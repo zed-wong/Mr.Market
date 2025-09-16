@@ -16,6 +16,7 @@ import { Campaign } from './common/entities/campaign/campaign.entity';
 import { CampaignParticipation } from './common/entities/campaign/campaign-participation.entity';
 import { Contribution } from './common/entities/campaign/contribution.entity';
 import { HufiScoreSnapshot } from './common/entities/campaign/hufi-score-snapshot.entity';
+import { IndicatorStrategyHistory } from './common/entities/indicator-strategy-history.entity';
 import {
   GrowdataArbitragePair,
   GrowdataExchange,
@@ -156,6 +157,7 @@ function buildRedisConfig(configService: ConfigService) {
         ShareLedgerEntry,
         HufiScoreSnapshot,
         StrategyOrderIntentEntity,
+        IndicatorStrategyHistory,
       ],
       synchronize: false,
       migrations: [join(__dirname, 'database/migrations/*{.ts,.js}')],

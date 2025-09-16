@@ -197,7 +197,6 @@ export class PureMarketMakingStrategyDto {
   })
   currentBaseRatio?: number;
 }
-
 export class ExecuteVolumeStrategyDto {
   @ApiProperty({ description: 'Name of the exchange' })
   exchangeName: string;
@@ -234,6 +233,11 @@ export class ExecuteVolumeStrategyDto {
     example: 1,
   })
   pricePushRate: number; // <--- NEW PARAM to push price after each trade
+  @ApiProperty({
+    description: 'The first trade is a buy or sell',
+    example: 'buy',
+  })
+  postOnlySide: 'buy' | 'sell'; // <--- NEW PARAM
 }
 
 export class StopVolumeStrategyDto {

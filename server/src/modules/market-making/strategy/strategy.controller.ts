@@ -26,13 +26,17 @@ import {
   PureMarketMakingStrategyDto,
   StopVolumeStrategyDto,
 } from './strategy.dto';
+import { TimeIndicatorStrategyService } from './time-indicator.service';
+import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
 @ApiTags('Trading Engine')
 @Controller('strategy')
 export class StrategyController {
+  private loops = new Map<string, NodeJS.Timeout>();
   constructor(
     private readonly strategyService: StrategyService,
     private readonly adminService: AdminStrategyService,
+    private readonly timeIndicatorStrategyService: TimeIndicatorStrategyService,
   ) {}
 
   @Get('running')
@@ -201,6 +205,7 @@ export class StrategyController {
       userId,
       clientId,
       pricePushRate,
+      postOnlySide,
     } = executeVolumeStrategyDto;
 
     return this.strategyService.executeVolumeStrategy(
@@ -213,6 +218,7 @@ export class StrategyController {
       userId,
       clientId,
       pricePushRate,
+      postOnlySide,
     );
   }
 
@@ -231,6 +237,46 @@ export class StrategyController {
       stopVolumeStrategyDto.userId,
       stopVolumeStrategyDto.clientId,
     );
+  }
+
+  @Post('execute-indicator-strategy')
+  @ApiOperation({ summary: 'Run the time-indicator strategy once (stateless)' })
+  async execute(@Body() dto: TimeIndicatorStrategyDto) {
+    return this.timeIndicatorStrategyService.executeIndicatorStrategy(dto);
+  }
+
+  @Post('start-indicator-strategy')
+  @ApiOperation({
+    summary: 'Start periodic execution of the time-indicator strategy',
+  })
+  async start(@Body() dto: TimeIndicatorStrategyDto) {
+    const key = `${dto.userId}:${dto.clientId}`;
+    if (this.loops.has(key)) {
+      return { message: `Strategy already running for ${key}` };
+    }
+
+    const loop = setInterval(
+      () => this.timeIndicatorStrategyService.executeIndicatorStrategy(dto),
+      dto.tickIntervalMs,
+    );
+
+    this.loops.set(key, loop);
+    return { message: `Started strategy for ${key}` };
+  }
+
+  @Post('stop-indicator-strategy')
+  @ApiOperation({
+    summary: 'Stop periodic execution of the time-indicator strategy',
+  })
+  async stop(@Body() body: { userId: string; clientId: string }) {
+    const key = `${body.userId}:${body.clientId}`;
+    const loop = this.loops.get(key);
+    if (loop) {
+      clearInterval(loop);
+      this.loops.delete(key);
+      return { message: `Stopped strategy for ${key}` };
+    }
+    return { message: `No running strategy found for ${key}` };
   }
 
   @Post('rerun')
