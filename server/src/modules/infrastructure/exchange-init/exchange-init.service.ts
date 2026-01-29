@@ -4,7 +4,10 @@ import {
   InternalServerErrorException,
   BadRequestException,
   Scope,
+  Inject,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 @Injectable({ scope: Scope.DEFAULT })
@@ -12,8 +15,9 @@ export class ExchangeInitService {
   private readonly logger = new CustomLogger(ExchangeInitService.name);
   private exchanges = new Map<string, Map<string, ccxt.Exchange>>();
   private defaultAccounts = new Map<string, ccxt.Exchange>();
+  private readonly marketsCacheTtlSeconds = 60 * 60;
 
-  constructor() {
+  constructor(@Inject(CACHE_MANAGER) private cacheService: Cache) {
     this.initializeExchanges()
       .then(() => {
         this.logger.log('Exchanges initialized successfully');
@@ -506,6 +510,12 @@ export class ExchangeInitService {
     }
 
     try {
+      const cacheKey = `ccxt_markets_${exchangeId}`;
+      const cachedMarkets = await this.cacheService.get<any[]>(cacheKey);
+      if (cachedMarkets) {
+        return cachedMarkets;
+      }
+
       const exchangeClass = ccxt[exchangeId];
       const exchange = new exchangeClass();
 
@@ -513,7 +523,7 @@ export class ExchangeInitService {
       // Since we are not authenticated, we can only get public markets
       await exchange.loadMarkets();
 
-      return Object.values(exchange.markets).map((market: any) => ({
+      const markets = Object.values(exchange.markets).map((market: any) => ({
         symbol: market.symbol,
         base: market.base,
         quote: market.quote,
@@ -524,6 +534,12 @@ export class ExchangeInitService {
         precision: market.precision,
         limits: market.limits,
       }));
+      await this.cacheService.set(
+        cacheKey,
+        markets,
+        this.marketsCacheTtlSeconds,
+      );
+      return markets;
     } catch (error) {
       this.logger.error(
         `Failed to get markets for ${exchangeId}: ${error.message}`,

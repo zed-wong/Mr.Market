@@ -22,11 +22,23 @@
     // Pagination
     let currentPage = 1;
     const itemsPerPage = 5;
-    $: totalPages = Math.ceil(marketMakingPairs.length / itemsPerPage);
-    $: paginatedPairs = marketMakingPairs.slice(
+    $: sortedPairs = [...marketMakingPairs].sort((a, b) => {
+        const exchangeCompare = a.exchange_id.localeCompare(b.exchange_id);
+        if (exchangeCompare !== 0) return exchangeCompare;
+        return a.symbol.localeCompare(b.symbol);
+    });
+    $: totalPages = Math.ceil(sortedPairs.length / itemsPerPage);
+    $: paginatedPairs = sortedPairs.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage,
     );
+    $: totalEntries = sortedPairs.length;
+    $: showingStart = totalEntries === 0
+        ? 0
+        : (currentPage - 1) * itemsPerPage + 1;
+    $: showingEnd = totalEntries === 0
+        ? 0
+        : Math.min(currentPage * itemsPerPage, totalEntries);
 
     async function UpdateMarketMakingPair(id: string, enable: boolean) {
         if (!id) return;
@@ -347,11 +359,13 @@
             class="flex items-center justify-between px-6 py-4 border-t border-base-200 bg-base-100"
         >
             <div class="text-sm text-base-content/60">
-                {$_("showing")}
-                <span class="font-medium">{paginatedPairs.length}</span>
-                {$_("pairs")} of
-                <span class="font-medium">{totalPages || 1}</span>
-                {(totalPages || 1) === 1 ? "page" : "pages"}
+                {$_("showing_entries", {
+                    values: {
+                        start: showingStart,
+                        end: showingEnd,
+                        total: totalEntries,
+                    },
+                })}
             </div>
             <div class="join">
                 <button

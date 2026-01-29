@@ -11,7 +11,7 @@
 
   import { MIXIN_API_BASE_URL } from "$lib/helpers/constants";
   import AssetSelect from "../common/AssetSelect.svelte";
-  import type { MarketMakingPairDto } from "$lib/types/hufi/grow";
+  import type { MarketMakingPair, MarketMakingPairDto } from "$lib/types/hufi/grow";
   import { addMarketMakingPair } from "$lib/helpers/mrm/admin/growdata";
 
   export let configuredExchanges: {
@@ -20,6 +20,7 @@
     icon_url?: string;
     enable: boolean;
   }[] = [];
+  export let existingPairs: MarketMakingPair[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -47,6 +48,14 @@
   let selectedBaseAsset: any = null;
   let selectedTargetAsset: any = null;
 
+  const normalizeSymbol = (symbol: string) =>
+    symbol.split(":")[0].trim().toUpperCase();
+  $: existingPairKeys = new Set(
+    existingPairs.map(
+      (pair) => `${pair.exchange_id}:${normalizeSymbol(pair.symbol || "")}`,
+    ),
+  );
+
   const cleanUpStates = () => {
     isAdding = false;
     addDialog = false;
@@ -66,6 +75,12 @@
   };
 
   async function AddMarketMakingPair(pair: MarketMakingPairDto) {
+    const existingKey = `${pair.exchange_id}:${normalizeSymbol(pair.symbol || "")}`;
+    if (existingPairKeys.has(existingKey)) {
+      toast.error($_("pair_already_added"));
+      return;
+    }
+
     if (
       !pair.symbol ||
       !pair.base_symbol ||
@@ -298,6 +313,9 @@
                   .filter((m) => m.symbol
                       .toLowerCase()
                       .includes(AddNewSymbol.toLowerCase()))
+                  .filter((m) => !existingPairKeys.has(
+                    `${AddNewExchangeId}:${normalizeSymbol(m.symbol || "")}`,
+                  ))
                   .slice(0, 50) as market}
                   <li>
                     <button
