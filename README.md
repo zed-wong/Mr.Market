@@ -27,13 +27,9 @@ Install dependencies
 make install
 ```
 
-### Run DB server
+### SQLite database
 
-If you don't have Postgres installed, run it simply with docker.
-
-```
-make start-server-db
-```
+SQLite is file-based. Set `DATABASE_PATH` in `/server/.env` and the database file is created automatically.
 
 ### Run development servers
 
@@ -72,7 +68,7 @@ yarn test:e2e
 Unit testing
 
 ```
-yarn test
+bun test
 ```
 
 ## Deployment Guide
@@ -83,25 +79,20 @@ First, ensure you have the following environment variables ready. These are cruc
 
 #### Server Environment Variables (`/server/.env`)
 
-| Variable                    | Description                       | Source                    |
-| --------------------------- | --------------------------------- | ------------------------- |
-| `ADMIN_PASSWORD`            | Admin page password               | User-defined              |
-| `JWT_SECRET`                | JWT secret key (32 bit)           | User-defined              |
-| `COINGECKO_API_KEY`         | Coingecko API key                 | Coingecko                 |
-| `POSTGRES_HOST`             | DB Host Name                      | Postgres Database         |
-| `POSTGRES_USER`             | DB User Name                      | Postgres Database         |
-| `POSTGRES_PASSWORD`         | DB Password                       | Postgres Database         |
-| `POSTGRES_DATABASE`         | DB Name                           | Postgres Database         |
-| `POSTGRES_PORT`             | DB Port (Usually 5432)            | Postgres Database         |
-| `POSTGRES_SSL`              | DB SSL Connnection (Usually true) | Postgres Database         |
-| `MIXIN_APP_ID`              | Mixin App ID                      | Mixin Developer Dashboard |
-| `MIXIN_SESSION_ID`          | Mixin Session ID                  | Mixin Developer Dashboard |
-| `MIXIN_SERVER_PUBLIC_KEY`   | Mixin Server Public key           | Mixin Developer Dashboard |
-| `MIXIN_SESSION_PRIVATE_KEY` | Mixin Session Private key         | Mixin Developer Dashboard |
-| `MIXIN_SPEND_PRIVATE_KEY`   | Mixin Spend Private key           | Mixin Developer Dashboard |
-| `MIXIN_OAUTH_SECRET`        | Mixin Oauth Secret                | Mixin Developer Dashboard |
-| `BINANCE_API_KEY`           | Binance Account API Key           | Binance Account Settings  |
-| `BINANCE_SECRET`            | Binance Account API Secret        | Binance Account Settings  |
+| Variable                    | Description                | Source                    |
+| --------------------------- | -------------------------- | ------------------------- |
+| `ADMIN_PASSWORD`            | Admin page password        | User-defined              |
+| `JWT_SECRET`                | JWT secret key (32 bit)    | User-defined              |
+| `COINGECKO_API_KEY`         | Coingecko API key          | Coingecko                 |
+| `DATABASE_PATH`             | SQLite database file path  | User-defined              |
+| `MIXIN_APP_ID`              | Mixin App ID               | Mixin Developer Dashboard |
+| `MIXIN_SESSION_ID`          | Mixin Session ID           | Mixin Developer Dashboard |
+| `MIXIN_SERVER_PUBLIC_KEY`   | Mixin Server Public key    | Mixin Developer Dashboard |
+| `MIXIN_SESSION_PRIVATE_KEY` | Mixin Session Private key  | Mixin Developer Dashboard |
+| `MIXIN_SPEND_PRIVATE_KEY`   | Mixin Spend Private key    | Mixin Developer Dashboard |
+| `MIXIN_OAUTH_SECRET`        | Mixin Oauth Secret         | Mixin Developer Dashboard |
+| `BINANCE_API_KEY`           | Binance Account API Key    | Binance Account Settings  |
+| `BINANCE_SECRET`            | Binance Account API Secret | Binance Account Settings  |
 
 Refer to [`./server/.env.example`](./server/.env.example) to enable more exchanges for strategies.
 
@@ -117,7 +108,7 @@ Variables starting with `MIXIN` are obtained from the Mixin bot keystore, access
 
 ### Deploy on Render
 
-This guide will walk you through the process of deploying a server, and an interface on Render for our application. We highly recommend using Postgres DB instance from Render since this guide is basically using Render as hosting service, but it's totally up to you if you pick another Postgres DB server.
+This guide will walk you through the process of deploying a server, and an interface on Render for our application. SQLite is used for persistence, so no external database service is required.
 By the end of these steps, you will have a fully functional server and interface setup.
 
 1. **Deploy Server on Render**
@@ -126,9 +117,9 @@ By the end of these steps, you will have a fully functional server and interface
 
    - Use
      - `./server` for Root Directory
-     - `yarn install; yarn build;` for Build Command
-     - `yarn migration:run` for Pre-Deploy Command (Available in advanced settings)
-     - `yarn start:prod` for Start Command
+   - `bun install --frozen-lockfile; bun run build` for Build Command
+   - `bun run migration:run` for Pre-Deploy Command (Available in advanced settings)
+   - `bun run start:prod` for Start Command
 
 2. **Deploy Interface on Render**
 
@@ -150,7 +141,7 @@ By the end of these steps, you will have a fully functional server and interface
 
 1. Deploy Server
 
-   If you have docker installed on your server, it's much easier to run the Mr.Market server without much setting up additional DB instance.
+   If you have docker installed on your server, it's much easier to run the Mr.Market server without setting up an additional database service.
 
    - Make sure you have `.env` file is configured properly.
    - Run `docker compose up` in `server` directory.

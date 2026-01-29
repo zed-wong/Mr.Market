@@ -4,7 +4,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bull';
 
 import { AppController } from './app.controller';
@@ -24,7 +23,6 @@ import { EventListenersModule } from './modules/mixin/listeners/events.module';
 
 import { Trade } from './common/entities/trade.entity';
 import { Transaction } from './common/entities/transaction.entity';
-import { UserBalance } from './common/entities/user-balance.entity';
 import { Performance } from './common/entities/performance.entity';
 
 import { SpotOrder } from './common/entities/spot-order.entity';
@@ -72,7 +70,6 @@ dotenv.config();
 @Module({
   imports: [
     LoggerModule,
-    EventEmitterModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
@@ -83,12 +80,8 @@ dotenv.config();
       load: [configuration],
     }),
     TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.POSTGRES_HOST,
-      port: parseInt(process.env.POSTGRES_PORT),
-      username: process.env.POSTGRES_USER,
-      password: process.env.POSTGRES_PASSWORD,
-      database: process.env.POSTGRES_DATABASE,
+      type: 'sqlite',
+      database: process.env.DATABASE_PATH || 'data/mr_market.db',
       entities: [
         Trade,
         ArbitrageHistory,
@@ -96,7 +89,6 @@ dotenv.config();
         StrategyInstance,
         Performance,
         Transaction,
-        UserBalance,
         SpotOrder,
         APIKeysConfig,
         CustomConfigEntity,
@@ -119,7 +111,10 @@ dotenv.config();
         CampaignParticipation,
       ],
       synchronize: false,
-      ssl: process.env.POSTGRES_SSL === 'true',
+      migrationsRun: true,
+      extra: {
+        flags: ['-WAL'],
+      },
     }),
     ScheduleModule.forRoot(),
     TradeModule,
@@ -154,4 +149,4 @@ dotenv.config();
   controllers: [AppController, AdminController],
   providers: [CustomLogger],
 })
-export class AppModule { }
+export class AppModule {}

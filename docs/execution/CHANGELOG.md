@@ -14,3 +14,6 @@
 - Apply agents.md rules to confirmPaymentInfo.svelte: replace uppercase with capitalize, replace h3 with span
 - Disable market-making exchange withdrawals during validation; refund instead
 
+## 2026-01-28
+- Remove Postgres leftovers and align configs/docs with SQLite
+- Restore snapshot memo handling and defer market making order creation until payment completion
