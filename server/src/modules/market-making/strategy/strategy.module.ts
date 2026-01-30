@@ -6,7 +6,6 @@ import { PerformanceModule } from '../performance/performance.module';
 import { LoggerModule } from '../../infrastructure/logger/logger.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  ArbitrageOrder,
   MarketMakingOrder,
   SimplyGrowOrder,
 } from 'src/common/entities/user-orders.entity';
@@ -26,7 +25,6 @@ import { FeeModule } from '../fee/fee.module';
     ConfigModule,
     AdminModule,
     TypeOrmModule.forFeature([
-      ArbitrageOrder,
       SimplyGrowOrder,
       MarketMakingOrder,
       StrategyInstance,
@@ -39,4 +37,4 @@ import { FeeModule } from '../fee/fee.module';
   providers: [StrategyService, AlpacaStratService],
   exports: [StrategyService],
 })
-export class StrategyModule { }
+export class StrategyModule {}

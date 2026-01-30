@@ -35,7 +35,6 @@ import {
 import { MixinMessage } from 'src/common/entities/mixin-message.entity';
 import { MixinUser } from 'src/common/entities/mixin-user.entity';
 import {
-  ArbitrageOrder,
   MarketMakingOrder,
   PaymentState,
   SimplyGrowOrder,
@@ -97,7 +96,6 @@ dotenv.config();
         MixinReleaseHistory,
         MixinMessage,
         MixinUser,
-        ArbitrageOrder,
         MarketMakingOrder,
         PaymentState,
         SimplyGrowOrder,

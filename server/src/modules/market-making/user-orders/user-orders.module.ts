@@ -7,7 +7,6 @@ import { MarketMakingOrderProcessor } from './market-making.processor';
 import { StrategyModule } from '../strategy/strategy.module';
 import { MixinClientModule } from 'src/modules/mixin/client/mixin-client.module';
 import {
-  ArbitrageOrder,
   MarketMakingOrder,
   PaymentState,
   SimplyGrowOrder,
@@ -29,7 +28,6 @@ import { CampaignModule } from 'src/modules/campaign/campaign.module';
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature([
-      ArbitrageOrder,
       MarketMakingOrder,
       PaymentState,
       SimplyGrowOrder,
@@ -58,4 +56,4 @@ import { CampaignModule } from 'src/modules/campaign/campaign.module';
   providers: [UserOrdersService, MarketMakingOrderProcessor],
   exports: [UserOrdersService],
 })
-export class UserOrdersModule { }
+export class UserOrdersModule {}
