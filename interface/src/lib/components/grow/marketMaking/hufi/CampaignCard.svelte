@@ -19,9 +19,7 @@
 
   export let campaign: ApiCampaign;
 
-  let showAddresses = true;
-
-  function copyToClipboard(text: string) {
+  function copyAddress(text: string) {
     navigator.clipboard.writeText(text);
   }
 
@@ -142,7 +140,7 @@
           >
           <button
             class="btn btn-ghost btn-xs"
-            onclick={() => copyToClipboard(campaign.address)}
+            onclick={() => copyAddress(campaign.address)}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -281,156 +279,137 @@
     </div>
   </div>
 
-  <!-- Oracle Addresses (Expandable) -->
+  <!-- Oracle Addresses -->
   <div class="flex flex-col space-y-4">
-    <button
-      class="font-bold text-sm bg-slate-50 p-3 px-4 rounded-lg flex justify-between items-center"
-      onclick={() => (showAddresses = !showAddresses)}
-    >
-      <span>Oracle Addresses</span>
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke-width="1.5"
-        stroke="currentColor"
-        class="w-4 h-4 transition-transform {showAddresses ? 'rotate-180' : ''}"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="m19.5 8.25-7.5 7.5-7.5-7.5"
-        />
-      </svg>
-    </button>
-    {#if showAddresses}
-      <div class="flex flex-col space-y-3 px-2">
-        <div class="flex justify-between items-center">
-          <span class="text-xs text-gray-500 font-medium">Launcher</span>
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-mono">{shortenAddress(campaign.launcher)}</span>
-            <button
-              class="btn btn-ghost btn-xs"
-              onclick={() => copyToClipboard(campaign.launcher)}
+    <div class="font-bold text-sm bg-slate-50 p-3 px-4 rounded-lg">
+      Oracle Addresses
+    </div>
+    <div class="flex flex-col space-y-3 px-2">
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-500 font-medium">Launcher</span>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-mono">{shortenAddress(campaign.launcher)}</span>
+          <button
+            class="btn btn-ghost btn-xs"
+            onclick={() => copyAddress(campaign.launcher)}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-3 h-3"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-3 h-3"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-xs text-gray-500 font-medium">Exchange Oracle</span>
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-mono">{shortenAddress(campaign.exchange_oracle)}</span>
-            <button
-              class="btn btn-ghost btn-xs"
-              onclick={() => copyToClipboard(campaign.exchange_oracle)}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-3 h-3"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-xs text-gray-500 font-medium">Recording Oracle</span>
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-mono">{shortenAddress(campaign.recording_oracle)}</span>
-            <button
-              class="btn btn-ghost btn-xs"
-              onclick={() => copyToClipboard(campaign.recording_oracle)}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-3 h-3"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-xs text-gray-500 font-medium">Reputation Oracle</span>
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-mono">{shortenAddress(campaign.reputation_oracle)}</span>
-            <button
-              class="btn btn-ghost btn-xs"
-              onclick={() => copyToClipboard(campaign.reputation_oracle)}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-3 h-3"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-xs text-gray-500 font-medium">Fund Token</span>
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-mono">{campaign.fund_token_symbol}</span>
-            <button
-              class="btn btn-ghost btn-xs"
-              onclick={() => copyToClipboard(campaign.fund_token)}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-3 h-3"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
-                />
-              </svg>
-            </button>
-          </div>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
+              />
+            </svg>
+          </button>
         </div>
       </div>
-    {/if}
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-500 font-medium">Exchange Oracle</span>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-mono">{shortenAddress(campaign.exchange_oracle)}</span>
+          <button
+            class="btn btn-ghost btn-xs"
+            onclick={() => copyAddress(campaign.exchange_oracle)}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-3 h-3"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-500 font-medium">Recording Oracle</span>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-mono">{shortenAddress(campaign.recording_oracle)}</span>
+          <button
+            class="btn btn-ghost btn-xs"
+            onclick={() => copyAddress(campaign.recording_oracle)}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-3 h-3"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-500 font-medium">Reputation Oracle</span>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-mono">{shortenAddress(campaign.reputation_oracle)}</span>
+          <button
+            class="btn btn-ghost btn-xs"
+            onclick={() => copyAddress(campaign.reputation_oracle)}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-3 h-3"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-500 font-medium">Fund Token</span>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-mono">{campaign.fund_token_symbol}</span>
+          <button
+            class="btn btn-ghost btn-xs"
+            onclick={() => copyAddress(campaign.fund_token)}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-3 h-3"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>

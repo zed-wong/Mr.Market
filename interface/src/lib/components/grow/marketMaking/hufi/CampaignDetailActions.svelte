@@ -7,7 +7,7 @@
 
   const dispatch = createEventDispatcher();
 
-  let showDialog = false;
+  let showDialog = $state(false);
 </script>
 
 <div
@@ -23,7 +23,7 @@
       viewBox="0 0 24 24"
       stroke-width="2"
       stroke="currentColor"
-      class="w-4 h-4 mr-2"
+      class="w-4 h-4"
     >
       <path
         stroke-linecap="round"
@@ -34,7 +34,7 @@
     Join Directly
   </button>
   <button
-    class="flex-1 btn bg-black hover:bg-gray-900 text-white border-none rounded-full h-12 min-h-12 text-sm font-bold normal-case shadow-lg"
+    class="flex-[1.5] btn bg-black hover:bg-gray-900 text-white border-none rounded-full h-12 min-h-12 text-sm font-bold normal-case shadow-lg"
     onclick={() => (showDialog = true)}
   >
     <svg
@@ -43,7 +43,7 @@
       viewBox="0 0 24 24"
       stroke-width="2"
       stroke="currentColor"
-      class="w-4 h-4 mr-2"
+      class="w-4 h-4"
     >
       <path
         stroke-linecap="round"
