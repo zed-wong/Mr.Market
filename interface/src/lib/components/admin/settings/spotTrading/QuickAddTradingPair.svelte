@@ -17,6 +17,8 @@
     enable: boolean;
   }[] = [];
   export let existingPairs: SpotTradingPair[] = [];
+  export let embedded = false;
+  export let resetToken = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -39,6 +41,49 @@
   const normalizeSymbol = (symbol: string) =>
     symbol.split(":")[0].trim().toUpperCase();
 
+  type MarketCandidate = {
+    exchange_id: string;
+    symbol?: string;
+    display_symbol?: string;
+    base?: string;
+    quote?: string;
+    [key: string]: unknown;
+  };
+
+  function normalizePairText(value: string) {
+    return value
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "")
+      .replace(/[-_]/g, "/")
+      .replace(/\/+/g, "/");
+  }
+
+  function rankPairMatch(market: MarketCandidate, queryRaw: string) {
+    const query = normalizePairText(queryRaw);
+    if (!query) return 999;
+
+    const symbol = normalizePairText(market.display_symbol || market.symbol || "");
+    if (!symbol) return 999;
+    if (symbol === query) return 0;
+
+    const base = normalizePairText(market.base || "");
+    const quote = normalizePairText(market.quote || "");
+
+    if (query.includes("/")) {
+      const [qBase, qQuote] = query.split("/");
+      if (qBase && qQuote && base === qBase && quote === qQuote) return 1;
+      if (qBase && symbol.startsWith(`${qBase}/`)) return 2;
+      if (qQuote && symbol.endsWith(`/${qQuote}`)) return 3;
+    } else {
+      if (base === query || quote === query) return 1;
+      if (symbol.startsWith(query)) return 2;
+    }
+
+    if (symbol.includes(query)) return 4;
+    return 10;
+  }
+
   $: exchangeById = Object.fromEntries(
     configuredExchanges.map((exchange) => [exchange.exchange_id, exchange]),
   );
@@ -50,40 +95,63 @@
 
   $: filteredMarkets = symbolQuery.trim().length
     ? (() => {
-        const seenKeys = new Set<string>();
-        return configuredExchanges
-          .flatMap((exchange) =>
-            (marketsByExchange[exchange.exchange_id] || []).map((market) => ({
-              ...market,
-              exchange_id: exchange.exchange_id,
-              display_symbol: (market?.symbol || "").split(":")[0],
-            })),
-          )
-          .filter((market) => {
-            if ((market?.symbol || "").includes(":")) return false;
-            const query = symbolQuery.trim().toLowerCase();
-            const symbol = (market?.display_symbol || "").toLowerCase();
-            const base = (market?.base || "").toLowerCase();
-            const quote = (market?.quote || "").toLowerCase();
-            return (
-              symbol.includes(query) ||
-              base === query ||
-              quote === query
-            );
-          })
-          .filter((market) => {
-            const key = `${market.exchange_id}:${market.display_symbol}`;
-            if (seenKeys.has(key)) return false;
-            seenKeys.add(key);
-            return true;
-          })
-          .slice(0, 100);
-      })()
+      const seenKeys = new Set<string>();
+      const queryRaw = symbolQuery.trim();
+      const query = normalizePairText(queryRaw);
+      const results = configuredExchanges
+        .flatMap((exchange) =>
+          (marketsByExchange[exchange.exchange_id] || []).map(
+            (market) =>
+              ({
+                ...market,
+                exchange_id: exchange.exchange_id,
+                display_symbol: (market?.symbol || "").split(":")[0],
+              }) as MarketCandidate,
+          ),
+        )
+        .filter((market) => {
+          if ((market?.symbol || "").includes(":")) return false;
+          const symbol = normalizePairText(
+            market.display_symbol || market.symbol || "",
+          );
+          const base = normalizePairText(market.base || "");
+          const quote = normalizePairText(market.quote || "");
+          return (
+            symbol.includes(query) ||
+            base === query ||
+            quote === query
+          );
+        })
+        .filter((market) => {
+          const key = `${market.exchange_id}:${market.display_symbol}`;
+          if (seenKeys.has(key)) return false;
+          seenKeys.add(key);
+          return true;
+        });
+
+      return results
+        .map((market, idx) => ({
+          market,
+          idx,
+          rank: rankPairMatch(market, queryRaw),
+        }))
+        .sort((a, b) => a.rank - b.rank || a.idx - b.idx)
+        .map((item) => item.market)
+        .slice(0, 100);
+    })()
     : [];
 
   $: if (addDialog && symbolQuery.trim().length > 0 && !hasFetchedAll) {
     hasFetchedAll = true;
     fetchAllMarkets();
+  }
+
+  $: if (embedded) {
+    addDialog = true;
+  }
+
+  $: if (embedded && resetToken > 0) {
+    resetState();
   }
 
   async function fetchExchangeMarkets(exchangeId: string, token: string) {
@@ -298,46 +366,63 @@
   }
 </script>
 
-<details class="dropdown dropdown-end" bind:open={addDialog} on:toggle={() => !addDialog && resetState()}>
-  <summary class="btn btn-outline gap-2">
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke-width="2"
-      stroke="currentColor"
-      class="w-4 h-4"
-    >
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        d="M12 4.5v15m7.5-7.5h-15"
-      />
-    </svg>
-    {$_("quick_add")}
-  </summary>
+<details
+  class={clsx(!embedded && "dropdown dropdown-end", embedded && "w-full")}
+  bind:open={addDialog}
+  on:toggle={() => !embedded && !addDialog && resetState()}
+>
+  {#if !embedded}
+    <summary class="btn btn-outline gap-2">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="2"
+        stroke="currentColor"
+        class="w-4 h-4"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 4.5v15m7.5-7.5h-15"
+        />
+      </svg>
+      {$_("quick_add")}
+    </summary>
+  {/if}
+
   <div
-    class="dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-lg mt-2 max-h-[80vh] overflow-y-auto"
+    class={clsx(
+      "max-h-[80vh] overflow-y-auto",
+      embedded
+        ? "w-full"
+        : "dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-lg mt-2",
+    )}
   >
-    <div class="flex justify-between items-center mb-4">
-      <span class="text-lg font-semibold">{$_("quick_add_pair")}</span>
-      <button class="btn btn-sm btn-circle btn-ghost" on:click={() => (addDialog = false)}>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="w-6 h-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1"
-          stroke="currentColor"
+    {#if !embedded}
+      <div class="flex justify-between items-center mb-4">
+        <span class="text-lg font-semibold">{$_("quick_add_pair")}</span>
+        <button
+          class="btn btn-sm btn-circle btn-ghost"
+          on:click={() => (addDialog = false)}
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M6 18 18 6M6 6l12 12"
-          />
-        </svg>
-      </button>
-    </div>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-6 h-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M6 18 18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </div>
+    {/if}
 
     {#if configuredExchanges.length === 0}
       <div class="alert alert-warning">

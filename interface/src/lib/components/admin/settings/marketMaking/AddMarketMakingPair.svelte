@@ -13,6 +13,7 @@
   import AssetSelect from "../common/AssetSelect.svelte";
   import type { MarketMakingPair, MarketMakingPairDto } from "$lib/types/hufi/grow";
   import { addMarketMakingPair } from "$lib/helpers/mrm/admin/growdata";
+  import QuickAddMarketMakingPair from "$lib/components/admin/settings/marketMaking/QuickAddMarketMakingPair.svelte";
 
   export let configuredExchanges: {
     exchange_id: string;
@@ -39,6 +40,9 @@
   let isBaseIconFetching = false;
   let isTargetIconFetching = false;
 
+  let addMode: "menu" | "quick" | "custom" = "menu";
+  let quickResetToken = 0;
+
   // Market Search State
   let isExchangeDropdownOpen = false;
   let isMarketDropdownOpen = false;
@@ -59,6 +63,7 @@
   const cleanUpStates = () => {
     isAdding = false;
     addDialog = false;
+    addMode = "menu";
     AddNewSymbol = "";
     AddNewBaseSymbol = "";
     AddNewTargetSymbol = "";
@@ -73,6 +78,19 @@
     selectedBaseAsset = null;
     selectedTargetAsset = null;
   };
+
+  function closeDialog() {
+    cleanUpStates();
+  }
+
+  function openQuickAdd() {
+    addMode = "quick";
+    quickResetToken += 1;
+  }
+
+  function openCustomAdd() {
+    addMode = "custom";
+  }
 
   async function AddMarketMakingPair(pair: MarketMakingPairDto) {
     const existingKey = `${pair.exchange_id}:${normalizeSymbol(pair.symbol || "")}`;
@@ -154,7 +172,15 @@
 
 <svelte:window on:click={handleClickOutside} />
 
-<details class="dropdown dropdown-end" bind:open={addDialog}>
+<details
+  class="dropdown dropdown-end"
+  bind:open={addDialog}
+  on:toggle={() => {
+    if (!addDialog) {
+      closeDialog();
+    }
+  }}
+>
   <summary
     class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
   >
@@ -174,33 +200,104 @@
     </svg>
     {$_("add_pair")}
   </summary>
-  <div
-    class="dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-[32rem] mt-2 max-h-[80vh] overflow-y-auto"
-  >
-    <div class="flex justify-between items-center mb-4">
-      <h3 class="font-bold text-lg">{$_("add_new_pair")}</h3>
-      <button
-        class="btn btn-sm btn-circle btn-ghost"
-        on:click={() => (addDialog = false)}
-      >
-        <!-- Close Icon -->
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="w-6 h-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1"
-          stroke="currentColor"
-          ><path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M6 18 18 6M6 6l12 12"
-          /></svg
+  {#if addMode === "menu"}
+    <ul
+      class="dropdown-content menu p-2 shadow-xl bg-base-100 rounded-box w-56 mt-2 border border-base-200"
+    >
+      <li>
+        <button type="button" on:click={openQuickAdd}>
+          {$_("quick_add")}
+        </button>
+      </li>
+      <li>
+        <button type="button" on:click={openCustomAdd}>Custom add</button>
+      </li>
+    </ul>
+  {:else}
+    <div
+      class="dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-[32rem] mt-2 max-h-[80vh] overflow-y-auto"
+    >
+      <div class="flex justify-between items-center mb-4">
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-sm btn-circle btn-ghost"
+            on:click={() => (addMode = "menu")}
+            aria-label="Back"
+            title="Back"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-5 h-5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+              />
+            </svg>
+          </button>
+          <h3 class="font-bold text-lg">
+            {addMode === "quick" ? $_("quick_add_pair") : $_("add_new_pair")}
+          </h3>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm btn-circle btn-ghost"
+          on:click={closeDialog}
+          aria-label="Close"
         >
-      </button>
-    </div>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="form-control w-full col-span-2">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-6 h-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1"
+            stroke="currentColor"
+            ><path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M6 18 18 6M6 6l12 12"
+            /></svg
+          >
+        </button>
+      </div>
+
+      <div class="tabs tabs-boxed mb-4">
+        <button
+          type="button"
+          class={clsx("tab", addMode === "quick" && "tab-active")}
+          on:click={openQuickAdd}
+        >
+          {$_("quick_add")}
+        </button>
+        <button
+          type="button"
+          class={clsx("tab", addMode === "custom" && "tab-active")}
+          on:click={openCustomAdd}
+        >
+          Custom add
+        </button>
+      </div>
+
+      {#if addMode === "quick"}
+        <QuickAddMarketMakingPair
+          embedded
+          resetToken={quickResetToken}
+          {configuredExchanges}
+          existingPairs={existingPairs}
+          on:refresh={() => {
+            dispatch("refresh");
+            closeDialog();
+          }}
+        />
+      {:else}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="form-control w-full col-span-2">
         <label class="label" for="exchange-id-input">
           <span class="label-text font-medium">{$_("exchange_id")}</span>
         </label>
@@ -516,10 +613,12 @@
           }}
         >
           <span class={clsx(isAdding && "loading loading-spinner loading-sm")}>
-            {$_("add_pair")}
+            {$_("add")}
           </span>
         </button>
       </div>
     </div>
-  </div>
+      {/if}
+    </div>
+  {/if}
 </details>

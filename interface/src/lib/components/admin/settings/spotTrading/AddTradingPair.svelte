@@ -8,6 +8,7 @@
   import { getCcxtExchangeMarkets } from "$lib/helpers/mrm/admin/growdata";
   import { MIXIN_API_BASE_URL } from "$lib/helpers/constants";
   import AssetSelect from "../common/AssetSelect.svelte";
+  import QuickAddTradingPair from "$lib/components/admin/settings/spotTrading/QuickAddTradingPair.svelte";
 
 import { toast } from "svelte-sonner";
 
@@ -39,6 +40,9 @@ import { toast } from "svelte-sonner";
   let availableMarkets: any[] = [];
   let isLoadingMarkets = false;
 
+  let addMode: "menu" | "quick" | "custom" = "menu";
+  let quickResetToken = 0;
+
   const normalizeSymbol = (symbol: string) =>
     symbol.split(":")[0].trim().toUpperCase();
   $: existingPairKeys = new Set(
@@ -50,6 +54,7 @@ import { toast } from "svelte-sonner";
   const cleanUpStates = () => {
     isAdding = false;
     addDialog = false;
+    addMode = "menu";
     AddNewSymbol = "";
     AddNewExchangeId = "";
     AddNewCcxtId = "";
@@ -69,6 +74,19 @@ import { toast } from "svelte-sonner";
     selectedBaseAsset = null;
     selectedQuoteAsset = null;
   };
+
+  function closeDialog() {
+    cleanUpStates();
+  }
+
+  function openQuickAdd() {
+    addMode = "quick";
+    quickResetToken += 1;
+  }
+
+  function openCustomAdd() {
+    addMode = "custom";
+  }
 
   async function AddSpotTradingPair(pair: SpotTradingPair) {
     const existingKey = `${pair.exchange_id}:${normalizeSymbol(pair.symbol || "")}`;
@@ -188,7 +206,15 @@ import { toast } from "svelte-sonner";
 
 <svelte:window on:click={handleClickOutside} />
 
-<details class="dropdown dropdown-end" bind:open={addDialog}>
+<details
+  class="dropdown dropdown-end"
+  bind:open={addDialog}
+  on:toggle={() => {
+    if (!addDialog) {
+      closeDialog();
+    }
+  }}
+>
   <summary
     class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
   >
@@ -208,56 +234,126 @@ import { toast } from "svelte-sonner";
     </svg>
     {$_("add_pair")}
   </summary>
-  <div
-    class=" dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-[32rem] mt-2 max-h-[80vh] overflow-y-auto"
-  >
-    <div class="mb-4 flex justify-between items-center">
-      <span class="font-bold text-lg">{$_("add_new_pair")}</span>
-      <button
-        class="btn btn-sm btn-circle btn-ghost"
-        on:click={() => (addDialog = false)}
-      >
-        <!-- Close Icon -->
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="w-6 h-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1"
-          stroke="currentColor"
-          ><path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M6 18 18 6M6 6l12 12"
-          /></svg
-        ></button
-      >
-    </div>
-
-    {#if configuredExchanges.length === 0}
-      <div class="alert alert-warning">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="stroke-current shrink-0 h-6 w-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          ><path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          /></svg
-        >
-        <span>{$_("no_exchanges_configured_msg")}</span>
-        <div>
-          <a href="/manage/settings/exchanges" class="btn btn-sm"
-            >{$_("go_to_exchanges")}</a
+  {#if addMode === "menu"}
+    <ul
+      class="dropdown-content menu p-2 shadow-xl bg-base-100 rounded-box w-56 mt-2 border border-base-200"
+    >
+      <li>
+        <button type="button" on:click={openQuickAdd}>
+          {$_("quick_add")}
+        </button>
+      </li>
+      <li>
+        <button type="button" on:click={openCustomAdd}>Custom add</button>
+      </li>
+    </ul>
+  {:else}
+    <div
+      class="dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-[32rem] mt-2 max-h-[80vh] overflow-y-auto"
+    >
+      <div class="flex justify-between items-center mb-4">
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-sm btn-circle btn-ghost"
+            on:click={() => (addMode = "menu")}
+            aria-label="Back"
+            title="Back"
           >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-5 h-5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+              />
+            </svg>
+          </button>
+          <h3 class="font-bold text-lg">
+            {addMode === "quick" ? $_("quick_add_pair") : $_("add_new_pair")}
+          </h3>
         </div>
+        <button
+          type="button"
+          class="btn btn-sm btn-circle btn-ghost"
+          on:click={closeDialog}
+          aria-label="Close"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-6 h-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1"
+            stroke="currentColor"
+            ><path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M6 18 18 6M6 6l12 12"
+            /></svg
+          >
+        </button>
       </div>
-    {:else}
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div class="form-control w-full col-span-2">
+
+      <div class="tabs tabs-boxed mb-4">
+        <button
+          type="button"
+          class={clsx("tab", addMode === "quick" && "tab-active")}
+          on:click={openQuickAdd}
+        >
+          {$_("quick_add")}
+        </button>
+        <button
+          type="button"
+          class={clsx("tab", addMode === "custom" && "tab-active")}
+          on:click={openCustomAdd}
+        >
+          Custom add
+        </button>
+      </div>
+
+      {#if addMode === "quick"}
+        <QuickAddTradingPair
+          embedded
+          resetToken={quickResetToken}
+          {configuredExchanges}
+          existingPairs={existingPairs}
+          on:refresh={async () => {
+            await invalidate("admin:settings:spot-trading");
+            closeDialog();
+          }}
+        />
+      {:else}
+        {#if configuredExchanges.length === 0}
+          <div class="alert alert-warning">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="stroke-current shrink-0 h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              ><path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              /></svg
+            >
+            <span>{$_("no_exchanges_configured_msg")}</span>
+            <div>
+              <a href="/manage/settings/exchanges" class="btn btn-sm"
+                >{$_("go_to_exchanges")}</a
+              >
+            </div>
+          </div>
+        {:else}
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control w-full col-span-2">
           <label class="label" for="exchange-id-input">
             <span class="label-text font-medium">{$_("exchange_id")}</span>
           </label>
@@ -548,17 +644,18 @@ import { toast } from "svelte-sonner";
                 enable: true,
                 id: getUuid(),
               });
-              addDialog = false;
             }}
           >
             <span
               class={clsx(isAdding && "loading loading-spinner loading-sm")}
             >
-              {$_("add_pair")}
+              {$_("add")}
             </span>
           </button>
         </div>
       </div>
-    {/if}
-  </div>
+        {/if}
+      {/if}
+    </div>
+  {/if}
 </details>

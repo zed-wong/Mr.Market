@@ -21,7 +21,7 @@ import { toast } from "svelte-sonner";
 
     // Pagination
     let currentPage = 1;
-    const itemsPerPage = 5;
+    const itemsPerPage = 10;
     $: sortedPairs = [...marketMakingPairs].sort((a, b) => {
         const exchangeCompare = a.exchange_id.localeCompare(b.exchange_id);
         if (exchangeCompare !== 0) return exchangeCompare;
@@ -101,7 +101,7 @@ import { toast } from "svelte-sonner";
         class="card bg-base-100 shadow-sm border border-base-200 overflow-hidden"
     >
         <div class="overflow-x-auto">
-            <table class="table table-lg">
+            <table class="table table-sm">
                 <thead class="bg-base-200/50 text-base-content/70">
                     <tr>
                         <th class="uppercase text-xs font-semibold"
@@ -153,12 +153,12 @@ import { toast } from "svelte-sonner";
                             <td>
                                 <div class="flex -space-x-3">
                                     <img
-                                        class="inline-block min-w-8 min-h-8 h-8 w-8 rounded-full ring-2 ring-base-100"
+                                        class="inline-block min-w-6 min-h-6 h-6 w-6 rounded-full ring-2 ring-base-100"
                                         src={pair.base_icon_url}
                                         alt=""
                                     />
                                     <img
-                                        class="inline-block min-w-8 min-h-8 h-8 w-8 rounded-full ring-2 ring-base-100"
+                                        class="inline-block min-w-6 min-h-6 h-6 w-6 rounded-full ring-2 ring-base-100"
                                         src={pair.quote_icon_url}
                                         alt=""
                                     />

@@ -8,11 +8,10 @@
   import type { SpotTradingPair } from "$lib/types/hufi/spot";
   import Loading from "$lib/components/common/loading.svelte";
   import AddTradingPair from "$lib/components/admin/settings/spotTrading/AddTradingPair.svelte";
-  import QuickAddTradingPair from "$lib/components/admin/settings/spotTrading/QuickAddTradingPair.svelte";
   import TradingPairList from "$lib/components/admin/settings/spotTrading/TradingPairList.svelte";
 
   let isRefreshing = false;
-  let spotInfoPromise: Promise<any> | null = null;
+  let spotInfoPromise: any = null;
   let spotTradingPairs: SpotTradingPair[] = [];
 
   async function RefreshSpotTradingPairs(showToast = true) {
@@ -36,7 +35,7 @@
   $: if ($page.data.spotInfo && $page.data.spotInfo !== spotInfoPromise) {
     spotInfoPromise = $page.data.spotInfo;
     if (spotInfoPromise) {
-      spotInfoPromise.then((spotInfo) => {
+      Promise.resolve(spotInfoPromise).then((spotInfo) => {
         spotTradingPairs = spotInfo?.trading_pairs || [];
       });
     }
@@ -76,11 +75,6 @@
     </div>
 
     <div class="flex items-center gap-3">
-      <QuickAddTradingPair
-        {configuredExchanges}
-        existingPairs={spotTradingPairs}
-        on:refresh={() => RefreshSpotTradingPairs(false)}
-      />
       <AddTradingPair
         {configuredExchanges}
         existingPairs={spotTradingPairs}

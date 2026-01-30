@@ -19,6 +19,8 @@
         enable: boolean;
     }[] = [];
     export let existingPairs: MarketMakingPair[] = [];
+    export let embedded = false;
+    export let resetToken = 0;
 
     const dispatch = createEventDispatcher();
 
@@ -40,6 +42,50 @@
     const normalizeSymbol = (symbol: string) =>
         symbol.split(":")[0].trim().toUpperCase();
 
+    type MarketCandidate = {
+        exchange_id: string;
+        symbol?: string;
+        display_symbol?: string;
+        base?: string;
+        quote?: string;
+        spot?: boolean;
+        [key: string]: unknown;
+    };
+
+    function normalizePairText(value: string) {
+        return value
+            .trim()
+            .toUpperCase()
+            .replace(/\s+/g, "")
+            .replace(/[-_]/g, "/")
+            .replace(/\/+/g, "/");
+    }
+
+    function rankPairMatch(market: MarketCandidate, queryRaw: string) {
+        const query = normalizePairText(queryRaw);
+        if (!query) return 999;
+
+        const symbol = normalizePairText(market.display_symbol || market.symbol || "");
+        if (!symbol) return 999;
+        if (symbol === query) return 0;
+
+        const base = normalizePairText(market.base || "");
+        const quote = normalizePairText(market.quote || "");
+
+        if (query.includes("/")) {
+            const [qBase, qQuote] = query.split("/");
+            if (qBase && qQuote && base === qBase && quote === qQuote) return 1;
+            if (qBase && symbol.startsWith(`${qBase}/`)) return 2;
+            if (qQuote && symbol.endsWith(`/${qQuote}`)) return 3;
+        } else {
+            if (base === query || quote === query) return 1;
+            if (symbol.startsWith(query)) return 2;
+        }
+
+        if (symbol.includes(query)) return 4;
+        return 10;
+    }
+
     $: exchangeById = Object.fromEntries(
         configuredExchanges.map((exchange) => [exchange.exchange_id, exchange]),
     );
@@ -53,23 +99,26 @@
     $: filteredMarkets = symbolQuery.trim().length
         ? (() => {
               const seenKeys = new Set<string>();
-              return configuredExchanges
+              const queryRaw = symbolQuery.trim();
+              const query = normalizePairText(queryRaw);
+              const results = configuredExchanges
                   .flatMap((exchange) =>
                       (marketsByExchange[exchange.exchange_id] || []).map(
                           (market) => ({
                               ...market,
                               exchange_id: exchange.exchange_id,
                               display_symbol: (market?.symbol || "").split(":")[0],
-                          }),
+                          }) as MarketCandidate,
                       ),
                   )
                   .filter((market) => {
                       if (market?.spot === false) return false;
                       if ((market?.symbol || "").includes(":")) return false;
-                      const query = symbolQuery.trim().toLowerCase();
-                      const symbol = (market?.display_symbol || "").toLowerCase();
-                      const base = (market?.base || "").toLowerCase();
-                      const quote = (market?.quote || "").toLowerCase();
+                       const symbol = normalizePairText(
+                           market.display_symbol || market.symbol || "",
+                       );
+                      const base = normalizePairText(market.base || "");
+                      const quote = normalizePairText(market.quote || "");
                       return (
                           symbol.includes(query) ||
                           base === query ||
@@ -81,12 +130,21 @@
                       if (seenKeys.has(key)) return false;
                       seenKeys.add(key);
                       return true;
-                  })
+                  });
+
+              return results
+                  .map((market, idx) => ({
+                      market,
+                      idx,
+                      rank: rankPairMatch(market, queryRaw),
+                  }))
+                  .sort((a, b) => a.rank - b.rank || a.idx - b.idx)
+                  .map((item) => item.market)
                   .slice(0, 100);
           })()
         : [];
 
-    $: if (addDialog && symbolQuery.trim().length > 0 && !hasFetchedAll) {
+    $: if ((embedded || addDialog) && symbolQuery.trim().length > 0 && !hasFetchedAll) {
         hasFetchedAll = true;
         fetchAllMarkets();
     }
@@ -310,56 +368,14 @@
         addingKey = null;
         resetAssetPicker();
     }
+
+    $: if (embedded && resetToken > 0) {
+        resetState();
+    }
 </script>
 
-<details
-    class="dropdown dropdown-end"
-    bind:open={addDialog}
-    on:toggle={() => !addDialog && resetState()}
->
-    <summary class="btn btn-outline gap-2">
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="2"
-            stroke="currentColor"
-            class="w-4 h-4"
-        >
-            <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M12 4.5v15m7.5-7.5h-15"
-            />
-        </svg>
-        {$_("quick_add")}
-    </summary>
-    <div
-        class="dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-lg mt-2 max-h-[80vh] overflow-y-auto"
-    >
-        <div class="flex justify-between items-center mb-4">
-            <span class="text-lg font-semibold">{$_("quick_add_pair")}</span>
-            <button
-                class="btn btn-sm btn-circle btn-ghost"
-                on:click={() => (addDialog = false)}
-            >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="w-6 h-6"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke-width="1"
-                    stroke="currentColor"
-                >
-                    <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M6 18 18 6M6 6l12 12"
-                    />
-                </svg>
-            </button>
-        </div>
-
+{#if embedded}
+    <div class="w-full">
         {#if configuredExchanges.length === 0}
             <div class="alert alert-warning">
                 <svg
@@ -645,4 +661,342 @@
             </div>
         {/if}
     </div>
-</details>
+{:else}
+    <details
+        class={clsx(!embedded && "dropdown dropdown-end", embedded && "w-full")}
+        bind:open={addDialog}
+        on:toggle={() => !addDialog && resetState()}
+    >
+        <summary class="btn btn-outline gap-2">
+            <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="2"
+                stroke="currentColor"
+                class="w-4 h-4"
+            >
+                <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 4.5v15m7.5-7.5h-15"
+                />
+            </svg>
+            {$_("quick_add")}
+        </summary>
+        <div
+            class={clsx(
+                "bg-base-100 rounded-box p-6 shadow-xl border border-base-200 max-h-[80vh] overflow-y-auto",
+                "dropdown-content w-lg mt-2",
+            )}
+        >
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-lg font-semibold">{$_("quick_add_pair")}</span>
+                <button
+                    class="btn btn-sm btn-circle btn-ghost"
+                    on:click={() => (addDialog = false)}
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="w-6 h-6"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1"
+                        stroke="currentColor"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M6 18 18 6M6 6l12 12"
+                        />
+                    </svg>
+                </button>
+            </div>
+
+            {#if configuredExchanges.length === 0}
+                <div class="alert alert-warning">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="stroke-current shrink-0 h-6 w-6"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                        />
+                    </svg>
+                    <span>{$_("no_exchanges_configured_msg")}</span>
+                </div>
+            {:else}
+                <div class="space-y-4">
+                    <div class="form-control w-full">
+                        <label class="label" for="quick-symbol-input">
+                            <span class="label-text font-medium"
+                                >{$_("symbol")}</span
+                            >
+                            <span class="label-text-alt text-base-content/60"
+                                >{$_("symbol_examples_pairs")}</span
+                            >
+                        </label>
+                        <input
+                            id="quick-symbol-input"
+                            type="text"
+                            class="input input-bordered w-full focus:input-primary transition-all"
+                            bind:value={symbolQuery}
+                            placeholder={$_("symbol_placeholder_pairs")}
+                        />
+                        <span class="text-xs text-base-content/50 mt-1">
+                            {$_("search_all_exchanges_hint")}
+                        </span>
+                    </div>
+
+                    {#if showAssetPicker}
+                        <div
+                            class="rounded-lg border border-base-200 bg-base-200/40 p-4 space-y-4"
+                        >
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="font-semibold">
+                                        {$_("select_assets")}
+                                    </div>
+                                    <div class="text-xs text-base-content/60">
+                                        {$_("select_assets_hint")}
+                                    </div>
+                                </div>
+                                <button
+                                    class="btn btn-xs btn-ghost"
+                                    on:click={resetAssetPicker}
+                                >
+                                    {$_("cancel")}
+                                </button>
+                            </div>
+
+                            <div class="space-y-2">
+                                <div
+                                    class="text-xs font-semibold capitalize tracking-wide opacity-60"
+                                >
+                                    {$_("base_asset_choice", {
+                                        values: { symbol: pendingMarket?.base },
+                                    })}
+                                </div>
+                                {#each baseAssetOptions as asset}
+                                    <label
+                                        class="flex items-center gap-3 p-3 rounded-lg border border-base-200 bg-base-100"
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="base-asset"
+                                            class="radio radio-sm"
+                                            checked={selectedBaseAsset?.asset_id ===
+                                                asset.asset_id}
+                                            on:change={() =>
+                                                (selectedBaseAsset = asset)}
+                                        />
+                                        <img
+                                            src={asset.icon_url}
+                                            alt={asset.symbol}
+                                            class="w-8 h-8 rounded-full"
+                                        />
+                                        <div class="flex-1">
+                                            <div class="font-semibold">
+                                                {asset.symbol}
+                                            </div>
+                                            <div
+                                                class="text-xs text-base-content/60"
+                                            >
+                                                {asset.name}
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="flex items-center gap-2 text-xs"
+                                        >
+                                            {#if chainInfoById[asset.chain_id]?.icon_url}
+                                                <img
+                                                    src={chainInfoById[
+                                                        asset.chain_id
+                                                    ].icon_url}
+                                                    alt={chainInfoById[
+                                                        asset.chain_id
+                                                    ].symbol}
+                                                    class="w-4 h-4 rounded-full"
+                                                />
+                                            {/if}
+                                            <span class="font-mono opacity-70"
+                                                >{asset.chain_id}</span
+                                            >
+                                        </div>
+                                    </label>
+                                {/each}
+                            </div>
+
+                            <div class="space-y-2">
+                                <div
+                                    class="text-xs font-semibold capitalize tracking-wide opacity-60"
+                                >
+                                    {$_("quote_asset_choice", {
+                                        values: { symbol: pendingMarket?.quote },
+                                    })}
+                                </div>
+                                {#each quoteAssetOptions as asset}
+                                    <label
+                                        class="flex items-center gap-3 p-3 rounded-lg border border-base-200 bg-base-100"
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="quote-asset"
+                                            class="radio radio-sm"
+                                            checked={selectedQuoteAsset?.asset_id ===
+                                                asset.asset_id}
+                                            on:change={() =>
+                                                (selectedQuoteAsset = asset)}
+                                        />
+                                        <img
+                                            src={asset.icon_url}
+                                            alt={asset.symbol}
+                                            class="w-8 h-8 rounded-full"
+                                        />
+                                        <div class="flex-1">
+                                            <div class="font-semibold">
+                                                {asset.symbol}
+                                            </div>
+                                            <div
+                                                class="text-xs text-base-content/60"
+                                            >
+                                                {asset.name}
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="flex items-center gap-2 text-xs"
+                                        >
+                                            {#if chainInfoById[asset.chain_id]?.icon_url}
+                                                <img
+                                                    src={chainInfoById[
+                                                        asset.chain_id
+                                                    ].icon_url}
+                                                    alt={chainInfoById[
+                                                        asset.chain_id
+                                                    ].symbol}
+                                                    class="w-4 h-4 rounded-full"
+                                                />
+                                            {/if}
+                                            <span class="font-mono opacity-70"
+                                                >{asset.chain_id}</span
+                                            >
+                                        </div>
+                                    </label>
+                                {/each}
+                            </div>
+
+                            <button
+                                class="btn btn-primary w-full"
+                                on:click={confirmAssetSelection}
+                                disabled={!selectedBaseAsset || !selectedQuoteAsset}
+                            >
+                                {#if addingKey && pendingMarket}
+                                    <span class="loading loading-spinner loading-xs"
+                                    ></span>
+                                {:else}
+                                    {$_("add_pair_action", {
+                                        values: { symbol: pendingMarket?.symbol },
+                                    })}
+                                {/if}
+                            </button>
+                        </div>
+                    {/if}
+
+                    <div
+                        class="divider text-xs font-bold opacity-50 capitalize tracking-wide"
+                    >
+                        {$_("related_pairs")}
+                    </div>
+
+                    {#if isLoadingMarkets}
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="loading loading-spinner loading-xs"></span>
+                            {$_("loading_markets")} ({configuredExchanges.length} exchanges)
+                        </div>
+                    {:else if symbolQuery.trim().length === 0}
+                        <div class="text-sm text-base-content/60">
+                            {$_("type_symbol_to_search")}
+                        </div>
+                    {:else if filteredMarkets.length === 0}
+                        <div class="text-sm text-base-content/60">
+                            {$_("no_matching_markets")}
+                        </div>
+                    {:else}
+                        <div class="space-y-2">
+                            {#each filteredMarkets as market}
+                                <div
+                                    class="flex items-center justify-between gap-4 p-3 rounded-lg border border-base-200"
+                                >
+                                    <div>
+                                        <div class="font-semibold">
+                                            {market.display_symbol || market.symbol}
+                                        </div>
+                                        <div
+                                            class="flex items-center gap-2 text-xs text-base-content/60 mt-1"
+                                        >
+                                            {#if exchangeById[market.exchange_id]?.icon_url}
+                                                <img
+                                                    src={exchangeById[
+                                                        market.exchange_id
+                                                    ].icon_url}
+                                                    alt={exchangeById[
+                                                        market.exchange_id
+                                                    ].name}
+                                                    class="h-4 w-auto"
+                                                />
+                                            {/if}
+                                            <span
+                                                >{exchangeById[market.exchange_id]
+                                                    ?.name ||
+                                                    market.exchange_id}</span
+                                            >
+                                        </div>
+                                    </div>
+                                    <button
+                                        class={clsx(
+                                            "btn btn-sm btn-primary",
+                                            addingKey ===
+                                                `${market.exchange_id}:${market.symbol}` &&
+                                                "btn-disabled",
+                                        )}
+                                        on:click={() => addFromMarket(market)}
+                                        disabled={addingKey ===
+                                            `${market.exchange_id}:${market.symbol}` ||
+                                            existingPairKeys.has(
+                                                `${market.exchange_id}:${normalizeSymbol(
+                                                    market.display_symbol ||
+                                                        market.symbol ||
+                                                        "",
+                                                )}`,
+                                            )}
+                                    >
+                                        {#if existingPairKeys.has(
+                                            `${market.exchange_id}:${normalizeSymbol(
+                                                market.display_symbol ||
+                                                    market.symbol ||
+                                                    "",
+                                            )}`,
+                                        )}
+                                            {$_("pair_added")}
+                                        {:else if addingKey === `${market.exchange_id}:${market.symbol}`}
+                                            <span
+                                                class="loading loading-spinner loading-xs"
+                                            ></span>
+                                        {:else}
+                                            {$_("add")}
+                                        {/if}
+                                    </button>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+        </div>
+    </details>
+{/if}

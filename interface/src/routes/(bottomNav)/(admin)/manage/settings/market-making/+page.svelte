@@ -6,7 +6,6 @@
 
   import type { MarketMakingPair } from "$lib/types/hufi/grow";
   import AddMarketMakingPair from "$lib/components/admin/settings/marketMaking/AddMarketMakingPair.svelte";
-  import QuickAddMarketMakingPair from "$lib/components/admin/settings/marketMaking/QuickAddMarketMakingPair.svelte";
   import MarketMakingPairList from "$lib/components/admin/settings/marketMaking/MarketMakingPairList.svelte";
 
   $: marketMakingPairs = $page.data.growInfo.market_making
@@ -66,11 +65,6 @@
     </div>
 
     <div class="flex items-center gap-3">
-      <QuickAddMarketMakingPair
-        {configuredExchanges}
-        existingPairs={marketMakingPairs}
-        on:refresh={() => RefreshMarketMakingPairs(false)}
-      />
       <AddMarketMakingPair
         {configuredExchanges}
         existingPairs={marketMakingPairs}
@@ -104,6 +98,6 @@
 
   <MarketMakingPairList
     {marketMakingPairs}
-    on:refresh={RefreshMarketMakingPairs}
+    on:refresh={() => RefreshMarketMakingPairs()}
   />
 </div>
