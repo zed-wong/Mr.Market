@@ -1,49 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import {
-  ArbitrageStates,
-  MarketMakingStates,
-  SimplyGrowStates,
-} from '../types/orders/states';
-
-@Entity()
-export class ArbitrageOrder {
-  @PrimaryColumn()
-  orderId: string;
-
-  @Column()
-  userId: string;
-
-  @Column()
-  pair: string;
-
-  @Column()
-  amountToTrade: string;
-
-  @Column()
-  minProfitability: string;
-
-  @Column()
-  exchangeAName: string;
-
-  @Column()
-  exchangeBName: string;
-
-  @Column({ nullable: true })
-  balanceA?: string;
-
-  @Column({ nullable: true })
-  balanceB?: string;
-
-  @Column()
-  state: ArbitrageStates;
-
-  @Column()
-  createdAt: string;
-
-  @Column({ nullable: true })
-  rewardAddress: string;
-}
+import { MarketMakingStates, SimplyGrowStates } from '../types/orders/states';
 
 @Entity()
 export class MarketMakingOrder {
