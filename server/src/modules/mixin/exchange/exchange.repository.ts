@@ -52,6 +52,19 @@ export class ExchangeRepository {
     return await this.apiKeysRepository.find({ where: { exchange } });
   }
 
+  async readSupportedExchanges(): Promise<string[]> {
+    const rows = await this.apiKeysRepository
+      .createQueryBuilder('api_key')
+      .select('DISTINCT api_key.exchange', 'exchange')
+      .getRawMany();
+
+    return rows
+      .map((row) => row.exchange)
+      .filter(
+        (exchange) => typeof exchange === 'string' && exchange.length > 0,
+      );
+  }
+
   async readOrderByUser(userId: string): Promise<SpotOrder[]> {
     let orders = await this.spotOrderRepository.find({ where: { userId } });
     orders = orders.map((order) => {

@@ -98,9 +98,79 @@ export class ExchangeService {
     });
   }
 
+  async readDecryptedAPIKeys(): Promise<APIKeysConfig[]> {
+    const keys = await this.exchangeRepository.readAllAPIKeys();
+    const privateKey =
+      this.configService.get<string>('admin.encryption_private_key') || '';
+
+    return keys.map((key) => {
+      let apiSecret = key.api_secret;
+      if (privateKey) {
+        try {
+          apiSecret = decrypt(apiSecret, privateKey);
+        } catch (e) {
+          this.logger.warn(`Failed to decrypt key ${key.key_id}: ${e.message}`);
+        }
+      }
+
+      return {
+        ...key,
+        api_secret: apiSecret,
+      };
+    });
+  }
+
+  async seedApiKeysFromEnv(
+    exchangeConfigs: Array<{
+      name: string;
+      accounts: Array<{ label: string; apiKey?: string; secret?: string }>;
+    }>,
+  ): Promise<number> {
+    const existing = await this.exchangeRepository.readAllAPIKeys();
+    if (existing.length > 0) {
+      return 0;
+    }
+
+    const privateKey =
+      this.configService.get<string>('admin.encryption_private_key') || '';
+    if (!privateKey) {
+      this.logger.warn(
+        'Encryption private key not set; skipping .env API key seed.',
+      );
+      return 0;
+    }
+
+    const publicKey = getPublicKeyFromPrivate(privateKey);
+    let savedCount = 0;
+
+    for (const config of exchangeConfigs) {
+      for (const account of config.accounts) {
+        if (!account.apiKey || !account.secret) {
+          continue;
+        }
+
+        const apiKeyConfig = new APIKeysConfig();
+        apiKeyConfig.exchange = config.name;
+        apiKeyConfig.exchange_index = account.label || 'default';
+        apiKeyConfig.name = account.label || 'default';
+        apiKeyConfig.api_key = account.apiKey;
+        apiKeyConfig.api_secret = encrypt(account.secret, publicKey);
+
+        await this.exchangeRepository.addAPIKey(apiKeyConfig);
+        savedCount += 1;
+      }
+    }
+
+    return savedCount;
+  }
+
+  async readSupportedExchanges(): Promise<string[]> {
+    return this.exchangeRepository.readSupportedExchanges();
+  }
+
   async getAllAPIKeysBalance() {
     try {
-      const apiKeys: APIKeysConfig[] = await this.readAllAPIKeys();
+      const apiKeys: APIKeysConfig[] = await this.readDecryptedAPIKeys();
       const balancePromises = apiKeys.map((apiKeyConfig) =>
         this.getBalance(
           apiKeyConfig.exchange,

@@ -9,6 +9,8 @@ import {
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
+import { APIKeysConfig } from 'src/common/entities/api-keys.entity';
 
 @Injectable({ scope: Scope.DEFAULT })
 export class ExchangeInitService {
@@ -16,12 +18,18 @@ export class ExchangeInitService {
   private exchanges = new Map<string, Map<string, ccxt.Exchange>>();
   private defaultAccounts = new Map<string, ccxt.Exchange>();
   private readonly marketsCacheTtlSeconds = 60 * 60;
+  private readonly refreshIntervalMs = 10 * 1000;
+  private apiKeysSignature: string | null = null;
 
-  constructor(@Inject(CACHE_MANAGER) private cacheService: Cache) {
+  constructor(
+    @Inject(CACHE_MANAGER) private cacheService: Cache,
+    private exchangeService: ExchangeService,
+  ) {
     this.initializeExchanges()
       .then(() => {
         this.logger.log('Exchanges initialized successfully');
         this.startKeepAlive();
+        this.startRefresh();
       })
       .catch((error) =>
         this.logger.error(
@@ -31,8 +39,8 @@ export class ExchangeInitService {
       );
   }
 
-  private async initializeExchanges() {
-    const exchangeConfigs = [
+  private getEnvExchangeConfigs() {
+    return [
       {
         name: 'okx',
         accounts: [
@@ -286,6 +294,70 @@ export class ExchangeInitService {
         class: ccxt.digifinex,
       },
     ];
+  }
+
+  private buildExchangeConfigsFromDb(apiKeys: APIKeysConfig[]) {
+    const grouped = new Map<string, APIKeysConfig[]>();
+    for (const key of apiKeys) {
+      if (!grouped.has(key.exchange)) {
+        grouped.set(key.exchange, []);
+      }
+      grouped.get(key.exchange)?.push(key);
+    }
+
+    const exchangeConfigs: Array<{
+      name: string;
+      accounts: Array<{ label: string; apiKey: string; secret: string }>;
+      class: any;
+    }> = [];
+
+    for (const [exchange, keys] of grouped) {
+      const ccxtPro = (ccxt as any).pro || {};
+      const exchangeClass = ccxtPro[exchange] || (ccxt as any)[exchange];
+      if (!exchangeClass) {
+        this.logger.warn(`Exchange ${exchange} is not supported by CCXT.`);
+        continue;
+      }
+
+      const accounts = keys.map((key) => ({
+        label: key.exchange_index || 'default',
+        apiKey: key.api_key,
+        secret: key.api_secret,
+      }));
+
+      exchangeConfigs.push({
+        name: exchange,
+        accounts,
+        class: exchangeClass,
+      });
+    }
+
+    return exchangeConfigs;
+  }
+
+  private computeApiKeysSignature(apiKeys: APIKeysConfig[]): string {
+    const entries = apiKeys.map((key) =>
+      [
+        key.key_id,
+        key.exchange,
+        key.exchange_index,
+        key.api_key,
+        key.api_secret,
+      ].join('::'),
+    );
+    entries.sort();
+    return entries.join('|');
+  }
+
+  private async initializeExchangeConfigs(
+    exchangeConfigs: Array<{
+      name: string;
+      accounts: Array<{ label: string; apiKey: string; secret: string }>;
+      class: any;
+    }>,
+  ) {
+    this.exchanges.clear();
+    this.defaultAccounts.clear();
 
     await Promise.all(
       exchangeConfigs.map(async (config) => {
@@ -342,6 +414,55 @@ export class ExchangeInitService {
         }
       }),
     );
+  }
+
+  private async initializeExchanges() {
+    let apiKeys = await this.exchangeService.readDecryptedAPIKeys();
+    if (!apiKeys.length) {
+      const seededCount = await this.exchangeService.seedApiKeysFromEnv(
+        this.getEnvExchangeConfigs(),
+      );
+      if (seededCount > 0) {
+        apiKeys = await this.exchangeService.readDecryptedAPIKeys();
+      }
+    }
+
+    const exchangeConfigs = apiKeys.length
+      ? this.buildExchangeConfigsFromDb(apiKeys)
+      : this.getEnvExchangeConfigs();
+
+    this.apiKeysSignature = apiKeys.length
+      ? this.computeApiKeysSignature(apiKeys)
+      : null;
+
+    await this.initializeExchangeConfigs(exchangeConfigs);
+  }
+
+  private startRefresh() {
+    setInterval(async () => {
+      try {
+        const apiKeys = await this.exchangeService.readDecryptedAPIKeys();
+        const signature = apiKeys.length
+          ? this.computeApiKeysSignature(apiKeys)
+          : null;
+
+        if (signature === this.apiKeysSignature) {
+          return;
+        }
+
+        const exchangeConfigs = apiKeys.length
+          ? this.buildExchangeConfigsFromDb(apiKeys)
+          : this.getEnvExchangeConfigs();
+
+        this.apiKeysSignature = signature;
+        await this.initializeExchangeConfigs(exchangeConfigs);
+        this.logger.log('Exchanges reinitialized after API key changes.');
+      } catch (error) {
+        this.logger.error(
+          `Failed to refresh exchanges from DB: ${error.message}`,
+        );
+      }
+    }, this.refreshIntervalMs);
   }
 
   private startKeepAlive() {
@@ -402,7 +523,11 @@ export class ExchangeInitService {
     return exchange;
   }
 
-  getSupportedExchanges(): string[] {
+  async getSupportedExchanges(): Promise<string[]> {
+    const dbExchanges = await this.exchangeService.readSupportedExchanges();
+    if (dbExchanges.length > 0) {
+      return dbExchanges;
+    }
     return Array.from(this.exchanges.keys());
   }
 
