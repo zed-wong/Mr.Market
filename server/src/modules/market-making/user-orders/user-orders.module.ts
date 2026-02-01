@@ -11,6 +11,7 @@ import {
   SimplyGrowOrder,
 } from 'src/common/entities/user-orders.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
+import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
 import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
 import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
 import { FeeModule } from '../fee/fee.module';
@@ -30,6 +31,7 @@ import { CampaignModule } from 'src/modules/campaign/campaign.module';
     TypeOrmModule.forFeature([
       MarketMakingOrder,
       MarketMakingPaymentState,
+      MarketMakingOrderIntent,
       SimplyGrowOrder,
       MarketMakingHistory,
       ArbitrageHistory,

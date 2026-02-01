@@ -11,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MarketMakingOrder } from 'src/common/entities/user-orders.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
+import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
 import { FeeService } from '../fee/fee.service';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
@@ -63,6 +64,8 @@ export class MarketMakingOrderProcessor {
     private readonly mixinClientService: MixinClientService,
     @InjectRepository(MarketMakingPaymentState)
     private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
+    @InjectRepository(MarketMakingOrderIntent)
+    private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
     @InjectQueue('withdrawal-confirmations')
@@ -466,6 +469,14 @@ export class MarketMakingOrderProcessor {
       // All payments complete!
       this.logger.log(
         `Payment complete for order ${orderId}. Base: ${paymentState.baseAssetAmount}, Quote: ${paymentState.quoteAssetAmount}`,
+      );
+
+      await this.marketMakingOrderIntentRepository.update(
+        { orderId },
+        {
+          state: 'completed',
+          updatedAt: new Date().toISOString(),
+        },
       );
 
       paymentState.state = 'payment_complete';

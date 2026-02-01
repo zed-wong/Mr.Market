@@ -2,6 +2,8 @@ import { ConfigService } from '@nestjs/config';
 import { Injectable } from '@nestjs/common';
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 import {
   memoPreDecode,
@@ -12,6 +14,7 @@ import { Queue } from 'bull';
 import { InjectQueue } from '@nestjs/bull';
 import { MixinClientService } from '../client/mixin-client.service';
 import { TransactionService } from '../transaction/transaction.service';
+import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
 
 @Injectable()
 export class SnapshotsService {
@@ -24,6 +27,8 @@ export class SnapshotsService {
     @InjectQueue('market-making') private marketMakingQueue: Queue,
     private mixinClientService: MixinClientService,
     private transactionService: TransactionService,
+    @InjectRepository(MarketMakingOrderIntent)
+    private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
   ) {
     this.enableCron =
       this.configService.get<string>('strategy.mixin_snapshots_run') === 'true';
@@ -146,12 +151,56 @@ export class SnapshotsService {
           // Spot trading
           break;
         case 1:
-          // Market making - Queue for processing
+          // Market making
           const mmDetails = decodeMarketMakingCreateMemo(payload);
           if (!mmDetails) {
             this.logger.warn('Failed to decode market making memo, refunding');
             await this.transactionService.refund(snapshot);
             break;
+          }
+          const intent = await this.marketMakingOrderIntentRepository.findOne({
+            where: { orderId: mmDetails.orderId },
+          });
+          if (!intent) {
+            this.logger.warn(
+              `No intent found for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+            );
+            await this.transactionService.refund(snapshot);
+            break;
+          }
+
+          if (intent.marketMakingPairId !== mmDetails.marketMakingPairId) {
+            this.logger.warn(
+              `Intent pair mismatch for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+            );
+            await this.transactionService.refund(snapshot);
+            break;
+          }
+
+          const expiresAtMs = Date.parse(intent.expiresAt);
+          if (!Number.isFinite(expiresAtMs) || expiresAtMs < Date.now()) {
+            intent.state = 'expired';
+            intent.updatedAt = new Date().toISOString();
+            await this.marketMakingOrderIntentRepository.save(intent);
+            this.logger.warn(
+              `Intent expired for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+            );
+            await this.transactionService.refund(snapshot);
+            break;
+          }
+
+          if (!['pending', 'in_progress'].includes(intent.state)) {
+            this.logger.warn(
+              `Intent not active for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+            );
+            await this.transactionService.refund(snapshot);
+            break;
+          }
+
+          if (intent.state === 'pending') {
+            intent.state = 'in_progress';
+            intent.updatedAt = new Date().toISOString();
+            await this.marketMakingOrderIntentRepository.save(intent);
           }
           // Queue the snapshot for market making processing
           await this.marketMakingQueue.add(

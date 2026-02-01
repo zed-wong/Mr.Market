@@ -19,19 +19,20 @@
   import { page as dPage } from "$app/stores";
   import BigNumber from "bignumber.js";
   import { findCoinIconBySymbol } from "$lib/helpers/helpers";
-  import { encodeMarketMakingCreateMemo } from "$lib/helpers/mixin/memo";
   import {
     createMixinInvoice,
     getPaymentUrl,
     type InvoiceItem,
   } from "$lib/helpers/mixin/mixin-invoice";
-  import { v4 as uuidv4 } from "uuid";
   import { botId } from "$lib/stores/home";
+  import { get } from "svelte/store";
+  import { user } from "$lib/stores/wallet";
 
   import type { GrowInfo } from "$lib/types/hufi/grow";
   import { getUuid } from "@mixin.dev/mixin-node-sdk";
   import {
     getMarketMakingFee,
+    createMarketMakingOrderIntent,
     type MarketMakingFee,
   } from "$lib/helpers/mrm/grow";
   import ChooseExchange from "$lib/components/grow/marketMaking/createNew/exchange/chooseExchange.svelte";
@@ -79,7 +80,7 @@
     });
   };
 
-  const confirmPayment = () => {
+  const confirmPayment = async () => {
     if (
       !selectedPairInfo ||
       !baseAmountInput ||
@@ -90,8 +91,6 @@
     ) {
       return;
     }
-
-    const orderId = uuidv4();
 
     // Use fee info from API
     const baseAssetId = selectedPairInfo.base_asset_id;
@@ -113,15 +112,17 @@
       : "0";
 
     try {
-      const memo = encodeMarketMakingCreateMemo({
-        version: 1,
-        tradingType: "Market Making",
-        action: "create",
+      const currentUser = get(user);
+      const intent = await createMarketMakingOrderIntent({
         marketMakingPairId: selectedPairInfo.id,
-        orderId: orderId,
+        userId: currentUser?.user_id,
       });
+      if (!intent?.memo || !intent?.orderId) {
+        console.error("Failed to create market making order intent");
+        return;
+      }
 
-      console.log(`memo: ${memo}`);
+      const memo = intent.memo;
 
       const itemsMap = new Map<string, BigNumber>();
       const itemMemo = new Map<string, string>();

@@ -51,3 +51,31 @@ export const getMarketMakingFee = async (
     return null;
   }
 }
+
+export interface MarketMakingOrderIntentResponse {
+  orderId: string;
+  memo: string;
+  expiresAt: string;
+}
+
+export const createMarketMakingOrderIntent = async (params: {
+  marketMakingPairId: string;
+  userId?: string;
+}): Promise<MarketMakingOrderIntentResponse | null> => {
+  try {
+    const response = await fetch(
+      `${MRM_BACKEND_URL}/user-orders/market-making/intent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+      },
+    );
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error creating market making order intent:', error);
+    return null;
+  }
+};

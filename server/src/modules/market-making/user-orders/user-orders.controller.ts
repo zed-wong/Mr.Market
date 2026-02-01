@@ -1,9 +1,11 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Post,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -92,6 +94,24 @@ export class UserOrdersController {
   @ApiResponse({ status: 400, description: 'Bad request.' })
   async getMarketMakingDetailsById(@Param('id') id: string) {
     return await this.userOrdersService.findMarketMakingByOrderId(id);
+  }
+
+  @Post('/market-making/intent')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Create market making order intent' })
+  @ApiResponse({
+    status: 200,
+    description: 'Market making order intent created.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  async createMarketMakingIntent(
+    @Body()
+    body: {
+      marketMakingPairId: string;
+      userId?: string;
+    },
+  ) {
+    return await this.userOrdersService.createMarketMakingOrderIntent(body);
   }
 
   @Get('/market-making/history/:userId')

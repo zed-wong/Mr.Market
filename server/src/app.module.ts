@@ -52,6 +52,7 @@ import { ArbitrageHistory } from './common/entities/arbitrage-order.entity';
 import { MarketMakingHistory } from './common/entities/market-making-order.entity';
 import { Contribution } from './common/entities/contribution.entity';
 import { GrowdataModule } from './modules/data/grow-data/grow-data.module';
+import { MarketMakingOrderIntent } from './common/entities/market-making-order-intent.entity';
 import {
   GrowdataArbitragePair,
   GrowdataExchange,
@@ -111,6 +112,7 @@ dotenv.config();
         Withdrawal,
         Campaign,
         CampaignParticipation,
+        MarketMakingOrderIntent,
       ],
       synchronize: false,
       migrationsRun: true,

@@ -1,22 +1,26 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import {
   MarketMakingOrder,
   SimplyGrowOrder,
 } from 'src/common/entities/user-orders.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
+import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
 import {
   MarketMakingStates,
   SimplyGrowStates,
 } from 'src/common/types/orders/states';
 import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
 import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
+import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
+import { encodeMarketMakingCreateMemo } from 'src/common/helpers/mixin/memo';
 
 @Injectable()
 export class UserOrdersService {
@@ -28,6 +32,8 @@ export class UserOrdersService {
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
     @InjectRepository(MarketMakingPaymentState)
     private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
+    @InjectRepository(MarketMakingOrderIntent)
+    private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
     @InjectRepository(SimplyGrowOrder)
     private readonly simplyGrowRepository: Repository<SimplyGrowOrder>,
     @InjectRepository(MarketMakingHistory)
@@ -35,6 +41,7 @@ export class UserOrdersService {
     @InjectRepository(ArbitrageHistory)
     private readonly arbitrageHistoryRepository: Repository<ArbitrageHistory>,
     @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
+    private readonly growdataRepository: GrowdataRepository,
   ) {}
 
   async findAllStrategyByUser(userId: string) {
@@ -183,6 +190,49 @@ export class UserOrdersService {
       return null;
     }
     return updateResult;
+  }
+
+  async createMarketMakingOrderIntent(params: {
+    marketMakingPairId: string;
+    userId?: string;
+  }) {
+    const { marketMakingPairId, userId } = params;
+    if (!marketMakingPairId) {
+      throw new BadRequestException('marketMakingPairId is required');
+    }
+
+    const pair = await this.growdataRepository.findMarketMakingPairById(
+      marketMakingPairId,
+    );
+    if (!pair || !pair.enable) {
+      throw new NotFoundException('Market making pair not found');
+    }
+
+    const orderId = randomUUID();
+    const memo = encodeMarketMakingCreateMemo({
+      version: 1,
+      tradingType: 'Market Making',
+      action: 'create',
+      marketMakingPairId,
+      orderId,
+    });
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+
+    const intent = this.marketMakingOrderIntentRepository.create({
+      orderId,
+      userId: userId || null,
+      marketMakingPairId,
+      state: 'pending',
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      expiresAt,
+    });
+
+    await this.marketMakingOrderIntentRepository.save(intent);
+
+    return { orderId, memo, expiresAt };
   }
 
   // Methods moved from StrategyService

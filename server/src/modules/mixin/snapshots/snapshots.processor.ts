@@ -10,7 +10,8 @@ import { Cron } from '@nestjs/schedule';
 export class SnapshotsProcessor implements OnModuleInit {
   private readonly logger = new Logger(SnapshotsProcessor.name);
   private readonly CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
-  private readonly COMPLETED_JOB_RETENTION = 60 * 60 * 1000; // Keep for 1 hour
+  private readonly COMPLETED_JOB_RETENTION = 24 * 60 * 60 * 1000; // Keep for 1 day
+  private readonly FAILED_JOB_RETENTION = 3 * 24 * 60 * 60 * 1000; // Keep for 3 day
   private isPolling = false;
 
   constructor(
@@ -35,6 +36,7 @@ export class SnapshotsProcessor implements OnModuleInit {
           this.COMPLETED_JOB_RETENTION,
           'completed',
         );
+        await this.snapshotsQueue.clean(this.COMPLETED_JOB_RETENTION, 'failed');
         this.logger.log('Cleaned up old completed polling jobs');
       } catch (error) {
         this.logger.error(
