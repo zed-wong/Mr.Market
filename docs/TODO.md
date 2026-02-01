@@ -8,6 +8,11 @@
 6. after join campaign, or no campain to join, the market making handler can start mm right away
 7. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
 
+### Connect payment state to confirm payment page
+1. after user clicked pay button in create-new market making page, should start loading and fetch payment status from backend
+2. after payment status fetched, should show payment successful, and redirect to order details page
+3. order details page should fetch order details from backend, and show order details (connect ui to backend)
+
 ### Create market making UI
 1. when select trading pair, there should be an small icon that represents the chain of the asset
 
@@ -15,15 +20,19 @@
 - [x] 1. Add a special add trading pair dialog that only require users to enter symbol, and it will fetch all available related trading pairs from ccxt, allowing user to add trading pair with one-click
 - [x] 2. Add a setup guide for initialization that is step by step, allowing admin to have basic understanding of how setting works, and makes it easier to set up all the things
 
-## Hufi education FAQ
+### Admin exchanges management
+1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
+
+
+
+## Hufi 
+
+### Hufi education FAQ
 - [x] 1. Hufi education FAQ under /market-making/hufi/learn-more and Mr.market FAQ under /market-making/learn-more
 - [x] 2. for hufi, mainly about how hufi works, how it benefits users, how safe it is
 - [x] 3. for mr.market, mainly about what is market making, why to market make, and how it benefits projects 
 
-### Admin exchanges management
-1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
-
-## Hufi Campaigns
+### Campaigns
 1. Mr.Market users can join hufi campaigns under /market-making/hufi
 2. Mr.Market users can create campaigns under /market-making/hufi
 
