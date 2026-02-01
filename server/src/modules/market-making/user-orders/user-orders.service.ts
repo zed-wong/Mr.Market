@@ -8,9 +8,9 @@ import { ConfigService } from '@nestjs/config';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import {
   MarketMakingOrder,
-  PaymentState,
   SimplyGrowOrder,
 } from 'src/common/entities/user-orders.entity';
+import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
 import {
   MarketMakingStates,
   SimplyGrowStates,
@@ -26,8 +26,8 @@ export class UserOrdersService {
     private readonly configService: ConfigService,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
-    @InjectRepository(PaymentState)
-    private readonly paymentStateRepository: Repository<PaymentState>,
+    @InjectRepository(MarketMakingPaymentState)
+    private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
     @InjectRepository(SimplyGrowOrder)
     private readonly simplyGrowRepository: Repository<SimplyGrowOrder>,
     @InjectRepository(MarketMakingHistory)
@@ -145,11 +145,11 @@ export class UserOrdersService {
     }
   }
 
-  async createPaymentState(paymentState: PaymentState): Promise<PaymentState> {
+  async createMarketMakingPaymentState(paymentState: MarketMakingPaymentState): Promise<MarketMakingPaymentState> {
     return await this.paymentStateRepository.save(paymentState);
   }
 
-  async findPaymentStateById(orderId: string) {
+  async findMarketMakingPaymentStateById(orderId: string) {
     try {
       const result = await this.paymentStateRepository.findOneBy({ orderId });
       if (!result) {
@@ -163,21 +163,21 @@ export class UserOrdersService {
     }
   }
 
-  async findPaymentStateByIdRaw(orderId: string) {
+  async findMarketMakingPaymentStateByIdRaw(orderId: string) {
     return await this.paymentStateRepository.findOneBy({ orderId });
   }
 
-  async findPaymentStateByState(state: string): Promise<PaymentState[]> {
+  async findMarketMakingPaymentStateByState(state: string): Promise<MarketMakingPaymentState[]> {
     return await this.paymentStateRepository.findBy({ state });
   }
 
-  async updatePaymentStateById(
+  async updateMarketMakingPaymentStateById(
     orderId: string,
-    newPaymentState: Partial<PaymentState>,
+    newMarketMakingPaymentState: Partial<MarketMakingPaymentState>,
   ) {
     const updateResult = await this.paymentStateRepository.update(
       { orderId },
-      newPaymentState,
+      newMarketMakingPaymentState,
     );
     if (updateResult.affected === 0) {
       return null;
@@ -203,8 +203,8 @@ export class UserOrdersService {
   // Timeout worker
   @Cron('*/60 * * * * *') // 60s
   async clearTimeoutOrders() {
-    // Read all PaymentState
-    const created = await this.findPaymentStateByState('created');
+    // Read all MarketMakingPaymentState
+    const created = await this.findMarketMakingPaymentStateByState('created');
     // Check if created time over timeout 10m
     created.forEach((item) => {
       // check if timeout, refund if timeout, update state to timeout

@@ -10,9 +10,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   MarketMakingOrder,
-  PaymentState,
   SimplyGrowOrder,
 } from 'src/common/entities/user-orders.entity';
+import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
@@ -43,7 +43,7 @@ describe('UserOrdersService', () => {
           useClass: Repository,
         },
         {
-          provide: getRepositoryToken(PaymentState),
+          provide: getRepositoryToken(MarketMakingPaymentState),
           useClass: Repository,
         },
         {

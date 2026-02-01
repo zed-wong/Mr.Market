@@ -28,7 +28,7 @@ export class UserOrdersController {
     return await this.userOrdersService.findAllStrategyByUser(userId);
   }
 
-  @Get('/payment-state/:order_id')
+  @Get('/payment-state/market-making/:order_id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get payment state by id' })
   @ApiResponse({
@@ -36,8 +36,10 @@ export class UserOrdersController {
     description: 'The payment state of order.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async getPaymentState(@Param('order_id') orderId: string) {
-    return await this.userOrdersService.findPaymentStateById(orderId);
+  async getMarketMakingPaymentState(@Param('order_id') orderId: string) {
+    return await this.userOrdersService.findMarketMakingPaymentStateById(
+      orderId,
+    );
   }
 
   @Get('/simply-grow/all')

@@ -9,10 +9,8 @@ import { MarketMakingCreateMemoDetails } from 'src/common/types/memo/memo';
 import BigNumber from 'bignumber.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  MarketMakingOrder,
-  PaymentState,
-} from 'src/common/entities/user-orders.entity';
+import { MarketMakingOrder } from 'src/common/entities/user-orders.entity';
+import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
 import { FeeService } from '../fee/fee.service';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
@@ -63,8 +61,8 @@ export class MarketMakingOrderProcessor {
     private readonly exchangeService: ExchangeService,
     private readonly networkMappingService: NetworkMappingService,
     private readonly mixinClientService: MixinClientService,
-    @InjectRepository(PaymentState)
-    private readonly paymentStateRepository: Repository<PaymentState>,
+    @InjectRepository(MarketMakingPaymentState)
+    private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
     @InjectQueue('withdrawal-confirmations')
@@ -86,9 +84,9 @@ export class MarketMakingOrderProcessor {
     }
   }
 
-  private async refundPaymentState(
+  private async refundMarketMakingPendingOrder(
     orderId: string,
-    paymentState: PaymentState,
+    paymentState: MarketMakingPaymentState,
     reason: string,
   ) {
     const order = await this.marketMakingRepository.findOne({
@@ -241,7 +239,7 @@ export class MarketMakingOrderProcessor {
           quoteFeeAssetSnapshotId: null,
           requiredBaseWithdrawalFee: requiredBaseFee,
           requiredQuoteWithdrawalFee: requiredQuoteFee,
-          requiredMarketMakingFee: marketMakingFeePercentage,
+          requiredStrategyFeePercentage: marketMakingFeePercentage,
           state: 'payment_pending',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -386,7 +384,7 @@ export class MarketMakingOrderProcessor {
       const totalPaidBase = BigNumber(paymentState.baseAssetAmount);
       const totalPaidQuote = BigNumber(paymentState.quoteAssetAmount);
       const mmFeePercentage = BigNumber(
-        paymentState.requiredMarketMakingFee || 0,
+        paymentState.requiredStrategyFeePercentage || 0,
       );
 
       // Note: Market making fee is usually deducted from the paid amounts
@@ -402,7 +400,7 @@ export class MarketMakingOrderProcessor {
             orderId,
             'failed',
           );
-          await this.refundPaymentState(
+          await this.refundMarketMakingPendingOrder(
             orderId,
             paymentState,
             'payment timeout',
@@ -416,7 +414,7 @@ export class MarketMakingOrderProcessor {
             orderId,
             'failed',
           );
-          await this.refundPaymentState(
+          await this.refundMarketMakingPendingOrder(
             orderId,
             paymentState,
             'max payment retries exceeded',
@@ -457,7 +455,7 @@ export class MarketMakingOrderProcessor {
           orderId,
           'failed',
         );
-        await this.refundPaymentState(
+        await this.refundMarketMakingPendingOrder(
           orderId,
           paymentState,
           'insufficient fees',
@@ -668,7 +666,7 @@ export class MarketMakingOrderProcessor {
         `Withdrawal disabled for validation. Refunding order ${orderId} instead of sending to exchange.`,
       );
 
-      await this.refundPaymentState(
+      await this.refundMarketMakingPendingOrder(
         orderId,
         paymentState,
         'validation mode: withdrawal disabled',

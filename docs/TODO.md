@@ -24,7 +24,6 @@
 1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
 
 
-
 ## Hufi 
 
 ### Hufi education FAQ

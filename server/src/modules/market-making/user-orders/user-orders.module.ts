@@ -8,9 +8,9 @@ import { StrategyModule } from '../strategy/strategy.module';
 import { MixinClientModule } from 'src/modules/mixin/client/mixin-client.module';
 import {
   MarketMakingOrder,
-  PaymentState,
   SimplyGrowOrder,
 } from 'src/common/entities/user-orders.entity';
+import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
 import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
 import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
 import { FeeModule } from '../fee/fee.module';
@@ -29,7 +29,7 @@ import { CampaignModule } from 'src/modules/campaign/campaign.module';
     ConfigModule,
     TypeOrmModule.forFeature([
       MarketMakingOrder,
-      PaymentState,
+      MarketMakingPaymentState,
       SimplyGrowOrder,
       MarketMakingHistory,
       ArbitrageHistory,
