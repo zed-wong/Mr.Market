@@ -42,7 +42,7 @@ export class UserOrdersService {
     private readonly arbitrageHistoryRepository: Repository<ArbitrageHistory>,
     @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
     private readonly growdataRepository: GrowdataRepository,
-  ) {}
+  ) { }
 
   async findAllStrategyByUser(userId: string) {
     try {

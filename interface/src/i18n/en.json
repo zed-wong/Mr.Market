@@ -599,5 +599,12 @@
   "quantity": "Quantity",
   "continue_to_trading_pair": "Continue to Trading Pair",
   "status_selected": "Selected",
-  "status_available": "Available"
+  "status_available": "Available",
+  "status_created": "Created",
+  "status_paused": "Paused",
+  "status_refunded": "Refunded",
+  "status_deleted": "Deleted",
+  "market_making_type": "Market Making",
+  "payment_successful": "Payment Successful",
+  "redirecting_to_order_details": "Redirecting to order details..."
 }

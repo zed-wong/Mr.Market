@@ -15,7 +15,7 @@ import { MarketMakingHistory } from 'src/common/entities/market-making-order.ent
 @ApiTags('Trading Engine')
 @Controller('user-orders')
 export class UserOrdersController {
-  constructor(private readonly userOrdersService: UserOrdersService) {}
+  constructor(private readonly userOrdersService: UserOrdersService) { }
 
   @Get('/all')
   @HttpCode(HttpStatus.OK)
@@ -127,4 +127,20 @@ export class UserOrdersController {
   ): Promise<MarketMakingHistory[]> {
     return await this.userOrdersService.getUserOrders(userId);
   }
+
+  // @Get('/market-making/history/instance/:id')
+  // @HttpCode(HttpStatus.OK)
+  // @ApiOperation({ summary: 'Get market making history by strategy instance id' })
+  // @ApiResponse({
+  //   status: 200,
+  //   description: 'Market making history of strategy instance',
+  // })
+  // @ApiResponse({ status: 400, description: 'Bad request.' })
+  // async getMarketMakingHistoryByInstanceId(
+  //   @Param('id') id: string,
+  // ): Promise<MarketMakingHistory[]> {
+  //   return await this.userOrdersService.getMarketMakingHistoryByStrategyInstanceId(
+  //     id,
+  //   );
+  // }
 }

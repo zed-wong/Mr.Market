@@ -9,13 +9,16 @@
     import ModifyOrderModal from "$lib/components/market-making/order-details/ModifyOrderDialog.svelte";
     import ExecutionDetailsDialog from "$lib/components/market-making/order-details/ExecutionDetailsDialog.svelte";
     import type { PageData } from "./$types";
+    import { _ } from "svelte-i18n";
+    import BigNumber from "bignumber.js";
 
     export let data: PageData;
 
     let showModifyModal = false;
     let showExecutionDetails = false;
+    let isCancelDialogOpen = false;
 
-    // Mock data fallback if API returns null/undefined (for development/demo purposes based on provided UI)
+    // Mock data fallback
     const mockOrder = {
         symbol: "BTC/USDT",
         ordersPlaced: "842",
@@ -44,24 +47,69 @@
                 price: "64,240.50 USDT",
                 status: "Filled",
             },
-            {
-                amount: "0.15 BTC",
-                time: "14:31:12",
-                price: "64,235.20 USDT",
-                status: "Partial Fill",
-            },
-            {
-                amount: "0.05 BTC",
-                time: "14:30:45",
-                price: "64,230.00 USDT",
-                status: "Filled",
-            },
         ],
     };
 
-    $: order = data.order || mockOrder;
+    const formatDate = (dateStr: string) => {
+        if (!dateStr) return "---";
+        return new Date(dateStr).toLocaleString();
+    };
 
-    let isCancelDialogOpen = false;
+    $: backendOrder = data.order?.data || data.order;
+    $: history = data.history || [];
+
+    $: ordersPlaced = history.length.toString();
+    $: volume = history
+        .reduce((acc: BigNumber, curr: any) => {
+            const amount = new BigNumber(curr.amount || 0);
+            const price = new BigNumber(curr.price || 0);
+            return acc.plus(amount.times(price));
+        }, new BigNumber(0))
+        .toFormat(2);
+
+    $: fills = history.map((h: any) => ({
+        amount: `${h.amount}`,
+        time: new Date(h.executedAt).toLocaleTimeString(),
+        price: `${h.price}`,
+        status: h.status || "Filled",
+        side: h.side,
+    }));
+
+    $: order = backendOrder
+        ? {
+              symbol: backendOrder.pair || "---",
+              ordersPlaced: ordersPlaced,
+              volume: volume,
+              active:
+                  backendOrder.state === "created" ||
+                  backendOrder.state === "resumed" ||
+                  backendOrder.state === "payment_complete" ||
+                  backendOrder.state === "in_progress",
+              totalRevenue: "---", // TODO: Calculate revenue
+              pnl: "---", // TODO: Calculate PnL
+              profitFromSpreads: "---",
+              balances: {
+                  base: {
+                      symbol: backendOrder.pair?.split("/")[0] || "---",
+                      amount: backendOrder.balanceA || "0",
+                  },
+                  quote: {
+                      symbol: backendOrder.pair?.split("/")[1] || "---",
+                      amount: backendOrder.balanceB || "0",
+                  },
+              },
+              details: {
+                  symbol: backendOrder.pair,
+                  exchange: backendOrder.exchangeName,
+                  orderId: backendOrder.orderId,
+                  type: $_("market_making"),
+                  created: formatDate(backendOrder.createdAt),
+                  totalValue: "---",
+                  fees: "---",
+              },
+              fills: fills,
+          }
+        : mockOrder;
 
     function handleCancelConfirm(event: CustomEvent) {
         const { action } = event.detail;

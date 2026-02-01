@@ -35,6 +35,11 @@
     createMarketMakingOrderIntent,
     type MarketMakingFee,
   } from "$lib/helpers/mrm/grow";
+  import { getMarketMakingPaymentState } from "$lib/helpers/mrm/strategy";
+  import {
+    ORDER_STATE_FETCH_INTERVAL,
+    ORDER_STATE_TIMEOUT_DURATION,
+  } from "$lib/helpers/constants";
   import ChooseExchange from "$lib/components/grow/marketMaking/createNew/exchange/chooseExchange.svelte";
   import ChooseTradingPair from "$lib/components/grow/marketMaking/createNew/tradingPair/chooseTradingPair.svelte";
 
@@ -80,6 +85,9 @@
     });
   };
 
+  let isPaying = false;
+  let paymentSuccess = false;
+
   const confirmPayment = async () => {
     if (
       !selectedPairInfo ||
@@ -91,6 +99,8 @@
     ) {
       return;
     }
+
+    isPaying = true;
 
     // Use fee info from API
     const baseAssetId = selectedPairInfo.base_asset_id;
@@ -119,6 +129,7 @@
       });
       if (!intent?.memo || !intent?.orderId) {
         console.error("Failed to create market making order intent");
+        isPaying = false;
         return;
       }
 
@@ -176,8 +187,40 @@
         const url = getPaymentUrl(invoiceMin);
         window.open(url);
       }
+
+      // Poll payment state
+      let totalTime = 0;
+      const checkPayment = async () => {
+        try {
+          if (totalTime > ORDER_STATE_TIMEOUT_DURATION) {
+            isPaying = false;
+            return;
+          }
+
+          console.log(`Checking payment state for order ${intent.orderId}`);
+          const res = await getMarketMakingPaymentState(intent.orderId);
+          if (res?.data?.payment_complete) {
+            paymentSuccess = true;
+            setTimeout(() => {
+              goto(`/market-making/orders/${intent.orderId}`);
+            }, 2000);
+            return;
+          }
+
+          totalTime += ORDER_STATE_FETCH_INTERVAL;
+          setTimeout(checkPayment, ORDER_STATE_FETCH_INTERVAL);
+        } catch (error) {
+          console.error("Error polling payment state:", error);
+          // Continue polling despite error? Or stop? usually continue for network glitches
+          totalTime += ORDER_STATE_FETCH_INTERVAL;
+          setTimeout(checkPayment, ORDER_STATE_FETCH_INTERVAL);
+        }
+      };
+
+      setTimeout(checkPayment, ORDER_STATE_FETCH_INTERVAL);
     } catch (e) {
       console.error("Error in confirmPayment:", e);
+      isPaying = false;
     }
   };
 
@@ -403,31 +446,57 @@
     <div
       class="flex flex-col items-center grow h-[100vh-64px] mt-6 px-4 space-y-4"
     >
-      <ConfirmPaymentInfo
-        {exchangeName}
-        {tradingPair}
-        {baseSymbol}
-        {quoteSymbol}
-        {baseIcon}
-        {quoteIcon}
-        {baseAmount}
-        {quoteAmount}
-        {baseAmountUsd}
-        {quoteAmountUsd}
-        baseFeeAmount={feeInfo?.base_fee_amount}
-        baseFeeSymbol={feeInfo?.base_fee_symbol}
-        quoteFeeAmount={feeInfo?.quote_fee_amount}
-        quoteFeeSymbol={feeInfo?.quote_fee_symbol}
-        baseFeeUsdPrice={feeInfo?.base_fee_price_usd}
-        quoteFeeUsdPrice={feeInfo?.quote_fee_price_usd}
-        baseAssetUsdPrice={feeInfo?.base_asset_price_usd}
-        quoteAssetUsdPrice={feeInfo?.quote_asset_price_usd}
-        marketMakingFeePercentage={feeInfo?.market_making_fee_percentage}
-        {isFetchingFee}
-      />
-      <div class="px-6 w-full flex justify-center">
-        <ConfirmPaymentBtn onConfirm={confirmPayment} />
-      </div>
+      {#if paymentSuccess}
+        <div
+          class="flex flex-col items-center justify-center p-8 space-y-4 bg-white rounded-lg shadow-sm"
+        >
+          <div class="rounded-full bg-green-100 p-3">
+            <svg
+              class="w-8 h-8 text-green-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-gray-900">
+            {$_("payment_successful")}
+          </h3>
+          <p class="text-gray-500">{$_("redirecting_to_order_details")}</p>
+        </div>
+      {:else}
+        <ConfirmPaymentInfo
+          {exchangeName}
+          {tradingPair}
+          {baseSymbol}
+          {quoteSymbol}
+          {baseIcon}
+          {quoteIcon}
+          {baseAmount}
+          {quoteAmount}
+          {baseAmountUsd}
+          {quoteAmountUsd}
+          baseFeeAmount={feeInfo?.base_fee_amount}
+          baseFeeSymbol={feeInfo?.base_fee_symbol}
+          quoteFeeAmount={feeInfo?.quote_fee_amount}
+          quoteFeeSymbol={feeInfo?.quote_fee_symbol}
+          baseFeeUsdPrice={feeInfo?.base_fee_price_usd}
+          quoteFeeUsdPrice={feeInfo?.quote_fee_price_usd}
+          baseAssetUsdPrice={feeInfo?.base_asset_price_usd}
+          quoteAssetUsdPrice={feeInfo?.quote_asset_price_usd}
+          marketMakingFeePercentage={feeInfo?.market_making_fee_percentage}
+          {isFetchingFee}
+        />
+        <div class="px-6 w-full flex justify-center">
+          <ConfirmPaymentBtn onConfirm={confirmPayment} loading={isPaying} />
+        </div>
+      {/if}
     </div>
   {/if}
 {/await}

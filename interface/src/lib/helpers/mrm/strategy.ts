@@ -97,11 +97,38 @@ export const getMarketMakingDetailsById = async (id: string) => {
   }
 }
 
+export const getUserOrderMarketMakingById = async (id: string) => {
+  try {
+    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/market-making/${id}`);
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching user order market making details by id:', error);
+  }
+}
+
+export const getMarketMakingPaymentState = async (orderId: string) => {
+  try {
+    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/payment-state/market-making/${orderId}`);
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching market making payment state:', error);
+  }
+}
+
 export const stopPureMarketMaking = async (userId: string, clientId: string) => {
   try {
     const response = await fetch(`${MRM_BACKEND_URL}/strategy/market_making/stop?userId=${userId}&clientId=${clientId}`);
     return await handleResponse(response);
   } catch (error) {
     console.error('Error stopping pure market making strategy for user:', error);
+  }
+}
+
+export const getMarketMakingHistoryByInstanceId = async (id: string) => {
+  try {
+    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/market-making/history/instance/${id}`);
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching market making history by instance id:', error);
   }
 }

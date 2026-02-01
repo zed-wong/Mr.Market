@@ -1,9 +1,13 @@
-import { getMarketMakingDetailsById } from "$lib/helpers/mrm/strategy";
+import { getUserOrderMarketMakingById, getMarketMakingHistoryByInstanceId } from "$lib/helpers/mrm/strategy";
 
 export async function load({ params }: { params: { id: string } }) {
-  const order = await getMarketMakingDetailsById(params.id);
+  const [order, history] = await Promise.all([
+    getUserOrderMarketMakingById(params.id),
+    getMarketMakingHistoryByInstanceId(params.id)
+  ]);
 
   return {
-    order
+    order,
+    history
   };
 }
