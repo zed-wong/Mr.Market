@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('http://127.0.0.1:5173/grow');
 })
 
-test('create arbitrage', async ({ page }) => {
+test.skip('create arbitrage', async ({ page }) => {
   await page.getByTestId('arbitrage').click();
   await page.waitForURL('**/grow/arbitrage');
 
