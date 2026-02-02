@@ -9,7 +9,7 @@
 7. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
 
 ### Connect payment state to confirm payment page
-1. after user clicked pay button in create-new market making page, should start loading and fetch payment status from backend
+- [x] 1. after user clicked pay button in create-new market making page, should start loading and fetch payment status from backend
 2. after payment status fetched, should show payment successful, and redirect to order details page
 3. order details page should fetch order details from backend, and show order details (connect ui to backend)
 
@@ -22,6 +22,15 @@
 
 ### Admin exchanges management
 1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
+
+### E2e Test
+- [x] 1. Create market making UI
+- [x] 2. Admin add trading pairs
+- [x] 3. Admin add exchanges
+
+### Health endpoint
+- [] 1. Create health endpoint that returns status of all services
+- [] 2. Health page in admin page for monitor status
 
 
 ## Hufi 
@@ -39,3 +48,6 @@
 1. Create page for users to configure their exchange API keys to join hufi campaigns directly
 2. User should be able to add/select exchange, enter API keys, and join campaign in one flow
 3. Page should be accessible from campaign detail page via "Join Directly" button
+
+### Hufi Controller
+1. Should add an endpoint to cache data from hufi recording oracle api, to return to the frontend, frontend use data from this api, and fallback to recording oracle api when this cache endpoint is not available
