@@ -9,6 +9,7 @@
     export let exchangeName = "";
     export let selected = false;
     export let onClick = () => {};
+    export let testId: string | null = null;
 
     $: symbol = pair?.symbol || "";
     $: baseSymbol = pair?.base_symbol || symbol.split("/")[0] || "";
@@ -31,6 +32,7 @@
   {selected
         ? 'border-[3px] border-base-content'
         : 'border-base-200 hover:border-base-300'}"
+    data-testid={testId}
     on:click|preventDefault|stopPropagation={onClick}
 >
     <div class="flex items-center gap-4">

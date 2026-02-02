@@ -57,6 +57,7 @@
   class:btn-disabled={isDisabled}
   class:opacity-50={isDisabled}
   class:cursor-not-allowed={isDisabled}
+  data-testid="market-making-next-step"
   disabled={isDisabled}
   aria-disabled={isDisabled}
   on:click={setAmountToURL}

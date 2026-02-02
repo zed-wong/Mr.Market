@@ -52,6 +52,7 @@
                 status={selectedExchange === exchange.exchange_id
                     ? $_("status_selected")
                     : $_("status_available")}
+                testId={`market-making-exchange-${exchange.exchange_id}`}
                 onClick={() => onSelect(exchange.exchange_id)}
             />
         {/each}
@@ -67,6 +68,7 @@
     >
         <button
             class="btn btn-xl pointer-events-auto bg-base-content text-base-100 px-16 py-4 rounded-full text-lg font-bold shadow-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-base-content/80 transition-colors"
+            data-testid="market-making-exchange-continue"
             disabled={!selectedExchange}
             on:click={onContinue}
         >

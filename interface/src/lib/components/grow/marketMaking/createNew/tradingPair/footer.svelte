@@ -10,10 +10,12 @@
 >
     <button
         class="btn btn-xl pointer-events-auto bg-base-200 text-base-content px-6 py-4 rounded-full text-lg font-bold shadow-xl border-none hover:bg-base-300 transition-colors"
+        data-testid="market-making-pair-back"
         on:click={onBack}>{$_("back")}</button
     >
     <button
         class="btn btn-xl flex-1 pointer-events-auto bg-base-content text-base-100 px-6 py-4 rounded-full text-lg font-bold shadow-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-base-content/80 transition-colors"
+        data-testid="market-making-pair-confirm"
         on:click={onConfirm}
         disabled={confirmDisabled}
     >

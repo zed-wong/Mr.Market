@@ -7,6 +7,7 @@
     export let selected: boolean = false;
     export let status: string = "Available";
     export let onClick: () => void;
+    export let testId: string | null = null;
 </script>
 
 <button
@@ -16,6 +17,7 @@
             ? "border-[3px] border-base-content"
             : "border border-base-200 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-lg hover:-translate-y-1",
     )}
+    data-testid={testId}
     on:click={onClick}
 >
     <div class="w-12 h-12 flex items-center justify-center">

@@ -10,11 +10,12 @@
 </script>
 
 <div class="flex-1 w-full px-6 overflow-y-auto space-y-3">
-    {#each pairs as pair (pair.id || pair.symbol)}
+    {#each pairs as pair, index (pair.id || pair.symbol)}
         <ChooseTradingPairSmallBtn
             {pair}
             {exchangeName}
             selected={pair.symbol === selectedPair}
+            testId={`market-making-pair-${index}`}
             onClick={() => onSelect(pair.symbol)}
         />
     {/each}

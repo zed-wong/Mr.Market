@@ -39,6 +39,7 @@
           inputmode="decimal"
           required
           bind:value={baseAmount}
+          data-testid="amount-input-0"
           placeholder={$_("enter_symbol_amount", {
             values: { symbol: baseSymbol ?? "" },
           })}
@@ -76,6 +77,7 @@
           inputmode="decimal"
           required
           bind:value={quoteAmount}
+          data-testid="amount-input-1"
           placeholder={$_("enter_symbol_amount", {
             values: { symbol: quoteSymbol ?? "" },
           })}

@@ -16,6 +16,7 @@
   class:btn-disabled={disabled || loading}
   class:opacity-50={disabled || loading}
   class:cursor-not-allowed={disabled || loading}
+  data-testid="market-making-pay"
   disabled={disabled || loading}
   aria-disabled={disabled || loading}
   on:click={handleClick}

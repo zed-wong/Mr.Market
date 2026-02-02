@@ -5,29 +5,27 @@ test.use({
 });
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('http://127.0.0.1:5173/grow');
-})
+  await page.goto('/market-making/create-new');
+});
 
 test('create market making', async ({ page }) => {
-  await page.getByTestId('market-making').click();
-  await page.waitForURL('**/market-making');
+  const exchangeOptions = page.locator('[data-testid^="market-making-exchange-"]');
+  await expect(exchangeOptions.first()).toBeVisible();
+  await exchangeOptions.first().click();
+  await page.getByTestId('market-making-exchange-continue').click();
 
-  await page.getByTestId('create-new-market-making').click();
-  await page.waitForURL('**/new/**');
+  const pairOptions = page.locator('[data-testid^="market-making-pair-"]');
+  await expect(pairOptions.first()).toBeVisible();
+  await pairOptions.first().click();
+  await page.getByTestId('market-making-pair-confirm').click();
 
-  await page.getByTestId('market-making-pair-0').click();
-  await page.waitForURL('**/two');
+  await expect(page.getByTestId('amount-input-0')).toBeVisible();
+  await expect(page.getByTestId('amount-input-1')).toBeVisible();
 
-  expect(page.getByTestId(`amount-input-0`)).toBeVisible();
-  expect(page.getByTestId(`amount-input-1`)).toBeVisible();
-  expect(page.getByTestId(`reward-address-input`)).toBeVisible();
+  await page.getByTestId('amount-input-0').fill('0.00000001');
+  await page.getByTestId('amount-input-1').fill('0.00000001');
+  await expect(page.getByTestId('market-making-next-step')).toBeEnabled();
+  await page.getByTestId('market-making-next-step').click();
 
-  expect(page.getByTestId(`confirm-btn`)).toBeDisabled();
-
-  await page.getByTestId(`amount-input-0`).fill('0.00000001');
-  await page.getByTestId(`amount-input-1`).fill('0.00000001');
-  await page.getByTestId(`reward-address-input`).fill('0x3b5fb9d9da3546e9ce6e5aa3cceca14c8d20041e');
-
-  expect(page.getByTestId(`confirm-btn`)).toBeEnabled();
-  await page.getByTestId(`confirm-btn`).click();
-})
+  await expect(page.getByTestId('market-making-pay')).toBeVisible();
+});
