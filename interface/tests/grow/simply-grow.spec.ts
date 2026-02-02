@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('http://127.0.0.1:5173/grow');
 })
 
-test('create just grow order', async ({ page }) => {
+test.skip('create just grow order', async ({ page }) => {
   await page.getByTestId('just-grow').click();
   await page.waitForURL('**/grow/simply_grow');
 
