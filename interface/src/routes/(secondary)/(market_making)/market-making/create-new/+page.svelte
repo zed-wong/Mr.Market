@@ -208,7 +208,7 @@
                     const res = await getMarketMakingPaymentState(
                         intent.orderId,
                     );
-                    if (res?.data?.payment_complete) {
+                    if (res?.data?.state === "payment_complete") {
                         isPaying = false;
                         showSuccessDialog = true;
                         successOrderId = intent.orderId;
