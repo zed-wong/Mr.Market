@@ -15,6 +15,7 @@ import {
 } from 'src/common/types/memo/memo';
 import { base58 } from 'ethers/lib/utils';
 import { createHash } from 'crypto';
+import BigNumber from 'bignumber.js';
 
 export const computeMemoChecksum = (buffer: Buffer): Buffer => {
   const hash = createHash('sha256')
@@ -80,8 +81,8 @@ export const encodeSimplyGrowCreateMemo = (details: {
     throw new Error('Invalid memo details');
   }
 
-  const tradingTypeKey = Number(tradingTypeKeyStr);
-  const actionKey = Number(actionKeyStr);
+  const tradingTypeKey = new BigNumber(tradingTypeKeyStr).toNumber();
+  const actionKey = new BigNumber(actionKeyStr).toNumber();
 
   // Serialize fields into binary
   const versionBuffer = Buffer.from([details.version]);
@@ -121,8 +122,8 @@ export const encodeMarketMakingCreateMemo = (
     throw new Error('Invalid memo details');
   }
 
-  const tradingTypeKey = Number(tradingTypeKeyStr);
-  const actionKey = Number(actionKeyStr);
+  const tradingTypeKey = new BigNumber(tradingTypeKeyStr).toNumber();
+  const actionKey = new BigNumber(actionKeyStr).toNumber();
 
   // Serialize fields into binary
   const versionBuffer = Buffer.from([details.version]);
@@ -154,7 +155,12 @@ export const encodeMarketMakingCreateMemo = (
 
 export const memoPreDecode = (
   memo: string,
-): { payload: Buffer; version: number; tradingTypeKey: number } => {
+): {
+  payload: Buffer;
+  version: number;
+  tradingTypeKey: number;
+  action: number;
+} => {
   // Base58 decode memo
   const completeBuffer = base58.decode(memo);
 
@@ -176,11 +182,15 @@ export const memoPreDecode = (
   // TradingTypeKey (1 byte)
   const tradingTypeKey = payload.readUInt8(1);
 
-  if (!version || !tradingTypeKey) {
+  // Action (1 byte)
+  const action = payload.readUInt8(2);
+
+  // `readUInt8` returns numbers; key 0 is valid (e.g. Spot trading).
+  if (!Number.isFinite(version) || !Number.isFinite(tradingTypeKey) || !Number.isFinite(action)) {
     throw new Error('Invalid memo details');
   }
 
-  return { payload, version, tradingTypeKey };
+  return { payload, version, tradingTypeKey, action };
 };
 
 export const decodeSimplyGrowCreateMemo = (
