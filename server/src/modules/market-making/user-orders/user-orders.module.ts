@@ -37,9 +37,6 @@ import { CampaignModule } from 'src/modules/campaign/campaign.module';
       ArbitrageHistory,
     ]),
     BullModule.registerQueue({
-      name: 'withdrawal-confirmations',
-    }),
-    BullModule.registerQueue({
       name: 'market-making',
     }),
     StrategyModule,
