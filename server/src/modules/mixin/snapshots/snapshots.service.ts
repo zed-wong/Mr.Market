@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { Injectable } from '@nestjs/common';
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
+import BigNumber from 'bignumber.js';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,11 +11,17 @@ import {
   decodeMarketMakingCreateMemo,
   decodeSimplyGrowCreateMemo,
 } from 'src/common/helpers/mixin/memo';
+import {
+  MarketMakingMemoActionKey,
+  MemoVersion,
+  TradingTypeKey,
+} from 'src/common/constants/memo';
 import { Queue } from 'bull';
 import { InjectQueue } from '@nestjs/bull';
 import { MixinClientService } from '../client/mixin-client.service';
 import { TransactionService } from '../transaction/transaction.service';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 
 @Injectable()
 export class SnapshotsService {
@@ -109,8 +116,8 @@ export class SnapshotsService {
     this.logger.debug(
       `[Service] Snapshot details: ${JSON.stringify(snapshot)}`,
     );
-    const amountValue = Number(snapshot.amount);
-    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+    const amountValue = BigNumber(snapshot.amount);
+    if (!amountValue.isFinite() || amountValue.isLessThanOrEqualTo(0)) {
       return;
     }
     if (!snapshot.memo) {
@@ -127,7 +134,7 @@ export class SnapshotsService {
       const hexDecodedMemo = Buffer.from(snapshot.memo, 'hex').toString(
         'utf-8',
       );
-      const { payload, version, tradingTypeKey } =
+      const { payload, version, tradingTypeKey, action } =
         memoPreDecode(hexDecodedMemo);
       if (!payload) {
         this.logger.log(
@@ -137,94 +144,96 @@ export class SnapshotsService {
         return;
       }
 
-      // Only memo version 1 is supported
-      if (version !== 1) {
+      if (version !== MemoVersion.Current) {
         this.logger.log(
-          `Snapshot memo version is not 1, refund: ${snapshot.snapshot_id}`,
+          `Snapshot memo version is not ${MemoVersion.Current}, refund: ${snapshot.snapshot_id}`,
         );
         await this.transactionService.refund(snapshot);
         return;
       }
 
       switch (tradingTypeKey) {
-        case 0:
-          // Spot trading
+        case TradingTypeKey.Spot:
           break;
-        case 1:
-          // Market making
-          const mmDetails = decodeMarketMakingCreateMemo(payload);
-          if (!mmDetails) {
-            this.logger.warn('Failed to decode market making memo, refunding');
-            await this.transactionService.refund(snapshot);
-            break;
-          }
-          const intent = await this.marketMakingOrderIntentRepository.findOne({
-            where: { orderId: mmDetails.orderId },
-          });
-          if (!intent) {
-            this.logger.warn(
-              `No intent found for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+        case TradingTypeKey.MarketMaking:
+          if (action === MarketMakingMemoActionKey.Create) {
+            const mmDetails = decodeMarketMakingCreateMemo(payload);
+            if (!mmDetails) {
+              this.logger.warn(
+                'Failed to decode market making memo, refunding',
+              );
+              await this.transactionService.refund(snapshot);
+              break;
+            }
+            const intent = await this.marketMakingOrderIntentRepository.findOne(
+              {
+                where: { orderId: mmDetails.orderId },
+              },
             );
-            await this.transactionService.refund(snapshot);
-            break;
-          }
+            if (!intent) {
+              this.logger.warn(
+                `No intent found for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+              );
+              await this.transactionService.refund(snapshot);
+              break;
+            }
 
-          if (intent.marketMakingPairId !== mmDetails.marketMakingPairId) {
-            this.logger.warn(
-              `Intent pair mismatch for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+            if (intent.marketMakingPairId !== mmDetails.marketMakingPairId) {
+              this.logger.warn(
+                `Intent pair mismatch for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+              );
+              await this.transactionService.refund(snapshot);
+              break;
+            }
+
+            const expiresAtMs = BigNumber(Date.parse(intent.expiresAt));
+            if (!expiresAtMs.isFinite() || expiresAtMs.isLessThan(Date.now())) {
+              intent.state = 'expired';
+              intent.updatedAt = getRFC3339Timestamp();
+              await this.marketMakingOrderIntentRepository.save(intent);
+              this.logger.warn(
+                `Intent expired for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+              );
+              await this.transactionService.refund(snapshot);
+              break;
+            }
+
+            if (!['pending', 'in_progress'].includes(intent.state)) {
+              this.logger.warn(
+                `Intent not active for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+              );
+              await this.transactionService.refund(snapshot);
+              break;
+            }
+
+            if (intent.state === 'pending') {
+              intent.state = 'in_progress';
+              intent.updatedAt = getRFC3339Timestamp();
+              await this.marketMakingOrderIntentRepository.save(intent);
+            }
+            // Queue the snapshot for market making processing
+            await this.marketMakingQueue.add(
+              'process_market_making_snapshots',
+              {
+                snapshotId: snapshot.snapshot_id,
+                orderId: mmDetails.orderId,
+                marketMakingPairId: mmDetails.marketMakingPairId,
+                memoDetails: mmDetails,
+                snapshot,
+              },
+              {
+                jobId: `mixin_snapshot_${snapshot.snapshot_id}`,
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 5000 },
+                removeOnComplete: false, // Keep for debugging
+              },
             );
-            await this.transactionService.refund(snapshot);
-            break;
-          }
-
-          const expiresAtMs = Date.parse(intent.expiresAt);
-          if (!Number.isFinite(expiresAtMs) || expiresAtMs < Date.now()) {
-            intent.state = 'expired';
-            intent.updatedAt = new Date().toISOString();
-            await this.marketMakingOrderIntentRepository.save(intent);
-            this.logger.warn(
-              `Intent expired for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+            this.logger.log(
+              `Queued market making snapshot ${snapshot.snapshot_id} for order ${mmDetails.orderId}`,
             );
-            await this.transactionService.refund(snapshot);
-            break;
           }
-
-          if (!['pending', 'in_progress'].includes(intent.state)) {
-            this.logger.warn(
-              `Intent not active for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
-            );
-            await this.transactionService.refund(snapshot);
-            break;
-          }
-
-          if (intent.state === 'pending') {
-            intent.state = 'in_progress';
-            intent.updatedAt = new Date().toISOString();
-            await this.marketMakingOrderIntentRepository.save(intent);
-          }
-          // Queue the snapshot for market making processing
-          await this.marketMakingQueue.add(
-            'process_mm_snapshot',
-            {
-              snapshotId: snapshot.snapshot_id,
-              orderId: mmDetails.orderId,
-              marketMakingPairId: mmDetails.marketMakingPairId,
-              memoDetails: mmDetails,
-              snapshot,
-            },
-            {
-              jobId: `mm_snapshot_${snapshot.snapshot_id}`,
-              attempts: 3,
-              backoff: { type: 'exponential', delay: 5000 },
-              removeOnComplete: false, // Keep for debugging
-            },
-          );
-          this.logger.log(
-            `Queued market making snapshot ${snapshot.snapshot_id} for order ${mmDetails.orderId}`,
-          );
           break;
-        case 2:
-          // Simply grow
+        case TradingTypeKey.SimplyGrow:
           const simplyGrowDetails = decodeSimplyGrowCreateMemo(payload);
           if (!simplyGrowDetails) {
             break;
