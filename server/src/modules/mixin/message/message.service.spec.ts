@@ -6,6 +6,7 @@ import { UserService } from 'src/modules/mixin/user/user.service';
 import { MessageRepository } from './message.repository';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { MixinMessage } from 'src/common/entities/mixin-message.entity';
+import { getRFC3339Timestamp } from '../../../common/helpers/utils';
 
 jest.mock('src/modules/mixin/user/user.service');
 jest.mock('./message.repository');
@@ -51,8 +52,8 @@ describe('MessageService', () => {
         data_base64: 'SGVsbG8sIFdvcmxkIQ==',
         status: 'SENT',
         source: 'source',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: getRFC3339Timestamp(),
+        updated_at: getRFC3339Timestamp(),
       };
       const savedMessage = { ...mockMessage };
 
