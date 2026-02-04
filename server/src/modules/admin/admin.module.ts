@@ -22,12 +22,14 @@ import { CustomConfigEntity } from 'src/common/entities/custom-config.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/spot-data.entity';
 import { AdminExchangesModule } from './exchanges/exchanges.module';
+import { MixinClientModule } from '../mixin/client/mixin-client.module';
 
 @Module({
   imports: [
     AdminExchangesModule,
     GrowdataModule,
     SpotdataModule,
+    MixinClientModule,
     TypeOrmModule.forFeature([
       MarketMakingHistory,
       ArbitrageHistory,

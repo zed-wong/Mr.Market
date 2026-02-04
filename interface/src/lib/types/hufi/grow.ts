@@ -41,8 +41,12 @@ export interface MarketMakingPair {
   quote_symbol: string;
   base_asset_id: string;
   base_icon_url: string;
+  base_chain_id?: string;
+  base_chain_icon_url?: string;
   quote_asset_id: string;
   quote_icon_url: string;
+  quote_chain_id?: string;
+  quote_chain_icon_url?: string;
   base_price?: string;
   target_price?: string;
   exchange_id: string;

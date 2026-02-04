@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-02-04
+
+- Store chain metadata for market-making pairs in grow data
+
 ## 2026-02-03
 
 - Remove interface-side market making memo generator so intent API remains the memo source of truth

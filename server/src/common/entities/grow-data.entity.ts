@@ -98,11 +98,23 @@ export class GrowdataMarketMakingPair {
   @Column()
   base_icon_url: string;
 
+  @Column({ nullable: true })
+  base_chain_id: string;
+
+  @Column({ nullable: true })
+  base_chain_icon_url: string;
+
   @Column()
   quote_asset_id: string;
 
   @Column()
   quote_icon_url: string;
+
+  @Column({ nullable: true })
+  quote_chain_id: string;
+
+  @Column({ nullable: true })
+  quote_chain_icon_url: string;
 
   @Column({ nullable: true })
   base_price: string;

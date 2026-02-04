@@ -102,11 +102,27 @@ export class GrowdataMarketMakingPairDto {
   @IsString()
   base_icon_url: string;
 
+  @IsString()
+  @IsOptional()
+  base_chain_id: string;
+
+  @IsString()
+  @IsOptional()
+  base_chain_icon_url: string;
+
   @IsUUID()
   quote_asset_id: string;
 
   @IsString()
   quote_icon_url: string;
+
+  @IsString()
+  @IsOptional()
+  quote_chain_id: string;
+
+  @IsString()
+  @IsOptional()
+  quote_chain_icon_url: string;
 
   @IsString()
   @IsOptional()

@@ -15,6 +15,8 @@
     $: baseSymbol = pair?.base_symbol || symbol.split("/")[0] || "";
     $: quoteSymbol = pair?.quote_symbol || symbol.split("/")[1] || "";
     $: basePrice = pair?.base_price ? parseFloat(pair.base_price) : 0;
+    $: baseChainIcon = pair?.base_chain_icon_url || "";
+    $: quoteChainIcon = pair?.quote_chain_icon_url || "";
 
     // Format price
     $: displayPrice =
@@ -40,6 +42,8 @@
             <PairIcon
                 clazz="w-6 h-6"
                 claxx="w-2 h-2"
+                chain0Icon={baseChainIcon}
+                chain1Icon={quoteChainIcon}
                 asset0Icon={findCoinIconBySymbol(baseSymbol) || emptyToken}
                 asset1Icon={findCoinIconBySymbol(quoteSymbol) || emptyToken}
             />
