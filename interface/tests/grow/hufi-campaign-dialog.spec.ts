@@ -50,13 +50,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('redirects to create-new with preset params', async ({ page }) => {
-  await page.getByRole('button', { name: 'Create M-Making' }).click();
+  await page.getByTestId('hufi-create-button').click();
   await expect(page.getByTestId('hufi-create-dialog')).toBeVisible();
-  await expect(
-    page.getByText(
-      'Continue in Create New with exchange and trading pair pre-filled.'
-    )
-  ).toBeVisible();
+  await expect(page.getByText(/prefilled/i)).toBeVisible();
   await page.getByTestId('hufi-create-continue').click();
   await expect(page).toHaveURL(
     /\/market-making\/create-new\?.*exchange=binance.*trading_pair=BTC%2FUSDT/

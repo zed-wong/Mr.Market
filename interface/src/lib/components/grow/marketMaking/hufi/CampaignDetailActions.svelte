@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { _ } from "svelte-i18n";
   import type { ApiCampaign } from "$lib/helpers/mrm/campaignFormatter";
 
   export let campaign: ApiCampaign;
@@ -28,10 +29,11 @@
         d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"
       />
     </svg>
-    Join Directly
+    {$_("hufi_campaign_join_direct")}
   </button>
   <button
     class="flex-[1.5] btn bg-black hover:bg-gray-900 text-white border-none rounded-full h-12 min-h-12 text-sm font-bold normal-case shadow-lg"
+    data-testid="hufi-create-button"
     on:click={() => (showDialog = true)}
   >
     <svg
@@ -48,7 +50,7 @@
         d="M12 4.5v15m7.5-7.5h-15"
       />
     </svg>
-    Create M-Making
+    {$_("hufi_campaign_create_mmaking")}
   </button>
 </div>
 
@@ -60,7 +62,7 @@
       data-testid="hufi-create-dialog"
     >
       <div class="flex justify-between items-center mb-6">
-        <h2 class="text-xl font-bold">Create M-Making</h2>
+        <h2 class="text-xl font-bold">{$_("hufi_campaign_create_mmaking")}</h2>
         <button
           class="btn btn-sm btn-circle btn-ghost"
           on:click={() => (showDialog = false)}
@@ -86,17 +88,17 @@
       <div class="space-y-5">
         <div class="bg-gray-50 rounded-lg p-4 space-y-3">
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-600">Exchange</span>
+            <span class="text-sm text-gray-600">{$_("exchange")}</span>
             <span class="text-sm font-semibold capitalize">{campaign.exchange_name}</span>
           </div>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-600">Trading Pair</span>
+            <span class="text-sm text-gray-600">{$_("trading_pair")}</span>
             <span class="text-sm font-semibold">{campaign.symbol}</span>
           </div>
         </div>
 
         <div class="bg-blue-50 border border-blue-100 text-sm text-blue-700 rounded-lg p-3">
-          Continue in Create New with exchange and trading pair pre-filled.
+          {$_("hufi_campaign_create_new_notice")}
         </div>
 
         <div class="flex gap-3 pt-2">
@@ -104,7 +106,7 @@
             class="btn btn-ghost flex-1"
             on:click={() => (showDialog = false)}
           >
-            Cancel
+            {$_("cancel")}
           </button>
           <button
             class="btn btn-primary flex-1"
@@ -118,7 +120,7 @@
               goto(`/market-making/create-new?${params.toString()}`);
             }}
           >
-            Continue
+            {$_("continue_to_trading_pair")}
           </button>
         </div>
       </div>
