@@ -1,5 +1,16 @@
+import { RebalanceService } from './rebalance.service';
+
+jest.mock('src/modules/infrastructure/logger/logger.service');
+
 describe('RebalanceService', () => {
-  it('has a placeholder test', () => {
-    expect(true).toBe(true);
+  it('constructs with required dependencies', () => {
+    const service = new RebalanceService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(service).toBeInstanceOf(RebalanceService);
   });
 });

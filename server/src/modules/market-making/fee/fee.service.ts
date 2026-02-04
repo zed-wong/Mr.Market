@@ -41,6 +41,8 @@ export class FeeService {
   ) {
     const [base_symbol, quote_symbol] = pair.split('/');
     let base_fee, quote_fee, direction_info;
+    let base_exchange_fee: number | undefined;
+    let quote_exchange_fee: number | undefined;
     let mixin_deposit_fee = '0';
 
     // Fetch the trading pair configuration from database to get the correct asset IDs
@@ -115,8 +117,8 @@ export class FeeService {
             base,
             quote,
           );
-          base_fee = exchangeFees.baseFee;
-          quote_fee = exchangeFees.quoteFee;
+          base_exchange_fee = exchangeFees.baseFee;
+          quote_exchange_fee = exchangeFees.quoteFee;
         }
 
         // Deposit fee in USD
@@ -130,8 +132,8 @@ export class FeeService {
           symbol: pair,
           base_asset_id: base_asset.asset_id,
           quote_asset_id: quote_asset.asset_id,
-          base_asset_fee: base_fee?.amount,
-          quote_asset_fee: quote_fee?.amount,
+          base_asset_fee: base_exchange_fee,
+          quote_asset_fee: quote_exchange_fee,
           mixin_deposit_fee,
           direction: direction_info,
         };
@@ -143,15 +145,15 @@ export class FeeService {
             base,
             quote,
           );
-          base_fee = exchangeFees.baseFee;
-          quote_fee = exchangeFees.quoteFee;
+          base_exchange_fee = exchangeFees.baseFee;
+          quote_exchange_fee = exchangeFees.quoteFee;
         }
         return {
           symbol: pair,
           base_asset_id: base_asset.asset_id,
           quote_asset_id: quote_asset.asset_id,
-          base_asset_fee: base_fee?.amount,
-          quote_asset_fee: quote_fee?.amount,
+          base_asset_fee: base_exchange_fee,
+          quote_asset_fee: quote_exchange_fee,
           direction: direction_info,
         };
       }

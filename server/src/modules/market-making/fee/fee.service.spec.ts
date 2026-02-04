@@ -204,8 +204,8 @@ describe('FeeService', () => {
         symbol: pair,
         base_asset_id: baseAssetId,
         quote_asset_id: quoteAssetId,
-        base_asset_fee: undefined,
-        quote_asset_fee: undefined,
+        base_asset_fee: 0.0005,
+        quote_asset_fee: 10,
         mixin_deposit_fee: '6',
         direction: 'exchange->mixin',
       });
@@ -239,8 +239,8 @@ describe('FeeService', () => {
       const mockExchange = {
         has: { fetchTransactionFees: false },
         currencies: {
-          LTC: { fee: 0.001 },
-          DOGE: { fee: 1 },
+          [ltcAssetId]: { fee: 0.001 },
+          [dogeAssetId]: { fee: 1 },
         },
       };
 
@@ -252,15 +252,28 @@ describe('FeeService', () => {
       // Dogecoin -> 0.1
       // Total = 0.2
 
+      const repo = testingModule.get(GrowdataRepository) as {
+        findMarketMakingPairByExchangeAndSymbol: jest.Mock;
+      };
+      repo.findMarketMakingPairByExchangeAndSymbol.mockResolvedValue({
+        base_asset_id: ltcAssetId,
+        quote_asset_id: dogeAssetId,
+      });
+      mockClient.safe.fetchAsset.mockImplementation((assetId) => {
+        if (assetId === ltcAssetId) return mockLTC;
+        if (assetId === dogeAssetId) return mockDoge;
+        return undefined;
+      });
+
       const result = await service.calculateMoveFundsFee(
         exchangeName,
         pairSimple,
         direction,
       );
 
-      expect(result.mixin_deposit_fee).toBe('6');
-      expect(result.base_asset_fee).toBeUndefined();
-      expect(result.quote_asset_fee).toBeUndefined();
+      expect(result.mixin_deposit_fee).toBe('0.2');
+      expect(result.base_asset_fee).toBe(0.001);
+      expect(result.quote_asset_fee).toBe(1);
     });
 
     it('should calculate fees for withdraw_external', async () => {
@@ -289,8 +302,8 @@ describe('FeeService', () => {
         symbol: pair,
         base_asset_id: baseAssetId,
         quote_asset_id: quoteAssetId,
-        base_asset_fee: undefined,
-        quote_asset_fee: undefined,
+        base_asset_fee: 0.0004,
+        quote_asset_fee: 8,
         direction: 'exchange->external',
       });
     });
