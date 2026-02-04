@@ -34,11 +34,18 @@ jobs:
         with:
           node-version: 20
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install dependencies
-        run: make install
+        run: |
+          (cd interface && bun install)
+          (cd server && bun install)
 
       - name: Run DB Migration
-        run: make run-migrations
+        run: cd server && bun run migration:run
         env:
           POSTGRES_PORT: 5432
           POSTGRES_HOST: localhost
@@ -47,7 +54,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
 
       - name: Run DB seeder
-        run: make run-seeder
+        run: cd server && bun run migration:seed
         env:
           POSTGRES_PORT: 5432
           POSTGRES_HOST: localhost
@@ -57,7 +64,7 @@ jobs:
 
       - name: Wait for localhost:3000 to become available
         run: |
-          make start-server &
+          cd server && bun run start:dev &
           echo "Waiting for localhost:3000 to become available..."
           attempt=1
           max_attempts=3
@@ -84,11 +91,11 @@ jobs:
           ADMIN_PASSWORD: 123123
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
+        run: bun x playwright install --with-deps
         working-directory: ./interface
 
       - name: Run Playwright tests
-        run: npx playwright test --project='chromium'
+        run: bun x playwright test --project='chromium'
         working-directory: ./interface
         env:
           PUBLIC_HUFI_BACKEND_URL: "http://localhost:3000"

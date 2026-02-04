@@ -1,6 +1,6 @@
 install-client:
 	@echo "Installing client dependencies..."
-	@cd interface && yarn install || exit 1
+	@cd interface && bun install || exit 1
 	@echo "Client dependencies installed successfully!"
 .PHONY: install-client
 
@@ -17,7 +17,7 @@ install: install-client install-server
 # Path: Makefile
 start-client:
 	@echo "Starting client..."
-	@cd interface && yarn dev
+	@cd interface && bun run dev
 .PHONY: start-client
 
 run-migrations:

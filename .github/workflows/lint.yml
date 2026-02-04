@@ -21,14 +21,20 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
 
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
     - name: Install dependencies
       run: |
-        make install
+        (cd interface && bun install)
+        (cd server && bun install)
 
     - name: Lint interface
-      run: yarn lint
+      run: bun run lint
       working-directory: ./interface
 
     - name: Lint server
-      run: yarn lint
+      run: bun run lint
       working-directory: ./server
