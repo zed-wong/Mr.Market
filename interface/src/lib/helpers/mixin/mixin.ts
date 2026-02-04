@@ -11,6 +11,7 @@ import {
   getInvoiceString,
   getUuid,
   hashMembers,
+  WebViewApi,
 } from "@mixin.dev/mixin-node-sdk";
 import {
   AppURL,
@@ -220,6 +221,13 @@ export const mixinSafeAsset = async (asset_id: string, token: string) => {
   return result.data ? result.data.data : {};
 };
 
+export const mixinWebViewAssets = async (assetIds: string[]) => {
+  const api = WebViewApi();
+  return new Promise((resolve) => {
+    api.getAssets(assetIds, (assets) => resolve(assets || []));
+  });
+};
+
 async function fetchTopAssetsCache() {
   const topAssets = await mixinTopAssets();
   const topCache = get(topAssetsCache);
@@ -267,6 +275,33 @@ export async function calculateAndSortUSDBalances(balances, topAssetsCache) {
   return sortedBalancesArray; // You can keep it as an array since it's already sorted
 }
 
+export async function mapMixinAssetsToBalances(assets, btcDetails) {
+  const balances = assets.map((asset) => ({
+    asset_id: asset.asset_id,
+    balance: parseFloat(asset.balance),
+    usdBalance: parseFloat(asset.balance) * parseFloat(asset.price_usd || "0"),
+    details: asset,
+  }));
+
+  const sortedBalancesArray = balances.sort(
+    (a, b) => b.usdBalance - a.usdBalance,
+  );
+
+  const totalUSDBalance = calculateTotalUSDBalance(sortedBalancesArray);
+  const totalBTCBalance =
+    totalUSDBalance / parseFloat(btcDetails.price_usd || "1");
+
+  return {
+    balances: sortedBalancesArray,
+    totalUSDBalance,
+    totalBTCBalance,
+  };
+}
+
+export async function formatBalancesForUser(assets, btcDetails) {
+  return mapMixinAssetsToBalances(assets, btcDetails);
+}
+
 // Step 5: Calculate total USD balance
 export function calculateTotalUSDBalance(balances) {
   return Object.values(balances).reduce(
@@ -282,10 +317,19 @@ async function calculateTotalBTCBalance(totalUSDBalance) {
 }
 
 const getUserBalances = async (user_id: string, token: string) => {
-  if (isMixin) {
-    // TODO: implement get asset list from mixin webview context
-  }
   const topAssetsCache = await fetchTopAssetsCache();
+
+  if (isMixin()) {
+    const webViewAssets = await mixinWebViewAssets(
+      topAssetsCache ? Object.keys(topAssetsCache) : [],
+    );
+    const btcDetails = await getAssetDetails(BTC_UUID, topAssetsCache);
+    const { balances, totalUSDBalance, totalBTCBalance } =
+      await mapMixinAssetsToBalances(webViewAssets, btcDetails);
+    userAssets.set({ balances, totalUSDBalance, totalBTCBalance });
+    return { balances, totalUSDBalance, totalBTCBalance };
+  }
+
   const outputs = await mixinSafeOutputs([user_id], token);
   // console.log(outputs)
   let balances = groupAndSumUTXOs(outputs);
