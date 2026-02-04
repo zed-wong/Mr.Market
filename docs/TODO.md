@@ -12,9 +12,10 @@
 - [x] 1. after user clicked pay button in create-new market making page, should start loading and fetch payment status from backend
 - [x] 2. after payment status fetched, should show payment successful, and redirect to order details page
 - [x] 3. order details page should fetch order details from backend, and show order details (connect ui to backend)
+- [x] 4. make sure order details page is connected to backend correctly
 
 ### Create market making UI
-- [] 1. when select trading pair, there should be an small icon that represents the chain of the asset
+- [x] 1. when select trading pair, there should be an small icon that represents the chain of the asset
 
 ### Admin page
 - [] 1. Add a setup guide for initialization that is step by step, allowing admin to have basic understanding of how setting works, and makes it easier to set up all the things

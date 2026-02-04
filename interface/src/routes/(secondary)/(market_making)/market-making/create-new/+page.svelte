@@ -6,6 +6,7 @@
     import TradingPairList from "$lib/components/grow/marketMaking/createNew/tradingPair/pairList.svelte";
     import TradingPairFooter from "$lib/components/grow/marketMaking/createNew/tradingPair/footer.svelte";
     import { _ } from "svelte-i18n";
+    import { onDestroy } from "svelte";
 
     import AmountText from "$lib/components/grow/marketMaking/createNew/amount/amountText.svelte";
     import AmountNextStepBtn from "$lib/components/grow/marketMaking/createNew/amount/amountNextStepBtn.svelte";
@@ -89,6 +90,83 @@
     let isPaying = false;
     let showSuccessDialog = false;
     let successOrderId = "";
+    let isPageActive = true;
+    let paymentPollers = new Map<
+        string,
+        { timeoutId: ReturnType<typeof setTimeout>; startedAt: number }
+    >();
+    const paymentResults = new Map<
+        string,
+        { state: "pending" | "success" | "timeout" }
+    >();
+    const paymentTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+    const PAYMENT_PROCESSING_DURATION = 15000;
+
+    const stopPaymentPolling = (orderId: string) => {
+        const poller = paymentPollers.get(orderId);
+        if (poller) {
+            clearTimeout(poller.timeoutId);
+            paymentPollers.delete(orderId);
+        }
+    };
+
+    const stopPaymentTimeout = (orderId: string) => {
+        const timeout = paymentTimeouts.get(orderId);
+        if (timeout) {
+            clearTimeout(timeout);
+            paymentTimeouts.delete(orderId);
+        }
+    };
+
+    const resetPaymentState = () => {
+        isPaying = false;
+        showSuccessDialog = false;
+        successOrderId = "";
+    };
+
+    const startPaymentTimeout = (orderId: string) => {
+        stopPaymentTimeout(orderId);
+        const timeoutId = setTimeout(() => {
+            paymentResults.set(orderId, { state: "timeout" });
+            if (isPageActive) {
+                isPaying = false;
+            }
+            stopPaymentPolling(orderId);
+        }, PAYMENT_PROCESSING_DURATION);
+        paymentTimeouts.set(orderId, timeoutId);
+    };
+
+    const schedulePaymentPoll = (orderId: string, startedAt: number) => {
+        const timeoutId = setTimeout(async () => {
+            try {
+                if (!isPageActive) {
+                    stopPaymentPolling(orderId);
+                    return;
+                }
+
+                if (Date.now() - startedAt > ORDER_STATE_TIMEOUT_DURATION) {
+                    paymentResults.set(orderId, { state: "timeout" });
+                    stopPaymentPolling(orderId);
+                    return;
+                }
+
+                const res = await getMarketMakingPaymentState(orderId);
+                if (res?.data?.state === "payment_complete") {
+                    paymentResults.set(orderId, { state: "success" });
+                    stopPaymentPolling(orderId);
+                    stopPaymentTimeout(orderId);
+                    return;
+                }
+
+                schedulePaymentPoll(orderId, startedAt);
+            } catch (error) {
+                console.error("Error polling payment state:", error);
+                schedulePaymentPoll(orderId, startedAt);
+            }
+        }, ORDER_STATE_FETCH_INTERVAL);
+
+        paymentPollers.set(orderId, { timeoutId, startedAt });
+    };
 
     const confirmPayment = async () => {
         if (
@@ -193,39 +271,12 @@
                 window.open(url);
             }
 
-            // Poll payment state
-            let totalTime = 0;
-            const checkPayment = async () => {
-                try {
-                    if (totalTime > ORDER_STATE_TIMEOUT_DURATION) {
-                        isPaying = false;
-                        return;
-                    }
-
-                    console.log(
-                        `Checking payment state for order ${intent.orderId}`,
-                    );
-                    const res = await getMarketMakingPaymentState(
-                        intent.orderId,
-                    );
-                    if (res?.data?.state === "payment_complete") {
-                        isPaying = false;
-                        showSuccessDialog = true;
-                        successOrderId = intent.orderId;
-                        return;
-                    }
-
-                    totalTime += ORDER_STATE_FETCH_INTERVAL;
-                    setTimeout(checkPayment, ORDER_STATE_FETCH_INTERVAL);
-                } catch (error) {
-                    console.error("Error polling payment state:", error);
-                    // Continue polling despite error? Or stop? usually continue for network glitches
-                    totalTime += ORDER_STATE_FETCH_INTERVAL;
-                    setTimeout(checkPayment, ORDER_STATE_FETCH_INTERVAL);
-                }
-            };
-
-            setTimeout(checkPayment, ORDER_STATE_FETCH_INTERVAL);
+            if (isPageActive) {
+                isPaying = true;
+            }
+            paymentResults.set(intent.orderId, { state: "pending" });
+            startPaymentTimeout(intent.orderId);
+            schedulePaymentPoll(intent.orderId, Date.now());
         } catch (e) {
             console.error("Error in confirmPayment:", e);
             isPaying = false;
@@ -308,10 +359,25 @@
     let selectedLocalPair: string | null = null;
 
     const goBack = () => {
+        resetPaymentState();
         const newUrl = new URL($dPage.url);
         newUrl.searchParams.delete("exchange");
         goto(newUrl.toString(), { replaceState: true });
     };
+
+    $: if (!isValidAmount || !tradingPair || !exchangeName) {
+        resetPaymentState();
+    }
+
+    onDestroy(() => {
+        isPageActive = false;
+        for (const orderId of Array.from(paymentPollers.keys())) {
+            stopPaymentPolling(orderId);
+        }
+        for (const orderId of Array.from(paymentTimeouts.keys())) {
+            stopPaymentTimeout(orderId);
+        }
+    });
 
     const confirmSelection = () => {
         if (selectedLocalPair) {
