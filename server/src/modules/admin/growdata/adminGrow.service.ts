@@ -12,6 +12,7 @@ import {
   GrowdataArbitragePairDto,
   GrowdataMarketMakingPairDto,
 } from 'src/modules/admin/growdata/adminGrow.dto';
+import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 
 @Injectable()
 export class AdminGrowService {
@@ -20,7 +21,52 @@ export class AdminGrowService {
   constructor(
     private readonly growDataService: GrowdataService,
     private readonly growdataRepository: GrowdataRepository,
+    private readonly mixinClientService: MixinClientService,
   ) {}
+
+  private async resolveChainInfo(assetId?: string) {
+    if (!assetId || !this.mixinClientService?.client?.safe) {
+      return { chainId: undefined, chainIconUrl: undefined };
+    }
+
+    try {
+      const asset = await this.mixinClientService.client.safe.fetchAsset(
+        assetId,
+      );
+      const chainId = asset?.chain_id;
+      if (!chainId) {
+        return { chainId: undefined, chainIconUrl: undefined };
+      }
+      const chainAsset =
+        await this.mixinClientService.client.safe.fetchAsset(chainId);
+      return {
+        chainId,
+        chainIconUrl: chainAsset?.icon_url,
+      };
+    } catch (error) {
+      this.logger.warn(`Failed to resolve chain info for ${assetId}`, error);
+      return { chainId: undefined, chainIconUrl: undefined };
+    }
+  }
+
+  private async applyChainInfo(
+    pair: GrowdataMarketMakingPair,
+  ): Promise<GrowdataMarketMakingPair> {
+    // Resolve chain icon metadata at storage time.
+    const [baseChain, quoteChain] = await Promise.all([
+      this.resolveChainInfo(pair.base_asset_id),
+      this.resolveChainInfo(pair.quote_asset_id),
+    ]);
+
+    return {
+      ...pair,
+      base_chain_id: baseChain.chainId || pair.base_chain_id,
+      base_chain_icon_url: baseChain.chainIconUrl || pair.base_chain_icon_url,
+      quote_chain_id: quoteChain.chainId || pair.quote_chain_id,
+      quote_chain_icon_url:
+        quoteChain.chainIconUrl || pair.quote_chain_icon_url,
+    };
+  }
 
   // Exchange
   async addExchange(exchange: GrowdataExchange) {
@@ -94,10 +140,10 @@ export class AdminGrowService {
     if (!exchange) {
       throw new Error('Exchange not found');
     }
-    const pair: GrowdataMarketMakingPair = {
+    const pair = await this.applyChainInfo({
       ...pairDto,
       exchange_id: exchange.exchange_id,
-    };
+    } as GrowdataMarketMakingPair);
     return this.growdataRepository.addMarketMakingPair(pair);
   }
 
@@ -120,7 +166,8 @@ export class AdminGrowService {
     if (pair) {
       Object.assign(pair, modifications);
       // Assuming there's a method to update the pair
-      return this.growdataRepository.addMarketMakingPair(pair);
+      const updatedPair = await this.applyChainInfo(pair);
+      return this.growdataRepository.addMarketMakingPair(updatedPair);
     }
   }
 
