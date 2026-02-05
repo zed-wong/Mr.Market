@@ -1,6 +1,5 @@
 <script lang="ts">
   import { findChainIcon } from "$lib/helpers/utils";
-  import type { MixinAsset } from "$lib/types/common/asset";
   import AssetIcon from "$lib/components/common/assetIcon.svelte";
 
   export let asset: any;

@@ -1,5 +1,4 @@
 <script>
-  import { _ } from "svelte-i18n";
   import ExchangeIcon from "$lib/components/common/exchangeIcon.svelte";
   import ExchangeName from "$lib/components/common/exchangeName.svelte";
 

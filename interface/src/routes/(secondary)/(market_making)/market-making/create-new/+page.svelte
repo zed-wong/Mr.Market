@@ -563,7 +563,6 @@
         <!-- Payment Success Dialog -->
         <PaymentSuccessDialog
             isOpen={showSuccessDialog}
-            orderId={successOrderId}
             on:confirm={() => goto(`/market-making/orders/${successOrderId}`)}
         />
     {/if}

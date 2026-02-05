@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { _ } from "svelte-i18n";
     import emptyToken from "$lib/images/empty-token.svg";
     import { findCoinIconBySymbol } from "$lib/helpers/helpers";
     import PairIcon from "$lib/components/common/tradingPairIcon.svelte";

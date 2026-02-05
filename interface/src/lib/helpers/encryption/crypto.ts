@@ -1,5 +1,4 @@
 import { browser } from "$app/environment";
-import * as nacl from 'tweetnacl';
 
 let sodiumPromise: Promise<any> | null = null;
 
@@ -74,11 +73,3 @@ export const decrypt = async (encryptedMessage: string, privateKey: string): Pro
     return null;
   }
 };
-
-/**
- * Helper to derive public key from private key if needed internally.
- * @param privateKey Base64 encoded private key
- */
-const publicKeyBytes = (privateKeyBytes: Uint8Array): Uint8Array => {
-  return nacl.box.keyPair.fromSecretKey(privateKeyBytes).publicKey;
-}

@@ -1,9 +1,6 @@
 <script lang="ts">
-  import { _ } from "svelte-i18n";
   import type { ApiCampaign } from "$lib/helpers/mrm/campaignFormatter";
   import {
-    formatAmount,
-    formatDate,
     formatDateTime,
     formatType,
     formatStatus,
@@ -11,7 +8,6 @@
     shortenAddress,
     getTargetLabel,
     getTargetValue,
-    calculateAmountPaid,
     calculateOracleFees,
     getCampaignResults,
     getSymbolIcon,

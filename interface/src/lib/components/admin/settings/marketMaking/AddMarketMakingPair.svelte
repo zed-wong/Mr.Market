@@ -9,7 +9,6 @@
   import { getUuid } from "@mixin.dev/mixin-node-sdk";
   import { getCcxtExchangeMarkets } from "$lib/helpers/mrm/admin/growdata";
 
-  import { MIXIN_API_BASE_URL } from "$lib/helpers/constants";
   import AssetSelect from "../common/AssetSelect.svelte";
   import type { MarketMakingPair, MarketMakingPairDto } from "$lib/types/hufi/grow";
   import { addMarketMakingPair } from "$lib/helpers/mrm/admin/growdata";

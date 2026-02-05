@@ -57,7 +57,7 @@
 
   <!-- Pairs -->
   <div class="flex flex-wrap !mt-4 overflow-y-auto">
-    {#each placeholders as item, i}
+    {#each placeholders as item}
       <button
         class={clsx(
           "flex just items-center justify-center space-x-1 mx-1 my-2 p-2 bg-base-100 border border-base-300 shadow-sm rounded-xl text-start",

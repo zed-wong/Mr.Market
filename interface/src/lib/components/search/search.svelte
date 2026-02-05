@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import { getCoingeckoMarket } from "$lib/helpers/mrm/coin";
-  import { marketData, searchValue } from "$lib/stores/market";
+  import { searchValue } from "$lib/stores/market";
   import Popular from "$lib/components/search/popular.svelte";
   import Filtered from "$lib/components/search/filtered.svelte";
 

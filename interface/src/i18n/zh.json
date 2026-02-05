@@ -580,7 +580,7 @@
   "current_balance": "当前余额",
   "new_balance": "新余额",
   "asset_amount": "{symbol} 数量",
-  "cancel_order_intro": "请选择如何结束 <b>{pair}</b> 的做市活动。",
+  "cancel_order_intro": "请选择如何结束 {pair} 的做市活动。",
   "pause_order": "暂停订单",
   "pause_order_desc": "暂时停止活动。您的设置和现有持仓将被保留。",
   "close_order_action": "关闭订单",

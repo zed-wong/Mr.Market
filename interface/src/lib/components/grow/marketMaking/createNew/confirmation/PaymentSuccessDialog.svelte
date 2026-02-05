@@ -4,7 +4,6 @@
   import { fade, fly } from "svelte/transition";
 
   export let isOpen = false;
-  export let orderId = "";
 
   const dispatch = createEventDispatcher();
 

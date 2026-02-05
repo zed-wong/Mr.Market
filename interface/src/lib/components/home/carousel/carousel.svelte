@@ -1,8 +1,6 @@
 <script lang="ts">
     import Carousel from "svelte-carousel";
     import MarketMaking from "$lib/components/home/carousel/marketMaking.svelte";
-    import SimplyGrow from "$lib/components/home/carousel/simplyGrow.svelte";
-    import Arbitrage from "$lib/components/home/carousel/arbitrage.svelte";
 
     const onPageChange = (event: CustomEvent) => {
         currentPageIndex = event.detail;

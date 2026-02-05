@@ -2,7 +2,7 @@ import { page } from "$app/stores";
 import { derived } from 'svelte/store';
 import { growPathChecker } from "$lib/helpers/helpers";
 import { writable, type Writable } from "svelte/store";
-import type { ArbitragePair, MarketMakingPair, SimplyGrowToken } from "$lib/types/hufi/grow";
+import type { ArbitragePair, SimplyGrowToken } from "$lib/types/hufi/grow";
 
 // 0 easy, 1 advanced
 export const easyAdvancedMode = writable(0)

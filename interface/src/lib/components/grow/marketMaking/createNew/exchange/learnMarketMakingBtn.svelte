@@ -1,6 +1,5 @@
 <script>
   import { goto } from "$app/navigation";
-  import { _ } from "svelte-i18n";
 </script>
 
 <button

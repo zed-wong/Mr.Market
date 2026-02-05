@@ -76,9 +76,9 @@
         <!-- Content -->
         <div class="px-6 pb-8 overflow-y-auto">
             <div class="text-base-content/60 mb-6 leading-relaxed">
-                {@html $_("cancel_order_intro", {
+                {$_("cancel_order_intro", {
                     values: {
-                        pair: `<span class="font-bold text-base-content">${pair}</span>`,
+                        pair,
                     },
                 })}
             </div>
