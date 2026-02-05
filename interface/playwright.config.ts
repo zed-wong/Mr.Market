@@ -36,11 +36,11 @@ export default defineConfig({
     /* Test against mobile viewports. */
     {
       name: 'chromium',
-      use: { ...devices['Pixel 7'] },
+      use: { ...devices['Galaxy S9+'] },
     },
     {
       name: 'webkit',
-      use: { ...devices['iPhone 15'] },
+      use: { ...devices['iPhone 14'] },
     },
   ],
 
