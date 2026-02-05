@@ -5,6 +5,8 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 const browserOnlyPolyfills = nodePolyfills({
   globals: {
     Buffer: true,
+    global: true,
+    process: true,
   },
 }) as Plugin;
 
