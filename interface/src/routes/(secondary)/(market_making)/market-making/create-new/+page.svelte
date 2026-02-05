@@ -22,22 +22,18 @@
     import BigNumber from "bignumber.js";
     import { findCoinIconBySymbol } from "$lib/helpers/helpers";
     import {
-        createMixinInvoice,
-        getPaymentUrl,
-        type InvoiceItem,
-    } from "$lib/helpers/mixin/mixin-invoice";
+        createMarketMakingPayment,
+        createMarketMakingPaymentPoller,
+    } from "$lib/helpers/mrm/marketMakingPayment";
     import { botId } from "$lib/stores/home";
     import { get } from "svelte/store";
     import { user } from "$lib/stores/wallet";
 
     import type { GrowInfo } from "$lib/types/hufi/grow";
-    import { getUuid } from "@mixin.dev/mixin-node-sdk";
     import {
         getMarketMakingFee,
-        createMarketMakingOrderIntent,
         type MarketMakingFee,
     } from "$lib/helpers/mrm/grow";
-    import { getMarketMakingPaymentState } from "$lib/helpers/mrm/strategy";
     import {
         ORDER_STATE_FETCH_INTERVAL,
         ORDER_STATE_TIMEOUT_DURATION,
@@ -91,86 +87,24 @@
     let showSuccessDialog = false;
     let successOrderId = "";
     let isPageActive = true;
-    let paymentPollers = new Map<
-        string,
-        { timeoutId: ReturnType<typeof setTimeout>; startedAt: number }
-    >();
-    const paymentResults = new Map<
-        string,
-        { state: "pending" | "success" | "timeout" }
-    >();
-    const paymentTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
-    const PAYMENT_PROCESSING_DURATION = 15000;
-
-    const stopPaymentPolling = (orderId: string) => {
-        const poller = paymentPollers.get(orderId);
-        if (poller) {
-            clearTimeout(poller.timeoutId);
-            paymentPollers.delete(orderId);
-        }
-    };
-
-    const stopPaymentTimeout = (orderId: string) => {
-        const timeout = paymentTimeouts.get(orderId);
-        if (timeout) {
-            clearTimeout(timeout);
-            paymentTimeouts.delete(orderId);
-        }
-    };
+    const paymentPoller = createMarketMakingPaymentPoller({
+        isActive: () => isPageActive,
+        onSuccess: (orderId) => {
+            showSuccessDialog = true;
+            successOrderId = orderId;
+            isPaying = false;
+        },
+        onTimeout: () => {
+            if (isPageActive) {
+                isPaying = false;
+            }
+        },
+    });
 
     const resetPaymentState = () => {
         isPaying = false;
         showSuccessDialog = false;
         successOrderId = "";
-    };
-
-    const startPaymentTimeout = (orderId: string) => {
-        stopPaymentTimeout(orderId);
-        const timeoutId = setTimeout(() => {
-            paymentResults.set(orderId, { state: "timeout" });
-            if (isPageActive) {
-                isPaying = false;
-            }
-            stopPaymentPolling(orderId);
-        }, PAYMENT_PROCESSING_DURATION);
-        paymentTimeouts.set(orderId, timeoutId);
-    };
-
-    const schedulePaymentPoll = (orderId: string, startedAt: number) => {
-        const timeoutId = setTimeout(async () => {
-            try {
-                if (!isPageActive) {
-                    stopPaymentPolling(orderId);
-                    return;
-                }
-
-                if (Date.now() - startedAt > ORDER_STATE_TIMEOUT_DURATION) {
-                    paymentResults.set(orderId, { state: "timeout" });
-                    stopPaymentPolling(orderId);
-                    return;
-                }
-
-                const res = await getMarketMakingPaymentState(orderId);
-                if (res?.data?.state === "payment_complete") {
-                    paymentResults.set(orderId, { state: "success" });
-                    if (isPageActive) {
-                        showSuccessDialog = true;
-                        successOrderId = orderId;
-                        isPaying = false;
-                    }
-                    stopPaymentPolling(orderId);
-                    stopPaymentTimeout(orderId);
-                    return;
-                }
-
-                schedulePaymentPoll(orderId, startedAt);
-            } catch (error) {
-                console.error("Error polling payment state:", error);
-                schedulePaymentPoll(orderId, startedAt);
-            }
-        }, ORDER_STATE_FETCH_INTERVAL);
-
-        paymentPollers.set(orderId, { timeoutId, startedAt });
     };
 
     const confirmPayment = async () => {
@@ -189,101 +123,30 @@
         successOrderId = "";
         isPaying = true;
 
-        // Use fee info from API
-        const baseAssetId = selectedPairInfo.base_asset_id;
-        const quoteAssetId = selectedPairInfo.quote_asset_id;
-        const baseFeeId = feeInfo.base_fee_id;
-        const quoteFeeId = feeInfo.quote_fee_id;
-        const baseFeeAmount = feeInfo.base_fee_amount;
-        const quoteFeeAmount = feeInfo.quote_fee_amount;
-        const marketMakingFeePercentage = feeInfo.market_making_fee_percentage;
-
-        // Calculate market making fees
-        const baseMarketMakingFee = marketMakingFeePercentage
-            ? BigNumber(baseAmount)
-                  .multipliedBy(marketMakingFeePercentage)
-                  .toString()
-            : "0";
-        const quoteMarketMakingFee = marketMakingFeePercentage
-            ? BigNumber(quoteAmount)
-                  .multipliedBy(marketMakingFeePercentage)
-                  .toString()
-            : "0";
-
         try {
             const currentUser = get(user);
-            const intent = await createMarketMakingOrderIntent({
-                marketMakingPairId: selectedPairInfo.id,
+            const paymentResult = await createMarketMakingPayment({
+                selectedPairInfo,
+                feeInfo,
+                baseAmount,
+                quoteAmount,
+                botId: $botId,
                 userId: currentUser?.user_id,
             });
-            if (!intent?.memo || !intent?.orderId) {
-                console.error("Failed to create market making order intent");
+
+            if (!paymentResult?.orderId) {
                 isPaying = false;
                 return;
             }
 
-            const memo = intent.memo;
-
-            const itemsMap = new Map<string, BigNumber>();
-            const itemMemo = new Map<string, string>();
-
-            const addItem = (assetId: string | null, amount: string) => {
-                if (!assetId || !amount || parseFloat(amount) <= 0) return;
-                const existingAmount =
-                    itemsMap.get(assetId) || new BigNumber(0);
-                itemsMap.set(assetId, existingAmount.plus(amount));
-                if (!itemMemo.has(assetId)) {
-                    itemMemo.set(assetId, memo);
-                }
-            };
-
-            // Base asset payment
-            addItem(baseAssetId, baseAmount);
-
-            // Quote asset payment
-            addItem(quoteAssetId, quoteAmount);
-
-            // Add base asset withdrawal fee if it exists
-            if (baseFeeAmount && parseFloat(baseFeeAmount) > 0) {
-                addItem(baseFeeId, baseFeeAmount);
-            }
-
-            // Add quote asset withdrawal fee if it exists
-            if (quoteFeeAmount && parseFloat(quoteFeeAmount) > 0) {
-                addItem(quoteFeeId, quoteFeeAmount);
-            }
-
-            // Add base market making fee if it exists
-            if (baseMarketMakingFee && parseFloat(baseMarketMakingFee) > 0) {
-                addItem(baseAssetId, baseMarketMakingFee);
-            }
-
-            // Add quote market making fee if it exists
-            if (quoteMarketMakingFee && parseFloat(quoteMarketMakingFee) > 0) {
-                addItem(quoteAssetId, quoteMarketMakingFee);
-            }
-
-            const items: InvoiceItem[] = Array.from(itemsMap.entries()).map(
-                ([assetId, amount]) => ({
-                    assetId,
-                    amount: amount.toString(),
-                    extra: itemMemo.get(assetId) || memo,
-                    traceId: getUuid(),
-                }),
-            );
-
-            const invoiceMin = createMixinInvoice($botId, items);
-            if (invoiceMin) {
-                const url = getPaymentUrl(invoiceMin);
-                window.open(url);
+            if (paymentResult.paymentUrl) {
+                window.open(paymentResult.paymentUrl);
             }
 
             if (isPageActive) {
                 isPaying = true;
             }
-            paymentResults.set(intent.orderId, { state: "pending" });
-            startPaymentTimeout(intent.orderId);
-            schedulePaymentPoll(intent.orderId, Date.now());
+            paymentPoller.start(paymentResult.orderId);
         } catch (e) {
             console.error("Error in confirmPayment:", e);
             isPaying = false;
@@ -378,12 +241,7 @@
 
     onDestroy(() => {
         isPageActive = false;
-        for (const orderId of Array.from(paymentPollers.keys())) {
-            stopPaymentPolling(orderId);
-        }
-        for (const orderId of Array.from(paymentTimeouts.keys())) {
-            stopPaymentTimeout(orderId);
-        }
+        paymentPoller.stopAll();
     });
 
     const confirmSelection = () => {
