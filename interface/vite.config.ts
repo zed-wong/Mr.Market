@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite';
+import { createLogger, defineConfig, type Plugin } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
@@ -20,6 +20,28 @@ browserOnlyPolyfills.apply = (config) => {
 };
 
 export default defineConfig({
+  customLogger: (() => {
+    const logger = createLogger();
+    const originalWarn = logger.warn;
+
+    logger.warn = (message, options) => {
+      if (typeof message === "string") {
+        const normalized = message.toLowerCase();
+        const isMissingExports = normalized.includes(
+          "missing exports condition for svelte",
+        );
+        const mentionsCarousel = normalized.includes("svelte-carousel");
+
+        if (isMissingExports && mentionsCarousel) {
+          return;
+        }
+      }
+
+      originalWarn(message, options);
+    };
+
+    return logger;
+  })(),
   plugins: [sveltekit(), browserOnlyPolyfills],
   server: {
     allowedHosts: [''],
