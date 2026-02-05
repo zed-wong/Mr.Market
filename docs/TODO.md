@@ -1,4 +1,7 @@
-## Mr.Market
+# Mr.Market
+
+## Backend
+
 ### Validation of create market making process
 1. user can open invoice payment page in confirm payment step
 2. invoice payment can be handled correctly by backend
@@ -8,8 +11,12 @@
 6. after join campaign, or no campain to join, the market making handler can start mm right away
 7. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
 
-### Track created market making order
-1. Implement a comprehensive order tracking & market making execution system, including order status updates, execution logs, and error handling. So that users can monitor the status of their market making orders.
+### Market making execution system
+1. market making execution system, including order status updates, place/cancel order logs, error handling. reflect on user's market making orders details.
+2. comprehensive order tracking, including volume created, profit made, placed order count, filled order amount, success/failure/cancel count.
+3. campaign reward trading, calculate reward based on performance.
+
+## Interface
 
 ### Connect payment state to confirm payment page
 - [x] 1. after user clicked pay button in create-new market making page, should start loading and fetch payment status from backend
@@ -26,23 +33,27 @@
 ### Admin exchanges management
 1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
 
+
 ### E2e Test
 - [x] 1. Create market making UI
 - [x] 2. Admin add trading pairs
 - [x] 3. Admin add exchanges
-- [] 4.
 
+# Hufi 
 
-## Hufi 
-
+## UI
 ### Campaigns
-1. Mr.Market users can join hufi campaigns under /market-making/hufi
-2. Mr.Market users can create campaigns under /market-making/hufi
+- [-] 0. Mr.Market users can see all campaigns, and specific campaign details under /market-making/hufi
+- [] 1. Mr.Market users should see volume created by Hufi campaigns
+- [] 2. Mr.Market users can create campaigns with mixin wallet under /market-making/hufi
+- [] 3. Mr.Market users can join hufi campaigns by creating market making orders with mixin wallet under /market-making/hufi
+- [] 4. Mr.Market users can see joined hufi campaigns (via market making orders) under /market-making/hufi
+- [] 5. Mr.Market users can see their created campaigns with mixin wallet under /market-making/hufi
 
-### Join Hufi campaign directly
-1. Create page for users to configure their exchange API keys to join hufi campaigns directly
-2. User should be able to add/select exchange, enter API keys, and join campaign in one flow
-3. Page should be accessible from campaign detail page via "Join Directly" button
+- [] 6. Mr.Market users can create campaigns with evm wallets (including mixin evm wallet) under /market-making/hufi
+- [] 7. Mr.Market users can join hufi campaigns by creating market making orders with evm wallets under /market-making/hufi
+- [] 8. Mr.Market users can see joined hufi campaigns with evm wallets under /market-making/hufi
+- [] 9. Mr.Market users can see their created campaigns with evm wallets under /market-making/hufi
 
-### Hufi Controller
-1. Should add an endpoint to cache data from hufi recording oracle api, to return to the frontend, frontend use data from this api, and fallback to recording oracle api when this cache endpoint is not available
+- [] 10. HuFi Learn more page should introduce each types of campaigns
+- [] 11. HuFi campaigns page should have a filter button put on top of the page, allowing user open dialog to filter campaigns (by campaign type, create/end date, DESC or ASC, reward amount)

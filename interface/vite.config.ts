@@ -8,6 +8,7 @@ const browserOnlyPolyfills = nodePolyfills({
     global: true,
     process: true,
   },
+  exclude: ['path'],
 }) as Plugin;
 
 browserOnlyPolyfills.apply = (config) => {
