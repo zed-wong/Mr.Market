@@ -27,10 +27,14 @@ jobs:
         bun-version: latest
 
     - name: Install dependencies
-      run: make install
+      run: |
+        (cd interface && bun install)
+        (cd server && bun install)
 
     - name: Lint interface
-      run: make lint-interface
+      run: bun run lint
+      working-directory: ./interface
 
     - name: Lint server
-      run: make lint-server
+      run: bun run lint
+      working-directory: ./server
