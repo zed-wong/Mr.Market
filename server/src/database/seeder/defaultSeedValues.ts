@@ -135,9 +135,13 @@ export const defaultMarketMakingPairs: GrowdataMarketMakingPair[] = [
     base_asset_id: 'c6d0c728-2624-429b-8e0d-d9d19b6592fa',
     base_icon_url:
       'https://images.mixin.one/HvYGJsV5TGeZ-X9Ek3FEQohQZ3fE9LBEBGcOcn4c4BNHovP4fW4YB97Dg5LcXoQ1hUjMEgjbl1DPlKg1TW7kK6XP=s128',
+    base_chain_id: '',
+    base_chain_icon_url: '',
     quote_asset_id: '4d8c508b-91c5-375b-92b0-ee702ed2dac5',
     quote_icon_url:
       'https://images.mixin.one/ndNBEpObYs7450U08oAOMnSEPzN66SL8Mh-f2pPWBDeWaKbXTPUIdrZph7yj8Z93Rl8uZ16m7Qjz-E-9JFKSsJ-F=s128',
+    quote_chain_id: '',
+    quote_chain_icon_url: '',
     base_price: '',
     target_price: '',
     custom_fee_rate: '',
@@ -152,9 +156,13 @@ export const defaultMarketMakingPairs: GrowdataMarketMakingPair[] = [
     base_asset_id: '43d61dcd-e413-450d-80b8-101d5e903357',
     base_icon_url:
       'https://images.mixin.one/zVDjOxNTQvVsA8h2B4ZVxuHoCF3DJszufYKWpd9duXUSbSapoZadC7_13cnWBqg0EmwmRcKGbJaUpA8wFfpgZA=s128',
+    base_chain_id: '',
+    base_chain_icon_url: '',
     quote_asset_id: '4d8c508b-91c5-375b-92b0-ee702ed2dac5',
     quote_icon_url:
       'https://images.mixin.one/ndNBEpObYs7450U08oAOMnSEPzN66SL8Mh-f2pPWBDeWaKbXTPUIdrZph7yj8Z93Rl8uZ16m7Qjz-E-9JFKSsJ-F=s128',
+    quote_chain_id: '',
+    quote_chain_icon_url: '',
     base_price: '',
     target_price: '',
     custom_fee_rate: '',
@@ -169,9 +177,13 @@ export const defaultMarketMakingPairs: GrowdataMarketMakingPair[] = [
     base_asset_id: '30e340a7-3284-3f04-8594-fbdd8f2da79f',
     base_icon_url:
       'https://images.mixin.one/rXVPsR7G8pZsAuWB2-UUDd1q8Ok4amyZwkBaRJt9qFDHruTnYKR0tffYoDwzz4-nHwnsKRyy26wRJaVXc5_kOj6eP3JKlgJYVCGMJg=s128',
+    base_chain_id: '',
+    base_chain_icon_url: '',
     quote_asset_id: '4d8c508b-91c5-375b-92b0-ee702ed2dac5',
     quote_icon_url:
       'https://images.mixin.one/ndNBEpObYs7450U08oAOMnSEPzN66SL8Mh-f2pPWBDeWaKbXTPUIdrZph7yj8Z93Rl8uZ16m7Qjz-E-9JFKSsJ-F=s128',
+    quote_chain_id: '',
+    quote_chain_icon_url: '',
     base_price: '',
     target_price: '',
     custom_fee_rate: '',
@@ -186,9 +198,13 @@ export const defaultMarketMakingPairs: GrowdataMarketMakingPair[] = [
     base_asset_id: 'c94ac88f-4671-3976-b60a-09064f1811e8',
     base_icon_url:
       'https://images.mixin.one/UasWtBZO0TZyLTLCFQjvE_UYekjC7eHCuT_9_52ZpzmCC-X-NPioVegng7Hfx0XmIUavZgz5UL-HIgPCBECc-Ws=s128',
+    base_chain_id: '',
+    base_chain_icon_url: '',
     quote_asset_id: '4d8c508b-91c5-375b-92b0-ee702ed2dac5',
     quote_icon_url:
       'https://images.mixin.one/ndNBEpObYs7450U08oAOMnSEPzN66SL8Mh-f2pPWBDeWaKbXTPUIdrZph7yj8Z93Rl8uZ16m7Qjz-E-9JFKSsJ-F=s128',
+    quote_chain_id: '',
+    quote_chain_icon_url: '',
     base_price: '',
     target_price: '',
     custom_fee_rate: '',
