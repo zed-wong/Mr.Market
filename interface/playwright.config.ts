@@ -52,5 +52,11 @@ export default defineConfig({
       reuseExistingServer: true,
       ignoreHTTPSErrors: true,
     },
+    {
+      command: 'cd ../server && bun run start:dev',
+      url: 'http://127.0.0.1:3000',
+      reuseExistingServer: true,
+      ignoreHTTPSErrors: true,
+    },
   ],
 });

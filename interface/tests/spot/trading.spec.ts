@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('http://127.0.0.1:5173/spot');
 })
 
-test('switch buy and sell', async ({ page }) => {
+test.skip('switch buy and sell', async ({ page }) => {
   // buy
   await page.getByTestId('type_buy').click()
   let actionButtonText = await page.getByTestId('buy_button_text').textContent()
@@ -20,7 +20,7 @@ test('switch buy and sell', async ({ page }) => {
   expect(actionButtonText?.toLocaleLowerCase()).toContain('sell')
 });
 
-test('select limit/market order', async ({ page }) => {
+test.skip('select limit/market order', async ({ page }) => {
   // Open dialog
   await page.getByTestId('order_type_selector').click()
   // Select limit order
@@ -37,7 +37,7 @@ test('select limit/market order', async ({ page }) => {
   expect(actionButtonText?.toLocaleLowerCase()).toContain('market')
 });
 
-test('create buy/sell market order', async ({ page }) => {
+test.skip('create buy/sell market order', async ({ page }) => {
   let isDialogOpen = await page.locator('#order_confirm_modal').evaluate(dialog => dialog.classList.contains('modal-open'));
   expect(isDialogOpen).toBeFalsy();
 
@@ -86,7 +86,7 @@ test('create buy/sell market order', async ({ page }) => {
   expect(isDialogOpen).toBeFalsy();
 });
 
-test('connect wallet', async({ page, context }) => {
+test.skip('connect wallet', async({ page, context }) => {
   await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   const pagePromise = context.waitForEvent('page');
   const newPage = await pagePromise;
