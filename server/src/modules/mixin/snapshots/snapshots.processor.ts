@@ -47,7 +47,7 @@ export class SnapshotsProcessor implements OnModuleInit {
     }, this.CLEANUP_INTERVAL);
   }
 
-  @Cron('*/3 * * * * *') // 3 seconds
+  @Cron('*/5 * * * * *') // 5 seconds
   async pollSnapshotsCron() {
     if (!this.snapshotsService.isPollingEnabled()) {
       return;
@@ -63,17 +63,6 @@ export class SnapshotsProcessor implements OnModuleInit {
     try {
       const { snapshots, newSnapshots, newestTimestamp } =
         await this.snapshotsService.fetchSnapshots();
-      this.logger.debug(
-        `Fetched ${snapshots?.length || 0} snapshots from Mixin`,
-      );
-
-      if (!newSnapshots.length) {
-        this.logger.debug(
-          'No new snapshots to process (all filtered by cursor)',
-        );
-        return;
-      }
-
       this.logger.log(
         `Found ${newSnapshots.length} new snapshots (${
           snapshots.length - newSnapshots.length
@@ -89,10 +78,6 @@ export class SnapshotsProcessor implements OnModuleInit {
           removeOnComplete: true,
         });
       }
-
-      this.logger.log(
-        `Successfully queued ${newSnapshots.length} snapshots, cursor updated to ${newestTimestamp}`,
-      );
     } catch (error) {
       this.logger.error(
         `Error polling snapshots: ${error.message}`,

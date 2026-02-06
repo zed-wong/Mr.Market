@@ -56,7 +56,9 @@ export class ExchangeService {
   private async loadAPIKeys() {
     const apiKeys = await this.exchangeRepository.readAllAPIKeys();
     if (!apiKeys?.length) {
-      this.logger.warn('No API Keys loaded');
+      this.logger.warn(
+        '[VIEW ONLY MODE] No API Keys loaded, no execution would be done on exchange. Configure exchange API keys in /manage page',
+      );
       return;
     }
     for (const key of apiKeys) {
