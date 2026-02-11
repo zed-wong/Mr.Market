@@ -21,7 +21,7 @@ import { UserModule } from '../mixin/user/user.module';
       }),
     }),
   ],
-  providers: [AuthService, JwtStrategy, ConfigService],
+  providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
   exports: [AuthService],
 })

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { WithdrawalService } from './withdrawal.service';
 import { Withdrawal } from 'src/common/entities/withdrawal.entity';
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';

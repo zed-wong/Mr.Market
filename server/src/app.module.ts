@@ -67,6 +67,22 @@ import { Withdrawal } from './common/entities/withdrawal.entity';
 import { Campaign } from './common/entities/campaign.entity';
 import { CampaignParticipation } from './common/entities/campaign-participation.entity';
 import { LocalCampaignModule } from './modules/market-making/local-campaign/local-campaign.module';
+import { TickModule } from './modules/market-making/tick/tick.module';
+import { LedgerModule } from './modules/market-making/ledger/ledger.module';
+import { LedgerEntry } from './common/entities/ledger-entry.entity';
+import { BalanceReadModel } from './common/entities/balance-read-model.entity';
+import { OutboxEvent } from './common/entities/outbox-event.entity';
+import { ConsumerReceipt } from './common/entities/consumer-receipt.entity';
+import { DurabilityModule } from './modules/market-making/durability/durability.module';
+import { TrackersModule } from './modules/market-making/trackers/trackers.module';
+import { ReconciliationModule } from './modules/market-making/reconciliation/reconciliation.module';
+import { RewardsModule } from './modules/market-making/rewards/rewards.module';
+import { RewardLedger } from './common/entities/reward-ledger.entity';
+import { RewardAllocation } from './common/entities/reward-allocation.entity';
+import { OrchestrationModule } from './modules/market-making/orchestration/orchestration.module';
+import { ShareLedgerEntry } from './common/entities/share-ledger-entry.entity';
+import { HufiScoreSnapshot } from './common/entities/hufi-score-snapshot.entity';
+import { StrategyOrderIntentEntity } from './common/entities/strategy-order-intent.entity';
 
 dotenv.config();
 
@@ -80,6 +96,7 @@ dotenv.config();
       },
     ]),
     ConfigModule.forRoot({
+      isGlobal: true,
       load: [configuration],
     }),
     TypeOrmModule.forRoot({
@@ -113,6 +130,15 @@ dotenv.config();
         Campaign,
         CampaignParticipation,
         MarketMakingOrderIntent,
+        LedgerEntry,
+        BalanceReadModel,
+        OutboxEvent,
+        ConsumerReceipt,
+        RewardLedger,
+        RewardAllocation,
+        ShareLedgerEntry,
+        HufiScoreSnapshot,
+        StrategyOrderIntentEntity,
       ],
       synchronize: false,
       migrationsRun: true,
@@ -139,6 +165,13 @@ dotenv.config();
     MetricsModule,
     UserOrdersModule,
     LocalCampaignModule,
+    TickModule,
+    LedgerModule,
+    DurabilityModule,
+    TrackersModule,
+    ReconciliationModule,
+    RewardsModule,
+    OrchestrationModule,
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({

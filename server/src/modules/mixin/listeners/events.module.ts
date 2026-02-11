@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ExchangeModule } from 'src/modules/mixin/exchange/exchange.module';
 import { SnapshotsModule } from 'src/modules/mixin/snapshots/snapshots.module';
 import { CustomConfigModule } from 'src/modules/infrastructure/custom-config/custom-config.module';
@@ -16,7 +15,5 @@ import { LoggerModule } from 'src/modules/infrastructure/logger/logger.module';
     GrowdataModule,
     LoggerModule,
   ],
-  providers: [ConfigService],
-  exports: [ConfigService],
 })
 export class EventListenersModule { }

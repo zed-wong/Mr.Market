@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MixinUser } from 'src/common/entities/mixin-user.entity';
 import { UserService } from 'src/modules/mixin/user/user.service';
@@ -10,7 +9,7 @@ import { MixinClientModule } from '../client/mixin-client.module';
 
 @Module({
   imports: [TypeOrmModule.forFeature([MixinUser]), MixinClientModule],
-  providers: [UserService, ConfigService, UserRepository],
+  providers: [UserService, UserRepository],
   exports: [UserService, UserRepository],
   controllers: [UserController],
 })

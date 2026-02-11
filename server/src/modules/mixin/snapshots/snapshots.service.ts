@@ -16,7 +16,7 @@ import {
   MemoVersion,
   TradingTypeKey,
 } from 'src/common/constants/memo';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { InjectQueue } from '@nestjs/bull';
 import { MixinClientService } from '../client/mixin-client.service';
 import { TransactionService } from '../transaction/transaction.service';

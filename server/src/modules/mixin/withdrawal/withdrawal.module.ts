@@ -1,6 +1,6 @@
 import { BullModule } from '@nestjs/bull';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bull';
 import { Module, OnApplicationBootstrap } from '@nestjs/common';
 import { Withdrawal } from 'src/common/entities/withdrawal.entity';
@@ -9,8 +9,9 @@ import { WithdrawalProcessor } from './withdrawal.processor';
 import { WithdrawalConfirmationWorker } from './withdrawal-confirmation.worker';
 import { MixinClientModule } from '../client/mixin-client.module';
 import { WalletModule } from '../wallet/wallet.module';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { LedgerModule } from 'src/modules/market-making/ledger/ledger.module';
 
 @Module({
     imports: [
@@ -25,9 +26,10 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
         ),
         MixinClientModule,
         WalletModule,
+        LedgerModule,
+        ConfigModule,
     ],
     providers: [
-        ConfigService,
         WithdrawalService,
         WithdrawalProcessor,
         WithdrawalConfirmationWorker,

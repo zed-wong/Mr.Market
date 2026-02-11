@@ -5,7 +5,7 @@ import { Withdrawal } from 'src/common/entities/withdrawal.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { SafeSnapshot, SequencerTransactionRequest } from '@mixin.dev/mixin-node-sdk';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { MixinClientService } from '../client/mixin-client.service';
 import { randomUUID } from 'crypto';
 import {

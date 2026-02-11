@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MixinMessage } from 'src/common/entities/mixin-message.entity';
 import { MessageService } from 'src/modules/mixin/message/message.service';
@@ -17,6 +16,6 @@ import { MixinClientModule } from '../client/mixin-client.module';
     MixinClientModule,
   ],
   controllers: [MessageController],
-  providers: [MessageService, ConfigService, UserService, MessageRepository],
+  providers: [MessageService, UserService, MessageRepository],
 })
 export class MessageModule {}

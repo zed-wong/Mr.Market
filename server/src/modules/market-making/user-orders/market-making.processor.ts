@@ -3,7 +3,6 @@ import { Job } from 'bull';
 import { UserOrdersService } from './user-orders.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { StrategyService } from '../strategy/strategy.service';
-import { createStrategyKey } from 'src/common/helpers/strategyKey';
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
 import { MarketMakingCreateMemoDetails } from 'src/common/types/memo/memo';
 import BigNumber from 'bignumber.js';
@@ -23,6 +22,7 @@ import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
 import { NetworkMappingService } from '../network-mapping/network-mapping.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { getRFC3339Timestamp } from '../../../common/helpers/utils';
+import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 
 interface ProcessSnapshotJobData {
   snapshotId: string;
@@ -41,6 +41,16 @@ interface WithdrawJobData {
   orderId: string;
   marketMakingPairId: string;
 }
+
+type RefundTransferCommand = {
+  userId: string;
+  assetId: string;
+  amount: string;
+  debitIdempotencyKey: string;
+  refType: string;
+  refId: string;
+  transfer: () => Promise<unknown>;
+};
 
 @Processor('market-making')
 export class MarketMakingOrderProcessor {
@@ -66,6 +76,7 @@ export class MarketMakingOrderProcessor {
     private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
+    private readonly balanceLedgerService: BalanceLedgerService,
   ) {}
 
   private readonly WITHDRAWAL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -73,11 +84,15 @@ export class MarketMakingOrderProcessor {
 
   private async refundUser(snapshot: SafeSnapshot, reason: string) {
     this.logger.warn(`Refunding snapshot ${snapshot.snapshot_id}: ${reason}`);
-    try {
-      await this.transactionService.refund(snapshot);
-    } catch (error) {
-      this.logger.error(`Failed to refund: ${error.message}`);
-    }
+    await this.executeRefundTransfer({
+      userId: snapshot.opponent_id,
+      assetId: snapshot.asset_id,
+      amount: new BigNumber(snapshot.amount).toFixed(),
+      debitIdempotencyKey: `snapshot-refund:${snapshot.snapshot_id}`,
+      refType: 'market_making_snapshot_refund',
+      refId: snapshot.snapshot_id,
+      transfer: async () => await this.transactionService.refund(snapshot),
+    });
   }
 
   private async refundMarketMakingPendingOrder(
@@ -117,26 +132,83 @@ export class MarketMakingOrderProcessor {
     this.logger.warn(`Refunding order ${orderId}: ${reason}`);
 
     for (const [assetId, amount] of refundMap.entries()) {
-      try {
-        this.logger.log(
-          `Refunding ${amount.toString()} of asset ${assetId} to user ${refundUserId}`,
-        );
-        const requests = await this.transactionService.transfer(
-          refundUserId,
-          assetId,
-          amount.toString(),
-          `Refund:${orderId}:${assetId}`,
-        );
-        if (!requests || requests.length === 0) {
-          this.logger.error(
-            `Refund transaction failed for order ${orderId}, asset ${assetId}`,
-          );
-        }
-      } catch (error) {
-        this.logger.error(
-          `Refund failed for order ${orderId}, asset ${assetId}: ${error.message}`,
-        );
+      this.logger.log(
+        `Refunding ${amount.toString()} of asset ${assetId} to user ${refundUserId}`,
+      );
+      await this.executeRefundTransfer({
+        userId: refundUserId,
+        assetId,
+        amount: amount.toFixed(),
+        debitIdempotencyKey: `mm-refund:${orderId}:${assetId}`,
+        refType: 'market_making_order_refund',
+        refId: orderId,
+        transfer: async () =>
+          await this.transactionService.transfer(
+            refundUserId,
+            assetId,
+            amount.toString(),
+            `Refund:${orderId}:${assetId}`,
+          ),
+      });
+    }
+  }
+
+  private async executeRefundTransfer(command: RefundTransferCommand): Promise<void> {
+    let debitApplied = true;
+
+    try {
+      const debitResult = await this.balanceLedgerService.debitWithdrawal({
+        userId: command.userId,
+        assetId: command.assetId,
+        amount: command.amount,
+        idempotencyKey: command.debitIdempotencyKey,
+        refType: command.refType,
+        refId: command.refId,
+      });
+      if (debitResult && debitResult.applied === false) {
+        debitApplied = false;
       }
+    } catch (error) {
+      this.logger.error(
+        `Refund debit failed for ${command.refType}:${command.refId}:${command.assetId}: ${error.message}`,
+      );
+      return;
+    }
+
+    if (!debitApplied) {
+      this.logger.log(
+        `Skipping transfer for duplicate refund debit key ${command.debitIdempotencyKey}`,
+      );
+      return;
+    }
+
+    try {
+      const requests = await command.transfer();
+      if (!Array.isArray(requests) || requests.length === 0) {
+        throw new Error('refund transfer returned no receipt');
+      }
+    } catch (error) {
+      this.logger.error(
+        `Refund transfer failed for ${command.refType}:${command.refId}:${command.assetId}: ${error.message}`,
+      );
+      await this.compensateRefundDebit(command);
+    }
+  }
+
+  private async compensateRefundDebit(command: RefundTransferCommand): Promise<void> {
+    try {
+      await this.balanceLedgerService.creditDeposit({
+        userId: command.userId,
+        assetId: command.assetId,
+        amount: command.amount,
+        idempotencyKey: `${command.debitIdempotencyKey}:compensation`,
+        refType: `${command.refType}_compensation`,
+        refId: command.refId,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Refund compensation credit failed for ${command.refType}:${command.refId}:${command.assetId}: ${error.message}`,
+      );
     }
   }
 
@@ -206,6 +278,15 @@ export class MarketMakingOrderProcessor {
       const receivedAssetId = snapshot.asset_id;
       const receivedAmount = snapshot.amount;
       const userId = snapshot.opponent_id;
+
+      await this.balanceLedgerService.creditDeposit({
+        userId,
+        assetId: receivedAssetId,
+        amount: receivedAmount,
+        idempotencyKey: `snapshot-credit:${snapshotId}`,
+        refType: 'market_making_snapshot',
+        refId: snapshotId,
+      });
 
       // Step 1.4: Find or create payment state
       let paymentState = await this.paymentStateRepository.findOne({
@@ -820,10 +901,6 @@ export class MarketMakingOrderProcessor {
     }
   }
 
-  // ============================================================================
-  // Existing job handlers (start_mm, stop_mm, execute_mm_cycle)
-  // ============================================================================
-
   @Process('start_mm')
   async handleStartMM(job: Job<{ userId: string; orderId: string }>) {
     const { userId, orderId } = job.data;
@@ -837,12 +914,6 @@ export class MarketMakingOrderProcessor {
       return;
     }
 
-    const key = createStrategyKey({
-      user_id: userId,
-      client_id: orderId,
-      type: 'pureMarketMaking',
-    });
-
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,
       'running',
@@ -851,23 +922,18 @@ export class MarketMakingOrderProcessor {
     const toNumber = (value?: string | number | null, fallback = 0) =>
       new BigNumber(value ?? fallback).toNumber();
 
-    // Add first execution cycle job
-    await (job.queue as any).add('execute_mm_cycle', {
-      userId,
-      orderId,
-      strategyParams: {
-        ...order,
-        pair: order.pair.replaceAll('-ERC20', ''),
-        clientId: orderId,
-        bidSpread: toNumber(order.bidSpread),
-        askSpread: toNumber(order.askSpread),
-        orderAmount: toNumber(order.orderAmount),
-        orderRefreshTime: toNumber(order.orderRefreshTime),
-        numberOfLayers: toNumber(order.numberOfLayers),
-        amountChangePerLayer: toNumber(order.amountChangePerLayer),
-        ceilingPrice: toNumber(order.ceilingPrice),
-        floorPrice: toNumber(order.floorPrice),
-      },
+    await this.strategyService.executePureMarketMakingStrategy({
+      ...order,
+      pair: order.pair.replaceAll('-ERC20', ''),
+      clientId: orderId,
+      bidSpread: toNumber(order.bidSpread),
+      askSpread: toNumber(order.askSpread),
+      orderAmount: toNumber(order.orderAmount),
+      orderRefreshTime: toNumber(order.orderRefreshTime),
+      numberOfLayers: toNumber(order.numberOfLayers),
+      amountChangePerLayer: toNumber(order.amountChangePerLayer),
+      ceilingPrice: toNumber(order.ceilingPrice),
+      floorPrice: toNumber(order.floorPrice),
     });
   }
 
@@ -885,38 +951,6 @@ export class MarketMakingOrderProcessor {
       orderId,
       'stopped',
     );
-  }
-
-  @Process('execute_mm_cycle')
-  async handleExecuteMMCycle(
-    job: Job<{ userId: string; orderId: string; strategyParams: any }>,
-  ) {
-    const { userId, orderId, strategyParams } = job.data;
-
-    // 1. Check if order is still running
-    const order = await this.userOrdersService.findMarketMakingByOrderId(
-      orderId,
-    );
-    if (!order || order.state !== 'running') {
-      this.logger.log(
-        `MM Order ${orderId} is not running (state: ${order?.state}), stopping cycle.`,
-      );
-      return;
-    }
-
-    // 2. Execute one cycle of MM
-    try {
-      await this.strategyService.executeMMCycle(strategyParams);
-    } catch (error) {
-      this.logger.error(
-        `Error executing MM cycle for ${orderId}: ${error.message}`,
-      );
-    }
-
-    // 3. Re-queue
-    await (job.queue as any).add('execute_mm_cycle', job.data, {
-      delay: strategyParams.orderRefreshTime || 10000, // Default 10s
-    });
   }
 
   /**

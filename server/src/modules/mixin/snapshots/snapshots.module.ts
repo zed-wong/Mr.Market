@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { SnapshotsService } from './snapshots.service';
 import { BullModule } from '@nestjs/bull';
 import { SnapshotsProcessor } from './snapshots.processor';
@@ -20,7 +19,7 @@ import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order
     MixinClientModule,
     TransactionModule,
   ],
-  providers: [ConfigService, SnapshotsService, SnapshotsProcessor],
+  providers: [SnapshotsService, SnapshotsProcessor],
   exports: [SnapshotsService, BullModule],
 })
 export class SnapshotsModule { }
