@@ -24,6 +24,7 @@ import { ExchangeModule } from 'src/modules/mixin/exchange/exchange.module';
 import { NetworkMappingModule } from '../network-mapping/network-mapping.module';
 import { ConfigModule } from '@nestjs/config';
 import { CampaignModule } from 'src/modules/campaign/campaign.module';
+import { LedgerModule } from '../ledger/ledger.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { CampaignModule } from 'src/modules/campaign/campaign.module';
     NetworkMappingModule,
     CampaignModule,
     MixinClientModule,
+    LedgerModule,
   ],
   controllers: [UserOrdersController],
   providers: [UserOrdersService, MarketMakingOrderProcessor],

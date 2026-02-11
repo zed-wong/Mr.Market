@@ -3,7 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -13,7 +13,7 @@ import {
 } from 'src/common/entities/user-orders.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
-import {
+import type {
   MarketMakingStates,
   SimplyGrowStates,
 } from 'src/common/types/orders/states';

@@ -19,7 +19,7 @@ export class MetricsService {
         "exchange",
         "userId",
         "clientId",
-        DATE_TRUNC('day', "executedAt") AS date,
+        DATE("executedAt") AS date,
         COUNT(*) AS orders,
         SUM("amount" * "price") AS volume
       FROM market_making_history
@@ -33,7 +33,7 @@ export class MetricsService {
         "exchange",
         "userId",
         "clientId",
-        DATE_TRUNC('day', "executedAt") AS date,
+        DATE("executedAt") AS date,
         SUM("amount" * "price") AS volume
       FROM market_making_history
       GROUP BY "exchange", "userId", "clientId", date
