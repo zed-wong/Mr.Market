@@ -3,7 +3,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { SpotdataService } from './spot-data.service';
 import { SpotdataRepository } from './spot-data.repository';
 import { MarketdataService } from '../market-data/market-data.service';
-import { Cache } from 'cache-manager';
+import type { Cache } from 'cache-manager';
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
 import { Tickers } from 'ccxt';
 import { SpotdataTradingPair } from 'src/common/entities/spot-data.entity';

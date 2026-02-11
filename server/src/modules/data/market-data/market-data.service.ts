@@ -1,5 +1,5 @@
 import * as ccxt from 'ccxt';
-import { Cache } from 'cache-manager';
+import type { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Injectable, Inject } from '@nestjs/common';
 import { createCompositeKey } from 'src/common/helpers/subscriptionKey';

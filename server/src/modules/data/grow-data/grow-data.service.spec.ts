@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { GrowdataService } from './grow-data.service';
 import { GrowdataRepository } from './grow-data.repository';
-import { Cache } from 'cache-manager';
+import type { Cache } from 'cache-manager';
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
 import { MixinClientService } from '../../mixin/client/mixin-client.service';
 

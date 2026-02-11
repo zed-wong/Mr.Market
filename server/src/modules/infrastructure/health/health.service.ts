@@ -4,7 +4,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import * as ccxt from 'ccxt';
-import { Queue } from 'bull';
+import type { Queue } from 'bull';
 import { InjectQueue } from '@nestjs/bull';
 import { CustomLogger } from '../logger/logger.service';
 import { getRFC3339Timestamp } from '../../../common/helpers/utils';

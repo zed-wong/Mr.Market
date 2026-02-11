@@ -1,5 +1,5 @@
 import { Injectable, Inject, BadRequestException } from '@nestjs/common';
-import { Cache } from 'cache-manager';
+import type { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { SpotdataTradingPair } from 'src/common/entities/spot-data.entity';
 import { SpotdataRepository } from 'src/modules/data/spot-data/spot-data.repository';
