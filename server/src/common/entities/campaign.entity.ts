@@ -14,6 +14,12 @@ export class Campaign {
   @Column()
   name: string;
 
+  @Column({ nullable: true })
+  chainId: number;
+
+  @Column({ nullable: true })
+  address: string;
+
   @Column()
   pair: string;
 

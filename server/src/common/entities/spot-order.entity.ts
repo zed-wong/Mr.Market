@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column } from 'typeorm';
-import { SpotOrderType } from 'src/common/types/memo/memo';
-import { SpotOrderStatus } from 'src/common/types/orders/states';
+import type { SpotOrderType } from 'src/common/types/memo/memo';
+import type { SpotOrderStatus } from 'src/common/types/orders/states';
 
 @Entity()
 export class SpotOrder {
