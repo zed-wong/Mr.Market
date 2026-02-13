@@ -1,11 +1,12 @@
-import { Module } from '@nestjs/common';
-import { SnapshotsService } from './snapshots.service';
 import { BullModule } from '@nestjs/bull';
-import { SnapshotsProcessor } from './snapshots.processor';
-import { MixinClientModule } from '../client/mixin-client.module';
-import { TransactionModule } from '../transaction/transaction.module';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+
+import { MixinClientModule } from '../client/mixin-client.module';
+import { TransactionModule } from '../transaction/transaction.module';
+import { SnapshotsProcessor } from './snapshots.processor';
+import { SnapshotsService } from './snapshots.service';
 
 @Module({
   imports: [
@@ -22,4 +23,4 @@ import { MarketMakingOrderIntent } from 'src/common/entities/market-making/marke
   providers: [SnapshotsService, SnapshotsProcessor],
   exports: [SnapshotsService, BullModule],
 })
-export class SnapshotsModule { }
+export class SnapshotsModule {}

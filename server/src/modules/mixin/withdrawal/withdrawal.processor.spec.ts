@@ -21,9 +21,7 @@ describe('WithdrawalProcessor', () => {
       markAsFailed: jest.fn().mockResolvedValue(undefined),
       executeWithdrawal: overrides?.executeWithdrawalError
         ? jest.fn().mockRejectedValue(overrides.executeWithdrawalError)
-        : jest
-            .fn()
-            .mockResolvedValue([{ request_id: 'mixin-tx-1' }]),
+        : jest.fn().mockResolvedValue([{ request_id: 'mixin-tx-1' }]),
       updateWithdrawalStatus: jest.fn().mockResolvedValue(undefined),
       incrementRetryCount: jest.fn().mockResolvedValue(undefined),
     };
@@ -65,7 +63,9 @@ describe('WithdrawalProcessor', () => {
   it('debits ledger for successful withdrawal processing', async () => {
     const { processor, balanceLedgerService } = buildProcessor();
 
-    await processor.handleWithdrawal({ data: { withdrawalId: 'withdrawal-1' } } as any);
+    await processor.handleWithdrawal({
+      data: { withdrawalId: 'withdrawal-1' },
+    } as any);
 
     expect(balanceLedgerService.debitWithdrawal).toHaveBeenCalledWith({
       userId: 'user-1',
@@ -82,7 +82,9 @@ describe('WithdrawalProcessor', () => {
       hasEnoughBalance: false,
     });
 
-    await processor.handleWithdrawal({ data: { withdrawalId: 'withdrawal-1' } } as any);
+    await processor.handleWithdrawal({
+      data: { withdrawalId: 'withdrawal-1' },
+    } as any);
 
     expect(balanceLedgerService.debitWithdrawal).not.toHaveBeenCalled();
   });

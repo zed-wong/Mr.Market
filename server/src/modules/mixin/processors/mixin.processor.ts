@@ -1,13 +1,13 @@
 import { Process, Processor } from '@nestjs/bull';
 import { Job } from 'bull';
-import { validate } from 'uuid';
-import { STATE_TEXT_MAP } from 'src/common/types/orders/states';
 import { getRFC3339Timestamp, subtractFee } from 'src/common/helpers/utils';
+import { STATE_TEXT_MAP } from 'src/common/types/orders/states';
+import { CustomConfigService } from 'src/modules/infrastructure/custom-config/custom-config.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { MixinReleaseTokenEvent } from 'src/modules/mixin/events/spot.event';
 import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
-import { CustomConfigService } from 'src/modules/infrastructure/custom-config/custom-config.service';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { validate } from 'uuid';
 
 @Processor('mixin')
 export class MixinProcessor {
@@ -17,17 +17,19 @@ export class MixinProcessor {
     private transactionService: TransactionService,
     private exchangeService: ExchangeService,
     private configService: CustomConfigService,
-  ) { }
+  ) {}
 
   @Process('release_token')
   async handleReleaseToken(job: Job<MixinReleaseTokenEvent>) {
     const e = job.data;
+
     // Validate assetId and userId
     if (!validate(e.assetId) || !validate(e.userId)) {
       await this.exchangeService.updateSpotOrderState(
         e.orderId,
         STATE_TEXT_MAP['MIXIN_RELEASE_FAILED'],
       );
+
       return;
     }
 
@@ -55,6 +57,7 @@ export class MixinProcessor {
         e.orderId,
         STATE_TEXT_MAP['MIXIN_RELEASE_FAILED'],
       );
+
       return;
     }
 

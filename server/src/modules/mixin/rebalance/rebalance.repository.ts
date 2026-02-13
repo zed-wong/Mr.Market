@@ -5,5 +5,5 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 export class RebalanceRepository {
   private readonly logger = new CustomLogger(RebalanceRepository.name);
 
-  constructor() { }
+  constructor() {}
 }

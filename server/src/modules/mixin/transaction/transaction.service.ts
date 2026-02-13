@@ -1,24 +1,25 @@
-import { Injectable } from '@nestjs/common';
-import BigNumber from 'bignumber.js';
 import {
-  SafeSnapshot,
+  buildSafeTransaction,
   buildSafeTransactionRecipient,
+  encodeSafeTransaction,
   getTotalBalanceFromOutputs,
   getUnspentOutputsForRecipients,
-  buildSafeTransaction,
-  encodeSafeTransaction,
-  signSafeTransaction,
-  SequencerTransactionRequest,
   getUuid,
+  SafeSnapshot,
+  SequencerTransactionRequest,
+  signSafeTransaction,
 } from '@mixin.dev/mixin-node-sdk';
+import { Injectable } from '@nestjs/common';
+import BigNumber from 'bignumber.js';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
 import { MixinClientService } from '../client/mixin-client.service';
 
 @Injectable()
 export class TransactionService {
   private readonly logger = new CustomLogger(TransactionService.name);
 
-  constructor(private mixinClientService: MixinClientService) { }
+  constructor(private mixinClientService: MixinClientService) {}
 
   /**
    * Send a Mixin transaction to a specific opponent
@@ -30,6 +31,7 @@ export class TransactionService {
     memo: string,
   ): Promise<SequencerTransactionRequest[]> {
     const spendKey = this.mixinClientService.spendKey;
+
     if (!spendKey) {
       throw new Error('Missing spend_private_key in configuration');
     }
@@ -44,8 +46,10 @@ export class TransactionService {
 
     const balance = getTotalBalanceFromOutputs(outputs);
     const amountBN = BigNumber(amount);
+
     if (balance.isLessThan(amountBN)) {
       this.logger.error(`Insufficient fund`);
+
       return;
     }
 
@@ -53,6 +57,7 @@ export class TransactionService {
       outputs,
       recipients,
     );
+
     if (!change.isZero() && !change.isNegative()) {
       recipients.push(
         buildSafeTransactionRecipient(
@@ -84,19 +89,17 @@ export class TransactionService {
         },
       ]);
 
-    const signedRaw = signSafeTransaction(
-      tx,
-      verifiedTx[0].views,
-      spendKey,
-    );
+    const signedRaw = signSafeTransaction(tx, verifiedTx[0].views, spendKey);
 
-    const sendedTx =
-      await this.mixinClientService.client.utxo.sendTransactions([
+    const sendedTx = await this.mixinClientService.client.utxo.sendTransactions(
+      [
         {
           raw: signedRaw,
           request_id: requestId,
         },
-      ]);
+      ],
+    );
+
     return sendedTx;
   }
 
@@ -112,11 +115,15 @@ export class TransactionService {
         snapshot.opponent_id,
         snapshot.asset_id,
         snapshot.amount,
-        `Refund:${snapshot.snapshot_id}`
+        `Refund:${snapshot.snapshot_id}`,
       );
+
       this.logger.log(
-        `[Service] Refund successful for snapshot ${snapshot.snapshot_id}: ${JSON.stringify(result)}`,
+        `[Service] Refund successful for snapshot ${
+          snapshot.snapshot_id
+        }: ${JSON.stringify(result)}`,
       );
+
       return result;
     } catch (error) {
       this.logger.error(

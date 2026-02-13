@@ -1,10 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
-  MixinApi,
   Keystore,
   KeystoreClientReturnType,
+  MixinApi,
 } from '@mixin.dev/mixin-node-sdk';
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 @Injectable()
@@ -26,8 +26,10 @@ export class MixinClientService {
     const spend_private_key = this.configService.get<string>(
       'mixin.spend_private_key',
     );
+
     if (!app_id || !session_id || !server_public_key || !session_private_key) {
       this.logger.warn('Mixin bot configuration is missing');
+
       return;
     }
     this.keystore = {
