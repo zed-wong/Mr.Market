@@ -5,26 +5,28 @@ import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DataSource, Repository } from 'typeorm';
-import { CustomConfigEntity } from '../../common/entities/custom-config.entity';
+
+import { CustomConfigEntity } from '../../common/entities/admin/custom-config.entity';
 import {
+  GrowdataArbitragePair,
   GrowdataExchange,
   GrowdataMarketMakingPair,
-  GrowdataArbitragePair,
   GrowdataSimplyGrowToken,
-} from '../../common/entities/grow-data.entity';
+} from '../../common/entities/data/grow-data.entity';
+import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import {
+  defaultCustomConfig,
   defaultExchanges,
   defaultMarketMakingPairs,
   defaultSimplyGrowTokens,
   defaultSpotdataTradingPairs,
-  defaultCustomConfig,
 } from './defaultSeedValues';
-import { SpotdataTradingPair } from '../../common/entities/spot-data.entity';
 
 async function connectToDatabase() {
   dotenv.config();
   const dbPath = process.env.DATABASE_PATH || 'data/mr_market.db';
   const dbDir = path.dirname(dbPath);
+
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
@@ -45,6 +47,7 @@ async function connectToDatabase() {
   try {
     await dataSource.initialize();
     console.log('Connected to the database successfully!');
+
     return dataSource;
   } catch (error) {
     console.error('Error connecting to the database', error);
@@ -57,6 +60,7 @@ async function seedSpotdataTradingPair(
 ) {
   for (const pair of defaultSpotdataTradingPairs) {
     const exists = await repository.findOneBy({ id: pair.id });
+
     if (!exists) {
       await repository.save(pair);
     }
@@ -69,6 +73,7 @@ async function seedGrowdataExchange(repository: Repository<GrowdataExchange>) {
     const exists = await repository.findOneBy({
       exchange_id: exchange.exchange_id,
     });
+
     if (!exists) {
       await repository.save(exchange);
     }
@@ -81,6 +86,7 @@ async function seedGrowdataMarketMakingPair(
 ) {
   for (const pair of defaultMarketMakingPairs) {
     const exists = await repository.findOneBy({ id: pair.id });
+
     if (!exists) {
       await repository.save(pair);
     }
@@ -93,6 +99,7 @@ async function seedGrowdataSimplyGrowToken(
 ) {
   for (const token of defaultSimplyGrowTokens) {
     const exists = await repository.findOneBy({ asset_id: token.asset_id });
+
     if (!exists) {
       await repository.save(token);
     }
@@ -104,6 +111,7 @@ async function seedCustomConfig(repository: Repository<CustomConfigEntity>) {
   const exists = await repository.findOneBy({
     config_id: defaultCustomConfig.config_id,
   });
+
   if (!exists) {
     await repository.save(defaultCustomConfig);
   }
@@ -112,6 +120,7 @@ async function seedCustomConfig(repository: Repository<CustomConfigEntity>) {
 
 async function run() {
   const dataSource = await connectToDatabase();
+
   await seedSpotdataTradingPair(dataSource.getRepository(SpotdataTradingPair));
   await seedGrowdataExchange(dataSource.getRepository(GrowdataExchange));
   await seedGrowdataMarketMakingPair(

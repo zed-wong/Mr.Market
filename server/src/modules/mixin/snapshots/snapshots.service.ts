@@ -1,27 +1,27 @@
-import { ConfigService } from '@nestjs/config';
-import { Injectable } from '@nestjs/common';
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
-import BigNumber from 'bignumber.js';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { InjectQueue } from '@nestjs/bull';
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-
-import {
-  memoPreDecode,
-  decodeMarketMakingCreateMemo,
-  decodeSimplyGrowCreateMemo,
-} from 'src/common/helpers/mixin/memo';
+import BigNumber from 'bignumber.js';
+import type { Queue } from 'bull';
 import {
   MarketMakingMemoActionKey,
   MemoVersion,
   TradingTypeKey,
 } from 'src/common/constants/memo';
-import { Queue } from 'bull';
-import { InjectQueue } from '@nestjs/bull';
+import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import {
+  decodeMarketMakingCreateMemo,
+  decodeSimplyGrowCreateMemo,
+  memoPreDecode,
+} from 'src/common/helpers/mixin/memo';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Repository } from 'typeorm';
+
 import { MixinClientService } from '../client/mixin-client.service';
 import { TransactionService } from '../transaction/transaction.service';
-import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 
 @Injectable()
 export class SnapshotsService {
@@ -76,6 +76,7 @@ export class SnapshotsService {
       return { snapshots, newSnapshots, newestTimestamp };
     } catch (error) {
       this.logger.error(`Failed to fetch snapshots: ${error}`);
+
       return { snapshots: [], newSnapshots: [], newestTimestamp: '' };
     }
   }
@@ -84,9 +85,11 @@ export class SnapshotsService {
     try {
       const redis = (this.snapshotsQueue as any).client;
       const cursor = await redis.get('snapshots:cursor');
+
       return cursor || '';
     } catch (error) {
       this.logger.error(`Failed to get snapshot cursor: ${error}`);
+
       return '';
     }
   }
@@ -94,6 +97,7 @@ export class SnapshotsService {
   async updateSnapshotCursor(timestamp: string) {
     try {
       const redis = (this.snapshotsQueue as any).client;
+
       await redis.set('snapshots:cursor', timestamp);
     } catch (error) {
       this.logger.error(`Failed to update snapshot cursor: ${error}`);
@@ -103,6 +107,7 @@ export class SnapshotsService {
   async updateLastPoll() {
     try {
       const redis = (this.snapshotsQueue as any).client;
+
       await redis.set('snapshots:last_poll', Date.now().toString());
     } catch (error) {
       this.logger.error(`Failed to update last poll timestamp: ${error}`);
@@ -117,15 +122,18 @@ export class SnapshotsService {
       `[Service] Snapshot details: ${JSON.stringify(snapshot)}`,
     );
     const amountValue = BigNumber(snapshot.amount);
+
     if (!amountValue.isFinite() || amountValue.isLessThanOrEqualTo(0)) {
       return;
     }
     if (!snapshot.memo) {
       this.logger.warn('snapshot no memo, return');
+
       return;
     }
     if (snapshot.memo.length === 0) {
       this.logger.warn('snapshot.memo.length === 0, return');
+
       return;
     }
     try {
@@ -136,11 +144,13 @@ export class SnapshotsService {
       );
       const { payload, version, tradingTypeKey, action } =
         memoPreDecode(hexDecodedMemo);
+
       if (!payload) {
         this.logger.log(
           `Snapshot memo is invalid, refund: ${snapshot.snapshot_id}`,
         );
         await this.transactionService.refund(snapshot);
+
         return;
       }
 
@@ -149,6 +159,7 @@ export class SnapshotsService {
           `Snapshot memo version is not ${MemoVersion.Current}, refund: ${snapshot.snapshot_id}`,
         );
         await this.transactionService.refund(snapshot);
+
         return;
       }
 
@@ -158,6 +169,7 @@ export class SnapshotsService {
         case TradingTypeKey.MarketMaking:
           if (action === MarketMakingMemoActionKey.Create) {
             const mmDetails = decodeMarketMakingCreateMemo(payload);
+
             if (!mmDetails) {
               this.logger.warn(
                 'Failed to decode market making memo, refunding',
@@ -170,6 +182,7 @@ export class SnapshotsService {
                 where: { orderId: mmDetails.orderId },
               },
             );
+
             if (!intent) {
               this.logger.warn(
                 `No intent found for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
@@ -187,6 +200,7 @@ export class SnapshotsService {
             }
 
             const expiresAtMs = BigNumber(Date.parse(intent.expiresAt));
+
             if (!expiresAtMs.isFinite() || expiresAtMs.isLessThan(Date.now())) {
               intent.state = 'expired';
               intent.updatedAt = getRFC3339Timestamp();
@@ -235,6 +249,7 @@ export class SnapshotsService {
           break;
         case TradingTypeKey.SimplyGrow:
           const simplyGrowDetails = decodeSimplyGrowCreateMemo(payload);
+
           if (!simplyGrowDetails) {
             break;
           }

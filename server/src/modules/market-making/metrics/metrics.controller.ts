@@ -1,7 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { MetricsService } from './metrics.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
+import { MetricsService } from './metrics.service';
 
 @ApiTags('Trading Engine')
 @Controller('metrics')

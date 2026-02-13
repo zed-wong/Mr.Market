@@ -1,10 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { FeeService } from './fee.service';
-import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { ConfigService } from '@nestjs/config';
-import { MixinClientService } from '../../mixin/client/mixin-client.service';
-import { CustomConfigService } from '../../infrastructure/custom-config/custom-config.service';
+import { Test, TestingModule } from '@nestjs/testing';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
+
+import { CustomConfigService } from '../../infrastructure/custom-config/custom-config.service';
+import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
+import { MixinClientService } from '../../mixin/client/mixin-client.service';
+import { FeeService } from './fee.service';
 
 // Mock the Mixin SDK clients
 const mockClient = {
@@ -55,6 +56,7 @@ describe('FeeService', () => {
                 return 'mock_server_public_key';
               if (key === 'mixin.session_private_key')
                 return 'mock_session_private_key';
+
               return null;
             }),
           },
@@ -75,7 +77,8 @@ describe('FeeService', () => {
     }).compile();
 
     service = testingModule.get<FeeService>(FeeService);
-    exchangeInitService = testingModule.get<ExchangeInitService>(ExchangeInitService);
+    exchangeInitService =
+      testingModule.get<ExchangeInitService>(ExchangeInitService);
     configService = testingModule.get<ConfigService>(ConfigService);
   });
 
@@ -112,16 +115,19 @@ describe('FeeService', () => {
       mockClient.network.searchAssets.mockImplementation((query) => {
         if (query === 'BTC') return [mockBaseAsset];
         if (query === 'USDT') return [mockQuoteAsset];
+
         return [];
       });
       mockClient.safe.fetchAsset.mockImplementation((assetId) => {
         if (assetId === baseAssetId) return mockBaseAsset;
         if (assetId === quoteAssetId) return mockQuoteAsset;
+
         return undefined;
       });
       const repo = testingModule.get(GrowdataRepository) as {
         findMarketMakingPairByExchangeAndSymbol: jest.Mock;
       };
+
       repo.findMarketMakingPairByExchangeAndSymbol.mockResolvedValue(
         mockTradingPair,
       );
@@ -136,6 +142,7 @@ describe('FeeService', () => {
           return [{ amount: '0.0001', asset_id: baseAssetId }];
         if (assetId === quoteAssetId)
           return [{ amount: '5', asset_id: quoteAssetId }];
+
         return [];
       });
 
@@ -233,6 +240,7 @@ describe('FeeService', () => {
       mockClient.network.searchAssets.mockImplementation((query) => {
         if (query === 'LTC') return [mockLTC];
         if (query === 'DOGE') return [mockDoge];
+
         return [];
       });
 
@@ -255,6 +263,7 @@ describe('FeeService', () => {
       const repo = testingModule.get(GrowdataRepository) as {
         findMarketMakingPairByExchangeAndSymbol: jest.Mock;
       };
+
       repo.findMarketMakingPairByExchangeAndSymbol.mockResolvedValue({
         base_asset_id: ltcAssetId,
         quote_asset_id: dogeAssetId,
@@ -262,6 +271,7 @@ describe('FeeService', () => {
       mockClient.safe.fetchAsset.mockImplementation((assetId) => {
         if (assetId === ltcAssetId) return mockLTC;
         if (assetId === dogeAssetId) return mockDoge;
+
         return undefined;
       });
 

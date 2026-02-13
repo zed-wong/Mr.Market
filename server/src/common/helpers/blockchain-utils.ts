@@ -1,10 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
-import { ethers } from 'ethers';
 import axios from 'axios';
+import { ethers } from 'ethers';
 
 // Function to check if an RPC URL requires an API key
 const requiresApiKey = (rpcUrl: string): boolean => {
   const apiKeyPatterns = ['infura.io', 'alchemyapi.io', 'quiknode.pro'];
+
   return apiKeyPatterns.some((pattern) => rpcUrl.includes(pattern));
 };
 
@@ -57,6 +58,7 @@ export const getTokenSymbolByContractAddress = async (
 ): Promise<string> => {
   try {
     const chainData = await getInfoFromChainId(chainId);
+
     if (!chainData || !chainData.rpc.length) {
       throw new BadRequestException(`No RPC URL found for chainId ${chainId}`);
     }
@@ -94,6 +96,7 @@ export const getTokenSymbolByContractAddress = async (
           tokenContract.symbol(),
           timeoutMs,
         );
+
         // If successful, return the token symbol
         return tokenSymbol;
       } catch (rpcError) {

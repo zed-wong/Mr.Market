@@ -1,14 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AlpacaStratService } from 'src/modules/market-making/strategy/alpacastrat.service';
-import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
-import { StrategyService } from './strategy.service';
-import { Repository } from 'typeorm';
-import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
-import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import * as ccxt from 'ccxt';
+import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
+import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { AlpacaStratService } from 'src/modules/market-making/strategy/alpacastrat.service';
 import { ArbitrageStrategyDto } from 'src/modules/market-making/strategy/strategy.dto';
+import { Repository } from 'typeorm';
+
+import { StrategyService } from './strategy.service';
 
 describe('AlpacaStratService', () => {
   let service: AlpacaStratService;

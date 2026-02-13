@@ -1,10 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { GrowdataService } from './grow-data.service';
-import { GrowdataRepository } from './grow-data.repository';
-import { Cache } from 'cache-manager';
+import { Test, TestingModule } from '@nestjs/testing';
+import type { Cache } from 'cache-manager';
+
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
 import { MixinClientService } from '../../mixin/client/mixin-client.service';
+import { GrowdataRepository } from './grow-data.repository';
+import { GrowdataService } from './grow-data.service';
 
 describe('GrowdataService', () => {
   let service: GrowdataService;
@@ -83,6 +84,7 @@ describe('GrowdataService', () => {
       jest.spyOn(repository, 'findAllMarketMakingPairs').mockResolvedValue([]);
 
       const result = await service.getGrowData();
+
       expect(result).toEqual({
         exchanges: [],
         simply_grow: { tokens: [] },
@@ -109,6 +111,7 @@ describe('GrowdataService', () => {
         .mockResolvedValue(marketMakingPairs as any);
 
       const result = await service.getGrowData();
+
       expect(result.market_making.exchanges).toHaveLength(1);
       expect(result.market_making.exchanges[0].exchange_id).toBe('exchange-1');
     });
@@ -122,9 +125,11 @@ describe('GrowdataService', () => {
         { asset_id: 'asset-2', price_usd: '200' },
       ];
       const mixinClientService = module.get(MixinClientService) as any;
+
       mixinClientService.client.safe.fetchAssets.mockResolvedValue(assets);
 
       const result = await (service as any).fetchExternalPriceData(assetIds);
+
       expect(result).toBeInstanceOf(Map);
       expect(result.get('asset-1')).toEqual('100');
       expect(result.get('asset-2')).toEqual('200');
@@ -132,17 +137,20 @@ describe('GrowdataService', () => {
 
     it('should return empty map if no asset IDs provided', async () => {
       const result = await (service as any).fetchExternalPriceData([]);
+
       expect(result).toBeInstanceOf(Map);
       expect(result.size).toBe(0);
     });
 
     it('should return empty map and log error on failure', async () => {
       const mixinClientService = module.get(MixinClientService) as any;
+
       mixinClientService.client.safe.fetchAssets.mockRejectedValue(
         new Error('Network error'),
       );
 
       const result = await (service as any).fetchExternalPriceData(['asset-1']);
+
       expect(result).toBeInstanceOf(Map);
       expect(result.size).toBe(0);
     });

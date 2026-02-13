@@ -1,6 +1,7 @@
-import { ExchangeService } from './exchange.service';
-import { APIKeysConfig } from 'src/common/entities/api-keys.entity';
 import { ConfigService } from '@nestjs/config';
+import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
+
+import { ExchangeService } from './exchange.service';
 
 jest.mock('src/common/helpers/crypto', () => ({
   decrypt: jest.fn(),
@@ -60,6 +61,7 @@ describe('ExchangeService', () => {
     const { service } = makeService({ readAllAPIKeys });
 
     const result = await service.readAllAPIKeys();
+
     expect(result[0].api_secret).toBe('********');
   });
 

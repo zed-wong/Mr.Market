@@ -1,23 +1,14 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  UseGuards,
   BadRequestException,
-  Query,
+  Body,
+  Controller,
   Delete,
+  Get,
   Param,
+  Post,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import { AdminStrategyService } from './strategy/adminStrategy.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import {
-  GetDepositAddressDto,
-  GetSupportedNetworksDto,
-  GetTokenSymbolDto,
-  StartStrategyDto,
-  StopStrategyDto,
-} from './strategy/admin-strategy.dto';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -26,6 +17,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { SpotdataTradingPairDto } from './admin-spot-management/admin-spot-management.dto';
+import { AdminSpotService } from './admin-spot-management/admin-spot-management.service';
 import {
   GrowdataArbitragePairDto,
   GrowdataExchangeDto,
@@ -33,8 +28,14 @@ import {
   GrowdataSimplyGrowTokenDto,
 } from './growdata/adminGrow.dto';
 import { AdminGrowService } from './growdata/adminGrow.service';
-import { AdminSpotService } from './admin-spot-management/admin-spot-management.service';
-import { SpotdataTradingPairDto } from './admin-spot-management/admin-spot-management.dto';
+import {
+  GetDepositAddressDto,
+  GetSupportedNetworksDto,
+  GetTokenSymbolDto,
+  StartStrategyDto,
+  StopStrategyDto,
+} from './strategy/admin-strategy.dto';
+import { AdminStrategyService } from './strategy/adminStrategy.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -206,6 +207,7 @@ export class AdminController {
   })
   async getTokenSymbol(@Body() body: GetTokenSymbolDto) {
     const { contractAddress, chainId } = body;
+
     try {
       return await this.adminStrategyService.getTokenSymbolByContract(
         contractAddress,

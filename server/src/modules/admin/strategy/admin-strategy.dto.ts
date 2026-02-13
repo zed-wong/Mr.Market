@@ -1,10 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsDecimal, IsUUID } from 'class-validator';
+
 import {
   ArbitrageStrategyDto,
-  PureMarketMakingStrategyDto,
   ExecuteVolumeStrategyDto,
+  PureMarketMakingStrategyDto,
 } from '../../market-making/strategy/strategy.dto';
-import { IsUUID, IsDecimal } from 'class-validator';
 
 // Unified DTO for starting strategies that handles all types
 export class StartStrategyDto {

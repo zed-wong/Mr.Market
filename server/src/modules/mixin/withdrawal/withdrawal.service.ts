@@ -1,24 +1,28 @@
+import {
+  SafeSnapshot,
+  SequencerTransactionRequest,
+} from '@mixin.dev/mixin-node-sdk';
+import {
+  blake3Hash,
+  buildSafeTransaction,
+  buildSafeTransactionRecipient,
+  encodeSafeTransaction,
+  getUnspentOutputsForRecipients,
+  MixinCashier,
+  SafeMixinRecipient,
+  SafeWithdrawalRecipient,
+  signSafeTransaction,
+} from '@mixin.dev/mixin-node-sdk';
+import { InjectQueue } from '@nestjs/bull';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Withdrawal } from 'src/common/entities/withdrawal.entity';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { SafeSnapshot, SequencerTransactionRequest } from '@mixin.dev/mixin-node-sdk';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
-import { MixinClientService } from '../client/mixin-client.service';
+import type { Queue } from 'bull';
 import { randomUUID } from 'crypto';
-import {
-  buildSafeTransactionRecipient,
-  getUnspentOutputsForRecipients,
-  buildSafeTransaction,
-  encodeSafeTransaction,
-  signSafeTransaction,
-  blake3Hash,
-  MixinCashier,
-  SafeWithdrawalRecipient,
-  SafeMixinRecipient,
-} from '@mixin.dev/mixin-node-sdk';
+import { Withdrawal } from 'src/common/entities/mixin/withdrawal.entity';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Repository } from 'typeorm';
+
+import { MixinClientService } from '../client/mixin-client.service';
 
 export interface WithdrawalMemoDetails {
   version: number;
@@ -38,7 +42,7 @@ export class WithdrawalService {
     private withdrawalRepository: Repository<Withdrawal>,
     @InjectQueue('withdrawals') private withdrawalQueue: Queue,
     private mixinClientService: MixinClientService,
-  ) { }
+  ) {}
 
   /**
    * Execute withdrawal to blockchain address
@@ -59,6 +63,7 @@ export class WithdrawalService {
         ? asset
         : await client.network.fetchAsset(asset.chain_id);
     const fee = chain;
+
     this.logger.log(`Withdrawal Fee: ${fee.amount} ${fee.symbol}`);
 
     // withdrawal with chain asset as fee
@@ -82,6 +87,7 @@ export class WithdrawalService {
         outputs,
         recipients,
       );
+
       if (!change.isZero() && !change.isNegative()) {
         recipients.push(
           buildSafeTransactionRecipient(
@@ -113,6 +119,7 @@ export class WithdrawalService {
       ];
       const { utxos: feeUtxos, change: feeChange } =
         getUnspentOutputsForRecipients(feeOutputs, feeRecipients);
+
       if (!feeChange.isZero() && !feeChange.isNegative()) {
         // add fee change output if needed
         feeRecipients.push(
@@ -151,11 +158,7 @@ export class WithdrawalService {
       ]);
 
       const signedRaw = signSafeTransaction(tx, txs[0].views, spendKey);
-      const signedFeeRaw = signSafeTransaction(
-        feeTx,
-        txs[1].views,
-        spendKey,
-      );
+      const signedFeeRaw = signSafeTransaction(feeTx, txs[1].views, spendKey);
       const res = await client.utxo.sendTransactions([
         {
           raw: signedRaw,
@@ -166,7 +169,9 @@ export class WithdrawalService {
           request_id: feeId,
         },
       ]);
+
       this.logger.log(`Withdrawal result: ${JSON.stringify(res)}`);
+
       return res;
     }
     // withdrawal with asset as fee
@@ -189,6 +194,7 @@ export class WithdrawalService {
         outputs,
         recipients,
       );
+
       if (!change.isZero() && !change.isNegative()) {
         // add change output if needed
         recipients.push(
@@ -230,7 +236,9 @@ export class WithdrawalService {
           request_id,
         },
       ]);
+
       this.logger.log(`Withdrawal result: ${JSON.stringify(res)}`);
+
       return res;
     }
   }
@@ -253,6 +261,7 @@ export class WithdrawalService {
         this.logger.warn(
           `Withdrawal already exists for snapshot ${snapshot.snapshot_id}`,
         );
+
         return existingWithdrawal;
       }
 
@@ -274,6 +283,7 @@ export class WithdrawalService {
       });
 
       const savedWithdrawal = await this.withdrawalRepository.save(withdrawal);
+
       this.logger.log(
         `Initialized withdrawal ${savedWithdrawal.id} for snapshot ${snapshot.snapshot_id}`,
       );
@@ -287,6 +297,7 @@ export class WithdrawalService {
         `Failed to initialize withdrawal from snapshot ${snapshot.snapshot_id}: ${error.message}`,
         error.stack,
       );
+
       return null;
     }
   }
@@ -385,6 +396,7 @@ export class WithdrawalService {
    */
   async incrementRetryCount(id: string): Promise<void> {
     const withdrawal = await this.getWithdrawalById(id);
+
     if (withdrawal) {
       await this.withdrawalRepository.update(id, {
         retryCount: withdrawal.retryCount + 1,

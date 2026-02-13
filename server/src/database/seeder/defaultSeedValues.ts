@@ -1,10 +1,10 @@
+import { CustomConfigEntity } from 'src/common/entities/admin/custom-config.entity';
 import {
   GrowdataExchange,
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
-} from 'src/common/entities/grow-data.entity';
-import { SpotdataTradingPair } from 'src/common/entities/spot-data.entity';
-import { CustomConfigEntity } from 'src/common/entities/custom-config.entity';
+} from 'src/common/entities/data/grow-data.entity';
+import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 
 export const defaultSpotdataTradingPairs: SpotdataTradingPair[] = [
   {

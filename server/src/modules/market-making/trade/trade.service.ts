@@ -1,13 +1,14 @@
 import {
-  Injectable,
   BadRequestException,
+  Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
 import * as ccxt from 'ccxt';
-import { TradeRepository } from './trade.repository';
-import { MarketTradeDto, LimitTradeDto } from './trade.dto';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { LimitTradeDto, MarketTradeDto } from './trade.dto';
+import { TradeRepository } from './trade.repository';
 
 @Injectable()
 export class TradeService {
@@ -21,10 +22,12 @@ export class TradeService {
 
   private getExchange(exchangeName: string): ccxt.Exchange {
     const exchange = this.exchangeInitService.getExchange(exchangeName);
+
     if (!exchange) {
       this.logger.error(`Exchange: ${exchangeName} is not configured.`);
       throw new InternalServerErrorException('Exchange configuration error.');
     }
+
     return exchange;
   }
 
@@ -46,6 +49,7 @@ export class TradeService {
         side,
         amount,
       );
+
       this.logger.log(`Market trade executed`, order.toString());
       await this.tradeRepository.createTrade({
         userId,
@@ -88,6 +92,7 @@ export class TradeService {
         amount,
         price,
       );
+
       this.logger.log(`Limit trade executed: ${JSON.stringify(order)}`);
 
       await this.tradeRepository.createTrade({

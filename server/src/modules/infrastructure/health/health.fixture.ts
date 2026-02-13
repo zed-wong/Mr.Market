@@ -9,6 +9,7 @@ export class HealthFixture {
     if (!this.shouldFail) {
       throw new Error('API key invalid');
     }
+
     return { balance: { USD: 10000 } };
   }
 }

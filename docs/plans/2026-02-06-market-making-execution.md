@@ -306,7 +306,7 @@ git commit -m "fix: make campaign join idempotent per order"
 - Modify: `server/src/modules/market-making/user-orders/market-making.processor.ts`
 - Modify: `server/src/config/configuration.ts`
 - Test: `server/src/modules/market-making/user-orders/market-making.processor.spec.ts`
-- Doc: `docs/execution/flow/MARKET_MAKING_FLOW.md`
+- Doc: `docs/MARKET_MAKING_FLOW.md`
 
 **Step 1: Write failing test for withdrawal queueing when enabled**
 
@@ -337,7 +337,7 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add server/src/modules/market-making/user-orders/market-making.processor.ts server/src/config/configuration.ts server/src/modules/market-making/user-orders/market-making.processor.spec.ts docs/execution/flow/MARKET_MAKING_FLOW.md
+git add server/src/modules/market-making/user-orders/market-making.processor.ts server/src/config/configuration.ts server/src/modules/market-making/user-orders/market-making.processor.spec.ts docs/MARKET_MAKING_FLOW.md
 git commit -m "feat: gate withdraw-to-exchange in market making lifecycle"
 ```
 

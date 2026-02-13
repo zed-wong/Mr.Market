@@ -1,13 +1,14 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { SpotdataService } from './spot-data.service';
-import { SpotdataRepository } from './spot-data.repository';
-import { MarketdataService } from '../market-data/market-data.service';
-import { Cache } from 'cache-manager';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { Test, TestingModule } from '@nestjs/testing';
+import type { Cache } from 'cache-manager';
 import { Tickers } from 'ccxt';
-import { SpotdataTradingPair } from 'src/common/entities/spot-data.entity';
+import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
+
 import { getRFC3339Timestamp } from '../../../common/helpers/utils';
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { MarketdataService } from '../market-data/market-data.service';
+import { SpotdataRepository } from './spot-data.repository';
+import { SpotdataService } from './spot-data.service';
 
 describe('SpotdataService', () => {
   let service: SpotdataService;
@@ -165,6 +166,7 @@ describe('SpotdataService', () => {
         .mockResolvedValue(mockTickers);
 
       const result = await service.getSpotData();
+
       expect(result).toEqual({
         trading_pairs: expectedPairs,
       });
@@ -176,6 +178,7 @@ describe('SpotdataService', () => {
         .mockRejectedValue(new Error('Database error'));
 
       const result = await service.getSpotData();
+
       expect(result).toEqual({
         statusCode: 500,
         message: 'Internal server error',
@@ -187,11 +190,13 @@ describe('SpotdataService', () => {
   describe('getSupportedPairs', () => {
     it('should return cached data when available', async () => {
       const cachedPairs = [{ id: 'cached-pair' }];
+
       jest
         .spyOn(cacheService, 'get')
         .mockResolvedValue(JSON.stringify(cachedPairs));
 
       const result = await service.getSupportedPairs();
+
       expect(result).toEqual(cachedPairs);
       expect(cacheService.get).toHaveBeenCalledWith('supported-spotdata-pairs');
     });
@@ -200,9 +205,11 @@ describe('SpotdataService', () => {
   describe('getTradingPairById', () => {
     it('should return trading pair when found', async () => {
       const pair = mockTradingPairs[0];
+
       jest.spyOn(repository, 'findTradingPairById').mockResolvedValue(pair);
 
       const result = await service.getTradingPairById(pair.id);
+
       expect(result).toEqual(pair);
     });
 
@@ -210,6 +217,7 @@ describe('SpotdataService', () => {
       jest.spyOn(repository, 'findTradingPairById').mockResolvedValue(null);
 
       const result = await service.getTradingPairById('non-existent-id');
+
       expect(result).toBeNull();
     });
   });
@@ -217,15 +225,18 @@ describe('SpotdataService', () => {
   describe('addTradingPair', () => {
     it('should add trading pair successfully', async () => {
       const newPair = mockTradingPairs[0];
+
       jest.spyOn(repository, 'addTradingPair').mockResolvedValue(newPair);
 
       const result = await service.addTradingPair(newPair);
+
       expect(result).toEqual(newPair);
       expect(repository.addTradingPair).toHaveBeenCalledWith(newPair);
     });
 
     it('should throw error when adding trading pair fails', async () => {
       const newPair = mockTradingPairs[0];
+
       jest
         .spyOn(repository, 'addTradingPair')
         .mockRejectedValue(new Error('Database error'));
@@ -240,6 +251,7 @@ describe('SpotdataService', () => {
     it('should update trading pair successfully', async () => {
       const pairId = 'pair-1';
       const updateData = { symbol: 'updated-symbol' };
+
       jest
         .spyOn(repository, 'updateTradingPair')
         .mockResolvedValue({ affected: 1 } as any);
@@ -254,6 +266,7 @@ describe('SpotdataService', () => {
     it('should throw error when updating trading pair fails', async () => {
       const pairId = 'pair-1';
       const updateData = { symbol: 'updated-symbol' };
+
       jest
         .spyOn(repository, 'updateTradingPair')
         .mockRejectedValue(new Error('Database error'));
@@ -267,6 +280,7 @@ describe('SpotdataService', () => {
   describe('removeTradingPair', () => {
     it('should remove trading pair successfully', async () => {
       const pairId = 'pair-1';
+
       jest
         .spyOn(repository, 'removeTradingPair')
         .mockResolvedValue({ affected: 1 } as any);
@@ -277,6 +291,7 @@ describe('SpotdataService', () => {
 
     it('should throw error when removing trading pair fails', async () => {
       const pairId = 'pair-1';
+
       jest
         .spyOn(repository, 'removeTradingPair')
         .mockRejectedValue(new Error('Database error'));

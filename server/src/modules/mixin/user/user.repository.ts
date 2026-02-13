@@ -1,7 +1,7 @@
-import { Repository } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MixinUser } from 'src/common/entities/mixin-user.entity';
+import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class UserRepository {
@@ -18,6 +18,7 @@ export class UserRepository {
     const user = await this.userRepository.findOne({
       where: { user_id },
     });
+
     if (!user) {
       // Handle key not found error
       return;

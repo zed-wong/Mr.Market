@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { BigNumber, Wallet, ethers } from 'ethers';
-
 import { ConfigService } from '@nestjs/config';
+import { BigNumber, ethers, Wallet } from 'ethers';
 
 @Injectable()
 export class Web3Service {
@@ -45,6 +44,7 @@ export class Web3Service {
     for (const network of networks) {
       if (network.rpcUrl) {
         const provider = new ethers.providers.JsonRpcProvider(network.rpcUrl);
+
         this.signers[network.chainId] = new Wallet(privateKey, provider);
       }
     }
@@ -58,6 +58,7 @@ export class Web3Service {
     const signer = this.getSigner(chainId);
     const multiplier = this.configService.get<number>('web3.gas_multiplier');
     const gasPrice = (await signer.provider?.getFeeData())?.gasPrice;
+
     if (gasPrice) {
       return gasPrice
         .mul(BigNumber.from(Math.round(multiplier * 100)))

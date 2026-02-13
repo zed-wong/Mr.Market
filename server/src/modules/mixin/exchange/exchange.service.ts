@@ -1,17 +1,20 @@
-import * as ccxt from 'ccxt';
-import BigNumber from 'bignumber.js';
-import { Cron } from '@nestjs/schedule';
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
-  BadRequestException,
 } from '@nestjs/common';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
+import BigNumber from 'bignumber.js';
+import * as ccxt from 'ccxt';
+import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
+import { SpotOrder } from 'src/common/entities/orders/spot-order.entity';
 import {
-  STATE_TEXT_MAP,
-  SpotOrderStatus,
-} from 'src/common/types/orders/states';
-import { ExchangeRepository } from 'src/modules/mixin/exchange/exchange.repository';
+  decrypt,
+  encrypt,
+  getPublicKeyFromPrivate,
+} from 'src/common/helpers/crypto';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import {
   ErrorResponse,
   SuccessResponse,
@@ -20,17 +23,15 @@ import {
   MixinReleaseHistory,
   MixinReleaseToken,
 } from 'src/common/types/exchange/mixinRelease';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { SpotOrder } from 'src/common/entities/spot-order.entity';
-import { APIKeysConfig } from 'src/common/entities/api-keys.entity';
-import { ExchangeDepositDto, ExchangeWithdrawalDto } from './exchange.dto';
-import { AggregatedBalances } from 'src/common/types/rebalance/map';
-import { ConfigService } from '@nestjs/config';
 import {
-  decrypt,
-  encrypt,
-  getPublicKeyFromPrivate,
-} from 'src/common/helpers/crypto';
+  SpotOrderStatus,
+  STATE_TEXT_MAP,
+} from 'src/common/types/orders/states';
+import { AggregatedBalances } from 'src/common/types/rebalance/map';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { ExchangeRepository } from 'src/modules/mixin/exchange/exchange.repository';
+
+import { ExchangeDepositDto, ExchangeWithdrawalDto } from './exchange.dto';
 
 @Injectable()
 export class ExchangeService {
@@ -47,18 +48,22 @@ export class ExchangeService {
   getEncryptionPublicKey() {
     const privateKey =
       this.configService.get<string>('admin.encryption_private_key') || '';
+
     if (!privateKey) {
       throw new Error('Encryption private key not set');
     }
+
     return { publicKey: getPublicKeyFromPrivate(privateKey) };
   }
 
   private async loadAPIKeys() {
     const apiKeys = await this.exchangeRepository.readAllAPIKeys();
+
     if (!apiKeys?.length) {
       this.logger.warn(
         '[VIEW ONLY MODE] No API Keys loaded, no execution would be done on exchange. Configure exchange API keys in /manage page',
       );
+
       return;
     }
     for (const key of apiKeys) {
@@ -71,6 +76,7 @@ export class ExchangeService {
       // We assume stored secrets are always encrypted if this feature is on.
       const privateKey =
         this.configService.get<string>('admin.encryption_private_key') || '';
+
       if (privateKey) {
         try {
           apiSecret = decrypt(apiSecret, privateKey);
@@ -92,6 +98,7 @@ export class ExchangeService {
 
   async readAllAPIKeys() {
     const keys = await this.exchangeRepository.readAllAPIKeys();
+
     return keys.map((k) => {
       return {
         ...k,
@@ -107,6 +114,7 @@ export class ExchangeService {
 
     return keys.map((key) => {
       let apiSecret = key.api_secret;
+
       if (privateKey) {
         try {
           apiSecret = decrypt(apiSecret, privateKey);
@@ -129,16 +137,19 @@ export class ExchangeService {
     }>,
   ): Promise<number> {
     const existing = await this.exchangeRepository.readAllAPIKeys();
+
     if (existing.length > 0) {
       return 0;
     }
 
     const privateKey =
       this.configService.get<string>('admin.encryption_private_key') || '';
+
     if (!privateKey) {
       this.logger.warn(
         'Encryption private key not set; skipping .env API key seed.',
       );
+
       return 0;
     }
 
@@ -152,6 +163,7 @@ export class ExchangeService {
         }
 
         const apiKeyConfig = new APIKeysConfig();
+
         apiKeyConfig.exchange = config.name;
         apiKeyConfig.exchange_index = account.label || 'default';
         apiKeyConfig.name = account.label || 'default';
@@ -189,6 +201,7 @@ export class ExchangeService {
             this.logger.error(
               `Failed to get balance for ${apiKeyConfig.name} on ${apiKeyConfig.exchange}: ${error.message}`,
             );
+
             return null;
           }),
       );
@@ -244,11 +257,13 @@ export class ExchangeService {
 
     try {
       const b = await e.fetchBalance();
+
       function filterZeroBalances(balances) {
         return Object.fromEntries(
           Object.entries(balances).filter(([, value]) => value !== 0),
         );
       }
+
       return {
         free: filterZeroBalances(b['free']),
         used: filterZeroBalances(b['used']),
@@ -275,6 +290,7 @@ export class ExchangeService {
 
     try {
       const b = await e.fetchBalance({ currency: symbol });
+
       return b['free'];
     } catch (error) {
       this.logger.error(
@@ -286,9 +302,11 @@ export class ExchangeService {
 
   async getDepositAddress(data: ExchangeDepositDto) {
     const key = await this.readAPIKey(data.apiKeyId);
+
     if (!key) {
       return;
     }
+
     return await this._getDepositAddress({
       ...data,
       apiKey: key.api_key,
@@ -313,8 +331,10 @@ export class ExchangeService {
       apiKey,
       secret: apiSecret,
     });
+
     if (!e.has['fetchDepositAddress']) {
       this.logger.error(`${exchange} doesn't support fetchDepositAddress()`);
+
       return;
     }
     try {
@@ -375,6 +395,7 @@ export class ExchangeService {
 
   async createWithdrawal(data: ExchangeWithdrawalDto) {
     const key = await this.readAPIKey(data.apiKeyId);
+
     if (!key) {
       return;
     }
@@ -418,6 +439,7 @@ export class ExchangeService {
       const withdrawal = await e.withdraw(symbol, amount, address, tag, {
         network,
       });
+
       return withdrawal; // This will return the response from the exchange, which usually includes a transaction ID.
     } catch (error) {
       if (error instanceof ccxt.NetworkError) {
@@ -466,6 +488,7 @@ export class ExchangeService {
       apiSecret,
       symbol,
     );
+
     return BigNumber(amount).isLessThan(balance);
   }
 
@@ -478,6 +501,7 @@ export class ExchangeService {
     const apiKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
       exchange,
     );
+
     apiKeys.forEach(async (key) => {
       if (
         await this.checkExchangeBalanceEnough(
@@ -497,6 +521,7 @@ export class ExchangeService {
         };
       }
     });
+
     return {
       type: 'error',
       error: `no API key available (${exchange}:${
@@ -528,12 +553,14 @@ export class ExchangeService {
       if (buy) {
         // Assuming amount is in target asset for buying, finalAmount is in base asset
         const finalAmount = new BigNumber(amount).div(limit_price).toString();
+
         return finalAmount;
       } else {
         // Assuming amount is in base asset for selling, finalAmount is in target asset
         const finalAmount = new BigNumber(amount)
           .multipliedBy(limit_price)
           .toString();
+
         return finalAmount;
       }
     } else {
@@ -547,12 +574,14 @@ export class ExchangeService {
         const estimatedBaseAmount = new BigNumber(amount)
           .div(latestPrice)
           .toString();
+
         return estimatedBaseAmount;
       } else {
         // For market sell, assuming amount is in base asset, estimate how much target asset we'll receive
         const estimatedTargetAmount = latestPrice
           .multipliedBy(amount)
           .toString();
+
         return estimatedTargetAmount;
       }
     }
@@ -566,6 +595,7 @@ export class ExchangeService {
   async addApiKey(key: APIKeysConfig) {
     const privateKey =
       this.configService.get<string>('admin.encryption_private_key') || '';
+
     if (!privateKey) {
       throw new InternalServerErrorException(
         'Server encryption private key not configured',
@@ -574,6 +604,7 @@ export class ExchangeService {
 
     // 1. Decrypt transport layer
     let rawSecret: string | null = null;
+
     try {
       rawSecret = decrypt(key.api_secret, privateKey);
     } catch (e) {
@@ -589,6 +620,7 @@ export class ExchangeService {
     // 2. Validate with CCXT
     try {
       const exchangeClass = ccxt[key.exchange];
+
       if (!exchangeClass) {
         throw new BadRequestException(`Exchange ${key.exchange} not supported`);
       }
@@ -596,6 +628,7 @@ export class ExchangeService {
         apiKey: key.api_key,
         secret: rawSecret,
       });
+
       // Try to fetch balance to validate keys
       await exchangeInstance.fetchBalance();
     } catch (e) {
@@ -618,6 +651,7 @@ export class ExchangeService {
 
     // reload keys to update memory
     await this.loadAPIKeys();
+
     return savedKey;
   }
 
@@ -631,9 +665,11 @@ export class ExchangeService {
     const apiKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
       exchange,
     );
+
     if (!apiKeys) {
       return null;
     }
+
     return apiKeys[0];
   }
 
@@ -650,6 +686,7 @@ export class ExchangeService {
       orderId,
       getRFC3339Timestamp(),
     );
+
     return await this.exchangeRepository.updateSpotOrderState(orderId, state);
   }
 
@@ -658,6 +695,7 @@ export class ExchangeService {
       orderId,
       getRFC3339Timestamp(),
     );
+
     return await this.exchangeRepository.updateSpotOrderApiKeyId(
       orderId,
       api_key_id,
@@ -739,6 +777,7 @@ export class ExchangeService {
     await Promise.all(
       orders.map(async (o) => {
         const instance = this.exchangeInstances[o.exchangeName];
+
         if (!instance.has['fetchOrder']) {
           return await this.updateSpotOrderState(
             o.orderId,
@@ -759,6 +798,7 @@ export class ExchangeService {
               o.orderId,
               STATE_TEXT_MAP['EXCHANGE_ORDER_PARTIAL_FILLED'],
             );
+
             return;
           }
         }
@@ -767,6 +807,7 @@ export class ExchangeService {
             o.orderId,
             STATE_TEXT_MAP['EXCHANGE_ORDER_CANCELED'],
           );
+
           return;
         }
         if (order.status === 'closed') {

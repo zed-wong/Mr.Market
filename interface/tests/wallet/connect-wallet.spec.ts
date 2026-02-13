@@ -5,10 +5,11 @@ test.use({
 });
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('http://127.0.0.1:5173/wallet');
+  await page.goto('/wallet');
 })
 
 test('connect wallet', async ({ page }) => {
+  test.slow();
   const page14Promise = page.waitForEvent('popup');
   await page.getByRole('button', { name: 'Connect Wallet' }).click();
   const newPage = await page14Promise;

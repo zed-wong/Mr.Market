@@ -48,6 +48,24 @@ export default () => ({
   strategy: {
     run: process.env.RUN_STARTEGY_FOR_MIXIN_ORDERS || 'false',
     mixin_snapshots_run: process.env.RUN_MIXIN_SNAPSHOTS || 'false',
+    tick_size_ms: parseInt(process.env.MARKET_MAKING_TICK_SIZE_MS, 10) || 1000,
+    execute_intents: process.env.MARKET_MAKING_EXECUTE_INTENTS === 'true',
+    intent_execution_driver:
+      process.env.MARKET_MAKING_INTENT_EXECUTION_DRIVER || 'worker',
+    intent_max_retries:
+      parseInt(process.env.MARKET_MAKING_INTENT_MAX_RETRIES, 10) || 2,
+    intent_retry_base_delay_ms:
+      parseInt(process.env.MARKET_MAKING_INTENT_RETRY_BASE_DELAY_MS, 10) || 250,
+    intent_worker_poll_interval_ms:
+      parseInt(process.env.MARKET_MAKING_INTENT_WORKER_POLL_INTERVAL_MS, 10) ||
+      100,
+    intent_worker_max_in_flight:
+      parseInt(process.env.MARKET_MAKING_INTENT_WORKER_MAX_IN_FLIGHT, 10) || 8,
+    intent_worker_max_in_flight_per_exchange:
+      parseInt(
+        process.env.MARKET_MAKING_INTENT_WORKER_MAX_IN_FLIGHT_PER_EXCHANGE,
+        10,
+      ) || 1,
   },
   web3: {
     network: {
@@ -75,10 +93,15 @@ export default () => ({
   },
   hufi: {
     campaign_launcher: {
-      api_url: process.env.HUFI_CAMPAIGN_LAUNCHER_API_URL || 'https://cl.hu.finance',
+      api_url:
+        process.env.HUFI_CAMPAIGN_LAUNCHER_API_URL || 'https://cl.hu.finance',
     },
     recording_oracle: {
-      api_url: process.env.HUFI_RECORDING_ORACLE_API_URL || 'https://ro.hu.finance',
+      api_url:
+        process.env.HUFI_RECORDING_ORACLE_API_URL || 'https://ro.hu.finance',
     },
+  },
+  reward: {
+    mixin_vault_user_id: process.env.REWARD_MIXIN_VAULT_USER_ID,
   },
 });

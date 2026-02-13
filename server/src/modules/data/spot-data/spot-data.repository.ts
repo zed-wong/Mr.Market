@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import { SpotdataTradingPair } from 'src/common/entities/spot-data.entity';
+import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class SpotdataRepository {
@@ -38,9 +38,11 @@ export class SpotdataRepository {
     const pair = await this.tradingPairRepository.findOne({
       where: { id },
     });
+
     if (!pair) {
       return;
     }
+
     return await this.tradingPairRepository.remove(pair);
   }
 

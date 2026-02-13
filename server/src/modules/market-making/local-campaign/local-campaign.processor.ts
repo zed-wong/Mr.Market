@@ -1,23 +1,27 @@
 import { Process, Processor } from '@nestjs/bull';
-import { Job } from 'bull';
-import { LocalCampaignService } from './local-campaign.service';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import BigNumber from 'bignumber.js';
+import { Job } from 'bull';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
+import { LocalCampaignService } from './local-campaign.service';
 
 @Processor('local-campaigns')
 export class LocalCampaignProcessor {
   private readonly logger = new CustomLogger(LocalCampaignProcessor.name);
 
-  constructor(private readonly campaignService: LocalCampaignService) { }
+  constructor(private readonly campaignService: LocalCampaignService) {}
 
   @Process('check_campaign_status')
   async handleCheckCampaignStatus(job: Job<{ campaignId: string }>) {
     const { campaignId } = job.data;
+
     this.logger.log(`Checking campaign status for ${campaignId}`);
 
     const campaign = await this.campaignService.findById(campaignId);
+
     if (!campaign) {
       this.logger.error(`Campaign ${campaignId} not found`);
+
       return;
     }
 
@@ -41,6 +45,7 @@ export class LocalCampaignProcessor {
 
     if (participations.length === 0) {
       this.logger.warn(`No participants for campaign ${campaignId}`);
+
       return;
     }
 
@@ -51,6 +56,7 @@ export class LocalCampaignProcessor {
 
     if (totalContribution.isZero()) {
       this.logger.warn(`Total contribution is 0 for campaign ${campaignId}`);
+
       return;
     }
 
@@ -65,7 +71,9 @@ export class LocalCampaignProcessor {
       });
 
       this.logger.log(
-        `Rewarded user ${p.userId} with ${reward.toString()} ${campaign.rewardToken}`,
+        `Rewarded user ${p.userId} with ${reward.toString()} ${
+          campaign.rewardToken
+        }`,
       );
     }
   }

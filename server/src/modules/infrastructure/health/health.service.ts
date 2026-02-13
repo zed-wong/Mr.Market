@@ -1,14 +1,15 @@
+import { InjectQueue } from '@nestjs/bull';
 import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
+import type { Queue } from 'bull';
 import * as ccxt from 'ccxt';
-import { Queue } from 'bull';
-import { InjectQueue } from '@nestjs/bull';
-import { CustomLogger } from '../logger/logger.service';
+
 import { getRFC3339Timestamp } from '../../../common/helpers/utils';
 import { ExchangeInitService } from '../exchange-init/exchange-init.service';
+import { CustomLogger } from '../logger/logger.service';
 
 type HEALTH_STATE = 'alive' | 'dead';
 
@@ -52,6 +53,7 @@ export class HealthService {
     const allExchanges = Array.from(this.exchanges.values());
     // Get balance from each exchange to test if API key is valid
     const allRequests = [];
+
     for (let i = 0; i < allExchanges.length; i++) {
       try {
         allRequests.push(allExchanges[i].fetchBalance());
@@ -62,6 +64,7 @@ export class HealthService {
     }
 
     const responses = await Promise.all(allRequests);
+
     for (let i = 0; i < responses.length; i++) {
       if (!responses[i]) {
         // there is no field like balance in responses[i]
@@ -73,25 +76,30 @@ export class HealthService {
     }
 
     const result = Array.from(healthMap, ([key, value]) => ({ [key]: value }));
+
     if (result.length === 0) {
       throw new InternalServerErrorException(`Exchanges are all dead`);
     }
+
     return result;
   }
 
   async getExchangeHealth(exchangeName: string): Promise<any> {
     const exchange = this.exchangeInitService.getExchange(exchangeName);
+
     if (!exchange) {
       throw new BadRequestException(
         'Exchange not found, use GET /strategy/supported-exchanges to get supported exchanges',
       );
     }
     const balance = await exchange.fetchBalance();
+
     if (!balance) {
       throw new InternalServerErrorException(
         `Exchange ${exchange.name} is dead`,
       );
     }
+
     return { statusCode: 200, message: 'alive' as HEALTH_STATE };
   }
 
@@ -215,6 +223,7 @@ export class HealthService {
         `Failed to check snapshot polling health: ${error.message}`,
         error.stack,
       );
+
       return {
         status: 'critical',
         healthy: false,
@@ -229,17 +238,20 @@ export class HealthService {
     try {
       const redis = (this.snapshotsQueue as any).client;
       const lastPoll = await redis.get('snapshots:last_poll');
+
       if (!lastPoll) {
         return null;
       }
 
       const parsed = Number(lastPoll);
+
       return Number.isFinite(parsed) ? parsed : null;
     } catch (error) {
       this.logger.error(
         `Failed to get last poll timestamp: ${error.message}`,
         error.stack,
       );
+
       return null;
     }
   }

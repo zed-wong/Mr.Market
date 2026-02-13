@@ -1,12 +1,13 @@
 // coingecko.controller.ts
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { CoingeckoProxyService } from './coingecko.service';
 import { ApiQuery, ApiTags } from '@nestjs/swagger';
 import {
   CoinFullInfo,
   CoinMarket,
   CoinMarketChartResponse,
 } from 'coingecko-api-v3';
+
+import { CoingeckoProxyService } from './coingecko.service';
 
 @ApiTags('Data')
 @Controller('coingecko')

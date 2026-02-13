@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { CustomConfigService } from 'src/modules/infrastructure/custom-config/custom-config.service';
 import { CustomConfigRepository } from 'src/modules/infrastructure/custom-config/custom-config.repository';
+import { CustomConfigService } from 'src/modules/infrastructure/custom-config/custom-config.service';
 
 describe('CustomConfigService', () => {
   let service: CustomConfigService;
@@ -49,6 +49,7 @@ describe('CustomConfigService', () => {
   describe('modifySpotFee', () => {
     it('should modify the spot fee', async () => {
       const newSpotFee = '0.2';
+
       // No real return value needed for modify methods unless they return something specific
       mockRepository.modifySpotFee.mockResolvedValue(undefined);
       await service.modifySpotFee(newSpotFee);
@@ -59,6 +60,7 @@ describe('CustomConfigService', () => {
   describe('modifyMaxBalanceInMixinBot', () => {
     it('should modify the max balance in Mixin Bot', async () => {
       const newMaxBalance = '1000';
+
       mockRepository.modifyMaxBalanceInMixinBot.mockResolvedValue(undefined); // Assuming the method does not return a value
 
       await service.modifyMaxBalanceInMixinBot(newMaxBalance);
@@ -72,6 +74,7 @@ describe('CustomConfigService', () => {
   describe('modifyMaxBalanceInAPIKey', () => {
     it('should modify the max balance in API Key', async () => {
       const newMaxBalance = '2000';
+
       mockRepository.modifyMaxBalanceInAPIKey.mockResolvedValue(undefined);
 
       await service.modifyMaxBalanceInAPIKey(newMaxBalance);
@@ -85,6 +88,7 @@ describe('CustomConfigService', () => {
   describe('readFundingAccountStatus', () => {
     it('should return funding account status', async () => {
       const status = 'active';
+
       mockRepository.readFundingAccountStatus.mockResolvedValue(status);
 
       const result = await service.readFundingAccountStatus();

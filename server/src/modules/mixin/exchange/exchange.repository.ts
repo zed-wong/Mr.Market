@@ -1,13 +1,13 @@
-import { Repository } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { SpotOrderStatus } from 'src/common/types/orders/states';
-import { SpotOrder } from 'src/common/entities/spot-order.entity';
-import { APIKeysConfig } from 'src/common/entities/api-keys.entity';
+import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 import {
   MixinReleaseHistory,
   MixinReleaseToken,
-} from 'src/common/entities/mixin-release.entity';
+} from 'src/common/entities/mixin/mixin-release.entity';
+import { SpotOrder } from 'src/common/entities/orders/spot-order.entity';
+import { SpotOrderStatus } from 'src/common/types/orders/states';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class ExchangeRepository {
@@ -37,6 +37,7 @@ export class ExchangeRepository {
     const apiKey = await this.apiKeysRepository.findOne({
       where: { key_id },
     });
+
     if (!apiKey) {
       // Handle key not found error
       return;
@@ -67,10 +68,13 @@ export class ExchangeRepository {
 
   async readOrderByUser(userId: string): Promise<SpotOrder[]> {
     let orders = await this.spotOrderRepository.find({ where: { userId } });
+
     orders = orders.map((order) => {
       delete order.apiKeyId;
+
       return order;
     });
+
     return orders;
   }
 
@@ -78,7 +82,9 @@ export class ExchangeRepository {
     const order = await this.spotOrderRepository.findOne({
       where: { orderId },
     });
+
     delete order.apiKeyId;
+
     return order;
   }
 
@@ -94,6 +100,7 @@ export class ExchangeRepository {
     transactionData: Partial<SpotOrder>,
   ): Promise<SpotOrder> {
     const transaction = this.spotOrderRepository.create(transactionData);
+
     return await this.spotOrderRepository.save(transaction);
   }
 
@@ -111,6 +118,7 @@ export class ExchangeRepository {
 
   async addMixinReleaseToken(transactionData: Partial<MixinReleaseToken>) {
     const transaction = this.mixinReleaseRepository.create(transactionData);
+
     return await this.mixinReleaseRepository.save(transaction);
   }
 
@@ -127,6 +135,7 @@ export class ExchangeRepository {
   async addMixinReleaseHistory(transactionData: Partial<MixinReleaseHistory>) {
     const transaction =
       this.mixinReleaseHistoryRepository.create(transactionData);
+
     return await this.mixinReleaseHistoryRepository.save(transaction);
   }
 }
