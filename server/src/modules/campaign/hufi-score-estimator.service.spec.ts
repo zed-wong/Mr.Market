@@ -17,6 +17,7 @@ describe('HufiScoreEstimatorService', () => {
       create: jest.fn((payload) => payload),
       save: jest.fn(async (payload) => {
         snapshotRows.push(payload);
+
         return payload;
       }),
     };
@@ -54,6 +55,7 @@ describe('HufiScoreEstimatorService', () => {
     await service.estimateDailyScore('2026-02-11');
 
     const callArg = historyRepository.find.mock.calls[0][0];
+
     expect(callArg.where.executedAt).toBeDefined();
   });
 });

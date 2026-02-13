@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
-import { CoingeckoProxyService } from './coingecko.service';
-import { CoingeckoController } from './coingecko.controller';
 import { CacheModule } from '@nestjs/cache-manager';
+import { Module } from '@nestjs/common';
+
+import { CoingeckoController } from './coingecko.controller';
+import { CoingeckoProxyService } from './coingecko.service';
 
 @Module({
   imports: [

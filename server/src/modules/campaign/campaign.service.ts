@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CampaignDataDto } from './campaign.dto';
-import axios, { AxiosInstance } from 'axios';
-import { CustomLogger } from '../infrastructure/logger/logger.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Web3Service } from '../web3/web3.service';
+import axios, { AxiosInstance } from 'axios';
+
 import { ExchangeInitService } from '../infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from '../infrastructure/logger/logger.service';
+import { Web3Service } from '../web3/web3.service';
+import { CampaignDataDto } from './campaign.dto';
 
 @Injectable()
 export class CampaignService {
@@ -46,9 +47,11 @@ export class CampaignService {
       >('/campaign?chainId=-1');
 
       this.logger.log('Finished getting HuFi campaigns');
+
       return data;
     } catch (error) {
       this.logger.warn(`Error getting HuFi campaigns: ${error.message}`);
+
       return [];
     }
   }
@@ -74,19 +77,19 @@ export class CampaignService {
       });
 
       this.logger.log('Successfully retrieved authentication nonce');
+
       return data.nonce;
     } catch (error) {
       const errorMessage =
         error.response?.data?.message ||
         error.message ||
         'Unknown error occurred';
+
       this.logger.warn(
         `Error getting authentication nonce: ${errorMessage}`,
         error.stack,
       );
-      throw new Error(
-        `Failed to get authentication nonce: ${errorMessage}`,
-      );
+      throw new Error(`Failed to get authentication nonce: ${errorMessage}`);
     }
   }
 
@@ -127,12 +130,14 @@ export class CampaignService {
       });
 
       this.logger.log('Successfully authenticated Web3 user');
+
       return data.access_token;
     } catch (error) {
       const errorMessage =
         error.response?.data?.message ||
         error.message ||
         'Unknown error occurred';
+
       this.logger.warn(
         `Error authenticating Web3 user: ${errorMessage}`,
         error.stack,
@@ -177,6 +182,7 @@ export class CampaignService {
       this.logger.log(
         `Successfully joined campaign: ${campaign_address} on chain: ${chain_id}`,
       );
+
       return data;
     } catch (error) {
       const errorMessage =
@@ -197,10 +203,7 @@ export class CampaignService {
         );
       }
 
-      this.logger.warn(
-        `Error joining campaign: ${errorMessage}`,
-        error.stack,
-      );
+      this.logger.warn(`Error joining campaign: ${errorMessage}`, error.stack);
       throw new Error(`Failed to join campaign: ${errorMessage}`);
     }
   }
@@ -270,12 +273,14 @@ export class CampaignService {
       this.logger.warn(
         'Missing HuFi campaign launcher API base URL. Join campaign cron will not run.',
       );
+
       return;
     }
     if (!this.recordingOracleBaseUrl) {
       this.logger.warn(
         'Missing HuFi recording oracle API base URL. Join campaign cron will not run.',
       );
+
       return;
     }
     const campaigns = await this.getCampaigns();
@@ -290,6 +295,7 @@ export class CampaignService {
 
     if (runningCampaigns.length === 0) {
       this.logger.log('No campaigns to join');
+
       return;
     }
 

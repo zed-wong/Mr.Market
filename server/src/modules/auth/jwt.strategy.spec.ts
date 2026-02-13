@@ -1,6 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { JwtStrategy } from './jwt.strategy';
 import { ConfigService } from '@nestjs/config';
+import { Test, TestingModule } from '@nestjs/testing';
+
+import { JwtStrategy } from './jwt.strategy';
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
@@ -28,6 +29,7 @@ describe('JwtStrategy', () => {
   it('should validate the payload and return user data', async () => {
     const payload = { username: 'admin', sub: 'user-id' };
     const result = await strategy.validate(payload);
+
     expect(result).toEqual({ userId: 'user-id', username: 'admin' });
   });
 });

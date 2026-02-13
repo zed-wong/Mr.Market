@@ -1,4 +1,4 @@
-import { IsString, IsBoolean, IsOptional, IsUUID } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 
 // DTO for GrowdataExchange
 export class GrowdataExchangeDto {

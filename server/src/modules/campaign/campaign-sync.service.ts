@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
-import { Repository } from 'typeorm';
 import { Campaign } from 'src/common/entities/campaign/campaign.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { Repository } from 'typeorm';
+
 import { CampaignService } from './campaign.service';
 
 @Injectable()
@@ -60,6 +61,7 @@ export class CampaignSyncService {
 
   private mapStatus(remoteStatus: string): string {
     const normalized = (remoteStatus || '').toLowerCase();
+
     if (normalized.includes('running') || normalized.includes('active')) {
       return 'active';
     }
@@ -69,6 +71,7 @@ export class CampaignSyncService {
     if (normalized.includes('payout')) {
       return 'payout';
     }
+
     return 'cancelled';
   }
 }

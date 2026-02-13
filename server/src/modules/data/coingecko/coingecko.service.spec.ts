@@ -1,7 +1,8 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { CoingeckoProxyService } from './coingecko.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Test, TestingModule } from '@nestjs/testing';
 import { CoinGeckoClient } from 'coingecko-api-v3';
+
+import { CoingeckoProxyService } from './coingecko.service';
 
 jest.mock('coingecko-api-v3', () => ({
   CoinGeckoClient: jest.fn().mockImplementation(() => ({
@@ -46,9 +47,11 @@ describe('CoingeckoProxyService', () => {
     it('should return cached data if available', async () => {
       const mockId = 'bitcoin';
       const mockData = { id: 'bitcoin', symbol: 'btc', name: 'Bitcoin' };
+
       cacheManagerMock.get.mockResolvedValue(mockData);
 
       const result = await service.coinsId(mockId);
+
       expect(result).toEqual(mockData);
       expect(cacheManagerMock.get).toHaveBeenCalledWith(mockId);
       expect(coinGeckoClientMock.coinId).not.toHaveBeenCalled();
@@ -64,6 +67,7 @@ describe('CoingeckoProxyService', () => {
 
     it('should return cached market data if available', async () => {
       const key = `markets/${mockVsCurrency}/${mockPerPage}/${mockPage}`;
+
       cacheManagerMock.get.mockResolvedValue(mockData);
 
       const result = await service.coinsMarkets(
@@ -72,6 +76,7 @@ describe('CoingeckoProxyService', () => {
         mockPerPage,
         mockPage,
       );
+
       expect(result).toEqual(mockData);
       expect(cacheManagerMock.get).toHaveBeenCalledWith(key);
       expect(coinGeckoClientMock.coinMarket).not.toHaveBeenCalled();
@@ -87,6 +92,7 @@ describe('CoingeckoProxyService', () => {
 
     it('should return cached chart data if available', async () => {
       const key = `chart/${mockId}-${mockDays}-${mockVsCurrency}`;
+
       cacheManagerMock.get.mockResolvedValue(mockData);
 
       const result = await service.coinsIdMarketChart(
@@ -94,6 +100,7 @@ describe('CoingeckoProxyService', () => {
         mockDays,
         mockVsCurrency,
       );
+
       expect(result).toEqual(mockData);
       expect(cacheManagerMock.get).toHaveBeenCalledWith(key);
       expect(coinGeckoClientMock.coinIdMarketChart).not.toHaveBeenCalled();
@@ -109,6 +116,7 @@ describe('CoingeckoProxyService', () => {
 
     it('should return cached chart range data if available', async () => {
       const key = `chart/${mockId}-${mockFrom}-${mockTo}-${mockVsCurrency}`;
+
       cacheManagerMock.get.mockResolvedValue(mockData);
 
       const result = await service.coinIdMarketChartRange(
@@ -117,6 +125,7 @@ describe('CoingeckoProxyService', () => {
         mockTo,
         mockVsCurrency,
       );
+
       expect(result).toEqual(mockData);
       expect(cacheManagerMock.get).toHaveBeenCalledWith(key);
       expect(coinGeckoClientMock.coinIdMarketChartRange).not.toHaveBeenCalled();

@@ -1,7 +1,7 @@
 import { Injectable, Logger, Scope } from '@nestjs/common';
-import * as winston from 'winston';
-import * as path from 'path';
 import axios from 'axios';
+import * as path from 'path';
+import * as winston from 'winston';
 
 @Injectable({ scope: Scope.DEFAULT })
 export class CustomLogger extends Logger {
@@ -21,7 +21,8 @@ export class CustomLogger extends Logger {
         winston.format.timestamp(),
         winston.format.printf(
           (info) =>
-            `[${info.timestamp}] [${info.level.toUpperCase()}] [${context || this.context
+            `[${info.timestamp}] [${info.level.toUpperCase()}] [${
+              context || this.context
             }] ${info.message}`,
         ),
       ),

@@ -1,7 +1,8 @@
 // market-data.controller.ts
 import { Controller, Get, Query } from '@nestjs/common';
-import { MarketdataService } from './market-data.service';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+
+import { MarketdataService } from './market-data.service';
 
 @ApiTags('Data')
 @Controller('market')
@@ -43,6 +44,7 @@ export class MarketDataController {
     const sinceNumber = since ? Number(since) : undefined;
     const limitNumber = limit ? Number(limit) : 30;
     const symbolCap = symbol.toUpperCase();
+
     return this.marketDataService.getOHLCVData(
       exchange,
       symbolCap,
@@ -84,6 +86,7 @@ export class MarketDataController {
     // Split the symbols string by comma to get an array of symbols
     const symbolsArray = symbols.split(',');
     const symbolsCap = symbolsArray.map((symbol) => symbol.toUpperCase());
+
     return this.marketDataService.getTickers(exchange, symbolsCap);
   }
 

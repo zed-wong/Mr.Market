@@ -6,7 +6,8 @@ describe('CampaignSyncService', () => {
     const campaignRepository = {
       findOneBy: jest.fn(async ({ address, chainId }) => {
         return (
-          rows.find((r) => r.address === address && r.chainId === chainId) || null
+          rows.find((r) => r.address === address && r.chainId === chainId) ||
+          null
         );
       }),
       create: jest.fn((payload) => payload),
@@ -14,11 +15,14 @@ describe('CampaignSyncService', () => {
         const index = rows.findIndex(
           (r) => r.address === payload.address && r.chainId === payload.chainId,
         );
+
         if (index >= 0) {
           rows[index] = { ...rows[index], ...payload };
+
           return rows[index];
         }
         rows.push(payload);
+
         return payload;
       }),
     };
@@ -45,6 +49,7 @@ describe('CampaignSyncService', () => {
     );
 
     const synced = await service.syncCampaigns();
+
     expect(synced).toBe(1);
     expect(rows[0].status).toBe('active');
   });

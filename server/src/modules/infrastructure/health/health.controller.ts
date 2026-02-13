@@ -1,13 +1,13 @@
 // health.controller.ts
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { HealthService } from './health.service';
+import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+
+import { HealthService } from './health.service';
 
 @ApiTags('System')
 @Controller('health')
 export class HealthController {
-  constructor(private healthService: HealthService) { }
+  constructor(private healthService: HealthService) {}
 
   @Get('/')
   @ApiOperation({ summary: 'Get server health status' })
@@ -97,4 +97,3 @@ export class HealthController {
     return await this.healthService.checkSnapshotPollingHealth();
   }
 }
-

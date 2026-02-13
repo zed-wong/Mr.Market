@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HealthService } from './health.service';
-import { CustomLogger } from '../logger/logger.service';
 import { getEntityManagerToken } from '@nestjs/typeorm';
+
 import { ExchangeInitService } from '../exchange-init/exchange-init.service';
+import { CustomLogger } from '../logger/logger.service';
+import { HealthService } from './health.service';
 
 const mockEntityManager = {
   // Mock methods as needed, for example:
@@ -66,15 +67,20 @@ describe('HealthService', () => {
       name: 'Binance',
       fetchBalance: jest.fn(),
     } as any;
+
     service['exchanges'].set('bitfinex', bitfinex);
     service['exchanges'].set('mexc', mexc);
     service['exchanges'].set('binance', binance);
 
-    bitfinex.fetchBalance.mockRejectedValue(new Error('Exchange bitfinex is dead'));
+    bitfinex.fetchBalance.mockRejectedValue(
+      new Error('Exchange bitfinex is dead'),
+    );
     mexc.fetchBalance.mockResolvedValue(undefined);
     binance.fetchBalance.mockResolvedValue({ total: 100 });
 
-    const exchangeInitService = module.get<ExchangeInitService>(ExchangeInitService);
+    const exchangeInitService =
+      module.get<ExchangeInitService>(ExchangeInitService);
+
     exchangeInitService.getExchange = jest.fn((exchangeName: string) =>
       service['exchanges'].get(exchangeName),
     );
@@ -87,8 +93,10 @@ describe('HealthService', () => {
     });
     it('should handle both alive and dead exchanges fetch', async () => {
       const bitfinexMock = service['exchanges'].get('bitfinex');
+
       bitfinexMock.fetchBalance = jest.fn().mockResolvedValue({ total: 100 });
       const allExchangesHealthResult = await service.getAllHealth();
+
       expect(allExchangesHealthResult).toEqual([
         { Bitfinex: 'alive' },
         { 'MEXC Global': 'dead' },
@@ -99,6 +107,7 @@ describe('HealthService', () => {
   describe('getExchangeHealth', () => {
     it('should return health status of a specific exchange', async () => {
       const healthStatus = await service.getExchangeHealth('binance');
+
       expect(healthStatus).toEqual({ statusCode: 200, message: 'alive' });
     });
 
