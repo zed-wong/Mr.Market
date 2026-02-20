@@ -32,7 +32,7 @@ import { toast } from "svelte-sonner";
   let AddNewQuoteAssetId = "";
   let AddNewCustomFeeRate = "";
 
-  let addDialog = false;
+  let addDialogEl: HTMLDialogElement | null = null;
   let isAdding = false;
   let isExchangeDropdownOpen = false;
   let isMarketDropdownOpen = false;
@@ -52,7 +52,6 @@ import { toast } from "svelte-sonner";
 
   const cleanUpStates = () => {
     isAdding = false;
-    addDialog = false;
     addMode = "menu";
     AddNewSymbol = "";
     AddNewExchangeId = "";
@@ -75,7 +74,12 @@ import { toast } from "svelte-sonner";
   };
 
   function closeDialog() {
-    cleanUpStates();
+    addDialogEl?.close();
+  }
+
+  function openDialog() {
+    addMode = "menu";
+    addDialogEl?.showModal();
   }
 
   function openQuickAdd() {
@@ -205,18 +209,11 @@ import { toast } from "svelte-sonner";
 
 <svelte:window on:click={handleClickOutside} />
 
-<details
-  class="dropdown dropdown-end"
-  bind:open={addDialog}
-  on:toggle={() => {
-    if (!addDialog) {
-      closeDialog();
-    }
-  }}
+<button
+  type="button"
+  class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
+  on:click={openDialog}
 >
-  <summary
-    class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
-  >
     <svg
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
@@ -232,24 +229,27 @@ import { toast } from "svelte-sonner";
       />
     </svg>
     {$_("add_pair")}
-  </summary>
-  {#if addMode === "menu"}
-    <ul
-      class="dropdown-content menu p-2 shadow-xl bg-base-100 rounded-box w-56 mt-2 border border-base-200"
-    >
-      <li>
-        <button type="button" on:click={openQuickAdd}>
+  </button>
+
+<dialog
+  bind:this={addDialogEl}
+  class="modal modal-bottom sm:modal-middle"
+  on:close={cleanUpStates}
+>
+  <div
+    class="modal-box w-[calc(100vw-1rem)] sm:w-full sm:max-w-[32rem] p-4 sm:p-6 max-h-[85vh] overflow-y-auto"
+  >
+    {#if addMode === "menu"}
+      <h3 class="font-bold text-lg mb-4">{$_("add_pair")}</h3>
+      <div class="grid gap-2">
+        <button type="button" class="btn btn-outline" on:click={openQuickAdd}>
           {$_("quick_add")}
         </button>
-      </li>
-      <li>
-        <button type="button" on:click={openCustomAdd}>Custom add</button>
-      </li>
-    </ul>
-  {:else}
-    <div
-      class="dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-[32rem] mt-2 max-h-[80vh] overflow-y-auto"
-    >
+        <button type="button" class="btn btn-outline" on:click={openCustomAdd}>
+          Custom add
+        </button>
+      </div>
+    {:else}
       <div class="flex justify-between items-center mb-4">
         <div class="flex items-center gap-2">
           <button
@@ -655,6 +655,9 @@ import { toast } from "svelte-sonner";
       </div>
         {/if}
       {/if}
-    </div>
-  {/if}
-</details>
+    {/if}
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button aria-label="Close">close</button>
+  </form>
+</dialog>
