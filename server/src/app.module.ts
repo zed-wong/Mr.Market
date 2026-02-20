@@ -1,4 +1,5 @@
 import * as dotenv from 'dotenv';
+import { join } from 'path';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -115,6 +116,8 @@ dotenv.config();
         MarketMakingOrderIntent,
       ],
       synchronize: false,
+      migrations: [join(__dirname, 'database/migrations/*{.ts,.js}')],
+      migrationsTableName: 'migrations_typeorm',
       migrationsRun: true,
       extra: {
         flags: ['-WAL'],
