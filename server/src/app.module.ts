@@ -71,6 +71,28 @@ import { LocalCampaignModule } from './modules/market-making/local-campaign/loca
 
 dotenv.config();
 
+function buildRedisConfig(configService: ConfigService) {
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    const parsed = new URL(redisUrl);
+    return {
+      host: parsed.hostname,
+      port: Number(parsed.port || 6379),
+      password: parsed.password || undefined,
+      db:
+        parsed.pathname && parsed.pathname !== '/'
+          ? Number(parsed.pathname.slice(1)) || 0
+          : 0,
+      tls: parsed.protocol === 'rediss:' ? {} : undefined,
+    };
+  }
+
+  return {
+    host: configService.get('redis.host'),
+    port: configService.get('redis.port'),
+  };
+}
+
 @Module({
   imports: [
     LoggerModule,
@@ -145,10 +167,7 @@ dotenv.config();
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        redis: {
-          host: configService.get('redis.host'),
-          port: configService.get('redis.port'),
-        },
+        redis: buildRedisConfig(configService),
       }),
       inject: [ConfigService],
     }),
