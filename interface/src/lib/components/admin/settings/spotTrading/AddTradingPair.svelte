@@ -362,7 +362,7 @@ import { toast } from "svelte-sonner";
             </div>
           </div>
         {:else}
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div class="form-control w-full col-span-2">
           <label class="label" for="exchange-id-input">
             <span class="label-text font-medium">{$_("exchange_id")}</span>
