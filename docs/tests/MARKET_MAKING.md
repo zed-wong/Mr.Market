@@ -1,4 +1,4 @@
-# Market Making End-to-End Test Guide
+# Market Making End-to-End Test
 
 This document covers backend end-to-end testing for market making:
 
@@ -7,15 +7,6 @@ This document covers backend end-to-end testing for market making:
 - withdrawal path toward exchange
 - dispatch into tick-driven market making engine
 - user profit and balance tracking validation
-
-## Important Reality Check
-
-Current implementation has a hard stop in withdrawal stage:
-
-- `withdraw_to_exchange` handler is currently validation/refund mode.
-- live withdrawal calls are commented out in `server/src/modules/market-making/user-orders/market-making.processor.ts`.
-
-So the default runtime reaches `payment_complete`, but not full exchange-start lifecycle unless you explicitly enable/simulate those stages in tests.
 
 ## Components Under Test
 
