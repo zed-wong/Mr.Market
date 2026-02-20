@@ -199,49 +199,48 @@
 
 <dialog
   bind:this={addDialogEl}
-  class="modal modal-bottom sm:modal-middle"
+  class="modal modal-bottom sm:modal-middle backdrop-blur-sm"
   on:close={cleanUpStates}
 >
   <div
-    class="modal-box w-[calc(100vw-1rem)] sm:w-full sm:max-w-[32rem] p-4 sm:p-6 max-h-[85vh] overflow-y-auto"
+    class="modal-box w-full sm:max-w-[36rem] rounded-t-3xl sm:rounded-box space-y-3 pt-0 px-0 max-h-[88vh] overflow-y-auto"
   >
-    {#if addMode === "menu"}
-      <h3 class="font-bold text-lg mb-4">{$_("add_pair")}</h3>
-      <div class="grid gap-2">
-        <button type="button" class="btn btn-outline" on:click={openQuickAdd}>
-          {$_("quick_add")}
-        </button>
-        <button type="button" class="btn btn-outline" on:click={openCustomAdd}>
-          Custom add
-        </button>
-      </div>
-    {:else}
-      <div class="flex justify-between items-center mb-4">
+    <div class="sticky top-0 bg-base-100 z-10">
+      <div class="mx-auto mt-2 mb-2 h-1 w-10 rounded-full bg-base-content/20 sm:hidden"></div>
+      <div class="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-base-200">
         <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="btn btn-sm btn-circle btn-ghost"
-            on:click={() => (addMode = "menu")}
-            aria-label="Back"
-            title="Back"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-5 h-5"
+          {#if addMode !== "menu"}
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost"
+              on:click={() => (addMode = "menu")}
+              aria-label="Back"
+              title="Back"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
-              />
-            </svg>
-          </button>
-          <h3 class="font-bold text-lg">
-            {addMode === "quick" ? $_("quick_add_pair") : $_("add_new_pair")}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-5 h-5"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+                />
+              </svg>
+            </button>
+          {/if}
+          <h3 class="font-semibold text-base sm:text-lg">
+            {#if addMode === "menu"}
+              {$_("add_pair")}
+            {:else if addMode === "quick"}
+              {$_("quick_add_pair")}
+            {:else}
+              {$_("add_new_pair")}
+            {/if}
           </h3>
         </div>
         <button
@@ -265,7 +264,19 @@
           >
         </button>
       </div>
+    </div>
 
+    <div class="px-4 sm:px-6 pb-5">
+    {#if addMode === "menu"}
+      <div class="grid gap-2">
+        <button type="button" class="btn btn-outline justify-start" on:click={openQuickAdd}>
+          {$_("quick_add")}
+        </button>
+        <button type="button" class="btn btn-outline justify-start" on:click={openCustomAdd}>
+          Custom add
+        </button>
+      </div>
+    {:else}
       <div class="tabs tabs-boxed mb-4">
         <button
           type="button"
@@ -619,6 +630,7 @@
     </div>
       {/if}
     {/if}
+    </div>
   </div>
   <form method="dialog" class="modal-backdrop">
     <button aria-label="Close">close</button>
