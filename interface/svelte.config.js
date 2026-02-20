@@ -1,33 +1,22 @@
 import adapterAuto from '@sveltejs/adapter-auto';
+import adapterNode from '@sveltejs/adapter-node';
+import adapterStatic from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
 
 /**
  * @returns {import('@sveltejs/kit').Adapter}
  */
 function getAdapter() {
   if (process.env.ADAPTER === 'node' || process.env.RENDER) {
-    try {
-      const adapterNode = require('@sveltejs/adapter-node');
-      return (adapterNode.default || adapterNode)();
-    } catch (e) {
-      console.warn('Could not load @sveltejs/adapter-node, falling back to auto. Error:', e.message);
-    }
+    return adapterNode();
   } else if (process.env.ADAPTER === 'static') {
-    try {
-      const adapterStatic = require('@sveltejs/adapter-static');
-      return (adapterStatic.default || adapterStatic)({
-        pages: 'build',
-        assets: 'build',
-        fallback: 'app.html',
-        precompress: false,
-        strict: true
-      });
-    } catch (e) {
-      console.warn('Could not load @sveltejs/adapter-static, falling back to auto. Error:', e.message);
-    }
+    return adapterStatic({
+      pages: 'build',
+      assets: 'build',
+      fallback: 'app.html',
+      precompress: false,
+      strict: true
+    });
   }
 
   return adapterAuto();
