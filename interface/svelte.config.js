@@ -7,9 +7,9 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
  * @returns {import('@sveltejs/kit').Adapter}
  */
 function getAdapter() {
-  if (process.env.ADAPTER === 'node' || process.env.RENDER) {
+  if (process.env.ADAPTER === 'node') {
     return adapterNode();
-  } else if (process.env.ADAPTER === 'static') {
+  } else if (process.env.ADAPTER === 'static' || process.env.RENDER) {
     return adapterStatic({
       pages: 'build',
       assets: 'build',
