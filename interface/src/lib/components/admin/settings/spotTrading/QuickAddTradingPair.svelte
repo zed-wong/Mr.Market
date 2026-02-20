@@ -371,7 +371,12 @@
   bind:open={addDialog}
   on:toggle={() => !embedded && !addDialog && resetState()}
 >
-  {#if !embedded}
+  {#if embedded}
+    <summary
+      class="absolute w-px h-px p-0 m-0 overflow-hidden opacity-0 pointer-events-none"
+      aria-hidden="true"
+    ></summary>
+  {:else}
     <summary class="btn btn-outline gap-2">
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -444,20 +449,13 @@
     {:else}
       <div class="space-y-4">
         <div class="form-control w-full">
-          <label class="label" for="quick-symbol-input">
-            <span class="label-text font-medium">{$_("symbol")}</span>
-            <span class="label-text-alt text-base-content/60">{$_("symbol_examples_pairs")}</span>
-          </label>
           <input
             id="quick-symbol-input"
             type="text"
-            class="input input-bordered w-full focus:input-primary transition-all"
+            class="input input-bordered input-sm w-full"
             bind:value={symbolQuery}
-            placeholder={$_("symbol_placeholder_pairs")}
+            placeholder={$_("search_pair_placeholder")}
           />
-          <span class="text-xs text-base-content/50 mt-1">
-            {$_("search_all_exchanges_hint")}
-          </span>
         </div>
 
         {#if showAssetPicker}
@@ -550,10 +548,6 @@
           </div>
         {/if}
 
-        <div class="divider text-xs font-bold opacity-50 capitalize tracking-wide">
-          {$_("related_pairs")}
-        </div>
-
         {#if isLoadingMarkets}
           <div class="flex items-center gap-2 text-sm">
             <span class="loading loading-spinner loading-xs"></span>
@@ -566,19 +560,12 @@
         {:else}
           <div class="space-y-2">
             {#each filteredMarkets as market}
-              <div class="flex items-center justify-between gap-4 p-3 rounded-lg border border-base-200">
+              <div class="flex items-center justify-between gap-4 p-2.5 rounded-lg border border-base-200">
                 <div>
-                  <div class="font-semibold">{market.display_symbol || market.symbol}</div>
-                  <div class="flex items-center gap-2 text-xs text-base-content/60 mt-1">
-                    {#if exchangeById[market.exchange_id]?.icon_url}
-                      <img
-                        src={exchangeById[market.exchange_id].icon_url}
-                        alt={exchangeById[market.exchange_id].name}
-                        class="h-4 w-auto"
-                      />
-                    {/if}
-                    <span>{exchangeById[market.exchange_id]?.name || market.exchange_id}</span>
-                  </div>
+                  <div class="font-medium">{market.display_symbol || market.symbol}</div>
+                  <span class="text-xs text-base-content/60">
+                    {exchangeById[market.exchange_id]?.name || market.exchange_id}
+                  </span>
                 </div>
                 <button
                   class={clsx(

@@ -1,127 +1,139 @@
 <script lang="ts">
-  import clsx from "clsx";
-  import { _ } from "svelte-i18n";
-  import { toast } from "svelte-sonner";
-  import { onMount } from "svelte";
-  import { page } from "$app/stores";
-  import { invalidate } from "$app/navigation";
-  import {
-    getSupportedExchanges,
-    getAllCcxtExchanges,
-  } from "$lib/helpers/mrm/admin/growdata";
-  import AddExchange from "$lib/components/admin/exchanges/addExchange.svelte";
-  import ExchangeList from "$lib/components/admin/exchanges/exchangeList.svelte";
+    import clsx from "clsx";
+    import { _ } from "svelte-i18n";
+    import { toast } from "svelte-sonner";
+    import { onMount } from "svelte";
+    import { page } from "$app/stores";
+    import { invalidate } from "$app/navigation";
+    import {
+        getSupportedExchanges,
+        getAllCcxtExchanges,
+    } from "$lib/helpers/mrm/admin/growdata";
+    import AddExchange from "$lib/components/admin/exchanges/addExchange.svelte";
+    import ExchangeList from "$lib/components/admin/exchanges/exchangeList.svelte";
 
-  $: supportedExchanges = [] as string[];
-  $: allCcxtExchanges = [] as string[];
-  $: exchanges = $page.data.growInfo.exchanges as {
-    exchange_id: string;
-    name: string;
-    icon_url?: string;
-    enable: boolean;
-  }[];
+    $: supportedExchanges = [] as string[];
+    $: allCcxtExchanges = [] as string[];
+    $: exchanges = $page.data.growInfo.exchanges as {
+        exchange_id: string;
+        name: string;
+        icon_url?: string;
+        enable: boolean;
+    }[];
 
-  let isRefreshing = false;
+    let isRefreshing = false;
 
-  async function RefreshExchanges(showToast = true) {
-    isRefreshing = true;
-    const refreshTask = new Promise<void>((resolve, reject) => {
-      setTimeout(() => {
-        invalidate("admin:settings:exchanges")
-          .then(() => resolve())
-          .catch((error) => reject(error))
-          .finally(() => {
-            isRefreshing = false;
-          });
-      }, getRandomDelay());
-    });
-    if (showToast) {
-      await toast.promise(refreshTask, {
-        loading: $_("refreshing_msg"),
-        success: $_("refresh_success_msg"),
-        error: $_("refresh_failed_msg"),
-      });
-    } else {
-      await refreshTask;
+    async function RefreshExchanges(showToast = true) {
+        isRefreshing = true;
+        const refreshTask = new Promise<void>((resolve, reject) => {
+            setTimeout(() => {
+                invalidate("admin:settings:exchanges")
+                    .then(() => resolve())
+                    .catch((error) => reject(error))
+                    .finally(() => {
+                        isRefreshing = false;
+                    });
+            }, getRandomDelay());
+        });
+        if (showToast) {
+            await toast.promise(refreshTask, {
+                loading: $_("refreshing_msg"),
+                success: $_("refresh_success_msg"),
+                error: $_("refresh_failed_msg"),
+            });
+        } else {
+            await refreshTask;
+        }
     }
-  }
 
-  function getRandomDelay() {
-    return Math.floor(Math.random() * (3000 - 2000 + 1)) + 2000;
-  }
+    function getRandomDelay() {
+        return Math.floor(Math.random() * (3000 - 2000 + 1)) + 2000;
+    }
 
-  onMount(async () => {
-    const token = localStorage.getItem("admin-access-token");
-    if (!token) return;
-    supportedExchanges = (await getSupportedExchanges(token)) as string[];
-    allCcxtExchanges = await getAllCcxtExchanges(token);
-  });
+    onMount(async () => {
+        const token = localStorage.getItem("admin-access-token");
+        if (!token) return;
+        supportedExchanges = (await getSupportedExchanges(token)) as string[];
+        allCcxtExchanges = await getAllCcxtExchanges(token);
+    });
 </script>
 
 <div class="p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-    <div class="flex items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
-      <!-- Back button centered with title/subtitle -->
-      <button
-        on:click={() => window.history.back()}
-        class="btn btn-ghost btn-circle"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-5 h-5"
+    <!-- Header -->
+    <div
+        class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4"
+    >
+        <div
+            class="flex items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
-          />
-        </svg>
-      </button>
-
-      <!-- Title and subtitle -->
-      <div class="min-w-0">
-        <h1 class="text-2xl sm:text-3xl font-bold">{$_("exchanges")}</h1>
-        <p class="text-sm text-base-content/60">
-          {$_("manage_connected_exchanges")}
-        </p>
-      </div>
-    </div>
-
-    <!-- Action buttons -->
-    <div class="flex items-center justify-end gap-2 sm:gap-3 w-full sm:w-auto">
-      <AddExchange {allCcxtExchanges} existingExchanges={exchanges} />
-      <button
-        class="btn btn-square btn-outline"
-        on:click={() => RefreshExchanges()}
-      >
-        <span
-          class={clsx(isRefreshing && "loading loading-spinner loading-sm")}
-        >
-          {#if !isRefreshing}
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-5 h-5"
+            <!-- Back button centered with title/subtitle -->
+            <button
+                on:click={() => window.history.back()}
+                class="btn btn-ghost btn-circle"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
-              />
-            </svg>
-          {/if}
-        </span>
-      </button>
-    </div>
-  </div>
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="w-5 h-5"
+                >
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+                    />
+                </svg>
+            </button>
 
-  <ExchangeList {exchanges} {supportedExchanges} />
+            <!-- Title and subtitle -->
+            <div
+                class="flex flex-col text-start items-start justify-center min-w-0"
+            >
+                <span class="text-xl sm:text-2xl font-bold"
+                    >{$_("exchanges")}</span
+                >
+                <span class="text-sm text-base-content/60">
+                    {$_("manage_connected_exchanges")}
+                </span>
+            </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div
+            class="flex items-center justify-end gap-2 sm:gap-3 w-full sm:w-auto"
+        >
+            <AddExchange {allCcxtExchanges} existingExchanges={exchanges} />
+            <button
+                class="btn btn-square btn-outline"
+                on:click={() => RefreshExchanges()}
+            >
+                <span
+                    class={clsx(
+                        isRefreshing && "loading loading-spinner loading-sm",
+                    )}
+                >
+                    {#if !isRefreshing}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke-width="1.5"
+                            stroke="currentColor"
+                            class="w-5 h-5"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+                            />
+                        </svg>
+                    {/if}
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <ExchangeList {exchanges} {supportedExchanges} />
 </div>
