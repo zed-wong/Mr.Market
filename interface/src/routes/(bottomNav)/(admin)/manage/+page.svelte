@@ -3,8 +3,8 @@
   import { _ } from "svelte-i18n";
 </script>
 
-<div class="flex flex-col gap-4 justify-center items-center h-[100vh]">
-  <span class="text-2xl font-bold">{$_("welcome_to_admin_panel")}</span>
+<div class="flex flex-col gap-4 justify-center items-center min-h-[calc(100vh-4rem)] px-4 text-center">
+  <span class="text-2xl md:text-3xl font-bold">{$_("welcome_to_admin_panel")}</span>
   <button
     class="btn"
     on:click={() => {

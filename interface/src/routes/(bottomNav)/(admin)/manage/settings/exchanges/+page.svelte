@@ -58,10 +58,10 @@
   });
 </script>
 
-<div class="p-6 md:p-10 space-y-6 max-w-7xl mx-auto">
+<div class="p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 max-w-7xl mx-auto">
   <!-- Header -->
-  <div class="flex items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+    <div class="flex items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
       <!-- Back button centered with title/subtitle -->
       <button
         on:click={() => window.history.back()}
@@ -84,8 +84,8 @@
       </button>
 
       <!-- Title and subtitle -->
-      <div>
-        <h1 class="text-3xl font-bold">{$_("exchanges")}</h1>
+      <div class="min-w-0">
+        <h1 class="text-2xl sm:text-3xl font-bold">{$_("exchanges")}</h1>
         <p class="text-sm text-base-content/60">
           {$_("manage_connected_exchanges")}
         </p>
@@ -93,7 +93,7 @@
     </div>
 
     <!-- Action buttons -->
-    <div class="flex items-center gap-3">
+    <div class="flex items-center justify-end gap-2 sm:gap-3 w-full sm:w-auto">
       <AddExchange {allCcxtExchanges} existingExchanges={exchanges} />
       <button
         class="btn btn-square btn-outline"

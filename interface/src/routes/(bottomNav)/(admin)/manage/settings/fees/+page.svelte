@@ -69,10 +69,10 @@
   });
 </script>
 
-<div class="p-6 md:p-10 space-y-6 max-w-7xl mx-auto">
+<div class="p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 max-w-7xl mx-auto">
   <!-- Header -->
-  <div class="flex items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+    <div class="flex items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
       <button
         on:click={() => window.history.back()}
         class="btn btn-ghost btn-circle"
@@ -93,15 +93,15 @@
         </svg>
       </button>
 
-      <div class="flex flex-col text-start items-start justify-center">
-        <h1 class="text-3xl font-bold">{$_("fees")}</h1>
+      <div class="flex flex-col text-start items-start justify-center min-w-0">
+        <h1 class="text-2xl sm:text-3xl font-bold">{$_("fees")}</h1>
         <p class="text-sm text-base-content/60">
           {$_("manage_global_fees_and_overrides")}
         </p>
       </div>
     </div>
 
-    <button class="btn btn-square btn-outline" on:click={() => RefreshFees(true)}>
+    <button class="btn btn-square btn-outline self-end sm:self-auto" on:click={() => RefreshFees(true)}>
       <span class={clsx(isRefreshing && "loading loading-spinner loading-sm")}>
         {#if !isRefreshing}
           <svg

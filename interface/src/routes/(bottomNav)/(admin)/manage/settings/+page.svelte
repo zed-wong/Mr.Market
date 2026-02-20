@@ -39,9 +39,9 @@
   ];
 </script>
 
-<div class="p-6 md:p-10 space-y-8 max-w-7xl mx-auto">
+<div class="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto">
   <div class="flex flex-col space-y-2 text-start items-start justify-center">
-    <h1 class="text-4xl font-bold text-primary">
+      <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-primary">
       {$_("settings")}
     </h1>
     <p class="text-base-content/60">
@@ -49,13 +49,13 @@
     </p>
   </div>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
     {#each links as link}
       <button
         on:click={() => goto(link.path)}
         class="card bg-base-100 shadow hover:shadow-lg transition-all duration-200 hover:-translate-y-1 border border-base-200 cursor-pointer text-left"
       >
-        <div class="card-body p-6 flex-row items-center gap-5">
+        <div class="card-body p-4 sm:p-6 flex-row items-center gap-4 sm:gap-5">
           <div
             class="p-3 rounded-xl {link.name === 'exchanges'
               ? 'bg-blue-100 text-blue-600'
