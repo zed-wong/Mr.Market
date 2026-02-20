@@ -1,15 +1,16 @@
-import BigNumber from 'bignumber.js';
-import { Injectable } from '@nestjs/common';
 import {
   KeystoreClientReturnType,
   SafeWithdrawalFee,
 } from '@mixin.dev/mixin-node-sdk';
+import { Injectable } from '@nestjs/common';
+import BigNumber from 'bignumber.js';
+import { MIXIN_DEPOSIT_FEES } from 'src/common/constants/constants';
+import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
+
+import { CustomConfigService } from '../../infrastructure/custom-config/custom-config.service';
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
 import { MixinClientService } from '../../mixin/client/mixin-client.service';
-import { MIXIN_DEPOSIT_FEES } from 'src/common/constants/constants';
-import { CustomConfigService } from '../../infrastructure/custom-config/custom-config.service';
-import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 
 @Injectable()
 export class FeeService {
@@ -111,12 +112,14 @@ export class FeeService {
         };
       } else if (direction === 'withdraw_to_mixin') {
         const exchange = this.exchangeInitService.getExchange(exchangeName);
+
         if (exchange) {
           const exchangeFees = await this.getExchangeWithdrawalFee(
             exchange,
             base,
             quote,
           );
+
           base_exchange_fee = exchangeFees.baseFee;
           quote_exchange_fee = exchangeFees.quoteFee;
         }
@@ -124,6 +127,7 @@ export class FeeService {
         // Deposit fee in USD
         const base_mixin_fee = this.getMixinDepositFee(base_asset.chain_id);
         const quote_mixin_fee = this.getMixinDepositFee(quote_asset.chain_id);
+
         mixin_deposit_fee = BigNumber(base_mixin_fee)
           .plus(quote_mixin_fee)
           .toString();
@@ -139,15 +143,18 @@ export class FeeService {
         };
       } else if (direction === 'withdraw_external') {
         const exchange = this.exchangeInitService.getExchange(exchangeName);
+
         if (exchange) {
           const exchangeFees = await this.getExchangeWithdrawalFee(
             exchange,
             base,
             quote,
           );
+
           base_exchange_fee = exchangeFees.baseFee;
           quote_exchange_fee = exchangeFees.quoteFee;
         }
+
         return {
           symbol: pair,
           base_asset_id: base_asset.asset_id,
@@ -174,15 +181,19 @@ export class FeeService {
   ): Promise<SafeWithdrawalFee> {
     try {
       const asset_detail = await this.client.safe.fetchAsset(asset_id);
+
       if (asset_detail) {
-        const fees: SafeWithdrawalFee[] =
-          await this.client.safe.fetchFee(asset_detail.asset_id, '');
+        const fees: SafeWithdrawalFee[] = await this.client.safe.fetchFee(
+          asset_detail.asset_id,
+          '',
+        );
 
         // Find the fee with maximum priority
         if (fees && fees.length > 0) {
           const maxPriorityFee = fees.reduce((max, current) => {
             return current.priority > max.priority ? current : max;
           });
+
           return maxPriorityFee;
         }
       }
@@ -205,6 +216,7 @@ export class FeeService {
     if (exchange.has['fetchTransactionFees']) {
       try {
         const fees = await exchange.fetchTransactionFees([base, quote]);
+
         if (fees) {
           if (fees[base]) baseFee = fees[base].withdraw || 0;
           if (fees[quote]) quoteFee = fees[quote].withdraw || 0;

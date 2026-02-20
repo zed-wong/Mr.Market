@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { GrowdataService } from 'src/modules/data/grow-data/grow-data.service';
 import {
-  GrowdataExchange,
-  GrowdataSimplyGrowToken,
   GrowdataArbitragePair,
+  GrowdataExchange,
   GrowdataMarketMakingPair,
-} from 'src/common/entities/grow-data.entity';
-import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+  GrowdataSimplyGrowToken,
+} from 'src/common/entities/data/grow-data.entity';
 import {
   GrowdataArbitragePairDto,
   GrowdataMarketMakingPairDto,
 } from 'src/modules/admin/growdata/adminGrow.dto';
+import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
+import { GrowdataService } from 'src/modules/data/grow-data/grow-data.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 
 @Injectable()
@@ -34,17 +34,21 @@ export class AdminGrowService {
         assetId,
       );
       const chainId = asset?.chain_id;
+
       if (!chainId) {
         return { chainId: undefined, chainIconUrl: undefined };
       }
-      const chainAsset =
-        await this.mixinClientService.client.safe.fetchAsset(chainId);
+      const chainAsset = await this.mixinClientService.client.safe.fetchAsset(
+        chainId,
+      );
+
       return {
         chainId,
         chainIconUrl: chainAsset?.icon_url,
       };
     } catch (error) {
       this.logger.warn(`Failed to resolve chain info for ${assetId}`, error);
+
       return { chainId: undefined, chainIconUrl: undefined };
     }
   }
@@ -79,6 +83,7 @@ export class AdminGrowService {
 
   async removeAllExchanges() {
     const exchanges = await this.growDataService.getAllExchanges();
+
     for (const exchange of exchanges) {
       await this.growdataRepository.removeExchange(exchange.exchange_id);
     }
@@ -110,6 +115,7 @@ export class AdminGrowService {
 
   async removeAllSimplyGrowTokens() {
     const tokens = await this.growDataService.getAllSimplyGrowTokens();
+
     for (const token of tokens) {
       await this.growdataRepository.removeSimplyGrowToken(token.asset_id);
     }
@@ -137,6 +143,7 @@ export class AdminGrowService {
     const exchange = await this.growDataService.getExchangeById(
       pairDto.exchange_id,
     );
+
     if (!exchange) {
       throw new Error('Exchange not found');
     }
@@ -144,6 +151,7 @@ export class AdminGrowService {
       ...pairDto,
       exchange_id: exchange.exchange_id,
     } as GrowdataMarketMakingPair);
+
     return this.growdataRepository.addMarketMakingPair(pair);
   }
 
@@ -153,6 +161,7 @@ export class AdminGrowService {
 
   async removeAllMarketMakingPairs() {
     const pairs = await this.growDataService.getAllMarketMakingPairs();
+
     for (const pair of pairs) {
       await this.growDataService.removeMarketMakingPair(pair.id);
     }
@@ -163,10 +172,12 @@ export class AdminGrowService {
     modifications: Partial<GrowdataMarketMakingPair>,
   ) {
     const pair = await this.growDataService.getMarketMakingPairById(id);
+
     if (pair) {
       Object.assign(pair, modifications);
       // Assuming there's a method to update the pair
       const updatedPair = await this.applyChainInfo(pair);
+
       return this.growdataRepository.addMarketMakingPair(updatedPair);
     }
   }
@@ -179,6 +190,7 @@ export class AdminGrowService {
     const target_exchange = await this.growDataService.getExchangeById(
       pairDto.target_exchange_id,
     );
+
     if (!base_exchange || !target_exchange) {
       throw new Error('Exchange not found');
     }
@@ -187,6 +199,7 @@ export class AdminGrowService {
       base_exchange_id: base_exchange.exchange_id,
       target_exchange_id: target_exchange.exchange_id,
     };
+
     return this.growdataRepository.addArbitragePair(pair);
   }
 
@@ -196,6 +209,7 @@ export class AdminGrowService {
 
   async removeAllArbitragePairs() {
     const pairs = await this.growDataService.getAllArbitragePairs();
+
     for (const pair of pairs) {
       await this.growdataRepository.removeArbitragePair(pair.id);
     }

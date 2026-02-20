@@ -16,6 +16,7 @@ export const createCompositeKey = (
   timeFrame?: string,
 ): string => {
   let key = '';
+
   if (type === 'orderbook' || type === 'ticker') {
     key = `${type}:${exchange}:${symbol}`;
   } else if (type === 'OHLCV') {
@@ -23,6 +24,7 @@ export const createCompositeKey = (
   } else if (type === 'tickers') {
     key = `${type}:${exchange}:${symbols}`;
   }
+
   return key;
 };
 export const decodeCompositeKey = (compositeKey: string): CompositeKey => {

@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { UserRepository } from './user.repository';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { MixinUser } from 'src/common/entities/mixin-user.entity';
 import { KeystoreClientReturnType } from '@mixin.dev/mixin-node-sdk';
+import { Injectable } from '@nestjs/common';
+import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { mapApiResponseToMixinUser } from 'src/common/helpers/mixin/user';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
 import { MixinClientService } from '../client/mixin-client.service';
+import { UserRepository } from './user.repository';
 
 @Injectable()
 export class UserService {
@@ -21,6 +22,7 @@ export class UserService {
   async addUser(user: Partial<MixinUser>) {
     try {
       const newUser = await this.userRepository.addUser(user);
+
       return newUser;
     } catch (error) {
       this.logger.error('Failed to add user', error.message);
@@ -48,15 +50,18 @@ export class UserService {
         `Failed to check user existence ${user_id}`,
         error.message,
       );
+
       return false;
     }
   }
 
   async addUserIfNotExist(user: Partial<MixinUser>, user_id: string) {
     const exist = await this.checkUserExist(user_id);
+
     if (!exist) {
       await this.addUser(user);
     }
+
     return exist;
   }
 
@@ -87,8 +92,10 @@ export class UserService {
     jwt_token: string,
   ): Promise<void> {
     const mappedUser = mapApiResponseToMixinUser(user, jwt_token);
+
     try {
       const userExists = await this.checkUserExist(user_id);
+
       if (userExists) {
         await this.updateUserToken(user_id, jwt_token);
       } else {

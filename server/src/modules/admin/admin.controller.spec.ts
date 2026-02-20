@@ -1,15 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AdminController } from './admin.controller';
-import { AdminStrategyService } from './strategy/adminStrategy.service';
-import { AdminGrowService } from './growdata/adminGrow.service';
-import { AdminSpotService } from './admin-spot-management/admin-spot-management.service';
+
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminController } from './admin.controller';
 import { SpotdataTradingPairDto } from './admin-spot-management/admin-spot-management.dto';
+import { AdminSpotService } from './admin-spot-management/admin-spot-management.service';
+import { GrowdataExchangeDto } from './growdata/adminGrow.dto';
+import { AdminGrowService } from './growdata/adminGrow.service';
 import {
   StartStrategyDto,
   StopStrategyDto,
 } from './strategy/admin-strategy.dto';
-import { GrowdataExchangeDto } from './growdata/adminGrow.dto';
+import { AdminStrategyService } from './strategy/adminStrategy.service';
 
 describe('AdminController', () => {
   let controller: AdminController;
@@ -99,6 +100,7 @@ describe('AdminController', () => {
       checkIntervalSeconds: 10,
       maxOpenOrders: 5,
     };
+
     await controller.startStrategy(startStrategyDto);
     expect(adminStrategyService.startStrategy).toHaveBeenCalledWith(
       startStrategyDto,
@@ -111,6 +113,7 @@ describe('AdminController', () => {
       clientId: '456',
       strategyType: 'arbitrage',
     };
+
     await controller.stopStrategy(stopStrategyDto);
     expect(adminStrategyService.stopStrategy).toHaveBeenCalledWith(
       stopStrategyDto,
@@ -125,12 +128,14 @@ describe('AdminController', () => {
       icon_url: '',
       enable: true,
     };
+
     await controller.addExchange(exchangeDto);
     expect(adminGrowService.addExchange).toHaveBeenCalledWith(exchangeDto);
   });
 
   it('should call removeExchange on AdminGrowService', async () => {
     const exchange_id = 'binance';
+
     await controller.removeExchange(exchange_id);
     expect(adminGrowService.removeExchange).toHaveBeenCalledWith(exchange_id);
   });
@@ -143,6 +148,7 @@ describe('AdminController', () => {
   it('should call updateExchange on AdminGrowService', async () => {
     const exchange_id = 'binance';
     const modifications = { name: 'New Binance' };
+
     await controller.updateExchange(exchange_id, modifications);
     expect(adminGrowService.updateExchange).toHaveBeenCalledWith(
       exchange_id,
@@ -175,6 +181,7 @@ describe('AdminController', () => {
 
   it('should call removeTradingPair on AdminSpotService', async () => {
     const id = 'mock-id';
+
     await controller.removeTradingPair(id);
     expect(adminSpotService.removeTradingPair).toHaveBeenCalledWith(id);
   });
@@ -189,6 +196,7 @@ describe('AdminController', () => {
     const modifications = {
       // mock modifications
     };
+
     await controller.updateTradingPair(id, modifications);
     expect(adminSpotService.updateTradingPair).toHaveBeenCalledWith(
       id,

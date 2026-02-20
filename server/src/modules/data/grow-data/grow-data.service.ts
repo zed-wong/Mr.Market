@@ -1,10 +1,10 @@
-import { Cache } from 'cache-manager';
-import { Inject, Injectable } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Inject, Injectable } from '@nestjs/common';
+import type { Cache } from 'cache-manager';
+import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
-import { GrowdataMarketMakingPair } from 'src/common/entities/grow-data.entity';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 
 @Injectable()
 export class GrowdataService {
@@ -14,7 +14,7 @@ export class GrowdataService {
     @Inject(CACHE_MANAGER) private cacheService: Cache,
     private readonly growdataRepository: GrowdataRepository,
     private readonly mixinClientService: MixinClientService,
-  ) { }
+  ) {}
 
   private cachingTTL = 60; // 1 minute
 
@@ -44,6 +44,7 @@ export class GrowdataService {
       };
     } catch (error) {
       this.logger.error('Error fetching grow data', error.stack);
+
       return {
         statusCode: 500,
         message: 'Internal server error',
@@ -84,6 +85,7 @@ export class GrowdataService {
       pair.base_price = priceMap.get(pair.base_asset_id) || '0';
       pair.target_price = priceMap.get(pair.quote_asset_id) || '0';
     }
+
     return pairs;
   }
 
@@ -94,6 +96,7 @@ export class GrowdataService {
   // MarketMakingPair Methods
   async getAllMarketMakingPairs() {
     const pairs = await this.growdataRepository.findAllMarketMakingPairs();
+
     this.logger.debug(`MarketMakingPairs: ${JSON.stringify(pairs)}`);
 
     const assetIds = pairs.flatMap((pair) => [
@@ -106,6 +109,7 @@ export class GrowdataService {
       pair.base_price = priceMap.get(pair.base_asset_id) || '0';
       pair.target_price = priceMap.get(pair.quote_asset_id) || '0';
     }
+
     return pairs;
   }
 
@@ -133,6 +137,7 @@ export class GrowdataService {
 
   private async fetchExternalPriceData(asset_ids: string[]) {
     const uniqueAssetIds = [...new Set(asset_ids.filter((id) => !!id))];
+
     if (uniqueAssetIds.length === 0) return new Map<string, string>();
 
     const priceMap = new Map<string, string>();
@@ -141,6 +146,7 @@ export class GrowdataService {
     for (const assetId of uniqueAssetIds) {
       const cacheKey = `asset_price_${assetId}`;
       const cachedPrice = await this.cacheService.get<string>(cacheKey);
+
       if (cachedPrice) {
         priceMap.set(assetId, cachedPrice);
       } else {
@@ -156,8 +162,10 @@ export class GrowdataService {
       const assets = await this.mixinClientService.client.safe.fetchAssets(
         missingAssetIds,
       );
+
       for (const asset of assets) {
         const price = asset.price_usd || '0';
+
         priceMap.set(asset.asset_id, price);
         await this.cacheService.set(
           `asset_price_${asset.asset_id}`,
@@ -165,12 +173,14 @@ export class GrowdataService {
           this.cachingTTL,
         );
       }
+
       return priceMap;
     } catch (error) {
       this.logger.error(
         `Failed to fetch prices for assets: ${missingAssetIds.join(', ')}`,
         error.stack,
       );
+
       return priceMap;
     }
   }

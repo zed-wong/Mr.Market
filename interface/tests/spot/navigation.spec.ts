@@ -5,21 +5,20 @@ test.use({
 });
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('http://127.0.0.1:5173/spot');
+  await page.goto('/spot');
 })
 
 test('open/close pair selector', async ({ page }) => {
-  let isDialogOpen = await page.locator('#select_pair_modal').evaluate(dialog => dialog.classList.contains('modal-open'));
-  expect(isDialogOpen).toBeFalsy();
+  const pairDialog = page.locator('#select_pair_modal');
+
+  await expect(pairDialog).not.toHaveClass(/modal-open/);
   // Open
   await page.getByTestId('spot_pair_selector').click();
-  isDialogOpen = await page.locator('#select_pair_modal').evaluate(dialog => dialog.classList.contains('modal-open'));
-  expect(isDialogOpen).toBeTruthy();
+  await expect(pairDialog).toHaveClass(/modal-open/);
 
-  // Close 
-  await page.getByTestId('spot_pair_selector_close').click();
-  isDialogOpen = await page.locator('#select_pair_modal').evaluate(dialog => dialog.classList.contains('modal-open'));
-  expect(isDialogOpen).toBeFalsy();
+  // Close
+  await page.locator('#select_pair_modal form.modal-backdrop button').last().click();
+  await expect(pairDialog).not.toHaveClass(/modal-open/);
 });
 
 test('goto candlestick', async ({ page }) => {

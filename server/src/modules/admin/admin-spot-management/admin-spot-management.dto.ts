@@ -1,4 +1,4 @@
-import { IsString, IsBoolean, IsUUID, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 
 // DTO for SpotdataTradingPair
 export class SpotdataTradingPairDto {

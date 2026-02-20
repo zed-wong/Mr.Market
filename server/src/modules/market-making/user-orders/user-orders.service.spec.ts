@@ -1,24 +1,25 @@
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { UserOrdersService } from './user-orders.service';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
-import { StrategyService } from '../strategy/strategy.service';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
+import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
+import {
+  MarketMakingOrder,
+  SimplyGrowOrder,
+} from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import {
   type MarketMakingStates,
   type SimplyGrowStates,
 } from 'src/common/types/orders/states';
-import { ConfigService } from '@nestjs/config';
-import {
-  MarketMakingOrder,
-  SimplyGrowOrder,
-} from 'src/common/entities/user-orders.entity';
-import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
-import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
-import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
+
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { StrategyService } from '../strategy/strategy.service';
+import { UserOrdersService } from './user-orders.service';
 
 jest.mock('../../infrastructure/logger/logger.service');
 jest.mock('../strategy/strategy.service');
@@ -103,6 +104,7 @@ describe('UserOrdersService', () => {
         .mockResolvedValue(mockSimplyGrowOrder);
 
       const result = await service.createSimplyGrow(mockSimplyGrowOrder);
+
       expect(result).toEqual(mockSimplyGrowOrder);
       expect(simplyGrowRepository.save).toHaveBeenCalledWith(
         mockSimplyGrowOrder,
@@ -139,6 +141,7 @@ describe('UserOrdersService', () => {
         .mockResolvedValue(mockMarketMakingOrder);
 
       const result = await service.createMarketMaking(mockMarketMakingOrder);
+
       expect(result).toEqual(mockMarketMakingOrder);
       expect(marketMakingRepository.save).toHaveBeenCalledWith(
         mockMarketMakingOrder,
@@ -215,6 +218,7 @@ describe('UserOrdersService', () => {
       .mockImplementation(async (criteria: any) => {
         if (criteria.state === 'created') return mockActiveMMOrders;
         if (criteria.state === 'paused') return mockPausedMMOrders;
+
         return [];
       });
 

@@ -1,11 +1,14 @@
-import { Job } from 'bull';
-import { Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
 import { Process, Processor } from '@nestjs/bull';
-import { WithdrawalService } from './withdrawal.service';
-import { WalletService } from '../wallet/wallet.service';
-import { Withdrawal } from 'src/common/entities/withdrawal.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import BigNumber from 'bignumber.js';
+import { Job } from 'bull';
+import { Withdrawal } from 'src/common/entities/mixin/withdrawal.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
+import { Repository } from 'typeorm';
+
+import { WalletService } from '../wallet/wallet.service';
+import { WithdrawalService } from './withdrawal.service';
 
 @Processor('withdrawals')
 export class WithdrawalProcessor {
@@ -19,7 +22,8 @@ export class WithdrawalProcessor {
     private readonly walletService: WalletService,
     @InjectRepository(Withdrawal)
     private withdrawalRepository: Repository<Withdrawal>,
-  ) { }
+    private readonly balanceLedgerService: BalanceLedgerService,
+  ) {}
 
   @Process('process_withdrawal')
   async handleWithdrawal(job: Job<{ withdrawalId: string }>) {
@@ -32,6 +36,7 @@ export class WithdrawalProcessor {
       this.logger.warn(
         `Withdrawal ${withdrawalId} is already being processed, skipping...`,
       );
+
       return;
     }
 
@@ -46,6 +51,7 @@ export class WithdrawalProcessor {
 
       if (!withdrawal) {
         this.logger.error(`Withdrawal ${withdrawalId} not found`);
+
         return;
       }
 
@@ -59,6 +65,7 @@ export class WithdrawalProcessor {
         this.logger.warn(
           `Withdrawal ${withdrawalId} already in final or processing state: ${withdrawal.status}`,
         );
+
         return;
       }
 
@@ -77,6 +84,7 @@ export class WithdrawalProcessor {
         this.logger.warn(
           `Withdrawal ${withdrawalId} was already processed by another worker`,
         );
+
         return;
       }
 
@@ -85,11 +93,10 @@ export class WithdrawalProcessor {
       );
 
       // Check balance before withdrawal
-      const hasEnoughBalance =
-        await this.walletService.checkMixinBalanceEnough(
-          withdrawal.assetId,
-          withdrawal.amount.toString(),
-        );
+      const hasEnoughBalance = await this.walletService.checkMixinBalanceEnough(
+        withdrawal.assetId,
+        withdrawal.amount.toString(),
+      );
 
       if (!hasEnoughBalance) {
         await this.withdrawalService.markAsFailed(
@@ -99,6 +106,7 @@ export class WithdrawalProcessor {
         this.logger.error(
           `Insufficient balance for withdrawal ${withdrawalId}`,
         );
+
         return;
       }
 
@@ -123,6 +131,21 @@ export class WithdrawalProcessor {
           },
         );
 
+        try {
+          await this.balanceLedgerService.debitWithdrawal({
+            userId: withdrawal.userId,
+            assetId: withdrawal.assetId,
+            amount: new BigNumber(withdrawal.amount).toFixed(),
+            idempotencyKey: `withdrawal-debit:${withdrawalId}`,
+            refType: 'withdrawal_processor',
+            refId: withdrawalId,
+          });
+        } catch (ledgerError) {
+          this.logger.error(
+            `Ledger debit failed for withdrawal ${withdrawalId}: ${ledgerError.message}`,
+          );
+        }
+
         this.logger.log(
           `Withdrawal ${withdrawalId} sent successfully, txId: ${mixinTxId}`,
         );
@@ -145,6 +168,7 @@ export class WithdrawalProcessor {
       const withdrawal = await this.withdrawalService.getWithdrawalById(
         withdrawalId,
       );
+
       if (withdrawal && withdrawal.retryCount >= 3) {
         await this.withdrawalService.markAsFailed(
           withdrawalId,

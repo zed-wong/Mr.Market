@@ -125,6 +125,10 @@ export class SnapshotsProcessor implements OnModuleInit {
 
   @OnQueueEvent('failed')
   onFailed(job: Job, error: Error) {
+    if (job.name === 'process_snapshots') {
+      return;
+    }
+
     this.logger.error(
       `Job ${job.name} (ID: ${job.id}) failed after ${job.attemptsMade} attempts: ${error.message}`,
       error.stack,
@@ -139,6 +143,10 @@ export class SnapshotsProcessor implements OnModuleInit {
 
   @OnQueueEvent('stalled')
   onStalled(job: Job) {
+    if (job.name === 'process_snapshots') {
+      return;
+    }
+
     this.logger.warn(
       `Job ${job.name} (ID: ${job.id}) has stalled. This may indicate a worker crash or long-running operation.`,
     );

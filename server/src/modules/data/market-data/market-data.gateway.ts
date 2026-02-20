@@ -1,23 +1,25 @@
-import { v4 as uuidv4 } from 'uuid';
 import {
-  WebSocketGateway,
-  SubscribeMessage,
-  MessageBody,
   ConnectedSocket,
-  OnGatewayInit,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { MarketdataService, marketDataType } from './market-data.service';
 import {
   createCompositeKey,
   decodeCompositeKey,
 } from 'src/common/helpers/subscriptionKey';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { v4 as uuidv4 } from 'uuid';
+
+import { MarketdataService, marketDataType } from './market-data.service';
 
 const webSocketPort = process.env.WS_PORT || '0';
+
 @WebSocketGateway(parseInt(webSocketPort, 10), {
   namespace: '/market',
   cors: true,
@@ -39,6 +41,7 @@ export class MarketDataGateway
 
   handleConnection(client: Socket) {
     const clientId = uuidv4();
+
     this.clients.set(clientId, client);
     client.emit('connected', 'Connected Successfully');
 
@@ -99,6 +102,7 @@ export class MarketDataGateway
       undefined,
       timeFrame,
     );
+
     if (!this.clientSubscriptions.has(clientId)) {
       this.clientSubscriptions.set(clientId, new Set());
     }
@@ -178,8 +182,10 @@ export class MarketDataGateway
       `Subscribing to order book ${data.exchange} ${data.symbol}`,
     );
     const clientId = this.getClientId(client);
+
     if (!clientId) {
       this.logger.error(`Client ID not found for the connected socket`);
+
       return;
     }
     this.subscribeToMarketData(
@@ -223,8 +229,10 @@ export class MarketDataGateway
       `Subscribing to OHLCV ${data.exchange} ${data.symbol} ${data.timeFrame}`,
     );
     const clientId = this.getClientId(client);
+
     if (!clientId) {
       this.logger.error(`Client ID not found for the connected socket`);
+
       return;
     }
     this.subscribeToOHLCV(
@@ -264,8 +272,10 @@ export class MarketDataGateway
   ) {
     this.logger.log(`Subscribing to ticker ${data.exchange} ${data.symbol}`);
     const clientId = this.getClientId(client);
+
     if (!clientId) {
       this.logger.error(`Client ID not found for the connected socket`);
+
       return;
     }
     this.subscribeToMarketData(
@@ -303,8 +313,10 @@ export class MarketDataGateway
   ) {
     this.logger.log(`Subscribing to tickers ${data.exchange} ${data.symbols}`);
     const clientId = this.getClientId(client);
+
     if (!clientId) {
       this.logger.error(`Client ID not found for the connected socket`);
+
       return;
     }
 
@@ -328,9 +340,11 @@ export class MarketDataGateway
 
   private broadcastToSubscribedClients(compositeKey: string, data: object) {
     const [type] = compositeKey.split(':'); // Split the composite key
+
     this.clientSubscriptions.forEach((subscriptions, clientId) => {
       if (subscriptions.has(compositeKey)) {
         const subscribedClient = this.getClientById(clientId);
+
         if (subscribedClient) {
           switch (type) {
             case 'orderbook':
@@ -353,9 +367,11 @@ export class MarketDataGateway
 
   handleDisconnect(clientId: string) {
     const subscriptions = this.clientSubscriptions.get(clientId);
+
     if (subscriptions) {
       subscriptions.forEach((compositeKey) => {
         const data = decodeCompositeKey(compositeKey);
+
         this.handleUnsubscribeData(data, this.getClientById(clientId));
       });
     }
@@ -386,6 +402,7 @@ export class MarketDataGateway
     );
 
     const clientId = this.getClientId(client);
+
     this.logger.log(`Unsubscribe: ${subscriptionKey}`);
     this.clientSubscriptions.get(clientId)?.delete(subscriptionKey);
 
@@ -422,6 +439,7 @@ export class MarketDataGateway
         return true;
       }
     }
+
     return false;
   }
 
@@ -431,6 +449,7 @@ export class MarketDataGateway
         return id;
       }
     }
+
     return null;
   }
 

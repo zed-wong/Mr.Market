@@ -1,13 +1,14 @@
 // message.service.spec.ts
-import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { MessageService } from './message.service';
-import { UserService } from 'src/modules/mixin/user/user.service';
-import { MessageRepository } from './message.repository';
+import { Test, TestingModule } from '@nestjs/testing';
+import { MixinMessage } from 'src/common/entities/mixin/mixin-message.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { MixinMessage } from 'src/common/entities/mixin-message.entity';
+import { UserService } from 'src/modules/mixin/user/user.service';
+
 import { getRFC3339Timestamp } from '../../../common/helpers/utils';
 import { MixinClientService } from '../client/mixin-client.service';
+import { MessageRepository } from './message.repository';
+import { MessageService } from './message.service';
 
 jest.mock('src/modules/mixin/user/user.service');
 jest.mock('./message.repository');
@@ -90,6 +91,7 @@ describe('MessageService', () => {
   describe('removeMessageById', () => {
     it('should call the repository method to remove a message by id', async () => {
       const messageId = 'test-message-id';
+
       jest
         .spyOn(messageRepository, 'removeMessageById')
         .mockResolvedValue(undefined);

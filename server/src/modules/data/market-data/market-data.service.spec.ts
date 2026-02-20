@@ -1,8 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { MarketdataService } from './market-data.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { Test, TestingModule } from '@nestjs/testing';
+
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { MarketdataService } from './market-data.service';
 
 jest.mock('../../infrastructure/logger/logger.service');
 
@@ -14,6 +15,7 @@ const mockCacheManager = () => ({
 // Mock setup for ccxt
 const mockFetchTickers = jest.fn();
 const mockFetchOHLCV = jest.fn();
+
 jest.mock('ccxt', () => ({
   pro: {
     binance: jest.fn(() => ({
@@ -66,6 +68,7 @@ describe('MarketdataService', () => {
   describe('getTickers', () => {
     it('fetches tickers successfully from a supported exchange', async () => {
       const expectedTickers = { BTCUSD: { last: 50000 } };
+
       mockFetchTickers.mockResolvedValue(expectedTickers);
       exchangeInitService.getExchange.mockReturnValue({
         fetchTickers: mockFetchTickers,
@@ -74,6 +77,7 @@ describe('MarketdataService', () => {
       });
 
       const tickers = await service.getTickers('binance', ['BTCUSD']);
+
       expect(tickers).toEqual(expectedTickers);
       expect(mockFetchTickers).toHaveBeenCalledWith(['BTCUSD']);
     });
@@ -95,6 +99,7 @@ describe('MarketdataService', () => {
   describe('getOHLCVData', () => {
     it('fetches OHLCV data successfully', async () => {
       const expectedOHLCV = [[1609459200000, 29000, 29500, 28500, 29300, 1200]];
+
       mockFetchOHLCV.mockResolvedValue(expectedOHLCV);
       exchangeInitService.getExchange.mockReturnValue({
         fetchOHLCV: mockFetchOHLCV,
@@ -103,6 +108,7 @@ describe('MarketdataService', () => {
       });
 
       const OHLCV = await service.getOHLCVData('binance', 'BTCUSD');
+
       expect(OHLCV).toEqual(
         expectedOHLCV.map((data) => ({
           timestamp: data[0],
@@ -125,9 +131,11 @@ describe('MarketdataService', () => {
   describe('getSupportedPairs', () => {
     it('returns supported pairs from cache if available', async () => {
       const cachedPairs = [{ symbol: 'BTCUSD', price: 50000 }];
+
       cacheManager.get.mockResolvedValue(JSON.stringify(cachedPairs));
 
       const pairs = await service.getSupportedPairs();
+
       expect(pairs).toEqual(cachedPairs);
       expect(cacheManager.get).toHaveBeenCalledWith('supported-pairs');
     });

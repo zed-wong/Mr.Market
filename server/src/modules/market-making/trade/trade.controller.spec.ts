@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+
 import { TradeController } from './trade.controller';
+import { LimitTradeDto, MarketTradeDto } from './trade.dto';
 import { TradeService } from './trade.service';
-import { MarketTradeDto, LimitTradeDto } from './trade.dto';
 
 describe('TradeController', () => {
   let controller: TradeController;
@@ -34,6 +35,7 @@ describe('TradeController', () => {
       side: 'buy',
       amount: 1,
     };
+
     await controller.executeMarketTrade(dto);
     expect(mockTradeService.executeMarketTrade).toHaveBeenCalledWith(dto);
   });
@@ -48,6 +50,7 @@ describe('TradeController', () => {
       amount: 1,
       price: 50000,
     };
+
     await controller.executeLimitTrade(dto);
     expect(mockTradeService.executeLimitTrade).toHaveBeenCalledWith(dto);
   });

@@ -1,5 +1,5 @@
-import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { GrowdataService } from 'src/modules/data/grow-data/grow-data.service';
 
 @ApiTags('Data')

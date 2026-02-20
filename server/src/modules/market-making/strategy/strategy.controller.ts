@@ -8,7 +8,6 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import {
   ApiBody,
   ApiOperation,
@@ -16,6 +15,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
+
+import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
 import {
   ArbitrageStrategyDto,
   ExecuteVolumeStrategyDto,
@@ -23,8 +26,6 @@ import {
   PureMarketMakingStrategyDto,
   StopVolumeStrategyDto,
 } from './strategy.dto';
-import { StrategyInstance } from 'src/common/entities/strategy-instances.entity';
-import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
 
 @ApiTags('Trading Engine')
 @Controller('strategy')

@@ -160,6 +160,42 @@ export class PureMarketMakingStrategyDto {
     required: false,
   })
   floorPrice?: number;
+
+  @ApiPropertyOptional({
+    description: 'Enable hanging orders behavior',
+    example: true,
+  })
+  hangingOrdersEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Enable maker-heavy quote widening mode',
+    example: true,
+  })
+  makerHeavyMode?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Maker-heavy widening bias in basis points',
+    example: 20,
+  })
+  makerHeavyBiasBps?: number;
+
+  @ApiPropertyOptional({
+    description: 'Target base inventory ratio (0-1)',
+    example: 0.5,
+  })
+  inventoryTargetBaseRatio?: number;
+
+  @ApiPropertyOptional({
+    description: 'Inventory skew factor for spread adjustment',
+    example: 0.25,
+  })
+  inventorySkewFactor?: number;
+
+  @ApiPropertyOptional({
+    description: 'Current base inventory ratio estimate (0-1)',
+    example: 0.5,
+  })
+  currentBaseRatio?: number;
 }
 
 export class ExecuteVolumeStrategyDto {

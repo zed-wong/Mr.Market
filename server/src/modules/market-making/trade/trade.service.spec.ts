@@ -1,14 +1,15 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { TradeService } from './trade.service';
-import { TradeRepository } from './trade.repository';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
-import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
-import { MarketTradeDto, LimitTradeDto } from './trade.dto';
 import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import * as ccxt from 'ccxt';
+import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { LimitTradeDto, MarketTradeDto } from './trade.dto';
+import { TradeRepository } from './trade.repository';
+import { TradeService } from './trade.service';
 
 jest.mock('ccxt');
 

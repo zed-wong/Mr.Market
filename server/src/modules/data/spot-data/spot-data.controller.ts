@@ -1,5 +1,5 @@
-import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { SpotdataService } from 'src/modules/data/spot-data/spot-data.service';
 
 @ApiTags('Data')

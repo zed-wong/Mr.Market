@@ -1,11 +1,12 @@
+import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import type { Queue } from 'bull';
+import { Withdrawal } from 'src/common/entities/mixin/withdrawal.entity';
 import { Repository } from 'typeorm';
-import { Queue } from 'bull';
-import { WithdrawalService } from './withdrawal.service';
-import { Withdrawal } from 'src/common/entities/withdrawal.entity';
-import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
+
 import { MixinClientService } from '../client/mixin-client.service';
+import { WithdrawalService } from './withdrawal.service';
 
 describe('WithdrawalService', () => {
   let service: WithdrawalService;
@@ -126,6 +127,7 @@ describe('WithdrawalService', () => {
         id: 'existing-withdrawal-id',
         snapshotId: 'test-snapshot-id',
       };
+
       mockWithdrawalRepository.findOne.mockResolvedValue(existingWithdrawal);
 
       const result = await service.initializeWithdrawal(
@@ -222,6 +224,7 @@ describe('WithdrawalService', () => {
         { id: '1', status: 'processing' },
         { id: '2', status: 'sent' },
       ];
+
       mockWithdrawalRepository.find.mockResolvedValue(mockWithdrawals);
 
       const result = await service.getPendingWithdrawals();
@@ -276,6 +279,7 @@ describe('WithdrawalService', () => {
     it('should increment retry count', async () => {
       const withdrawalId = 'test-withdrawal-id';
       const mockWithdrawal = { id: withdrawalId, retryCount: 1 };
+
       mockWithdrawalRepository.findOne.mockResolvedValue(mockWithdrawal);
 
       await service.incrementRetryCount(withdrawalId);
@@ -288,6 +292,7 @@ describe('WithdrawalService', () => {
 
     it('should handle non-existent withdrawal', async () => {
       const withdrawalId = 'non-existent-id';
+
       mockWithdrawalRepository.findOne.mockResolvedValue(null);
 
       await service.incrementRetryCount(withdrawalId);

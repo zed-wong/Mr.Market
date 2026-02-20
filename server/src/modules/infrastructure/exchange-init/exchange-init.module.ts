@@ -1,7 +1,8 @@
-import { Module, Global } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
-import { ExchangeInitService } from './exchange-init.service';
+import { Global, Module } from '@nestjs/common';
 import { ExchangeModule } from 'src/modules/mixin/exchange/exchange.module';
+
+import { ExchangeInitService } from './exchange-init.service';
 
 @Global()
 @Module({

@@ -413,6 +413,7 @@
                         </button>
                         <button
                             class="btn btn-xl flex-1 rounded-full bg-base-content hover:bg-base-content/90 focus:bg-base-content/90 no-animation"
+                            data-testid="hufi-create-continue"
                             class:btn-disabled={isContinueDisabled}
                             class:opacity-50={isContinueDisabled}
                             class:cursor-not-allowed={isContinueDisabled}

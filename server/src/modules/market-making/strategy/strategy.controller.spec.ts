@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+
+import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
 import { StrategyController } from './strategy.controller';
 import { StrategyService } from './strategy.service';
-import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
 
 const mockStrategyService = {
   // mock methods of StrategyService that are used by StrategyController

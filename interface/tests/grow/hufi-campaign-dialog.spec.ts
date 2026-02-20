@@ -49,12 +49,12 @@ test.beforeEach(async ({ page }) => {
   await page.goto(`/market-making/hufi/campaign/${campaignId}`);
 });
 
-test('redirects to create-new with preset params', async ({ page }) => {
+test('opens create dialog with campaign defaults', async ({ page }) => {
   await page.getByTestId('hufi-create-button').click();
-  await expect(page.getByTestId('hufi-create-dialog')).toBeVisible();
-  await expect(page.getByText(/pre-filled/i)).toBeVisible();
-  await page.getByTestId('hufi-create-continue').click();
-  await expect(page).toHaveURL(
-    /\/market-making\/create-new\?.*exchange=binance.*trading_pair=BTC%2FUSDT/
-  );
+  const dialog = page.getByTestId('hufi-create-dialog');
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('binance', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('BTC/USDT', { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/not supported/i)).toBeVisible();
 });

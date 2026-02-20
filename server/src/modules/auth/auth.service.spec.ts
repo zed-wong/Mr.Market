@@ -1,17 +1,18 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { AuthService } from './auth.service';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
-import { UserService } from '../mixin/user/user.service';
 import {
-  UnauthorizedException,
   HttpException,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { Test, TestingModule } from '@nestjs/testing';
 import axios from 'axios';
 import { createHash } from 'crypto';
-import { getUserMe } from 'src/common/helpers/mixin/user';
 import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
+import { getUserMe } from 'src/common/helpers/mixin/user';
+
+import { UserService } from '../mixin/user/user.service';
+import { AuthService } from './auth.service';
 
 // Mock axios and getUserMe
 jest.mock('axios');
@@ -94,6 +95,7 @@ describe('AuthService', () => {
       const hashedAdminPassword = createHash('sha256')
         .update(password)
         .digest('hex');
+
       expect(hashedAdminPassword).toEqual(hashIncomingPass);
 
       const signSpy = jest
@@ -112,6 +114,7 @@ describe('AuthService', () => {
   describe('mixinOauthHandler', () => {
     it('should throw HttpException if code length is not 64', async () => {
       const invalidCode = 'short_code';
+
       await expect(authService.mixinOauthHandler(invalidCode)).rejects.toThrow(
         HttpException,
       );
@@ -156,6 +159,7 @@ describe('AuthService', () => {
 
     it('should throw HttpException if Mixin OAuth request fails', async () => {
       const validCode = 'a'.repeat(64);
+
       (axios.post as jest.Mock).mockRejectedValueOnce({
         response: {
           data: { message: 'Request failed' },

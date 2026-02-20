@@ -1,16 +1,17 @@
-import axios from 'axios';
-import { JwtService } from '@nestjs/jwt';
-import { createHash } from 'crypto';
-import { ConfigService } from '@nestjs/config';
-import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import {
-  Injectable,
-  UnauthorizedException,
   HttpException,
   HttpStatus,
+  Injectable,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import axios from 'axios';
+import { createHash } from 'crypto';
+import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { getUserMe } from 'src/common/helpers/mixin/user';
+
 import { UserService } from '../mixin/user/user.service';
 
 @Injectable()
@@ -38,7 +39,9 @@ export class AuthService {
       );
     }
 
-    const mixinOauthSecret = this.configService.get<string>('mixin.oauth_secret');
+    const mixinOauthSecret =
+      this.configService.get<string>('mixin.oauth_secret');
+
     if (!mixinOauthSecret) {
       this.logger.warn(
         'MIXIN_OAUTH_SECRET is not defined in .env. Mixin login will fail.',
@@ -60,11 +63,13 @@ export class AuthService {
     const hashedAdminPassword = createHash('sha256')
       .update(this.adminPassword)
       .digest('hex');
+
     if (hashedAdminPassword !== password) {
       throw new UnauthorizedException('Invalid password');
     }
 
     const payload = { username: 'admin' };
+
     return this.jwtService.sign(payload, { expiresIn: '120m' });
   }
 
@@ -95,6 +100,7 @@ export class AuthService {
       const accessToken = response.data.data.access_token;
 
       const user = await getUserMe(accessToken);
+
       if (user) {
         await this.userService.checkAndUpdateUserToken(
           user,
@@ -102,6 +108,7 @@ export class AuthService {
           accessToken,
         );
       }
+
       return { token: accessToken };
     } catch (error) {
       throw new HttpException(

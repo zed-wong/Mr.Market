@@ -1,8 +1,9 @@
-import { Job } from 'bull';
 import { Process, Processor } from '@nestjs/bull';
-import { WithdrawalService } from './withdrawal.service';
-import { MixinClientService } from '../client/mixin-client.service';
+import { Job } from 'bull';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
+import { MixinClientService } from '../client/mixin-client.service';
+import { WithdrawalService } from './withdrawal.service';
 
 @Processor('withdrawal-confirmations')
 export class WithdrawalConfirmationWorker {
@@ -11,7 +12,7 @@ export class WithdrawalConfirmationWorker {
   constructor(
     private readonly withdrawalService: WithdrawalService,
     private readonly mixinClientService: MixinClientService,
-  ) { }
+  ) {}
 
   @Process('check_withdrawal_confirmations')
   async handleCheckConfirmations(job: Job) {
@@ -24,6 +25,7 @@ export class WithdrawalConfirmationWorker {
 
       if (pendingWithdrawals.length === 0) {
         this.logger.debug('No pending withdrawals to check');
+
         return;
       }
 
@@ -70,6 +72,7 @@ export class WithdrawalConfirmationWorker {
 
     if (!withdrawal) {
       this.logger.error(`Withdrawal ${withdrawalId} not found`);
+
       return;
     }
 
@@ -77,6 +80,7 @@ export class WithdrawalConfirmationWorker {
       this.logger.warn(
         `Withdrawal ${withdrawalId} has no mixinTxId, cannot check status`,
       );
+
       return;
     }
 
@@ -93,6 +97,7 @@ export class WithdrawalConfirmationWorker {
         this.logger.warn(
           `Could not fetch status for withdrawal ${withdrawalId}, txId: ${withdrawal.mixinTxId}`,
         );
+
         return;
       }
 
@@ -152,6 +157,7 @@ export class WithdrawalConfirmationWorker {
 
       if (!snapshot) {
         this.logger.warn(`Transaction ${txId} not found in snapshots`);
+
         return null;
       }
 
@@ -168,6 +174,7 @@ export class WithdrawalConfirmationWorker {
       this.logger.error(
         `Failed to fetch transaction ${txId} from Mixin: ${error.message}`,
       );
+
       return null;
     }
   }

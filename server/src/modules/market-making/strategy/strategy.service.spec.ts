@@ -1,42 +1,43 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { StrategyService } from './strategy.service';
-import { TradeService } from '../trade/trade.service';
-import { PerformanceService } from '../performance/performance.service';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
 import { InternalServerErrorException } from '@nestjs/common';
-import * as ccxt from 'ccxt';
-import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { PureMarketMakingStrategyDto } from './strategy.dto';
+import { ConfigService } from '@nestjs/config';
+import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
-import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
+import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
+import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
-import { StrategyInstance } from 'src/common/entities/strategy-instances.entity';
-import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
 
-// Mocking the TradeService
+import { PerformanceService } from '../performance/performance.service';
+import { TradeService } from '../trade/trade.service';
+import { PureMarketMakingStrategyDto } from './strategy.dto';
+import { StrategyService } from './strategy.service';
+import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
+import { StrategyIntentStoreService } from './strategy-intent-store.service';
+
 class TradeServiceMock {
-  async executeLimitTrade() {}
+  executeLimitTrade = jest.fn();
 }
 
-// Mocking the PerformanceService
 class PerformanceServiceMock {
-  async recordPerformance() {}
+  recordPerformance = jest.fn();
 }
 
-// Mocking the ExchangeInitService
 class ExchangeInitServiceMock {
-  getExchange(exchangeName: string): ccxt.Exchange {
-    switch (exchangeName) {
-      case 'bitfinex':
-        return new ccxt.bitfinex();
-      case 'mexc':
-        return new ccxt.mexc();
-      case 'binance':
-        return new ccxt.binance();
-      default:
-        throw new InternalServerErrorException('Exchange not configured');
+  getExchange(exchangeName: string): any {
+    if (exchangeName === 'unknownExchange') {
+      throw new InternalServerErrorException('Exchange not configured');
     }
+
+    return {
+      id: exchangeName,
+      name: exchangeName,
+      fetchOrderBook: jest.fn().mockResolvedValue({
+        bids: [[100, 10]],
+        asks: [[101, 10]],
+      }),
+      fetchTicker: jest.fn().mockResolvedValue({ last: 100.5 }),
+    };
   }
 
   getSupportedExchanges(): string[] {
@@ -46,18 +47,27 @@ class ExchangeInitServiceMock {
 
 describe('StrategyService', () => {
   let service: StrategyService;
+  let tradeService: TradeServiceMock;
+  let strategyIntentExecutionService: {
+    consumeIntents: jest.Mock;
+  };
+  let strategyIntentStoreService: {
+    upsertIntent: jest.Mock;
+  };
 
-  // Example mock repository implementation
   const mockOrderRepository = {
     find: jest.fn(),
     findOne: jest.fn(),
     save: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
   };
 
   const mockArbitrageOrderRepository = {
     find: jest.fn(),
     findOne: jest.fn(),
     save: jest.fn(),
+    create: jest.fn(),
   };
 
   const mockStrategyInstanceRepository = {
@@ -65,9 +75,17 @@ describe('StrategyService', () => {
     findOne: jest.fn(),
     save: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   };
 
   beforeEach(async () => {
+    strategyIntentExecutionService = {
+      consumeIntents: jest.fn().mockResolvedValue(undefined),
+    };
+    strategyIntentStoreService = {
+      upsertIntent: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StrategyService,
@@ -75,9 +93,23 @@ describe('StrategyService', () => {
         { provide: PerformanceService, useClass: PerformanceServiceMock },
         { provide: ExchangeInitService, useClass: ExchangeInitServiceMock },
         {
-          provide: AdminStrategyService,
+          provide: StrategyIntentExecutionService,
+          useValue: strategyIntentExecutionService,
+        },
+        {
+          provide: StrategyIntentStoreService,
+          useValue: strategyIntentStoreService,
+        },
+        {
+          provide: ConfigService,
           useValue: {
-            joinstrategy: jest.fn(),
+            get: jest.fn((key: string, defaultValue?: string) => {
+              if (key === 'strategy.intent_execution_driver') {
+                return 'worker';
+              }
+
+              return defaultValue;
+            }),
           },
         },
         {
@@ -92,162 +124,120 @@ describe('StrategyService', () => {
           provide: getRepositoryToken(StrategyInstance),
           useValue: mockStrategyInstanceRepository,
         },
-        {
-          provide: CustomLogger,
-          useValue: { log: jest.fn(), error: jest.fn() },
-        },
       ],
     }).compile();
 
     service = module.get<StrategyService>(StrategyService);
+    tradeService = module.get(TradeService);
 
-    // Initialize activeOrderBookWatches map
-    service['activeOrderBookWatches'].set(
-      '1-client1-arbitrage',
-      new Set<string>(),
+    jest.clearAllMocks();
+  });
+
+  it('registers a pure market making session without executing orders directly', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.1,
+      askSpread: 0.1,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 2,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0.1,
+      amountChangeType: 'percentage',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await service.executePureMarketMakingStrategy(strategyParamsDto);
+    await service.executeMMCycle(strategyParamsDto);
+
+    expect(tradeService.executeLimitTrade).not.toHaveBeenCalled();
+  });
+
+  it('publishes intents for a pure market making cycle', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.01,
+      askSpread: 0.01,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 1,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await service.executeMMCycle(strategyParamsDto);
+
+    const intents = service.getLatestIntentsForStrategy(
+      '1-client1-pureMarketMaking',
+    );
+
+    expect(intents.length).toBe(2);
+    expect(intents[0].type).toBe('CREATE_LIMIT_ORDER');
+  });
+
+  it('publishes intents without consuming synchronously when worker driver is enabled', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.01,
+      askSpread: 0.01,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 1,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await service.executeMMCycle(strategyParamsDto);
+
+    expect(strategyIntentStoreService.upsertIntent).toHaveBeenCalledTimes(2);
+    expect(
+      strategyIntentExecutionService.consumeIntents,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('stops a strategy and emits a stop intent', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.01,
+      askSpread: 0.01,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 1,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await service.executePureMarketMakingStrategy(strategyParamsDto);
+    await service.stopStrategyForUser('1', 'client1', 'pureMarketMaking');
+
+    const intents = service.getLatestIntentsForStrategy(
+      '1-client1-pureMarketMaking',
+    );
+
+    expect(intents.some((intent) => intent.type === 'STOP_EXECUTOR')).toBe(
+      true,
     );
   });
-
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  describe('getSupportedExchanges', () => {
-    it('should return an array of supported exchanges', async () => {
-      const exchanges = await service.getSupportedExchanges();
-      expect(exchanges).toEqual(
-        expect.arrayContaining(['bitfinex', 'mexc', 'binance']),
-      );
-    });
-  });
-
-  describe('startArbitrageStrategyForUser', () => {
-    it('should start an arbitrage strategy for the user', async () => {
-      const strategyParamsDto = {
-        userId: '1',
-        clientId: 'client1',
-        pair: 'BTC/USDT',
-        exchangeAName: 'bitfinex',
-        exchangeBName: 'mexc',
-        minProfitability: -1,
-        amountToTrade: 0.1,
-      };
-      await service.startArbitrageStrategyForUser(strategyParamsDto, 20, 10);
-      expect(
-        service['strategyInstances'].has('1-client1-arbitrage'),
-      ).toBeTruthy();
-    });
-
-    it('should throw InternalServerErrorException if exchanges are not configured', async () => {
-      const strategyParamsDto = {
-        userId: '1',
-        clientId: 'client1',
-        pair: 'BTC/USDT',
-        exchangeAName: 'unknownExchange',
-        exchangeBName: 'mexc',
-        minProfitability: -1,
-        amountToTrade: 0.1,
-      };
-      await expect(
-        service.startArbitrageStrategyForUser(strategyParamsDto, 30, 1),
-      ).rejects.toThrow(InternalServerErrorException);
-    });
-  });
-
-  describe('executePureMarketMakingStrategy', () => {
-    it('should start a pure market making strategy for the user', async () => {
-      const strategyParamsDto: PureMarketMakingStrategyDto = {
-        userId: '1',
-        clientId: 'client1',
-        pair: 'BTC/USDT',
-        exchangeName: 'bitfinex',
-        bidSpread: 0.1,
-        askSpread: 0.1,
-        orderAmount: 1,
-        orderRefreshTime: 1000,
-        numberOfLayers: 5,
-        priceSourceType: PriceSourceType.MID_PRICE,
-        amountChangePerLayer: 0.1,
-        amountChangeType: 'percentage', // Corrected value
-        ceilingPrice: undefined, // Add other required properties if needed
-        floorPrice: undefined, // Add other required properties if needed
-      };
-
-      await service.executePureMarketMakingStrategy(strategyParamsDto);
-
-      expect(
-        service['strategyInstances'].has('1-client1-pureMarketMaking'),
-      ).toBeTruthy();
-    });
-  });
-
-  describe('cancelAllOrders', () => {
-    it('should cancel all open orders for the given pair', async () => {
-      const exchange = new ccxt.Exchange();
-      exchange.fetchOpenOrders = jest.fn().mockResolvedValue([
-        { id: 'order1', symbol: 'BTC/USDT' },
-        { id: 'order2', symbol: 'BTC/USDT' },
-      ]);
-      exchange.cancelOrder = jest.fn().mockResolvedValue(undefined);
-
-      const pair = 'BTC/USDT';
-      const strategyKey = '1-client1-pureMarketMaking';
-
-      await service['cancelAllOrders'](exchange, pair, strategyKey);
-
-      expect(exchange.fetchOpenOrders).toHaveBeenCalledWith(pair);
-      expect(exchange.cancelOrder).toHaveBeenCalledWith('order1', pair);
-      expect(exchange.cancelOrder).toHaveBeenCalledWith('order2', pair);
-    });
-  });
-
-  describe('executeArbitrageTradeWithLimitOrders', () => {
-    it('should execute arbitrage trade with limit orders and record performance', async () => {
-      const userId = '1';
-      const clientId = 'client1';
-      const exchangeA = new ccxt.Exchange();
-      const exchangeB = new ccxt.Exchange();
-      const symbol = 'BTC/USDT';
-      const amount = 1;
-      const buyPrice = 48000;
-      const sellPrice = 49000;
-
-      const executeLimitTradeMock = jest.fn().mockResolvedValue({});
-      service['tradeService'] = {
-        executeLimitTrade: executeLimitTradeMock,
-      } as any; // Mock TradeService
-
-      await service['executeArbitrageTradeWithLimitOrders'](
-        exchangeA,
-        exchangeB,
-        symbol,
-        amount,
-        userId,
-        clientId,
-        buyPrice,
-        sellPrice,
-      );
-
-      expect(executeLimitTradeMock).toHaveBeenCalledWith({
-        userId,
-        clientId,
-        exchange: exchangeA.id,
-        symbol,
-        side: 'buy',
-        amount,
-        price: buyPrice,
-      });
-      expect(executeLimitTradeMock).toHaveBeenCalledWith({
-        userId,
-        clientId,
-        exchange: exchangeB.id,
-        symbol,
-        side: 'sell',
-        amount,
-        price: sellPrice,
-      });
-    });
-  });
-
-  // Add more tests for other methods as needed...
 });

@@ -1,7 +1,8 @@
 import { Controller, Get, Redirect } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { execSync } from 'child_process';
+
 import { getRFC3339Timestamp } from './common/helpers/utils';
 
 @Controller()
@@ -38,5 +39,5 @@ export class AppController {
   @Redirect('/docs', 302)
   @ApiOperation({ summary: 'Redirect to docs' })
   @ApiResponse({ status: 200, description: 'Redirect to docs.' })
-  redirectToDocs() { }
+  redirectToDocs() {}
 }

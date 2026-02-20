@@ -1,21 +1,22 @@
 import {
-  Controller,
-  Post,
-  Body,
   BadRequestException,
+  Body,
+  Controller,
   HttpCode,
   HttpStatus,
   Param,
+  Post,
 } from '@nestjs/common';
 import {
-  ApiTags,
+  ApiBadRequestResponse,
   ApiOperation,
   ApiResponse,
-  ApiBadRequestResponse,
+  ApiTags,
 } from '@nestjs/swagger';
-import { TradeService } from './trade.service';
-import { MarketTradeDto, LimitTradeDto } from './trade.dto';
+
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { LimitTradeDto, MarketTradeDto } from './trade.dto';
+import { TradeService } from './trade.service';
 
 @ApiTags('Trading Engine')
 @Controller('trade')
@@ -39,9 +40,11 @@ export class TradeController {
 
     try {
       const order = await this.tradeService.executeMarketTrade(marketTradeDto);
+
       this.logger.log(
         `Market trade executed for symbol ${marketTradeDto.symbol}`,
       );
+
       return order;
     } catch (error) {
       this.logger.error(`Error executing market trade: ${error.message}`);
@@ -65,9 +68,11 @@ export class TradeController {
 
     try {
       const order = await this.tradeService.executeLimitTrade(limitTradeDto);
+
       this.logger.log(
         `Limit trade executed for symbol ${limitTradeDto.symbol}`,
       );
+
       return order;
     } catch (error) {
       this.logger.error(`Error executing limit trade: ${error.message}`);

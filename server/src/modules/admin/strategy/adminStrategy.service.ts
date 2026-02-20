@@ -1,22 +1,23 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { StrategyService } from '../../market-making/strategy/strategy.service';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { ethers } from 'ethers';
+import { Contribution } from 'src/common/entities/campaign/contribution.entity';
+import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
+import {
+  getInfoFromChainId,
+  getTokenSymbolByContractAddress,
+} from 'src/common/helpers/blockchain-utils';
+import { Repository } from 'typeorm';
+
+import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { PerformanceService } from '../../market-making/performance/performance.service';
+import { StrategyService } from '../../market-making/strategy/strategy.service';
+import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,
   StartStrategyDto,
   StopStrategyDto,
 } from './admin-strategy.dto';
-import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
-import {
-  getInfoFromChainId,
-  getTokenSymbolByContractAddress,
-} from 'src/common/helpers/blockchain-utils';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Contribution } from 'src/common/entities/contribution.entity';
-import { Repository } from 'typeorm';
-import { MixinUser } from 'src/common/entities/mixin-user.entity';
-import { Web3Service } from '../../web3/web3.service';
-import { ethers } from 'ethers';
 
 @Injectable()
 export class AdminStrategyService {
@@ -64,6 +65,7 @@ export class AdminStrategyService {
 
   async stopStrategy(stopStrategyDto: StopStrategyDto) {
     const { strategyType, userId, clientId } = stopStrategyDto;
+
     return this.strategyService.stopStrategyForUser(
       userId,
       clientId,
@@ -79,6 +81,7 @@ export class AdminStrategyService {
       network,
       accountLabel,
     );
+
     return depositAddress;
   }
 
@@ -93,6 +96,7 @@ export class AdminStrategyService {
     );
 
     const currency = exchange.currencies[tokenSymbol];
+
     if (!currency) {
       throw new BadRequestException(
         `Token ${tokenSymbol} is not supported on ${exchangeName}.`,
@@ -137,6 +141,7 @@ export class AdminStrategyService {
     try {
       // Call the utility function to get chain info from chainId
       const chainInfo = await getInfoFromChainId(chainId);
+
       return chainInfo;
     } catch (error) {
       throw new BadRequestException(
@@ -158,6 +163,7 @@ export class AdminStrategyService {
     const strategy = await this.strategyService.getStrategyInstanceKey(
       strategyKey,
     );
+
     if (!strategy || strategy.status !== 'running') {
       throw new BadRequestException(`Strategy ${strategyKey} is not active`);
     }
@@ -166,6 +172,7 @@ export class AdminStrategyService {
     const mixinUser = await this.mixinuserrepository.findOne({
       where: { user_id: userId },
     });
+
     if (!mixinUser) {
       throw new BadRequestException(`User ${userId} does not exist`);
     }
@@ -194,6 +201,7 @@ export class AdminStrategyService {
     const contribution = await this.contributionRepository.findOne({
       where: { id: contributionId },
     });
+
     if (!contribution) {
       throw new BadRequestException(
         `Contribution ${contributionId} does not exist`,
@@ -207,6 +215,7 @@ export class AdminStrategyService {
     const user = await this.mixinuserrepository.findOne({
       where: { user_id: userId },
     });
+
     if (!user) {
       throw new BadRequestException(
         `User associated with contribution does not exist`,
@@ -226,6 +235,7 @@ export class AdminStrategyService {
       // Update the contribution status to confirmed
       contribution.status = 'confirmed';
       await this.contributionRepository.save(contribution);
+
       return true;
     }
 
