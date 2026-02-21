@@ -49,7 +49,7 @@ export const formatBalanceForDisplay = (
 ) => {
   if (!isValidBalance(balance)) return "0";
   const raw = String(balance);
-  const [integerPart, decimalPart] = raw.split(".");
+  const [, decimalPart] = raw.split(".");
   if (!decimalPart || decimalPart.length <= maxDecimals) {
     return raw;
   }
