@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Dashboard from "$lib/components/admin/dashboard.svelte";
+    import { goto } from "$app/navigation";
+    goto("/manage/settings");
 </script>
-
-<Dashboard />

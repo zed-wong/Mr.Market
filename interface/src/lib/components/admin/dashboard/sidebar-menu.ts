@@ -14,12 +14,12 @@ export type SidebarMenuItem = {
 
 export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
   return [
-    {
-      key: "dashboard",
-      labelKey: "dashboard",
-      value: "/manage",
-      icon: "dashboard",
-    },
+    // {
+    //   key: "dashboard",
+    //   labelKey: "dashboard",
+    //   value: "/manage",
+    //   icon: "dashboard",
+    // },
     {
       key: "settings",
       labelKey: "settings",
