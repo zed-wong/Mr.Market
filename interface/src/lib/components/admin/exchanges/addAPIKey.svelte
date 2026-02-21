@@ -22,7 +22,7 @@
   let publicKey = "";
   let encryptionError = "";
 
-  let addDialog = false;
+  let addDialogEl: HTMLDialogElement | null = null;
   let isAdding = false;
   let isDropdownOpen = false;
 
@@ -45,7 +45,10 @@
     }
     isAdding = true;
     const token = localStorage.getItem("admin-access-token");
-    if (!token) return;
+    if (!token) {
+      isAdding = false;
+      return;
+    }
 
     if (!publicKey) {
       encryptionError = $_("encryption_key_error");
@@ -75,13 +78,27 @@
     setTimeout(() => {
       invalidate("admin:settings:api-keys").finally(() => {
         isAdding = false;
-        addDialog = false;
-        AddNewExchange = "";
-        AddNewName = "";
-        AddNewApiKey = "";
-        AddNewApiSecret = "";
+        closeDialog();
       });
     }, getRandomDelay());
+  }
+
+  const cleanUpStates = () => {
+    isAdding = false;
+    isDropdownOpen = false;
+    encryptionError = "";
+    AddNewExchange = "";
+    AddNewName = "";
+    AddNewApiKey = "";
+    AddNewApiSecret = "";
+  };
+
+  function openDialog() {
+    addDialogEl?.showModal();
+  }
+
+  function closeDialog() {
+    addDialogEl?.close();
   }
 
   function getRandomDelay() {
@@ -108,17 +125,15 @@
       console.error(e);
     }
   });
-  $: if (!addDialog) {
-    encryptionError = "";
-  }
 </script>
 
 <svelte:window on:click={handleClickOutside} />
 
-<details class="dropdown dropdown-end" bind:open={addDialog}>
-  <summary
-    class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
-  >
+<button
+  type="button"
+  class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
+  on:click={openDialog}
+>
     <svg
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
@@ -134,33 +149,45 @@
       />
     </svg>
     {$_("add_api_key")}
-  </summary>
+  </button>
+
+<dialog
+  bind:this={addDialogEl}
+  class="modal modal-bottom sm:modal-middle backdrop-blur-sm"
+  on:close={cleanUpStates}
+>
   <div
-    class="dropdown-content bg-base-100 rounded-box p-6 shadow-xl border border-base-200 w-[32rem] mt-2 max-h-[80vh] overflow-y-auto"
+    class="modal-box w-full sm:max-w-[32rem] rounded-t-3xl sm:rounded-box space-y-3 pt-0 px-0 max-h-[88vh] overflow-y-auto"
   >
-    <div class="flex justify-between items-center mb-4">
-      <h3 class="font-bold text-lg">{$_("add_new_api_key")}</h3>
-      <button
-        class="btn btn-sm btn-circle btn-ghost"
-        on:click={() => (addDialog = false)}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
+    <div class="sticky top-0 bg-base-100 z-10">
+      <div class="mx-auto mt-2 mb-2 h-1 w-10 rounded-full bg-base-content/20 sm:hidden"></div>
+      <div class="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-base-200">
+        <h3 class="font-semibold text-base sm:text-lg">{$_("add_new_api_key")}</h3>
+        <button
+          type="button"
+          class="btn btn-sm btn-circle btn-ghost"
+          on:click={closeDialog}
+          aria-label="Close"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M6 18L18 6M6 6l12 12"
-          />
-        </svg>
-      </button>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-5 w-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
-    <div class="flex flex-col gap-4">
+
+    <div class="px-4 sm:px-6 pb-5 flex flex-col gap-4">
       <div class="form-control w-full">
         <span class="label">
           <span class="label-text font-medium">{$_("exchange")}</span>
@@ -275,4 +302,7 @@
       </button>
     </div>
   </div>
-</details>
+  <form method="dialog" class="modal-backdrop">
+    <button aria-label="Close">close</button>
+  </form>
+</dialog>

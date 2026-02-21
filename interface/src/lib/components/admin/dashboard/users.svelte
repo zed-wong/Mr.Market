@@ -87,20 +87,19 @@
 </script>
 
 <div class="grid grid-cols-1 2xl:grid-cols-2 xl:gap-4 my-4">
-  <div class="bg-white shadow rounded-lg p-4 sm:p-6 h-full">
+  <div class="card bg-base-100 border border-base-300 shadow-sm h-full">
+    <div class="card-body p-4 sm:p-5">
     <div class="flex items-center justify-between mb-4">
-      <h3 class="text-xl font-bold leading-none text-base-content">
-        Latest Users
-      </h3>
+      <span class="text-lg font-semibold leading-none text-base-content">{$_("latest_users")}</span>
       <a
         href="/manage/users"
-        class="text-sm font-medium text-cyan-600 hover:bg-gray-100 rounded-lg inline-flex items-center p-2"
+        class="btn btn-ghost btn-sm normal-case"
       >
         {$_("view_all")}
       </a>
     </div>
     <div class="flow-root">
-      <ul role="list" class="divide-y divide-gray-200">
+      <ul role="list" class="divide-y divide-base-300">
         {#each users as user}
           <li class="py-3 sm:py-4">
             <div class="flex items-center space-x-4">
@@ -112,12 +111,12 @@
                 />
               </div>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-base-content truncate">
+                <span class="block text-sm font-medium text-base-content truncate">
                   {user.full_name}
-                </p>
-                <p class="text-sm text-gray-500 truncate">
+                </span>
+                <span class="block text-sm text-base-content/60 truncate">
                   {user.identity_number}
-                </p>
+                </span>
               </div>
               <div class="inline-flex items-center text-base text-base-content">
                 {user.created_at}
@@ -127,5 +126,6 @@
         {/each}
       </ul>
     </div>
+  </div>
   </div>
 </div>

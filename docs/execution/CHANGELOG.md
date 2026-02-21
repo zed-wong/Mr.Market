@@ -1,5 +1,15 @@
 # Execution Flow Changelog
 
+## 2026-02-20
+
+- Add shared DaisyUI theme files for main/admin UI and map admin routes to dedicated admin theme tokens
+- Refresh ui/DESIGN_PATTERN.md to match current theme files, typography, and layout wiring
+- Localize hardcoded HuFi empty-state text in market-making pages with en/zh i18n keys
+- Remove custom add mode from market-making pair dialog and simplify quick-add search/result UI
+- Align spot-trading quick-add dialog inner content with market-making quick-add and unify dialog backdrop behavior
+- Restore DaisyUI default semantic status colors and depth/border tokens in custom themes to recover previous badge, border, and shadow appearance
+- Rework admin /manage dashboard to a TailAdmin-style shell with responsive sidebar drawer, sticky top bar, and refreshed stats/orders/users widgets for desktop and mobile
+
 ## 2026-02-05
 
 - Switch Playwright workflow to SQLite and remove Postgres service

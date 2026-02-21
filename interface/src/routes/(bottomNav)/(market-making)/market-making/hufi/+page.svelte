@@ -2,6 +2,7 @@
   import CampaignSmallCard from "$lib/components/grow/marketMaking/hufi/CampaignSmallCard.svelte";
   import IntroCard from "$lib/components/grow/marketMaking/hufi/IntroCard.svelte";
   import { formatCampaigns } from "$lib/helpers/mrm/campaignFormatter.js";
+  import { _ } from "svelte-i18n";
 
   export let data;
 
@@ -24,8 +25,8 @@
     <div
       class="col-span-full flex flex-col items-center justify-center py-20 text-base-content/60"
     >
-      <p class="text-xl font-semibold mb-2">No Active Campaigns</p>
-      <p class="text-sm">There are currently no active campaigns available.</p>
+      <span class="text-xl font-semibold mb-2">{$_("hufi_no_active_campaigns_title")}</span>
+      <span class="text-sm">{$_("hufi_no_active_campaigns_desc")}</span>
     </div>
   {/if}
 </div>

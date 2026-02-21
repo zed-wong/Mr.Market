@@ -1,145 +1,157 @@
 <script lang="ts">
-  import clsx from "clsx";
-  import { _ } from "svelte-i18n";
-  import { toast } from "svelte-sonner";
-  import { page } from "$app/stores";
-  import { invalidate } from "$app/navigation";
+    import clsx from "clsx";
+    import { _ } from "svelte-i18n";
+    import { toast } from "svelte-sonner";
+    import { page } from "$app/stores";
+    import { invalidate } from "$app/navigation";
 
-  import type { SpotTradingPair } from "$lib/types/hufi/spot";
-  import Loading from "$lib/components/common/loading.svelte";
-  import AddTradingPair from "$lib/components/admin/settings/spotTrading/AddTradingPair.svelte";
-  import TradingPairList from "$lib/components/admin/settings/spotTrading/TradingPairList.svelte";
+    import type { SpotTradingPair } from "$lib/types/hufi/spot";
+    import Loading from "$lib/components/common/loading.svelte";
+    import AddTradingPair from "$lib/components/admin/settings/spotTrading/AddTradingPair.svelte";
+    import TradingPairList from "$lib/components/admin/settings/spotTrading/TradingPairList.svelte";
 
-  let isRefreshing = false;
-  let spotInfoPromise: any = null;
-  let spotTradingPairs: SpotTradingPair[] = [];
+    let isRefreshing = false;
+    let spotInfoPromise: any = null;
+    let spotTradingPairs: SpotTradingPair[] = [];
 
-  async function RefreshSpotTradingPairs(showToast = true) {
-    isRefreshing = true;
-    const refreshTask = () =>
-      invalidate("admin:settings:spot-trading").finally(() => {
-        isRefreshing = false;
-      });
-    if (showToast) {
-      await toast.promise(refreshTask, {
-        loading: $_("refreshing_msg"),
-        success: $_("refresh_success_msg"),
-        error: $_("refresh_failed_msg"),
-      });
-    } else {
-      await refreshTask();
+    async function RefreshSpotTradingPairs(showToast = true) {
+        isRefreshing = true;
+        const refreshTask = () =>
+            invalidate("admin:settings:spot-trading").finally(() => {
+                isRefreshing = false;
+            });
+        if (showToast) {
+            await toast.promise(refreshTask, {
+                loading: $_("refreshing_msg"),
+                success: $_("refresh_success_msg"),
+                error: $_("refresh_failed_msg"),
+            });
+        } else {
+            await refreshTask();
+        }
     }
-  }
 
-  $: configuredExchanges = $page.data.growInfo?.exchanges || [];
-  $: if ($page.data.spotInfo && $page.data.spotInfo !== spotInfoPromise) {
-    spotInfoPromise = $page.data.spotInfo;
-    if (spotInfoPromise) {
-      Promise.resolve(spotInfoPromise).then((spotInfo) => {
-        spotTradingPairs = spotInfo?.trading_pairs || [];
-      });
+    $: configuredExchanges = $page.data.growInfo?.exchanges || [];
+    $: if ($page.data.spotInfo && $page.data.spotInfo !== spotInfoPromise) {
+        spotInfoPromise = $page.data.spotInfo;
+        if (spotInfoPromise) {
+            Promise.resolve(spotInfoPromise).then((spotInfo) => {
+                spotTradingPairs = spotInfo?.trading_pairs || [];
+            });
+        }
     }
-  }
 </script>
 
-<div class="p-6 md:p-10 space-y-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <button
-        on:click={() => window.history.back()}
-        class="btn btn-ghost btn-circle"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-5 h-5"
+<div class="p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 max-w-7xl mx-auto">
+    <!-- Header -->
+    <div
+        class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4"
+    >
+        <div
+            class="flex items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
-          />
-        </svg>
-      </button>
-
-      <div>
-        <h1 class="text-3xl font-bold">{$_("spot_trading")}</h1>
-        <p class="text-sm text-base-content/60">
-          {$_("manage_spot_trading_pairs")}
-        </p>
-      </div>
-    </div>
-
-    <div class="flex items-center gap-3">
-      <AddTradingPair
-        {configuredExchanges}
-        existingPairs={spotTradingPairs}
-      />
-      <button
-        class="btn btn-square btn-outline"
-        on:click={() => RefreshSpotTradingPairs()}
-      >
-        <span
-          class={clsx(isRefreshing && "loading loading-spinner loading-sm")}
-        >
-          {#if !isRefreshing}
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-5 h-5"
+            <button
+                on:click={() => window.history.back()}
+                class="btn btn-ghost btn-circle"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
-              />
-            </svg>
-          {/if}
-        </span>
-      </button>
-    </div>
-  </div>
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="w-5 h-5"
+                >
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+                    />
+                </svg>
+            </button>
 
-  {#await $page.data.spotInfo}
-    <div class="w-full h-64 flex justify-center items-center">
-      <Loading />
+            <div
+                class="flex flex-col text-start items-start justify-center min-w-0"
+            >
+                <span class="text-xl sm:text-2xl font-bold"
+                    >{$_("spot_trading")}</span
+                >
+                <span class="text-sm text-base-content/60">
+                    {$_("manage_spot_trading_pairs")}
+                </span>
+            </div>
+        </div>
+
+        <div
+            class="flex items-center justify-end gap-2 sm:gap-3 w-full sm:w-auto"
+        >
+            <AddTradingPair
+                {configuredExchanges}
+                existingPairs={spotTradingPairs}
+            />
+            <button
+                class="btn btn-square btn-outline"
+                on:click={() => RefreshSpotTradingPairs()}
+            >
+                <span
+                    class={clsx(
+                        isRefreshing && "loading loading-spinner loading-sm",
+                    )}
+                >
+                    {#if !isRefreshing}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke-width="1.5"
+                            stroke="currentColor"
+                            class="w-5 h-5"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+                            />
+                        </svg>
+                    {/if}
+                </span>
+            </button>
+        </div>
     </div>
-  {:then spotInfo}
-    {#if !spotInfo.trading_pairs}
-      <div
-        class="w-full h-64 flex flex-col justify-center items-center gap-4 text-base-content/40"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-12 h-12"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
-          />
-        </svg>
-        <p>{$_("failed_to_load_data")}</p>
-        <button
-          class="btn btn-sm btn-ghost"
-          on:click={() => RefreshSpotTradingPairs()}
-        >
-          {$_("reload")}
-        </button>
-      </div>
-    {:else}
-      <TradingPairList tradingPairs={spotInfo.trading_pairs} />
-    {/if}
-  {/await}
+
+    {#await $page.data.spotInfo}
+        <div class="w-full h-64 flex justify-center items-center">
+            <Loading />
+        </div>
+    {:then spotInfo}
+        {#if !spotInfo.trading_pairs}
+            <div
+                class="w-full h-64 flex flex-col justify-center items-center gap-4 text-base-content/40"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="w-12 h-12"
+                >
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
+                    />
+                </svg>
+                <p>{$_("failed_to_load_data")}</p>
+                <button
+                    class="btn btn-sm btn-ghost"
+                    on:click={() => RefreshSpotTradingPairs()}
+                >
+                    {$_("reload")}
+                </button>
+            </div>
+        {:else}
+            <TradingPairList tradingPairs={spotInfo.trading_pairs} />
+        {/if}
+    {/await}
 </div>

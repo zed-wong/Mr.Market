@@ -2,7 +2,7 @@
   import clsx from "clsx"
   import { _ } from "svelte-i18n"
   import colors from "tailwindcss/colors";
-  import { theme } from "$lib/stores/theme";
+  import { darkTheme } from "$lib/stores/theme";
   import { CandlePair } from "$lib/stores/market";
   import { formatDecimals } from "$lib/helpers/utils";
 	import { CandleBids, CandleAsks } from '$lib/stores/market';
@@ -13,8 +13,8 @@
     return (arr[i]/max)*100
   }
 
-  $: BidsBgColor = $theme === 'dark' ? colors.emerald[900]: colors.green[100]
-  $: AsksBgColor = $theme === 'dark' ? colors.rose[950]: colors.red[100]
+  $: BidsBgColor = $darkTheme ? colors.emerald[900]: colors.green[100]
+  $: AsksBgColor = $darkTheme ? colors.rose[950]: colors.red[100]
 </script>
 
 <div class="flex flex-col space-y-3 px-4 mt-3">
