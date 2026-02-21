@@ -31,6 +31,8 @@
     let loadingExchangeIds: string[] = [];
     let hasFetchedAll = false;
     let addingKey: string | null = null;
+    let isFocusedAddFlow = false;
+    let loadingMarket: any = null;
     let showAssetPicker = false;
     let pendingMarket: any = null;
     let baseAssetOptions: any[] = [];
@@ -236,6 +238,8 @@
     }
 
     function resetAssetPicker() {
+        isFocusedAddFlow = false;
+        loadingMarket = null;
         showAssetPicker = false;
         pendingMarket = null;
         baseAssetOptions = [];
@@ -289,6 +293,8 @@
             return;
         }
 
+        isFocusedAddFlow = true;
+        loadingMarket = market;
         addingKey = `${market.exchange_id}:${market.symbol}`;
 
         try {
@@ -299,6 +305,8 @@
 
             if (!baseAssets.length || !quoteAssets.length) {
                 toast.error($_("no_assets_found") || "No assets found");
+                isFocusedAddFlow = false;
+                loadingMarket = null;
                 return;
             }
 
@@ -329,6 +337,10 @@
             await submitPair(market, baseAssets[0], quoteAssets[0]);
         } finally {
             addingKey = null;
+            if (!showAssetPicker) {
+                isFocusedAddFlow = false;
+                loadingMarket = null;
+            }
         }
     }
 
@@ -356,6 +368,8 @@
             resetAssetPicker();
         } finally {
             addingKey = null;
+            isFocusedAddFlow = false;
+            loadingMarket = null;
         }
     }
 
@@ -366,6 +380,8 @@
         loadingExchangeIds = [];
         hasFetchedAll = false;
         addingKey = null;
+        isFocusedAddFlow = false;
+        loadingMarket = null;
         resetAssetPicker();
     }
 
@@ -395,15 +411,35 @@
             </div>
         {:else}
             <div class="space-y-4">
-                <div class="form-control w-full">
-                    <input
-                        id="quick-symbol-input"
-                        type="text"
-                        class="input input-bordered input-sm w-full"
-                        bind:value={symbolQuery}
-                        placeholder={$_("search_pair_placeholder")}
-                    />
-                </div>
+                {#if !isFocusedAddFlow}
+                    <label
+                        class="input input-lg text-sm w-full rounded-full bg-base-200 border-0.5 border-base-200 focus-within:border-base-200 focus-within:outline-none flex items-center gap-2"
+                    >
+                        <svg
+                            class="h-[1em] opacity-50"
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                        >
+                            <g
+                                stroke-linejoin="round"
+                                stroke-linecap="round"
+                                stroke-width="2.5"
+                                fill="none"
+                                stroke="currentColor"
+                            >
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="m21 21-4.3-4.3"></path>
+                            </g>
+                        </svg>
+                        <input
+                            id="quick-symbol-input"
+                            type="search"
+                            class="grow"
+                            bind:value={symbolQuery}
+                            placeholder={$_("search_pair_placeholder")}
+                        />
+                    </label>
+                {/if}
 
                 {#if showAssetPicker}
                     <div
@@ -559,20 +595,42 @@
                     </div>
                 {/if}
 
-                {#if isLoadingMarkets}
+                {#if isFocusedAddFlow && addingKey && !showAssetPicker && loadingMarket}
+                    <div
+                        class="rounded-lg border border-base-200 bg-base-200/40 p-3"
+                    >
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <div class="font-medium">
+                                    {loadingMarket.display_symbol ||
+                                        loadingMarket.symbol}
+                                </div>
+                                <span class="text-xs text-base-content/60">
+                                    {exchangeById[loadingMarket.exchange_id]?.name ||
+                                        loadingMarket.exchange_id}
+                                </span>
+                            </div>
+                            <button class="btn btn-sm btn-primary btn-disabled">
+                                <span
+                                    class="loading loading-spinner loading-xs"
+                                ></span>
+                            </button>
+                        </div>
+                    </div>
+                {:else if !isFocusedAddFlow && isLoadingMarkets}
                     <div class="flex items-center gap-2 text-sm">
                         <span class="loading loading-spinner loading-xs"></span>
                         {$_("loading_markets")} ({configuredExchanges.length} exchanges)
                     </div>
-                {:else if symbolQuery.trim().length === 0}
+                {:else if !isFocusedAddFlow && symbolQuery.trim().length === 0}
                     <div class="text-sm text-base-content/60">
                         {$_("type_symbol_to_search")}
                     </div>
-                {:else if filteredMarkets.length === 0}
+                {:else if !isFocusedAddFlow && filteredMarkets.length === 0}
                     <div class="text-sm text-base-content/60">
                         {$_("no_matching_markets")}
                     </div>
-                {:else}
+                {:else if !isFocusedAddFlow}
                     <div class="space-y-2">
                         {#each filteredMarkets as market}
                             <div class="flex items-center justify-between gap-4 p-2.5 rounded-lg border border-base-200">
@@ -696,15 +754,35 @@
                 </div>
             {:else}
                 <div class="space-y-4">
-                    <div class="form-control w-full">
-                        <input
-                            id="quick-symbol-input"
-                            type="text"
-                            class="input input-bordered input-sm w-full"
-                            bind:value={symbolQuery}
-                            placeholder={$_("search_pair_placeholder")}
-                        />
-                    </div>
+                    {#if !isFocusedAddFlow}
+                        <label
+                            class="input input-lg text-sm w-full rounded-full bg-base-200 border-0.5 border-base-200 focus-within:border-base-200 focus-within:outline-none flex items-center gap-2"
+                        >
+                            <svg
+                                class="h-[1em] opacity-50"
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                            >
+                                <g
+                                    stroke-linejoin="round"
+                                    stroke-linecap="round"
+                                    stroke-width="2.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                >
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <path d="m21 21-4.3-4.3"></path>
+                                </g>
+                            </svg>
+                            <input
+                                id="quick-symbol-input"
+                                type="search"
+                                class="grow"
+                                bind:value={symbolQuery}
+                                placeholder={$_("search_pair_placeholder")}
+                            />
+                        </label>
+                    {/if}
 
                     {#if showAssetPicker}
                         <div
@@ -860,20 +938,44 @@
                         </div>
                     {/if}
 
-                    {#if isLoadingMarkets}
+                    {#if isFocusedAddFlow && addingKey && !showAssetPicker && loadingMarket}
+                        <div
+                            class="rounded-lg border border-base-200 bg-base-200/40 p-3"
+                        >
+                            <div class="flex items-center justify-between gap-4">
+                                <div>
+                                    <div class="font-medium">
+                                        {loadingMarket.display_symbol ||
+                                            loadingMarket.symbol}
+                                    </div>
+                                    <span class="text-xs text-base-content/60">
+                                        {exchangeById[loadingMarket.exchange_id]
+                                            ?.name || loadingMarket.exchange_id}
+                                    </span>
+                                </div>
+                                <button
+                                    class="btn btn-sm btn-primary btn-disabled"
+                                >
+                                    <span
+                                        class="loading loading-spinner loading-xs"
+                                    ></span>
+                                </button>
+                            </div>
+                        </div>
+                    {:else if !isFocusedAddFlow && isLoadingMarkets}
                         <div class="flex items-center gap-2 text-sm">
                             <span class="loading loading-spinner loading-xs"></span>
                             {$_("loading_markets")} ({configuredExchanges.length} exchanges)
                         </div>
-                    {:else if symbolQuery.trim().length === 0}
+                    {:else if !isFocusedAddFlow && symbolQuery.trim().length === 0}
                         <div class="text-sm text-base-content/60">
                             {$_("type_symbol_to_search")}
                         </div>
-                    {:else if filteredMarkets.length === 0}
+                    {:else if !isFocusedAddFlow && filteredMarkets.length === 0}
                         <div class="text-sm text-base-content/60">
                             {$_("no_matching_markets")}
                         </div>
-                    {:else}
+                    {:else if !isFocusedAddFlow}
                         <div class="space-y-2">
                             {#each filteredMarkets as market}
                                 <div class="flex items-center justify-between gap-4 p-2.5 rounded-lg border border-base-200">
