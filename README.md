@@ -44,7 +44,7 @@ make start-dev
 #### Install dependencies
 
 ```
-npx playwright install
+bunx playwright install
 ```
 
 #### Running tests
@@ -52,13 +52,13 @@ npx playwright install
 Unit testing
 
 ```
-yarn test:unit
+bun run test:unit
 ```
 
 E2E testing
 
 ```
-yarn test:e2e
+bun run test:e2e
 ```
 
 ### Server
@@ -128,7 +128,7 @@ By the end of these steps, you will have a fully functional server and interface
    - Use
 
      - `./interface` for Root Directory
-     - `yarn --frozen-lockfile install; yarn build` for Build Command
+      - `bun install --frozen-lockfile; bun run build` for Build Command
      - `build` for Publish Directory
 
    - Setup Redirect & Rewrite Rules as follows.
@@ -163,6 +163,14 @@ If you encounter issues during the deployment, check the following:
 - [Svelte](https://svelte.dev/) - Web framework
 - [Daisy UI](https://daisyui.com/) - UI framework
 - [Nest.js](https://nestjs.com/) - Backend API framework
+
+# Market Making Runtime Docs
+
+For the current intent-driven and tick-driven market making backend flow, use these docs as the source of truth:
+
+- Runtime flow: `docs/execution/flow/MARKET_MAKING_FLOW.md`
+- End-to-end test guide: `docs/tests/MARKET_MAKING.md`
+- Execution flow changelog: `docs/execution/CHANGELOG.md`
 
 # License
 
