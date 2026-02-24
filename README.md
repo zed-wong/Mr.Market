@@ -164,14 +164,6 @@ If you encounter issues during the deployment, check the following:
 - [Daisy UI](https://daisyui.com/) - UI framework
 - [Nest.js](https://nestjs.com/) - Backend API framework
 
-# Market Making Runtime Docs
-
-For the current intent-driven and tick-driven market making backend flow, use these docs as the source of truth:
-
-- Runtime flow: `docs/execution/flow/MARKET_MAKING_FLOW.md`
-- End-to-end test guide: `docs/tests/MARKET_MAKING.md`
-- Execution flow changelog: `docs/execution/CHANGELOG.md`
-
 # License
 
 This project is licensed under the GNU Affero General Public License - see the [LICENSE.md](./LICENSE) file for details
