@@ -245,4 +245,48 @@ describe('StrategyIntentExecutionService', () => {
       'DONE',
     );
   });
+
+  it('falls back to safe retry defaults for invalid config values', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockRejectedValueOnce(new Error('temporary'))
+      .mockRejectedValueOnce(new Error('temporary'))
+      .mockResolvedValueOnce({
+        id: 'order-after-default-retries',
+        status: 'open',
+      });
+
+    const configService = {
+      get: jest.fn((key: string, defaultValue?: unknown) => {
+        if (key === 'strategy.execute_intents') {
+          return true;
+        }
+        if (key === 'strategy.intent_max_retries') {
+          return 'NaN';
+        }
+        if (key === 'strategy.intent_retry_base_delay_ms') {
+          return -10;
+        }
+
+        return defaultValue;
+      }),
+    } as unknown as ConfigService;
+
+    const service = new StrategyIntentExecutionService(
+      tradeService as any,
+      exchangeInitService as any,
+      configService,
+      durabilityService as any,
+      intentStoreService as any,
+      exchangeConnectorAdapterService as any,
+      exchangeOrderTrackerService as any,
+    );
+
+    await service.consumeIntents([
+      { ...baseIntent, intentId: 'invalid-config' },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(3);
+  });
 });

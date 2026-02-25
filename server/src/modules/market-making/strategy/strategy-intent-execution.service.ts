@@ -39,12 +39,33 @@ export class StrategyIntentExecutionService {
       this.configService.get('strategy.execute_intents', false),
       false,
     );
-    this.maxRetries = Number(
+    const parsedMaxRetries = Number(
       this.configService.get('strategy.intent_max_retries', 2),
     );
-    this.retryBaseDelayMs = Number(
+
+    this.maxRetries =
+      Number.isFinite(parsedMaxRetries) && parsedMaxRetries >= 0
+        ? Math.floor(parsedMaxRetries)
+        : 2;
+    if (this.maxRetries !== parsedMaxRetries) {
+      this.logger.warn(
+        `Invalid strategy.intent_max_retries value: ${parsedMaxRetries}. Falling back to ${this.maxRetries}`,
+      );
+    }
+
+    const parsedRetryBaseDelayMs = Number(
       this.configService.get('strategy.intent_retry_base_delay_ms', 250),
     );
+
+    this.retryBaseDelayMs =
+      Number.isFinite(parsedRetryBaseDelayMs) && parsedRetryBaseDelayMs > 0
+        ? parsedRetryBaseDelayMs
+        : 250;
+    if (this.retryBaseDelayMs !== parsedRetryBaseDelayMs) {
+      this.logger.warn(
+        `Invalid strategy.intent_retry_base_delay_ms value: ${parsedRetryBaseDelayMs}. Falling back to ${this.retryBaseDelayMs}`,
+      );
+    }
   }
 
   async consumeIntents(intents: StrategyOrderIntent[]): Promise<void> {

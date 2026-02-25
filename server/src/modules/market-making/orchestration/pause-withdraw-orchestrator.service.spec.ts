@@ -29,6 +29,7 @@ describe('PauseWithdrawOrchestratorService', () => {
     );
 
     await service.pauseAndWithdraw({
+      operationId: 'op-1',
       userId: 'u1',
       clientId: 'c1',
       strategyType: 'pureMarketMaking',
@@ -76,6 +77,7 @@ describe('PauseWithdrawOrchestratorService', () => {
 
     await expect(
       service.pauseAndWithdraw({
+        operationId: 'op-2',
         userId: 'u1',
         clientId: 'c1',
         strategyType: 'pureMarketMaking',
@@ -126,6 +128,7 @@ describe('PauseWithdrawOrchestratorService', () => {
     );
 
     await service.pauseAndWithdraw({
+      operationId: 'op-3',
       userId: 'u1',
       clientId: 'c1',
       strategyType: 'pureMarketMaking',

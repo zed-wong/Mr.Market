@@ -8,6 +8,7 @@ import { StrategyService } from '../strategy/strategy.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
 
 type PauseWithdrawCommand = {
+  operationId: string;
   userId: string;
   clientId: string;
   strategyType: 'arbitrage' | 'pureMarketMaking' | 'volume';
@@ -42,23 +43,31 @@ export class PauseWithdrawOrchestratorService {
 
     await this.cancelUntilDrained(strategyKey);
 
-    await this.balanceLedgerService.unlockFunds({
+    const unlockResult = await this.balanceLedgerService.unlockFunds({
       userId: command.userId,
       assetId: command.assetId,
       amount: command.amount,
-      idempotencyKey: `unlock:${command.userId}:${command.clientId}:${command.assetId}:${command.amount}`,
+      idempotencyKey: `unlock:${command.operationId}`,
       refType: 'withdraw_orchestrator_unlock',
       refId: command.clientId,
     });
 
-    await this.balanceLedgerService.debitWithdrawal({
+    if (!unlockResult.applied) {
+      throw new Error('Unlock mutation was not applied');
+    }
+
+    const debitResult = await this.balanceLedgerService.debitWithdrawal({
       userId: command.userId,
       assetId: command.assetId,
       amount: command.amount,
-      idempotencyKey: `withdraw_debit:${command.userId}:${command.clientId}:${command.assetId}:${command.amount}`,
+      idempotencyKey: `withdraw_debit:${command.operationId}`,
       refType: 'withdraw_orchestrator_debit',
       refId: command.clientId,
     });
+
+    if (!debitResult.applied) {
+      throw new Error('Withdrawal debit mutation was not applied');
+    }
 
     await this.withdrawalService.executeWithdrawal(
       command.assetId,
