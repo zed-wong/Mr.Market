@@ -5,6 +5,7 @@ describe('WithdrawalProcessor', () => {
   const buildProcessor = (overrides?: {
     hasEnoughBalance?: boolean;
     executeWithdrawalError?: Error;
+    ledgerDebitError?: Error;
   }) => {
     const withdrawal = {
       id: 'withdrawal-1',
@@ -46,7 +47,13 @@ describe('WithdrawalProcessor', () => {
     };
 
     const balanceLedgerService = {
-      debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
+      debitWithdrawal: overrides?.ledgerDebitError
+        ? jest.fn().mockRejectedValue(overrides.ledgerDebitError)
+        : jest.fn().mockResolvedValue({ applied: true }),
+    };
+
+    const queue = {
+      add: jest.fn().mockResolvedValue(undefined),
     };
 
     return {
@@ -58,14 +65,16 @@ describe('WithdrawalProcessor', () => {
       ),
       withdrawalService,
       balanceLedgerService,
+      queue,
     };
   };
 
   it('debits ledger for successful withdrawal processing', async () => {
-    const { processor, balanceLedgerService } = buildProcessor();
+    const { processor, balanceLedgerService, queue } = buildProcessor();
 
     await processor.handleWithdrawal({
       data: { withdrawalId: 'withdrawal-1' },
+      queue,
     } as any);
 
     expect(balanceLedgerService.debitWithdrawal).toHaveBeenCalledWith({
@@ -79,14 +88,41 @@ describe('WithdrawalProcessor', () => {
   });
 
   it('does not debit ledger when wallet balance is insufficient', async () => {
-    const { processor, balanceLedgerService } = buildProcessor({
+    const { processor, balanceLedgerService, queue } = buildProcessor({
       hasEnoughBalance: false,
     });
 
     await processor.handleWithdrawal({
       data: { withdrawalId: 'withdrawal-1' },
+      queue,
     } as any);
 
     expect(balanceLedgerService.debitWithdrawal).not.toHaveBeenCalled();
+  });
+
+  it('enqueues ledger debit reconciliation when post-send debit fails', async () => {
+    const { processor, withdrawalService, queue } = buildProcessor({
+      ledgerDebitError: new Error('ledger offline'),
+    });
+
+    await processor.handleWithdrawal({
+      data: { withdrawalId: 'withdrawal-1' },
+      queue,
+    } as any);
+
+    expect(withdrawalService.updateWithdrawalStatus).toHaveBeenCalledWith(
+      'withdrawal-1',
+      'sent',
+      expect.objectContaining({
+        errorMessage: expect.stringContaining('LEDGER_DEBIT_PENDING:'),
+      }),
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      'reconcile_withdrawal_ledger_debit',
+      { withdrawalId: 'withdrawal-1' },
+      expect.objectContaining({
+        jobId: 'reconcile_ledger_debit_withdrawal-1',
+      }),
+    );
   });
 });

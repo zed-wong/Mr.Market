@@ -144,6 +144,26 @@ export class WithdrawalProcessor {
           this.logger.error(
             `Ledger debit failed for withdrawal ${withdrawalId}: ${ledgerError.message}`,
           );
+          await this.withdrawalService.updateWithdrawalStatus(
+            withdrawalId,
+            'sent',
+            {
+              errorMessage: `LEDGER_DEBIT_PENDING: ${ledgerError.message}`,
+            },
+          );
+          await job.queue?.add(
+            'reconcile_withdrawal_ledger_debit',
+            { withdrawalId },
+            {
+              jobId: `reconcile_ledger_debit_${withdrawalId}`,
+              attempts: 10,
+              backoff: {
+                type: 'exponential',
+                delay: 10000,
+              },
+              removeOnComplete: true,
+            },
+          );
         }
 
         this.logger.log(
@@ -187,5 +207,30 @@ export class WithdrawalProcessor {
       // Remove from processing set
       this.processingWithdrawals.delete(withdrawalId);
     }
+  }
+
+  @Process('reconcile_withdrawal_ledger_debit')
+  async handleReconcileLedgerDebit(job: Job<{ withdrawalId: string }>) {
+    const { withdrawalId } = job.data;
+    const withdrawal = await this.withdrawalService.getWithdrawalById(
+      withdrawalId,
+    );
+
+    if (!withdrawal || withdrawal.status !== 'sent') {
+      return;
+    }
+
+    await this.balanceLedgerService.debitWithdrawal({
+      userId: withdrawal.userId,
+      assetId: withdrawal.assetId,
+      amount: new BigNumber(withdrawal.amount).toFixed(),
+      idempotencyKey: `withdrawal-debit:${withdrawalId}`,
+      refType: 'withdrawal_processor',
+      refId: withdrawalId,
+    });
+
+    await this.withdrawalService.updateWithdrawalStatus(withdrawalId, 'sent', {
+      errorMessage: null,
+    });
   }
 }
