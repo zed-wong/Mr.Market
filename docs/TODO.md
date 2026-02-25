@@ -9,7 +9,11 @@
 4. after withdrawal to exchange, the deposit status can be tracked by backend, update in real time
 5. after arrival of deposit to exchange, then join campaign should be triggered automatically
 6. after join campaign, or no campain to join, the market making handler can start mm right away
-7. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
+7. implement actual HuFi join campaign execution in market making `join_campaign` flow (not only local participation)
+8. implement actual HuFi join campaign execution in `CampaignService.joinCampaigns` cron flow
+9. add backend tests for market making `join_campaign` flow: successful HuFi join, no campaign match, and failure fallback behavior
+10. add backend tests for cron auto-join flow: already joined skip, new campaign join, and API error handling
+11. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
 
 ### Market making execution system
 1. market making execution system, including order status updates, place/cancel order logs, error handling. reflect on user's market making orders details.

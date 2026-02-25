@@ -52,6 +52,7 @@ If withdrawal path is enabled and used:
 2. Current code is validation mode and refunds instead of submitting real withdrawal.
 3. `monitor_mixin_withdrawal` checks confirmation status and can queue `join_campaign`.
 4. `join_campaign` creates local campaign participation and queues `start_mm`.
+   It does not perform direct HuFi Web3 `/campaigns/join` in this runtime path.
 
 ### 4) Start and stop market making
 
