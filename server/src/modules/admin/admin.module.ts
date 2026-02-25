@@ -6,6 +6,7 @@ import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.ent
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
 import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { Performance } from 'src/common/entities/market-making/performance.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 

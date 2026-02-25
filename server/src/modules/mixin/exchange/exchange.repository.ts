@@ -78,10 +78,14 @@ export class ExchangeRepository {
     return orders;
   }
 
-  async readOrderByID(orderId: string): Promise<SpotOrder> {
+  async readOrderByID(orderId: string): Promise<SpotOrder | null> {
     const order = await this.spotOrderRepository.findOne({
       where: { orderId },
     });
+
+    if (!order) {
+      return null;
+    }
 
     delete order.apiKeyId;
 

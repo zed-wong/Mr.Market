@@ -707,7 +707,7 @@ export class ExchangeService {
     return await this.exchangeRepository.readOrderByUser(userId);
   }
 
-  async readOrderById(orderId: string): Promise<SpotOrder> {
+  async readOrderById(orderId: string): Promise<SpotOrder | null> {
     return await this.exchangeRepository.readOrderByID(orderId);
   }
 
