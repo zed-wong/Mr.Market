@@ -58,7 +58,23 @@ export class ExchangeService {
   }
 
   private async loadAPIKeys() {
-    const apiKeys = await this.exchangeRepository.readAllAPIKeys();
+    let apiKeys: APIKeysConfig[] = [];
+
+    try {
+      apiKeys = await this.exchangeRepository.readAllAPIKeys();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message.includes('no such table: api_keys_config')) {
+        this.logger.warn(
+          'api_keys_config table is missing. Skipping exchange API key preload until migrations complete.',
+        );
+
+        return;
+      }
+
+      throw error;
+    }
 
     if (!apiKeys?.length) {
       this.logger.warn(

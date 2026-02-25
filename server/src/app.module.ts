@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as dotenv from 'dotenv';
+import { join } from 'path';
 import { MixinMessage } from 'src/common/entities/mixin/mixin-message.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 
@@ -82,6 +83,30 @@ import { Web3Module } from './modules/web3/web3.module';
 
 dotenv.config();
 
+function buildRedisConfig(configService: ConfigService) {
+  const redisUrl = process.env.REDIS_URL;
+
+  if (redisUrl) {
+    const parsed = new URL(redisUrl);
+
+    return {
+      host: parsed.hostname,
+      port: Number(parsed.port || 6379),
+      password: parsed.password || undefined,
+      db:
+        parsed.pathname && parsed.pathname !== '/'
+          ? Number(parsed.pathname.slice(1)) || 0
+          : 0,
+      tls: parsed.protocol === 'rediss:' ? {} : undefined,
+    };
+  }
+
+  return {
+    host: configService.get('redis.host'),
+    port: configService.get('redis.port'),
+  };
+}
+
 @Module({
   imports: [
     LoggerModule,
@@ -136,6 +161,8 @@ dotenv.config();
         StrategyOrderIntentEntity,
       ],
       synchronize: false,
+      migrations: [join(__dirname, 'database/migrations/*{.ts,.js}')],
+      migrationsTableName: 'migrations_typeorm',
       migrationsRun: true,
       extra: {
         flags: ['-WAL'],
@@ -170,10 +197,7 @@ dotenv.config();
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        redis: {
-          host: configService.get('redis.host'),
-          port: configService.get('redis.port'),
-        },
+        redis: buildRedisConfig(configService),
       }),
       inject: [ConfigService],
     }),
