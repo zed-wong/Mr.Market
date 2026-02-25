@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@plugin "daisyui";
+@import "./lib/theme/daisyui-themes.css";
 
 .menu :where(li:not(.disabled)) > :where(:not(ul)) {
   transition-property: none;

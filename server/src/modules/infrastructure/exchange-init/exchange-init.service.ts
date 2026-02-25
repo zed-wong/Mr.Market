@@ -271,7 +271,7 @@ export class ExchangeInitService {
             secret: process.env.PROBIT_SECRET_READ_ONLY,
           },
         ],
-        class: ccxt.pro.probit,
+        class: (ccxt as any).pro?.probit || (ccxt as any).probit,
       },
       {
         name: 'digifinex',
@@ -366,6 +366,13 @@ export class ExchangeInitService {
 
     await Promise.all(
       exchangeConfigs.map(async (config) => {
+        if (!config.class) {
+          this.logger.warn(
+            `Exchange ${config.name} is not supported by current CCXT version. Skipping initialization.`,
+          );
+          return;
+        }
+
         const exchangeMap = new Map<string, ccxt.Exchange>();
 
         await Promise.all(

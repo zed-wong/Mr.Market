@@ -122,7 +122,7 @@
 
           <!-- Right -->
           <div class="flex space-x-2 items-center">
-            <button
+            <span
               class="flex items-center justify-center rounded-full p-0 h-6 w-6"
             >
               <svg
@@ -139,12 +139,12 @@
                   d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"
                 />
               </svg>
-            </button>
+            </span>
           </div>
         </button>
       {:else}
         <!-- Confirm Disconnect -->
-        <button class="flex justify-between items-center my-4">
+        <div class="flex justify-between items-center my-4">
           <!-- Left -->
           <div>
             <span class="font-bold text-sm"> {$_("confirm_disconnect")} </span>
@@ -192,7 +192,7 @@
               </svg>
             </button>
           </div>
-        </button>
+        </div>
       {/if}
     {/if}
   {/each}

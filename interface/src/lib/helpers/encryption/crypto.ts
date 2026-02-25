@@ -8,7 +8,7 @@ const loadSodium = async () => {
   }
 
   if (!sodiumPromise) {
-    sodiumPromise = import("libsodium-wrappers").then(
+    sodiumPromise = import("libsodium-wrappers/dist/modules/libsodium-wrappers.js").then(
       (module) => module.default ?? module,
     );
   }

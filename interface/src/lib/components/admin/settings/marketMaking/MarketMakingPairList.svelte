@@ -356,7 +356,7 @@ import { toast } from "svelte-sonner";
 
         <!-- Pagination Footer -->
         <div
-            class="flex items-center justify-between px-6 py-4 border-t border-base-200 bg-base-100"
+            class="flex items-center justify-between px-6 py-4 border-t border-base-200 bg-base-200/60 w-full"
         >
             <div class="text-sm text-base-content/60">
                 {$_("showing_entries", {

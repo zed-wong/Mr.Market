@@ -8,6 +8,23 @@ vi.mock('$env/dynamic/public', () => {
 });
 
 describe('getCurrencyRate', () => {
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+  const mockRates = {
+    usdt: {
+      AED: 3.67,
+      EUR: 0.92,
+      AFN: 71.2,
+      SGD: 1.35,
+    },
+  };
+
+  fetchSpy.mockResolvedValue({
+    ok: true,
+    statusText: 'OK',
+    json: async () => mockRates,
+  } as Response);
+
   it('should return filtered currency rates', async () => {
     const currencies = ['AED', 'EUR'];
     const result = await getCurrencyRate(currencies);
