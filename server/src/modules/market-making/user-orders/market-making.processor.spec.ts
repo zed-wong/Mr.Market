@@ -212,15 +212,17 @@ describe('MarketMakingOrderProcessor', () => {
     );
     transactionService.refund.mockRejectedValueOnce(new Error('transfer fail'));
 
-    await (processor as any).refundUser(
-      {
-        snapshot_id: 'snapshot-insufficient-fail',
-        asset_id: 'asset-base',
-        amount: '3',
-        opponent_id: 'user-1',
-      },
-      'invalid snapshot',
-    );
+    await expect(
+      (processor as any).refundUser(
+        {
+          snapshot_id: 'snapshot-insufficient-fail',
+          asset_id: 'asset-base',
+          amount: '3',
+          opponent_id: 'user-1',
+        },
+        'invalid snapshot',
+      ),
+    ).rejects.toThrow('transfer fail');
 
     expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
   });
@@ -233,15 +235,17 @@ describe('MarketMakingOrderProcessor', () => {
       new Error('transfer failed'),
     );
 
-    await (processor as any).refundUser(
-      {
-        snapshot_id: 'snapshot-3',
-        asset_id: 'asset-base',
-        amount: '8.5',
-        opponent_id: 'user-1',
-      },
-      'test-reason',
-    );
+    await expect(
+      (processor as any).refundUser(
+        {
+          snapshot_id: 'snapshot-3',
+          asset_id: 'asset-base',
+          amount: '8.5',
+          opponent_id: 'user-1',
+        },
+        'test-reason',
+      ),
+    ).rejects.toThrow('transfer failed');
 
     expect(balanceLedgerService.creditDeposit).toHaveBeenCalledWith({
       userId: 'user-1',

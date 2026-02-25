@@ -192,8 +192,7 @@ export class MarketMakingOrderProcessor {
         this.logger.error(
           `Refund debit failed for ${command.refType}:${command.refId}:${command.assetId}: ${error.message}`,
         );
-
-        return;
+        throw error;
       }
     }
 
@@ -210,6 +209,7 @@ export class MarketMakingOrderProcessor {
       if (debitApplied) {
         await this.compensateRefundDebit(command);
       }
+      throw error;
     }
   }
 
