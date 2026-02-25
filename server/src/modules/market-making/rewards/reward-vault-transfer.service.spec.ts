@@ -22,6 +22,7 @@ describe('RewardVaultTransferService', () => {
 
     const rewardLedgerRepository = {
       find: jest.fn(async () => rows),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       save: jest.fn(async (payload) => {
         rows[0] = { ...rows[0], ...payload };
 
@@ -74,6 +75,7 @@ describe('RewardVaultTransferService', () => {
 
     const rewardLedgerRepository = {
       find: jest.fn(async () => rows),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       save: jest.fn(async (payload) => {
         rows[0] = { ...rows[0], ...payload };
 
@@ -121,6 +123,7 @@ describe('RewardVaultTransferService', () => {
 
     const rewardLedgerRepository = {
       find: jest.fn(async () => rows),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       save: jest.fn(async (payload) => payload),
     };
     const transactionService = {
@@ -148,7 +151,7 @@ describe('RewardVaultTransferService', () => {
     expect(transactionService.transfer).toHaveBeenCalledTimes(2);
   });
 
-  it('skips duplicate transfer when durability receipt already exists', async () => {
+  it('skips transfer when another worker already claimed the row', async () => {
     const rows: any[] = [
       {
         txHash: 'tx-processed',
@@ -160,6 +163,7 @@ describe('RewardVaultTransferService', () => {
 
     const rewardLedgerRepository = {
       find: jest.fn(async () => rows),
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
       save: jest.fn(async (payload) => payload),
     };
     const transactionService = {
@@ -170,23 +174,17 @@ describe('RewardVaultTransferService', () => {
         key === 'reward.mixin_vault_user_id' ? 'vault-user' : undefined,
       ),
     };
-    const durabilityService = createDurabilityService({
-      isProcessed: true,
-    });
-
     const service = new RewardVaultTransferService(
       rewardLedgerRepository as any,
       transactionService as any,
       configService as any,
-      durabilityService as any,
+      createDurabilityService() as any,
     );
 
     const transferred = await service.transferConfirmedRewardsToMixin();
 
-    expect(transferred).toBe(1);
+    expect(transferred).toBe(0);
     expect(transactionService.transfer).not.toHaveBeenCalled();
-    expect(rewardLedgerRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'TRANSFERRED_TO_MIXIN' }),
-    );
+    expect(rewardLedgerRepository.save).not.toHaveBeenCalled();
   });
 });

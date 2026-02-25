@@ -126,6 +126,7 @@ export class RewardPipelineService {
 
     for (const row of computed) {
       const allocationId = this.buildAllocationId(
+        txHash,
         reward.campaignId,
         reward.dayIndex,
         row.userId,
@@ -196,13 +197,14 @@ export class RewardPipelineService {
   }
 
   private buildAllocationId(
+    txHash: string,
     campaignId: string,
     dayIndex: number,
     userId: string,
     token: string,
   ): string {
     return createHash('sha256')
-      .update(`${campaignId}:${dayIndex}:${userId}:${token}`)
+      .update(`${txHash}:${campaignId}:${dayIndex}:${userId}:${token}`)
       .digest('hex');
   }
 }

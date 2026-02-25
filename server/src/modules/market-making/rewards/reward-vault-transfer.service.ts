@@ -44,47 +44,38 @@ export class RewardVaultTransferService {
 
     for (const row of rows) {
       const idempotencyKey = `reward-vault-transfer:${row.txHash}`;
-      let transferCompleted = false;
+      const claimResult = await this.rewardLedgerRepository.update(
+        { txHash: row.txHash, status: 'CONFIRMED' },
+        { status: 'TRANSFERRING_TO_MIXIN' },
+      );
+
+      if (!claimResult.affected) {
+        continue;
+      }
 
       try {
-        const alreadyTransferred = await this.durabilityService.isProcessed(
+        const requests = await this.transactionService.transfer(
+          this.mixinVaultUserId,
+          row.token,
+          row.amount,
+          `reward-vault:${row.txHash}`,
+        );
+
+        if (!Array.isArray(requests) || requests.length === 0) {
+          throw new Error('reward vault transfer returned no receipt');
+        }
+
+        await this.durabilityService.markProcessed(
           'reward-vault-transfer',
           idempotencyKey,
         );
-
-        if (!alreadyTransferred) {
-          const requests = await this.transactionService.transfer(
-            this.mixinVaultUserId,
-            row.token,
-            row.amount,
-            `reward-vault:${row.txHash}`,
-          );
-
-          if (!Array.isArray(requests) || requests.length === 0) {
-            throw new Error('reward vault transfer returned no receipt');
-          }
-
-          transferCompleted = true;
-          await this.durabilityService.markProcessed(
-            'reward-vault-transfer',
-            idempotencyKey,
-          );
-        }
 
         row.status = 'TRANSFERRED_TO_MIXIN';
         await this.rewardLedgerRepository.save(row);
         transferredCount += 1;
       } catch (error) {
-        if (transferCompleted) {
-          try {
-            row.status = 'TRANSFERRED_TO_MIXIN';
-            await this.rewardLedgerRepository.save(row);
-          } catch (saveError) {
-            this.logger.error(
-              `Failed to persist transfer state for ${row.txHash}: ${saveError.message}`,
-            );
-          }
-        }
+        row.status = 'CONFIRMED';
+        await this.rewardLedgerRepository.save(row);
         this.logger.error(
           `Failed reward vault transfer for ${row.txHash}: ${error.message}`,
         );

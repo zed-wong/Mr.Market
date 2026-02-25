@@ -7,6 +7,7 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 export type RewardLedgerStatus =
   | 'OBSERVED'
   | 'CONFIRMED'
+  | 'TRANSFERRING_TO_MIXIN'
   | 'TRANSFERRED_TO_MIXIN'
   | 'DISTRIBUTED';
 
