@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
 import { ConsumerReceipt } from 'src/common/entities/system/consumer-receipt.entity';
 import { OutboxEvent } from 'src/common/entities/system/outbox-event.entity';
 
@@ -122,5 +123,24 @@ describe('DurabilityService', () => {
 
     expect(first).toBe(true);
     expect(second).toBe(false);
+  });
+
+  it('returns false on sqlite unique constraint errors', async () => {
+    const repos = createInMemoryRepos();
+
+    repos.consumerReceiptRepository.insert = jest.fn().mockRejectedValueOnce({
+      code: 'SQLITE_CONSTRAINT',
+      message:
+        'SQLITE_CONSTRAINT: UNIQUE constraint failed: consumer_receipt.consumerName, consumer_receipt.idempotencyKey',
+    });
+
+    const service = new DurabilityService(
+      repos.outboxRepository as any,
+      repos.consumerReceiptRepository as any,
+    );
+
+    const created = await service.markProcessed('sqlite-worker', 'intent-1');
+
+    expect(created).toBe(false);
   });
 });

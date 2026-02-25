@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Test, TestingModule } from '@nestjs/testing';
 
@@ -138,6 +139,39 @@ describe('MarketdataService', () => {
 
       expect(pairs).toEqual(cachedPairs);
       expect(cacheManager.get).toHaveBeenCalledWith('supported-pairs');
+    });
+  });
+
+  describe('subscriptions', () => {
+    it('uses watchTickers capability for watchTickers subscriptions', async () => {
+      const watchTickers = jest
+        .fn()
+        .mockResolvedValueOnce({ BTCUSDT: { last: 1 } });
+
+      exchangeInitService.getExchange.mockReturnValue({
+        watchTickers,
+        has: { watchTickers: true },
+      });
+
+      const work = service.watchTickers('binance', ['BTC/USDT'], jest.fn());
+
+      service.unsubscribeData('tickers', 'binance', undefined, ['BTC/USDT']);
+      await work;
+
+      expect(watchTickers).toHaveBeenCalled();
+    });
+
+    it('unsubscribes order book using the full composite key', () => {
+      (service as any).activeSubscriptions.set(
+        'orderbook:binance:BTC/USDT',
+        true,
+      );
+
+      service.unsubscribeOrderBook('binance', 'BTC/USDT');
+
+      expect(
+        (service as any).activeSubscriptions.has('orderbook:binance:BTC/USDT'),
+      ).toBe(false);
     });
   });
 });

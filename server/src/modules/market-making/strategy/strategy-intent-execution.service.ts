@@ -35,8 +35,9 @@ export class StrategyIntentExecutionService {
     @Optional()
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
   ) {
-    this.executeIntents = Boolean(
+    this.executeIntents = this.toBoolean(
       this.configService.get('strategy.execute_intents', false),
+      false,
     );
     this.maxRetries = Number(
       this.configService.get('strategy.intent_max_retries', 2),
@@ -245,5 +246,26 @@ export class StrategyIntentExecutionService {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private toBoolean(value: unknown, defaultValue: boolean): boolean {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number') {
+      return value !== 0;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+
+      if (['true', '1', 'yes', 'on'].includes(normalized)) {
+        return true;
+      }
+      if (['false', '0', 'no', 'off', ''].includes(normalized)) {
+        return false;
+      }
+    }
+
+    return defaultValue;
   }
 }

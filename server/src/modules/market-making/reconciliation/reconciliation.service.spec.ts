@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ReconciliationService } from './reconciliation.service';
 
 describe('ReconciliationService', () => {

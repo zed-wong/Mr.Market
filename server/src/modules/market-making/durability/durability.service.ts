@@ -1,9 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { ConsumerReceipt } from 'src/common/entities/system/consumer-receipt.entity';
 import { OutboxEvent } from 'src/common/entities/system/outbox-event.entity';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import {
+  getRFC3339Timestamp,
+  isUniqueConstraintViolation,
+} from 'src/common/helpers/utils';
 import { Repository } from 'typeorm';
 
 type AppendOutboxCommand = {
@@ -86,12 +90,6 @@ export class DurabilityService {
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-    const code = (error as { code?: string }).code;
-    const message = String((error as { message?: string }).message || '');
-
-    return code === '23505' || message.toLowerCase().includes('duplicate');
+    return isUniqueConstraintViolation(error);
   }
 }

@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 // This file is used to seed the database with initial data
 // Make sure to run this file after the database and the table is created (after migration:run)
 

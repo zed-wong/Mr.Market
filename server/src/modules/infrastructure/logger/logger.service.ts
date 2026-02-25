@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable, Logger, Scope } from '@nestjs/common';
 import axios from 'axios';
 import * as path from 'path';

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';

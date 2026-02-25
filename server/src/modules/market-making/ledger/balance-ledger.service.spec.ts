@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
 import { BadRequestException } from '@nestjs/common';
 import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
@@ -338,5 +339,6 @@ describe('BalanceLedgerService', () => {
     expect(balance.available).toBe('30');
     expect(balance.locked).toBe('70');
     expect(balance.total).toBe('100');
+    expect((service as any).balanceMutationLocks.size).toBe(0);
   });
 });

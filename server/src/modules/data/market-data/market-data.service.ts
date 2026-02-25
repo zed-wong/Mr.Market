@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
@@ -156,7 +157,11 @@ export class MarketdataService {
       );
     }
 
-    const subscriptionKey = `orderbook:${exchangeName}:${symbol}`;
+    const subscriptionKey = createCompositeKey(
+      'orderbook',
+      exchangeName,
+      symbol,
+    );
 
     this.activeSubscriptions.set(subscriptionKey, true);
 
@@ -164,7 +169,7 @@ export class MarketdataService {
       limit = 25;
     }
 
-    while (this.activeSubscriptions.get(subscriptionKey)) {
+    while (this.isSubscriptionActive(subscriptionKey)) {
       try {
         const orderBook = await exchange.watchOrderBook(symbol, limit);
 
@@ -194,11 +199,17 @@ export class MarketdataService {
       );
     }
 
-    const subscriptionKey = `OHLCV:${exchangeName}:${symbol}:${timeFrame}`;
+    const subscriptionKey = createCompositeKey(
+      'OHLCV',
+      exchangeName,
+      symbol,
+      undefined,
+      timeFrame,
+    );
 
     this.activeSubscriptions.set(subscriptionKey, true);
 
-    while (this.activeSubscriptions.get(subscriptionKey)) {
+    while (this.isSubscriptionActive(subscriptionKey)) {
       try {
         const OHLCV = await exchange.watchOHLCV(
           symbol,
@@ -230,11 +241,11 @@ export class MarketdataService {
       );
     }
 
-    const subscriptionKey = `ticker:${exchangeName}:${symbol}`;
+    const subscriptionKey = createCompositeKey('ticker', exchangeName, symbol);
 
     this.activeSubscriptions.set(subscriptionKey, true);
 
-    while (this.activeSubscriptions.get(subscriptionKey)) {
+    while (this.isSubscriptionActive(subscriptionKey)) {
       try {
         const ticker = await exchange.watchTicker(symbol);
 
@@ -250,29 +261,40 @@ export class MarketdataService {
 
   async watchTickers(
     exchangeName: string,
-    symbol: string[],
+    symbols: string[],
     onData: (data: any) => void,
   ): Promise<void> {
+    if (!Array.isArray(symbols) || symbols.length === 0) {
+      throw new Error('watchTickers requires at least one symbol');
+    }
+
     const exchange = this.ExchangeInitService.getExchange(exchangeName);
 
-    if (!exchange || !exchange.has.watchTicker) {
+    if (!exchange || !exchange.has.watchTickers) {
       throw new Error(
-        `Exchange ${exchangeName} does not support watchTicker or is not configured.`,
+        `Exchange ${exchangeName} does not support watchTickers or is not configured.`,
       );
     }
 
-    const subscriptionKey = `tickers:${exchangeName}:${symbol}`;
+    const subscriptionKey = createCompositeKey(
+      'tickers',
+      exchangeName,
+      undefined,
+      symbols,
+    );
 
     this.activeSubscriptions.set(subscriptionKey, true);
 
-    while (this.activeSubscriptions.get(subscriptionKey)) {
+    while (this.isSubscriptionActive(subscriptionKey)) {
       try {
-        const ticker = await exchange.watchTickers(symbol);
+        const ticker = await exchange.watchTickers(symbols);
 
         onData(ticker);
       } catch (error) {
         this.logger.error(
-          `Error watching tickers for ${symbol} on ${exchangeName}: ${error.message}`,
+          `Error watching tickers for ${symbols.join(
+            ',',
+          )} on ${exchangeName}: ${error.message}`,
         );
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Reconnect after a delay
       }
@@ -294,13 +316,17 @@ export class MarketdataService {
       timeFrame,
     );
 
-    return this.activeSubscriptions.has(subscriptionKey);
+    return this.isSubscriptionActive(subscriptionKey);
   }
 
   unsubscribeOrderBook(exchangeName: string, symbol: string): void {
-    const subscriptionKey = `${exchangeName}:${symbol}`;
+    const subscriptionKey = createCompositeKey(
+      'orderbook',
+      exchangeName,
+      symbol,
+    );
 
-    this.activeSubscriptions.delete(subscriptionKey);
+    this.deactivateSubscription(subscriptionKey);
   }
 
   public async getTickerPrice(
@@ -371,6 +397,15 @@ export class MarketdataService {
       timeFrame,
     );
 
+    this.deactivateSubscription(subscriptionKey);
+  }
+
+  private isSubscriptionActive(subscriptionKey: string): boolean {
+    return this.activeSubscriptions.get(subscriptionKey) === true;
+  }
+
+  private deactivateSubscription(subscriptionKey: string): void {
+    this.activeSubscriptions.set(subscriptionKey, false);
     this.activeSubscriptions.delete(subscriptionKey);
   }
 }

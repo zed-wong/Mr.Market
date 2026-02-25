@@ -7,7 +7,10 @@ import {
   LedgerEntry,
   LedgerEntryType,
 } from 'src/common/entities/ledger/ledger-entry.entity';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import {
+  getRFC3339Timestamp,
+  isUniqueConstraintViolation,
+} from 'src/common/helpers/utils';
 import { DataSource, Repository } from 'typeorm';
 
 import { DurabilityService } from '../durability/durability.service';
@@ -165,17 +168,16 @@ export class BalanceLedgerService {
       releaseCurrent = resolve;
     });
 
-    this.balanceMutationLocks.set(
-      lockKey,
-      currentTail.then(() => nextTail),
-    );
+    const chainedTail = currentTail.then(() => nextTail);
+
+    this.balanceMutationLocks.set(lockKey, chainedTail);
     await currentTail;
 
     try {
       return await operation();
     } finally {
       releaseCurrent();
-      if (this.balanceMutationLocks.get(lockKey) === nextTail) {
+      if (this.balanceMutationLocks.get(lockKey) === chainedTail) {
         this.balanceMutationLocks.delete(lockKey);
       }
     }
@@ -311,13 +313,7 @@ export class BalanceLedgerService {
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-    const code = (error as { code?: string }).code;
-    const message = String((error as { message?: string }).message || '');
-
-    return code === '23505' || message.toLowerCase().includes('duplicate');
+    return isUniqueConstraintViolation(error);
   }
 
   private async getOrCreateBalance(

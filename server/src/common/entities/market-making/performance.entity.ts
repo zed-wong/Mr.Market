@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Stores strategy performance snapshots (PnL and strategy-specific metrics).
  * Used by app.module and modules/market-making/performance service.

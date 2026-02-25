@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import 'dotenv/config';
 
 import { NestFactory } from '@nestjs/core';
@@ -52,7 +53,31 @@ async function bootstrap() {
   const logger = new CustomLogger(AppModule.name);
   const app = await NestFactory.create(AppModule);
 
-  app.enableCors();
+  const corsOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  const hasWildcard = corsOrigins.includes('*');
+  const wildcardAllowed =
+    String(process.env.CORS_ALLOW_WILDCARD || '').toLowerCase() === 'true';
+  const sanitizedCorsOrigins =
+    hasWildcard && !wildcardAllowed
+      ? corsOrigins.filter((origin) => origin !== '*')
+      : corsOrigins;
+  const allowedOrigins =
+    sanitizedCorsOrigins.length > 0
+      ? sanitizedCorsOrigins
+      : [
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:5173',
+        ];
+
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+  });
 
   // Global request logging
   app.use((req, _, next) => {

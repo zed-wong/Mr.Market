@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 

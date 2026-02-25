@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 
 describe('ExchangeOrderTrackerService', () => {
@@ -57,8 +58,42 @@ describe('ExchangeOrderTrackerService', () => {
 
     await service.onTick('2026-02-11T00:00:01.000Z');
 
-    const tracked = service.getByExchangeOrderId('ex-1');
+    const tracked = service.getByExchangeOrderId('binance', 'ex-1');
 
     expect(tracked?.status).toBe('filled');
+  });
+
+  it('keeps same exchange order id from different exchanges isolated', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    service.upsertOrder({
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'same-id',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      strategyKey: 'strategy-1',
+      exchange: 'mexc',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'same-id',
+      side: 'sell',
+      price: '101',
+      qty: '1',
+      status: 'open',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    expect(service.getByExchangeOrderId('binance', 'same-id')?.exchange).toBe(
+      'binance',
+    );
+    expect(service.getByExchangeOrderId('mexc', 'same-id')?.exchange).toBe(
+      'mexc',
+    );
   });
 });

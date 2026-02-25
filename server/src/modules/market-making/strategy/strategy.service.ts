@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   Injectable,
   OnModuleDestroy,
@@ -603,13 +604,33 @@ export class StrategyService
     const priceExchange = params.oracleExchangeName
       ? this.exchangeInitService.getExchange(params.oracleExchangeName)
       : exchange;
-    const priceSource = new BigNumber(
-      await this.getPriceSource(
-        priceExchange,
-        params.pair,
-        params.priceSourceType,
-      ),
-    );
+    let priceSource: BigNumber;
+
+    try {
+      priceSource = new BigNumber(
+        await this.getPriceSource(
+          priceExchange,
+          params.pair,
+          params.priceSourceType,
+        ),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Skipping cycle for ${strategyKey}: cannot resolve price source for ${params.exchangeName} ${params.pair} (${error.message})`,
+      );
+
+      return intents;
+    }
+
+    if (!priceSource.isFinite() || priceSource.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Skipping cycle for ${strategyKey}: invalid price source ${priceSource.toFixed()} for ${
+          params.exchangeName
+        } ${params.pair}`,
+      );
+
+      return intents;
+    }
 
     const openOrders =
       this.exchangeOrderTrackerService?.getOpenOrders(strategyKey) || [];
@@ -810,25 +831,38 @@ export class StrategyService
     priceSourceType: PriceSourceType,
   ): Promise<number> {
     const orderBook = await exchange.fetchOrderBook(pair);
+    const bestBid = this.toPositiveNumber(orderBook?.bids?.[0]?.[0]);
+    const bestAsk = this.toPositiveNumber(orderBook?.asks?.[0]?.[0]);
 
     if (priceSourceType === PriceSourceType.MID_PRICE) {
-      return new BigNumber(orderBook.bids[0][0])
-        .plus(orderBook.asks[0][0])
-        .dividedBy(2)
-        .toNumber();
+      if (bestBid !== undefined && bestAsk !== undefined) {
+        return new BigNumber(bestBid).plus(bestAsk).dividedBy(2).toNumber();
+      }
     }
 
     if (priceSourceType === PriceSourceType.BEST_BID) {
-      return Number(orderBook.bids[0][0]);
+      if (bestBid !== undefined) {
+        return Number(bestBid);
+      }
     }
 
     if (priceSourceType === PriceSourceType.BEST_ASK) {
-      return Number(orderBook.asks[0][0]);
+      if (bestAsk !== undefined) {
+        return Number(bestAsk);
+      }
     }
 
     const ticker = await exchange.fetchTicker(pair);
+    const fallbackPrice =
+      this.toPositiveNumber(ticker?.last) ??
+      this.toPositiveNumber(ticker?.bid) ??
+      this.toPositiveNumber(ticker?.ask);
 
-    return Number(ticker.last);
+    if (fallbackPrice !== undefined) {
+      return fallbackPrice;
+    }
+
+    throw new Error('no usable price in order book or ticker');
   }
 
   private calculateVWAPForAmount(
@@ -839,7 +873,14 @@ export class StrategyService
     let volumeAccumulated = new BigNumber(0);
     let volumePriceProductSum = new BigNumber(0);
     const amountToTradeBn = new BigNumber(amountToTrade);
-    const orders = direction === 'buy' ? orderBook.asks : orderBook.bids;
+    const orders =
+      direction === 'buy'
+        ? Array.isArray(orderBook?.asks)
+          ? orderBook.asks
+          : []
+        : Array.isArray(orderBook?.bids)
+        ? orderBook.bids
+        : [];
 
     for (const [price, volume] of orders) {
       const volumeToUse = BigNumber.min(
@@ -862,5 +903,15 @@ export class StrategyService
     }
 
     return volumePriceProductSum.dividedBy(volumeAccumulated);
+  }
+
+  private toPositiveNumber(value: unknown): number | undefined {
+    const parsed = Number(value);
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return undefined;
+    }
+
+    return parsed;
   }
 }

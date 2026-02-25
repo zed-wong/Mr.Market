@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
 
 import { StrategyOrderIntent } from './strategy-intent.types';
@@ -132,6 +133,42 @@ describe('StrategyIntentExecutionService', () => {
       baseIntent.intentId,
       'DONE',
     );
+  });
+
+  it('parses string false for strategy.execute_intents safely', async () => {
+    const configService = {
+      get: jest.fn((key: string, defaultValue?: unknown) => {
+        if (key === 'strategy.execute_intents') {
+          return 'false';
+        }
+        if (key === 'strategy.intent_max_retries') {
+          return 2;
+        }
+        if (key === 'strategy.intent_retry_base_delay_ms') {
+          return 1;
+        }
+
+        return defaultValue;
+      }),
+    } as unknown as ConfigService;
+    const service = new StrategyIntentExecutionService(
+      tradeService as any,
+      exchangeInitService as any,
+      configService,
+      durabilityService as any,
+      intentStoreService as any,
+      exchangeConnectorAdapterService as any,
+      exchangeOrderTrackerService as any,
+    );
+
+    await service.consumeIntents([
+      { ...baseIntent, intentId: 'intent-string' },
+    ]);
+
+    expect(tradeService.executeLimitTrade).not.toHaveBeenCalled();
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
   });
 
   it('executes CANCEL_ORDER through exchange adapter', async () => {

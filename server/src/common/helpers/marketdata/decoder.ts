@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export const decodeTicker = (exchangeName: string, data: any) => {
   switch (exchangeName) {
     case 'mexc':

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
 import { Process, Processor } from '@nestjs/bull';
 import { Job } from 'bull';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';

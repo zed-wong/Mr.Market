@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import * as sodium from 'sodium-native';
 
 /**

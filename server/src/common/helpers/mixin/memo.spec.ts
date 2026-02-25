@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, no-console */
 import { TradingTypeValue } from 'src/common/types/memo/memo';
 
 import {

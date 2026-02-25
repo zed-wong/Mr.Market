@@ -4,7 +4,10 @@ import {
 } from '@mixin.dev/mixin-node-sdk';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { MixinMessage } from 'src/common/entities/mixin/mixin-message.entity';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import {
+  getRFC3339Timestamp,
+  isUniqueConstraintViolation,
+} from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { UserService } from 'src/modules/mixin/user/user.service';
 
@@ -88,14 +91,27 @@ export class MessageService implements OnModuleInit {
     }
   }
 
-  async addMessageIfNotExist(msg: MixinMessage, message_id: string) {
-    const exist = await this.checkMessageExist(message_id);
-
-    if (!exist) {
-      await this.addMessageHistory(msg);
+  async addMessageIfNotExist(msg: MixinMessage): Promise<boolean> {
+    if (!msg?.message_id) {
+      return false;
     }
 
-    return exist;
+    const exists = await this.checkMessageExist(msg.message_id);
+
+    if (exists) {
+      return false;
+    }
+
+    try {
+      await this.addMessageHistory(msg);
+
+      return true;
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async getAllMessages(): Promise<MixinMessage[]> {
@@ -137,7 +153,7 @@ export class MessageService implements OnModuleInit {
 
       // Add user record if not exist in db
       let user: UserResponse;
-      const exist = this.userService.checkUserExist(msg.user_id);
+      const exist = await this.userService.checkUserExist(msg.user_id);
 
       if (!exist) {
         user = await this.client.user.fetch(msg.user_id);
@@ -149,14 +165,9 @@ export class MessageService implements OnModuleInit {
 
       // Add message record if not exist in db
       // Wrapped in await to fix potential bug where promise object is checked as boolean
-      const processed = await this.addMessageIfNotExist(
-        { ...msg },
-        msg.message_id,
-      );
+      const inserted = await this.addMessageIfNotExist({ ...msg });
 
-      if (!processed) {
-        this.logger.warn(`message ${msg.message_id} was not processed`);
-
+      if (!inserted) {
         return;
       }
 

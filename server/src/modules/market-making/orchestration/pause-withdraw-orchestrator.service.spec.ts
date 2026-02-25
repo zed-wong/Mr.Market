@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { PauseWithdrawOrchestratorService } from './pause-withdraw-orchestrator.service';
 
 describe('PauseWithdrawOrchestratorService', () => {

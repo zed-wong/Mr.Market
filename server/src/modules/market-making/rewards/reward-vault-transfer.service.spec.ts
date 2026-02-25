@@ -1,6 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { RewardVaultTransferService } from './reward-vault-transfer.service';
 
 describe('RewardVaultTransferService', () => {
+  const createDurabilityService = (options?: {
+    isProcessed?: boolean;
+    markProcessed?: boolean;
+  }) => ({
+    isProcessed: jest.fn().mockResolvedValue(options?.isProcessed ?? false),
+    markProcessed: jest.fn().mockResolvedValue(options?.markProcessed ?? true),
+  });
+
   it('marks confirmed rewards as transferred to mixin vault', async () => {
     const rows: any[] = [
       {
@@ -38,6 +47,7 @@ describe('RewardVaultTransferService', () => {
       rewardLedgerRepository as any,
       transactionService as any,
       configService as any,
+      createDurabilityService() as any,
     );
 
     const transferred = await service.transferConfirmedRewardsToMixin();
@@ -83,6 +93,7 @@ describe('RewardVaultTransferService', () => {
       rewardLedgerRepository as any,
       transactionService as any,
       configService as any,
+      createDurabilityService() as any,
     );
 
     const transferred = await service.transferConfirmedRewardsToMixin();
@@ -90,5 +101,92 @@ describe('RewardVaultTransferService', () => {
     expect(transferred).toBe(0);
     expect(rows[0].status).toBe('CONFIRMED');
     expect(transactionService.transfer).not.toHaveBeenCalled();
+  });
+
+  it('continues processing remaining rows when one transfer fails', async () => {
+    const rows: any[] = [
+      {
+        txHash: 'tx-fail',
+        token: 'HFT',
+        amount: '10',
+        status: 'CONFIRMED',
+      },
+      {
+        txHash: 'tx-ok',
+        token: 'HFT',
+        amount: '12',
+        status: 'CONFIRMED',
+      },
+    ];
+
+    const rewardLedgerRepository = {
+      find: jest.fn(async () => rows),
+      save: jest.fn(async (payload) => payload),
+    };
+    const transactionService = {
+      transfer: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('network'))
+        .mockResolvedValueOnce([{ trace_id: 'trace-2' }]),
+    };
+    const configService = {
+      get: jest.fn((key: string) =>
+        key === 'reward.mixin_vault_user_id' ? 'vault-user' : undefined,
+      ),
+    };
+
+    const service = new RewardVaultTransferService(
+      rewardLedgerRepository as any,
+      transactionService as any,
+      configService as any,
+      createDurabilityService() as any,
+    );
+
+    const transferred = await service.transferConfirmedRewardsToMixin();
+
+    expect(transferred).toBe(1);
+    expect(transactionService.transfer).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips duplicate transfer when durability receipt already exists', async () => {
+    const rows: any[] = [
+      {
+        txHash: 'tx-processed',
+        token: 'HFT',
+        amount: '8',
+        status: 'CONFIRMED',
+      },
+    ];
+
+    const rewardLedgerRepository = {
+      find: jest.fn(async () => rows),
+      save: jest.fn(async (payload) => payload),
+    };
+    const transactionService = {
+      transfer: jest.fn(),
+    };
+    const configService = {
+      get: jest.fn((key: string) =>
+        key === 'reward.mixin_vault_user_id' ? 'vault-user' : undefined,
+      ),
+    };
+    const durabilityService = createDurabilityService({
+      isProcessed: true,
+    });
+
+    const service = new RewardVaultTransferService(
+      rewardLedgerRepository as any,
+      transactionService as any,
+      configService as any,
+      durabilityService as any,
+    );
+
+    const transferred = await service.transferConfirmedRewardsToMixin();
+
+    expect(transferred).toBe(1);
+    expect(transactionService.transfer).not.toHaveBeenCalled();
+    expect(rewardLedgerRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'TRANSFERRED_TO_MIXIN' }),
+    );
   });
 });

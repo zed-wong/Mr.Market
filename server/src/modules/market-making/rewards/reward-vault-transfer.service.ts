@@ -3,11 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
 import { Repository } from 'typeorm';
 
+import { DurabilityService } from '../durability/durability.service';
+
 @Injectable()
 export class RewardVaultTransferService {
+  private readonly logger = new CustomLogger(RewardVaultTransferService.name);
   private readonly mixinVaultUserId?: string;
 
   constructor(
@@ -15,6 +19,7 @@ export class RewardVaultTransferService {
     private readonly rewardLedgerRepository: Repository<RewardLedger>,
     private readonly transactionService: TransactionService,
     private readonly configService: ConfigService,
+    private readonly durabilityService: DurabilityService,
   ) {
     this.mixinVaultUserId = this.configService.get<string>(
       'reward.mixin_vault_user_id',
@@ -38,15 +43,52 @@ export class RewardVaultTransferService {
     let transferredCount = 0;
 
     for (const row of rows) {
-      await this.transactionService.transfer(
-        this.mixinVaultUserId,
-        row.token,
-        row.amount,
-        `reward-vault:${row.txHash}`,
-      );
-      row.status = 'TRANSFERRED_TO_MIXIN';
-      await this.rewardLedgerRepository.save(row);
-      transferredCount += 1;
+      const idempotencyKey = `reward-vault-transfer:${row.txHash}`;
+      let transferCompleted = false;
+
+      try {
+        const alreadyTransferred = await this.durabilityService.isProcessed(
+          'reward-vault-transfer',
+          idempotencyKey,
+        );
+
+        if (!alreadyTransferred) {
+          const requests = await this.transactionService.transfer(
+            this.mixinVaultUserId,
+            row.token,
+            row.amount,
+            `reward-vault:${row.txHash}`,
+          );
+
+          if (!Array.isArray(requests) || requests.length === 0) {
+            throw new Error('reward vault transfer returned no receipt');
+          }
+
+          transferCompleted = true;
+          await this.durabilityService.markProcessed(
+            'reward-vault-transfer',
+            idempotencyKey,
+          );
+        }
+
+        row.status = 'TRANSFERRED_TO_MIXIN';
+        await this.rewardLedgerRepository.save(row);
+        transferredCount += 1;
+      } catch (error) {
+        if (transferCompleted) {
+          try {
+            row.status = 'TRANSFERRED_TO_MIXIN';
+            await this.rewardLedgerRepository.save(row);
+          } catch (saveError) {
+            this.logger.error(
+              `Failed to persist transfer state for ${row.txHash}: ${saveError.message}`,
+            );
+          }
+        }
+        this.logger.error(
+          `Failed reward vault transfer for ${row.txHash}: ${error.message}`,
+        );
+      }
     }
 
     return transferredCount;

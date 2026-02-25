@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { MarketMakingOrderProcessor } from './market-making.processor';
 
 describe('MarketMakingOrderProcessor', () => {
@@ -129,7 +130,7 @@ describe('MarketMakingOrderProcessor', () => {
     });
   });
 
-  it('debits ledger before snapshot refund transfer', async () => {
+  it('attempts ledger debit before snapshot refund transfer', async () => {
     const { processor, balanceLedgerService, transactionService } =
       createProcessor();
 
@@ -157,6 +158,71 @@ describe('MarketMakingOrderProcessor', () => {
     const refundOrder = transactionService.refund.mock.invocationCallOrder[0];
 
     expect(debitOrder).toBeLessThan(refundOrder);
+  });
+
+  it('still executes snapshot refund transfer when internal debit is insufficient', async () => {
+    const { processor, balanceLedgerService, transactionService } =
+      createProcessor();
+
+    balanceLedgerService.debitWithdrawal.mockRejectedValueOnce(
+      new Error('insufficient available balance'),
+    );
+
+    await (processor as any).refundUser(
+      {
+        snapshot_id: 'snapshot-no-ledger',
+        asset_id: 'asset-base',
+        amount: '2.5',
+        opponent_id: 'user-1',
+      },
+      'invalid snapshot',
+    );
+
+    expect(transactionService.refund).toHaveBeenCalledTimes(1);
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
+  });
+
+  it('skips duplicate snapshot refund transfer when debit idempotency already exists', async () => {
+    const { processor, balanceLedgerService, transactionService } =
+      createProcessor();
+
+    balanceLedgerService.debitWithdrawal.mockResolvedValueOnce({
+      applied: false,
+    });
+
+    await (processor as any).refundUser(
+      {
+        snapshot_id: 'snapshot-dup',
+        asset_id: 'asset-base',
+        amount: '1',
+        opponent_id: 'user-1',
+      },
+      'duplicate retry',
+    );
+
+    expect(transactionService.refund).not.toHaveBeenCalled();
+  });
+
+  it('does not compensate when refund transfer fails after insufficient debit', async () => {
+    const { processor, balanceLedgerService, transactionService } =
+      createProcessor();
+
+    balanceLedgerService.debitWithdrawal.mockRejectedValueOnce(
+      new Error('insufficient available balance'),
+    );
+    transactionService.refund.mockRejectedValueOnce(new Error('transfer fail'));
+
+    await (processor as any).refundUser(
+      {
+        snapshot_id: 'snapshot-insufficient-fail',
+        asset_id: 'asset-base',
+        amount: '3',
+        opponent_id: 'user-1',
+      },
+      'invalid snapshot',
+    );
+
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
   });
 
   it('credits compensation when snapshot refund transfer fails after debit', async () => {

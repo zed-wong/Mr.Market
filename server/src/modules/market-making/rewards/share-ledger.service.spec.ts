@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ShareLedgerService } from './share-ledger.service';
 
 describe('ShareLedgerService', () => {

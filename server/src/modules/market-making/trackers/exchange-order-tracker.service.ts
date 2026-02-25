@@ -60,7 +60,7 @@ export class ExchangeOrderTrackerService
   }
 
   upsertOrder(order: TrackedOrder): void {
-    this.orders.set(order.exchangeOrderId, order);
+    this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), order);
   }
 
   getOpenOrders(strategyKey: string): TrackedOrder[] {
@@ -69,8 +69,11 @@ export class ExchangeOrderTrackerService
     );
   }
 
-  getByExchangeOrderId(exchangeOrderId: string): TrackedOrder | undefined {
-    return this.orders.get(exchangeOrderId);
+  getByExchangeOrderId(
+    exchange: string,
+    exchangeOrderId: string,
+  ): TrackedOrder | undefined {
+    return this.orders.get(this.toKey(exchange, exchangeOrderId));
   }
 
   async onTick(_: string): Promise<void> {
@@ -91,7 +94,7 @@ export class ExchangeOrderTrackerService
 
       const normalizedStatus = this.normalizeStatus(latest.status);
 
-      this.orders.set(order.exchangeOrderId, {
+      this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), {
         ...order,
         status: normalizedStatus,
         updatedAt: getRFC3339Timestamp(),
@@ -116,5 +119,9 @@ export class ExchangeOrderTrackerService
     }
 
     return 'failed';
+  }
+
+  private toKey(exchange: string, exchangeOrderId: string): string {
+    return `${exchange}:${exchangeOrderId}`;
   }
 }

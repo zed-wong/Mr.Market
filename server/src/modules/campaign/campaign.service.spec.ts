@@ -1,3 +1,4 @@
+/* eslint-disable no-console, unused-imports/no-unused-vars */
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 

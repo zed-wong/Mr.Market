@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 

@@ -6,6 +6,7 @@ import { ShareLedgerEntry } from 'src/common/entities/ledger/share-ledger-entry.
 import { TransactionModule } from 'src/modules/mixin/transaction/transaction.module';
 import { Web3Module } from 'src/modules/web3/web3.module';
 
+import { DurabilityModule } from '../durability/durability.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { RewardPipelineService } from './reward-pipeline.service';
 import { RewardReceiverService } from './reward-receiver.service';
@@ -19,6 +20,7 @@ import { ShareLedgerService } from './share-ledger.service';
       RewardAllocation,
       ShareLedgerEntry,
     ]),
+    DurabilityModule,
     LedgerModule,
     Web3Module,
     TransactionModule,

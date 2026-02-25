@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
 
 import { ExchangeConnectorAdapterService } from './exchange-connector-adapter.service';

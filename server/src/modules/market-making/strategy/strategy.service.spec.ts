@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -48,6 +49,7 @@ class ExchangeInitServiceMock {
 describe('StrategyService', () => {
   let service: StrategyService;
   let tradeService: TradeServiceMock;
+  let exchangeInitService: ExchangeInitService;
   let strategyIntentExecutionService: {
     consumeIntents: jest.Mock;
   };
@@ -129,6 +131,7 @@ describe('StrategyService', () => {
 
     service = module.get<StrategyService>(StrategyService);
     tradeService = module.get(TradeService);
+    exchangeInitService = module.get(ExchangeInitService);
 
     jest.clearAllMocks();
   });
@@ -239,5 +242,37 @@ describe('StrategyService', () => {
     expect(intents.some((intent) => intent.type === 'STOP_EXECUTOR')).toBe(
       true,
     );
+  });
+
+  it('falls back to ticker price when order book is empty', async () => {
+    jest.spyOn(exchangeInitService, 'getExchange').mockReturnValue({
+      id: 'bitfinex',
+      fetchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
+      fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
+    } as any);
+
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.01,
+      askSpread: 0.01,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 1,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await expect(
+      service.executeMMCycle(strategyParamsDto),
+    ).resolves.not.toThrow();
+    expect(
+      service.getLatestIntentsForStrategy('1-client1-pureMarketMaking'),
+    ).toHaveLength(2);
   });
 });

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { RewardPipelineService } from './reward-pipeline.service';
 
 describe('RewardPipelineService', () => {

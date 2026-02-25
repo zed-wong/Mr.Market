@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Stores lifecycle/configuration of created strategy instances per user/client.
  * Used by app.module and modules/market-making strategy services plus admin strategy tools.

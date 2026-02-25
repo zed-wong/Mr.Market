@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { SnapshotsProcessor } from './snapshots.processor';
 
 describe('SnapshotsProcessor', () => {
@@ -19,6 +20,7 @@ describe('SnapshotsProcessor', () => {
       log: jest.fn(),
       debug: jest.fn(),
     };
+
     (processor as any).logger = logger;
 
     return { processor, logger };

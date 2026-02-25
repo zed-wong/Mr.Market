@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
 import { Process, Processor } from '@nestjs/bull';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -162,7 +163,7 @@ export class MarketMakingOrderProcessor {
   private async executeRefundTransfer(
     command: RefundTransferCommand,
   ): Promise<void> {
-    let debitApplied = true;
+    let debitApplied = false;
 
     try {
       const debitResult = await this.balanceLedgerService.debitWithdrawal({
@@ -175,22 +176,25 @@ export class MarketMakingOrderProcessor {
       });
 
       if (debitResult && debitResult.applied === false) {
-        debitApplied = false;
+        this.logger.log(
+          `Skipping transfer for duplicate refund debit key ${command.debitIdempotencyKey}`,
+        );
+
+        return;
       }
+      debitApplied = true;
     } catch (error) {
-      this.logger.error(
-        `Refund debit failed for ${command.refType}:${command.refId}:${command.assetId}: ${error.message}`,
-      );
+      if (this.isInsufficientBalanceError(error)) {
+        this.logger.warn(
+          `Refund debit skipped due to missing internal balance for ${command.refType}:${command.refId}:${command.assetId}; continuing transfer`,
+        );
+      } else {
+        this.logger.error(
+          `Refund debit failed for ${command.refType}:${command.refId}:${command.assetId}: ${error.message}`,
+        );
 
-      return;
-    }
-
-    if (!debitApplied) {
-      this.logger.log(
-        `Skipping transfer for duplicate refund debit key ${command.debitIdempotencyKey}`,
-      );
-
-      return;
+        return;
+      }
     }
 
     try {
@@ -203,8 +207,27 @@ export class MarketMakingOrderProcessor {
       this.logger.error(
         `Refund transfer failed for ${command.refType}:${command.refId}:${command.assetId}: ${error.message}`,
       );
-      await this.compensateRefundDebit(command);
+      if (debitApplied) {
+        await this.compensateRefundDebit(command);
+      }
     }
+  }
+
+  private isInsufficientBalanceError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const message = String((error as { message?: string }).message || '');
+    const responseMessage = String(
+      (error as { response?: { message?: string | string[] } }).response
+        ?.message || '',
+    ).toLowerCase();
+    const normalized = message.toLowerCase();
+
+    return (
+      normalized.includes('insufficient available balance') ||
+      responseMessage.includes('insufficient available balance')
+    );
   }
 
   private async compensateRefundDebit(
