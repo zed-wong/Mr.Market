@@ -121,7 +121,9 @@ Exact transitions depend on which queue branches are enabled in your environment
 
 - `strategy.execute_intents=false` means intents are created and marked processed but no live exchange actions are sent.
 - `strategy.intent_execution_driver=worker` decouples tick from exchange execution and keeps tick latency stable under load.
+  Tick only creates/persists intents, and a separate worker executes exchange API actions with its own concurrency and retry controls.
 - `strategy.intent_execution_driver=sync` keeps legacy inline execution behavior and can increase tick latency.
+  Tick both generates and executes intents in the same path, so slow exchange calls directly extend tick duration.
 - `withdraw_to_exchange` path is currently validation/refund mode in this implementation.
 - Tick coordinator is now the periodic execution source for active strategy sessions.
 - Reconciliation and trackers should be monitored to detect drift between local state and exchange state.
