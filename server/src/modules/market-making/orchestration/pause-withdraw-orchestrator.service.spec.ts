@@ -9,6 +9,7 @@ describe('PauseWithdrawOrchestratorService', () => {
     const balanceLedgerService = {
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
       debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
+      adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
     const withdrawalService = {
       executeWithdrawal: jest.fn().mockResolvedValue({ trace_id: 'tx-1' }),
@@ -19,6 +20,9 @@ describe('PauseWithdrawOrchestratorService', () => {
     const exchangeConnectorAdapterService = {
       cancelOrder: jest.fn().mockResolvedValue(undefined),
     };
+    const durabilityService = {
+      appendOutboxEvent: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new PauseWithdrawOrchestratorService(
       strategyService as any,
@@ -26,6 +30,7 @@ describe('PauseWithdrawOrchestratorService', () => {
       withdrawalService as any,
       exchangeOrderTrackerService as any,
       exchangeConnectorAdapterService as any,
+      durabilityService as any,
     );
 
     await service.pauseAndWithdraw({
@@ -47,6 +52,21 @@ describe('PauseWithdrawOrchestratorService', () => {
     expect(balanceLedgerService.unlockFunds).toHaveBeenCalledTimes(1);
     expect(balanceLedgerService.debitWithdrawal).toHaveBeenCalledTimes(1);
     expect(withdrawalService.executeWithdrawal).toHaveBeenCalledTimes(1);
+    expect(balanceLedgerService.adjust).not.toHaveBeenCalled();
+    expect(durabilityService.appendOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'withdrawal.orchestrator.pending',
+        aggregateType: 'withdrawal_orchestrator',
+        aggregateId: 'op-1',
+      }),
+    );
+    expect(durabilityService.appendOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'withdrawal.orchestrator.completed',
+        aggregateType: 'withdrawal_orchestrator',
+        aggregateId: 'op-1',
+      }),
+    );
   });
 
   it('rejects withdraw flow when strategy still has open orders', async () => {
@@ -56,6 +76,7 @@ describe('PauseWithdrawOrchestratorService', () => {
     const balanceLedgerService = {
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
       debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
+      adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
     const withdrawalService = {
       executeWithdrawal: jest.fn().mockResolvedValue({ trace_id: 'tx-1' }),
@@ -66,6 +87,9 @@ describe('PauseWithdrawOrchestratorService', () => {
     const exchangeConnectorAdapterService = {
       cancelOrder: jest.fn().mockResolvedValue(undefined),
     };
+    const durabilityService = {
+      appendOutboxEvent: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new PauseWithdrawOrchestratorService(
       strategyService as any,
@@ -73,6 +97,7 @@ describe('PauseWithdrawOrchestratorService', () => {
       withdrawalService as any,
       exchangeOrderTrackerService as any,
       exchangeConnectorAdapterService as any,
+      durabilityService as any,
     );
 
     await expect(
@@ -99,6 +124,7 @@ describe('PauseWithdrawOrchestratorService', () => {
     const balanceLedgerService = {
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
       debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
+      adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
     const withdrawalService = {
       executeWithdrawal: jest.fn().mockResolvedValue({ trace_id: 'tx-1' }),
@@ -118,6 +144,9 @@ describe('PauseWithdrawOrchestratorService', () => {
     const exchangeConnectorAdapterService = {
       cancelOrder: jest.fn().mockResolvedValue(undefined),
     };
+    const durabilityService = {
+      appendOutboxEvent: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new PauseWithdrawOrchestratorService(
       strategyService as any,
@@ -125,6 +154,7 @@ describe('PauseWithdrawOrchestratorService', () => {
       withdrawalService as any,
       exchangeOrderTrackerService as any,
       exchangeConnectorAdapterService as any,
+      durabilityService as any,
     );
 
     await service.pauseAndWithdraw({
@@ -144,5 +174,81 @@ describe('PauseWithdrawOrchestratorService', () => {
       'ex-1',
     );
     expect(withdrawalService.executeWithdrawal).toHaveBeenCalledTimes(1);
+  });
+
+  it('records failure intent and compensates debit when withdrawal execution fails', async () => {
+    const strategyService = {
+      stopStrategyForUser: jest.fn().mockResolvedValue(undefined),
+    };
+    const balanceLedgerService = {
+      unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+      debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
+      adjust: jest.fn().mockResolvedValue({ applied: true }),
+    };
+    const withdrawalService = {
+      executeWithdrawal: jest
+        .fn()
+        .mockRejectedValue(new Error('external transfer failed')),
+    };
+    const exchangeOrderTrackerService = {
+      getOpenOrders: jest.fn().mockReturnValue([]),
+    };
+    const exchangeConnectorAdapterService = {
+      cancelOrder: jest.fn().mockResolvedValue(undefined),
+    };
+    const durabilityService = {
+      appendOutboxEvent: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new PauseWithdrawOrchestratorService(
+      strategyService as any,
+      balanceLedgerService as any,
+      withdrawalService as any,
+      exchangeOrderTrackerService as any,
+      exchangeConnectorAdapterService as any,
+      durabilityService as any,
+    );
+
+    await expect(
+      service.pauseAndWithdraw({
+        operationId: 'op-4',
+        userId: 'u1',
+        clientId: 'c1',
+        strategyType: 'pureMarketMaking',
+        assetId: 'asset-usdt',
+        amount: '10',
+        destination: '0xabc',
+        destinationTag: '',
+      }),
+    ).rejects.toThrow('external transfer failed');
+
+    expect(durabilityService.appendOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'withdrawal.orchestrator.pending',
+        aggregateType: 'withdrawal_orchestrator',
+        aggregateId: 'op-4',
+      }),
+    );
+    expect(durabilityService.appendOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'withdrawal.orchestrator.failed',
+        aggregateType: 'withdrawal_orchestrator',
+        aggregateId: 'op-4',
+      }),
+    );
+    expect(durabilityService.appendOutboxEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'withdrawal.orchestrator.completed',
+      }),
+    );
+
+    expect(balanceLedgerService.adjust).toHaveBeenCalledWith({
+      userId: 'u1',
+      assetId: 'asset-usdt',
+      amount: '10',
+      idempotencyKey: 'withdraw_debit:op-4:rollback',
+      refType: 'withdraw_orchestrator_rollback',
+      refId: 'c1',
+    });
   });
 });

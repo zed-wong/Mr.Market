@@ -3,6 +3,7 @@ import { createStrategyKey } from 'src/common/helpers/strategyKey';
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
+import { DurabilityService } from '../durability/durability.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { StrategyService } from '../strategy/strategy.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
@@ -26,6 +27,7 @@ export class PauseWithdrawOrchestratorService {
     private readonly withdrawalService: WithdrawalService,
     private readonly exchangeOrderTrackerService: ExchangeOrderTrackerService,
     private readonly exchangeConnectorAdapterService: ExchangeConnectorAdapterService,
+    private readonly durabilityService: DurabilityService,
   ) {}
 
   async pauseAndWithdraw(command: PauseWithdrawCommand): Promise<void> {
@@ -69,12 +71,64 @@ export class PauseWithdrawOrchestratorService {
       throw new Error('Withdrawal debit mutation was not applied');
     }
 
-    await this.withdrawalService.executeWithdrawal(
-      command.assetId,
-      command.destination,
-      command.destinationTag || 'withdraw-orchestrator',
-      command.amount,
-    );
+    await this.durabilityService.appendOutboxEvent({
+      topic: 'withdrawal.orchestrator.pending',
+      aggregateType: 'withdrawal_orchestrator',
+      aggregateId: command.operationId,
+      payload: {
+        operationId: command.operationId,
+        userId: command.userId,
+        clientId: command.clientId,
+        assetId: command.assetId,
+        amount: command.amount,
+        destination: command.destination,
+        destinationTag: command.destinationTag || 'withdraw-orchestrator',
+        ledgerDebitIdempotencyKey: `withdraw_debit:${command.operationId}`,
+      },
+    });
+
+    try {
+      await this.withdrawalService.executeWithdrawal(
+        command.assetId,
+        command.destination,
+        command.destinationTag || 'withdraw-orchestrator',
+        command.amount,
+      );
+
+      await this.durabilityService.appendOutboxEvent({
+        topic: 'withdrawal.orchestrator.completed',
+        aggregateType: 'withdrawal_orchestrator',
+        aggregateId: command.operationId,
+        payload: {
+          operationId: command.operationId,
+          status: 'completed',
+          ledgerDebitIdempotencyKey: `withdraw_debit:${command.operationId}`,
+        },
+      });
+    } catch (error) {
+      await this.durabilityService.appendOutboxEvent({
+        topic: 'withdrawal.orchestrator.failed',
+        aggregateType: 'withdrawal_orchestrator',
+        aggregateId: command.operationId,
+        payload: {
+          operationId: command.operationId,
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+          ledgerDebitIdempotencyKey: `withdraw_debit:${command.operationId}`,
+        },
+      });
+
+      await this.balanceLedgerService.adjust({
+        userId: command.userId,
+        assetId: command.assetId,
+        amount: command.amount,
+        idempotencyKey: `withdraw_debit:${command.operationId}:rollback`,
+        refType: 'withdraw_orchestrator_rollback',
+        refId: command.clientId,
+      });
+
+      throw error;
+    }
   }
 
   private async cancelUntilDrained(strategyKey: string): Promise<void> {

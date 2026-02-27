@@ -120,9 +120,21 @@ export class StrategyService
         continue;
       }
 
-      await this.runSession(session, ts);
-      session.nextRunAtMs += session.cadenceMs;
-      this.sessions.set(session.strategyKey, session);
+      try {
+        await this.runSession(session, ts);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const errorTrace = error instanceof Error ? error.stack : undefined;
+
+        this.logger.error(
+          `onTick runSession failed for strategyKey=${session.strategyKey} ts=${ts}: ${errorMessage}`,
+          errorTrace,
+        );
+      } finally {
+        session.nextRunAtMs += session.cadenceMs;
+        this.sessions.set(session.strategyKey, session);
+      }
     }
   }
 

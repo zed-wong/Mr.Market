@@ -299,7 +299,7 @@ export class ExchangeService {
     apiKey: string,
     apiSecret: string,
     symbol: string,
-  ): Promise<any> {
+  ): Promise<number> {
     const e = new ccxt[exchange]({
       apiKey,
       secret: apiSecret,
@@ -308,7 +308,7 @@ export class ExchangeService {
     try {
       const b = await e.fetchBalance({ currency: symbol });
 
-      return b['free'];
+      return Number(b?.free?.[symbol] ?? 0);
     } catch (error) {
       this.logger.error(
         `Error fetching balance for ${exchange}: ${error.message}`,
@@ -506,7 +506,7 @@ export class ExchangeService {
       symbol,
     );
 
-    return BigNumber(amount).isLessThan(balance);
+    return BigNumber(amount).isLessThan(Number(balance));
   }
 
   async pickAPIKeyOnDemand(

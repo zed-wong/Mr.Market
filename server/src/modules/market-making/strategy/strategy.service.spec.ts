@@ -275,4 +275,60 @@ describe('StrategyService', () => {
       service.getLatestIntentsForStrategy('1-client1-pureMarketMaking'),
     ).toHaveLength(2);
   });
+
+  it('continues onTick when one session run fails', async () => {
+    const nowMs = 1_700_000_000_000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    const runSessionSpy = jest
+      .spyOn(service as any, 'runSession')
+      .mockImplementation(async (session: { strategyKey: string }) => {
+        if (session.strategyKey === 'a-strategy') {
+          throw new Error('boom');
+        }
+      });
+
+    const loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    (service as any).sessions.set('a-strategy', {
+      strategyKey: 'a-strategy',
+      strategyType: 'pureMarketMaking',
+      userId: 'u1',
+      clientId: 'c1',
+      cadenceMs: 1000,
+      nextRunAtMs: nowMs,
+      params: {},
+    });
+    (service as any).sessions.set('b-strategy', {
+      strategyKey: 'b-strategy',
+      strategyType: 'pureMarketMaking',
+      userId: 'u2',
+      clientId: 'c2',
+      cadenceMs: 2000,
+      nextRunAtMs: nowMs,
+      params: {},
+    });
+
+    await expect(service.onTick('2026-02-27T00:00:00.000Z')).resolves.toBe(
+      undefined,
+    );
+
+    expect(runSessionSpy).toHaveBeenCalledTimes(2);
+    expect((runSessionSpy.mock.calls[0][0] as any).strategyKey).toBe(
+      'a-strategy',
+    );
+    expect((runSessionSpy.mock.calls[1][0] as any).strategyKey).toBe(
+      'b-strategy',
+    );
+    expect((service as any).sessions.get('a-strategy').nextRunAtMs).toBe(
+      nowMs + 1000,
+    );
+    expect((service as any).sessions.get('b-strategy').nextRunAtMs).toBe(
+      nowMs + 2000,
+    );
+    expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+
+    dateNowSpy.mockRestore();
+  });
 });
