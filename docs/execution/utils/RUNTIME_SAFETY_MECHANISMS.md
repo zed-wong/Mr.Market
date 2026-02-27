@@ -91,6 +91,9 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 
 - Stop strategy, cancel open orders until drained (with timeout), unlock funds, debit withdrawal, then transfer.
 - Uses idempotency keys per operation step.
+- Writes a durable pending withdrawal intent to outbox before external transfer.
+- On external transfer failure, writes a failed intent and applies idempotent ledger compensation via rollback idempotency key.
+- Clears intent only after successful transfer by writing a completed intent.
 - File: `server/src/modules/market-making/orchestration/pause-withdraw-orchestrator.service.ts`
 
 ## Notes

@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { createStrategyKey } from 'src/common/helpers/strategyKey';
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
 
-import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { DurabilityService } from '../durability/durability.service';
+import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { StrategyService } from '../strategy/strategy.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';

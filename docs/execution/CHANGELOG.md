@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-02-27
+
+- Harden pause-withdraw orchestration with durable pending/completed/failed intents and idempotent ledger rollback on external withdrawal failure
+
 ## 2026-02-20
 
 - Add shared DaisyUI theme files for main/admin UI and map admin routes to dedicated admin theme tokens

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { WithdrawalModule } from 'src/modules/mixin/withdrawal/withdrawal.module';
 
+import { DurabilityModule } from '../durability/durability.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { StrategyModule } from '../strategy/strategy.module';
@@ -11,6 +12,7 @@ import { PauseWithdrawOrchestratorService } from './pause-withdraw-orchestrator.
   imports: [
     StrategyModule,
     LedgerModule,
+    DurabilityModule,
     WithdrawalModule,
     TrackersModule,
     ExecutionModule,
