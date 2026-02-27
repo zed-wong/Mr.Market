@@ -56,7 +56,7 @@ export class NetworkMappingService {
       USDC: 'MATIC',
     },
     // Litecoin
-    '76c802a2-7c88-447f-a93e-c29c9e5dd9c1': {
+    '76c802a2-7c88-447f-a93e-c29c9e5dd9c8': {
       default: 'LTC',
       LTC: 'LTC',
     },
@@ -95,14 +95,14 @@ export class NetworkMappingService {
       USDC: 'AVAXC',
     },
     // Arbitrum
-    'd4fa2a7c-f1e8-4a7f-8ae8-2b3e5e6f8c4a': {
+    '8c590110-1abc-3697-84f2-05214e6516aa': {
       default: 'ARBITRUM',
       ETH: 'ARBITRUM',
       USDT: 'ARBITRUM',
       USDC: 'ARBITRUM',
     },
     // Optimism
-    'b0c82b1d-8c7e-4f5e-9a3f-1c2d3e4f5a6b': {
+    '60360611-370c-3b69-9826-b13db93f6aba': {
       default: 'OPTIMISM',
       ETH: 'OPTIMISM',
       USDT: 'OPTIMISM',
