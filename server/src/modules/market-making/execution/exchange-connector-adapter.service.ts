@@ -6,6 +6,7 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 @Injectable()
 export class ExchangeConnectorAdapterService {
   private readonly lastRequestAtMsByExchange = new Map<string, number>();
+  private readonly requestChainByExchange = new Map<string, Promise<void>>();
   private readonly minRequestIntervalMs: number;
 
   constructor(
@@ -101,19 +102,39 @@ export class ExchangeConnectorAdapterService {
     exchangeName: string,
     work: () => Promise<T>,
   ): Promise<T> {
-    const lastAt = this.lastRequestAtMsByExchange.get(exchangeName) || 0;
-    const now = Date.now();
-    const waitMs = Math.max(0, this.minRequestIntervalMs - (now - lastAt));
+    const previousChain =
+      this.requestChainByExchange.get(exchangeName) || Promise.resolve();
+    let releaseCurrentChain!: () => void;
+    const currentChain = new Promise<void>((resolve) => {
+      releaseCurrentChain = resolve;
+    });
+    const chainedRequests = previousChain.then(async () => await currentChain);
 
-    if (waitMs > 0) {
-      await this.sleep(waitMs);
+    this.requestChainByExchange.set(exchangeName, chainedRequests);
+
+    await previousChain;
+
+    try {
+      const lastAt = this.lastRequestAtMsByExchange.get(exchangeName) || 0;
+      const now = Date.now();
+      const waitMs = Math.max(0, this.minRequestIntervalMs - (now - lastAt));
+
+      if (waitMs > 0) {
+        await this.sleep(waitMs);
+      }
+
+      const result = await work();
+
+      this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
+
+      return result;
+    } finally {
+      releaseCurrentChain();
+
+      if (this.requestChainByExchange.get(exchangeName) === chainedRequests) {
+        this.requestChainByExchange.delete(exchangeName);
+      }
     }
-
-    const result = await work();
-
-    this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
-
-    return result;
   }
 
   private async sleep(ms: number): Promise<void> {

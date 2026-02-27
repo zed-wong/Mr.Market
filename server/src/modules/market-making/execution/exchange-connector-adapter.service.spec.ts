@@ -22,15 +22,16 @@ describe('ExchangeConnectorAdapterService', () => {
     getExchange: jest.fn().mockReturnValue(exchange),
   };
 
-  const configService = {
-    get: jest.fn((key: string, defaultValue?: number) => {
-      if (key === 'strategy.exchange_min_request_interval_ms') {
-        return 1;
-      }
+  const createConfigService = (minRequestIntervalMs = 1) =>
+    ({
+      get: jest.fn((key: string, defaultValue?: number) => {
+        if (key === 'strategy.exchange_min_request_interval_ms') {
+          return minRequestIntervalMs;
+        }
 
-      return defaultValue;
-    }),
-  } as unknown as ConfigService;
+        return defaultValue;
+      }),
+    }) as unknown as ConfigService;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -39,7 +40,7 @@ describe('ExchangeConnectorAdapterService', () => {
   it('places and cancels limit orders through adapter', async () => {
     const service = new ExchangeConnectorAdapterService(
       exchangeInitService as any,
-      configService,
+      createConfigService(),
     );
 
     await service.placeLimitOrder('binance', 'BTC/USDT', 'buy', '1', '100');
@@ -58,7 +59,7 @@ describe('ExchangeConnectorAdapterService', () => {
   it('fetches order/open-orders/orderbook through adapter', async () => {
     const service = new ExchangeConnectorAdapterService(
       exchangeInitService as any,
-      configService,
+      createConfigService(),
     );
 
     await service.fetchOrder('binance', 'BTC/USDT', 'ex-order-1');
@@ -73,7 +74,7 @@ describe('ExchangeConnectorAdapterService', () => {
   it('starts market and user streams when watch methods exist', async () => {
     const service = new ExchangeConnectorAdapterService(
       exchangeInitService as any,
-      configService,
+      createConfigService(),
     );
 
     await service.watchOrderBook('binance', 'BTC/USDT');
@@ -81,5 +82,59 @@ describe('ExchangeConnectorAdapterService', () => {
 
     expect(exchange.watchOrderBook).toHaveBeenCalledWith('BTC/USDT');
     expect(exchange.watchBalance).toHaveBeenCalled();
+  });
+
+  it('serializes concurrent calls per exchange and applies interval after prior completion', async () => {
+    const minIntervalMs = 20;
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(minIntervalMs),
+    );
+
+    let resolveFirstOrder!: (value: any) => void;
+    let firstResolvedAtMs = 0;
+    let secondCallAtMs = 0;
+
+    const firstOrder = new Promise<any>((resolve) => {
+      resolveFirstOrder = resolve;
+    });
+
+    exchange.createOrder
+      .mockImplementationOnce(async () => await firstOrder)
+      .mockImplementationOnce(async () => {
+        secondCallAtMs = Date.now();
+        return { id: 'ex-order-2' };
+      });
+
+    const firstCall = service.placeLimitOrder(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+    );
+
+    await Promise.resolve();
+
+    const secondCall = service.placeLimitOrder(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '2',
+      '101',
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(exchange.createOrder).toHaveBeenCalledTimes(1);
+
+    firstResolvedAtMs = Date.now();
+    resolveFirstOrder({ id: 'ex-order-1' });
+
+    await Promise.all([firstCall, secondCall]);
+
+    expect(exchange.createOrder).toHaveBeenCalledTimes(2);
+    expect(secondCallAtMs - firstResolvedAtMs).toBeGreaterThanOrEqual(
+      minIntervalMs,
+    );
   });
 });
