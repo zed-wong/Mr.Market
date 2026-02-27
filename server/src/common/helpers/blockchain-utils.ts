@@ -1,7 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { BadRequestException } from '@nestjs/common';
 import axios from 'axios';
 import { ethers } from 'ethers';
+
+type ChainIdNetworkInfo = {
+  chainId: number;
+  rpc: string[];
+};
 
 // Function to check if an RPC URL requires an API key
 const requiresApiKey = (rpcUrl: string): boolean => {
@@ -10,13 +14,19 @@ const requiresApiKey = (rpcUrl: string): boolean => {
   return apiKeyPatterns.some((pattern) => rpcUrl.includes(pattern));
 };
 
-export const getInfoFromChainId = async (chainId: number): Promise<any> => {
+export const getInfoFromChainId = async (
+  chainId: number,
+): Promise<ChainIdNetworkInfo> => {
   try {
     // Fetch the RPC URL dynamically from Chainlist based on the chainId
-    const response = await axios.get(`https://chainid.network/chains.json`);
+    const response = await axios.get<ChainIdNetworkInfo[]>(
+      `https://chainid.network/chains.json`,
+    );
     const chains = response.data;
     // Use strict equality (===) to properly match the chainId
-    const chainData = chains.find((chain) => chain.chainId === Number(chainId));
+    const chainData = chains.find(
+      (chain: ChainIdNetworkInfo) => chain.chainId === Number(chainId),
+    );
 
     if (!chainData || !chainData.rpc || !chainData.rpc.length) {
       throw new BadRequestException(`No RPC URL found for chainId ${chainId}`);
@@ -25,18 +35,17 @@ export const getInfoFromChainId = async (chainId: number): Promise<any> => {
     // Return the chain data
     return chainData;
   } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     throw new BadRequestException(
-      `Failed to get provider for chainId: ${chainId}. Error: ${error.message}`,
+      `Failed to get provider for chainId: ${chainId}. Error: ${errorMessage}`,
     );
   }
 };
 
 // Helper function to add timeout to a promise
-const withTimeout = (
-  promise: Promise<any>,
-  timeoutMs: number,
-): Promise<any> => {
-  return new Promise((resolve, reject) => {
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error('Request timed out'));
     }, timeoutMs);
@@ -93,18 +102,16 @@ export const getTokenSymbolByContractAddress = async (
         );
 
         // Try fetching the token symbol with a timeout
-        const tokenSymbol = await withTimeout(
-          tokenContract.symbol(),
+        const tokenSymbol = await withTimeout<string>(
+          tokenContract.symbol() as Promise<string>,
           timeoutMs,
         );
 
         // If successful, return the token symbol
         return tokenSymbol;
-      } catch (rpcError) {
-        // Log the error and continue trying the next RPC
-        throw new Error(
-          `Failed to connect using RPC URL: ${rpcUrl}. Error: ${rpcError.message}`,
-        );
+      } catch {
+        // Continue with the next RPC URL on failure
+        continue;
       }
     }
 
@@ -113,8 +120,10 @@ export const getTokenSymbolByContractAddress = async (
       `All non-API-key RPC URLs failed for chainId ${chainId}`,
     );
   } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     throw new BadRequestException(
-      `Failed to get token symbol: ${error.message}`,
+      `Failed to get token symbol: ${errorMessage}`,
     );
   }
 };
