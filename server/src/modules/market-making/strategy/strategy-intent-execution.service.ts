@@ -91,6 +91,10 @@ export class StrategyIntentExecutionService {
       : false;
 
     if (alreadyProcessed) {
+      await this.strategyIntentStoreService?.updateIntentStatus(
+        intent.intentId,
+        'DONE',
+      );
       this.processedIntentIds.add(intent.intentId);
 
       return;
