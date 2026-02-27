@@ -87,6 +87,14 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
   - stale or inconsistent strategy intents.
 - File: `server/src/modules/market-making/reconciliation/reconciliation.service.ts`
 
+## 10.1) Reward vault transfer idempotency gate
+
+- Reward vault transfer now checks durability idempotency (`isProcessed`) before calling external transfer.
+- If already processed, it marks the row as transferred without sending funds again.
+- After transfer, it requires `markProcessed(...)` to return true before persisting transferred status.
+- If marker write fails, row reverts to `CONFIRMED` to avoid false success state.
+- File: `server/src/modules/market-making/rewards/reward-vault-transfer.service.ts`
+
 ## 11) Safe pause-and-withdraw orchestration
 
 - Stop strategy, cancel open orders until drained (with timeout), unlock funds, debit withdrawal, then transfer.

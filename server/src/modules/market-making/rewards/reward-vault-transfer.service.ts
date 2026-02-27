@@ -54,6 +54,18 @@ export class RewardVaultTransferService {
       }
 
       try {
+        const alreadyProcessed = await this.durabilityService.isProcessed(
+          'reward-vault-transfer',
+          idempotencyKey,
+        );
+
+        if (alreadyProcessed) {
+          row.status = 'TRANSFERRED_TO_MIXIN';
+          await this.rewardLedgerRepository.save(row);
+          transferredCount += 1;
+          continue;
+        }
+
         const requests = await this.transactionService.transfer(
           this.mixinVaultUserId,
           row.token,
@@ -65,10 +77,14 @@ export class RewardVaultTransferService {
           throw new Error('reward vault transfer returned no receipt');
         }
 
-        await this.durabilityService.markProcessed(
+        const markedProcessed = await this.durabilityService.markProcessed(
           'reward-vault-transfer',
           idempotencyKey,
         );
+
+        if (!markedProcessed) {
+          throw new Error('reward vault transfer idempotency marker not written');
+        }
 
         row.status = 'TRANSFERRED_TO_MIXIN';
         await this.rewardLedgerRepository.save(row);

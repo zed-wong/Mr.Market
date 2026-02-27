@@ -187,4 +187,101 @@ describe('RewardVaultTransferService', () => {
     expect(transactionService.transfer).not.toHaveBeenCalled();
     expect(rewardLedgerRepository.save).not.toHaveBeenCalled();
   });
+
+  it('skips external transfer when idempotency key is already processed', async () => {
+    const rows: any[] = [
+      {
+        txHash: 'tx-processed-before-transfer',
+        token: 'HFT',
+        amount: '8',
+        status: 'CONFIRMED',
+      },
+    ];
+
+    const rewardLedgerRepository = {
+      find: jest.fn(async () => rows),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      save: jest.fn(async (payload) => ({ ...rows[0], ...payload })),
+    };
+    const transactionService = {
+      transfer: jest.fn(),
+    };
+    const configService = {
+      get: jest.fn((key: string) =>
+        key === 'reward.mixin_vault_user_id' ? 'vault-user' : undefined,
+      ),
+    };
+    const durabilityService = createDurabilityService({ isProcessed: true });
+
+    const service = new RewardVaultTransferService(
+      rewardLedgerRepository as any,
+      transactionService as any,
+      configService as any,
+      durabilityService as any,
+    );
+
+    const transferred = await service.transferConfirmedRewardsToMixin();
+
+    expect(transferred).toBe(1);
+    expect(durabilityService.isProcessed).toHaveBeenCalledWith(
+      'reward-vault-transfer',
+      'reward-vault-transfer:tx-processed-before-transfer',
+    );
+    expect(transactionService.transfer).not.toHaveBeenCalled();
+    expect(durabilityService.markProcessed).not.toHaveBeenCalled();
+    expect(rewardLedgerRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        txHash: 'tx-processed-before-transfer',
+        status: 'TRANSFERRED_TO_MIXIN',
+      }),
+    );
+  });
+
+  it('does not mark row transferred when durability marker cannot be written', async () => {
+    const rows: any[] = [
+      {
+        txHash: 'tx-marker-race',
+        token: 'HFT',
+        amount: '10',
+        status: 'CONFIRMED',
+      },
+    ];
+
+    const rewardLedgerRepository = {
+      find: jest.fn(async () => rows),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      save: jest.fn(async (payload) => ({ ...rows[0], ...payload })),
+    };
+    const transactionService = {
+      transfer: jest.fn().mockResolvedValue([{ trace_id: 'trace-1' }]),
+    };
+    const configService = {
+      get: jest.fn((key: string) =>
+        key === 'reward.mixin_vault_user_id' ? 'vault-user' : undefined,
+      ),
+    };
+    const durabilityService = createDurabilityService({ markProcessed: false });
+
+    const service = new RewardVaultTransferService(
+      rewardLedgerRepository as any,
+      transactionService as any,
+      configService as any,
+      durabilityService as any,
+    );
+
+    const transferred = await service.transferConfirmedRewardsToMixin();
+
+    expect(transferred).toBe(0);
+    expect(transactionService.transfer).toHaveBeenCalledTimes(1);
+    expect(durabilityService.markProcessed).toHaveBeenCalledWith(
+      'reward-vault-transfer',
+      'reward-vault-transfer:tx-marker-race',
+    );
+    expect(rewardLedgerRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        txHash: 'tx-marker-race',
+        status: 'CONFIRMED',
+      }),
+    );
+  });
 });
