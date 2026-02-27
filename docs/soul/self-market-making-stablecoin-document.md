@@ -131,7 +131,7 @@ The project team is not the issuer; it is the tool provider.
 
 ---
 
-8. Core conclusion
+7. Core conclusion
 
 By combining smart contracts with TEE-trusted market-making nodes, we can build:
 
