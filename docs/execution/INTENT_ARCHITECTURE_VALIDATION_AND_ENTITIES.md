@@ -27,15 +27,23 @@ Current enforced behavior:
 2. Unlock and debit ledger with idempotency keys:
    - `unlock:${operationId}`
    - `withdraw_debit:${operationId}`
-3. Append durable pending intent before external withdrawal:
+3. Append durable pending intent before external withdrawal (inside protected flow):
    - topic: `withdrawal.orchestrator.pending`
 4. Execute external withdrawal.
 5. On success, append completion intent:
    - topic: `withdrawal.orchestrator.completed`
-6. On failure:
+6. On failure (including pending-intent append failure):
    - append failed intent (`withdrawal.orchestrator.failed`)
    - apply idempotent compensation through ledger adjustment using:
-     - `withdraw_debit:${operationId}:rollback`
+      - `withdraw_debit:${operationId}:rollback`
+
+## Additional Idempotency Guards
+
+- Pause/withdraw external execution now passes deterministic withdrawal request key:
+  - `withdraw_execute:${operationId}`
+- Share ledger entries enforce unique business key:
+  - `(userId, type, refId)`
+- `CANCEL_ORDER` intents without `mixinOrderId` are marked failed and never transitioned to `DONE`.
 
 ## Related Tests
 

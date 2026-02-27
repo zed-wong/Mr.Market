@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { createStrategyKey } from 'src/common/helpers/strategyKey';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
 
 import { DurabilityService } from '../durability/durability.service';
@@ -21,6 +22,8 @@ type PauseWithdrawCommand = {
 
 @Injectable()
 export class PauseWithdrawOrchestratorService {
+  private readonly logger = new CustomLogger(PauseWithdrawOrchestratorService.name);
+
   constructor(
     private readonly strategyService: StrategyService,
     private readonly balanceLedgerService: BalanceLedgerService,
@@ -71,28 +74,29 @@ export class PauseWithdrawOrchestratorService {
       throw new Error('Withdrawal debit mutation was not applied');
     }
 
-    await this.durabilityService.appendOutboxEvent({
-      topic: 'withdrawal.orchestrator.pending',
-      aggregateType: 'withdrawal_orchestrator',
-      aggregateId: command.operationId,
-      payload: {
-        operationId: command.operationId,
-        userId: command.userId,
-        clientId: command.clientId,
-        assetId: command.assetId,
-        amount: command.amount,
-        destination: command.destination,
-        destinationTag: command.destinationTag || 'withdraw-orchestrator',
-        ledgerDebitIdempotencyKey: `withdraw_debit:${command.operationId}`,
-      },
-    });
-
     try {
+      await this.durabilityService.appendOutboxEvent({
+        topic: 'withdrawal.orchestrator.pending',
+        aggregateType: 'withdrawal_orchestrator',
+        aggregateId: command.operationId,
+        payload: {
+          operationId: command.operationId,
+          userId: command.userId,
+          clientId: command.clientId,
+          assetId: command.assetId,
+          amount: command.amount,
+          destination: command.destination,
+          destinationTag: command.destinationTag || 'withdraw-orchestrator',
+          ledgerDebitIdempotencyKey: `withdraw_debit:${command.operationId}`,
+        },
+      });
+
       await this.withdrawalService.executeWithdrawal(
         command.assetId,
         command.destination,
         command.destinationTag || 'withdraw-orchestrator',
         command.amount,
+        `withdraw_execute:${command.operationId}`,
       );
 
       await this.durabilityService.appendOutboxEvent({
@@ -106,17 +110,25 @@ export class PauseWithdrawOrchestratorService {
         },
       });
     } catch (error) {
-      await this.durabilityService.appendOutboxEvent({
-        topic: 'withdrawal.orchestrator.failed',
-        aggregateType: 'withdrawal_orchestrator',
-        aggregateId: command.operationId,
-        payload: {
-          operationId: command.operationId,
-          status: 'failed',
-          error: error instanceof Error ? error.message : String(error),
-          ledgerDebitIdempotencyKey: `withdraw_debit:${command.operationId}`,
-        },
-      });
+      try {
+        await this.durabilityService.appendOutboxEvent({
+          topic: 'withdrawal.orchestrator.failed',
+          aggregateType: 'withdrawal_orchestrator',
+          aggregateId: command.operationId,
+          payload: {
+            operationId: command.operationId,
+            status: 'failed',
+            error: error instanceof Error ? error.message : String(error),
+            ledgerDebitIdempotencyKey: `withdraw_debit:${command.operationId}`,
+          },
+        });
+      } catch (appendError) {
+        this.logger.error(
+          `Failed to append withdrawal.orchestrator.failed for ${command.operationId}: ${
+            appendError instanceof Error ? appendError.message : String(appendError)
+          }`,
+        );
+      }
 
       await this.balanceLedgerService.adjust({
         userId: command.userId,

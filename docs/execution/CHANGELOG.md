@@ -5,6 +5,7 @@
 - Harden pause-withdraw orchestration with durable pending/completed/failed intents and idempotent ledger rollback on external withdrawal failure
 - Gate reward vault transfer by durability idempotency check before external send and require marker write success before transferred status
 - Fix Arbitrum/OP/Litecoin chain UUID mappings in network mapping service using current Mixin chain metadata
+- Fix review findings: protect pending-intent append with rollback path, add deterministic withdrawal request key, fail CANCEL_ORDER without mixinOrderId, and enforce share-ledger idempotency key uniqueness
 
 ## 2026-02-20
 

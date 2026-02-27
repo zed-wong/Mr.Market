@@ -59,4 +59,32 @@ describe('ShareLedgerService', () => {
     expect(weights[0].userId).toBe('u1');
     expect(weights[0].basisShares).toBe('80');
   });
+
+  it('deduplicates repeated mint by business key', async () => {
+    const entries = new Map<string, any>();
+    const repository = {
+      create: jest.fn((payload) => payload),
+      upsert: jest.fn(async (payload) => {
+        const key = `${payload.userId}:${payload.type}:${payload.refId}`;
+
+        if (!entries.has(key)) {
+          entries.set(key, payload);
+        }
+      }),
+      findOneBy: jest.fn(async (where) => {
+        const key = `${where.userId}:${where.type}:${where.refId}`;
+
+        return entries.get(key) || null;
+      }),
+      find: jest.fn(async () => Array.from(entries.values())),
+    };
+
+    const service = new ShareLedgerService(repository as any);
+
+    await service.mintShares('u1', '100', 'dep-dup', '2026-02-11T00:00:00.000Z');
+    await service.mintShares('u1', '100', 'dep-dup', '2026-02-11T00:00:00.000Z');
+
+    expect(repository.upsert).toHaveBeenCalledTimes(2);
+    expect(entries.size).toBe(1);
+  });
 });

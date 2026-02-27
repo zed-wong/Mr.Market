@@ -4,6 +4,7 @@ import BigNumber from 'bignumber.js';
 import { randomUUID } from 'crypto';
 import { ShareLedgerEntry } from 'src/common/entities/ledger/share-ledger-entry.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { isUniqueConstraintViolation } from 'src/common/helpers/utils';
 import { Repository } from 'typeorm';
 
 type WeightedShare = {
@@ -24,7 +25,7 @@ export class ShareLedgerService {
     refId: string,
     createdAt?: string,
   ): Promise<ShareLedgerEntry> {
-    const entry = this.shareLedgerRepository.create({
+    return await this.upsertEntry({
       entryId: randomUUID(),
       userId,
       type: 'MINT',
@@ -32,8 +33,6 @@ export class ShareLedgerService {
       refId,
       createdAt: createdAt || getRFC3339Timestamp(),
     });
-
-    return await this.shareLedgerRepository.save(entry);
   }
 
   async burnShares(
@@ -42,7 +41,7 @@ export class ShareLedgerService {
     refId: string,
     createdAt?: string,
   ): Promise<ShareLedgerEntry> {
-    const entry = this.shareLedgerRepository.create({
+    return await this.upsertEntry({
       entryId: randomUUID(),
       userId,
       type: 'BURN',
@@ -50,8 +49,48 @@ export class ShareLedgerService {
       refId,
       createdAt: createdAt || getRFC3339Timestamp(),
     });
+  }
 
-    return await this.shareLedgerRepository.save(entry);
+  private async upsertEntry(
+    entry: ShareLedgerEntry,
+  ): Promise<ShareLedgerEntry> {
+    const candidate = this.shareLedgerRepository.create(entry);
+
+    if (typeof this.shareLedgerRepository.upsert === 'function') {
+      await this.shareLedgerRepository.upsert(candidate, {
+        conflictPaths: ['userId', 'type', 'refId'],
+        skipUpdateIfNoValuesChanged: true,
+      });
+
+      const existing = await this.shareLedgerRepository.findOneBy({
+        userId: entry.userId,
+        type: entry.type,
+        refId: entry.refId,
+      });
+
+      if (!existing) {
+        throw new Error('share ledger upsert did not persist entry');
+      }
+
+      return existing;
+    }
+
+    try {
+      return await this.shareLedgerRepository.save(candidate);
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        const existing = await this.shareLedgerRepository.findOneBy({
+          userId: entry.userId,
+          type: entry.type,
+          refId: entry.refId,
+        });
+
+        if (existing) {
+          return existing;
+        }
+      }
+      throw error;
+    }
   }
 
   async computeTimeWeightedShares(

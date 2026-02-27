@@ -166,13 +166,17 @@ export class StrategyIntentExecutionService {
         }
       }
 
-      if (intent.type === 'CANCEL_ORDER' && intent.mixinOrderId) {
+      if (intent.type === 'CANCEL_ORDER') {
+        if (!intent.mixinOrderId) {
+          throw new Error('CANCEL_ORDER intent missing mixinOrderId');
+        }
+
         const result = await this.runWithRetries(() =>
           this.exchangeConnectorAdapterService
             ? this.exchangeConnectorAdapterService.cancelOrder(
                 intent.exchange,
                 intent.pair,
-                intent.mixinOrderId as string,
+                intent.mixinOrderId,
               )
             : (() => {
                 const exchange = this.exchangeInitService.getExchange(

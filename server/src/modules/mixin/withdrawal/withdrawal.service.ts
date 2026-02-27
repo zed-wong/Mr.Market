@@ -53,6 +53,7 @@ export class WithdrawalService {
     destination: string,
     memo: string,
     amount: string,
+    requestKey?: string,
   ): Promise<SequencerTransactionRequest[]> {
     const client = this.mixinClientService.client;
     const spendKey = this.mixinClientService.spendKey;
@@ -144,8 +145,8 @@ export class WithdrawalService {
       );
       const feeRaw = encodeSafeTransaction(feeTx);
 
-      const txId = randomUUID();
-      const feeId = randomUUID();
+      const txId = requestKey ? `${requestKey}:tx` : randomUUID();
+      const feeId = requestKey ? `${requestKey}:fee` : randomUUID();
       const txs = await client.utxo.verifyTransaction([
         {
           raw,
@@ -221,7 +222,7 @@ export class WithdrawalService {
       );
       const raw = encodeSafeTransaction(tx);
 
-      const request_id = randomUUID();
+      const request_id = requestKey || randomUUID();
       const txs = await client.utxo.verifyTransaction([
         {
           raw,
