@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import * as sodium from 'sodium-native';
 
 /**
@@ -10,6 +11,7 @@ export const generateKeyPair = (): {
 } => {
   const publicKey = Buffer.alloc(sodium.crypto_box_PUBLICKEYBYTES);
   const privateKey = Buffer.alloc(sodium.crypto_box_SECRETKEYBYTES);
+
   sodium.crypto_box_keypair(publicKey, privateKey);
 
   return {
@@ -34,7 +36,9 @@ export const getPublicKeyFromPrivate = (privateKey: string): string => {
   }
 
   const publicKey = Buffer.alloc(sodium.crypto_box_PUBLICKEYBYTES);
+
   sodium.crypto_scalarmult_base(publicKey, secretKey);
+
   return publicKey.toString('base64');
 };
 
@@ -85,6 +89,7 @@ export const decrypt = (
 
     // Derive public key from secret key (required for seal_open)
     const publicKey = Buffer.alloc(sodium.crypto_box_PUBLICKEYBYTES);
+
     sodium.crypto_scalarmult_base(publicKey, secretKey);
 
     const decrypted = Buffer.alloc(
@@ -105,6 +110,7 @@ export const decrypt = (
     return decrypted.toString('utf8');
   } catch (error) {
     console.error('Decryption failed:', error);
+
     return null;
   }
 };

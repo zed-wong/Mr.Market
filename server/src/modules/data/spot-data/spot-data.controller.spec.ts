@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+
 import { SpotdataController } from './spot-data.controller';
 import { SpotdataService } from './spot-data.service';
 
@@ -68,6 +69,7 @@ describe('SpotdataController', () => {
 
   it('should return spot data', async () => {
     const result = await controller.getSpotData();
+
     expect(result).toEqual(mockSpotData);
     expect(service.getSpotData).toHaveBeenCalled();
   });

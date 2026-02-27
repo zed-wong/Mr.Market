@@ -1,26 +1,49 @@
-import { v4 as uuidv4 } from 'uuid';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  WebSocketGateway,
-  SubscribeMessage,
-  MessageBody,
   ConnectedSocket,
-  OnGatewayInit,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { MarketdataService, marketDataType } from './market-data.service';
 import {
   createCompositeKey,
   decodeCompositeKey,
 } from 'src/common/helpers/subscriptionKey';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { v4 as uuidv4 } from 'uuid';
+
+import { MarketdataService, marketDataType } from './market-data.service';
 
 const webSocketPort = process.env.WS_PORT || '0';
+const wsCorsOrigin = (process.env.WS_CORS_ORIGIN || process.env.CORS_ORIGIN)
+  ?.split(',')
+  .map((origin) => origin.trim())
+  .filter((origin) => origin.length > 0);
+const wsHasWildcard = Boolean(wsCorsOrigin?.includes('*'));
+const wsWildcardAllowed =
+  String(process.env.WS_CORS_ALLOW_WILDCARD || '').toLowerCase() === 'true';
+const wsSanitizedOrigins =
+  wsHasWildcard && !wsWildcardAllowed
+    ? wsCorsOrigin?.filter((origin) => origin !== '*')
+    : wsCorsOrigin;
+const wsAllowedOrigins =
+  wsSanitizedOrigins && wsSanitizedOrigins.length > 0
+    ? wsSanitizedOrigins
+    : [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+      ];
+
 @WebSocketGateway(parseInt(webSocketPort, 10), {
   namespace: '/market',
-  cors: true,
+  cors: { origin: wsAllowedOrigins, credentials: true },
 })
 export class MarketDataGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
@@ -39,6 +62,7 @@ export class MarketDataGateway
 
   handleConnection(client: Socket) {
     const clientId = uuidv4();
+
     this.clients.set(clientId, client);
     client.emit('connected', 'Connected Successfully');
 
@@ -99,6 +123,7 @@ export class MarketDataGateway
       undefined,
       timeFrame,
     );
+
     if (!this.clientSubscriptions.has(clientId)) {
       this.clientSubscriptions.set(clientId, new Set());
     }
@@ -178,8 +203,10 @@ export class MarketDataGateway
       `Subscribing to order book ${data.exchange} ${data.symbol}`,
     );
     const clientId = this.getClientId(client);
+
     if (!clientId) {
       this.logger.error(`Client ID not found for the connected socket`);
+
       return;
     }
     this.subscribeToMarketData(
@@ -223,8 +250,10 @@ export class MarketDataGateway
       `Subscribing to OHLCV ${data.exchange} ${data.symbol} ${data.timeFrame}`,
     );
     const clientId = this.getClientId(client);
+
     if (!clientId) {
       this.logger.error(`Client ID not found for the connected socket`);
+
       return;
     }
     this.subscribeToOHLCV(
@@ -264,8 +293,10 @@ export class MarketDataGateway
   ) {
     this.logger.log(`Subscribing to ticker ${data.exchange} ${data.symbol}`);
     const clientId = this.getClientId(client);
+
     if (!clientId) {
       this.logger.error(`Client ID not found for the connected socket`);
+
       return;
     }
     this.subscribeToMarketData(
@@ -303,8 +334,10 @@ export class MarketDataGateway
   ) {
     this.logger.log(`Subscribing to tickers ${data.exchange} ${data.symbols}`);
     const clientId = this.getClientId(client);
+
     if (!clientId) {
       this.logger.error(`Client ID not found for the connected socket`);
+
       return;
     }
 
@@ -328,9 +361,11 @@ export class MarketDataGateway
 
   private broadcastToSubscribedClients(compositeKey: string, data: object) {
     const [type] = compositeKey.split(':'); // Split the composite key
+
     this.clientSubscriptions.forEach((subscriptions, clientId) => {
       if (subscriptions.has(compositeKey)) {
         const subscribedClient = this.getClientById(clientId);
+
         if (subscribedClient) {
           switch (type) {
             case 'orderbook':
@@ -353,9 +388,11 @@ export class MarketDataGateway
 
   handleDisconnect(clientId: string) {
     const subscriptions = this.clientSubscriptions.get(clientId);
+
     if (subscriptions) {
       subscriptions.forEach((compositeKey) => {
         const data = decodeCompositeKey(compositeKey);
+
         this.handleUnsubscribeData(data, this.getClientById(clientId));
       });
     }
@@ -386,6 +423,7 @@ export class MarketDataGateway
     );
 
     const clientId = this.getClientId(client);
+
     this.logger.log(`Unsubscribe: ${subscriptionKey}`);
     this.clientSubscriptions.get(clientId)?.delete(subscriptionKey);
 
@@ -422,6 +460,7 @@ export class MarketDataGateway
         return true;
       }
     }
+
     return false;
   }
 
@@ -431,6 +470,7 @@ export class MarketDataGateway
         return id;
       }
     }
+
     return null;
   }
 

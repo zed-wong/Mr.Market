@@ -1,17 +1,17 @@
 import {
-  Injectable,
   BadRequestException,
+  Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
 import * as ccxt from 'ccxt';
-import { TradeRepository } from './trade.repository';
-import { MarketTradeDto, LimitTradeDto } from './trade.dto';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { LimitTradeDto, MarketTradeDto } from './trade.dto';
+import { TradeRepository } from './trade.repository';
 
 @Injectable()
 export class TradeService {
-  private exchange: ccxt.Exchange;
   private readonly logger = new CustomLogger(TradeService.name);
 
   constructor(
@@ -21,10 +21,12 @@ export class TradeService {
 
   private getExchange(exchangeName: string): ccxt.Exchange {
     const exchange = this.exchangeInitService.getExchange(exchangeName);
+
     if (!exchange) {
       this.logger.error(`Exchange: ${exchangeName} is not configured.`);
       throw new InternalServerErrorException('Exchange configuration error.');
     }
+
     return exchange;
   }
 
@@ -37,15 +39,16 @@ export class TradeService {
       );
     }
 
-    this.exchange = this.getExchange(exchange);
+    const exchangeInstance = this.getExchange(exchange);
 
     try {
-      const order = await this.exchange.createOrder(
+      const order = await exchangeInstance.createOrder(
         symbol,
         'market',
         side,
         amount,
       );
+
       this.logger.log(`Market trade executed`, order.toString());
       await this.tradeRepository.createTrade({
         userId,
@@ -78,16 +81,17 @@ export class TradeService {
       );
     }
 
-    this.exchange = this.getExchange(exchange);
+    const exchangeInstance = this.getExchange(exchange);
 
     try {
-      const order = await this.exchange.createOrder(
+      const order = await exchangeInstance.createOrder(
         symbol,
         'limit',
         side,
         amount,
         price,
       );
+
       this.logger.log(`Limit trade executed: ${JSON.stringify(order)}`);
 
       await this.tradeRepository.createTrade({
@@ -111,9 +115,15 @@ export class TradeService {
     }
   }
 
-  async cancelOrder(orderId: string, symbol: string): Promise<void> {
+  async cancelOrder(
+    exchangeName: string,
+    orderId: string,
+    symbol: string,
+  ): Promise<void> {
+    const exchangeInstance = this.getExchange(exchangeName);
+
     try {
-      await this.exchange.cancelOrder(orderId, symbol);
+      await exchangeInstance.cancelOrder(orderId, symbol);
       // update the transaction status in database
       await this.tradeRepository.updateTradeStatus(orderId, 'cancelled');
     } catch (error) {

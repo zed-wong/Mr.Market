@@ -68,7 +68,7 @@
     >
         <button
             class="btn btn-xl pointer-events-auto bg-base-content text-base-100 px-16 py-4 rounded-full text-lg font-bold shadow-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-base-content/80 transition-colors"
-            data-testid="market-making-exchange-continue"
+            data-testid="market-making-continue"
             disabled={!selectedExchange}
             on:click={onContinue}
         >

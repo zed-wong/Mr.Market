@@ -1,8 +1,10 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { MarketdataService } from './market-data.service';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { Test, TestingModule } from '@nestjs/testing';
+
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { MarketdataService } from './market-data.service';
 
 jest.mock('../../infrastructure/logger/logger.service');
 
@@ -14,6 +16,7 @@ const mockCacheManager = () => ({
 // Mock setup for ccxt
 const mockFetchTickers = jest.fn();
 const mockFetchOHLCV = jest.fn();
+
 jest.mock('ccxt', () => ({
   pro: {
     binance: jest.fn(() => ({
@@ -66,6 +69,7 @@ describe('MarketdataService', () => {
   describe('getTickers', () => {
     it('fetches tickers successfully from a supported exchange', async () => {
       const expectedTickers = { BTCUSD: { last: 50000 } };
+
       mockFetchTickers.mockResolvedValue(expectedTickers);
       exchangeInitService.getExchange.mockReturnValue({
         fetchTickers: mockFetchTickers,
@@ -74,6 +78,7 @@ describe('MarketdataService', () => {
       });
 
       const tickers = await service.getTickers('binance', ['BTCUSD']);
+
       expect(tickers).toEqual(expectedTickers);
       expect(mockFetchTickers).toHaveBeenCalledWith(['BTCUSD']);
     });
@@ -95,6 +100,7 @@ describe('MarketdataService', () => {
   describe('getOHLCVData', () => {
     it('fetches OHLCV data successfully', async () => {
       const expectedOHLCV = [[1609459200000, 29000, 29500, 28500, 29300, 1200]];
+
       mockFetchOHLCV.mockResolvedValue(expectedOHLCV);
       exchangeInitService.getExchange.mockReturnValue({
         fetchOHLCV: mockFetchOHLCV,
@@ -103,6 +109,7 @@ describe('MarketdataService', () => {
       });
 
       const OHLCV = await service.getOHLCVData('binance', 'BTCUSD');
+
       expect(OHLCV).toEqual(
         expectedOHLCV.map((data) => ({
           timestamp: data[0],
@@ -125,11 +132,46 @@ describe('MarketdataService', () => {
   describe('getSupportedPairs', () => {
     it('returns supported pairs from cache if available', async () => {
       const cachedPairs = [{ symbol: 'BTCUSD', price: 50000 }];
+
       cacheManager.get.mockResolvedValue(JSON.stringify(cachedPairs));
 
       const pairs = await service.getSupportedPairs();
+
       expect(pairs).toEqual(cachedPairs);
       expect(cacheManager.get).toHaveBeenCalledWith('supported-pairs');
+    });
+  });
+
+  describe('subscriptions', () => {
+    it('uses watchTickers capability for watchTickers subscriptions', async () => {
+      const watchTickers = jest
+        .fn()
+        .mockResolvedValueOnce({ BTCUSDT: { last: 1 } });
+
+      exchangeInitService.getExchange.mockReturnValue({
+        watchTickers,
+        has: { watchTickers: true },
+      });
+
+      const work = service.watchTickers('binance', ['BTC/USDT'], jest.fn());
+
+      service.unsubscribeData('tickers', 'binance', undefined, ['BTC/USDT']);
+      await work;
+
+      expect(watchTickers).toHaveBeenCalled();
+    });
+
+    it('unsubscribes order book using the full composite key', () => {
+      (service as any).activeSubscriptions.set(
+        'orderbook:binance:BTC/USDT',
+        true,
+      );
+
+      service.unsubscribeOrderBook('binance', 'BTC/USDT');
+
+      expect(
+        (service as any).activeSubscriptions.has('orderbook:binance:BTC/USDT'),
+      ).toBe(false);
     });
   });
 });

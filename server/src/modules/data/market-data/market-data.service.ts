@@ -1,11 +1,13 @@
-import * as ccxt from 'ccxt';
-import { Cache } from 'cache-manager';
+/* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Injectable, Inject } from '@nestjs/common';
-import { createCompositeKey } from 'src/common/helpers/subscriptionKey';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { Inject, Injectable } from '@nestjs/common';
+import type { Cache } from 'cache-manager';
+import * as ccxt from 'ccxt';
 import { decodeTicker } from 'src/common/helpers/marketdata/decoder';
+import { createCompositeKey } from 'src/common/helpers/subscriptionKey';
+
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
 
 export type marketDataType = 'orderbook' | 'OHLCV' | 'ticker' | 'tickers';
 
@@ -67,6 +69,7 @@ export class MarketdataService {
       since,
       limit,
     );
+
     return OHLCV.map((data) => {
       return {
         timestamp: data[0],
@@ -81,22 +84,27 @@ export class MarketdataService {
 
   async getSupportedPairs(): Promise<any> {
     const cacheID = `supported-pairs`;
+
     try {
       const cachedData = await this.cacheService.get(cacheID);
+
       if (cachedData) {
         return JSON.parse(cachedData);
       } else {
         const pairs = await this._getSupportedPairs();
+
         await this.cacheService.set(
           cacheID,
           JSON.stringify(pairs),
           this.cachingTTL,
         );
+
         return pairs;
       }
     } catch (error) {
       this.logger.error('Error accessing cache', error.message);
       const pairs = await this._getSupportedPairs();
+
       return pairs;
     }
   }
@@ -112,6 +120,7 @@ export class MarketdataService {
           config.exchange,
           config.symbol,
         );
+
         results.push({
           symbol: config.symbol,
           base_symbol: config.baseSymbol,
@@ -141,22 +150,29 @@ export class MarketdataService {
     limit = 14,
   ): Promise<void> {
     const exchange = this.ExchangeInitService.getExchange(exchangeName);
+
     if (!exchange || !exchange.has.watchOrderBook) {
       throw new Error(
         `Exchange ${exchangeName} does not support watchOrderBook or is not configured.`,
       );
     }
 
-    const subscriptionKey = `orderbook:${exchangeName}:${symbol}`;
+    const subscriptionKey = createCompositeKey(
+      'orderbook',
+      exchangeName,
+      symbol,
+    );
+
     this.activeSubscriptions.set(subscriptionKey, true);
 
     if (exchangeName === 'bitfinex') {
       limit = 25;
     }
 
-    while (this.activeSubscriptions.get(subscriptionKey)) {
+    while (this.isSubscriptionActive(subscriptionKey)) {
       try {
         const orderBook = await exchange.watchOrderBook(symbol, limit);
+
         onData(orderBook);
       } catch (error) {
         this.logger.error(
@@ -176,16 +192,24 @@ export class MarketdataService {
     limit?: number,
   ): Promise<void> {
     const exchange = this.ExchangeInitService.getExchange(exchangeName);
+
     if (!exchange || !exchange.has.watchOHLCV) {
       throw new Error(
         `Exchange ${exchangeName} does not support watchOHLCV or is not configured.`,
       );
     }
 
-    const subscriptionKey = `OHLCV:${exchangeName}:${symbol}:${timeFrame}`;
+    const subscriptionKey = createCompositeKey(
+      'OHLCV',
+      exchangeName,
+      symbol,
+      undefined,
+      timeFrame,
+    );
+
     this.activeSubscriptions.set(subscriptionKey, true);
 
-    while (this.activeSubscriptions.get(subscriptionKey)) {
+    while (this.isSubscriptionActive(subscriptionKey)) {
       try {
         const OHLCV = await exchange.watchOHLCV(
           symbol,
@@ -193,6 +217,7 @@ export class MarketdataService {
           since,
           limit,
         );
+
         onData(OHLCV);
       } catch (error) {
         this.logger.error(
@@ -209,18 +234,21 @@ export class MarketdataService {
     onData: (data: any) => void,
   ): Promise<void> {
     const exchange = this.ExchangeInitService.getExchange(exchangeName);
+
     if (!exchange || !exchange.has.watchTicker) {
       throw new Error(
         `Exchange ${exchangeName} does not support watchTicker or is not configured.`,
       );
     }
 
-    const subscriptionKey = `ticker:${exchangeName}:${symbol}`;
+    const subscriptionKey = createCompositeKey('ticker', exchangeName, symbol);
+
     this.activeSubscriptions.set(subscriptionKey, true);
 
-    while (this.activeSubscriptions.get(subscriptionKey)) {
+    while (this.isSubscriptionActive(subscriptionKey)) {
       try {
         const ticker = await exchange.watchTicker(symbol);
+
         onData(decodeTicker(exchangeName, ticker));
       } catch (error) {
         this.logger.error(
@@ -233,26 +261,40 @@ export class MarketdataService {
 
   async watchTickers(
     exchangeName: string,
-    symbol: string[],
+    symbols: string[],
     onData: (data: any) => void,
   ): Promise<void> {
+    if (!Array.isArray(symbols) || symbols.length === 0) {
+      throw new Error('watchTickers requires at least one symbol');
+    }
+
     const exchange = this.ExchangeInitService.getExchange(exchangeName);
-    if (!exchange || !exchange.has.watchTicker) {
+
+    if (!exchange || !exchange.has.watchTickers) {
       throw new Error(
-        `Exchange ${exchangeName} does not support watchTicker or is not configured.`,
+        `Exchange ${exchangeName} does not support watchTickers or is not configured.`,
       );
     }
 
-    const subscriptionKey = `tickers:${exchangeName}:${symbol}`;
+    const subscriptionKey = createCompositeKey(
+      'tickers',
+      exchangeName,
+      undefined,
+      symbols,
+    );
+
     this.activeSubscriptions.set(subscriptionKey, true);
 
-    while (this.activeSubscriptions.get(subscriptionKey)) {
+    while (this.isSubscriptionActive(subscriptionKey)) {
       try {
-        const ticker = await exchange.watchTickers(symbol);
+        const ticker = await exchange.watchTickers(symbols);
+
         onData(ticker);
       } catch (error) {
         this.logger.error(
-          `Error watching tickers for ${symbol} on ${exchangeName}: ${error.message}`,
+          `Error watching tickers for ${symbols.join(
+            ',',
+          )} on ${exchangeName}: ${error.message}`,
         );
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Reconnect after a delay
       }
@@ -273,12 +315,18 @@ export class MarketdataService {
       symbols,
       timeFrame,
     );
-    return this.activeSubscriptions.has(subscriptionKey);
+
+    return this.isSubscriptionActive(subscriptionKey);
   }
 
   unsubscribeOrderBook(exchangeName: string, symbol: string): void {
-    const subscriptionKey = `${exchangeName}:${symbol}`;
-    this.activeSubscriptions.delete(subscriptionKey);
+    const subscriptionKey = createCompositeKey(
+      'orderbook',
+      exchangeName,
+      symbol,
+    );
+
+    this.deactivateSubscription(subscriptionKey);
   }
 
   public async getTickerPrice(
@@ -286,6 +334,7 @@ export class MarketdataService {
     symbol: string,
   ): Promise<any> {
     const exchange = this.ExchangeInitService.getExchange(exchangeName);
+
     if (!exchange || !exchange.has.fetchTicker) {
       throw new Error(
         'Exchange does not support fetchTicker or is not configured.',
@@ -294,6 +343,7 @@ export class MarketdataService {
     this.logger.log(
       `Fetching ticker price from ${exchange.name} for ${symbol}`,
     );
+
     return await exchange.fetchTicker(symbol); //Use Last as it represent the last price.
   }
 
@@ -303,6 +353,7 @@ export class MarketdataService {
     symbols: string[],
   ): Promise<any[]> {
     const fetchPromises = [];
+
     exchangeNames.forEach((exchangeName) => {
       symbols.forEach((symbol) => {
         const promise = this.getTickerPrice(exchangeName, symbol).catch(
@@ -310,12 +361,15 @@ export class MarketdataService {
             this.logger.error(
               `Failed to fetch ticker for ${symbol} on ${exchangeName}: ${error.message}`,
             );
+
             return null; // Return null or some error indication for this failed request
           },
         );
+
         fetchPromises.push(promise);
       });
     });
+
     return Promise.all(fetchPromises);
   }
 
@@ -324,6 +378,7 @@ export class MarketdataService {
     //   exchangeName,
     // );
     const enabledConfigs = [];
+
     return enabledConfigs.map((config) => config.symbol);
   }
 
@@ -341,6 +396,16 @@ export class MarketdataService {
       symbols,
       timeFrame,
     );
+
+    this.deactivateSubscription(subscriptionKey);
+  }
+
+  private isSubscriptionActive(subscriptionKey: string): boolean {
+    return this.activeSubscriptions.get(subscriptionKey) === true;
+  }
+
+  private deactivateSubscription(subscriptionKey: string): void {
+    this.activeSubscriptions.set(subscriptionKey, false);
     this.activeSubscriptions.delete(subscriptionKey);
   }
 }

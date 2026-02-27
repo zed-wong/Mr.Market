@@ -1,13 +1,14 @@
 import {
-  generateKeyPair,
-  encrypt,
   decrypt,
+  encrypt,
+  generateKeyPair,
   getPublicKeyFromPrivate,
 } from './crypto';
 
 describe('Crypto Helpers', () => {
   it('should generate valid key pair', () => {
     const keys = generateKeyPair();
+
     expect(keys.publicKey).toBeDefined();
     expect(keys.privateKey).toBeDefined();
 
@@ -24,10 +25,12 @@ describe('Crypto Helpers', () => {
     const message = 'Hello, World!';
 
     const encrypted = encrypt(message, publicKey);
+
     expect(encrypted).toBeDefined();
     expect(encrypted).not.toBe(message);
 
     const decrypted = decrypt(encrypted, privateKey);
+
     expect(decrypted).toBe(message);
   });
 
@@ -40,6 +43,7 @@ describe('Crypto Helpers', () => {
     const encrypted = encrypt(message, publicKey);
 
     const decrypted = decrypt(encrypted, otherPrivateKey);
+
     expect(decrypted).toBeNull();
   });
 
@@ -48,12 +52,14 @@ describe('Crypto Helpers', () => {
       privateKey: 'MgQ3LwWFc2kdkOzkNk3jWVH832qiTjPMuBT8jV2DEBE=',
     };
     const decrypted = decrypt('invalid-base64', privateKey);
+
     expect(decrypted).toBeNull();
   });
 
   it('should derive public key from private key', () => {
     const { publicKey, privateKey } = generateKeyPair();
     const derivedPublicKey = getPublicKeyFromPrivate(privateKey);
+
     expect(derivedPublicKey).toBe(publicKey);
   });
 });

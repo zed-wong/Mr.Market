@@ -44,7 +44,7 @@ make start-dev
 #### Install dependencies
 
 ```
-npx playwright install
+bunx playwright install
 ```
 
 #### Running tests
@@ -52,13 +52,13 @@ npx playwright install
 Unit testing
 
 ```
-yarn test:unit
+bun run test:unit
 ```
 
 E2E testing
 
 ```
-yarn test:e2e
+bun run test:e2e
 ```
 
 ### Server
@@ -128,7 +128,7 @@ By the end of these steps, you will have a fully functional server and interface
    - Use
 
      - `./interface` for Root Directory
-     - `yarn --frozen-lockfile install; yarn build` for Build Command
+      - `bun install --frozen-lockfile; bun run build` for Build Command
      - `build` for Publish Directory
 
    - Setup Redirect & Rewrite Rules as follows.

@@ -1,26 +1,27 @@
+import BigNumber from 'bignumber.js';
+import { createHash } from 'crypto';
+import { base58 } from 'ethers/lib/utils';
 import {
-  TARDING_TYPE_MAP,
-  SPOT_ORDER_TYPE_MAP,
-  SPOT_EXCHANGE_MAP,
   MARKET_MAKING_MEMO_ACTION_MAP,
   SIMPLY_GROW_MEMO_ACTION_MAP,
+  SPOT_EXCHANGE_MAP,
+  SPOT_ORDER_TYPE_MAP,
+  TARDING_TYPE_MAP,
 } from 'src/common/constants/memo';
 import {
   ExchangeIndexValue,
+  MarketMakingCreateMemoDetails,
+  SimplyGrowCreateMemoDetails,
   SpotMemoDetails,
   SpotOrderTypeValue,
   TradingTypeValue,
-  MarketMakingCreateMemoDetails,
-  SimplyGrowCreateMemoDetails,
 } from 'src/common/types/memo/memo';
-import { base58 } from 'ethers/lib/utils';
-import { createHash } from 'crypto';
-import BigNumber from 'bignumber.js';
 
 export const computeMemoChecksum = (buffer: Buffer): Buffer => {
   const hash = createHash('sha256')
     .update(buffer as unknown as Uint8Array)
     .digest();
+
   return createHash('sha256')
     .update(hash as unknown as Uint8Array)
     .digest()
@@ -29,6 +30,7 @@ export const computeMemoChecksum = (buffer: Buffer): Buffer => {
 
 function bufferToUuid(buffer: Buffer): string {
   const hex = buffer.toString('hex');
+
   return [
     hex.substring(0, 8),
     hex.substring(8, 12),
@@ -104,6 +106,7 @@ export const encodeSimplyGrowCreateMemo = (details: {
 
   // Concatenate payload and checksum
   const completeBuffer = Buffer.concat([payload, checksum] as Uint8Array[]);
+
   return base58.encode(completeBuffer);
 };
 
@@ -150,6 +153,7 @@ export const encodeMarketMakingCreateMemo = (
 
   // Concatenate payload and checksum
   const completeBuffer = Buffer.concat([payload, checksum] as Uint8Array[]);
+
   return base58.encode(completeBuffer);
 };
 
@@ -172,6 +176,7 @@ export const memoPreDecode = (
 
   // Verify checksum
   const computedChecksum = computeMemoChecksum(payload);
+
   if (!checksum.equals(computedChecksum)) {
     throw new Error('Invalid checksum');
   }
@@ -186,7 +191,11 @@ export const memoPreDecode = (
   const action = payload.readUInt8(2);
 
   // `readUInt8` returns numbers; key 0 is valid (e.g. Spot trading).
-  if (!Number.isFinite(version) || !Number.isFinite(tradingTypeKey) || !Number.isFinite(action)) {
+  if (
+    !Number.isFinite(version) ||
+    !Number.isFinite(tradingTypeKey) ||
+    !Number.isFinite(action)
+  ) {
     throw new Error('Invalid memo details');
   }
 
@@ -201,18 +210,22 @@ export const decodeSimplyGrowCreateMemo = (
 
   // Version (1 byte)
   const version = payload.readUInt8(offset);
+
   offset += 1;
 
   // TradingTypeKey (1 byte)
   const tradingTypeKey = payload.readUInt8(offset);
+
   offset += 1;
 
   // ActionKey (1 byte)
   const actionKey = payload.readUInt8(offset);
+
   offset += 1;
 
   // OrderIdBuffer (16 bytes for UUID)
   const orderIdBuffer = payload.subarray(offset, offset + 16);
+
   offset += 16;
   const orderId = bufferToUuid(orderIdBuffer);
 
@@ -243,23 +256,28 @@ export const decodeMarketMakingCreateMemo = (
 
   // Version (1 byte)
   const version = payload.readUInt8(offset);
+
   offset += 1;
 
   // TradingTypeKey (1 byte)
   const tradingTypeKey = payload.readUInt8(offset);
+
   offset += 1;
 
   // ActionKey (1 byte)
   const actionKey = payload.readUInt8(offset);
+
   offset += 1;
 
   // MarketMakingPairIdBuffer (16 bytes for UUID)
   const marketMakingPairIdBuffer = payload.subarray(offset, offset + 16);
+
   offset += 16;
   const marketMakingPairId = bufferToUuid(marketMakingPairIdBuffer);
 
   // OrderIdBuffer (16 bytes for UUID)
   const orderIdBuffer = payload.subarray(offset, offset + 16);
+
   offset += 16;
   const orderId = bufferToUuid(orderIdBuffer);
 

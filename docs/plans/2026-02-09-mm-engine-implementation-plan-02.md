@@ -1,4 +1,4 @@
-# Changes to Make (Updated: add Balance as the only Source of Truth)
+Changes to Make (Updated: add Balance as the only Source of Truth)
 
 This is the revised **“Changes to Make”** document. It introduces all new parts for a production-grade **tick-driven market making engine**, **HuFi campaign integration**, and the complete **reward receive → calculate → distribute** pipeline — **and now explicitly adds the missing balance/ledger system** as the **only source of truth** for user funds.
 
@@ -72,7 +72,7 @@ Required fields:
 * `strategy_instance_id`
 * `exchange`, `pair`, `side`
 * `price`, `qty`
-* `client_order_id`
+* `mixin_order_id`
 * `created_at`
 * status: `NEW → SENT → ACKED/FAILED → DONE`
 
@@ -113,9 +113,9 @@ Connector must implement:
 
 Add:
 
-1. `OrderBookTracker`: snapshot + diffs, gap detection → resync
-2. `UserStreamTracker`: fills/order updates/balances events
-3. `ExchangeOrderTracker` (Shadow Ledger): client↔exchange ID map; lost-order protocol; zombie/phantom detection
+1. `OrderBookTracker`: (maintain an order book locally, track diff if websocket only return changes)
+2. `PrivateStreamTracker`: (track private informations like api key balance with websocket)
+3. `ExchangeOrderTracker` (Shadow Ledger): maintain exchange orders locally, update upon websocket/REST api
 4. periodic reconciliation jobs: open orders poller, lost order reconciler
 
 ---
@@ -124,7 +124,7 @@ Add:
 
 Consumes intents and:
 
-* executes idempotently
+* executes idempotently (have consistency no matter how many times it runs)
 * retries/backoff
 * respects rate limiter
 * updates ExchangeOrderTracker mappings
@@ -300,6 +300,8 @@ Add:
   * withdraw burns shares
 * day window calculator (24h campaign windows)
 
+This needs further design, should it be based on order, or should it be 
+
 ### 6.2 Reward Allocation Job
 
 When reward is confirmed/transferred:
@@ -383,29 +385,28 @@ Add:
 
 ### Tick-driven foundation
 
-* [ ] Clock exists and drives TickComponents deterministically
+* [x] Clock exists and drives TickComponents deterministically
 
 ### Execution engine
 
-* [ ] strategy outputs intents only
-* [ ] execution worker consumes intents idempotently
-* [ ] trackers reconstruct orderbook and order state under failure
-* [ ] reconciliation jobs work
+* [x] strategy outputs intents only
+* [x] execution worker consumes intents idempotently
+* [x] trackers reconstruct orderbook and order state under failure
+* [x] reconciliation jobs work
 
 ### Balance “only truth”
 
-* [ ] ledger is append-only
-* [ ] read model derives balances
-* [ ] lock/unlock enforced for MM and withdrawals
-* [ ] no module other than ledger writes balances
+* [x] ledger is append-only
+* [x] read model derives balances
+* [x] lock/unlock enforced for MM and withdrawals
+* [x] no module other than ledger writes balances
 
 ### HuFi + rewards
 
-* [ ] campaign sync/join
-* [ ] on-chain reward receiver
-* [ ] daily EVM→Mixin vault transfer
-* [ ] LP-share allocations
-* [ ] reward credits via ledger + Mixin internal distribution
+* [x] campaign sync/join
+* [x] on-chain reward receiver
+* [x] daily EVM→Mixin vault transfer
+* [x] LP-share allocations
+* [x] reward credits via ledger + Mixin internal distribution
 
 ---
-

@@ -52,8 +52,9 @@ test.beforeEach(async ({ page }) => {
 test('opens create dialog with prefilled campaign pair', async ({ page }) => {
   await page.getByTestId('hufi-create-button').click();
   const dialog = page.getByTestId('hufi-create-dialog');
+
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('binance', { exact: true })).toBeVisible();
   await expect(dialog.getByText('BTC/USDT', { exact: true })).toBeVisible();
-  await expect(page.getByText(/not supported by this/i)).toBeVisible();
+  await expect(dialog.getByText(/not supported by this/i)).toBeVisible();
 });

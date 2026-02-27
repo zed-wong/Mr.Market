@@ -1,7 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { ExchangeInitService } from './exchange-init.service';
+import { Test, TestingModule } from '@nestjs/testing';
 import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
+
+import { ExchangeInitService } from './exchange-init.service';
 
 describe('ExchangeinitService', () => {
   let service: ExchangeInitService;
@@ -65,6 +67,7 @@ describe('ExchangeinitService', () => {
 
   it('returns supported exchanges from DB-backed list', async () => {
     const result = await service.getSupportedExchanges();
+
     expect(result).toEqual(['binance']);
     expect(exchangeService.readSupportedExchanges).toHaveBeenCalledTimes(1);
   });

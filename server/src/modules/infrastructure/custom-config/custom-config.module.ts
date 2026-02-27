@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CustomConfigService } from './custom-config.service';
+import { CustomConfigEntity } from 'src/common/entities/admin/custom-config.entity';
+
 import { CustomConfigRepository } from './custom-config.repository';
-import { CustomConfigEntity } from 'src/common/entities/custom-config.entity';
+import { CustomConfigService } from './custom-config.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([CustomConfigEntity])],

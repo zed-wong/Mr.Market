@@ -1,5 +1,5 @@
-import { createCompositeKey, decodeCompositeKey } from './subscriptionKey'; // Adjust the import path as necessary
 import { marketDataType } from '../../modules/data/market-data/market-data.service'; // Adjust the import path as necessary
+import { createCompositeKey, decodeCompositeKey } from './subscriptionKey'; // Adjust the import path as necessary
 
 describe('Key Utils', () => {
   describe('createCompositeKey', () => {
@@ -10,6 +10,7 @@ describe('Key Utils', () => {
       const expectedKey = 'orderbook:binance:BTC/USD';
 
       const key = createCompositeKey(type, exchange, symbol);
+
       expect(key).toEqual(expectedKey);
     });
 
@@ -27,6 +28,7 @@ describe('Key Utils', () => {
         undefined,
         timeFrame,
       );
+
       expect(key).toEqual(expectedKey);
     });
 
@@ -37,6 +39,7 @@ describe('Key Utils', () => {
       const expectedKey = `tickers:binance:${symbols.toString()}`;
 
       const key = createCompositeKey(type, exchange, undefined, symbols);
+
       expect(key).toEqual(expectedKey);
     });
   });
@@ -51,6 +54,7 @@ describe('Key Utils', () => {
       };
 
       const decodedKey = decodeCompositeKey(compositeKey);
+
       expect(decodedKey).toEqual(expected);
     });
 
@@ -64,6 +68,7 @@ describe('Key Utils', () => {
       };
 
       const decodedKey = decodeCompositeKey(compositeKey);
+
       expect(decodedKey).toEqual(expected);
     });
 
@@ -76,6 +81,7 @@ describe('Key Utils', () => {
       };
 
       const decodedKey = decodeCompositeKey(compositeKey);
+
       expect(decodedKey).toEqual(expected);
     });
   });

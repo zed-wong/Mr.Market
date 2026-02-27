@@ -1,7 +1,7 @@
-import { Repository } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MixinMessage } from 'src/common/entities/mixin-message.entity';
+import { MixinMessage } from 'src/common/entities/mixin/mixin-message.entity';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class MessageRepository {
@@ -18,6 +18,7 @@ export class MessageRepository {
     const message = await this.messageRepository.findOne({
       where: { message_id },
     });
+
     if (!message) {
       // Handle key not found error
       return;

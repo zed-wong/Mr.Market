@@ -1,6 +1,9 @@
-import { ExchangeService } from './exchange.service';
-import { APIKeysConfig } from 'src/common/entities/api-keys.entity';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
+import * as ccxt from 'ccxt';
+import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
+
+import { ExchangeService } from './exchange.service';
 
 jest.mock('src/common/helpers/crypto', () => ({
   decrypt: jest.fn(),
@@ -42,6 +45,41 @@ describe('ExchangeService', () => {
     jest.clearAllMocks();
   });
 
+  it('returns numeric free balance for requested symbol', async () => {
+    const { service } = makeService();
+    const fetchBalanceSpy = jest
+      .spyOn((ccxt as any).binance.prototype, 'fetchBalance')
+      .mockResolvedValue({
+        free: {
+          USDT: 42.5,
+          BTC: 1.25,
+        },
+      } as any);
+
+    try {
+      const balance = await service.getBalanceBySymbol(
+        'binance',
+        'api-key',
+        'api-secret',
+        'USDT',
+      );
+
+      expect(balance).toBe(42.5);
+      expect(typeof balance).toBe('number');
+      await expect(
+        service.checkExchangeBalanceEnough(
+          'binance',
+          'api-key',
+          'api-secret',
+          'USDT',
+          '10',
+        ),
+      ).resolves.toBe(true);
+    } finally {
+      fetchBalanceSpy.mockRestore();
+    }
+  });
+
   it('masks api_secret when listing API keys', async () => {
     const readAllAPIKeys = jest
       .fn()
@@ -60,6 +98,7 @@ describe('ExchangeService', () => {
     const { service } = makeService({ readAllAPIKeys });
 
     const result = await service.readAllAPIKeys();
+
     expect(result[0].api_secret).toBe('********');
   });
 

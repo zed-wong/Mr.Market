@@ -5,14 +5,55 @@ test.use({
 });
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/grow/info', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        market_making: {
+          exchanges: [
+            { exchange_id: 'binance', name: 'Binance', enable: true },
+          ],
+          pairs: [
+            {
+              id: 'pair-1',
+              symbol: 'BTC/USDT',
+              exchange_id: 'binance',
+              base_price: '100000',
+              target_price: '1',
+              enable: true,
+            },
+          ],
+        },
+      }),
+    });
+  });
+
+  await page.route('**/fees/market-making/fee**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        base_asset_id: 'btc-id',
+        quote_asset_id: 'usdt-id',
+        base_fee_id: 'fee-btc',
+        quote_fee_id: 'fee-usdt',
+        base_fee_amount: '0.0001',
+        quote_fee_amount: '1',
+        direction: 'deposit_to_exchange',
+      }),
+    });
+  });
+
   await page.goto('/market-making/create-new');
 });
 
 test('create market making', async ({ page }) => {
-  const exchangeOptions = page.locator('[data-testid^="market-making-exchange-"]');
+  const exchangeOptions = page.locator('[data-testid="market-making-exchange-binance"]');
+
   await expect(exchangeOptions.first()).toBeVisible();
   await exchangeOptions.first().click();
-  await page.getByTestId('market-making-exchange-continue').click();
+  await page.getByTestId('market-making-continue').click();
 
   const pairOptions = page.locator('[data-testid^="market-making-pair-"]');
   await expect(pairOptions.first()).toBeVisible();

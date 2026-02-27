@@ -1,15 +1,16 @@
-import * as ccxt from 'ccxt';
 import { Injectable } from '@nestjs/common';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import BigNumber from 'bignumber.js';
+import * as ccxt from 'ccxt';
+import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
+import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { createStrategyKey } from 'src/common/helpers/strategyKey';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ArbitrageStrategyDto } from 'src/modules/market-making/strategy/strategy.dto';
 import { Repository } from 'typeorm';
-import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
-import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
-import { InjectRepository } from '@nestjs/typeorm';
-import { createStrategyKey } from 'src/common/helpers/strategyKey';
+
 import { StrategyService } from './strategy.service';
-import BigNumber from 'bignumber.js';
 
 //This is still in testing: Do not use in production
 
@@ -51,6 +52,7 @@ export class AlpacaStratService {
       this.logger.log(
         `Alpaca strategy for user ${userId}, client ${clientId} for ${pair} is already running.`,
       );
+
       return;
     }
 
@@ -101,6 +103,7 @@ export class AlpacaStratService {
       this.logger.log(
         `Alpaca ${derivativeType} strategy for user ${userId}, client ${clientId} for ${pair} is already running.`,
       );
+
       return;
     }
 
@@ -152,6 +155,7 @@ export class AlpacaStratService {
 
       // Fetch derivative price from exchangeB
       let derivativePrice: BigNumber;
+
       if (derivativeType === 'futures') {
         derivativePrice = new BigNumber(
           await this.fetchFuturesPrice(exchangeB, pair),
@@ -163,7 +167,9 @@ export class AlpacaStratService {
       }
 
       this.logger.log(
-        `${strategyKey}: Alpaca Spot Price: ${alpacaSpotPrice.toString()}, ${derivativeType} Price on ${exchangeB.name}: ${derivativePrice.toString()}`,
+        `${strategyKey}: Alpaca Spot Price: ${alpacaSpotPrice.toString()}, ${derivativeType} Price on ${
+          exchangeB.name
+        }: ${derivativePrice.toString()}`,
       );
 
       if (
@@ -173,6 +179,7 @@ export class AlpacaStratService {
         this.logger.warn(
           `Skipping arbitrage check due to non-positive prices (spot=${alpacaSpotPrice.toString()}, ${derivativeType}=${derivativePrice.toString()})`,
         );
+
         return;
       }
 
@@ -180,6 +187,7 @@ export class AlpacaStratService {
       const profitMargin = derivativePrice
         .minus(alpacaSpotPrice)
         .dividedBy(alpacaSpotPrice);
+
       this.logger.log(`Profit Margin: ${profitMargin.toString()}`);
 
       if (profitMargin.isGreaterThanOrEqualTo(minProfitability)) {
@@ -233,6 +241,7 @@ export class AlpacaStratService {
     pair: string,
   ): Promise<number> {
     const futuresTicker = await exchangeB.fetchTicker(pair); // Modify if necessary
+
     return futuresTicker.last;
   }
 
@@ -242,6 +251,7 @@ export class AlpacaStratService {
     pair: string,
   ): Promise<number> {
     const optionsTicker = await exchangeB.fetchTicker(pair); // Modify if necessary
+
     return optionsTicker.last;
   }
 
@@ -263,6 +273,7 @@ export class AlpacaStratService {
         amount,
         buyPrice,
       );
+
       this.logger.log(
         `Buy order placed on ${buyExchange.name}: ${buyOrder.id} at price ${buyPrice} for ${symbol}`,
       );
@@ -273,6 +284,7 @@ export class AlpacaStratService {
         amount,
         sellPrice,
       );
+
       this.logger.log(
         `Sell order placed on ${sellExchange.name}: ${sellOrder.id} at price ${sellPrice} for ${symbol}`,
       );
@@ -344,6 +356,7 @@ export class AlpacaStratService {
         new BigNumber(volume),
         amountToTrade.minus(totalVolume),
       );
+
       totalPriceVolume = totalPriceVolume.plus(
         new BigNumber(price).multipliedBy(volumeToUse),
       );
@@ -366,6 +379,7 @@ export class AlpacaStratService {
 
     for (const { exchange, orderId, symbol } of activeOrdersForStrategy) {
       const order = await exchange.fetchOrder(orderId, symbol);
+
       if (order.status !== 'closed') {
         allOrdersFilled = false;
         break;

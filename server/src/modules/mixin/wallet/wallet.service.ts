@@ -1,14 +1,15 @@
+import { getTotalBalanceFromOutputs } from '@mixin.dev/mixin-node-sdk';
 import { Injectable } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
-import { getTotalBalanceFromOutputs } from '@mixin.dev/mixin-node-sdk';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
 import { MixinClientService } from '../client/mixin-client.service';
 
 @Injectable()
 export class WalletService {
   private readonly logger = new CustomLogger(WalletService.name);
 
-  constructor(private mixinClientService: MixinClientService) { }
+  constructor(private mixinClientService: MixinClientService) {}
 
   /**
    * Get deposit address for a specific asset
@@ -18,12 +19,14 @@ export class WalletService {
       const chain_id = (
         await this.mixinClientService.client.network.fetchAsset(asset_id)
       ).chain_id;
-      const entities =
-        await this.mixinClientService.client.safe.depositEntries({
+      const entities = await this.mixinClientService.client.safe.depositEntries(
+        {
           members: [this.mixinClientService.keystore.app_id],
           threshold: 1,
           chain_id,
-        });
+        },
+      );
+
       return {
         address: entities[0].destination,
         memo: entities[0].tag,
@@ -45,10 +48,12 @@ export class WalletService {
       // Group outputs by asset ID
       const groupedByAssetId = outputs.reduce((acc, output) => {
         const assetId = output.asset_id;
+
         if (!acc[assetId]) {
           acc[assetId] = [];
         }
         acc[assetId].push(output);
+
         return acc;
       }, {});
 
@@ -57,7 +62,9 @@ export class WalletService {
         (acc, [assetId, outputs]) => {
           // @ts-expect-error types
           const totalBalance = getTotalBalanceFromOutputs(outputs);
+
           acc[assetId] = totalBalance.toString();
+
           return acc;
         },
         {},
@@ -81,6 +88,7 @@ export class WalletService {
       });
     } catch (e) {
       this.logger.error(`Mixin getAssetBalance() => ${e.message}`);
+
       return '0';
     }
   }
@@ -94,9 +102,11 @@ export class WalletService {
   ): Promise<boolean> {
     try {
       const balance = await this.getAssetBalance(asset_id);
+
       if (BigNumber(balance).isLessThan(amount)) {
         return false;
       }
+
       return true;
     } catch (e) {
       return false;

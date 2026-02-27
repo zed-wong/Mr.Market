@@ -1,26 +1,30 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
-import { ConfigService } from '@nestjs/config';
+import type { Queue } from 'bull';
 import { randomUUID } from 'crypto';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
+import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
   MarketMakingOrder,
   SimplyGrowOrder,
-} from 'src/common/entities/user-orders.entity';
-import { MarketMakingPaymentState } from 'src/common/entities/payment-state.entity';
-import { MarketMakingOrderIntent } from 'src/common/entities/market-making-order-intent.entity';
-import {
+} from 'src/common/entities/orders/user-orders.entity';
+import { encodeMarketMakingCreateMemo } from 'src/common/helpers/mixin/memo';
+import type {
   MarketMakingStates,
   SimplyGrowStates,
 } from 'src/common/types/orders/states';
-import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
-import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
-import { encodeMarketMakingCreateMemo } from 'src/common/helpers/mixin/memo';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class UserOrdersService {
@@ -42,7 +46,7 @@ export class UserOrdersService {
     private readonly arbitrageHistoryRepository: Repository<ArbitrageHistory>,
     @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
     private readonly growdataRepository: GrowdataRepository,
-  ) { }
+  ) {}
 
   async findAllStrategyByUser(userId: string) {
     try {
@@ -50,6 +54,7 @@ export class UserOrdersService {
         userId,
       });
       const simply_grows = await this.simplyGrowRepository.findBy({ userId });
+
       return {
         market_making: market_makings,
         simply_grow: simply_grows,
@@ -57,6 +62,7 @@ export class UserOrdersService {
       };
     } catch (error) {
       this.logger.error('Error finding all strategy by user', error);
+
       return { market_making: [], simply_grow: [], total: 0 };
     }
   }
@@ -152,13 +158,16 @@ export class UserOrdersService {
     }
   }
 
-  async createMarketMakingPaymentState(paymentState: MarketMakingPaymentState): Promise<MarketMakingPaymentState> {
+  async createMarketMakingPaymentState(
+    paymentState: MarketMakingPaymentState,
+  ): Promise<MarketMakingPaymentState> {
     return await this.paymentStateRepository.save(paymentState);
   }
 
   async findMarketMakingPaymentStateById(orderId: string) {
     try {
       const result = await this.paymentStateRepository.findOneBy({ orderId });
+
       if (!result) {
         return { code: 404, message: 'Not found', data: {} };
       } else {
@@ -166,6 +175,7 @@ export class UserOrdersService {
       }
     } catch (error) {
       this.logger.error('Error finding state by id', error.message);
+
       return { code: 404, message: 'Not found', data: {} };
     }
   }
@@ -174,7 +184,9 @@ export class UserOrdersService {
     return await this.paymentStateRepository.findOneBy({ orderId });
   }
 
-  async findMarketMakingPaymentStateByState(state: string): Promise<MarketMakingPaymentState[]> {
+  async findMarketMakingPaymentStateByState(
+    state: string,
+  ): Promise<MarketMakingPaymentState[]> {
     return await this.paymentStateRepository.findBy({ state });
   }
 
@@ -186,9 +198,11 @@ export class UserOrdersService {
       { orderId },
       newMarketMakingPaymentState,
     );
+
     if (updateResult.affected === 0) {
       return null;
     }
+
     return updateResult;
   }
 
@@ -197,6 +211,7 @@ export class UserOrdersService {
     userId?: string;
   }) {
     const { marketMakingPairId, userId } = params;
+
     if (!marketMakingPairId) {
       throw new BadRequestException('marketMakingPairId is required');
     }
@@ -204,6 +219,7 @@ export class UserOrdersService {
     const pair = await this.growdataRepository.findMarketMakingPairById(
       marketMakingPairId,
     );
+
     if (!pair || !pair.enable) {
       throw new NotFoundException('Market making pair not found');
     }
@@ -255,6 +271,7 @@ export class UserOrdersService {
   async clearTimeoutOrders() {
     // Read all MarketMakingPaymentState
     const created = await this.findMarketMakingPaymentStateByState('created');
+
     // Check if created time over timeout 10m
     created.forEach((item) => {
       // check if timeout, refund if timeout, update state to timeout
@@ -268,6 +285,7 @@ export class UserOrdersService {
   @Cron('*/60 * * * * *') // 60s
   async updateExecutionBasedOnOrders() {
     const enabled = this.configService.get<string>('strategy.run');
+
     if (enabled === 'false') {
       return;
     }

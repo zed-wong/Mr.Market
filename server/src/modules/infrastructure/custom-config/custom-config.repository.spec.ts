@@ -1,9 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+
+import { CustomConfigEntity } from '../../../common/entities/admin/custom-config.entity';
 import createMockCustomConfigEntity from './custom-config.fixture';
 import { CustomConfigRepository } from './custom-config.repository';
-import { Repository } from 'typeorm';
-import { CustomConfigEntity } from '../../../common/entities/custom-config.entity';
 
 describe('CustomConfigRepository', () => {
   let customConfigRepository: CustomConfigRepository;
@@ -44,9 +45,11 @@ describe('CustomConfigRepository', () => {
         config_id: 1,
         spot_fee: '0.05',
       });
+
       jest.spyOn(mockRepository, 'findOne').mockResolvedValue(mockConfig);
 
       const result = await customConfigRepository.readSpotFee(configId);
+
       expect(result).toEqual('0.05');
     });
 
@@ -67,11 +70,13 @@ describe('CustomConfigRepository', () => {
         config_id: configId,
         spot_fee: '0.05',
       });
+
       jest.spyOn(mockRepository, 'findOne').mockResolvedValue(mockConfig);
       const newConfig: CustomConfigEntity = {
         ...mockConfig,
         spot_fee: newSpotFee,
       };
+
       jest.spyOn(mockRepository, 'save').mockResolvedValue(newConfig);
 
       await customConfigRepository.modifySpotFee(newSpotFee, configId);
@@ -92,6 +97,7 @@ describe('CustomConfigRepository', () => {
         ...mockConfig,
         max_balance_mixin_bot: newMaxBalanceMixinBot,
       };
+
       jest.spyOn(mockRepository, 'save').mockResolvedValue(newConfig);
       jest.spyOn(mockRepository, 'findOne').mockResolvedValueOnce(mockConfig);
       await customConfigRepository.modifyMaxBalanceInMixinBot(
@@ -109,10 +115,12 @@ describe('CustomConfigRepository', () => {
         config_id: configId,
         funding_account: fundingAccount,
       });
+
       jest.spyOn(mockRepository, 'findOne').mockResolvedValueOnce(mockConfig);
       const response = await customConfigRepository.readFundingAccountStatus(
         configId,
       );
+
       expect(response).toEqual(fundingAccount);
     });
   });

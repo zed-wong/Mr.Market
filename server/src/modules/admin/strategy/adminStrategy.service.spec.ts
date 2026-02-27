@@ -1,19 +1,20 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { AdminStrategyService } from './adminStrategy.service';
-import { StrategyService } from '../../market-making/strategy/strategy.service';
-import { PerformanceService } from '../../market-making/performance/performance.service';
 import { BadRequestException } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Contribution } from 'src/common/entities/campaign/contribution.entity';
+import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
+import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+
+import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
+import { PerformanceService } from '../../market-making/performance/performance.service';
+import { StrategyService } from '../../market-making/strategy/strategy.service';
+import { Web3Service } from '../../web3/web3.service';
 import {
+  GetDepositAddressDto,
   StartStrategyDto,
   StopStrategyDto,
-  GetDepositAddressDto,
 } from './admin-strategy.dto';
-import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
-import { Web3Service } from '../../web3/web3.service';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Contribution } from 'src/common/entities/contribution.entity';
-import { MixinUser } from 'src/common/entities/mixin-user.entity';
+import { AdminStrategyService } from './adminStrategy.service';
 
 describe('AdminStrategyService', () => {
   let service: AdminStrategyService;
@@ -364,6 +365,7 @@ describe('AdminStrategyService', () => {
   describe('getChainInfo', () => {
     it('should return chain info', async () => {
       const chainInfoMock = { name: 'Ethereum', chainId: 1 };
+
       jest.spyOn(service, 'getChainInfo').mockResolvedValue(chainInfoMock);
 
       const result = await service.getChainInfo(1);

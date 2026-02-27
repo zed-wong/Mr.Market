@@ -6,9 +6,10 @@ export class HealthFixture {
     this.shouldFail = shouldFail;
   }
   async fetchBalance(): Promise<{ balance: { USD: number } }> {
-    if (!this.shouldFail) {
+    if (this.shouldFail) {
       throw new Error('API key invalid');
     }
+
     return { balance: { USD: 10000 } };
   }
 }

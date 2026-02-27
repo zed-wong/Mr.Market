@@ -1,19 +1,24 @@
+/* eslint-disable no-console */
 import 'dotenv/config';
-import * as fs from 'fs';
-import * as crypto from 'crypto';
-import * as encryption from './common/helpers/crypto';
+
 import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+
 import { AppModule } from './app.module';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import * as encryption from './common/helpers/crypto';
 import { CustomLogger } from './modules/infrastructure/logger/logger.service';
 
 async function bootstrap() {
   if (!process.env.JWT_SECRET) {
     console.log('JWT_SECRET is not set. Generating a new one...');
     const secret = crypto.randomBytes(32).toString('hex');
+
     process.env.JWT_SECRET = secret;
 
     const envFile = '.env';
+
     try {
       if (fs.existsSync(envFile)) {
         fs.appendFileSync(envFile, `\nJWT_SECRET=${secret}\n`);
@@ -33,6 +38,7 @@ async function bootstrap() {
     process.env.ENCRYPTION_PRIVATE_KEY = privateKey;
 
     const envFile = '.env';
+
     try {
       if (fs.existsSync(envFile)) {
         fs.appendFileSync(envFile, `\nENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
@@ -46,7 +52,32 @@ async function bootstrap() {
   }
   const logger = new CustomLogger(AppModule.name);
   const app = await NestFactory.create(AppModule);
-  app.enableCors();
+
+  const corsOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  const hasWildcard = corsOrigins.includes('*');
+  const wildcardAllowed =
+    String(process.env.CORS_ALLOW_WILDCARD || '').toLowerCase() === 'true';
+  const sanitizedCorsOrigins =
+    hasWildcard && !wildcardAllowed
+      ? corsOrigins.filter((origin) => origin !== '*')
+      : corsOrigins;
+  const allowedOrigins =
+    sanitizedCorsOrigins.length > 0
+      ? sanitizedCorsOrigins
+      : [
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:5173',
+        ];
+
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+  });
 
   // Global request logging
   app.use((req, _, next) => {
@@ -65,9 +96,11 @@ async function bootstrap() {
     })
     .build();
   const document = SwaggerModule.createDocument(app, config);
+
   SwaggerModule.setup('docs', app, document);
 
   const port = process.env.PORT || 3000;
+
   await app.listen(port);
 }
 

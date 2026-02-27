@@ -1,5 +1,12 @@
 # Execution Flow Changelog
 
+## 2026-02-27
+
+- Harden pause-withdraw orchestration with durable pending/completed/failed intents and idempotent ledger rollback on external withdrawal failure
+- Gate reward vault transfer by durability idempotency check before external send and require marker write success before transferred status
+- Fix Arbitrum/OP/Litecoin chain UUID mappings in network mapping service using current Mixin chain metadata
+- Fix review findings: protect pending-intent append with rollback path, add deterministic withdrawal request key, fail CANCEL_ORDER without mixinOrderId, and enforce share-ledger idempotency key uniqueness
+
 ## 2026-02-20
 
 - Add shared DaisyUI theme files for main/admin UI and map admin routes to dedicated admin theme tokens
@@ -9,6 +16,43 @@
 - Align spot-trading quick-add dialog inner content with market-making quick-add and unify dialog backdrop behavior
 - Restore DaisyUI default semantic status colors and depth/border tokens in custom themes to recover previous badge, border, and shadow appearance
 - Rework admin /manage dashboard to a TailAdmin-style shell with responsive sidebar drawer, sticky top bar, and refreshed stats/orders/users widgets for desktop and mobile
+
+## 2026-02-12
+
+- Add comprehensive `MIXIN_CLI_SKILL.md` guide covering installation, keystore setup, command groups, workflows, troubleshooting, and security practices
+- Update `MIXIN_CLI_SKILL.md` to Safe-first transaction flows and deprecate top-level `transfer` usage for new integrations
+- Restore `MARKET_MAKING_FLOW.md` as the backend runtime flow reference
+- Add `docs/tests/MARKET_MAKING.MD` for end-to-end market making lifecycle testing guidance
+
+## 2026-02-11
+
+- Add tick-driven core foundation with `TickComponent` contract and `ClockTickCoordinatorService` registration/scheduling
+- Rewrite `StrategyService` to tick-driven intent orchestration and register it with the clock coordinator
+- Add idempotent `StrategyIntentExecutionService` to consume strategy intents with optional live execution flag
+- Add single-writer balance ledger module with append-only entries, read-model balances, and idempotent mutation commands
+- Add durability outbox and consumer receipt modules for restart-safe idempotent processing
+- Add tick-based exchange state trackers for order books, private streams, and exchange orders
+- Add periodic reconciliation service for ledger invariants and order-tracker consistency checks
+- Add canonical HuFi campaign sync persistence with status normalization
+- Add reward pipeline core entities/services for reward ledger, allocations, and ledger-based reward credits
+- Add pause-withdraw orchestrator for stop-drain-unlock-debit-withdraw flow
+- Add LP-share ledger with time-weighted share calculation for reward allocation basis
+- Add reward receiver confirmation watcher and daily reward vault transfer workflow status updates
+- Add HuFi score estimator snapshots derived from closed market-making fills
+- Add reward consistency reconciliation against allocation totals per reward ledger entry
+- Harden intent lifecycle with persistent status transitions, strict withdraw drain guard, and intent reconciliation checks
+- Route snapshot payment intake and withdrawal processor through balance ledger credit/debit commands
+- Add exchange connector adapter with per-exchange rate limiting and normalized REST/WS access methods
+- Add execution retry/backoff with tracker updates and normalized execution event payloads
+- Add quote executor manager for inventory skew, hanging orders, and maker-heavy quote shaping
+- Add active cancel-until-drained loop in pause/withdraw orchestrator before unlocking funds
+- Add explicit reward allocation rounding policy (floor to 8dp, remainder to largest-share user)
+- Add reward vault transfer execution path via configured Mixin vault recipient transfer command
+- Fix ledger and durability idempotency race windows, day-scope HuFi score aggregation, and reward vault status gating
+- Harden ledger/processor reliability with SQLite-safe metrics bucketing, debit-before-refund compensation flow, and per-balance mutation locking
+- Remove legacy execute_mm_cycle self-requeue path and document the current tick-driven market making flow
+- Decouple tick from intent execution with async intent worker, bounded concurrency, and per-strategy FIFO safety gates
+- Fix Nest config wiring by making ConfigModule global and removing local ConfigService shadow providers across modules
 
 ## 2026-02-05
 

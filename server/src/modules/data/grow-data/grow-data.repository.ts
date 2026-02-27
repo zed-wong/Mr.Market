@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
-  GrowdataExchange,
-  GrowdataSimplyGrowToken,
   GrowdataArbitragePair,
+  GrowdataExchange,
   GrowdataMarketMakingPair,
-} from 'src/common/entities/grow-data.entity';
+  GrowdataSimplyGrowToken,
+} from 'src/common/entities/data/grow-data.entity';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class GrowdataRepository {
@@ -40,9 +40,11 @@ export class GrowdataRepository {
     const exchange = await this.exchangeRepository.findOne({
       where: { exchange_id },
     });
+
     if (!exchange) {
       return;
     }
+
     return await this.exchangeRepository.remove(exchange);
   }
 
@@ -72,9 +74,11 @@ export class GrowdataRepository {
     const token = await this.simplyGrowTokenRepository.findOne({
       where: { asset_id },
     });
+
     if (!token) {
       return;
     }
+
     return await this.simplyGrowTokenRepository.remove(token);
   }
 
@@ -104,9 +108,11 @@ export class GrowdataRepository {
     const pair = await this.arbitragePairRepository.findOne({
       where: { id },
     });
+
     if (!pair) {
       return;
     }
+
     return await this.arbitragePairRepository.remove(pair);
   }
 
@@ -145,9 +151,11 @@ export class GrowdataRepository {
     const pair = await this.marketMakingPairRepository.findOne({
       where: { id },
     });
+
     if (!pair) {
       return;
     }
+
     return await this.marketMakingPairRepository.remove(pair);
   }
 

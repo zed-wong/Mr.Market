@@ -1,10 +1,12 @@
-import { Process, Processor, OnQueueEvent } from '@nestjs/bull';
-import { Logger, OnModuleInit } from '@nestjs/common';
-import { Job, Queue } from 'bull';
-import { InjectQueue } from '@nestjs/bull';
-import { SnapshotsService } from './snapshots.service';
+/* eslint-disable unused-imports/no-unused-vars */
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
+import { OnQueueEvent, Process, Processor } from '@nestjs/bull';
+import { InjectQueue } from '@nestjs/bull';
+import { Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { Job, Queue } from 'bull';
+
+import { SnapshotsService } from './snapshots.service';
 
 @Processor('snapshots')
 export class SnapshotsProcessor implements OnModuleInit {
@@ -55,6 +57,7 @@ export class SnapshotsProcessor implements OnModuleInit {
 
     if (this.isPolling) {
       this.logger.debug('Skipping snapshot poll; previous run still active.');
+
       return;
     }
 
@@ -63,6 +66,7 @@ export class SnapshotsProcessor implements OnModuleInit {
     try {
       const { snapshots, newSnapshots, newestTimestamp } =
         await this.snapshotsService.fetchSnapshots();
+
       this.logger.log(
         `Found ${newSnapshots.length} new snapshots (${
           snapshots.length - newSnapshots.length
@@ -91,6 +95,7 @@ export class SnapshotsProcessor implements OnModuleInit {
   @Process('process_snapshot')
   async handleProcessSnapshot(job: Job<SafeSnapshot>) {
     const snapshot = job.data;
+
     this.logger.log(
       `[Processor] Starting to process snapshot: ${snapshot.snapshot_id} at ${snapshot.created_at}`,
     );
@@ -125,6 +130,10 @@ export class SnapshotsProcessor implements OnModuleInit {
 
   @OnQueueEvent('failed')
   onFailed(job: Job, error: Error) {
+    if (job.name === 'process_snapshots') {
+      return;
+    }
+
     this.logger.error(
       `Job ${job.name} (ID: ${job.id}) failed after ${job.attemptsMade} attempts: ${error.message}`,
       error.stack,
@@ -139,6 +148,10 @@ export class SnapshotsProcessor implements OnModuleInit {
 
   @OnQueueEvent('stalled')
   onStalled(job: Job) {
+    if (job.name === 'process_snapshots') {
+      return;
+    }
+
     this.logger.warn(
       `Job ${job.name} (ID: ${job.id}) has stalled. This may indicate a worker crash or long-running operation.`,
     );

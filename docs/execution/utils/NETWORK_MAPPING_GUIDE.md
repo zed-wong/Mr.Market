@@ -374,10 +374,14 @@ console.log("Symbol:", asset.symbol);
 ```bash
 # Build
 bun run build
-
-# Test specific assets
-# Add logs in code to view mapping results
 ```
+
+## Chain ID Notes
+
+- Arbitrum One chain UUID: `8c590110-1abc-3697-84f2-05214e6516aa`
+- OP Mainnet chain UUID: `60360611-370c-3b69-9826-b13db93f6aba`
+
+These values should be sourced from Mixin chain metadata (`mixinChains.json` or `https://api.mixin.one/network/chains`).
 
 ## Advantages
 

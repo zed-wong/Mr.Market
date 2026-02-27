@@ -1,12 +1,7 @@
 import BigNumber from 'bignumber.js';
-import { AssetBalances } from 'src/common/types/rebalance/map';
 
 export const getRFC3339Timestamp = () => {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60 * 1000;
-  const msFromEpochWithOffset = now.getTime() - offsetMs;
-  const isoString = new Date(msFromEpochWithOffset).toISOString();
-  return isoString.slice(0, -1) + 'Z';
+  return new Date().toISOString();
 };
 
 export const subtractFee = (
@@ -23,4 +18,47 @@ export const subtractFee = (
     amount: finalAmount.toString(),
     fee: feeAmount.toString(),
   };
+};
+
+export const isUniqueConstraintViolation = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidates: Array<Record<string, unknown>> = [
+    error as Record<string, unknown>,
+  ];
+  const nestedKeys = ['driverError', 'cause', 'originalError'];
+
+  for (const key of nestedKeys) {
+    const nested = (error as Record<string, unknown>)[key];
+
+    if (nested && typeof nested === 'object') {
+      candidates.push(nested as Record<string, unknown>);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const code = String(candidate.code ?? '');
+    const errno = Number(candidate.errno);
+    const normalizedMessage = String(candidate.message ?? '').toLowerCase();
+
+    if (
+      code === '23505' ||
+      code === 'SQLITE_CONSTRAINT' ||
+      code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+      errno === 19
+    ) {
+      return true;
+    }
+
+    if (
+      normalizedMessage.includes('duplicate') ||
+      normalizedMessage.includes('unique constraint failed')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 };

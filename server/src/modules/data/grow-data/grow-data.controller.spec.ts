@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+
 import { GrowdataController } from './grow-data.controller';
 import { GrowdataService } from './grow-data.service';
 
@@ -35,9 +36,11 @@ describe('GrowdataController', () => {
         arbitrage: { pairs: [] },
         market_making: { pairs: [], exchanges: [] },
       };
+
       jest.spyOn(service, 'getGrowData').mockResolvedValue(mockGrowData);
 
       const result = await controller.getGrowData();
+
       expect(result).toEqual(mockGrowData);
       expect(service.getGrowData).toHaveBeenCalled();
     });

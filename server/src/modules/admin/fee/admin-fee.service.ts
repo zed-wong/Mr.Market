@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { CustomConfigEntity } from 'src/common/entities/admin/custom-config.entity';
+import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
+import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { Repository } from 'typeorm';
-import { CustomConfigEntity } from 'src/common/entities/custom-config.entity';
-import { SpotdataTradingPair } from 'src/common/entities/spot-data.entity';
-import { GrowdataMarketMakingPair } from 'src/common/entities/grow-data.entity';
+
 import { UpdateGlobalFeeDto } from './admin-fee.dto';
 
 @Injectable()

@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { PerformanceService } from './performance.service';
 import { ApiTags } from '@nestjs/swagger';
+
+import { PerformanceService } from './performance.service';
 
 @ApiTags('Trading Engine')
 @Controller('performance')

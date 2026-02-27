@@ -1,11 +1,11 @@
+import { InjectQueue } from '@nestjs/bull';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
-import { Campaign } from 'src/common/entities/campaign.entity';
-import { CampaignParticipation } from 'src/common/entities/campaign-participation.entity';
+import type { Queue } from 'bull';
+import { Campaign } from 'src/common/entities/campaign/campaign.entity';
+import { CampaignParticipation } from 'src/common/entities/campaign/campaign-participation.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class LocalCampaignService {
@@ -17,13 +17,14 @@ export class LocalCampaignService {
     @InjectRepository(CampaignParticipation)
     private readonly participationRepository: Repository<CampaignParticipation>,
     @InjectQueue('local-campaigns') private readonly campaignQueue: Queue,
-  ) { }
+  ) {}
 
   async createCampaign(data: Partial<Campaign>): Promise<Campaign> {
     const campaign = this.campaignRepository.create({
       ...data,
       status: 'active',
     });
+
     return this.campaignRepository.save(campaign);
   }
 
@@ -38,6 +39,7 @@ export class LocalCampaignService {
       orderId,
       status: 'joined',
     });
+
     return this.participationRepository.save(participation);
   }
 

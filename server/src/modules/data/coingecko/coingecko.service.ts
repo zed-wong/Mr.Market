@@ -1,6 +1,6 @@
-import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
+import type { Cache } from 'cache-manager';
 import {
   CoinFullInfo,
   CoinGeckoClient,
@@ -28,11 +28,15 @@ export class CoingeckoProxyService {
   async coinsId(id: string): Promise<CoinFullInfo> {
     try {
       const cachedData = await this.cacheService.get(id);
+
       if (!cachedData) {
         const data = await this.coingecko.coinId({ id });
+
         await this.cacheService.set(id, data, this.cachingTTL);
+
         return data;
       }
+
       return cachedData;
     } catch (error) {
       throw new Error(`Failed to GET /coins/id: ${error.message}`);
@@ -51,6 +55,7 @@ export class CoingeckoProxyService {
         category ? `/${category}` : '/'
       }${per_page}/${page}`;
       const cachedData = await this.cacheService.get<CoinMarket[]>(key);
+
       if (!cachedData) {
         const data = await this.coingecko.coinMarket(
           category
@@ -62,9 +67,12 @@ export class CoingeckoProxyService {
               }
             : { vs_currency, per_page, page },
         );
+
         await this.cacheService.set(key, data, this.cachingTTL);
+
         return data;
       }
+
       return cachedData;
     } catch (error) {
       throw new Error(
@@ -84,15 +92,19 @@ export class CoingeckoProxyService {
       const cachedData = await this.cacheService.get<CoinMarketChartResponse>(
         key,
       );
+
       if (!cachedData) {
         const data = await this.coingecko.coinIdMarketChart({
           id,
           vs_currency,
           days,
         });
+
         await this.cacheService.set(key, data, this.cachingTTL * 2);
+
         return data;
       }
+
       return cachedData;
     } catch (error) {
       throw new Error(
@@ -111,6 +123,7 @@ export class CoingeckoProxyService {
     try {
       const key = `chart/${id}-${from}-${to}-${vs_currency}`;
       const cachedData = await this.cacheService.get(key);
+
       if (!cachedData) {
         const data = await this.coingecko.coinIdMarketChartRange({
           id,
@@ -118,9 +131,12 @@ export class CoingeckoProxyService {
           from,
           to,
         });
+
         await this.cacheService.set(key, data, this.cachingTTL);
+
         return data;
       }
+
       return cachedData;
     } catch (error) {
       throw new Error(

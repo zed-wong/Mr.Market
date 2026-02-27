@@ -1,11 +1,13 @@
-import {
-  memoPreDecode,
-  encodeMarketMakingCreateMemo,
-  decodeMarketMakingCreateMemo,
-  encodeSimplyGrowCreateMemo,
-  decodeSimplyGrowCreateMemo,
-} from './memo';
+/* eslint-disable @typescript-eslint/no-explicit-any, no-console */
 import { TradingTypeValue } from 'src/common/types/memo/memo';
+
+import {
+  decodeMarketMakingCreateMemo,
+  decodeSimplyGrowCreateMemo,
+  encodeMarketMakingCreateMemo,
+  encodeSimplyGrowCreateMemo,
+  memoPreDecode,
+} from './memo';
 
 describe('decodeSimplyGrowCreateMemo', () => {
   it('test encodeSimplyGrowCreateMemo', () => {
@@ -15,6 +17,7 @@ describe('decodeSimplyGrowCreateMemo', () => {
       action: 'create',
       orderId: 'b0177350-ae29-43ec-a26e-d46f821e416e',
     });
+
     expect(memo).toBeDefined();
   });
 
@@ -83,8 +86,10 @@ describe('decodeMarketMakingCreateMemo', () => {
   it('should throw an error for invalid checksum (memo without 6 bytes)', () => {
     const invalidMemo =
       '3NB9J7yT6msdnWVto4W5LxRyQndoLfzwA8TJcuBtKcTWLqG5n8S3pUBBiVjVLR9PekLU8sRo6h';
+
     expect(() => {
       const { payload } = memoPreDecode(invalidMemo);
+
       decodeMarketMakingCreateMemo(payload);
     }).toThrow('Invalid checksum');
   });
@@ -103,6 +108,7 @@ describe('decodeMarketMakingCreateMemo', () => {
       'f243yJSNnb9QQ7azcKFd5tzKQS8xX62VVYkk8KWwDAAkuFVXBwvw',
     );
     const result = decodeMarketMakingCreateMemo(payload);
+
     expect(result).toEqual({
       version: 1,
       tradingType: 'Market Making',

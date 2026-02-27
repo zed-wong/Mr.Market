@@ -1,11 +1,12 @@
-import { CoingeckoController } from './coingecko.controller';
-import { CoingeckoProxyService } from './coingecko.service';
 import { Test, TestingModule } from '@nestjs/testing';
+
+import { CoingeckoController } from './coingecko.controller';
 import {
   coinFullInfoFixture,
   coinMarketChartResponseFixture,
   coinMarketDataFixture,
 } from './coingecko.fixtures';
+import { CoingeckoProxyService } from './coingecko.service';
 
 describe('CoingeckoController', () => {
   let controller: CoingeckoController;
@@ -26,6 +27,7 @@ describe('CoingeckoController', () => {
         },
       ],
     }).compile();
+
     controller = module.get<CoingeckoController>(CoingeckoController);
     service = module.get<CoingeckoProxyService>(CoingeckoProxyService);
   });
@@ -37,20 +39,24 @@ describe('CoingeckoController', () => {
   it('should get coins by id', async () => {
     const id = '7';
     const expectedResult = coinFullInfoFixture;
+
     (service.coinsId as jest.Mock).mockReturnValueOnce(expectedResult);
     const result = await controller.getCoinsById(id);
+
     expect(service.coinsId).toHaveBeenCalledWith(id);
     expect(result).toEqual(expectedResult);
   });
   it('should get coin markets with requested currency', async () => {
     const currency = 'ethereum';
     const expectedResult = coinMarketDataFixture;
+
     (service.coinsMarkets as jest.Mock).mockReturnValueOnce(expectedResult);
     const result = await controller.getCoinMarkets(
       currency,
       undefined,
       undefined,
     );
+
     expect(service.coinsMarkets).toHaveBeenCalledWith(
       currency,
       undefined,
@@ -63,6 +69,7 @@ describe('CoingeckoController', () => {
     const currency = 'ethereum';
     const expectedResult = [coinMarketDataFixture[2]];
     const category = 'all';
+
     (service.coinsMarkets as jest.Mock).mockReturnValueOnce(expectedResult);
     const result = await controller.getCoinMarketsByCategory(
       currency,
@@ -70,6 +77,7 @@ describe('CoingeckoController', () => {
       undefined,
       undefined,
     );
+
     expect(service.coinsMarkets).toHaveBeenCalledWith(
       currency,
       category === 'all' ? undefined : 'all',
@@ -82,6 +90,7 @@ describe('CoingeckoController', () => {
     const currency = 'ethereum';
     const expectedResult = coinMarketDataFixture;
     const category = 'all';
+
     (service.coinsMarkets as jest.Mock).mockReturnValueOnce(expectedResult);
     const result = await controller.getCoinMarketsByCategory(
       currency,
@@ -89,6 +98,7 @@ describe('CoingeckoController', () => {
       undefined,
       undefined,
     );
+
     expect(service.coinsMarkets).toHaveBeenCalledWith(
       currency,
       category === 'all' ? undefined : 'all',
@@ -102,10 +112,12 @@ describe('CoingeckoController', () => {
     const id = 'ethereum';
     const days = 59;
     const currency = 'ethereum';
+
     (service.coinsIdMarketChart as jest.Mock).mockReturnValueOnce(
       expectedResult,
     );
     const result = await controller.getCoinIdMarketChart(id, days, currency);
+
     expect(service.coinsIdMarketChart).toHaveBeenCalledWith(id, days, currency);
     expect(result).toEqual(expectedResult);
   });
@@ -116,6 +128,7 @@ describe('CoingeckoController', () => {
     const from = 1609459200000;
     const to = 1614556800000;
     const currency = 'ethereum';
+
     (service.coinIdMarketChartRange as jest.Mock).mockReturnValueOnce(
       expectedResult,
     );
@@ -125,6 +138,7 @@ describe('CoingeckoController', () => {
       to,
       currency,
     );
+
     expect(service.coinIdMarketChartRange).toHaveBeenCalledWith(
       id,
       from,

@@ -1,14 +1,18 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { MessageRepository } from './message.repository';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { UserService } from 'src/modules/mixin/user/user.service';
-import { MixinMessage } from 'src/common/entities/mixin-message.entity';
 import {
   KeystoreClientReturnType,
   UserResponse,
 } from '@mixin.dev/mixin-node-sdk';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { MixinMessage } from 'src/common/entities/mixin/mixin-message.entity';
+import {
+  getRFC3339Timestamp,
+  isUniqueConstraintViolation,
+} from 'src/common/helpers/utils';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { UserService } from 'src/modules/mixin/user/user.service';
+
 import { MixinClientService } from '../client/mixin-client.service';
+import { MessageRepository } from './message.repository';
 
 @Injectable()
 export class MessageService implements OnModuleInit {
@@ -28,6 +32,7 @@ export class MessageService implements OnModuleInit {
       this.logger.warn(
         'Mixin client is not initialized, skipping message handler',
       );
+
       return;
     }
     this.client.blaze.loop(this.messageHandler);
@@ -39,6 +44,7 @@ export class MessageService implements OnModuleInit {
       const newMessage = await this.messageRepository.addMessageHistory(
         message,
       );
+
       return newMessage;
     } catch (error) {
       this.logger.error('Failed to add message history', error.message);
@@ -80,16 +86,32 @@ export class MessageService implements OnModuleInit {
         `Failed to check message existence ${message_id}`,
         error.message,
       );
+
       return false;
     }
   }
 
-  async addMessageIfNotExist(msg: MixinMessage, message_id: string) {
-    const exist = await this.checkMessageExist(message_id);
-    if (!exist) {
-      await this.addMessageHistory(msg);
+  async addMessageIfNotExist(msg: MixinMessage): Promise<boolean> {
+    if (!msg?.message_id) {
+      return false;
     }
-    return exist;
+
+    const exists = await this.checkMessageExist(msg.message_id);
+
+    if (exists) {
+      return false;
+    }
+
+    try {
+      await this.addMessageHistory(msg);
+
+      return true;
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async getAllMessages(): Promise<MixinMessage[]> {
@@ -107,6 +129,7 @@ export class MessageService implements OnModuleInit {
 
   async broadcastTextMessage(message: string) {
     const users = await this.userService.getAllUsers();
+
     users.forEach(async (u) => {
       await this.sendTextMessage(u.user_id, message);
     });
@@ -130,7 +153,8 @@ export class MessageService implements OnModuleInit {
 
       // Add user record if not exist in db
       let user: UserResponse;
-      const exist = this.userService.checkUserExist(msg.user_id);
+      const exist = await this.userService.checkUserExist(msg.user_id);
+
       if (!exist) {
         user = await this.client.user.fetch(msg.user_id);
         this.userService.addUserIfNotExist(
@@ -141,12 +165,9 @@ export class MessageService implements OnModuleInit {
 
       // Add message record if not exist in db
       // Wrapped in await to fix potential bug where promise object is checked as boolean
-      const processed = await this.addMessageIfNotExist(
-        { ...msg },
-        msg.message_id,
-      );
-      if (!processed) {
-        this.logger.warn(`message ${msg.message_id} was not processed`);
+      const inserted = await this.addMessageIfNotExist({ ...msg });
+
+      if (!inserted) {
         return;
       }
 
@@ -155,6 +176,7 @@ export class MessageService implements OnModuleInit {
     // callback when group information update, which your bot is in
     onConversation: async (msg) => {
       const group = await this.client.conversation.fetch(msg.conversation_id);
+
       this.logger.log(`group ${group.name} information updated`);
     },
   };

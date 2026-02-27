@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MarketMakingHistory } from 'src/common/entities/market-making-order.entity';
+import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
@@ -19,7 +19,7 @@ export class MetricsService {
         "exchange",
         "userId",
         "clientId",
-        DATE_TRUNC('day', "executedAt") AS date,
+        DATE("executedAt") AS date,
         COUNT(*) AS orders,
         SUM("amount" * "price") AS volume
       FROM market_making_history
@@ -33,7 +33,7 @@ export class MetricsService {
         "exchange",
         "userId",
         "clientId",
-        DATE_TRUNC('day', "executedAt") AS date,
+        DATE("executedAt") AS date,
         SUM("amount" * "price") AS volume
       FROM market_making_history
       GROUP BY "exchange", "userId", "clientId", date
@@ -44,6 +44,7 @@ export class MetricsService {
 
     closedOrderAndVolume.forEach((item) => {
       const strategyKey = `${item.exchange}-${item.userId}-${item.clientId}`;
+
       if (!metrics[strategyKey]) {
         metrics[strategyKey] = [];
       }
@@ -57,6 +58,7 @@ export class MetricsService {
 
     orderBookVolume.forEach((item) => {
       const strategyKey = `${item.exchange}-${item.userId}-${item.clientId}`;
+
       if (!metrics[strategyKey]) {
         metrics[strategyKey] = [];
       }

@@ -1,11 +1,11 @@
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
-import {
+import type {
   ExchangeIndexValue,
   SpotOrderType,
   SpotOrderTypeValue,
   TradingTypeValue,
 } from 'src/common/types/memo/memo';
-import { SpotOrderStatus } from 'src/common/types/orders/states';
+import type { SpotOrderStatus } from 'src/common/types/orders/states';
 
 export class SpotOrderCreateEvent {
   tradingType: TradingTypeValue;

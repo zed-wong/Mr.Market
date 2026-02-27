@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import type { Queue } from 'bull';
 
 /**
  * Optional metrics service for advanced queue health monitoring.
@@ -62,6 +63,7 @@ export class SnapshotsMetricsService {
       }
 
       const lastPoll = await this.getLastPollTimestamp();
+
       if (!lastPoll) {
         this.logger.warn('Snapshot polling has not reported a last poll time.');
       } else if (Date.now() - lastPoll > 30000) {
@@ -125,6 +127,7 @@ export class SnapshotsMetricsService {
         `Failed to get queue metrics: ${error.message}`,
         error.stack,
       );
+
       return null;
     }
   }
@@ -154,17 +157,20 @@ export class SnapshotsMetricsService {
     try {
       const redis = (this.snapshotsQueue as any).client;
       const lastPoll = await redis.get('snapshots:last_poll');
+
       if (!lastPoll) {
         return null;
       }
 
       const parsed = Number(lastPoll);
+
       return Number.isFinite(parsed) ? parsed : null;
     } catch (error) {
       this.logger.error(
         `Failed to get last poll timestamp: ${error.message}`,
         error.stack,
       );
+
       return null;
     }
   }

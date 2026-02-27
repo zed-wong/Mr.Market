@@ -1,16 +1,17 @@
-import * as ccxt from 'ccxt';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
+  BadRequestException,
+  Inject,
   Injectable,
   InternalServerErrorException,
-  BadRequestException,
   Scope,
-  Inject,
 } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import type { Cache } from 'cache-manager';
+import * as ccxt from 'ccxt';
+import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
-import { APIKeysConfig } from 'src/common/entities/api-keys.entity';
 
 @Injectable({ scope: Scope.DEFAULT })
 export class ExchangeInitService {
@@ -298,6 +299,7 @@ export class ExchangeInitService {
 
   private buildExchangeConfigsFromDb(apiKeys: APIKeysConfig[]) {
     const grouped = new Map<string, APIKeysConfig[]>();
+
     for (const key of apiKeys) {
       if (!grouped.has(key.exchange)) {
         grouped.set(key.exchange, []);
@@ -314,6 +316,7 @@ export class ExchangeInitService {
     for (const [exchange, keys] of grouped) {
       const ccxtPro = (ccxt as any).pro || {};
       const exchangeClass = ccxtPro[exchange] || (ccxt as any)[exchange];
+
       if (!exchangeClass) {
         this.logger.warn(`Exchange ${exchange} is not supported by CCXT.`);
         continue;
@@ -345,7 +348,9 @@ export class ExchangeInitService {
         key.api_secret,
       ].join('::'),
     );
+
     entries.sort();
+
     return entries.join('|');
   }
 
@@ -365,10 +370,12 @@ export class ExchangeInitService {
           this.logger.warn(
             `Exchange ${config.name} is not supported by current CCXT version. Skipping initialization.`,
           );
+
           return;
         }
 
         const exchangeMap = new Map<string, ccxt.Exchange>();
+
         await Promise.all(
           config.accounts.map(async (account) => {
             try {
@@ -425,10 +432,12 @@ export class ExchangeInitService {
 
   private async initializeExchanges() {
     let apiKeys = await this.exchangeService.readDecryptedAPIKeys();
+
     if (!apiKeys.length) {
       const seededCount = await this.exchangeService.seedApiKeysFromEnv(
         this.getEnvExchangeConfigs(),
       );
+
       if (seededCount > 0) {
         apiKeys = await this.exchangeService.readDecryptedAPIKeys();
       }
@@ -492,6 +501,7 @@ export class ExchangeInitService {
 
               // Check for open orders
               const openOrders = await exchange.fetchOpenOrders();
+
               if (openOrders.length > 0) {
                 this.logger.log(
                   `ProBit ${label} has open orders. Skipping signIn to avoid resetting them.`,
@@ -516,45 +526,54 @@ export class ExchangeInitService {
 
   getExchange(exchangeName: string, label: string = 'default'): ccxt.Exchange {
     const exchangeMap = this.exchanges.get(exchangeName);
+
     if (!exchangeMap) {
       this.logger.warn(`Exchange ${exchangeName} is not configured.`);
       throw new InternalServerErrorException('Exchange configuration error.');
     }
     const exchange = exchangeMap.get(label);
+
     if (!exchange) {
       this.logger.warn(
         `Exchange ${exchangeName} with label ${label} is not configured.`,
       );
       throw new InternalServerErrorException('Exchange configuration error.');
     }
+
     return exchange;
   }
 
   async getSupportedExchanges(): Promise<string[]> {
     const dbExchanges = await this.exchangeService.readSupportedExchanges();
+
     if (dbExchanges.length > 0) {
       return dbExchanges;
     }
+
     return Array.from(this.exchanges.keys());
   }
 
   getAccountsForExchange(exchangeName: string): string[] {
     const exchangeMap = this.exchanges.get(exchangeName);
+
     if (!exchangeMap) {
       this.logger.error(`Exchange ${exchangeName} is not configured.`);
       throw new InternalServerErrorException('Exchange configuration error.');
     }
+
     return Array.from(exchangeMap.keys());
   }
 
   getDefaultExchange(exchangeName: string): ccxt.Exchange {
     const exchange = this.defaultAccounts.get(exchangeName);
+
     if (!exchange) {
       this.logger.error(`Default exchange ${exchangeName} is not configured.`);
       throw new InternalServerErrorException(
         'Default exchange configuration error.',
       );
     }
+
     return exchange;
   }
   /**
@@ -572,6 +591,7 @@ export class ExchangeInitService {
   ): Promise<string> {
     try {
       const exchange = this.getExchange(exchangeName, label);
+
       if (!exchange.has['fetchDepositAddress']) {
         throw new InternalServerErrorException(
           `Exchange ${exchangeName} does not support fetching deposit addresses.`,
@@ -644,6 +664,7 @@ export class ExchangeInitService {
     try {
       const cacheKey = `ccxt_markets_${exchangeId}`;
       const cachedMarkets = await this.cacheService.get<any[]>(cacheKey);
+
       if (cachedMarkets) {
         return cachedMarkets;
       }
@@ -666,11 +687,13 @@ export class ExchangeInitService {
         precision: market.precision,
         limits: market.limits,
       }));
+
       await this.cacheService.set(
         cacheKey,
         markets,
         this.marketsCacheTtlSeconds,
       );
+
       return markets;
     } catch (error) {
       this.logger.error(

@@ -1,14 +1,15 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { TradeService } from './trade.service';
-import { TradeRepository } from './trade.repository';
-import { CustomLogger } from '../../infrastructure/logger/logger.service';
-import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
-import { MarketTradeDto, LimitTradeDto } from './trade.dto';
 import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import * as ccxt from 'ccxt';
+import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+
+import { CustomLogger } from '../../infrastructure/logger/logger.service';
+import { LimitTradeDto, MarketTradeDto } from './trade.dto';
+import { TradeRepository } from './trade.repository';
+import { TradeService } from './trade.service';
 
 jest.mock('ccxt');
 
@@ -207,15 +208,16 @@ describe('TradeService', () => {
 
   describe('cancelOrder', () => {
     it('should cancel an order successfully', async () => {
+      const exchangeName = 'binance';
       const orderId = 'order123';
       const symbol = 'BTC/USDT';
 
+      exchangeInitService.getExchange = jest.fn().mockReturnValue(exchangeMock);
       exchangeMock.cancelOrder = jest.fn().mockResolvedValue({});
 
-      service['exchange'] = exchangeMock;
+      await service.cancelOrder(exchangeName, orderId, symbol);
 
-      await service.cancelOrder(orderId, symbol);
-
+      expect(exchangeInitService.getExchange).toHaveBeenCalledWith('binance');
       expect(exchangeMock.cancelOrder).toHaveBeenCalledWith(orderId, symbol);
       expect(tradeRepository.updateTradeStatus).toHaveBeenCalledWith(
         orderId,
@@ -224,18 +226,18 @@ describe('TradeService', () => {
     });
 
     it('should throw InternalServerErrorException if order cancellation fails', async () => {
+      const exchangeName = 'binance';
       const orderId = 'order123';
       const symbol = 'BTC/USDT';
 
+      exchangeInitService.getExchange = jest.fn().mockReturnValue(exchangeMock);
       exchangeMock.cancelOrder = jest
         .fn()
         .mockRejectedValue(new Error('Cancellation failed'));
 
-      service['exchange'] = exchangeMock;
-
-      await expect(service.cancelOrder(orderId, symbol)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      await expect(
+        service.cancelOrder(exchangeName, orderId, symbol),
+      ).rejects.toThrow(InternalServerErrorException);
     });
   });
 });

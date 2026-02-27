@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
-import { MixinUser } from 'src/common/entities/mixin-user.entity';
+import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
+
 import { getRFC3339Timestamp } from '../utils';
 
 export const getUserMe = async (token: string) => {
