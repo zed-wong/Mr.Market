@@ -12,7 +12,6 @@ import { TradeRepository } from './trade.repository';
 
 @Injectable()
 export class TradeService {
-  private exchange: ccxt.Exchange;
   private readonly logger = new CustomLogger(TradeService.name);
 
   constructor(
@@ -40,10 +39,10 @@ export class TradeService {
       );
     }
 
-    this.exchange = this.getExchange(exchange);
+    const exchangeInstance = this.getExchange(exchange);
 
     try {
-      const order = await this.exchange.createOrder(
+      const order = await exchangeInstance.createOrder(
         symbol,
         'market',
         side,
@@ -82,10 +81,10 @@ export class TradeService {
       );
     }
 
-    this.exchange = this.getExchange(exchange);
+    const exchangeInstance = this.getExchange(exchange);
 
     try {
-      const order = await this.exchange.createOrder(
+      const order = await exchangeInstance.createOrder(
         symbol,
         'limit',
         side,
@@ -116,9 +115,15 @@ export class TradeService {
     }
   }
 
-  async cancelOrder(orderId: string, symbol: string): Promise<void> {
+  async cancelOrder(
+    exchangeName: string,
+    orderId: string,
+    symbol: string,
+  ): Promise<void> {
+    const exchangeInstance = this.getExchange(exchangeName);
+
     try {
-      await this.exchange.cancelOrder(orderId, symbol);
+      await exchangeInstance.cancelOrder(orderId, symbol);
       // update the transaction status in database
       await this.tradeRepository.updateTradeStatus(orderId, 'cancelled');
     } catch (error) {

@@ -80,12 +80,13 @@ export class TradeController {
     }
   }
 
-  @Post('/cancel/:orderId/:symbol')
+  @Post('/cancel/:exchange/:orderId/:symbol')
   @HttpCode(HttpStatus.OK)
   async cancelOrder(
+    @Param('exchange') exchange: string,
     @Param('orderId') orderId: string,
     @Param('symbol') symbol: string,
   ) {
-    return this.tradeService.cancelOrder(orderId, symbol);
+    return this.tradeService.cancelOrder(exchange, orderId, symbol);
   }
 }
