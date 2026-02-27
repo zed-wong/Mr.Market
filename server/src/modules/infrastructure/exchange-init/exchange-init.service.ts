@@ -370,6 +370,7 @@ export class ExchangeInitService {
           this.logger.warn(
             `Exchange ${config.name} is not supported by current CCXT version. Skipping initialization.`,
           );
+
           return;
         }
 

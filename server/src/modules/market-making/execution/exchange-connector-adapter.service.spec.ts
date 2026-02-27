@@ -31,7 +31,7 @@ describe('ExchangeConnectorAdapterService', () => {
 
         return defaultValue;
       }),
-    }) as unknown as ConfigService;
+    } as unknown as ConfigService);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -103,6 +103,7 @@ describe('ExchangeConnectorAdapterService', () => {
       .mockImplementationOnce(async () => await firstOrder)
       .mockImplementationOnce(async () => {
         secondCallAtMs = Date.now();
+
         return { id: 'ex-order-2' };
       });
 

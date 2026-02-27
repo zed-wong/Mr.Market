@@ -37,6 +37,7 @@ export const getInfoFromChainId = async (
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
+
     throw new BadRequestException(
       `Failed to get provider for chainId: ${chainId}. Error: ${errorMessage}`,
     );
@@ -122,6 +123,7 @@ export const getTokenSymbolByContractAddress = async (
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
+
     throw new BadRequestException(
       `Failed to get token symbol: ${errorMessage}`,
     );
