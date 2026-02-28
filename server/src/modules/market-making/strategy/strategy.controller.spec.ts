@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
 import { StrategyController } from './strategy.controller';
 import { StrategyService } from './strategy.service';
+import { TimeIndicatorStrategyService } from './time-indicator.service';
 
 const mockStrategyService = {
   // mock methods of StrategyService that are used by StrategyController
@@ -25,6 +26,12 @@ describe('StrategyController', () => {
         {
           provide: StrategyService,
           useValue: mockStrategyService, // Use the mock StrategyService here
+        },
+        {
+          provide: TimeIndicatorStrategyService,
+          useValue: {
+            executeIndicatorStrategy: jest.fn(),
+          },
         },
       ],
     }).compile();

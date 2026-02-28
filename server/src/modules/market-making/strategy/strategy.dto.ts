@@ -233,11 +233,11 @@ export class ExecuteVolumeStrategyDto {
     example: 1,
   })
   pricePushRate: number; // <--- NEW PARAM to push price after each trade
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'The first trade is a buy or sell',
     example: 'buy',
   })
-  postOnlySide: 'buy' | 'sell'; // <--- NEW PARAM
+  postOnlySide?: 'buy' | 'sell';
 }
 
 export class StopVolumeStrategyDto {

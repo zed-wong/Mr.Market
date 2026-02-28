@@ -44,6 +44,20 @@ type StrategyRuntimeSession = {
     | Record<string, any>;
 };
 
+type VolumeStrategyParams = {
+  exchangeName: string;
+  symbol: string;
+  baseIncrementPercentage: number;
+  baseIntervalTime: number;
+  baseTradeAmount: number;
+  numTrades: number;
+  userId: string;
+  clientId: string;
+  pricePushRate: number;
+  postOnlySide?: 'buy' | 'sell';
+  executedTrades?: number;
+};
+
 @Injectable()
 export class StrategyService
   implements TickComponent, OnModuleInit, OnModuleDestroy
@@ -192,6 +206,7 @@ export class StrategyService
         strategyInstance.parameters.userId,
         strategyInstance.parameters.clientId,
         strategyInstance.parameters.pricePushRate,
+        strategyInstance.parameters.postOnlySide,
       );
 
       return;
@@ -289,6 +304,7 @@ export class StrategyService
     userId: string,
     clientId: string,
     pricePushRate: number,
+    postOnlySide?: 'buy' | 'sell',
   ) {
     const strategyKey = createStrategyKey({
       type: 'volume',
@@ -296,7 +312,7 @@ export class StrategyService
       client_id: clientId,
     });
 
-    const params = {
+    const params: VolumeStrategyParams = {
       exchangeName,
       symbol,
       baseIncrementPercentage,
@@ -306,6 +322,8 @@ export class StrategyService
       userId,
       clientId,
       pricePushRate,
+      postOnlySide,
+      executedTrades: 0,
     };
 
     const cadenceMs = Math.max(1000, Number(baseIntervalTime || 10) * 1000);
@@ -603,7 +621,95 @@ export class StrategyService
       );
 
       await this.evaluateArbitrageOpportunityVWAP(exchangeA, exchangeB, params);
+
+      return;
     }
+
+    if (session.strategyType === 'volume') {
+      const params = session.params as VolumeStrategyParams;
+      const executedTrades = Number(params.executedTrades || 0);
+
+      if (executedTrades >= Number(params.numTrades || 0)) {
+        await this.stopStrategyForUser(
+          session.userId,
+          session.clientId,
+          session.strategyType,
+        );
+
+        return;
+      }
+
+      const intents = await this.buildVolumeIntents(session.strategyKey, params, ts);
+      await this.publishIntents(session.strategyKey, intents);
+      params.executedTrades = executedTrades + 1;
+      this.sessions.set(session.strategyKey, {
+        ...session,
+        params,
+      });
+    }
+  }
+
+  private async buildVolumeIntents(
+    strategyKey: string,
+    params: VolumeStrategyParams,
+    ts: string,
+  ): Promise<StrategyOrderIntent[]> {
+    const exchange = this.exchangeInitService.getExchange(params.exchangeName);
+    const orderBook = await exchange.fetchOrderBook(params.symbol);
+    const bestBid = this.toPositiveNumber(orderBook?.bids?.[0]?.[0]);
+    const bestAsk = this.toPositiveNumber(orderBook?.asks?.[0]?.[0]);
+
+    if (bestBid === undefined || bestAsk === undefined) {
+      this.logger.warn(
+        `Skipping volume cycle for ${strategyKey}: missing best bid/ask on ${params.exchangeName} ${params.symbol}`,
+      );
+
+      return [];
+    }
+
+    const mid = new BigNumber(bestBid).plus(bestAsk).dividedBy(2);
+    const pushMultiplier = new BigNumber(1).plus(
+      new BigNumber(params.pricePushRate || 0)
+        .dividedBy(100)
+        .multipliedBy(Number(params.executedTrades || 0)),
+    );
+    const basePrice = mid.multipliedBy(pushMultiplier);
+    const offsetMultiplier = new BigNumber(params.baseIncrementPercentage || 0).dividedBy(100);
+
+    const side: 'buy' | 'sell' = params.postOnlySide
+      ? params.postOnlySide
+      : Number(params.executedTrades || 0) % 2 === 0
+      ? 'buy'
+      : 'sell';
+    const price =
+      side === 'buy'
+        ? basePrice.multipliedBy(new BigNumber(1).minus(offsetMultiplier))
+        : basePrice.multipliedBy(new BigNumber(1).plus(offsetMultiplier));
+    const qty = new BigNumber(params.baseTradeAmount);
+
+    if (!qty.isFinite() || qty.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Skipping volume cycle for ${strategyKey}: invalid qty ${params.baseTradeAmount}`,
+      );
+
+      return [];
+    }
+
+    return [
+      this.createIntent(
+        strategyKey,
+        strategyKey,
+        params.userId,
+        params.clientId,
+        exchange.id,
+        params.symbol,
+        side,
+        price,
+        qty,
+        ts,
+        `volume-${params.executedTrades || 0}`,
+      ),
+    ];
   }
 
   private async buildPureMarketMakingIntents(
