@@ -31,9 +31,14 @@ import { AdminGrowService } from './growdata/adminGrow.service';
 import {
   GetDepositAddressDto,
   GetSupportedNetworksDto,
+  StopStrategyInstanceDto,
+  StartStrategyInstanceDto,
+  StrategyDefinitionDto,
+  PublishStrategyDefinitionVersionDto,
   GetTokenSymbolDto,
   StartStrategyDto,
   StopStrategyDto,
+  UpdateStrategyDefinitionDto,
 } from './strategy/admin-strategy.dto';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
 
@@ -91,6 +96,96 @@ export class AdminController {
   })
   async stopStrategy(@Body() stopStrategyDto: StopStrategyDto) {
     return this.adminStrategyService.stopStrategy(stopStrategyDto);
+  }
+
+  @Post('strategy/definitions')
+  @ApiOperation({ summary: 'Create a strategy definition' })
+  @ApiBody({ type: StrategyDefinitionDto })
+  async createStrategyDefinition(@Body() dto: StrategyDefinitionDto) {
+    return this.adminStrategyService.createStrategyDefinition(dto);
+  }
+
+  @Get('strategy/definitions')
+  @ApiOperation({ summary: 'List strategy definitions' })
+  async listStrategyDefinitions() {
+    return this.adminStrategyService.listStrategyDefinitions();
+  }
+
+  @Get('strategy/definitions/:id')
+  @ApiOperation({ summary: 'Get strategy definition' })
+  async getStrategyDefinition(@Param('id') id: string) {
+    return this.adminStrategyService.getStrategyDefinition(id);
+  }
+
+  @Post('strategy/definitions/:id/update')
+  @ApiOperation({ summary: 'Update strategy definition' })
+  @ApiBody({ type: UpdateStrategyDefinitionDto })
+  async updateStrategyDefinition(
+    @Param('id') id: string,
+    @Body() dto: UpdateStrategyDefinitionDto,
+  ) {
+    return this.adminStrategyService.updateStrategyDefinition(id, dto);
+  }
+
+  @Post('strategy/definitions/:id/publish')
+  @ApiOperation({ summary: 'Publish strategy definition version' })
+  @ApiBody({ type: PublishStrategyDefinitionVersionDto })
+  async publishStrategyDefinitionVersion(
+    @Param('id') id: string,
+    @Body() dto: PublishStrategyDefinitionVersionDto,
+  ) {
+    return this.adminStrategyService.publishStrategyDefinitionVersion(id, dto);
+  }
+
+  @Get('strategy/definitions/:id/versions')
+  @ApiOperation({ summary: 'List strategy definition versions' })
+  async listStrategyDefinitionVersions(@Param('id') id: string) {
+    return this.adminStrategyService.listStrategyDefinitionVersions(id);
+  }
+
+  @Post('strategy/definitions/:id/enable')
+  @ApiOperation({ summary: 'Enable strategy definition' })
+  async enableStrategyDefinition(@Param('id') id: string) {
+    return this.adminStrategyService.setStrategyDefinitionEnabled(id, true);
+  }
+
+  @Post('strategy/definitions/:id/disable')
+  @ApiOperation({ summary: 'Disable strategy definition' })
+  async disableStrategyDefinition(@Param('id') id: string) {
+    return this.adminStrategyService.setStrategyDefinitionEnabled(id, false);
+  }
+
+  @Post('strategy/instances/start')
+  @ApiOperation({ summary: 'Start strategy instance from definition' })
+  @ApiBody({ type: StartStrategyInstanceDto })
+  async startStrategyInstance(@Body() dto: StartStrategyInstanceDto) {
+    return this.adminStrategyService.startStrategyInstance(dto);
+  }
+
+  @Post('strategy/instances/validate')
+  @ApiOperation({ summary: 'Validate strategy instance config from definition' })
+  @ApiBody({ type: StartStrategyInstanceDto })
+  async validateStrategyInstance(@Body() dto: StartStrategyInstanceDto) {
+    return this.adminStrategyService.validateStrategyInstanceConfig(dto);
+  }
+
+  @Post('strategy/instances/stop')
+  @ApiOperation({ summary: 'Stop strategy instance from definition' })
+  @ApiBody({ type: StopStrategyInstanceDto })
+  async stopStrategyInstance(@Body() dto: StopStrategyInstanceDto) {
+    return this.adminStrategyService.stopStrategyInstance(dto);
+  }
+
+  @Get('strategy/instances')
+  @ApiOperation({ summary: 'List strategy instances with definition metadata' })
+  async getStrategyInstances(@Query('runningOnly') runningOnly?: string) {
+    return this.adminStrategyService.getStrategyInstances(runningOnly === 'true');
+  }
+
+  @Post('strategy/instances/backfill-definition-links')
+  @ApiOperation({ summary: 'Backfill legacy strategy instance definition links' })
+  async backfillStrategyInstanceDefinitions() {
+    return this.adminStrategyService.backfillLegacyStrategyInstanceDefinitions();
   }
 
   @Post('exchange/deposit-address')
