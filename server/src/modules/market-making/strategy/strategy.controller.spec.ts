@@ -64,6 +64,7 @@ describe('StrategyController', () => {
       orderSize: 1,
       tickIntervalMs: 1000,
     };
+
     mockTimeIndicatorStrategyService.executeIndicatorStrategy.mockResolvedValue(
       undefined,
     );
@@ -92,6 +93,7 @@ describe('StrategyController', () => {
       tickIntervalMs: 1000,
     };
     const expected = { message: 'Started strategy for user-1:client-1' };
+
     mockTimeIndicatorStrategyService.startIndicatorStrategy.mockResolvedValue(
       expected,
     );
@@ -107,6 +109,7 @@ describe('StrategyController', () => {
   it('should stop indicator strategy', async () => {
     const dto = { userId: 'user-1', clientId: 'client-1' };
     const expected = { message: 'Stopped strategy for user-1:client-1' };
+
     mockTimeIndicatorStrategyService.stopIndicatorStrategy.mockResolvedValue(
       expected,
     );

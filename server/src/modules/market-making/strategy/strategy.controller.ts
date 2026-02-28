@@ -281,6 +281,7 @@ export class StrategyController {
     this.logger.warn(
       'Stop indicator strategy should consult persisted run state in multi-instance deployments; current implementation is in-memory.',
     );
+
     return await this.timeIndicatorStrategyService.stopIndicatorStrategy(
       dto.userId,
       dto.clientId,

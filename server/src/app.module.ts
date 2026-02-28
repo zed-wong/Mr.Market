@@ -16,7 +16,6 @@ import { Campaign } from './common/entities/campaign/campaign.entity';
 import { CampaignParticipation } from './common/entities/campaign/campaign-participation.entity';
 import { Contribution } from './common/entities/campaign/contribution.entity';
 import { HufiScoreSnapshot } from './common/entities/campaign/hufi-score-snapshot.entity';
-import { IndicatorStrategyHistory } from './common/entities/indicator-strategy-history.entity';
 import {
   GrowdataArbitragePair,
   GrowdataExchange,
@@ -24,6 +23,7 @@ import {
   GrowdataSimplyGrowToken,
 } from './common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from './common/entities/data/spot-data.entity';
+import { IndicatorStrategyHistory } from './common/entities/indicator-strategy-history.entity';
 import { BalanceReadModel } from './common/entities/ledger/balance-read-model.entity';
 import { LedgerEntry } from './common/entities/ledger/ledger-entry.entity';
 import { RewardAllocation } from './common/entities/ledger/reward-allocation.entity';

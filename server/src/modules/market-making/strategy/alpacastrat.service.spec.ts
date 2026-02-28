@@ -48,7 +48,8 @@ describe('AlpacaStratService', () => {
     }).compile();
 
     service = moduleRef.get<AlpacaStratService>(AlpacaStratService);
-    exchangeInitService = moduleRef.get<ExchangeInitService>(ExchangeInitService);
+    exchangeInitService =
+      moduleRef.get<ExchangeInitService>(ExchangeInitService);
   });
 
   afterEach(async () => {

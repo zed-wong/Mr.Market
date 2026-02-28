@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
 import { IndicatorStrategyHistory } from 'src/common/entities/indicator-strategy-history.entity';
+import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
 import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';

@@ -1,16 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { BigNumber, ethers } from 'ethers';
+
+import {
+  UNISWAP_V3_FACTORY_ABI,
+  UNISWAP_V3_QUOTER_V2_ABI,
+  UNISWAP_V3_ROUTER_ABI,
+} from '../abis';
 import { DEX_ADDRESSES } from '../addresses';
 import {
   DexAdapter,
   ExactInputSingleParams,
   QuoteSingleParams,
 } from './dex-adapter';
-import {
-  UNISWAP_V3_FACTORY_ABI,
-  UNISWAP_V3_QUOTER_V2_ABI,
-  UNISWAP_V3_ROUTER_ABI,
-} from '../abis';
 
 /**
  * Pancake v3 is a Uniswap v3 fork; ABIs are compatible. Addresses must be set in DEX_ADDRESSES.pancakeV3.
@@ -25,7 +26,9 @@ export class PancakeV3Adapter implements DexAdapter {
 
   getAddresses(chainId: number) {
     const a = DEX_ADDRESSES.pancakeV3[chainId];
+
     if (!a) throw new Error(`PancakeV3 not configured for chain ${chainId}`);
+
     return a;
   }
 
@@ -38,6 +41,7 @@ export class PancakeV3Adapter implements DexAdapter {
   ) {
     const { factory } = this.getAddresses(chainId);
     const c = new ethers.Contract(factory, UNISWAP_V3_FACTORY_ABI, provider);
+
     return await c.getPool(tokenIn, tokenOut, fee);
   }
 
@@ -55,6 +59,7 @@ export class PancakeV3Adapter implements DexAdapter {
       fee: p.fee,
       sqrtPriceLimitX96: p.sqrtPriceLimitX96 ?? 0,
     });
+
     return { amountOut: res[0] as BigNumber };
   }
 
@@ -65,6 +70,7 @@ export class PancakeV3Adapter implements DexAdapter {
   ) {
     const { router } = this.getAddresses(chainId);
     const r = new ethers.Contract(router, UNISWAP_V3_ROUTER_ABI, signer);
+
     return await r.estimateGas.exactInputSingle({
       tokenIn: p.tokenIn,
       tokenOut: p.tokenOut,
@@ -95,6 +101,7 @@ export class PancakeV3Adapter implements DexAdapter {
       sqrtPriceLimitX96: p.sqrtPriceLimitX96 ?? 0,
     });
     const rcpt = await tx.wait();
+
     return rcpt;
   }
 }

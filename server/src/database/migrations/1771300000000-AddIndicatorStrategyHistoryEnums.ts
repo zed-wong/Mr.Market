@@ -61,6 +61,7 @@ export class AddIndicatorStrategyHistoryEnums1771300000000
     const table = await queryRunner.query(
       `SELECT name FROM sqlite_master WHERE type='table' AND name='indicator_strategy_history'`,
     );
+
     if (!table.length) {
       return;
     }

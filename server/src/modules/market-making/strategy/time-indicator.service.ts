@@ -1,16 +1,15 @@
-import * as ccxt from 'ccxt';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import * as ccxt from 'ccxt';
+import { Side } from 'src/common/constants/side';
 import { IndicatorStrategyHistory } from 'src/common/entities/indicator-strategy-history.entity';
+import { SignalType } from 'src/common/enum/signaltype';
 import { createStrategyKey } from 'src/common/helpers/strategyKey';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 import { Repository } from 'typeorm';
-
-import { SignalType } from 'src/common/enum/signaltype';
-import { Side } from 'src/common/constants/side';
 
 import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
@@ -41,17 +40,18 @@ export class TimeIndicatorStrategyService {
     }
 
     const key = `${dto.userId}:${dto.clientId}`;
+
     if (this.loops.has(key)) {
       return { message: `Strategy already running for ${key}` };
     }
 
-    let loop: NodeJS.Timeout;
-    loop = setInterval(() => {
+    const loop = setInterval(() => {
       void (async () => {
         try {
           await this.executeIndicatorStrategy(dto);
         } catch (e: unknown) {
           const { message, stack } = this.toErrorDetails(e);
+
           this.logger.error(
             `[${dto.exchangeName}:${dto.symbol}] indicator loop failed for ${key}: ${message}`,
             stack,
@@ -63,18 +63,21 @@ export class TimeIndicatorStrategyService {
     }, dto.tickIntervalMs);
 
     this.loops.set(key, loop);
+
     return { message: `Started strategy for ${key}` };
   }
 
   async stopIndicatorStrategy(userId: string, clientId: string) {
     const key = `${userId}:${clientId}`;
     const loop = this.loops.get(key);
+
     if (!loop) {
       return { message: `No running strategy found for ${key}` };
     }
 
     clearInterval(loop);
     this.loops.delete(key);
+
     return { message: `Stopped strategy for ${key}` };
   }
 
@@ -88,12 +91,15 @@ export class TimeIndicatorStrategyService {
       this.logger.debug(
         `[${exchangeName}:${symbol}] Outside time window — skipping.`,
       );
+
       return;
     }
 
     const ex = this.exchangeInit.getExchange(exchangeName);
+
     if (!ex) {
       this.logger.error(`Exchange '${exchangeName}' is not initialized.`);
+
       return;
     }
 
@@ -103,12 +109,18 @@ export class TimeIndicatorStrategyService {
       }
     } catch (e: unknown) {
       const { message, stack } = this.toErrorDetails(e);
-      this.logger.error(`[${exchangeName}] loadMarkets failed: ${message}`, stack);
+
+      this.logger.error(
+        `[${exchangeName}] loadMarkets failed: ${message}`,
+        stack,
+      );
+
       return;
     }
 
     if (!ex.markets[symbol]) {
       this.logger.error(`[${exchangeName}] Unknown symbol '${symbol}'.`);
+
       return;
     }
 
@@ -116,20 +128,24 @@ export class TimeIndicatorStrategyService {
       this.logger.error(
         `[${exchangeName}:${symbol}] Unsupported timeframe '${params.timeframe}'.`,
       );
+
       return;
     }
 
     if (params.maxConcurrentPositions && params.maxConcurrentPositions > 0) {
       try {
         const openOrders = await ex.fetchOpenOrders(symbol);
+
         if (openOrders.length >= params.maxConcurrentPositions) {
           this.logger.warn(
             `[${exchangeName}:${symbol}] Open orders (${openOrders.length}) >= maxConcurrentPositions (${params.maxConcurrentPositions}). Skipping.`,
           );
+
           return;
         }
       } catch (e: unknown) {
         const { message } = this.toErrorDetails(e);
+
         this.logger.warn(
           `[${exchangeName}:${symbol}] fetchOpenOrders failed (${message}). Proceeding anyway.`,
         );
@@ -144,8 +160,10 @@ export class TimeIndicatorStrategyService {
       params.lookback,
     );
     const minBarsNeeded = Math.max(params.emaSlow, params.rsiPeriod) + 2;
+
     if (!ohlcv || ohlcv.length < minBarsNeeded) {
       this.logger.warn(`[${exchangeName}:${symbol}] Not enough candles yet.`);
+
       return;
     }
 
@@ -169,6 +187,7 @@ export class TimeIndicatorStrategyService {
       this.logger.debug(
         `[${exchangeName}:${symbol}] Indicators not ready (NaN).`,
       );
+
       return;
     }
 
@@ -181,6 +200,7 @@ export class TimeIndicatorStrategyService {
       params.rsiBuyBelow !== undefined && params.rsiSellAbove !== undefined;
 
     let side: Side | null = null;
+
     if (params.indicatorMode === 'ema') {
       if (signal === SignalType.CROSS_UP) side = 'buy';
       else if (signal === SignalType.CROSS_DOWN) side = 'sell';
@@ -189,6 +209,7 @@ export class TimeIndicatorStrategyService {
         this.logger.warn(
           `[${exchangeName}:${symbol}] RSI mode requires both rsiBuyBelow and rsiSellAbove thresholds.`,
         );
+
         return;
       }
       if (rsiBuyOk && !rsiSellOk) side = 'buy';
@@ -200,24 +221,33 @@ export class TimeIndicatorStrategyService {
 
     if (!side) {
       this.logger.debug(`[${exchangeName}:${symbol}] No trade signal.`);
+
       return;
     }
 
     // --- Balance & sizing ---
     const parsedSymbol = this.parseBaseQuote(symbol);
+
     if (!parsedSymbol) {
       this.logger.error(
         `[${exchangeName}] Unable to parse symbol '${symbol}' into base/quote`,
       );
+
       return;
     }
     const { base, quote } = parsedSymbol;
     let balances;
+
     try {
       balances = await ex.fetchBalance();
     } catch (e: unknown) {
       const { message, stack } = this.toErrorDetails(e);
-      this.logger.error(`[${exchangeName}] fetchBalance failed: ${message}`, stack);
+
+      this.logger.error(
+        `[${exchangeName}] fetchBalance failed: ${message}`,
+        stack,
+      );
+
       return;
     }
 
@@ -231,12 +261,14 @@ export class TimeIndicatorStrategyService {
       this.logger.warn(
         `[${exchangeName}:${symbol}] Insufficient ${base} to sell.`,
       );
+
       return;
     }
     if (side === 'buy' && freeQuote < amountBaseRaw * last * 1.01) {
       this.logger.warn(
         `[${exchangeName}:${symbol}] Insufficient ${quote} to buy.`,
       );
+
       return;
     }
 
@@ -246,6 +278,7 @@ export class TimeIndicatorStrategyService {
     const pricePrec = (x: number) => parseFloat(ex.priceToPrecision(symbol, x));
 
     let amountBase = amountPrec(amountBaseRaw);
+
     if (market?.limits?.amount?.min && amountBase < market.limits.amount.min) {
       amountBase = amountPrec(market.limits.amount.min);
     }
@@ -254,6 +287,7 @@ export class TimeIndicatorStrategyService {
       amountBase * last < market.limits.cost.min
     ) {
       const needed = market.limits.cost.min / last;
+
       amountBase = amountPrec(Math.max(amountBase, needed));
     }
 
@@ -282,6 +316,7 @@ export class TimeIndicatorStrategyService {
       createdAt: getRFC3339Timestamp(),
       status: 'NEW',
     };
+
     await this.strategyIntentStoreService.upsertIntent(intent);
     await this.strategyIntentExecutionService.consumeIntents([intent]);
 
@@ -334,10 +369,12 @@ export class TimeIndicatorStrategyService {
     const now = new Date();
     const wd = now.getDay();
     const hr = now.getHours();
+
     if (params.allowedWeekdays?.length && !params.allowedWeekdays.includes(wd))
       return false;
     if (params.allowedHours?.length && !params.allowedHours.includes(hr))
       return false;
+
     return true;
   }
 
@@ -349,28 +386,45 @@ export class TimeIndicatorStrategyService {
   ) {
     try {
       const limit = Math.max(lookback, 200);
+
       return await ex.fetchOHLCV(symbol, timeframe, undefined, limit);
     } catch (e: unknown) {
       const { message, stack } = this.toErrorDetails(e);
+
       this.logger.error(
         `fetchOHLCV error on ${ex.id} ${symbol} ${timeframe}: ${message}`,
         stack,
       );
+
       return [];
     }
   }
 
-  private parseBaseQuote(symbol: string): { base: string; quote: string } | null {
+  private parseBaseQuote(
+    symbol: string,
+  ): { base: string; quote: string } | null {
     if (symbol.includes('/')) {
       const [base, quote] = symbol.split('/');
+
       if (base && quote) {
         return { base, quote };
       }
+
       return null;
     }
 
-    const knownQuotes = ['USDT', 'USDC', 'BUSD', 'USD', 'BTC', 'ETH', 'BNB', 'EUR'];
+    const knownQuotes = [
+      'USDT',
+      'USDC',
+      'BUSD',
+      'USD',
+      'BTC',
+      'ETH',
+      'BNB',
+      'EUR',
+    ];
     const upper = symbol.toUpperCase();
+
     for (const q of knownQuotes) {
       if (upper.endsWith(q) && upper.length > q.length) {
         return {
@@ -387,6 +441,7 @@ export class TimeIndicatorStrategyService {
     if (error instanceof Error) {
       return { message: error.message, stack: error.stack };
     }
+
     return { message: String(error) };
   }
 }
@@ -397,17 +452,21 @@ function ema(series: number[], period: number): number[] {
   const k = 2 / (period + 1);
   const out: number[] = [];
   let prev: number | undefined;
+
   for (let i = 0; i < series.length; i++) {
     const v = series[i];
+
     if (i === 0 || prev === undefined) {
       prev = v;
       out.push(v);
     } else {
       const e = (v - prev) * k + prev;
+
       out.push(e);
       prev = e;
     }
   }
+
   return out;
 }
 
@@ -416,14 +475,17 @@ function rsi(series: number[], period: number): number[] {
     return new Array(series.length).fill(NaN);
   const gains: number[] = [];
   const losses: number[] = [];
+
   for (let i = 1; i < series.length; i++) {
     const ch = series[i] - series[i - 1];
+
     gains.push(ch > 0 ? ch : 0);
     losses.push(ch < 0 ? -ch : 0);
   }
   let avgGain = avg(gains.slice(0, period));
   let avgLoss = avg(losses.slice(0, period));
   const rsiArr = new Array(series.length).fill(NaN);
+
   for (let i = period - 1; i < gains.length; i++) {
     if (i >= period) {
       avgGain = (avgGain * (period - 1) + gains[i]) / period;
@@ -431,13 +493,16 @@ function rsi(series: number[], period: number): number[] {
     }
     const rs = avgLoss === 0 ? Number.POSITIVE_INFINITY : avgGain / avgLoss;
     const val = 100 - 100 / (1 + rs);
+
     rsiArr[i + 1] = val;
   }
+
   return rsiArr;
 }
 
 function avg(arr: number[]) {
   if (!arr.length) return 0;
+
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
@@ -451,14 +516,18 @@ function calcCross(
   const nowAbove = fast > slow;
   const wasAbove = prevFast >= prevSlow;
   const nowBelow = fast < slow;
+
   if (wasBelow && nowAbove) return SignalType.CROSS_UP;
   if (wasAbove && nowBelow) return SignalType.CROSS_DOWN;
+
   return SignalType.NONE;
 }
 
 function safePct(v?: number) {
   if (v === undefined || v === null) return undefined;
   const n = Number(v);
+
   if (!Number.isFinite(n) || n <= 0) return undefined;
+
   return n;
 }

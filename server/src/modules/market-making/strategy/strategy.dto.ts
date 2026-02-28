@@ -1,9 +1,9 @@
 // strategy.dto.ts
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString } from 'class-validator';
 import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { IsString } from 'class-validator';
 
 export class JoinStrategyDto {
   @ApiProperty({ description: 'User ID', example: 'user123' })
