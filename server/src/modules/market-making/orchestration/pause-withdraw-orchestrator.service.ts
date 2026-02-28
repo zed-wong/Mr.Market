@@ -22,7 +22,9 @@ type PauseWithdrawCommand = {
 
 @Injectable()
 export class PauseWithdrawOrchestratorService {
-  private readonly logger = new CustomLogger(PauseWithdrawOrchestratorService.name);
+  private readonly logger = new CustomLogger(
+    PauseWithdrawOrchestratorService.name,
+  );
 
   constructor(
     private readonly strategyService: StrategyService,
@@ -124,8 +126,12 @@ export class PauseWithdrawOrchestratorService {
         });
       } catch (appendError) {
         this.logger.error(
-          `Failed to append withdrawal.orchestrator.failed for ${command.operationId}: ${
-            appendError instanceof Error ? appendError.message : String(appendError)
+          `Failed to append withdrawal.orchestrator.failed for ${
+            command.operationId
+          }: ${
+            appendError instanceof Error
+              ? appendError.message
+              : String(appendError)
           }`,
         );
       }

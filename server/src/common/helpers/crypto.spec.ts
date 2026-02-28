@@ -46,6 +46,7 @@ describe('Crypto Helpers', () => {
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
     const decrypted = decrypt(encrypted, otherPrivateKey);
+
     consoleErrorSpy.mockRestore();
 
     expect(decrypted).toBeNull();
@@ -59,6 +60,7 @@ describe('Crypto Helpers', () => {
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
     const decrypted = decrypt('invalid-base64', privateKey);
+
     consoleErrorSpy.mockRestore();
 
     expect(decrypted).toBeNull();
