@@ -17,6 +17,9 @@ describe('AlpacaStratService', () => {
   let exchangeInitService: ExchangeInitService;
 
   beforeEach(async () => {
+    jest
+      .spyOn(global, 'setInterval')
+      .mockImplementation(() => 1 as unknown as NodeJS.Timeout);
     moduleRef = await Test.createTestingModule({
       providers: [
         AlpacaStratService,
@@ -45,12 +48,12 @@ describe('AlpacaStratService', () => {
     }).compile();
 
     service = moduleRef.get<AlpacaStratService>(AlpacaStratService);
-    exchangeInitService =
-      moduleRef.get<ExchangeInitService>(ExchangeInitService);
+    exchangeInitService = moduleRef.get<ExchangeInitService>(ExchangeInitService);
   });
 
   afterEach(async () => {
     await moduleRef.close();
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 

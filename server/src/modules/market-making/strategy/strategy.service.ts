@@ -146,8 +146,12 @@ export class StrategyService
           errorTrace,
         );
       } finally {
-        session.nextRunAtMs += session.cadenceMs;
-        this.sessions.set(session.strategyKey, session);
+        if (!this.sessions.has(session.strategyKey)) {
+          continue;
+        }
+        const nextSession = this.sessions.get(session.strategyKey) || session;
+        nextSession.nextRunAtMs += nextSession.cadenceMs;
+        this.sessions.set(session.strategyKey, nextSession);
       }
     }
   }
@@ -639,13 +643,19 @@ export class StrategyService
         return;
       }
 
-      const intents = await this.buildVolumeIntents(session.strategyKey, params, ts);
-      await this.publishIntents(session.strategyKey, intents);
-      params.executedTrades = executedTrades + 1;
-      this.sessions.set(session.strategyKey, {
-        ...session,
+      const intents = await this.buildVolumeIntents(
+        session.strategyKey,
         params,
-      });
+        ts,
+      );
+      if (intents.length > 0) {
+        await this.publishIntents(session.strategyKey, intents);
+        params.executedTrades = executedTrades + 1;
+        this.sessions.set(session.strategyKey, {
+          ...session,
+          params,
+        });
+      }
     }
   }
 
@@ -686,6 +696,21 @@ export class StrategyService
         ? basePrice.multipliedBy(new BigNumber(1).minus(offsetMultiplier))
         : basePrice.multipliedBy(new BigNumber(1).plus(offsetMultiplier));
     const qty = new BigNumber(params.baseTradeAmount);
+
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      this.logger.error(
+        `Skipping volume cycle for ${strategyKey}: invalid non-positive price ${price.toFixed()} (executedTrades=${params.executedTrades || 0}, params=${JSON.stringify(
+          {
+            exchangeName: params.exchangeName,
+            symbol: params.symbol,
+            baseIncrementPercentage: params.baseIncrementPercentage,
+            pricePushRate: params.pricePushRate,
+          },
+        )})`,
+      );
+
+      return [];
+    }
 
     if (!qty.isFinite() || qty.isLessThanOrEqualTo(0)) {
       this.logger.warn(

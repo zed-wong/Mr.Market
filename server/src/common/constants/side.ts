@@ -1,1 +1,2 @@
-export type Side = 'buy' | 'sell';
+export const Side = ['buy', 'sell'] as const;
+export type Side = (typeof Side)[number];

@@ -1,7 +1,9 @@
 // strategy.dto.ts
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+import { IsString } from 'class-validator';
 
 export class JoinStrategyDto {
   @ApiProperty({ description: 'User ID', example: 'user123' })
@@ -237,13 +239,23 @@ export class ExecuteVolumeStrategyDto {
     description: 'The first trade is a buy or sell',
     example: 'buy',
   })
-  postOnlySide?: 'buy' | 'sell';
+  postOnlySide?: Side;
 }
 
 export class StopVolumeStrategyDto {
   @ApiProperty({ description: 'User ID' })
   userId: string;
 
+  @ApiProperty({ description: 'Client ID' })
+  clientId: string;
+}
+
+export class StopIndicatorStrategyDto {
+  @IsString()
+  @ApiProperty({ description: 'User ID' })
+  userId: string;
+
+  @IsString()
   @ApiProperty({ description: 'Client ID' })
   clientId: string;
 }
