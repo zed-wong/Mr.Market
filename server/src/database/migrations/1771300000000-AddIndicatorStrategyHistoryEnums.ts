@@ -123,10 +123,6 @@ export class AddIndicatorStrategyHistoryEnums1771300000000
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
-    } finally {
-      if (!queryRunner.isReleased) {
-        await queryRunner.release();
-      }
     }
   }
 }

@@ -133,6 +133,9 @@ export class StrategyService
       if (session.nextRunAtMs > nowMs) {
         continue;
       }
+      if (!this.sessions.has(session.strategyKey)) {
+        continue;
+      }
 
       try {
         await this.runSession(session, ts);
@@ -653,9 +656,15 @@ export class StrategyService
         await this.publishIntents(session.strategyKey, intents);
         params.executedTrades = executedTrades + 1;
         await this.persistStrategyParams(session.strategyKey, params);
-        if (this.sessions.has(session.strategyKey)) {
+        const currentSession = this.sessions.get(session.strategyKey);
+
+        if (
+          currentSession &&
+          currentSession.userId === session.userId &&
+          currentSession.clientId === session.clientId
+        ) {
           this.sessions.set(session.strategyKey, {
-            ...session,
+            ...currentSession,
             params,
           });
         }

@@ -246,6 +246,7 @@ export class StrategyController {
   }
 
   @Post('execute-indicator-strategy')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Run the time-indicator strategy once (stateless)' })
   @ApiResponse({
     status: 200,
@@ -259,6 +260,7 @@ export class StrategyController {
   }
 
   @Post('start-indicator-strategy')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Start periodic execution of the time-indicator strategy',
   })
@@ -287,6 +289,7 @@ export class StrategyController {
   }
 
   @Post('stop-indicator-strategy')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Stop periodic execution of the time-indicator strategy',
   })
