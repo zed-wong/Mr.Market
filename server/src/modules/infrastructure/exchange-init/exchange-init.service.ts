@@ -11,7 +11,7 @@ import type { Cache } from 'cache-manager';
 import * as ccxt from 'ccxt';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
 @Injectable({ scope: Scope.DEFAULT })
 export class ExchangeInitService {
@@ -24,7 +24,7 @@ export class ExchangeInitService {
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheService: Cache,
-    private exchangeService: ExchangeService,
+    private exchangeService: ExchangeApiKeyService,
   ) {
     this.initializeExchanges()
       .then(() => {

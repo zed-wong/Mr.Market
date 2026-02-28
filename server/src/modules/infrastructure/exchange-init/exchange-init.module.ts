@@ -1,12 +1,12 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { Global, Module } from '@nestjs/common';
-import { ExchangeModule } from 'src/modules/mixin/exchange/exchange.module';
+import { ExchangeApiKeyModule } from 'src/modules/market-making/exchange-api-key/exchange-api-key.module';
 
 import { ExchangeInitService } from './exchange-init.service';
 
 @Global()
 @Module({
-  imports: [CacheModule.register(), ExchangeModule],
+  imports: [CacheModule.register(), ExchangeApiKeyModule],
   providers: [ExchangeInitService],
   exports: [ExchangeInitService],
 })

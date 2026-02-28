@@ -2,9 +2,9 @@ import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
 import { ExchangeDepositDto, ExchangeWithdrawalDto } from './exchange.dto';
-import { ExchangeService } from './exchange.service';
 
 // This API is used for admin page to do rebalance
 @ApiTags('Exchange')
@@ -13,7 +13,7 @@ import { ExchangeService } from './exchange.service';
 export class ExchangeController {
   private readonly logger = new CustomLogger(ExchangeController.name);
 
-  constructor(private readonly exchangeService: ExchangeService) {}
+  constructor(private readonly exchangeService: ExchangeApiKeyService) {}
 
   @Post('/withdrawal/create')
   @ApiOperation({ summary: 'Create withdrawal with api key' })

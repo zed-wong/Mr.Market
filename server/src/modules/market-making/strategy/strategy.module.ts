@@ -18,7 +18,6 @@ import { FeeModule } from '../fee/fee.module';
 import { PerformanceModule } from '../performance/performance.module';
 import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
-import { TradeModule } from '../trade/trade.module';
 import { AlpacaStratService } from './alpacastrat.service';
 import { QuoteExecutorManagerService } from './quote-executor-manager.service';
 import { StrategyController } from './strategy.controller';
@@ -29,7 +28,6 @@ import { StrategyIntentWorkerService } from './strategy-intent-worker.service';
 
 @Module({
   imports: [
-    TradeModule,
     PerformanceModule,
     LoggerModule,
     ConfigModule,

@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import BigNumber from 'bignumber.js';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { RebalanceRepository } from 'src/modules/mixin/rebalance/rebalance.repository';
 import { SnapshotsService } from 'src/modules/mixin/snapshots/snapshots.service';
 
@@ -14,7 +14,7 @@ export class RebalanceService {
 
   constructor(
     private configService: ConfigService,
-    private exchangeService: ExchangeService,
+    private exchangeService: ExchangeApiKeyService,
     private snapshotService: SnapshotsService,
     private rebalanceRepository: RebalanceRepository,
   ) {}

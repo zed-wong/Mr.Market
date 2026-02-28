@@ -4,15 +4,14 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-
-import { ExchangeService } from './exchange.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
 @ApiTags('Exchange')
 @Controller('exchange')
 export class ExchangeUserController {
   private readonly logger = new CustomLogger(ExchangeUserController.name);
 
-  constructor(private readonly exchagneService: ExchangeService) {}
+  constructor(private readonly exchagneService: ExchangeApiKeyService) {}
 
   @Get('orders/user/:user_id')
   @ApiOperation({ summary: 'Get all orders by user id' })
