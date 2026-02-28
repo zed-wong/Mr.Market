@@ -17,12 +17,20 @@ describe('ExchangeApiKeyService', () => {
   const makeService = (overrides?: {
     readAllAPIKeys?: jest.Mock;
     addAPIKey?: jest.Mock;
+    readAPIKey?: jest.Mock;
+    readAllAPIKeysByExchange?: jest.Mock;
+    updateAPIKeyIndex?: jest.Mock;
     getConfig?: jest.Mock;
   }) => {
     const exchangeRepository = {
       readAllAPIKeys:
         overrides?.readAllAPIKeys || jest.fn().mockResolvedValue([]),
       addAPIKey: overrides?.addAPIKey || jest.fn().mockResolvedValue(undefined),
+      readAPIKey: overrides?.readAPIKey || jest.fn().mockResolvedValue(null),
+      readAllAPIKeysByExchange:
+        overrides?.readAllAPIKeysByExchange || jest.fn().mockResolvedValue([]),
+      updateAPIKeyIndex:
+        overrides?.updateAPIKeyIndex || jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const configService = {
@@ -124,5 +132,48 @@ describe('ExchangeApiKeyService', () => {
         api_secret: 'enc(secret)',
       }),
     );
+  });
+
+  it('switches default API key within an exchange', async () => {
+    const readAPIKey = jest
+      .fn()
+      .mockResolvedValueOnce({
+        key_id: 'target',
+        exchange: 'binance',
+        exchange_index: 'account2',
+        name: 'account2',
+      })
+      .mockResolvedValueOnce({
+        key_id: 'target',
+        exchange: 'binance',
+        exchange_index: 'default',
+        name: 'account2',
+      });
+    const readAllAPIKeysByExchange = jest.fn().mockResolvedValue([
+      {
+        key_id: 'default-key',
+        exchange: 'binance',
+        exchange_index: 'default',
+        name: 'default',
+      },
+      {
+        key_id: 'target',
+        exchange: 'binance',
+        exchange_index: 'account2',
+        name: 'account2',
+      },
+    ]);
+    const updateAPIKeyIndex = jest.fn().mockResolvedValue(undefined);
+    const { service } = makeService({
+      readAPIKey,
+      readAllAPIKeysByExchange,
+      updateAPIKeyIndex,
+    });
+
+    const updated = await service.setDefaultAPIKey('target');
+
+    expect(updateAPIKeyIndex).toHaveBeenCalledWith('default-key', 'account2-1');
+    expect(updateAPIKeyIndex).toHaveBeenCalledWith('target', 'default');
+    expect(updated.exchange_index).toBe('default');
   });
 });

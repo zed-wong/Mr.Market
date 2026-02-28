@@ -42,6 +42,32 @@ export const removeAPIKey = async (keyId: string, token: string): Promise<unknow
   }
 }
 
+export const setDefaultAPIKey = async (keyId: string, token: string): Promise<unknown> => {
+  try {
+    const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/keys/${keyId}/default`, {
+      method: "POST",
+      headers: getHeaders(token),
+    });
+    return handleApiResponse(response);
+  } catch (error) {
+    console.error("Error setting default API key:", error);
+    throw error;
+  }
+}
+
+export const reloadExchangeInstances = async (token: string): Promise<unknown> => {
+  try {
+    const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/reload`, {
+      method: "POST",
+      headers: getHeaders(token),
+    });
+    return handleApiResponse(response);
+  } catch (error) {
+    console.error("Error reloading exchange instances:", error);
+    throw error;
+  }
+}
+
 export const getEncryptionPublicKey = async (token: string): Promise<{ publicKey: string }> => {
   try {
     const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/key-pair`, {

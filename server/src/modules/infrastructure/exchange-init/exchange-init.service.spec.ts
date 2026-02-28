@@ -15,7 +15,6 @@ describe('ExchangeinitService', () => {
   let initializeExchangeConfigsSpy: jest.SpyInstance;
 
   beforeEach(async () => {
-    jest.useFakeTimers();
     exchangeService = {
       readSupportedExchanges: jest.fn().mockResolvedValue(['binance']),
       readDecryptedAPIKeys: jest
@@ -56,8 +55,6 @@ describe('ExchangeinitService', () => {
   });
 
   afterEach(() => {
-    jest.clearAllTimers();
-    jest.useRealTimers();
     initializeExchangeConfigsSpy.mockRestore();
   });
 
@@ -72,12 +69,11 @@ describe('ExchangeinitService', () => {
     expect(exchangeService.readSupportedExchanges).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes exchanges when API keys change', async () => {
+  it('refreshes exchanges only when refreshExchanges is called', async () => {
     await Promise.resolve();
     expect(initializeExchangeConfigsSpy).toHaveBeenCalledTimes(1);
 
-    jest.advanceTimersByTime(10 * 1000);
-    await Promise.resolve();
+    await service.refreshExchanges('test');
 
     expect(initializeExchangeConfigsSpy).toHaveBeenCalledTimes(2);
   });

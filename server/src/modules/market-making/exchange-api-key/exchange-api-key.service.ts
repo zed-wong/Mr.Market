@@ -663,6 +663,24 @@ export class ExchangeApiKeyService {
       getPublicKeyFromPrivate(privateKey),
     );
 
+    const existingKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
+      key.exchange,
+    );
+    const usedLabels = new Set(
+      existingKeys
+        .map((item) => (item.exchange_index || '').trim())
+        .filter((item) => item.length > 0),
+    );
+    const requestedIndex = (key.exchange_index || '').trim();
+
+    key.exchange_index =
+      requestedIndex ||
+      (existingKeys.length === 0
+        ? 'default'
+        : this.createUniqueLabel(
+            (key.name || `key-${Date.now()}`).toLowerCase(),
+            usedLabels,
+          ));
     key.api_secret = storageEncryptedSecret;
     const savedKey = await this.exchangeRepository.addAPIKey(key);
 
@@ -692,6 +710,70 @@ export class ExchangeApiKeyService {
 
   async removeAPIKey(keyId: string) {
     return await this.exchangeRepository.removeAPIKey(keyId);
+  }
+
+  async setDefaultAPIKey(keyId: string): Promise<APIKeysConfig> {
+    const targetKey = await this.exchangeRepository.readAPIKey(keyId);
+
+    if (!targetKey) {
+      throw new BadRequestException(`API key ${keyId} not found`);
+    }
+    if (targetKey.exchange_index === 'default') {
+      return targetKey;
+    }
+
+    const exchangeKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
+      targetKey.exchange,
+    );
+    const currentDefault = exchangeKeys.find(
+      (item) => item.exchange_index === 'default' && item.key_id !== keyId,
+    );
+
+    if (currentDefault) {
+      const usedLabels = new Set(
+        exchangeKeys
+          .filter((item) => item.key_id !== currentDefault.key_id)
+          .map((item) => (item.exchange_index || '').trim())
+          .filter((item) => item.length > 0),
+      );
+      const fallbackLabel = this.createUniqueLabel(
+        (targetKey.exchange_index || currentDefault.name || 'account')
+          .toLowerCase()
+          .replace(/\s+/g, '-'),
+        usedLabels,
+      );
+
+      await this.exchangeRepository.updateAPIKeyIndex(
+        currentDefault.key_id,
+        fallbackLabel,
+      );
+    }
+
+    await this.exchangeRepository.updateAPIKeyIndex(keyId, 'default');
+
+    const updated = await this.exchangeRepository.readAPIKey(keyId);
+
+    if (!updated) {
+      throw new InternalServerErrorException(
+        `Failed to update default API key ${keyId}`,
+      );
+    }
+
+    return updated;
+  }
+
+  private createUniqueLabel(base: string, used: Set<string>): string {
+    const normalizedBase =
+      base.replace(/[^a-z0-9_-]/gi, '-').replace(/-+/g, '-') || 'account';
+    let candidate = normalizedBase;
+    let attempt = 1;
+
+    while (candidate === 'default' || used.has(candidate)) {
+      candidate = `${normalizedBase}-${attempt}`;
+      attempt += 1;
+    }
+
+    return candidate;
   }
 
   async createSpotOrder(order: SpotOrder) {

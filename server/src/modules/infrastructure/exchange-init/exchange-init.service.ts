@@ -19,18 +19,16 @@ export class ExchangeInitService {
   private exchanges = new Map<string, Map<string, ccxt.Exchange>>();
   private defaultAccounts = new Map<string, ccxt.Exchange>();
   private readonly marketsCacheTtlSeconds = 60 * 60;
-  private readonly refreshIntervalMs = 10 * 1000;
-  private apiKeysSignature: string | null = null;
+  private refreshChain: Promise<void> = Promise.resolve();
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheService: Cache,
     private exchangeService: ExchangeApiKeyService,
   ) {
-    this.initializeExchanges()
+    this.refreshExchanges('startup')
       .then(() => {
         this.logger.log('Exchanges initialized successfully');
         this.startKeepAlive();
-        this.startRefresh();
       })
       .catch((error) =>
         this.logger.error(
@@ -338,22 +336,6 @@ export class ExchangeInitService {
     return exchangeConfigs;
   }
 
-  private computeApiKeysSignature(apiKeys: APIKeysConfig[]): string {
-    const entries = apiKeys.map((key) =>
-      [
-        key.key_id,
-        key.exchange,
-        key.exchange_index,
-        key.api_key,
-        key.api_secret,
-      ].join('::'),
-    );
-
-    entries.sort();
-
-    return entries.join('|');
-  }
-
   private async initializeExchangeConfigs(
     exchangeConfigs: Array<{
       name: string;
@@ -447,38 +429,18 @@ export class ExchangeInitService {
       ? this.buildExchangeConfigsFromDb(apiKeys)
       : this.getEnvExchangeConfigs();
 
-    this.apiKeysSignature = apiKeys.length
-      ? this.computeApiKeysSignature(apiKeys)
-      : null;
-
     await this.initializeExchangeConfigs(exchangeConfigs);
   }
 
-  private startRefresh() {
-    setInterval(async () => {
-      try {
-        const apiKeys = await this.exchangeService.readDecryptedAPIKeys();
-        const signature = apiKeys.length
-          ? this.computeApiKeysSignature(apiKeys)
-          : null;
+  async refreshExchanges(reason: string = 'manual'): Promise<void> {
+    this.refreshChain = this.refreshChain
+      .catch(() => undefined)
+      .then(async () => {
+        await this.initializeExchanges();
+        this.logger.log(`Exchanges reinitialized (${reason}).`);
+      });
 
-        if (signature === this.apiKeysSignature) {
-          return;
-        }
-
-        const exchangeConfigs = apiKeys.length
-          ? this.buildExchangeConfigsFromDb(apiKeys)
-          : this.getEnvExchangeConfigs();
-
-        this.apiKeysSignature = signature;
-        await this.initializeExchangeConfigs(exchangeConfigs);
-        this.logger.log('Exchanges reinitialized after API key changes.');
-      } catch (error) {
-        this.logger.error(
-          `Failed to refresh exchanges from DB: ${error.message}`,
-        );
-      }
-    }, this.refreshIntervalMs);
+    return this.refreshChain;
   }
 
   private startKeepAlive() {

@@ -13,6 +13,10 @@
     deleteConfirm = false;
   };
 
+  const setDefault = (key_id: string) => {
+    dispatch("setDefault", key_id);
+  };
+
   // Mock permissions - TODO: Update backend to include permissions in API response
   const permissions = ["Read", "Trade"];
 </script>
@@ -42,7 +46,12 @@
   <!-- LABEL / KEY ID Column -->
   <td>
     <div class="flex flex-col gap-1">
-      <span class="font-medium text-sm">{key.name}</span>
+      <div class="flex items-center gap-2">
+        <span class="font-medium text-sm">{key.exchange_index || key.name}</span>
+        {#if key.exchange_index === "default"}
+          <span class="badge badge-sm badge-success">default</span>
+        {/if}
+      </div>
       <code class="text-xs text-base-content/60 font-mono">
         ...{key.api_key.slice(-6)}
       </code>
@@ -106,6 +115,15 @@
   <td class="text-right">
     {#if !deleteConfirm}
       <div class="flex items-center justify-end gap-2">
+        {#if key.exchange_index !== "default"}
+          <button
+            class="btn btn-ghost btn-sm"
+            on:click={() => setDefault(key.key_id)}
+            title="Set as default key"
+          >
+            Set default
+          </button>
+        {/if}
         <button class="btn btn-ghost btn-sm btn-square" title={$_("edit")}>
           <svg
             xmlns="http://www.w3.org/2000/svg"

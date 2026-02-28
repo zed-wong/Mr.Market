@@ -53,6 +53,10 @@ export class ExchangeApiKeyRepository {
     return await this.apiKeysRepository.find({ where: { exchange } });
   }
 
+  async updateAPIKeyIndex(key_id: string, exchange_index: string): Promise<void> {
+    await this.apiKeysRepository.update({ key_id }, { exchange_index });
+  }
+
   async readSupportedExchanges(): Promise<string[]> {
     const rows = await this.apiKeysRepository
       .createQueryBuilder('api_key')

@@ -7,7 +7,9 @@
     import { page } from "$app/stores";
     import {
         getAllAPIKeys,
+        reloadExchangeInstances,
         removeAPIKey,
+        setDefaultAPIKey,
     } from "$lib/helpers/mrm/admin/exchanges";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import AddApiKey from "$lib/components/admin/exchanges/addAPIKey.svelte";
@@ -62,6 +64,38 @@
             toast.error($_("delete_api_key_failed"), { id: toastId });
         }
     }
+
+    async function HandleSetDefault(event: CustomEvent<string>) {
+        const keyId = event.detail;
+        if (!keyId) return;
+        const token = localStorage.getItem("admin-access-token");
+        if (!token) return;
+
+        const toastId = toast.loading("Setting default API key...");
+        try {
+            await setDefaultAPIKey(keyId, token);
+            toast.success("Default API key updated", { id: toastId });
+            RefreshKeys(false);
+        } catch (e) {
+            console.error(e);
+            toast.error("Failed to set default API key", { id: toastId });
+        }
+    }
+
+    async function HandleReloadInstances() {
+        const token = localStorage.getItem("admin-access-token");
+        if (!token) return;
+
+        const toastId = toast.loading("Reloading exchange instances...");
+        try {
+            await reloadExchangeInstances(token);
+            await invalidate("admin:settings:api-keys");
+            toast.success("Exchange instances reloaded", { id: toastId });
+        } catch (e) {
+            console.error(e);
+            toast.error("Failed to reload exchange instances", { id: toastId });
+        }
+    }
 </script>
 
 <div class="p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 max-w-7xl mx-auto">
@@ -113,7 +147,7 @@
             <AddApiKey existingKeys={keys} />
             <button
                 class="btn btn-square btn-outline"
-                on:click={() => RefreshKeys()}
+                on:click={HandleReloadInstances}
             >
                 <span
                     class={clsx(
@@ -206,7 +240,7 @@
         <div
             class="card bg-base-100 shadow-sm border border-base-200 overflow-hidden"
         >
-            <KeyList {keys} on:delete={HandleDelete} />
+            <KeyList {keys} on:delete={HandleDelete} on:setDefault={HandleSetDefault} />
         </div>
     {/if}
 </div>

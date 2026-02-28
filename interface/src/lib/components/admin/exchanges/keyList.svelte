@@ -12,6 +12,10 @@
     dispatch("delete", event.detail);
   }
 
+  function handleSetDefault(event: CustomEvent<string>) {
+    dispatch("setDefault", event.detail);
+  }
+
   // Pagination
   let currentPage = 1;
   const itemsPerPage = 4;
@@ -40,7 +44,7 @@
     </thead>
     <tbody>
       {#each paginatedKeys as key (key.key_id)}
-        <SingleApiKey {key} on:delete={handleDelete} />
+        <SingleApiKey {key} on:delete={handleDelete} on:setDefault={handleSetDefault} />
       {/each}
     </tbody>
   </table>
