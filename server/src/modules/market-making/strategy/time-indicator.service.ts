@@ -20,6 +20,7 @@ import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 export class TimeIndicatorStrategyService {
   private readonly logger = new CustomLogger(TimeIndicatorStrategyService.name);
   private readonly loops = new Map<string, NodeJS.Timeout>();
+  private readonly inFlight = new Set<string>();
 
   constructor(
     private readonly exchangeInit: ExchangeInitService,
@@ -47,6 +48,11 @@ export class TimeIndicatorStrategyService {
 
     const loop = setInterval(() => {
       void (async () => {
+        if (this.inFlight.has(key)) {
+          return;
+        }
+        this.inFlight.add(key);
+
         try {
           await this.executeIndicatorStrategy(dto);
         } catch (e: unknown) {
@@ -58,6 +64,8 @@ export class TimeIndicatorStrategyService {
           );
           clearInterval(loop);
           this.loops.delete(key);
+        } finally {
+          this.inFlight.delete(key);
         }
       })();
     }, dto.tickIntervalMs);
@@ -77,6 +85,7 @@ export class TimeIndicatorStrategyService {
 
     clearInterval(loop);
     this.loops.delete(key);
+    this.inFlight.delete(key);
 
     return { message: `Stopped strategy for ${key}` };
   }

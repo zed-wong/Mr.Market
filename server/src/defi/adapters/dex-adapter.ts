@@ -7,7 +7,7 @@ export type QuoteSingleParams = {
   tokenOut: string;
   fee: number; // v3 fee tier (500/3000/10000)
   amountIn: BigNumber;
-  sqrtPriceLimitX96?: BigNumber | number;
+  sqrtPriceLimitX96?: BigNumber | string;
 };
 
 export type ExactInputSingleParams = {
@@ -18,7 +18,7 @@ export type ExactInputSingleParams = {
   deadline: number;
   amountIn: BigNumber;
   amountOutMinimum: BigNumber;
-  sqrtPriceLimitX96?: BigNumber | number;
+  sqrtPriceLimitX96?: BigNumber | string;
 };
 
 export interface DexAdapter {

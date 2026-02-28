@@ -146,13 +146,12 @@ export class StrategyService
           errorTrace,
         );
       } finally {
-        if (!this.sessions.has(session.strategyKey)) {
-          continue;
-        }
-        const nextSession = this.sessions.get(session.strategyKey) || session;
+        const nextSession = this.sessions.get(session.strategyKey);
 
-        nextSession.nextRunAtMs += nextSession.cadenceMs;
-        this.sessions.set(session.strategyKey, nextSession);
+        if (nextSession) {
+          nextSession.nextRunAtMs += nextSession.cadenceMs;
+          this.sessions.set(session.strategyKey, nextSession);
+        }
       }
     }
   }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import type { DexAdapter } from './adapters/dex-adapter';
 import { PancakeV3Adapter } from './adapters/pancakeV3.adapter';
@@ -14,15 +14,15 @@ export class DexAdapterRegistry {
     private readonly cakeV3: PancakeV3Adapter,
   ) {
     this.adapters = {
-      uniswapV3: uniV3,
-      pancakeV3: cakeV3,
+      [uniV3.id]: uniV3,
+      [cakeV3.id]: cakeV3,
     };
   }
 
   get(id: DexId): DexAdapter {
     const a = this.adapters[id];
 
-    if (!a) throw new Error(`No adapter for id ${id}`);
+    if (!a) throw new BadRequestException(`No adapter for id ${id}`);
 
     return a;
   }

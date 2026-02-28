@@ -24,13 +24,38 @@ export function priceFromSqrtX96(
 }
 
 export function pctToBps(pct: number) {
-  return Math.round(pct * 100);
+  if (!Number.isFinite(pct)) {
+    throw new TypeError(`pctToBps expects a finite number, got: ${pct}`);
+  }
+
+  const bps = Math.round(pct * 100);
+
+  if (!Number.isFinite(bps)) {
+    throw new TypeError(`pctToBps produced non-finite bps for pct: ${pct}`);
+  }
+
+  return bps;
 }
 
 export function clampJitter(base: number, jitterPct: number) {
+  if (!Number.isFinite(base)) {
+    throw new TypeError(`clampJitter expects finite base, got: ${base}`);
+  }
+  if (!Number.isFinite(jitterPct)) {
+    throw new TypeError(
+      `clampJitter expects finite jitterPct, got: ${jitterPct}`,
+    );
+  }
+
   const jitterPctClamped = Math.min(Math.max(jitterPct, 0), 100);
   const r = (Math.random() * 2 - 1) * (jitterPctClamped / 100);
   const computedPrice = base * (1 + r);
+
+  if (!Number.isFinite(computedPrice)) {
+    throw new TypeError(
+      `clampJitter produced non-finite value for base=${base}, jitterPct=${jitterPct}`,
+    );
+  }
 
   return Math.max(0, computedPrice);
 }

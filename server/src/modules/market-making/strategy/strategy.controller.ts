@@ -197,6 +197,7 @@ export class StrategyController {
       'The volume strategy has been started and will ensure execution of trades.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async executeVolumeStrategy(
     @Body() executeVolumeStrategyDto: ExecuteVolumeStrategyDto,
   ) {

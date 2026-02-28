@@ -49,7 +49,9 @@ export class AddIndicatorStrategyHistoryEnums1771300000000
       `INSERT INTO "indicator_strategy_history_tmp"
        ("id","userId","clientId","exchange","symbol","price","amount","side","strategy","orderId","executedAt")
        SELECT "id","userId","clientId","exchange","symbol","price","amount","side","strategy","orderId","executedAt"
-       FROM "indicator_strategy_history"`,
+       FROM "indicator_strategy_history"
+       WHERE LOWER("side") IN ('buy','sell')
+         AND "strategy" = 'timeIndicator'`,
     );
     await queryRunner.query(`DROP TABLE "indicator_strategy_history"`);
     await queryRunner.query(

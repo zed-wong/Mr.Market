@@ -1,7 +1,7 @@
 // strategy.dto.ts
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 
@@ -239,6 +239,8 @@ export class ExecuteVolumeStrategyDto {
     description: 'The first trade is a buy or sell',
     example: 'buy',
   })
+  @IsOptional()
+  @IsEnum(Side)
   postOnlySide?: Side;
 }
 
