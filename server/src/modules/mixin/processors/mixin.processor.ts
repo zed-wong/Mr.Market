@@ -4,8 +4,8 @@ import { getRFC3339Timestamp, subtractFee } from 'src/common/helpers/utils';
 import { STATE_TEXT_MAP } from 'src/common/types/orders/states';
 import { CustomConfigService } from 'src/modules/infrastructure/custom-config/custom-config.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { MixinReleaseTokenEvent } from 'src/modules/mixin/events/spot.event';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
+import { MixinReleaseTokenEvent } from 'src/modules/mixin/events/spot.event';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
 import { validate } from 'uuid';
 

@@ -81,8 +81,18 @@ describe('ShareLedgerService', () => {
 
     const service = new ShareLedgerService(repository as any);
 
-    await service.mintShares('u1', '100', 'dep-dup', '2026-02-11T00:00:00.000Z');
-    await service.mintShares('u1', '100', 'dep-dup', '2026-02-11T00:00:00.000Z');
+    await service.mintShares(
+      'u1',
+      '100',
+      'dep-dup',
+      '2026-02-11T00:00:00.000Z',
+    );
+    await service.mintShares(
+      'u1',
+      '100',
+      'dep-dup',
+      '2026-02-11T00:00:00.000Z',
+    );
 
     expect(repository.upsert).toHaveBeenCalledTimes(2);
     expect(entries.size).toBe(1);
