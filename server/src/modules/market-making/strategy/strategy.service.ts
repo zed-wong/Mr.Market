@@ -150,6 +150,7 @@ export class StrategyService
           continue;
         }
         const nextSession = this.sessions.get(session.strategyKey) || session;
+
         nextSession.nextRunAtMs += nextSession.cadenceMs;
         this.sessions.set(session.strategyKey, nextSession);
       }
@@ -648,6 +649,7 @@ export class StrategyService
         params,
         ts,
       );
+
       if (intents.length > 0) {
         await this.publishIntents(session.strategyKey, intents);
         params.executedTrades = executedTrades + 1;
@@ -684,7 +686,9 @@ export class StrategyService
         .multipliedBy(Number(params.executedTrades || 0)),
     );
     const basePrice = mid.multipliedBy(pushMultiplier);
-    const offsetMultiplier = new BigNumber(params.baseIncrementPercentage || 0).dividedBy(100);
+    const offsetMultiplier = new BigNumber(
+      params.baseIncrementPercentage || 0,
+    ).dividedBy(100);
 
     const side: 'buy' | 'sell' = params.postOnlySide
       ? params.postOnlySide
@@ -699,14 +703,14 @@ export class StrategyService
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
       this.logger.error(
-        `Skipping volume cycle for ${strategyKey}: invalid non-positive price ${price.toFixed()} (executedTrades=${params.executedTrades || 0}, params=${JSON.stringify(
-          {
-            exchangeName: params.exchangeName,
-            symbol: params.symbol,
-            baseIncrementPercentage: params.baseIncrementPercentage,
-            pricePushRate: params.pricePushRate,
-          },
-        )})`,
+        `Skipping volume cycle for ${strategyKey}: invalid non-positive price ${price.toFixed()} (executedTrades=${
+          params.executedTrades || 0
+        }, params=${JSON.stringify({
+          exchangeName: params.exchangeName,
+          symbol: params.symbol,
+          baseIncrementPercentage: params.baseIncrementPercentage,
+          pricePushRate: params.pricePushRate,
+        })})`,
       );
 
       return [];

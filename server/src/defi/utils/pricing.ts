@@ -11,6 +11,7 @@ export function priceFromSqrtX96(
   const denom = TWO_96.mul(TWO_96).mul(BigNumber.from(10).pow(token1Decimals));
   const SCALE = 18;
   const scaled = base.mul(BigNumber.from(10).pow(SCALE)).div(denom);
+
   if (scaled.isZero()) {
     return '0';
   }
@@ -18,6 +19,7 @@ export function priceFromSqrtX96(
   const scaledStr = scaled.toString().padStart(SCALE + 1, '0');
   const intPart = scaledStr.slice(0, -SCALE);
   const fracPart = scaledStr.slice(-SCALE).replace(/0+$/, '');
+
   return fracPart ? `${intPart}.${fracPart}` : intPart;
 }
 
@@ -29,5 +31,6 @@ export function clampJitter(base: number, jitterPct: number) {
   const jitterPctClamped = Math.min(Math.max(jitterPct, 0), 100);
   const r = (Math.random() * 2 - 1) * (jitterPctClamped / 100);
   const computedPrice = base * (1 + r);
+
   return Math.max(0, computedPrice);
 }

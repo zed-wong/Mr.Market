@@ -30,7 +30,10 @@ import {
 } from 'src/common/types/orders/states';
 import { AggregatedBalances } from 'src/common/types/rebalance/map';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { ExchangeDepositDto, ExchangeWithdrawalDto } from 'src/modules/mixin/exchange/exchange.dto';
+import {
+  ExchangeDepositDto,
+  ExchangeWithdrawalDto,
+} from 'src/modules/mixin/exchange/exchange.dto';
 
 import { ExchangeApiKeyRepository } from './exchange-api-key.repository';
 

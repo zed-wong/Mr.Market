@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { DexId } from './addresses';
+
 import type { DexAdapter } from './adapters/dex-adapter';
-import { UniswapV3Adapter } from './adapters/uniswapV3.adapter';
 import { PancakeV3Adapter } from './adapters/pancakeV3.adapter';
+import { UniswapV3Adapter } from './adapters/uniswapV3.adapter';
+import type { DexId } from './addresses';
 
 @Injectable()
 export class DexAdapterRegistry {
@@ -20,7 +21,9 @@ export class DexAdapterRegistry {
 
   get(id: DexId): DexAdapter {
     const a = this.adapters[id];
+
     if (!a) throw new Error(`No adapter for id ${id}`);
+
     return a;
   }
 }

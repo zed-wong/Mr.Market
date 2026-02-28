@@ -1,9 +1,10 @@
 import {
-  Entity,
   Column,
-  PrimaryGeneratedColumn,
   CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
 } from 'typeorm';
+
 import { Side } from '../constants/side';
 
 export enum Strategy {
@@ -36,7 +37,11 @@ export class IndicatorStrategyHistory {
   @Column({ type: 'simple-enum', enum: Side })
   side!: Side;
 
-  @Column({ type: 'simple-enum', enum: Strategy, default: Strategy.TIME_INDICATOR })
+  @Column({
+    type: 'simple-enum',
+    enum: Strategy,
+    default: Strategy.TIME_INDICATOR,
+  })
   strategy!: Strategy;
 
   @Column({ nullable: true })

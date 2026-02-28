@@ -83,7 +83,9 @@ export class RewardVaultTransferService {
         );
 
         if (!markedProcessed) {
-          throw new Error('reward vault transfer idempotency marker not written');
+          throw new Error(
+            'reward vault transfer idempotency marker not written',
+          );
         }
 
         row.status = 'TRANSFERRED_TO_MIXIN';
