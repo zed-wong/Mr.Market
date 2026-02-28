@@ -6,6 +6,10 @@ import {
 } from 'typeorm';
 import { Side } from '../constants/side';
 
+export enum Strategy {
+  TIME_INDICATOR = 'timeIndicator',
+}
+
 @Entity({ name: 'indicator_strategy_history' })
 export class IndicatorStrategyHistory {
   @PrimaryGeneratedColumn('uuid')
@@ -29,11 +33,11 @@ export class IndicatorStrategyHistory {
   @Column({ type: 'float' })
   amount!: number;
 
-  @Column({ type: 'varchar' })
+  @Column({ type: 'simple-enum', enum: Side })
   side!: Side;
 
-  @Column({ type: 'varchar', default: 'timeIndicator' })
-  strategy!: string;
+  @Column({ type: 'simple-enum', enum: Strategy, default: Strategy.TIME_INDICATOR })
+  strategy!: Strategy;
 
   @Column({ nullable: true })
   orderId?: string;

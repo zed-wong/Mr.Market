@@ -37,9 +37,9 @@ export const DEX_ADDRESSES: Record<DexId, Record<number, DexAddresses>> = {
   },
   pancakeV3: {
     56: {
-      factory: '0xD7B6E04e3C8939A58A1d2641d3cA70E3fB1d6e48',
-      router: '0x8F352E7bD04327e9DF20D4fE3259Dce0a1B0Fc75',
-      quoterV2: '0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6', // Same interface as Uniswap V3 Quoter
+      factory: '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865',
+      router: '0x1b81D678ffb9C0263b24A97847620C99d213eB14',
+      quoterV2: '0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997',
       weth: '0xBB4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', // WBNB
     },
   },

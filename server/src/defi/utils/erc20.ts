@@ -17,9 +17,21 @@ export async function ensureAllowance(
   spender: string,
   needed: BigNumber,
 ) {
+  const signerAddress = await signer.getAddress();
+  if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
+    throw new Error(
+      `ensureAllowance owner/signer mismatch: owner=${owner}, signer=${signerAddress}`,
+    );
+  }
+
   const erc = new ethers.Contract(token, ERC20_ABI, signer);
-  const allowance: BigNumber = await erc.allowance(owner, spender);
+  const allowance: BigNumber = await erc.allowance(signerAddress, spender);
   if (allowance.lt(needed)) {
+    if (allowance.gt(0)) {
+      const resetTx = await erc.approve(spender, 0);
+      await resetTx.wait();
+    }
+
     const tx = await erc.approve(spender, ethers.constants.MaxUint256);
     await tx.wait();
   }

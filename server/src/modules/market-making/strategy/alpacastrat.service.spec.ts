@@ -12,11 +12,16 @@ import { Repository } from 'typeorm';
 import { StrategyService } from './strategy.service';
 
 describe('AlpacaStratService', () => {
+  let moduleRef: TestingModule;
   let service: AlpacaStratService;
   let exchangeInitService: ExchangeInitService;
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    jest
+      .spyOn(global, 'setInterval')
+      .mockImplementation(() => 1 as unknown as NodeJS.Timeout);
+
+    moduleRef = await Test.createTestingModule({
       providers: [
         AlpacaStratService,
         CustomLogger,
@@ -43,11 +48,13 @@ describe('AlpacaStratService', () => {
       ],
     }).compile();
 
-    service = module.get<AlpacaStratService>(AlpacaStratService);
-    exchangeInitService = module.get<ExchangeInitService>(ExchangeInitService);
+    service = moduleRef.get<AlpacaStratService>(AlpacaStratService);
+    exchangeInitService = moduleRef.get<ExchangeInitService>(ExchangeInitService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await moduleRef.close();
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 

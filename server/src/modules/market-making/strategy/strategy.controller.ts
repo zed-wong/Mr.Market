@@ -1,12 +1,16 @@
 // strategy.controller.ts
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Query,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -24,6 +28,7 @@ import {
   ExecuteVolumeStrategyDto,
   JoinStrategyDto,
   PureMarketMakingStrategyDto,
+  StopIndicatorStrategyDto,
   StopVolumeStrategyDto,
 } from './strategy.dto';
 import { TimeIndicatorStrategyService } from './time-indicator.service';
@@ -32,7 +37,7 @@ import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 @ApiTags('Trading Engine')
 @Controller('strategy')
 export class StrategyController {
-  private loops = new Map<string, NodeJS.Timeout>();
+  private readonly logger = new Logger(StrategyController.name);
   constructor(
     private readonly strategyService: StrategyService,
     private readonly adminService: AdminStrategyService,
@@ -249,34 +254,37 @@ export class StrategyController {
   @ApiOperation({
     summary: 'Start periodic execution of the time-indicator strategy',
   })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async start(@Body() dto: TimeIndicatorStrategyDto) {
-    const key = `${dto.userId}:${dto.clientId}`;
-    if (this.loops.has(key)) {
-      return { message: `Strategy already running for ${key}` };
+    if (
+      !Number.isFinite(dto.tickIntervalMs) ||
+      !Number.isInteger(dto.tickIntervalMs) ||
+      dto.tickIntervalMs <= 0
+    ) {
+      throw new BadRequestException(
+        'tickIntervalMs must be a finite positive integer',
+      );
     }
-
-    const loop = setInterval(
-      () => this.timeIndicatorStrategyService.executeIndicatorStrategy(dto),
-      dto.tickIntervalMs,
+    this.logger.warn(
+      'Time-indicator run state is in-memory only; use persistent strategy state for multi-instance/restart safety.',
     );
 
-    this.loops.set(key, loop);
-    return { message: `Started strategy for ${key}` };
+    return await this.timeIndicatorStrategyService.startIndicatorStrategy(dto);
   }
 
   @Post('stop-indicator-strategy')
   @ApiOperation({
     summary: 'Stop periodic execution of the time-indicator strategy',
   })
-  async stop(@Body() body: { userId: string; clientId: string }) {
-    const key = `${body.userId}:${body.clientId}`;
-    const loop = this.loops.get(key);
-    if (loop) {
-      clearInterval(loop);
-      this.loops.delete(key);
-      return { message: `Stopped strategy for ${key}` };
-    }
-    return { message: `No running strategy found for ${key}` };
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  async stop(@Body() dto: StopIndicatorStrategyDto) {
+    this.logger.warn(
+      'Stop indicator strategy should consult persisted run state in multi-instance deployments; current implementation is in-memory.',
+    );
+    return await this.timeIndicatorStrategyService.stopIndicatorStrategy(
+      dto.userId,
+      dto.clientId,
+    );
   }
 
   @Post('rerun')
