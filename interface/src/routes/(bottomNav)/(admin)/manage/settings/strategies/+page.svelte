@@ -10,7 +10,6 @@
         disableStrategyDefinition,
         enableStrategyDefinition,
         listStrategyDefinitionVersions,
-        listStrategyInstances,
         publishStrategyDefinitionVersion,
         startStrategyInstance,
         stopStrategyInstance,
@@ -19,26 +18,28 @@
     import type {
         PublishStrategyDefinitionVersionPayload,
         StartStrategyInstancePayload,
+        StrategyDefinition,
         StrategyDefinitionPayload,
         StrategyDefinitionVersion,
-        StrategyDefinition,
         StrategyInstanceView,
     } from "$lib/types/hufi/strategy-definition";
 
-    let definitions: StrategyDefinition[] = [];
-    let instances: StrategyInstanceView[] = [];
-
     $: definitions = ($page.data.definitions || []) as StrategyDefinition[];
     $: instances = ($page.data.instances || []) as StrategyInstanceView[];
+    $: selectedDefinition =
+        definitions.find((definition) => definition.id === selectedDefinitionId) || null;
 
+    let isRefreshing = false;
     let selectedDefinitionId = "";
+    let selectedDefinitionVersions: StrategyDefinitionVersion[] = [];
+    let publishVersionText = "";
+    let lastSelectedDefinitionId = "";
+
     let userId = "";
     let clientId = "";
     let configText = "{}";
-    let isRefreshing = false;
-    let selectedDefinitionVersions: StrategyDefinitionVersion[] = [];
 
-    let newDefinition: StrategyDefinitionPayload = {
+    let createPayload: StrategyDefinitionPayload = {
         key: "",
         name: "",
         description: "",
@@ -54,40 +55,48 @@
         defaultConfig: {},
         visibility: "system",
     };
-    let newDefinitionSchemaText = JSON.stringify(newDefinition.configSchema, null, 2);
-    let newDefinitionDefaultConfigText = JSON.stringify(newDefinition.defaultConfig, null, 2);
-    let publishVersionText = "";
-    let lastSelectedDefinitionId = "";
-
-    $: selectedDefinition =
-        definitions.find((d) => d.id === selectedDefinitionId) || null;
+    let createSchemaText = JSON.stringify(createPayload.configSchema, null, 2);
+    let createDefaultConfigText = JSON.stringify(createPayload.defaultConfig, null, 2);
 
     $: if (selectedDefinitionId !== lastSelectedDefinitionId) {
         lastSelectedDefinitionId = selectedDefinitionId;
-
-        if (selectedDefinition) {
-            publishVersionText = selectedDefinition.currentVersion;
-            loadSelectedDefinitionVersions();
-        } else {
+        if (!selectedDefinition) {
             selectedDefinitionVersions = [];
             publishVersionText = "";
+        } else {
+            publishVersionText = selectedDefinition.currentVersion;
+            loadDefinitionVersions();
         }
     }
 
-    async function refreshInstances(showToast = false) {
+    function getAdminToken(): string {
         const token = localStorage.getItem("admin-access-token");
         if (!token) {
-            toast.error($_("auth_token_missing"));
-            return;
+            throw new Error($_("auth_token_missing"));
         }
 
+        return token;
+    }
+
+    function parseObjectJson(input: string, messageKey = "strategy_config_invalid_json") {
+        try {
+            const parsed = JSON.parse(input || "{}");
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                throw new Error();
+            }
+
+            return parsed as Record<string, unknown>;
+        } catch {
+            throw new Error($_(messageKey));
+        }
+    }
+
+    async function refreshStrategies(showToast = true) {
         isRefreshing = true;
-        const task = async () => {
-            const response = await listStrategyInstances(token);
-            instances = Array.isArray(response)
-                ? (response as StrategyInstanceView[])
-                : [];
-        };
+        const task = () =>
+            invalidate("admin:settings:strategies").finally(() => {
+                isRefreshing = false;
+            });
 
         if (showToast) {
             await toast.promise(task, {
@@ -96,51 +105,18 @@
                 error: $_("refresh_failed_msg"),
             });
         } else {
-            try {
-                await task();
-            } catch {
-                toast.error($_("refresh_failed_msg"));
-            }
-        }
-        isRefreshing = false;
-    }
-
-    function parseConfig(): Record<string, unknown> {
-        try {
-            const parsed = JSON.parse(configText || "{}");
-            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-                return parsed as Record<string, unknown>;
-            }
-            throw new Error("Config must be a JSON object");
-        } catch {
-            throw new Error($_("strategy_config_invalid_json"));
+            await task();
         }
     }
 
-    function parseJsonObject(value: string, fallbackKey: string): Record<string, unknown> {
-        try {
-            const parsed = JSON.parse(value || "{}");
-            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-                return parsed as Record<string, unknown>;
-            }
-            throw new Error();
-        } catch {
-            throw new Error($_(fallbackKey));
-        }
-    }
-
-    async function loadSelectedDefinitionVersions() {
+    async function loadDefinitionVersions() {
         if (!selectedDefinitionId) {
             selectedDefinitionVersions = [];
             return;
         }
 
-        const token = localStorage.getItem("admin-access-token");
-        if (!token) {
-            return;
-        }
-
         try {
+            const token = getAdminToken();
             selectedDefinitionVersions = await listStrategyDefinitionVersions(
                 selectedDefinitionId,
                 token,
@@ -150,34 +126,25 @@
         }
     }
 
-    async function createDefinition() {
-        const token = localStorage.getItem("admin-access-token");
-        if (!token) {
-            toast.error($_("auth_token_missing"));
-            return;
-        }
-
-        if (!newDefinition.key || !newDefinition.name || !newDefinition.executorType) {
+    async function onCreateDefinition() {
+        if (!createPayload.key || !createPayload.name || !createPayload.executorType) {
             toast.error($_("strategy_definition_required_fields"));
             return;
         }
 
         try {
-            const payload: StrategyDefinitionPayload = {
-                ...newDefinition,
-                configSchema: parseJsonObject(
-                    newDefinitionSchemaText,
-                    "strategy_config_invalid_json",
-                ),
-                defaultConfig: parseJsonObject(
-                    newDefinitionDefaultConfigText,
-                    "strategy_config_invalid_json",
-                ),
-            };
+            const token = getAdminToken();
+            await createStrategyDefinition(
+                {
+                    ...createPayload,
+                    configSchema: parseObjectJson(createSchemaText),
+                    defaultConfig: parseObjectJson(createDefaultConfigText),
+                },
+                token,
+            );
 
-            await createStrategyDefinition(payload, token);
             toast.success($_("strategy_definition_create_success"));
-            await invalidate("admin:settings:strategies");
+            await refreshStrategies(false);
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -187,21 +154,16 @@
         }
     }
 
-    async function toggleDefinition(definition: StrategyDefinition) {
-        const token = localStorage.getItem("admin-access-token");
-        if (!token) {
-            toast.error($_("auth_token_missing"));
-            return;
-        }
-
+    async function onToggleDefinition(definition: StrategyDefinition) {
         try {
+            const token = getAdminToken();
             if (definition.enabled) {
                 await disableStrategyDefinition(definition.id, token);
             } else {
                 await enableStrategyDefinition(definition.id, token);
             }
             toast.success($_("strategy_definition_toggle_success"));
-            await invalidate("admin:settings:strategies");
+            await refreshStrategies(false);
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -211,23 +173,25 @@
         }
     }
 
-    async function publishDefinition(definition: StrategyDefinition) {
-        const token = localStorage.getItem("admin-access-token");
-        if (!token) {
-            toast.error($_("auth_token_missing"));
+    async function onPublishVersion() {
+        if (!selectedDefinition) {
+            toast.error($_("strategy_required_fields"));
             return;
         }
 
         try {
+            const token = getAdminToken();
             const payload: PublishStrategyDefinitionVersionPayload = {
                 version:
-                    publishVersionText && publishVersionText !== definition.currentVersion
+                    publishVersionText &&
+                    publishVersionText !== selectedDefinition.currentVersion
                         ? publishVersionText
                         : undefined,
             };
-            await publishStrategyDefinitionVersion(definition.id, payload, token);
+
+            await publishStrategyDefinitionVersion(selectedDefinition.id, payload, token);
             toast.success($_("strategy_definition_publish_success"));
-            await invalidate("admin:settings:strategies");
+            await refreshStrategies(false);
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -237,21 +201,16 @@
         }
     }
 
-    async function backfillLegacyInstances() {
-        const token = localStorage.getItem("admin-access-token");
-        if (!token) {
-            toast.error($_("auth_token_missing"));
-            return;
-        }
-
+    async function onBackfillLegacyLinks() {
         try {
+            const token = getAdminToken();
             const result = await backfillStrategyInstanceDefinitionLinks(token);
             toast.success(
                 $_("strategy_backfill_done", {
                     values: { updated: result.updated, skipped: result.skipped },
                 }),
             );
-            await invalidate("admin:settings:strategies");
+            await refreshStrategies(false);
         } catch (error) {
             toast.error(
                 error instanceof Error ? error.message : $_("strategy_backfill_failed"),
@@ -259,25 +218,19 @@
         }
     }
 
-    async function validateSelectedDefinition() {
+    async function onValidateStartConfig() {
         if (!selectedDefinitionId || !userId || !clientId) {
             toast.error($_("strategy_required_fields"));
             return;
         }
 
-        const token = localStorage.getItem("admin-access-token");
-        if (!token) {
-            toast.error($_("auth_token_missing"));
-            return;
-        }
-
         try {
-            const config = parseConfig();
+            const token = getAdminToken();
             const payload: StartStrategyInstancePayload = {
                 definitionId: selectedDefinitionId,
                 userId,
                 clientId,
-                config,
+                config: parseObjectJson(configText),
             };
             await validateStrategyInstance(payload, token);
             toast.success($_("strategy_validation_success"));
@@ -290,30 +243,23 @@
         }
     }
 
-    async function startSelectedDefinition() {
+    async function onStartStrategyInstance() {
         if (!selectedDefinitionId || !userId || !clientId) {
             toast.error($_("strategy_required_fields"));
             return;
         }
 
-        const token = localStorage.getItem("admin-access-token");
-        if (!token) {
-            toast.error($_("auth_token_missing"));
-            return;
-        }
-
         try {
-            const config = parseConfig();
+            const token = getAdminToken();
             const payload: StartStrategyInstancePayload = {
                 definitionId: selectedDefinitionId,
                 userId,
                 clientId,
-                config,
+                config: parseObjectJson(configText),
             };
             await startStrategyInstance(payload, token);
-
             toast.success($_("strategy_start_success"));
-            await invalidate("admin:settings:strategies");
+            await refreshStrategies(false);
         } catch (error) {
             toast.error(
                 error instanceof Error ? error.message : $_("strategy_start_failed"),
@@ -321,19 +267,14 @@
         }
     }
 
-    async function stopInstance(instance: StrategyInstanceView) {
+    async function onStopStrategyInstance(instance: StrategyInstanceView) {
         if (!instance.definitionId) {
             toast.error($_("strategy_instance_missing_definition"));
             return;
         }
 
-        const token = localStorage.getItem("admin-access-token");
-        if (!token) {
-            toast.error($_("auth_token_missing"));
-            return;
-        }
-
         try {
+            const token = getAdminToken();
             await stopStrategyInstance(
                 {
                     definitionId: instance.definitionId,
@@ -343,7 +284,7 @@
                 token,
             );
             toast.success($_("strategy_stop_success"));
-            await invalidate("admin:settings:strategies");
+            await refreshStrategies(false);
         } catch (error) {
             toast.error(
                 error instanceof Error ? error.message : $_("strategy_stop_failed"),
@@ -352,35 +293,67 @@
     }
 </script>
 
-<div class="p-4 sm:p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-2xl font-bold">{$_("strategies")}</h1>
-            <p class="text-base-content/60">{$_("manage_strategies")}</p>
+<div class="p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 max-w-7xl mx-auto min-h-screen bg-base-200">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+        <div class="flex items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
+            <button on:click={() => window.history.back()} class="btn btn-ghost btn-circle">
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="w-5 h-5"
+                >
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+                    />
+                </svg>
+            </button>
+
+            <div class="flex flex-col text-start items-start justify-center min-w-0">
+                <span class="text-xl sm:text-2xl font-bold">{$_("strategies")}</span>
+                <span class="text-sm text-base-content/60">{$_("manage_strategies")}</span>
+            </div>
         </div>
-        <button
-            class="btn btn-outline"
-            on:click={() => refreshInstances(true)}
-            disabled={isRefreshing}
-        >
-            {#if isRefreshing}
-                <span class="loading loading-spinner loading-sm" />
-            {/if}
-            {$_("refresh")}
-        </button>
+
+        <div class="flex items-center justify-end gap-2 sm:gap-3 w-full sm:w-auto">
+            <button class="btn btn-outline btn-sm" on:click={onBackfillLegacyLinks}>
+                {$_("strategy_backfill")}
+            </button>
+            <button class="btn btn-square btn-outline" on:click={() => refreshStrategies(true)}>
+                <span class={isRefreshing ? "loading loading-spinner loading-sm" : ""}>
+                    {#if !isRefreshing}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke-width="1.5"
+                            stroke="currentColor"
+                            class="w-5 h-5"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+                            />
+                        </svg>
+                    {/if}
+                </span>
+            </button>
+        </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="card bg-base-100 shadow border border-base-200">
-            <div class="card-body space-y-4">
-                <h2 class="card-title">{$_("start_strategy_instance")}</h2>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="card bg-base-100 border border-base-300 shadow-sm">
+            <div class="card-body gap-4">
+                <h2 class="card-title text-base">{$_("start_strategy_instance")}</h2>
 
                 <label class="form-control">
                     <span class="label-text">{$_("strategy_definition")}</span>
-                    <select
-                        class="select select-bordered"
-                        bind:value={selectedDefinitionId}
-                    >
+                    <select class="select select-bordered" bind:value={selectedDefinitionId}>
                         <option value="">{$_("select_strategy_definition")}</option>
                         {#each definitions as definition}
                             <option value={definition.id}>
@@ -393,37 +366,28 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label class="form-control">
                         <span class="label-text">User ID</span>
-                        <input
-                            class="input input-bordered"
-                            bind:value={userId}
-                            placeholder="user123"
-                        />
+                        <input class="input input-bordered" bind:value={userId} placeholder="user123" />
                     </label>
-
                     <label class="form-control">
                         <span class="label-text">Client ID</span>
-                        <input
-                            class="input input-bordered"
-                            bind:value={clientId}
-                            placeholder="client123"
-                        />
+                        <input class="input input-bordered" bind:value={clientId} placeholder="client123" />
                     </label>
                 </div>
 
                 <label class="form-control">
                     <span class="label-text">{$_("strategy_config_override")}</span>
-                    <textarea
-                        class="textarea textarea-bordered h-40 font-mono text-xs"
-                        bind:value={configText}
-                    />
+                    <textarea class="textarea textarea-bordered h-40 font-mono text-xs" bind:value={configText} />
                 </label>
 
                 {#if selectedDefinition}
-                    <div class="text-xs bg-base-200 rounded p-3">
-                        <div class="font-semibold mb-1">
-                            {$_("default_config_preview")}
+                    <div class="rounded-lg border border-base-300 bg-base-200 p-3">
+                        <div class="flex flex-wrap items-center gap-2 mb-2">
+                            <span class="badge badge-outline">{selectedDefinition.key}</span>
+                            <span class="badge badge-outline">{selectedDefinition.executorType}</span>
+                            <span class="badge badge-outline">v{selectedDefinition.currentVersion}</span>
                         </div>
-                        <pre class="whitespace-pre-wrap">{JSON.stringify(
+                        <div class="text-xs font-semibold mb-1">{$_("default_config_preview")}</div>
+                        <pre class="text-xs whitespace-pre-wrap break-all">{JSON.stringify(
                             selectedDefinition.defaultConfig,
                             null,
                             2,
@@ -431,98 +395,121 @@
                     </div>
                 {/if}
 
-                <div class="flex items-center gap-2 justify-end">
-                    <button
-                        class="btn btn-ghost"
-                        on:click={validateSelectedDefinition}
-                    >
-                        {$_("validate")}
-                    </button>
-                    <button
-                        class="btn btn-primary"
-                        on:click={startSelectedDefinition}
-                    >
-                        {$_("start")}
-                    </button>
+                <div class="card-actions justify-end">
+                    <button class="btn btn-ghost" on:click={onValidateStartConfig}>{$_("validate")}</button>
+                    <button class="btn btn-primary" on:click={onStartStrategyInstance}>{$_("start")}</button>
                 </div>
             </div>
         </div>
 
-        <div class="card bg-base-100 shadow border border-base-200">
-            <div class="card-body">
-                <div class="flex items-center justify-between gap-2">
-                    <h2 class="card-title">{$_("strategy_definitions")}</h2>
-                    <button class="btn btn-xs btn-outline" on:click={backfillLegacyInstances}>
-                        {$_("strategy_backfill")}
-                    </button>
-                </div>
+        <div class="card bg-base-100 border border-base-300 shadow-sm">
+            <div class="card-body gap-4">
+                <h2 class="card-title text-base">{$_("strategy_definitions")}</h2>
 
-                <div class="space-y-2 rounded border border-base-200 p-3 bg-base-50">
-                    <div class="font-medium text-sm">{$_("create_strategy_definition")}</div>
+                <div class="rounded-lg border border-base-300 bg-base-200 p-3 space-y-2">
+                    <div class="text-sm font-medium">{$_("create_strategy_definition")}</div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <input class="input input-bordered input-sm" placeholder="key" bind:value={newDefinition.key} />
-                        <input class="input input-bordered input-sm" placeholder="name" bind:value={newDefinition.name} />
+                        <input class="input input-bordered input-sm" placeholder="key" bind:value={createPayload.key} />
+                        <input class="input input-bordered input-sm" placeholder="name" bind:value={createPayload.name} />
                     </div>
-                    <input class="input input-bordered input-sm" placeholder="executorType" bind:value={newDefinition.executorType} />
-                    <textarea class="textarea textarea-bordered h-20 font-mono text-xs" bind:value={newDefinitionSchemaText} />
-                    <textarea class="textarea textarea-bordered h-20 font-mono text-xs" bind:value={newDefinitionDefaultConfigText} />
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <select class="select select-bordered select-sm" bind:value={createPayload.executorType}>
+                            <option value="pureMarketMaking">pureMarketMaking</option>
+                            <option value="arbitrage">arbitrage</option>
+                            <option value="volume">volume</option>
+                        </select>
+                        <select class="select select-bordered select-sm" bind:value={createPayload.visibility}>
+                            <option value="system">system</option>
+                            <option value="private">private</option>
+                            <option value="public">public</option>
+                        </select>
+                    </div>
+                    <input
+                        class="input input-bordered input-sm"
+                        placeholder="description"
+                        bind:value={createPayload.description}
+                    />
+                    <textarea
+                        class="textarea textarea-bordered h-20 font-mono text-xs"
+                        bind:value={createSchemaText}
+                    />
+                    <textarea
+                        class="textarea textarea-bordered h-20 font-mono text-xs"
+                        bind:value={createDefaultConfigText}
+                    />
                     <div class="flex justify-end">
-                        <button class="btn btn-sm btn-primary" on:click={createDefinition}>{$_("create")}</button>
+                        <button class="btn btn-sm btn-primary" on:click={onCreateDefinition}>{$_("create")}</button>
                     </div>
                 </div>
 
                 {#if definitions.length === 0}
-                    <p class="text-base-content/60">{$_("no_data")}</p>
+                    <p class="text-sm text-base-content/60">{$_("no_data")}</p>
                 {:else}
-                    <div class="space-y-2 max-h-[500px] overflow-auto pr-1">
+                    <div class="space-y-2 max-h-60 overflow-auto pr-1">
                         {#each definitions as definition}
-                            <div class="p-3 border border-base-200 rounded-lg bg-base-50">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <div class="font-semibold">{definition.name}</div>
-                                        <div class="text-xs text-base-content/60">
-                                            {definition.key} - {definition.executorType} - v{definition.currentVersion}
+                            <div
+                                class="rounded-lg border p-3 transition-colors"
+                                class:border-primary={selectedDefinitionId === definition.id}
+                                class:bg-base-200={selectedDefinitionId === definition.id}
+                                class:border-base-300={selectedDefinitionId !== definition.id}
+                            >
+                                <div class="flex items-start justify-between gap-3">
+                                    <button
+                                        type="button"
+                                        class="text-left min-w-0 flex-1"
+                                        on:click={() => (selectedDefinitionId = definition.id)}
+                                    >
+                                        <div class="font-medium truncate">{definition.name}</div>
+                                        <div class="text-xs text-base-content/60 break-all">
+                                            {definition.key} | {definition.executorType} | v{definition.currentVersion}
                                         </div>
-                                    </div>
+                                    </button>
                                     <div class="flex items-center gap-2">
                                         <span
                                             class={definition.enabled
                                                 ? "badge badge-success"
                                                 : "badge badge-warning"}
                                         >
-                                            {definition.enabled
-                                                ? $_("enabled")
-                                                : $_("disabled")}
+                                            {definition.enabled ? $_("enabled") : $_("disabled")}
                                         </span>
-                                        <button class="btn btn-xs btn-ghost" on:click={() => toggleDefinition(definition)}>
+                                        <button
+                                            type="button"
+                                            class="btn btn-xs btn-ghost"
+                                            on:click={() => onToggleDefinition(definition)}
+                                        >
                                             {definition.enabled ? $_("disable") : $_("enable")}
                                         </button>
                                     </div>
-                                </div>
-                                <div class="mt-2 flex items-center gap-2">
-                                    <input
-                                        class="input input-bordered input-xs w-28"
-                                        bind:value={publishVersionText}
-                                        placeholder="1.0.1"
-                                    />
-                                    <button class="btn btn-xs btn-outline" on:click={() => publishDefinition(definition)}>
-                                        {$_("publish")}
-                                    </button>
                                 </div>
                             </div>
                         {/each}
                     </div>
 
-                    {#if selectedDefinition && selectedDefinitionVersions.length > 0}
-                        <div class="mt-3 rounded border border-base-200 p-3 bg-base-50">
-                            <div class="font-medium text-sm mb-2">{$_("strategy_definition_versions")}</div>
-                            <div class="space-y-1 max-h-32 overflow-auto">
-                                {#each selectedDefinitionVersions as version}
-                                    <div class="text-xs">
-                                        v{version.version} - {version.executorType}
-                                    </div>
-                                {/each}
+                    {#if selectedDefinition}
+                        <div class="rounded-lg border border-base-300 bg-base-200 p-3 space-y-2">
+                            <div class="flex items-center gap-2">
+                                <input
+                                    class="input input-bordered input-sm w-32"
+                                    bind:value={publishVersionText}
+                                    placeholder="1.0.1"
+                                />
+                                <button class="btn btn-sm btn-outline" on:click={onPublishVersion}>
+                                    {$_("publish")}
+                                </button>
                             </div>
+
+                            <div class="text-sm font-medium">{$_("strategy_definition_versions")}</div>
+                            {#if selectedDefinitionVersions.length === 0}
+                                <p class="text-sm text-base-content/60">{$_("no_data")}</p>
+                            {:else}
+                                <div class="max-h-28 overflow-auto space-y-1">
+                                    {#each selectedDefinitionVersions as version}
+                                        <div class="text-xs">
+                                            v{version.version} - {version.executorType}
+                                        </div>
+                                    {/each}
+                                </div>
+                            {/if}
                         </div>
                     {/if}
                 {/if}
@@ -530,11 +517,12 @@
         </div>
     </div>
 
-    <div class="card bg-base-100 shadow border border-base-200">
-        <div class="card-body">
-            <h2 class="card-title">{$_("strategy_instances")}</h2>
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+        <div class="card-body gap-4">
+            <h2 class="card-title text-base">{$_("strategy_instances")}</h2>
+
             {#if instances.length === 0}
-                <p class="text-base-content/60">{$_("no_data")}</p>
+                <p class="text-sm text-base-content/60">{$_("no_data")}</p>
             {:else}
                 <div class="overflow-x-auto">
                     <table class="table table-zebra">
@@ -551,29 +539,21 @@
                             {#each instances as instance}
                                 <tr>
                                     <td>
-                                        <div class="font-medium">
-                                            {instance.definitionName || instance.strategyType}
-                                        </div>
-                                        <div class="text-xs text-base-content/60">
-                                            {instance.strategyKey}
-                                        </div>
+                                        <div class="font-medium">{instance.definitionName || instance.strategyType}</div>
+                                        <div class="text-xs text-base-content/60 break-all">{instance.strategyKey}</div>
                                     </td>
                                     <td>{instance.userId}</td>
                                     <td>{instance.clientId}</td>
                                     <td>
-                                        <span
-                                            class={instance.status === "running"
-                                                ? "badge badge-success"
-                                                : "badge"}
-                                        >
+                                        <span class={instance.status === "running" ? "badge badge-success" : "badge"}>
                                             {instance.status}
                                         </span>
                                     </td>
                                     <td>
                                         <button
                                             class="btn btn-sm btn-outline"
-                                            on:click={() => stopInstance(instance)}
                                             disabled={instance.status !== "running"}
+                                            on:click={() => onStopStrategyInstance(instance)}
                                         >
                                             {$_("stop")}
                                         </button>

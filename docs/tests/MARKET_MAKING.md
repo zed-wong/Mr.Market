@@ -17,6 +17,7 @@ This document covers backend end-to-end testing for market making:
 - Strategy orchestration: `server/src/modules/market-making/strategy/strategy.service.ts`
 - Intent worker: `server/src/modules/market-making/strategy/strategy-intent-worker.service.ts`
 - Intent execution: `server/src/modules/market-making/strategy/strategy-intent-execution.service.ts`
+- Strategy definition admin service: `server/src/modules/admin/strategy/adminStrategy.service.ts`
 - Balance ledger: `server/src/modules/market-making/ledger/balance-ledger.service.ts`
 - Performance API/service: `server/src/modules/market-making/performance/performance.service.ts`
 - HuFi score estimator: `server/src/modules/campaign/hufi-score-estimator.service.ts`
@@ -50,6 +51,7 @@ Queue `market-making`:
    - default: refund/fail (validation mode)
    - full lifecycle: withdraw -> monitor confirmation -> join campaign -> start MM
 8. Strategy is registered and triggered by tick coordinator.
+   - dynamic admin flow can start from `strategy_definitions` and attach `definitionId/definitionVersion` to `strategy_instances`.
 9. Intents are stored, dispatched by worker, and executed on exchange adapter.
 10. Ledger/performance/reward/score data confirms user profit and balances.
 
@@ -151,5 +153,5 @@ Memo fixtures must include:
 
 ## Last Updated
 
-- Date: 2026-02-12
+- Date: 2026-02-28
 - Status: Active
