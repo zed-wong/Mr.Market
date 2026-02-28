@@ -1,12 +1,16 @@
 // strategy.controller.ts
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Query,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -24,15 +28,20 @@ import {
   ExecuteVolumeStrategyDto,
   JoinStrategyDto,
   PureMarketMakingStrategyDto,
+  StopIndicatorStrategyDto,
   StopVolumeStrategyDto,
 } from './strategy.dto';
+import { TimeIndicatorStrategyService } from './time-indicator.service';
+import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
 @ApiTags('Trading Engine')
 @Controller('strategy')
 export class StrategyController {
+  private readonly logger = new Logger(StrategyController.name);
   constructor(
     private readonly strategyService: StrategyService,
     private readonly adminService: AdminStrategyService,
+    private readonly timeIndicatorStrategyService: TimeIndicatorStrategyService,
   ) {}
 
   @Get('running')
@@ -188,6 +197,7 @@ export class StrategyController {
       'The volume strategy has been started and will ensure execution of trades.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async executeVolumeStrategy(
     @Body() executeVolumeStrategyDto: ExecuteVolumeStrategyDto,
   ) {
@@ -201,6 +211,7 @@ export class StrategyController {
       userId,
       clientId,
       pricePushRate,
+      postOnlySide,
     } = executeVolumeStrategyDto;
 
     return this.strategyService.executeVolumeStrategy(
@@ -213,6 +224,7 @@ export class StrategyController {
       userId,
       clientId,
       pricePushRate,
+      postOnlySide,
     );
   }
 
@@ -230,6 +242,72 @@ export class StrategyController {
     return this.strategyService.stopVolumeStrategy(
       stopVolumeStrategyDto.userId,
       stopVolumeStrategyDto.clientId,
+    );
+  }
+
+  @Post('execute-indicator-strategy')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Run the time-indicator strategy once (stateless)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Executed indicator strategy cycle.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  async execute(@Body() dto: TimeIndicatorStrategyDto) {
+    return this.timeIndicatorStrategyService.executeIndicatorStrategy(dto);
+  }
+
+  @Post('start-indicator-strategy')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Start periodic execution of the time-indicator strategy',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Started periodic indicator strategy execution.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  async start(@Body() dto: TimeIndicatorStrategyDto) {
+    if (
+      !Number.isFinite(dto.tickIntervalMs) ||
+      !Number.isInteger(dto.tickIntervalMs) ||
+      dto.tickIntervalMs <= 0
+    ) {
+      throw new BadRequestException(
+        'tickIntervalMs must be a finite positive integer',
+      );
+    }
+    this.logger.warn(
+      'Time-indicator run state is in-memory only; use persistent strategy state for multi-instance/restart safety.',
+    );
+
+    return await this.timeIndicatorStrategyService.startIndicatorStrategy(dto);
+  }
+
+  @Post('stop-indicator-strategy')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Stop periodic execution of the time-indicator strategy',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Stopped periodic indicator strategy execution.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  async stop(@Body() dto: StopIndicatorStrategyDto) {
+    this.logger.warn(
+      'Stop indicator strategy should consult persisted run state in multi-instance deployments; current implementation is in-memory.',
+    );
+
+    return await this.timeIndicatorStrategyService.stopIndicatorStrategy(
+      dto.userId,
+      dto.clientId,
     );
   }
 

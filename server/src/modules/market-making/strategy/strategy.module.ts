@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { IndicatorStrategyHistory } from 'src/common/entities/indicator-strategy-history.entity';
 import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
 import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
@@ -25,6 +26,7 @@ import { StrategyService } from './strategy.service';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 import { StrategyIntentWorkerService } from './strategy-intent-worker.service';
+import { TimeIndicatorStrategyService } from './time-indicator.service';
 
 @Module({
   imports: [
@@ -39,6 +41,7 @@ import { StrategyIntentWorkerService } from './strategy-intent-worker.service';
       ArbitrageHistory,
       MarketMakingHistory,
       StrategyOrderIntentEntity,
+      IndicatorStrategyHistory,
     ]),
     FeeModule,
     TickModule,
@@ -54,6 +57,7 @@ import { StrategyIntentWorkerService } from './strategy-intent-worker.service';
     StrategyIntentWorkerService,
     StrategyIntentStoreService,
     QuoteExecutorManagerService,
+    TimeIndicatorStrategyService,
   ],
   exports: [StrategyService],
 })

@@ -23,6 +23,7 @@ import {
   GrowdataSimplyGrowToken,
 } from './common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from './common/entities/data/spot-data.entity';
+import { IndicatorStrategyHistory } from './common/entities/indicator-strategy-history.entity';
 import { BalanceReadModel } from './common/entities/ledger/balance-read-model.entity';
 import { LedgerEntry } from './common/entities/ledger/ledger-entry.entity';
 import { RewardAllocation } from './common/entities/ledger/reward-allocation.entity';
@@ -156,6 +157,7 @@ function buildRedisConfig(configService: ConfigService) {
         ShareLedgerEntry,
         HufiScoreSnapshot,
         StrategyOrderIntentEntity,
+        IndicatorStrategyHistory,
       ],
       synchronize: false,
       migrations: [join(__dirname, 'database/migrations/*{.ts,.js}')],

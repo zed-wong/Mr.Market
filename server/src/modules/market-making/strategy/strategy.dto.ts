@@ -1,6 +1,16 @@
 // strategy.dto.ts
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Min,
+} from 'class-validator';
+import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 
 export class JoinStrategyDto {
@@ -197,35 +207,45 @@ export class PureMarketMakingStrategyDto {
   })
   currentBaseRatio?: number;
 }
-
 export class ExecuteVolumeStrategyDto {
   @ApiProperty({ description: 'Name of the exchange' })
+  @IsString()
   exchangeName: string;
 
   @ApiProperty({ description: 'Symbol to trade' })
+  @IsString()
   symbol: string;
 
   @ApiProperty({
     description:
       'Percentage increment for offsetting from midPrice (initial offset)',
   })
+  @IsNumber()
   incrementPercentage: number;
 
   @ApiProperty({
     description: 'Time interval (in seconds) between each trade execution',
   })
+  @IsInt()
+  @IsPositive()
   intervalTime: number;
 
   @ApiProperty({ description: 'Base amount to trade per order' })
+  @IsNumber()
+  @IsPositive()
   tradeAmount: number;
 
   @ApiProperty({ description: 'Number of total trades to execute' })
+  @IsInt()
+  @Min(0)
   numTrades: number;
 
   @ApiProperty({ description: 'User ID' })
+  @IsString()
   userId: string;
 
   @ApiProperty({ description: 'Client ID' })
+  @IsString()
   clientId: string;
 
   @ApiProperty({
@@ -233,13 +253,31 @@ export class ExecuteVolumeStrategyDto {
       'Rate at which to push the price upward after each successful trade, in percent',
     example: 1,
   })
+  @IsNumber()
   pricePushRate: number; // <--- NEW PARAM to push price after each trade
+  @ApiPropertyOptional({
+    description: 'The first trade is a buy or sell',
+    example: 'buy',
+  })
+  @IsOptional()
+  @IsEnum(Side)
+  postOnlySide?: Side;
 }
 
 export class StopVolumeStrategyDto {
   @ApiProperty({ description: 'User ID' })
   userId: string;
 
+  @ApiProperty({ description: 'Client ID' })
+  clientId: string;
+}
+
+export class StopIndicatorStrategyDto {
+  @IsString()
+  @ApiProperty({ description: 'User ID' })
+  userId: string;
+
+  @IsString()
   @ApiProperty({ description: 'Client ID' })
   clientId: string;
 }

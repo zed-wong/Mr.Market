@@ -32,6 +32,7 @@ import { StrategyIntentStoreService } from './strategy-intent-store.service';
 type StrategyType = 'arbitrage' | 'pureMarketMaking' | 'volume';
 
 type StrategyRuntimeSession = {
+  runId: string;
   strategyKey: string;
   strategyType: StrategyType;
   userId: string;
@@ -44,6 +45,20 @@ type StrategyRuntimeSession = {
     | Record<string, any>;
 };
 
+type VolumeStrategyParams = {
+  exchangeName: string;
+  symbol: string;
+  baseIncrementPercentage: number;
+  baseIntervalTime: number;
+  baseTradeAmount: number;
+  numTrades: number;
+  userId: string;
+  clientId: string;
+  pricePushRate: number;
+  postOnlySide?: 'buy' | 'sell';
+  executedTrades?: number;
+};
+
 @Injectable()
 export class StrategyService
   implements TickComponent, OnModuleInit, OnModuleDestroy
@@ -54,6 +69,10 @@ export class StrategyService
     string,
     StrategyOrderIntent[]
   >();
+
+  private generateRunId(): string {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
 
   constructor(
     private readonly exchangeInitService: ExchangeInitService,
@@ -87,6 +106,7 @@ export class StrategyService
 
     for (const strategy of runningStrategies) {
       this.sessions.set(strategy.strategyKey, {
+        runId: this.generateRunId(),
         strategyKey: strategy.strategyKey,
         strategyType: strategy.strategyType as StrategyType,
         userId: strategy.userId,
@@ -116,7 +136,12 @@ export class StrategyService
     );
 
     for (const session of sessions) {
+      const capturedRunId = session.runId;
+
       if (session.nextRunAtMs > nowMs) {
+        continue;
+      }
+      if (!this.sessions.has(session.strategyKey)) {
         continue;
       }
 
@@ -132,8 +157,12 @@ export class StrategyService
           errorTrace,
         );
       } finally {
-        session.nextRunAtMs += session.cadenceMs;
-        this.sessions.set(session.strategyKey, session);
+        const nextSession = this.sessions.get(session.strategyKey);
+
+        if (nextSession && nextSession.runId === capturedRunId) {
+          nextSession.nextRunAtMs += nextSession.cadenceMs;
+          this.sessions.set(session.strategyKey, nextSession);
+        }
       }
     }
   }
@@ -192,6 +221,7 @@ export class StrategyService
         strategyInstance.parameters.userId,
         strategyInstance.parameters.clientId,
         strategyInstance.parameters.pricePushRate,
+        strategyInstance.parameters.postOnlySide,
       );
 
       return;
@@ -289,6 +319,7 @@ export class StrategyService
     userId: string,
     clientId: string,
     pricePushRate: number,
+    postOnlySide?: 'buy' | 'sell',
   ) {
     const strategyKey = createStrategyKey({
       type: 'volume',
@@ -296,7 +327,7 @@ export class StrategyService
       client_id: clientId,
     });
 
-    const params = {
+    const params: VolumeStrategyParams = {
       exchangeName,
       symbol,
       baseIncrementPercentage,
@@ -306,6 +337,8 @@ export class StrategyService
       userId,
       clientId,
       pricePushRate,
+      postOnlySide,
+      executedTrades: 0,
     };
 
     const cadenceMs = Math.max(1000, Number(baseIntervalTime || 10) * 1000);
@@ -492,6 +525,7 @@ export class StrategyService
     params: StrategyRuntimeSession['params'],
   ): void {
     this.sessions.set(strategyKey, {
+      runId: this.generateRunId(),
       strategyKey,
       strategyType,
       userId,
@@ -603,7 +637,165 @@ export class StrategyService
       );
 
       await this.evaluateArbitrageOpportunityVWAP(exchangeA, exchangeB, params);
+
+      return;
     }
+
+    if (session.strategyType === 'volume') {
+      const params = session.params as VolumeStrategyParams;
+      const executedTrades = Number(params.executedTrades || 0);
+
+      if (executedTrades >= Number(params.numTrades || 0)) {
+        await this.stopStrategyForUser(
+          session.userId,
+          session.clientId,
+          session.strategyType,
+        );
+
+        return;
+      }
+
+      const intents = await this.buildVolumeIntents(
+        session.strategyKey,
+        params,
+        ts,
+      );
+
+      if (intents.length > 0) {
+        const activeBeforePersist = this.sessions.get(session.strategyKey);
+
+        if (!this.isSameActiveSession(activeBeforePersist, session)) {
+          this.logger.warn(
+            `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
+          );
+
+          return;
+        }
+
+        const nextParams: VolumeStrategyParams = {
+          ...params,
+          executedTrades: executedTrades + 1,
+        };
+
+        await this.persistStrategyParams(session.strategyKey, nextParams);
+        const activeBeforePublish = this.sessions.get(session.strategyKey);
+
+        if (!this.isSameActiveSession(activeBeforePublish, session)) {
+          this.logger.warn(
+            `Skipping stale volume tick before publish for ${session.strategyKey}: active session changed`,
+          );
+
+          return;
+        }
+
+        await this.publishIntents(session.strategyKey, intents);
+        const currentSession = this.sessions.get(session.strategyKey);
+
+        if (this.isSameActiveSession(currentSession, session)) {
+          this.sessions.set(session.strategyKey, {
+            ...currentSession,
+            params: nextParams,
+          });
+        } else {
+          this.logger.warn(
+            `Skipping stale volume tick write-back for ${session.strategyKey}: active session changed`,
+          );
+        }
+      }
+    }
+  }
+
+  private isSameActiveSession(
+    active: StrategyRuntimeSession | undefined,
+    session: StrategyRuntimeSession,
+  ): active is StrategyRuntimeSession {
+    return (
+      !!active &&
+      active.userId === session.userId &&
+      active.clientId === session.clientId &&
+      active.strategyType === session.strategyType &&
+      active.runId === session.runId
+    );
+  }
+
+  private async buildVolumeIntents(
+    strategyKey: string,
+    params: VolumeStrategyParams,
+    ts: string,
+  ): Promise<StrategyOrderIntent[]> {
+    const exchange = this.exchangeInitService.getExchange(params.exchangeName);
+    const orderBook = await exchange.fetchOrderBook(params.symbol);
+    const bestBid = this.toPositiveNumber(orderBook?.bids?.[0]?.[0]);
+    const bestAsk = this.toPositiveNumber(orderBook?.asks?.[0]?.[0]);
+
+    if (bestBid === undefined || bestAsk === undefined) {
+      this.logger.warn(
+        `Skipping volume cycle for ${strategyKey}: missing best bid/ask on ${params.exchangeName} ${params.symbol}`,
+      );
+
+      return [];
+    }
+
+    const mid = new BigNumber(bestBid).plus(bestAsk).dividedBy(2);
+    const pushMultiplier = new BigNumber(1).plus(
+      new BigNumber(params.pricePushRate || 0)
+        .dividedBy(100)
+        .multipliedBy(Number(params.executedTrades || 0)),
+    );
+    const basePrice = mid.multipliedBy(pushMultiplier);
+    const offsetMultiplier = new BigNumber(
+      params.baseIncrementPercentage || 0,
+    ).dividedBy(100);
+
+    const side: 'buy' | 'sell' = params.postOnlySide
+      ? params.postOnlySide
+      : Number(params.executedTrades || 0) % 2 === 0
+      ? 'buy'
+      : 'sell';
+    const price =
+      side === 'buy'
+        ? basePrice.multipliedBy(new BigNumber(1).minus(offsetMultiplier))
+        : basePrice.multipliedBy(new BigNumber(1).plus(offsetMultiplier));
+    const qty = new BigNumber(params.baseTradeAmount);
+
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      this.logger.error(
+        `Skipping volume cycle for ${strategyKey}: invalid non-positive price ${price.toFixed()} (executedTrades=${
+          params.executedTrades || 0
+        }, params=${JSON.stringify({
+          exchangeName: params.exchangeName,
+          symbol: params.symbol,
+          baseIncrementPercentage: params.baseIncrementPercentage,
+          pricePushRate: params.pricePushRate,
+        })})`,
+      );
+
+      return [];
+    }
+
+    if (!qty.isFinite() || qty.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Skipping volume cycle for ${strategyKey}: invalid qty ${params.baseTradeAmount}`,
+      );
+
+      return [];
+    }
+
+    return [
+      this.createIntent(
+        strategyKey,
+        strategyKey,
+        params.userId,
+        params.clientId,
+        exchange.id,
+        params.symbol,
+        side,
+        price,
+        qty,
+        ts,
+        `volume-${params.executedTrades || 0}`,
+      ),
+    ];
   }
 
   private async buildPureMarketMakingIntents(
@@ -925,5 +1117,18 @@ export class StrategyService
     }
 
     return parsed;
+  }
+
+  private async persistStrategyParams(
+    strategyKey: string,
+    params: VolumeStrategyParams,
+  ): Promise<void> {
+    await this.strategyInstanceRepository.update(
+      { strategyKey },
+      {
+        parameters: params as Record<string, any>,
+        updatedAt: new Date(),
+      },
+    );
   }
 }
