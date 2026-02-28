@@ -23,7 +23,7 @@ export class CustomLogger extends Logger {
         : path.join(__dirname, '..', 'logs'); // Adjust as necessary for production
 
     const transports: winston.transport[] = isTestRuntime
-      ? [new winston.transports.Console({ silent: true })]
+      ? [new winston.transports.Console({ silent: this.silentForTests })]
       : [
           new winston.transports.File({
             filename: path.join(logsDir, 'error.log'),
