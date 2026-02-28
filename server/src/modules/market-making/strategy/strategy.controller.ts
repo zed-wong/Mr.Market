@@ -247,6 +247,12 @@ export class StrategyController {
 
   @Post('execute-indicator-strategy')
   @ApiOperation({ summary: 'Run the time-indicator strategy once (stateless)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Executed indicator strategy cycle.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async execute(@Body() dto: TimeIndicatorStrategyDto) {
     return this.timeIndicatorStrategyService.executeIndicatorStrategy(dto);
@@ -256,6 +262,12 @@ export class StrategyController {
   @ApiOperation({
     summary: 'Start periodic execution of the time-indicator strategy',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Started periodic indicator strategy execution.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async start(@Body() dto: TimeIndicatorStrategyDto) {
     if (
@@ -278,6 +290,12 @@ export class StrategyController {
   @ApiOperation({
     summary: 'Stop periodic execution of the time-indicator strategy',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Stopped periodic indicator strategy execution.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async stop(@Body() dto: StopIndicatorStrategyDto) {
     this.logger.warn(

@@ -653,10 +653,12 @@ export class StrategyService
         await this.publishIntents(session.strategyKey, intents);
         params.executedTrades = executedTrades + 1;
         await this.persistStrategyParams(session.strategyKey, params);
-        this.sessions.set(session.strategyKey, {
-          ...session,
-          params,
-        });
+        if (this.sessions.has(session.strategyKey)) {
+          this.sessions.set(session.strategyKey, {
+            ...session,
+            params,
+          });
+        }
       }
     }
   }
