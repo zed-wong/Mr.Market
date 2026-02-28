@@ -662,22 +662,6 @@ export class StrategyService
       );
 
       if (intents.length > 0) {
-        const activeBeforePublish = this.sessions.get(session.strategyKey);
-
-        if (!this.isSameActiveSession(activeBeforePublish, session)) {
-          this.logger.warn(
-            `Skipping stale volume tick before publish for ${session.strategyKey}: active session changed`,
-          );
-
-          return;
-        }
-
-        const nextParams: VolumeStrategyParams = {
-          ...params,
-          executedTrades: executedTrades + 1,
-        };
-
-        await this.publishIntents(session.strategyKey, intents);
         const activeBeforePersist = this.sessions.get(session.strategyKey);
 
         if (!this.isSameActiveSession(activeBeforePersist, session)) {
@@ -688,7 +672,23 @@ export class StrategyService
           return;
         }
 
+        const nextParams: VolumeStrategyParams = {
+          ...params,
+          executedTrades: executedTrades + 1,
+        };
+
         await this.persistStrategyParams(session.strategyKey, nextParams);
+        const activeBeforePublish = this.sessions.get(session.strategyKey);
+
+        if (!this.isSameActiveSession(activeBeforePublish, session)) {
+          this.logger.warn(
+            `Skipping stale volume tick before publish for ${session.strategyKey}: active session changed`,
+          );
+
+          return;
+        }
+
+        await this.publishIntents(session.strategyKey, intents);
         const currentSession = this.sessions.get(session.strategyKey);
 
         if (this.isSameActiveSession(currentSession, session)) {
