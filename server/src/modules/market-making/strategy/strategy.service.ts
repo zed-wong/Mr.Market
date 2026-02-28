@@ -32,6 +32,7 @@ import { StrategyIntentStoreService } from './strategy-intent-store.service';
 type StrategyType = 'arbitrage' | 'pureMarketMaking' | 'volume';
 
 type StrategyRuntimeSession = {
+  runId: string;
   strategyKey: string;
   strategyType: StrategyType;
   userId: string;
@@ -69,6 +70,10 @@ export class StrategyService
     StrategyOrderIntent[]
   >();
 
+  private generateRunId(): string {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
   constructor(
     private readonly exchangeInitService: ExchangeInitService,
     @InjectRepository(StrategyInstance)
@@ -101,6 +106,7 @@ export class StrategyService
 
     for (const strategy of runningStrategies) {
       this.sessions.set(strategy.strategyKey, {
+        runId: this.generateRunId(),
         strategyKey: strategy.strategyKey,
         strategyType: strategy.strategyType as StrategyType,
         userId: strategy.userId,
@@ -130,6 +136,8 @@ export class StrategyService
     );
 
     for (const session of sessions) {
+      const capturedRunId = session.runId;
+
       if (session.nextRunAtMs > nowMs) {
         continue;
       }
@@ -151,7 +159,7 @@ export class StrategyService
       } finally {
         const nextSession = this.sessions.get(session.strategyKey);
 
-        if (nextSession) {
+        if (nextSession && nextSession.runId === capturedRunId) {
           nextSession.nextRunAtMs += nextSession.cadenceMs;
           this.sessions.set(session.strategyKey, nextSession);
         }
@@ -517,6 +525,7 @@ export class StrategyService
     params: StrategyRuntimeSession['params'],
   ): void {
     this.sessions.set(strategyKey, {
+      runId: this.generateRunId(),
       strategyKey,
       strategyType,
       userId,
