@@ -652,6 +652,7 @@ export class StrategyService
       if (intents.length > 0) {
         await this.publishIntents(session.strategyKey, intents);
         params.executedTrades = executedTrades + 1;
+        await this.persistStrategyParams(session.strategyKey, params);
         this.sessions.set(session.strategyKey, {
           ...session,
           params,
@@ -1059,5 +1060,18 @@ export class StrategyService
     }
 
     return parsed;
+  }
+
+  private async persistStrategyParams(
+    strategyKey: string,
+    params: VolumeStrategyParams,
+  ): Promise<void> {
+    await this.strategyInstanceRepository.update(
+      { strategyKey },
+      {
+        parameters: params as Record<string, any>,
+        updatedAt: new Date(),
+      },
+    );
   }
 }

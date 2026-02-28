@@ -70,6 +70,8 @@ export class TimeIndicatorStrategyDto {
   })
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Max(100)
   rsiBuyBelow?: number;
 
   @ApiPropertyOptional({
@@ -78,6 +80,8 @@ export class TimeIndicatorStrategyDto {
   })
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Max(100)
   rsiSellAbove?: number;
 
   @ApiProperty({
@@ -95,6 +99,9 @@ export class TimeIndicatorStrategyDto {
   })
   @IsOptional()
   @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
   allowedWeekdays?: number[];
 
   @ApiPropertyOptional({
@@ -104,6 +111,9 @@ export class TimeIndicatorStrategyDto {
   })
   @IsOptional()
   @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(23, { each: true })
   allowedHours?: number[];
 
   @ApiProperty({

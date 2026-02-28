@@ -247,6 +247,7 @@ export class StrategyController {
 
   @Post('execute-indicator-strategy')
   @ApiOperation({ summary: 'Run the time-indicator strategy once (stateless)' })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async execute(@Body() dto: TimeIndicatorStrategyDto) {
     return this.timeIndicatorStrategyService.executeIndicatorStrategy(dto);
   }
