@@ -1,16 +1,21 @@
 import * as ccxt from 'ccxt';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { IndicatorStrategyHistory } from 'src/common/entities/indicator-strategy-history.entity';
+import { createStrategyKey } from 'src/common/helpers/strategyKey';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 import { Repository } from 'typeorm';
 
-import { ExchangeInitService } from 'src/modules/exchangeInit/exchangeInit.service';
-import { TradeService } from 'src/modules/trade/trade.service';
-import { PerformanceService } from 'src/modules/performance/performance.service';
-import { CustomLogger } from 'src/modules/logger/logger.service';
-import { IndicatorStrategyHistory } from 'src/common/entities/indicator-strategy-history.entity';
-import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
-import { Side } from 'src/common/constants/side';
 import { SignalType } from 'src/common/enum/signaltype';
+import { Side } from 'src/common/constants/side';
+
+import { StrategyOrderIntent } from './strategy-intent.types';
+import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
+import { StrategyIntentStoreService } from './strategy-intent-store.service';
+import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
 @Injectable()
 export class TimeIndicatorStrategyService {
@@ -18,8 +23,9 @@ export class TimeIndicatorStrategyService {
 
   constructor(
     private readonly exchangeInit: ExchangeInitService,
-    private readonly tradeService: TradeService,
     private readonly performanceService: PerformanceService,
+    private readonly strategyIntentExecutionService: StrategyIntentExecutionService,
+    private readonly strategyIntentStoreService: StrategyIntentStoreService,
     @InjectRepository(IndicatorStrategyHistory)
     private readonly historyRepo: Repository<IndicatorStrategyHistory>,
   ) {}
@@ -190,24 +196,28 @@ export class TimeIndicatorStrategyService {
       side === 'buy' ? last * (1 - bps / 10_000) : last * (1 + bps / 10_000);
     const entryPrice = pricePrec(entryPriceRaw);
 
-    // --- Entry ---
-    let order: any | undefined;
-    try {
-      order = await this.tradeService.executeLimitTrade({
-        userId,
-        clientId,
-        exchange: ex.id,
-        symbol,
-        side,
-        amount: amountBase,
-        price: entryPrice,
-      });
-    } catch (e: any) {
-      this.logger.error(
-        `[${exchangeName}:${symbol}] Entry order failed: ${e.message}`,
-      );
-      return;
-    }
+    const strategyKey = createStrategyKey({
+      type: 'timeIndicator',
+      user_id: userId,
+      client_id: clientId,
+    });
+    const intent: StrategyOrderIntent = {
+      type: 'CREATE_LIMIT_ORDER',
+      intentId: `${strategyKey}:${getRFC3339Timestamp()}:indicator-entry`,
+      strategyInstanceId: strategyKey,
+      strategyKey,
+      userId,
+      clientId,
+      exchange: ex.id,
+      pair: symbol,
+      side,
+      price: String(entryPrice),
+      qty: String(amountBase),
+      createdAt: getRFC3339Timestamp(),
+      status: 'NEW',
+    };
+    await this.strategyIntentStoreService.upsertIntent(intent);
+    await this.strategyIntentExecutionService.consumeIntents([intent]);
 
     await this.historyRepo.save(
       this.historyRepo.create({
@@ -218,30 +228,12 @@ export class TimeIndicatorStrategyService {
         side,
         amount: amountBase,
         price: entryPrice,
-        orderId: order?.id,
+        orderId: intent.intentId,
       }),
     );
 
-    // --- Exits ---
     const slPct = safePct(params.stopLossPct);
     const tpPct = safePct(params.takeProfitPct);
-    if (slPct || tpPct) {
-      try {
-        await this.placeProtectiveExits({
-          ex,
-          symbol,
-          entrySide: side,
-          entryPrice,
-          amountBase,
-          stopLossPct: slPct,
-          takeProfitPct: tpPct,
-        });
-      } catch (e: any) {
-        this.logger.warn(
-          `[${exchangeName}:${symbol}] Could not place exits: ${e.message}.`,
-        );
-      }
-    }
 
     // --- Performance ---
     await this.performanceService.recordPerformance({
@@ -297,77 +289,6 @@ export class TimeIndicatorStrategyService {
         `fetchOHLCV error on ${ex.id} ${symbol} ${timeframe}: ${e.message}`,
       );
       return [];
-    }
-  }
-
-  private async placeProtectiveExits(opts: {
-    ex: ccxt.Exchange;
-    symbol: string;
-    entrySide: Side;
-    entryPrice: number;
-    amountBase: number;
-    stopLossPct?: number;
-    takeProfitPct?: number;
-  }) {
-    const {
-      ex,
-      symbol,
-      entrySide,
-      entryPrice,
-      amountBase,
-      stopLossPct,
-      takeProfitPct,
-    } = opts;
-
-    const exitSide: Side = entrySide === 'buy' ? 'sell' : 'buy';
-    const pricePrec = (x: number) => parseFloat(ex.priceToPrecision(symbol, x));
-    const amountPrec = (x: number) =>
-      parseFloat(ex.amountToPrecision(symbol, x));
-    const amount = amountPrec(amountBase);
-
-    let slTrigger: number | undefined;
-    let tpLimit: number | undefined;
-
-    if (stopLossPct && stopLossPct > 0) {
-      slTrigger =
-        entrySide === 'buy'
-          ? pricePrec(entryPrice * (1 - stopLossPct / 100))
-          : pricePrec(entryPrice * (1 + stopLossPct / 100));
-    }
-
-    if (takeProfitPct && takeProfitPct > 0) {
-      tpLimit =
-        entrySide === 'buy'
-          ? pricePrec(entryPrice * (1 + takeProfitPct / 100))
-          : pricePrec(entryPrice * (1 - takeProfitPct / 100));
-    }
-
-    if (tpLimit) {
-      try {
-        await ex.createOrder(symbol, 'limit', exitSide, amount, tpLimit);
-        this.logger.debug(
-          `[${ex.id}:${symbol}] TP placed: ${exitSide} ${amount} @ ${tpLimit}`,
-        );
-      } catch (e: any) {
-        this.logger.warn(
-          `[${ex.id}:${symbol}] TP placement failed: ${e.message}`,
-        );
-      }
-    }
-
-    if (slTrigger) {
-      try {
-        await ex.createOrder(symbol, 'market', exitSide, amount, undefined, {
-          stopPrice: slTrigger,
-        });
-        this.logger.debug(
-          `[${ex.id}:${symbol}] SL placed: ${exitSide} ${amount} stopPrice=${slTrigger}`,
-        );
-      } catch (e: any) {
-        this.logger.warn(
-          `[${ex.id}:${symbol}] SL placement failed: ${e.message}`,
-        );
-      }
     }
   }
 }
