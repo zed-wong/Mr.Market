@@ -28,21 +28,11 @@ import {
 import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
-
-type StrategyType = 'arbitrage' | 'pureMarketMaking' | 'volume';
-
-type StrategyRuntimeSession = {
-  strategyKey: string;
-  strategyType: StrategyType;
-  userId: string;
-  clientId: string;
-  cadenceMs: number;
-  nextRunAtMs: number;
-  params:
-    | ArbitrageStrategyDto
-    | PureMarketMakingStrategyDto
-    | Record<string, any>;
-};
+import { StrategyExecutorRegistry } from './strategy-executor.registry';
+import {
+  StrategyRuntimeSession,
+  StrategyType,
+} from './strategy-executor.types';
 
 type VolumeStrategyParams = {
   exchangeName: string;
@@ -85,6 +75,8 @@ export class StrategyService
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
     @Optional()
     private readonly configService?: ConfigService,
+    @Optional()
+    private readonly strategyExecutorRegistry?: StrategyExecutorRegistry,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -182,42 +174,17 @@ export class StrategyService
       throw new Error(`Strategy with key ${strategyKey} not found.`);
     }
 
-    if (strategyInstance.strategyType === 'arbitrage') {
-      await this.startArbitrageStrategyForUser(
-        strategyInstance.parameters as ArbitrageStrategyDto,
-        strategyInstance.parameters.checkIntervalSeconds,
-        strategyInstance.parameters.maxOpenOrders,
-      );
+    const executor = this.strategyExecutorRegistry?.getExecutor(
+      strategyInstance.strategyType,
+    );
 
-      return;
+    if (!executor) {
+      throw new Error(
+        `No strategy executor registered for strategy type: ${strategyInstance.strategyType}`,
+      );
     }
 
-    if (strategyInstance.strategyType === 'pureMarketMaking') {
-      await this.executePureMarketMakingStrategy(
-        strategyInstance.parameters as PureMarketMakingStrategyDto,
-      );
-
-      return;
-    }
-
-    if (strategyInstance.strategyType === 'volume') {
-      await this.executeVolumeStrategy(
-        strategyInstance.parameters.exchangeName,
-        strategyInstance.parameters.symbol,
-        strategyInstance.parameters.baseIncrementPercentage,
-        strategyInstance.parameters.baseIntervalTime,
-        strategyInstance.parameters.baseTradeAmount,
-        strategyInstance.parameters.numTrades,
-        strategyInstance.parameters.userId,
-        strategyInstance.parameters.clientId,
-        strategyInstance.parameters.pricePushRate,
-        strategyInstance.parameters.postOnlySide,
-      );
-
-      return;
-    }
-
-    throw new Error(`Unknown strategy type: ${strategyInstance.strategyType}`);
+    await executor.rerun(strategyInstance, this);
   }
 
   async startArbitrageStrategyForUser(
@@ -389,6 +356,29 @@ export class StrategyService
     };
 
     await this.publishIntents(strategyKey, [stopIntent]);
+  }
+
+  async linkDefinitionToStrategyInstance(
+    userId: string,
+    clientId: string,
+    strategyType: StrategyType,
+    definitionId: string,
+    definitionVersion = '1.0.0',
+  ): Promise<void> {
+    const strategyKey = createStrategyKey({
+      type: strategyType,
+      user_id: userId,
+      client_id: clientId,
+    });
+
+    await this.strategyInstanceRepository.update(
+      { strategyKey },
+      {
+        definitionId,
+        definitionVersion,
+        updatedAt: new Date(),
+      },
+    );
   }
 
   stopVolumeStrategy(userId: string, clientId: string) {
@@ -563,7 +553,7 @@ export class StrategyService
     await this.strategyInstanceRepository.save(instance);
   }
 
-  private async fetchStartPrice(
+  public async fetchStartPrice(
     strategyType: StrategyType,
     parameters: Record<string, any>,
   ): Promise<number> {
@@ -582,82 +572,80 @@ export class StrategyService
     return Number(ticker.last || 0);
   }
 
-  private getCadenceMs(
+  public getCadenceMs(
     parameters: Record<string, any>,
     strategyType: string,
   ): number {
-    if (strategyType === 'arbitrage') {
-      return Math.max(
-        1000,
-        Number(parameters?.checkIntervalSeconds || 10) * 1000,
+    const executor = this.strategyExecutorRegistry?.getExecutor(strategyType);
+
+    if (!executor) {
+      throw new Error(
+        `No strategy executor registered for strategy type: ${strategyType}`,
       );
     }
 
-    if (strategyType === 'pureMarketMaking') {
-      return Math.max(1000, Number(parameters?.orderRefreshTime || 10000));
-    }
-
-    return Math.max(1000, Number(parameters?.baseIntervalTime || 10) * 1000);
+    return executor.getCadenceMs(parameters, this);
   }
 
   private async runSession(
     session: StrategyRuntimeSession,
     ts: string,
   ): Promise<void> {
-    if (session.strategyType === 'pureMarketMaking') {
-      const intents = await this.buildPureMarketMakingIntents(
-        session.strategyKey,
-        session.params as PureMarketMakingStrategyDto,
-        ts,
+    const executor = this.strategyExecutorRegistry?.getExecutor(
+      session.strategyType,
+    );
+
+    if (!executor) {
+      throw new Error(
+        `No strategy executor registered for strategy type: ${session.strategyType}`,
+      );
+    }
+
+    await executor.runSession(session, ts, this);
+  }
+
+  async runPureMarketMakingSession(
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+    ts: string,
+  ): Promise<void> {
+    const intents = await this.buildPureMarketMakingIntents(strategyKey, params, ts);
+    await this.publishIntents(strategyKey, intents);
+  }
+
+  async runArbitrageSession(params: ArbitrageStrategyDto): Promise<void> {
+    const exchangeA = this.exchangeInitService.getExchange(params.exchangeAName);
+    const exchangeB = this.exchangeInitService.getExchange(params.exchangeBName);
+
+    await this.evaluateArbitrageOpportunityVWAP(exchangeA, exchangeB, params);
+  }
+
+  async runVolumeSession(
+    session: StrategyRuntimeSession,
+    ts: string,
+  ): Promise<void> {
+    const params = session.params as VolumeStrategyParams;
+    const executedTrades = Number(params.executedTrades || 0);
+
+    if (executedTrades >= Number(params.numTrades || 0)) {
+      await this.stopStrategyForUser(
+        session.userId,
+        session.clientId,
+        session.strategyType,
       );
 
+      return;
+    }
+
+    const intents = await this.buildVolumeIntents(session.strategyKey, params, ts);
+
+    if (intents.length > 0) {
       await this.publishIntents(session.strategyKey, intents);
-
-      return;
-    }
-
-    if (session.strategyType === 'arbitrage') {
-      const params = session.params as ArbitrageStrategyDto;
-      const exchangeA = this.exchangeInitService.getExchange(
-        params.exchangeAName,
-      );
-      const exchangeB = this.exchangeInitService.getExchange(
-        params.exchangeBName,
-      );
-
-      await this.evaluateArbitrageOpportunityVWAP(exchangeA, exchangeB, params);
-
-      return;
-    }
-
-    if (session.strategyType === 'volume') {
-      const params = session.params as VolumeStrategyParams;
-      const executedTrades = Number(params.executedTrades || 0);
-
-      if (executedTrades >= Number(params.numTrades || 0)) {
-        await this.stopStrategyForUser(
-          session.userId,
-          session.clientId,
-          session.strategyType,
-        );
-
-        return;
-      }
-
-      const intents = await this.buildVolumeIntents(
-        session.strategyKey,
+      params.executedTrades = executedTrades + 1;
+      this.sessions.set(session.strategyKey, {
+        ...session,
         params,
-        ts,
-      );
-
-      if (intents.length > 0) {
-        await this.publishIntents(session.strategyKey, intents);
-        params.executedTrades = executedTrades + 1;
-        this.sessions.set(session.strategyKey, {
-          ...session,
-          params,
-        });
-      }
+      });
     }
   }
 

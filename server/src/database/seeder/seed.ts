@@ -14,11 +14,14 @@ import {
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
 } from '../../common/entities/data/grow-data.entity';
+import { StrategyDefinition } from '../../common/entities/market-making/strategy-definition.entity';
+import { StrategyDefinitionVersion } from '../../common/entities/market-making/strategy-definition-version.entity';
 import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import {
   defaultCustomConfig,
   defaultExchanges,
   defaultMarketMakingPairs,
+  defaultStrategyDefinitions,
   defaultSimplyGrowTokens,
   defaultSpotdataTradingPairs,
 } from './defaultSeedValues';
@@ -41,6 +44,8 @@ async function connectToDatabase() {
       GrowdataSimplyGrowToken,
       SpotdataTradingPair,
       CustomConfigEntity,
+      StrategyDefinition,
+      StrategyDefinitionVersion,
     ],
     synchronize: false,
   });
@@ -119,6 +124,61 @@ async function seedCustomConfig(repository: Repository<CustomConfigEntity>) {
   console.log('Seeding CustomConfigEntity complete!');
 }
 
+async function seedStrategyDefinitions(
+  repository: Repository<StrategyDefinition>,
+  versionRepository: Repository<StrategyDefinitionVersion>,
+) {
+  for (const definition of defaultStrategyDefinitions) {
+    let saved = await repository.findOneBy({ key: definition.key });
+
+    if (!saved) {
+      saved = await repository.save(
+        repository.create({
+          key: String(definition.key),
+          name: String(definition.name),
+          description: definition.description
+            ? String(definition.description)
+            : undefined,
+          executorType: String(definition.executorType),
+          configSchema: (definition.configSchema || {}) as Record<
+            string,
+            unknown
+          >,
+          defaultConfig: (definition.defaultConfig || {}) as Record<
+            string,
+            unknown
+          >,
+          enabled: definition.enabled !== false,
+          visibility: String(definition.visibility || 'system'),
+          currentVersion: '1.0.0',
+          createdBy: definition.createdBy
+            ? String(definition.createdBy)
+            : undefined,
+        }),
+      );
+    }
+
+    const versionExists = await versionRepository.findOneBy({
+      definitionId: saved.id,
+      version: saved.currentVersion || '1.0.0',
+    });
+
+    if (!versionExists) {
+      await versionRepository.save(
+        versionRepository.create({
+          definitionId: saved.id,
+          version: saved.currentVersion || '1.0.0',
+          executorType: saved.executorType,
+          configSchema: saved.configSchema,
+          defaultConfig: saved.defaultConfig,
+          description: saved.description,
+        }),
+      );
+    }
+  }
+  console.log('Seeding StrategyDefinition complete!');
+}
+
 async function run() {
   const dataSource = await connectToDatabase();
 
@@ -132,6 +192,10 @@ async function run() {
     dataSource.getRepository(GrowdataSimplyGrowToken),
   );
   await seedCustomConfig(dataSource.getRepository(CustomConfigEntity));
+  await seedStrategyDefinitions(
+    dataSource.getRepository(StrategyDefinition),
+    dataSource.getRepository(StrategyDefinitionVersion),
+  );
   await dataSource.destroy();
 }
 

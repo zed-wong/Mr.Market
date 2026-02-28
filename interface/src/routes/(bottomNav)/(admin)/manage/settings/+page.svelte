@@ -31,6 +31,11 @@
             icon: "M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
         },
         {
+            name: "strategies",
+            path: "/manage/settings/strategies",
+            icon: "M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h5.25M3.75 3h11.25A2.25 2.25 0 0 1 17.25 5.25v5.25M3.75 3 9 8.25m8.25 8.25L21 20.25m0 0-3.75 3.75M21 20.25l-3.75-3.75",
+        },
+        {
             name: "api_keys",
             path: "/manage/settings/api-keys",
             // Key icon
@@ -63,10 +68,12 @@
                             ? 'bg-blue-100 text-blue-600'
                             : link.name === 'spot_trading'
                               ? 'bg-purple-100 text-purple-600'
-                              : link.name === 'market_making'
+                            : link.name === 'market_making'
                                 ? 'bg-purple-100 text-purple-600'
-                                : link.name === 'fees'
+                              : link.name === 'fees'
                                   ? 'bg-green-100 text-green-600'
+                                  : link.name === 'strategies'
+                                    ? 'bg-orange-100 text-orange-600'
                                   : 'bg-yellow-100 text-yellow-600'}"
                     >
                         <svg

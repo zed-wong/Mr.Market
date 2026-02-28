@@ -10,6 +10,8 @@ import {
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
 } from '../src/common/entities/data/grow-data.entity';
+import { StrategyDefinition } from '../src/common/entities/market-making/strategy-definition.entity';
+import { StrategyDefinitionVersion } from '../src/common/entities/market-making/strategy-definition-version.entity';
 import { SpotdataTradingPair } from '../src/common/entities/data/spot-data.entity';
 
 describe('Database migration and seed scripts (e2e)', () => {
@@ -74,6 +76,8 @@ describe('Database migration and seed scripts (e2e)', () => {
         GrowdataMarketMakingPair,
         GrowdataSimplyGrowToken,
         CustomConfigEntity,
+        StrategyDefinition,
+        StrategyDefinitionVersion,
       ],
       synchronize: false,
     });
@@ -93,12 +97,20 @@ describe('Database migration and seed scripts (e2e)', () => {
     const customConfigs = await dataSource
       .getRepository(CustomConfigEntity)
       .count();
+    const strategyDefinitions = await dataSource
+      .getRepository(StrategyDefinition)
+      .count();
+    const strategyDefinitionVersions = await dataSource
+      .getRepository(StrategyDefinitionVersion)
+      .count();
 
     expect(spotPairs).toBeGreaterThan(0);
     expect(exchanges).toBeGreaterThan(0);
     expect(mmPairs).toBeGreaterThan(0);
     expect(simplyGrowTokens).toBeGreaterThan(0);
     expect(customConfigs).toBeGreaterThan(0);
+    expect(strategyDefinitions).toBeGreaterThan(0);
+    expect(strategyDefinitionVersions).toBeGreaterThan(0);
 
     await dataSource.destroy();
   });

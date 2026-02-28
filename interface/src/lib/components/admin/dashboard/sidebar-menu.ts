@@ -47,6 +47,11 @@ export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
           value: "/manage/settings/fees",
         },
         {
+          key: "strategies",
+          labelKey: "strategies",
+          value: "/manage/settings/strategies",
+        },
+        {
           key: "api-keys",
           labelKey: "api_keys",
           value: "/manage/settings/api-keys",

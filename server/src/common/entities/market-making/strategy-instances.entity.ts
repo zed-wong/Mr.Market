@@ -31,6 +31,12 @@ export class StrategyInstance {
   @Column()
   strategyType: string;
 
+  @Column({ nullable: true })
+  definitionId?: string;
+
+  @Column({ nullable: true, default: '1.0.0' })
+  definitionVersion?: string;
+
   @Column()
   startPrice: number;
 

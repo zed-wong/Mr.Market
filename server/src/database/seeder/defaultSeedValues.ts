@@ -4,6 +4,7 @@ import {
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
 } from 'src/common/entities/data/grow-data.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 
 export const defaultSpotdataTradingPairs: SpotdataTradingPair[] = [
@@ -350,3 +351,123 @@ export const defaultCustomConfig: CustomConfigEntity = {
   max_balance_single_api_key: '0',
   funding_account: '',
 };
+
+export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
+  {
+    key: 'pure-market-making',
+    name: 'Pure Market Making',
+    description: 'Layered maker quotes around a selected price source.',
+    executorType: 'pureMarketMaking',
+    configSchema: {
+      type: 'object',
+      required: [
+        'pair',
+        'exchangeName',
+        'bidSpread',
+        'askSpread',
+        'orderAmount',
+        'orderRefreshTime',
+      ],
+      properties: {
+        pair: { type: 'string' },
+        exchangeName: { type: 'string' },
+        bidSpread: { type: 'number', minimum: 0 },
+        askSpread: { type: 'number', minimum: 0 },
+        orderAmount: { type: 'number', minimum: 0 },
+        orderRefreshTime: { type: 'number', minimum: 1000 },
+      },
+    },
+    defaultConfig: {
+      pair: 'BTC/USDT',
+      exchangeName: 'binance',
+      bidSpread: 0.1,
+      askSpread: 0.1,
+      orderAmount: 0.01,
+      orderRefreshTime: 15000,
+      numberOfLayers: 1,
+      priceSourceType: 'MID_PRICE',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+    },
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+  {
+    key: 'arbitrage',
+    name: 'Arbitrage',
+    description: 'Cross-exchange arbitrage monitor with profitability threshold.',
+    executorType: 'arbitrage',
+    configSchema: {
+      type: 'object',
+      required: [
+        'pair',
+        'amountToTrade',
+        'minProfitability',
+        'exchangeAName',
+        'exchangeBName',
+      ],
+      properties: {
+        pair: { type: 'string' },
+        amountToTrade: { type: 'number', minimum: 0 },
+        minProfitability: { type: 'number', minimum: 0 },
+        exchangeAName: { type: 'string' },
+        exchangeBName: { type: 'string' },
+        checkIntervalSeconds: { type: 'number', minimum: 1 },
+        maxOpenOrders: { type: 'number', minimum: 1 },
+      },
+    },
+    defaultConfig: {
+      pair: 'BTC/USDT',
+      amountToTrade: 0.01,
+      minProfitability: 0.002,
+      exchangeAName: 'binance',
+      exchangeBName: 'mexc',
+      checkIntervalSeconds: 10,
+      maxOpenOrders: 1,
+    },
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+  {
+    key: 'volume',
+    name: 'Volume',
+    description: 'Alternating post-only trades to generate controlled volume.',
+    executorType: 'volume',
+    configSchema: {
+      type: 'object',
+      required: [
+        'exchangeName',
+        'symbol',
+        'incrementPercentage',
+        'intervalTime',
+        'tradeAmount',
+        'numTrades',
+      ],
+      properties: {
+        exchangeName: { type: 'string' },
+        symbol: { type: 'string' },
+        incrementPercentage: { type: 'number', minimum: 0 },
+        intervalTime: { type: 'number', minimum: 1 },
+        tradeAmount: { type: 'number', minimum: 0 },
+        numTrades: { type: 'number', minimum: 1 },
+        pricePushRate: { type: 'number', minimum: 0 },
+        postOnlySide: { type: 'string', enum: ['buy', 'sell'] },
+      },
+    },
+    defaultConfig: {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      incrementPercentage: 0.1,
+      intervalTime: 10,
+      tradeAmount: 0.001,
+      numTrades: 10,
+      pricePushRate: 0,
+      postOnlySide: 'buy',
+    },
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+];
