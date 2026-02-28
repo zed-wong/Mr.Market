@@ -71,4 +71,4 @@ This document lists all entity files in `server/src/common/entities`, what they 
 - When adding a new entity file, update this document with its purpose and flow stage.
 - If an entity shifts runtime responsibility (for example, from sync to worker path), update both `Main usage` and `Flow stage`.
 - Keep this document aligned with `docs/execution/flow/MARKET_MAKING_FLOW.md`.
-- Keep strategy entity rows aligned with `docs/plan/strategy-dynamic-migration-guide.md` after each schema/versioning update.
+- Keep strategy entity rows aligned with `docs/plans/2026-02-28-strategy-dynamic-migration-guide.md` after each schema/versioning update.
