@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
@@ -15,7 +15,7 @@ import { StrategyService } from './strategy.service';
 //This is still in testing: Do not use in production
 
 @Injectable()
-export class AlpacaStratService {
+export class AlpacaStratService implements OnModuleDestroy {
   private readonly logger = new CustomLogger(AlpacaStratService.name);
   private strategyInstances = new Map<
     string,
@@ -34,6 +34,13 @@ export class AlpacaStratService {
     @InjectRepository(ArbitrageHistory)
     private arbitrageHistoryRepository: Repository<ArbitrageHistory>,
   ) {}
+
+  onModuleDestroy(): void {
+    for (const instance of this.strategyInstances.values()) {
+      clearInterval(instance.intervalId);
+    }
+    this.strategyInstances.clear();
+  }
 
   // Method to start an arbitrage strategy between Alpaca and another exchange
   async startAlpacaArbitrageStrategy(

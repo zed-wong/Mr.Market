@@ -42,7 +42,11 @@ describe('Crypto Helpers', () => {
     const message = 'Wrong Key Test';
     const encrypted = encrypt(message, publicKey);
 
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     const decrypted = decrypt(encrypted, otherPrivateKey);
+    consoleErrorSpy.mockRestore();
 
     expect(decrypted).toBeNull();
   });
@@ -51,7 +55,11 @@ describe('Crypto Helpers', () => {
     const { privateKey } = {
       privateKey: 'MgQ3LwWFc2kdkOzkNk3jWVH832qiTjPMuBT8jV2DEBE=',
     };
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     const decrypted = decrypt('invalid-base64', privateKey);
+    consoleErrorSpy.mockRestore();
 
     expect(decrypted).toBeNull();
   });

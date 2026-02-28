@@ -6,6 +6,12 @@ import { ExchangeInitService } from '../infrastructure/exchange-init/exchange-in
 import { Web3Service } from '../web3/web3.service';
 import { CampaignService } from './campaign.service';
 
+const debugLog = (...args: unknown[]) => {
+  if (process.env.JEST_VERBOSE_LOGS === '1') {
+    console.log(...args);
+  }
+};
+
 /**
  * CampaignService Test Suite
  *
@@ -113,7 +119,7 @@ describe('CampaignService Integration', () => {
 
   beforeAll(async () => {
     if (!shouldRunIntegration) {
-      console.log('Skipping integration tests - HuFi API URLs not configured');
+      debugLog('Skipping integration tests - HuFi API URLs not configured');
 
       return;
     }
@@ -164,14 +170,14 @@ describe('CampaignService Integration', () => {
   describe('getCampaigns (real API)', () => {
     it('should fetch campaigns from HuFi API', async () => {
       if (!shouldRunIntegration) {
-        console.log('Skipped - integration not configured');
+        debugLog('Skipped - integration not configured');
 
         return;
       }
 
       const campaigns = await service.getCampaigns();
 
-      console.log(`Fetched ${campaigns.length} campaigns`);
+      debugLog(`Fetched ${campaigns.length} campaigns`);
 
       expect(Array.isArray(campaigns)).toBe(true);
 
@@ -183,7 +189,7 @@ describe('CampaignService Integration', () => {
         expect(campaign).toHaveProperty('status');
         expect(campaign).toHaveProperty('exchangeName');
 
-        console.log('Sample campaign:', JSON.stringify(campaign, null, 2));
+        debugLog('Sample campaign:', JSON.stringify(campaign, null, 2));
       }
     });
   });
@@ -191,7 +197,7 @@ describe('CampaignService Integration', () => {
   describe('get_auth_nonce (real API)', () => {
     it('should get nonce for wallet address', async () => {
       if (!shouldRunIntegration || !process.env.TEST_WALLET_ADDRESS) {
-        console.log('Skipped - TEST_WALLET_ADDRESS not configured');
+        debugLog('Skipped - TEST_WALLET_ADDRESS not configured');
 
         return;
       }
@@ -201,12 +207,12 @@ describe('CampaignService Integration', () => {
       try {
         const nonce = await service.get_auth_nonce(walletAddress);
 
-        console.log(`Got nonce for ${walletAddress}: ${nonce}`);
+        debugLog(`Got nonce for ${walletAddress}: ${nonce}`);
 
         expect(typeof nonce).toBe('string');
         expect(nonce.length).toBeGreaterThan(0);
       } catch (error) {
-        console.log(
+        debugLog(
           `Nonce request failed (expected if testing): ${error.message}`,
         );
       }
@@ -220,7 +226,7 @@ describe('CampaignService Integration', () => {
         !process.env.TEST_WALLET_ADDRESS ||
         !process.env.TEST_PRIVATE_KEY
       ) {
-        console.log(
+        debugLog(
           'Skipped - TEST_WALLET_ADDRESS or TEST_PRIVATE_KEY not configured',
         );
 
@@ -234,7 +240,7 @@ describe('CampaignService Integration', () => {
         // Step 1: Get nonce
         const nonce = await service.get_auth_nonce(walletAddress);
 
-        console.log(`Got nonce: ${nonce}`);
+        debugLog(`Got nonce: ${nonce}`);
 
         // Step 2: Authenticate
         const accessToken = await service.authenticate_web3_user(
@@ -243,12 +249,12 @@ describe('CampaignService Integration', () => {
           privateKey,
         );
 
-        console.log(`Got access token: ${accessToken.substring(0, 20)}...`);
+        debugLog(`Got access token: ${accessToken.substring(0, 20)}...`);
 
         expect(typeof accessToken).toBe('string');
         expect(accessToken.length).toBeGreaterThan(0);
       } catch (error) {
-        console.log(`Authentication failed: ${error.message}`);
+        debugLog(`Authentication failed: ${error.message}`);
         // Don't fail test - API might not be available
       }
     });
@@ -263,8 +269,8 @@ describe('CampaignService Integration', () => {
         !process.env.TEST_CHAIN_ID ||
         !process.env.TEST_CAMPAIGN_ADDRESS
       ) {
-        console.log('Skipped - Full integration test requires:');
-        console.log(
+        debugLog('Skipped - Full integration test requires:');
+        debugLog(
           '  TEST_WALLET_ADDRESS, TEST_PRIVATE_KEY, TEST_CHAIN_ID, TEST_CAMPAIGN_ADDRESS',
         );
 
@@ -276,10 +282,10 @@ describe('CampaignService Integration', () => {
       const chainId = parseInt(process.env.TEST_CHAIN_ID);
       const campaignAddress = process.env.TEST_CAMPAIGN_ADDRESS;
 
-      console.log('Testing full campaign join flow:');
-      console.log(`  Wallet: ${walletAddress}`);
-      console.log(`  Chain ID: ${chainId}`);
-      console.log(`  Campaign: ${campaignAddress}`);
+      debugLog('Testing full campaign join flow:');
+      debugLog(`  Wallet: ${walletAddress}`);
+      debugLog(`  Chain ID: ${chainId}`);
+      debugLog(`  Campaign: ${campaignAddress}`);
 
       try {
         const result = await service.joinCampaignWithAuth(
@@ -289,16 +295,16 @@ describe('CampaignService Integration', () => {
           campaignAddress,
         );
 
-        console.log('Join campaign result:', JSON.stringify(result, null, 2));
+        debugLog('Join campaign result:', JSON.stringify(result, null, 2));
 
         expect(result).toBeDefined();
       } catch (error) {
-        console.log(`Join campaign failed: ${error.message}`);
+        debugLog(`Join campaign failed: ${error.message}`);
         // Check for expected error types
         if (error.message.includes('already joined')) {
-          console.log('Campaign already joined - this is OK');
+          debugLog('Campaign already joined - this is OK');
         } else if (error.message.includes('Invalid campaign')) {
-          console.log('Campaign not found or invalid');
+          debugLog('Campaign not found or invalid');
         }
         // Don't fail test - just log the behavior
       }
@@ -317,8 +323,8 @@ describe('CampaignService Integration', () => {
 //
 //   // Generate a test wallet
 //   const wallet = Wallet.createRandom();
-//   console.log('Test wallet address:', wallet.address);
-//   console.log('Test wallet private key:', wallet.privateKey);
+//   debugLog('Test wallet address:', wallet.address);
+//   debugLog('Test wallet private key:', wallet.privateKey);
 //
 //   // Create service instance manually
 //   // ... add service creation code here

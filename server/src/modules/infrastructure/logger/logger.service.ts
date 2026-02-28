@@ -9,12 +9,29 @@ export class CustomLogger extends Logger {
   private logger: winston.Logger;
   private discordWebhookUrl: string;
   private mixinGroupWebhookUrl: string;
+  private readonly silentForTests: boolean;
   constructor(context?: string) {
     super(context);
+    const isTestRuntime =
+      process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
+    this.silentForTests =
+      isTestRuntime && process.env.JEST_VERBOSE_LOGS !== '1';
     const logsDir =
       process.env.NODE_ENV !== 'production'
         ? path.join(__dirname, '..', '..', 'logs')
         : path.join(__dirname, '..', 'logs'); // Adjust as necessary for production
+
+    const transports: winston.transport[] = isTestRuntime
+      ? [new winston.transports.Console({ silent: true })]
+      : [
+          new winston.transports.File({
+            filename: path.join(logsDir, 'error.log'),
+            level: 'error',
+          }),
+          new winston.transports.File({
+            filename: path.join(logsDir, 'combined.log'),
+          }),
+        ];
 
     this.logger = winston.createLogger({
       level: 'info', // Default logging level
@@ -27,15 +44,7 @@ export class CustomLogger extends Logger {
             }] ${info.message}`,
         ),
       ),
-      transports: [
-        new winston.transports.File({
-          filename: path.join(logsDir, 'error.log'),
-          level: 'error',
-        }),
-        new winston.transports.File({
-          filename: path.join(logsDir, 'combined.log'),
-        }),
-      ],
+      transports,
     });
     this.discordWebhookUrl = process.env.DISCORD_LOG_WEBHOOK_URL ?? '';
     this.mixinGroupWebhookUrl = process.env.MIXIN_GROUP_WEBHOOK_URL ?? '';
@@ -71,12 +80,16 @@ export class CustomLogger extends Logger {
   }
 
   log(message: any, ...optionalParams: any[]) {
-    super.log(message);
+    if (!this.silentForTests) {
+      super.log(message);
+    }
     this.logger.info(message, optionalParams);
   }
 
   error(message: any, trace?: string, ...optionalParams: any[]) {
-    super.error(message, trace);
+    if (!this.silentForTests) {
+      super.error(message, trace);
+    }
     this.logger.error(`${message}, Trace: ${trace}`, optionalParams);
 
     this.logToDiscord(`${message}, Trace: ${trace}`, 'ERROR');
@@ -86,12 +99,16 @@ export class CustomLogger extends Logger {
   }
 
   debug(message: any, ...optionalParams: any[]) {
-    super.debug(message);
+    if (!this.silentForTests) {
+      super.debug(message);
+    }
     this.logger.debug(message, optionalParams);
   }
 
   warn(message: any, ...optionalParams: any[]) {
-    super.warn(message);
+    if (!this.silentForTests) {
+      super.warn(message);
+    }
     this.logger.warn(message, optionalParams);
 
     this.logToDiscord(message, 'WARNING');

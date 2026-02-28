@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { TradingTypeValue } from 'src/common/types/memo/memo';
 
 import {
@@ -103,7 +103,6 @@ describe('decodeMarketMakingCreateMemo', () => {
       orderId: 'b0177350-ae29-43ec-a26e-d46f821e416e',
     });
 
-    console.log(`encodedMemo: ${encodedMemo}`);
     const { payload } = memoPreDecode(
       'f243yJSNnb9QQ7azcKFd5tzKQS8xX62VVYkk8KWwDAAkuFVXBwvw',
     );
