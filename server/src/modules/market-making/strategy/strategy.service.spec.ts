@@ -10,15 +10,10 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
 import { PerformanceService } from '../performance/performance.service';
-import { TradeService } from '../trade/trade.service';
 import { PureMarketMakingStrategyDto } from './strategy.dto';
 import { StrategyService } from './strategy.service';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
-
-class TradeServiceMock {
-  executeLimitTrade = jest.fn();
-}
 
 class PerformanceServiceMock {
   recordPerformance = jest.fn();
@@ -48,7 +43,6 @@ class ExchangeInitServiceMock {
 
 describe('StrategyService', () => {
   let service: StrategyService;
-  let tradeService: TradeServiceMock;
   let exchangeInitService: ExchangeInitService;
   let strategyIntentExecutionService: {
     consumeIntents: jest.Mock;
@@ -91,7 +85,6 @@ describe('StrategyService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StrategyService,
-        { provide: TradeService, useClass: TradeServiceMock },
         { provide: PerformanceService, useClass: PerformanceServiceMock },
         { provide: ExchangeInitService, useClass: ExchangeInitServiceMock },
         {
@@ -130,7 +123,6 @@ describe('StrategyService', () => {
     }).compile();
 
     service = module.get<StrategyService>(StrategyService);
-    tradeService = module.get(TradeService);
     exchangeInitService = module.get(ExchangeInitService);
 
     jest.clearAllMocks();
@@ -156,8 +148,6 @@ describe('StrategyService', () => {
 
     await service.executePureMarketMakingStrategy(strategyParamsDto);
     await service.executeMMCycle(strategyParamsDto);
-
-    expect(tradeService.executeLimitTrade).not.toHaveBeenCalled();
   });
 
   it('publishes intents for a pure market making cycle', async () => {

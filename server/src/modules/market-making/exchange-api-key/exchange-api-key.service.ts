@@ -30,17 +30,17 @@ import {
 } from 'src/common/types/orders/states';
 import { AggregatedBalances } from 'src/common/types/rebalance/map';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { ExchangeRepository } from 'src/modules/mixin/exchange/exchange.repository';
+import { ExchangeDepositDto, ExchangeWithdrawalDto } from 'src/modules/mixin/exchange/exchange.dto';
 
-import { ExchangeDepositDto, ExchangeWithdrawalDto } from './exchange.dto';
+import { ExchangeApiKeyRepository } from './exchange-api-key.repository';
 
 @Injectable()
-export class ExchangeService {
+export class ExchangeApiKeyService {
   private exchangeInstances: { [key: string]: ccxt.Exchange } = {};
-  private readonly logger = new CustomLogger(ExchangeService.name);
+  private readonly logger = new CustomLogger(ExchangeApiKeyService.name);
 
   constructor(
-    private exchangeRepository: ExchangeRepository,
+    private exchangeRepository: ExchangeApiKeyRepository,
     private configService: ConfigService,
   ) {
     this.loadAPIKeys();

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
-import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
 import { AddAPIKeyDto } from './exchanges.dto';
 
@@ -18,7 +18,7 @@ import { AddAPIKeyDto } from './exchanges.dto';
 @Controller('admin/exchanges')
 @UseGuards(JwtAuthGuard)
 export class AdminExchangesController {
-  constructor(private readonly exchangeService: ExchangeService) {}
+  constructor(private readonly exchangeService: ExchangeApiKeyService) {}
 
   @Get('/keys')
   @ApiOperation({ summary: 'Get all API keys' })

@@ -1,14 +1,11 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import BigNumber from 'bignumber.js';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
-import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { DurabilityService } from '../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
-import { TradeService } from '../trade/trade.service';
 import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
@@ -23,15 +20,12 @@ export class StrategyIntentExecutionService {
   private readonly retryBaseDelayMs: number;
 
   constructor(
-    private readonly tradeService: TradeService,
-    private readonly exchangeInitService: ExchangeInitService,
     private readonly configService: ConfigService,
+    private readonly exchangeConnectorAdapterService: ExchangeConnectorAdapterService,
     @Optional()
     private readonly durabilityService?: DurabilityService,
     @Optional()
     private readonly strategyIntentStoreService?: StrategyIntentStoreService,
-    @Optional()
-    private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
     @Optional()
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
   ) {
@@ -128,23 +122,13 @@ export class StrategyIntentExecutionService {
     try {
       if (intent.type === 'CREATE_LIMIT_ORDER') {
         const result = await this.runWithRetries(() =>
-          this.exchangeConnectorAdapterService
-            ? this.exchangeConnectorAdapterService.placeLimitOrder(
-                intent.exchange,
-                intent.pair,
-                intent.side,
-                intent.qty,
-                intent.price,
-              )
-            : this.tradeService.executeLimitTrade({
-                userId: intent.userId,
-                clientId: intent.clientId,
-                exchange: intent.exchange,
-                symbol: intent.pair,
-                side: intent.side,
-                amount: new BigNumber(intent.qty).toNumber(),
-                price: new BigNumber(intent.price).toNumber(),
-              }),
+          this.exchangeConnectorAdapterService.placeLimitOrder(
+            intent.exchange,
+            intent.pair,
+            intent.side,
+            intent.qty,
+            intent.price,
+          ),
         );
 
         if (result?.id) {
@@ -172,19 +156,11 @@ export class StrategyIntentExecutionService {
         }
 
         const result = await this.runWithRetries(() =>
-          this.exchangeConnectorAdapterService
-            ? this.exchangeConnectorAdapterService.cancelOrder(
-                intent.exchange,
-                intent.pair,
-                intent.mixinOrderId,
-              )
-            : (() => {
-                const exchange = this.exchangeInitService.getExchange(
-                  intent.exchange,
-                );
-
-                return exchange.cancelOrder(intent.mixinOrderId, intent.pair);
-              })(),
+          this.exchangeConnectorAdapterService.cancelOrder(
+            intent.exchange,
+            intent.pair,
+            intent.mixinOrderId,
+          ),
         );
 
         this.exchangeOrderTrackerService?.upsertOrder({

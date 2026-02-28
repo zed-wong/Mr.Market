@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as ccxt from 'ccxt';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 
-import { ExchangeService } from './exchange.service';
+import { ExchangeApiKeyService } from './exchange-api-key.service';
 
 jest.mock('src/common/helpers/crypto', () => ({
   decrypt: jest.fn(),
@@ -13,7 +13,7 @@ jest.mock('src/common/helpers/crypto', () => ({
 
 const crypto = jest.requireMock('src/common/helpers/crypto');
 
-describe('ExchangeService', () => {
+describe('ExchangeApiKeyService', () => {
   const makeService = (overrides?: {
     readAllAPIKeys?: jest.Mock;
     addAPIKey?: jest.Mock;
@@ -30,7 +30,7 @@ describe('ExchangeService', () => {
     } as unknown as ConfigService;
 
     return {
-      service: new ExchangeService(exchangeRepository, configService),
+      service: new ExchangeApiKeyService(exchangeRepository, configService),
       exchangeRepository,
       configService,
     };

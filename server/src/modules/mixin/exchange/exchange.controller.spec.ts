@@ -1,16 +1,16 @@
 // exchange.controller.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { ExchangeController } from './exchange.controller';
-import { ExchangeService } from './exchange.service';
 
 describe('ExchangeController', () => {
   let controller: ExchangeController;
-  let service: ExchangeService;
+  let service: ExchangeApiKeyService;
 
   beforeEach(async () => {
-    // Mock ExchangeService
+    // Mock ExchangeApiKeyService
     const mockExchangeService = {
       getAllSpotOrders: jest.fn(() => Promise.resolve(['order1', 'order2'])), // Example response
     };
@@ -19,7 +19,7 @@ describe('ExchangeController', () => {
       controllers: [ExchangeController],
       providers: [
         {
-          provide: ExchangeService,
+          provide: ExchangeApiKeyService,
           useValue: mockExchangeService,
         },
       ],
@@ -29,7 +29,7 @@ describe('ExchangeController', () => {
       .compile();
 
     controller = module.get<ExchangeController>(ExchangeController);
-    service = module.get<ExchangeService>(ExchangeService);
+    service = module.get<ExchangeApiKeyService>(ExchangeApiKeyService);
   });
 
   it('should be defined', () => {

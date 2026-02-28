@@ -10,7 +10,7 @@ import { SpotOrderStatus } from 'src/common/types/orders/states';
 import { Repository } from 'typeorm';
 
 @Injectable()
-export class ExchangeRepository {
+export class ExchangeApiKeyRepository {
   constructor(
     @InjectRepository(APIKeysConfig)
     private readonly apiKeysRepository: Repository<APIKeysConfig>,

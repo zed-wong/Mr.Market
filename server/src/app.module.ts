@@ -44,7 +44,6 @@ import {
   PaymentState,
 } from './common/entities/orders/payment-state.entity';
 import { SpotOrder } from './common/entities/orders/spot-order.entity';
-import { Trade } from './common/entities/orders/trade.entity';
 import {
   MarketMakingOrder,
   SimplyGrowOrder,
@@ -75,7 +74,6 @@ import { RewardsModule } from './modules/market-making/rewards/rewards.module';
 import { StrategyModule } from './modules/market-making/strategy/strategy.module';
 import { TickModule } from './modules/market-making/tick/tick.module';
 import { TrackersModule } from './modules/market-making/trackers/trackers.module';
-import { TradeModule } from './modules/market-making/trade/trade.module';
 import { UserOrdersModule } from './modules/market-making/user-orders/user-orders.module';
 import { EventListenersModule } from './modules/mixin/listeners/events.module';
 import { MixinModule } from './modules/mixin/mixin.module';
@@ -124,7 +122,6 @@ function buildRedisConfig(configService: ConfigService) {
       type: 'sqlite',
       database: process.env.DATABASE_PATH || 'data/mr_market.db',
       entities: [
-        Trade,
         ArbitrageHistory,
         MarketMakingHistory,
         StrategyInstance,
@@ -169,7 +166,6 @@ function buildRedisConfig(configService: ConfigService) {
       },
     }),
     ScheduleModule.forRoot(),
-    TradeModule,
     StrategyModule,
     PerformanceModule,
     MarketdataModule,

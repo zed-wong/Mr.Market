@@ -5,7 +5,7 @@ import { STATE_TEXT_MAP } from 'src/common/types/orders/states';
 import { CustomConfigService } from 'src/modules/infrastructure/custom-config/custom-config.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { MixinReleaseTokenEvent } from 'src/modules/mixin/events/spot.event';
-import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
 import { validate } from 'uuid';
 
@@ -15,7 +15,7 @@ export class MixinProcessor {
 
   constructor(
     private transactionService: TransactionService,
-    private exchangeService: ExchangeService,
+    private exchangeService: ExchangeApiKeyService,
     private configService: CustomConfigService,
   ) {}
 

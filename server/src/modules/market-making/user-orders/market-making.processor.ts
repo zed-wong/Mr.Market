@@ -13,7 +13,7 @@ import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
-import { ExchangeService } from 'src/modules/mixin/exchange/exchange.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
 import { Repository } from 'typeorm';
@@ -69,7 +69,7 @@ export class MarketMakingOrderProcessor {
     private readonly withdrawalService: WithdrawalService,
     private readonly localCampaignService: LocalCampaignService,
     private readonly hufiCampaignService: CampaignService,
-    private readonly exchangeService: ExchangeService,
+    private readonly exchangeService: ExchangeApiKeyService,
     private readonly networkMappingService: NetworkMappingService,
     private readonly mixinClientService: MixinClientService,
     @InjectRepository(MarketMakingPaymentState)

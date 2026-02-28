@@ -14,8 +14,6 @@ import { GrowdataModule } from '../data/grow-data/grow-data.module';
 import { SpotdataModule } from '../data/spot-data/spot-data.module';
 import { PerformanceService } from '../market-making/performance/performance.service';
 import { StrategyService } from '../market-making/strategy/strategy.service';
-import { TradeModule } from '../market-making/trade/trade.module';
-import { TradeService } from '../market-making/trade/trade.service';
 import { MixinClientModule } from '../mixin/client/mixin-client.module';
 import { Web3Module } from '../web3/web3.module';
 import { AdminController } from './admin.controller';
@@ -43,7 +41,6 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
       GrowdataMarketMakingPair,
       SpotdataTradingPair,
     ]),
-    TradeModule,
     Web3Module,
   ],
   controllers: [AdminController, AdminFeeController],
@@ -51,7 +48,6 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
     AdminStrategyService,
     StrategyService,
     PerformanceService,
-    TradeService,
     AdminGrowService,
     AdminSpotService,
     AdminFeeService,

@@ -5,18 +5,6 @@ import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 
 describe('StrategyIntentExecutionService', () => {
-  const tradeService = {
-    executeLimitTrade: jest.fn().mockResolvedValue({ id: 'order-1' }),
-  };
-
-  const exchange = {
-    cancelOrder: jest.fn().mockResolvedValue(undefined),
-  };
-
-  const exchangeInitService = {
-    getExchange: jest.fn().mockReturnValue(exchange),
-  };
-
   const exchangeConnectorAdapterService = {
     placeLimitOrder: jest
       .fn()
@@ -80,12 +68,10 @@ describe('StrategyIntentExecutionService', () => {
 
   it('executes CREATE_LIMIT_ORDER intents once (idempotent)', async () => {
     const service = new StrategyIntentExecutionService(
-      tradeService as any,
-      exchangeInitService as any,
       createConfigService(true),
+      exchangeConnectorAdapterService as any,
       durabilityService as any,
       intentStoreService as any,
-      exchangeConnectorAdapterService as any,
       exchangeOrderTrackerService as any,
     );
 
@@ -116,18 +102,15 @@ describe('StrategyIntentExecutionService', () => {
 
   it('does not execute intents when execution is disabled', async () => {
     const service = new StrategyIntentExecutionService(
-      tradeService as any,
-      exchangeInitService as any,
       createConfigService(false),
+      exchangeConnectorAdapterService as any,
       durabilityService as any,
       intentStoreService as any,
-      exchangeConnectorAdapterService as any,
       exchangeOrderTrackerService as any,
     );
 
     await service.consumeIntents([baseIntent]);
 
-    expect(tradeService.executeLimitTrade).not.toHaveBeenCalled();
     expect(service.hasProcessedIntent(baseIntent.intentId)).toBe(true);
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       baseIntent.intentId,
@@ -152,12 +135,10 @@ describe('StrategyIntentExecutionService', () => {
       }),
     } as unknown as ConfigService;
     const service = new StrategyIntentExecutionService(
-      tradeService as any,
-      exchangeInitService as any,
       configService,
+      exchangeConnectorAdapterService as any,
       durabilityService as any,
       intentStoreService as any,
-      exchangeConnectorAdapterService as any,
       exchangeOrderTrackerService as any,
     );
 
@@ -165,7 +146,6 @@ describe('StrategyIntentExecutionService', () => {
       { ...baseIntent, intentId: 'intent-string' },
     ]);
 
-    expect(tradeService.executeLimitTrade).not.toHaveBeenCalled();
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
     ).not.toHaveBeenCalled();
@@ -173,12 +153,10 @@ describe('StrategyIntentExecutionService', () => {
 
   it('executes CANCEL_ORDER through exchange adapter', async () => {
     const service = new StrategyIntentExecutionService(
-      tradeService as any,
-      exchangeInitService as any,
       createConfigService(true),
+      exchangeConnectorAdapterService as any,
       durabilityService as any,
       intentStoreService as any,
-      exchangeConnectorAdapterService as any,
       exchangeOrderTrackerService as any,
     );
     const cancelIntent: StrategyOrderIntent = {
@@ -202,12 +180,10 @@ describe('StrategyIntentExecutionService', () => {
       new Error('exchange down'),
     );
     const service = new StrategyIntentExecutionService(
-      tradeService as any,
-      exchangeInitService as any,
       createConfigService(true),
+      exchangeConnectorAdapterService as any,
       durabilityService as any,
       intentStoreService as any,
-      exchangeConnectorAdapterService as any,
       exchangeOrderTrackerService as any,
     );
 
@@ -226,12 +202,10 @@ describe('StrategyIntentExecutionService', () => {
       .mockRejectedValueOnce(new Error('temporary'))
       .mockResolvedValueOnce({ id: 'order-retry', status: 'open' });
     const service = new StrategyIntentExecutionService(
-      tradeService as any,
-      exchangeInitService as any,
       createConfigService(true),
+      exchangeConnectorAdapterService as any,
       durabilityService as any,
       intentStoreService as any,
-      exchangeConnectorAdapterService as any,
       exchangeOrderTrackerService as any,
     );
 
@@ -272,12 +246,10 @@ describe('StrategyIntentExecutionService', () => {
     } as unknown as ConfigService;
 
     const service = new StrategyIntentExecutionService(
-      tradeService as any,
-      exchangeInitService as any,
       configService,
+      exchangeConnectorAdapterService as any,
       durabilityService as any,
       intentStoreService as any,
-      exchangeConnectorAdapterService as any,
       exchangeOrderTrackerService as any,
     );
 
