@@ -714,7 +714,7 @@ export class StrategyService
       active.userId === session.userId &&
       active.clientId === session.clientId &&
       active.strategyType === session.strategyType &&
-      active.params === session.params
+      active.runId === session.runId
     );
   }
 
