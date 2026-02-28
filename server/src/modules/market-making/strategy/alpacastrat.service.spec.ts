@@ -20,7 +20,6 @@ describe('AlpacaStratService', () => {
     jest
       .spyOn(global, 'setInterval')
       .mockImplementation(() => 1 as unknown as NodeJS.Timeout);
-
     moduleRef = await Test.createTestingModule({
       providers: [
         AlpacaStratService,
