@@ -1,6 +1,8 @@
 // strategy.dto.ts
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString } from 'class-validator';
+import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 
 export class JoinStrategyDto {
@@ -197,7 +199,6 @@ export class PureMarketMakingStrategyDto {
   })
   currentBaseRatio?: number;
 }
-
 export class ExecuteVolumeStrategyDto {
   @ApiProperty({ description: 'Name of the exchange' })
   exchangeName: string;
@@ -234,12 +235,27 @@ export class ExecuteVolumeStrategyDto {
     example: 1,
   })
   pricePushRate: number; // <--- NEW PARAM to push price after each trade
+  @ApiPropertyOptional({
+    description: 'The first trade is a buy or sell',
+    example: 'buy',
+  })
+  postOnlySide?: Side;
 }
 
 export class StopVolumeStrategyDto {
   @ApiProperty({ description: 'User ID' })
   userId: string;
 
+  @ApiProperty({ description: 'Client ID' })
+  clientId: string;
+}
+
+export class StopIndicatorStrategyDto {
+  @IsString()
+  @ApiProperty({ description: 'User ID' })
+  userId: string;
+
+  @IsString()
   @ApiProperty({ description: 'Client ID' })
   clientId: string;
 }

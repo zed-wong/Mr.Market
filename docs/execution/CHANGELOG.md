@@ -1,5 +1,17 @@
 # Execution Flow Changelog
 
+## 2026-02-28
+
+- Add dynamic strategy definition architecture (`strategy_definitions`, `strategy_definition_versions`) and instance linkage fields on `strategy_instances`
+- Add admin strategy definition lifecycle APIs (create/list/get/update/enable/disable/publish versions)
+- Add admin strategy instance APIs (validate/start/stop/list)
+- Add legacy strategy instance backfill endpoint
+- Add seeded built-in strategy definitions (pure market making, arbitrage, volume) with version snapshots
+- Add executor registry abstraction and executor modules for strategy runtime dispatch
+- Add admin strategy manage settings page
+- Add typed interface helper APIs/tests
+- Add migration and transition guides for dynamic strategy cutover under `docs/plans/*`
+
 ## 2026-02-27
 
 - Harden pause-withdraw orchestration with durable pending/completed/failed intents and idempotent ledger rollback on external withdrawal failure

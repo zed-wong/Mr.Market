@@ -323,7 +323,10 @@
   "volume": "Volume",
   "actions": "Actions",
   "type": "Type",
+  "user": "User",
+  "client": "Client",
   "user_id": "User ID",
+  "client_id": "Client ID",
   "message_id": "Message ID",
   "symbol": "Symbol",
   "state": "State",
@@ -639,5 +642,44 @@
   "failed_to_load_campaign": "Failed to Load Campaign",
   "failed_to_load_campaign_desc": "An error occurred while loading the campaign details. Please try again.",
   "hufi_no_active_campaigns_title": "No Active Campaigns",
-  "hufi_no_active_campaigns_desc": "There are currently no active campaigns available."
+  "hufi_no_active_campaigns_desc": "There are currently no active campaigns available.",
+  "strategies": "Strategies",
+  "manage_strategies": "Manage strategy definitions and instances",
+  "start_strategy_instance": "Start Strategy Instance",
+  "strategy_definition": "Strategy Definition",
+  "select_strategy_definition": "Select a strategy definition",
+  "strategy_definitions": "Strategy Definitions",
+  "strategy_instances": "Strategy Instances",
+  "strategy_config_override": "Config override (JSON)",
+  "default_config_preview": "Default config preview",
+  "validate": "Validate",
+  "start": "Start",
+  "disabled": "Disabled",
+  "no_data": "No data",
+  "strategy_config_invalid_json": "Config JSON is invalid",
+  "strategy_required_fields": "Definition, user ID, and client ID are required",
+  "strategy_validation_success": "Configuration is valid",
+  "strategy_validation_failed": "Configuration validation failed",
+  "strategy_start_success": "Strategy instance started",
+  "strategy_start_failed": "Failed to start strategy instance",
+  "strategy_stop_success": "Strategy instance stopped",
+  "strategy_stop_failed": "Failed to stop strategy instance",
+  "strategy_instance_missing_definition": "This instance is missing a linked strategy definition"
+  ,"strategy_definition_required_fields": "Definition key, name, and executor type are required"
+  ,"strategy_definition_create_success": "Strategy definition created"
+  ,"strategy_definition_create_failed": "Failed to create strategy definition"
+  ,"strategy_definition_toggle_success": "Strategy definition state updated"
+  ,"strategy_definition_toggle_failed": "Failed to update strategy definition state"
+  ,"strategy_definition_publish_success": "Strategy definition version published"
+  ,"strategy_definition_publish_failed": "Failed to publish strategy definition version"
+  ,"strategy_definition_versions": "Definition Versions"
+  ,"strategy_backfill": "Backfill Links"
+  ,"strategy_backfill_done": "Backfill done (updated: {updated}, skipped: {skipped})"
+  ,"strategy_backfill_failed": "Failed to backfill legacy instances"
+  ,"create_strategy_definition": "Create Strategy Definition"
+  ,"create": "Create"
+  ,"publish": "Publish"
+  ,"enable": "Enable"
+  ,"disable": "Disable"
+  ,"strategy_definition_versions_load_failed": "Failed to load strategy definition versions"
 }

@@ -1,12 +1,16 @@
 // strategy.controller.ts
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Query,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -24,15 +28,20 @@ import {
   ExecuteVolumeStrategyDto,
   JoinStrategyDto,
   PureMarketMakingStrategyDto,
+  StopIndicatorStrategyDto,
   StopVolumeStrategyDto,
 } from './strategy.dto';
+import { TimeIndicatorStrategyService } from './time-indicator.service';
+import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
 @ApiTags('Trading Engine')
 @Controller('strategy')
 export class StrategyController {
+  private readonly logger = new Logger(StrategyController.name);
   constructor(
     private readonly strategyService: StrategyService,
     private readonly adminService: AdminStrategyService,
+    private readonly timeIndicatorStrategyService: TimeIndicatorStrategyService,
   ) {}
 
   @Get('running')
@@ -201,6 +210,7 @@ export class StrategyController {
       userId,
       clientId,
       pricePushRate,
+      postOnlySide,
     } = executeVolumeStrategyDto;
 
     return this.strategyService.executeVolumeStrategy(
@@ -213,6 +223,7 @@ export class StrategyController {
       userId,
       clientId,
       pricePushRate,
+      postOnlySide,
     );
   }
 
@@ -230,6 +241,50 @@ export class StrategyController {
     return this.strategyService.stopVolumeStrategy(
       stopVolumeStrategyDto.userId,
       stopVolumeStrategyDto.clientId,
+    );
+  }
+
+  @Post('execute-indicator-strategy')
+  @ApiOperation({ summary: 'Run the time-indicator strategy once (stateless)' })
+  async execute(@Body() dto: TimeIndicatorStrategyDto) {
+    return this.timeIndicatorStrategyService.executeIndicatorStrategy(dto);
+  }
+
+  @Post('start-indicator-strategy')
+  @ApiOperation({
+    summary: 'Start periodic execution of the time-indicator strategy',
+  })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  async start(@Body() dto: TimeIndicatorStrategyDto) {
+    if (
+      !Number.isFinite(dto.tickIntervalMs) ||
+      !Number.isInteger(dto.tickIntervalMs) ||
+      dto.tickIntervalMs <= 0
+    ) {
+      throw new BadRequestException(
+        'tickIntervalMs must be a finite positive integer',
+      );
+    }
+    this.logger.warn(
+      'Time-indicator run state is in-memory only; use persistent strategy state for multi-instance/restart safety.',
+    );
+
+    return await this.timeIndicatorStrategyService.startIndicatorStrategy(dto);
+  }
+
+  @Post('stop-indicator-strategy')
+  @ApiOperation({
+    summary: 'Stop periodic execution of the time-indicator strategy',
+  })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  async stop(@Body() dto: StopIndicatorStrategyDto) {
+    this.logger.warn(
+      'Stop indicator strategy should consult persisted run state in multi-instance deployments; current implementation is in-memory.',
+    );
+
+    return await this.timeIndicatorStrategyService.stopIndicatorStrategy(
+      dto.userId,
+      dto.clientId,
     );
   }
 

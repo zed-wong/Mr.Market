@@ -9,7 +9,7 @@
 
 ## Phase 1: Planning and Branch
 - [x] Create branch: `refactor/remove-trade-and-rename-exchange-service`
-- [x] Add migration/refactor plan document in `docs/plan/`.
+- [x] Add migration/refactor plan document in `docs/plans/`.
 
 ## Phase 2: Trade Removal
 - [x] Remove `server/src/modules/market-making/trade/*`.
