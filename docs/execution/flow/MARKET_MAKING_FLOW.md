@@ -139,7 +139,7 @@ Exact transitions depend on which queue branches are enabled in your environment
 - `strategy.intent_execution_driver=sync` keeps legacy inline execution behavior and can increase tick latency.
   Tick both generates and executes intents in the same path, so slow exchange calls directly extend tick duration.
 - Strategy definitions are now DB-backed and can be managed in admin settings (`/manage/settings/strategies`).
-- For migration/cutover details, follow `docs/plans/2026-02-28-strategy-dynamic-migration-guide.md`.
+- For migration/cutover details, follow `docs/plans/2026-02-28-dynamic-strategy-architecture-transition-plan.md`.
 - `withdraw_to_exchange` path is currently validation/refund mode in this implementation.
 - Tick coordinator is now the periodic execution source for active strategy sessions.
 - Reconciliation and trackers should be monitored to detect drift between local state and exchange state.

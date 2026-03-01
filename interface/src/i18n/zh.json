@@ -323,7 +323,10 @@
   "volume": "成交量",
   "actions": "操作",
   "type": "类型",
+  "user": "用户",
+  "client": "客户端",
   "user_id": "用户ID",
+  "client_id": "客户端ID",
   "message_id": "消息ID",
   "symbol": "标志",
   "state": "状态",
@@ -678,4 +681,5 @@
   "publish": "发布",
   "enable": "启用",
   "disable": "禁用"
+  ,"strategy_definition_versions_load_failed": "加载策略定义版本失败"
 }

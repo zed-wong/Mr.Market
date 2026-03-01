@@ -1,170 +1,137 @@
 # Dynamic Strategy Architecture Transition Plan
 
 ## Goals
-- Move from hardcoded strategy types to DB-driven strategy definitions.
-- Separate strategy configuration from execution (Hummingbot V2 style).
-- Manage strategy definitions and instances from admin UI.
-- Seed strategy definitions just like market-making pairs in seeder.
+- Move from hardcoded strategy types to DB-backed strategy definitions.
+- Separate strategy configuration from strategy execution (Hummingbot V2 style).
+- Manage definitions and instances from admin UI.
+- Seed built-in strategy definitions via `defaultStrategyDefinitions` and `seedStrategyDefinitions()`.
 - Keep backward compatibility during migration.
 
-## Current State (from codebase)
-- Strategy execution type branching is hardcoded in `server/src/modules/market-making/strategy/strategy.service.ts`.
-- Strategy config shapes are static DTOs in `server/src/modules/market-making/strategy/strategy.dto.ts`.
-- Admin start/stop flow is hardcoded for three types in:
-  - `server/src/modules/admin/strategy/admin-strategy.dto.ts`
-  - `server/src/modules/admin/strategy/adminStrategy.service.ts`
-- Runtime instances are persisted in `strategy_instances` (`server/src/common/entities/market-making/strategy-instances.entity.ts`) but there is no strategy definition catalog.
-- Seeder currently seeds grow data and market-making pairs, not strategy definitions:
-  - `server/src/database/seeder/seed.ts`
-  - `server/src/database/seeder/defaultSeedValues.ts`
+## Current State
+- Strategy runtime was historically driven by hardcoded `strategyType` branches in `StrategyService`.
+- Runtime rows already persisted in `strategy_instances`, but definition catalog/versioning did not exist.
+- Seeder previously handled grow/spot metadata only; no strategy catalog seeds.
 
-## Scope for V1
-- Implement configuration hot-plug (DB-driven definitions + dynamic instance config).
-- Do not implement code upload/download strategy marketplace yet.
-- Keep executor code local and whitelisted by `executorType`.
+## Scope (V1)
+- Dynamic configuration hot-plug only: DB-driven definitions, validation, instance lifecycle.
+- No custom uploaded executable strategy code in V1.
+- Executors remain local/whitelisted via `executorType`.
 
 ## Architecture Target
 
-### 1) Strategy Definition Layer (new)
-Add table: `strategy_definitions`
-- `id` (uuid)
-- `key` (unique, e.g. `pure-market-making`)
-- `name`
-- `description`
-- `executorType` (maps to local executor implementation)
-- `configSchema` (JSON Schema)
-- `defaultConfig` (JSON)
-- `enabled` (bool)
-- `visibility` (`system` | `private` | `public` future)
-- `createdBy` (nullable)
-- `createdAt`, `updatedAt`
+### Strategy Definition Layer
+- Table: `strategy_definitions`
+  - key/name/description/executorType/configSchema/defaultConfig/enabled/visibility/currentVersion
+- Table: `strategy_definition_versions`
+  - immutable version snapshots per definition publish
 
-Optional table: `strategy_definition_versions`
-- immutable version history for schema/default changes.
+### Strategy Instance Layer
+- Extend `strategy_instances`:
+  - `definitionId` (FK-like linkage)
+  - `definitionVersion`
+- Keep `strategyType` for compatibility during transition.
 
-### 2) Instance Layer (extend existing)
-Extend `strategy_instances` with:
-- `definitionId` (FK strategy_definitions.id)
-- `definitionVersion` (optional)
-- keep `parameters` as actual instance config
-- keep legacy `strategyType` temporarily for compatibility
+### Executor Layer
+- Standard executor contract:
+  - `validateConfig(config)`
+  - `onStart(context)`
+  - `onTick(context)`
+  - `onStop(context)`
+- `StrategyExecutorRegistry` maps `executorType -> executor`.
+- Built-ins: `pureMarketMaking`, `arbitrage`, `volume`.
 
-### 3) Executor Layer
-Define a common interface:
-- `validateConfig(config)`
-- `onStart(context)`
-- `onTick(context)`
-- `onStop(context)`
+### Validation Layer
+- Validate merged config (`defaultConfig + override`) against `configSchema` on validate/start.
+- Enforce required/type/min/enum and reject unknown fields where configured.
 
-Add `StrategyExecutorRegistry`:
-- maps `executorType -> executor class`
-- register built-ins: arbitrage, pure market making, volume
-- remove hardcoded branching from `StrategyService` and dispatch via registry
+## API & Admin UI
 
-### 4) Validation Layer
-- Validate instance config against `configSchema` at create/start.
-- Add domain preflight checks (exchange exists, pair exists, numeric bounds).
-- Return field-level validation errors for admin UI.
+### Admin APIs
+- Definitions:
+  - `POST /admin/strategy/definitions`
+  - `GET /admin/strategy/definitions`
+  - `GET /admin/strategy/definitions/:id`
+  - `POST /admin/strategy/definitions/:id/update`
+  - `POST /admin/strategy/definitions/:id/enable`
+  - `POST /admin/strategy/definitions/:id/disable`
+  - `POST /admin/strategy/definitions/:id/publish`
+  - `GET /admin/strategy/definitions/:id/versions`
+- Instances:
+  - `POST /admin/strategy/instances/validate`
+  - `POST /admin/strategy/instances/start`
+  - `POST /admin/strategy/instances/stop`
+  - `GET /admin/strategy/instances`
+  - `POST /admin/strategy/instances/backfill-definition-links`
 
-## API Plan
-
-### Admin Strategy Definition APIs (new)
-- `POST /admin/strategy/definitions`
-- `GET /admin/strategy/definitions`
-- `GET /admin/strategy/definitions/:id`
-- `POST /admin/strategy/definitions/:id/update`
-- `POST /admin/strategy/definitions/:id/enable`
-- `POST /admin/strategy/definitions/:id/disable`
-
-### Strategy Instance APIs (new/refactor)
-- `POST /admin/strategy/instances/start` (definitionId + config + user/client)
-- `POST /admin/strategy/instances/stop`
-- `GET /admin/strategy/instances/running`
-- `GET /admin/strategy/instances/all`
-
-### Backward Compatibility
-- Keep existing endpoints and translate payload to definition-based flow internally.
-- Deprecate old type-specific endpoints after migration window.
-
-## Admin UI Plan
-
-### New page: Manage Strategies
-- Strategy catalog table:
-  - name, key, executorType, version, enabled
-- Strategy editor:
-  - metadata + schema/default config
-- Strategy launcher:
-  - form rendered from `configSchema`
-  - start/stop instance actions
-- Instance monitor:
-  - running status, last error, recent events/intents
-
-### Keep Existing
-- Existing market-making pair management stays unchanged and independent.
+### Admin UI
+- `/manage/settings/strategies` supports:
+  - definition list and create
+  - enable/disable
+  - publish version and version history
+  - validate/start/stop instance
+  - legacy link backfill trigger
+- Existing market-making pair management remains unchanged.
 
 ## Seeder Plan
-In `server/src/database/seeder/defaultSeedValues.ts`:
-- add `defaultStrategyDefinitions` with built-in templates:
-  - `pure-market-making`
-  - `arbitrage`
-  - `volume`
-
-In `server/src/database/seeder/seed.ts`:
-- add `seedStrategyDefinitions()` with idempotent upsert semantics.
-- run it during standard seed pipeline.
+- `server/src/database/seeder/defaultSeedValues.ts`
+  - add `defaultStrategyDefinitions` for pure MM/arbitrage/volume.
+- `server/src/database/seeder/seed.ts`
+  - add `seedStrategyDefinitions()` and version snapshot seeding.
 
 ## Migration Plan
 
-### Step 1: Schema Migration
-- create `strategy_definitions` (+ versions optional)
-- alter `strategy_instances` with `definitionId` (+ version)
+### Schema Migration
+- Run migrations to create/alter:
+  - `strategy_definitions`
+  - `strategy_definition_versions`
+  - `strategy_instances.definitionId`
+  - `strategy_instances.definitionVersion`
 
-### Step 2: Backfill
-- insert built-in definitions
-- map existing instances:
-  - `arbitrage` -> corresponding definition
-  - `pureMarketMaking` -> corresponding definition
-  - `volume` -> corresponding definition
-- preserve existing `parameters`
+### Backfill
+- Seed definitions and initial version snapshots.
+- Backfill legacy instance rows with definition links:
+  - `POST /admin/strategy/instances/backfill-definition-links`
 
-### Step 3: Dual Path
-- old endpoints continue to work
-- new endpoints use definitions directly
-- verify parity in behavior
+### Dual Path
+- Keep legacy start/stop behavior compatible while routing new flow through definitions.
+- Keep legacy `strategyType` until cutover stability window ends.
 
-### Step 4: Cutover
-- switch admin UI to new endpoints
-- deprecate/remove legacy branching once stable
+### Cutover
+- Use definition-based UI/API paths as primary flow.
+- After stability, retire legacy type-specific paths and cleanup branches.
+
+## Operations & Verification
+
+### Migration Steps
+1. `bun run migration:run`
+2. `bun run migration:seed`
+3. Call backfill endpoint with admin auth.
+
+### Verification Checklist
+- `strategy_definitions` has seeded rows.
+- `strategy_definition_versions` has at least one version per definition.
+- legacy `strategy_instances` rows have `definitionId` after backfill.
+- `/manage/settings/strategies` supports validate/start/stop and version operations.
+
+### Rollback Notes
+- Runtime compatibility retained via `strategyType`.
+- Dynamic flow can be operationally disabled by reverting callers to legacy endpoints.
+- Do not remove legacy fields until all integrations are cut over.
 
 ## Testing Plan
 - Unit:
-  - executor registry dispatch
-  - schema validation pass/fail
-  - backward-compat adapter logic
-- Integration:
-  - start/stop instance from definition
-  - intent generation and execution unchanged for existing strategies
-- Migration:
-  - backfill correctness for legacy rows
-  - rollback safety
+  - registry dispatch
+  - schema validation
+  - compatibility adapters
+- Integration/E2E:
+  - definition validate/start/stop/list
+  - migration/seed/backfill correctness
 
 ## Risks & Mitigations
-- Risk: key/identity mismatch with existing `strategyKey`-based flows
-  - Mitigation: keep `strategyKey` semantics stable during V1.
-- Risk: invalid dynamic configs cause runtime failures
-  - Mitigation: strict JSON schema + preflight validation.
-- Risk: mixing config hot-plug with code hot-plug increases scope
-  - Mitigation: V1 only supports whitelisted local executors.
+- Strategy key identity drift: keep `strategyKey` semantics stable through V1.
+- Invalid dynamic config: enforce validation at validate/start entrypoints.
+- Scope creep from code hot-plug: keep executor implementations local in V1.
 
-## Future: Strategy Market (Not in V1)
-- Add import/export for definitions (metadata + schema + default config)
-- Add signature/hash verification and compatibility metadata
-- Keep execution code local; imported packages should not execute arbitrary code
-
-## Execution Order
-1. DB schema + migration + seed definitions
-2. Executor interface + registry refactor (no behavior change)
-3. New definition/instance services + admin APIs
-4. Backward compatibility adapters for existing APIs
-5. Admin manage strategies UI
-6. Migration rollout + cleanup
+## Future (Post-V1)
+- Optional strategy market import/export of signed definition packages.
+- Full JSON Schema validator, feature flags, and finer-grained RBAC/audit logs.

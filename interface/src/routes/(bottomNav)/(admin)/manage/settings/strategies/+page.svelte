@@ -121,8 +121,33 @@
                 selectedDefinitionId,
                 token,
             );
-        } catch {
+        } catch (err) {
             selectedDefinitionVersions = [];
+            console.error("Failed to load strategy definition versions", err);
+            toast.error($_("strategy_definition_versions_load_failed"));
+        }
+    }
+
+    function buildStartPayload(): StartStrategyInstancePayload | null {
+        if (!selectedDefinitionId || !userId || !clientId) {
+            toast.error($_("strategy_required_fields"));
+            return null;
+        }
+
+        try {
+            return {
+                definitionId: selectedDefinitionId,
+                userId,
+                clientId,
+                config: parseObjectJson(configText),
+            };
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : $_("strategy_config_invalid_json"),
+            );
+            return null;
         }
     }
 
@@ -219,19 +244,13 @@
     }
 
     async function onValidateStartConfig() {
-        if (!selectedDefinitionId || !userId || !clientId) {
-            toast.error($_("strategy_required_fields"));
+        const payload = buildStartPayload();
+        if (!payload) {
             return;
         }
 
         try {
             const token = getAdminToken();
-            const payload: StartStrategyInstancePayload = {
-                definitionId: selectedDefinitionId,
-                userId,
-                clientId,
-                config: parseObjectJson(configText),
-            };
             await validateStrategyInstance(payload, token);
             toast.success($_("strategy_validation_success"));
         } catch (error) {
@@ -244,19 +263,13 @@
     }
 
     async function onStartStrategyInstance() {
-        if (!selectedDefinitionId || !userId || !clientId) {
-            toast.error($_("strategy_required_fields"));
+        const payload = buildStartPayload();
+        if (!payload) {
             return;
         }
 
         try {
             const token = getAdminToken();
-            const payload: StartStrategyInstancePayload = {
-                definitionId: selectedDefinitionId,
-                userId,
-                clientId,
-                config: parseObjectJson(configText),
-            };
             await startStrategyInstance(payload, token);
             toast.success($_("strategy_start_success"));
             await refreshStrategies(false);
@@ -365,11 +378,11 @@
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label class="form-control">
-                        <span class="label-text">User ID</span>
+                        <span class="label-text">{$_("user_id")}</span>
                         <input class="input input-bordered" bind:value={userId} placeholder="user123" />
                     </label>
                     <label class="form-control">
-                        <span class="label-text">Client ID</span>
+                        <span class="label-text">{$_("client_id")}</span>
                         <input class="input input-bordered" bind:value={clientId} placeholder="client123" />
                     </label>
                 </div>
@@ -529,8 +542,8 @@
                         <thead>
                             <tr>
                                 <th>{$_("strategy")}</th>
-                                <th>User</th>
-                                <th>Client</th>
+                                <th>{$_("user")}</th>
+                                <th>{$_("client")}</th>
                                 <th>{$_("status")}</th>
                                 <th>{$_("action")}</th>
                             </tr>
