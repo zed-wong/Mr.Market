@@ -10,6 +10,7 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
 import { PerformanceService } from '../performance/performance.service';
+import { DexVolumeStrategyService } from './dex-volume.strategy.service';
 import { PureMarketMakingStrategyDto } from './strategy.dto';
 import { StrategyService } from './strategy.service';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
@@ -50,6 +51,9 @@ describe('StrategyService', () => {
   let strategyIntentStoreService: {
     upsertIntent: jest.Mock;
   };
+  let dexVolumeStrategyService: {
+    executeCycle: jest.Mock;
+  };
 
   const mockOrderRepository = {
     find: jest.fn(),
@@ -81,6 +85,13 @@ describe('StrategyService', () => {
     strategyIntentStoreService = {
       upsertIntent: jest.fn().mockResolvedValue(undefined),
     };
+    dexVolumeStrategyService = {
+      executeCycle: jest.fn().mockResolvedValue({
+        txHash: '0xabc',
+        side: 'buy',
+        amountIn: '1000000',
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -94,6 +105,10 @@ describe('StrategyService', () => {
         {
           provide: StrategyIntentStoreService,
           useValue: strategyIntentStoreService,
+        },
+        {
+          provide: DexVolumeStrategyService,
+          useValue: dexVolumeStrategyService,
         },
         {
           provide: ConfigService,
@@ -318,6 +333,89 @@ describe('StrategyService', () => {
       nowMs + 2000,
     );
     expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+
+    dateNowSpy.mockRestore();
+  });
+
+  it('registers dex volume strategy params when execution venue is dex', async () => {
+    await service.executeVolumeStrategy(
+      undefined,
+      undefined,
+      0.1,
+      60,
+      1,
+      5,
+      'user1',
+      'client1',
+      0,
+      undefined,
+      'dex',
+      'uniswapV3',
+      1,
+      '0x0000000000000000000000000000000000000001',
+      '0x0000000000000000000000000000000000000002',
+      3000,
+      100,
+      '0x0000000000000000000000000000000000000003',
+    );
+
+    const session = (service as any).sessions.get('user1-client1-volume');
+
+    expect(session).toBeDefined();
+    expect(session.params.executionVenue).toBe('dex');
+    expect(session.params.dexId).toBe('uniswapV3');
+    expect(session.params.chainId).toBe(1);
+  });
+
+  it('executes dex volume cycle via dex service and increments executed trades', async () => {
+    const nowMs = 1_700_000_000_000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    const strategyKey = 'user1-client1-volume';
+
+    (service as any).sessions.set(strategyKey, {
+      runId: 'run-1',
+      strategyKey,
+      strategyType: 'volume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: nowMs,
+      params: {
+        exchangeName: 'uniswapV3',
+        symbol: 'tokenIn/tokenOut',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionVenue: 'dex',
+        postOnlySide: 'buy',
+        executedTrades: 0,
+        dexId: 'uniswapV3',
+        chainId: 1,
+        tokenIn: '0x0000000000000000000000000000000000000001',
+        tokenOut: '0x0000000000000000000000000000000000000002',
+        feeTier: 3000,
+        slippageBps: 100,
+      },
+    });
+
+    await service.onTick('2026-03-01T00:00:00.000Z');
+
+    expect(dexVolumeStrategyService.executeCycle).toHaveBeenCalledTimes(1);
+    expect(dexVolumeStrategyService.executeCycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dexId: 'uniswapV3',
+        chainId: 1,
+        side: 'buy',
+      }),
+    );
+    expect(strategyIntentStoreService.upsertIntent).not.toHaveBeenCalled();
+    expect(
+      (service as any).sessions.get(strategyKey).params.executedTrades,
+    ).toBe(1);
 
     dateNowSpy.mockRestore();
   });

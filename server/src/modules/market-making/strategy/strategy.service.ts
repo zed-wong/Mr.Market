@@ -20,10 +20,13 @@ import { Repository } from 'typeorm';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
+import { DexVolumeStrategyService } from './dex-volume.strategy.service';
 import { QuoteExecutorManagerService } from './quote-executor-manager.service';
 import {
   ArbitrageStrategyDto,
+  DexAdapterId,
   PureMarketMakingStrategyDto,
+  VolumeExecutionVenue,
 } from './strategy.dto';
 import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
@@ -45,7 +48,7 @@ type StrategyRuntimeSession = {
     | Record<string, any>;
 };
 
-type VolumeStrategyParams = {
+type BaseVolumeStrategyParams = {
   exchangeName: string;
   symbol: string;
   baseIncrementPercentage: number;
@@ -55,9 +58,27 @@ type VolumeStrategyParams = {
   userId: string;
   clientId: string;
   pricePushRate: number;
+  executionVenue: VolumeExecutionVenue;
   postOnlySide?: 'buy' | 'sell';
   executedTrades?: number;
 };
+
+type CexVolumeStrategyParams = BaseVolumeStrategyParams & {
+  executionVenue: 'cex';
+};
+
+type DexVolumeStrategyParams = BaseVolumeStrategyParams & {
+  executionVenue: 'dex';
+  dexId: DexAdapterId;
+  chainId: number;
+  tokenIn: string;
+  tokenOut: string;
+  feeTier: number;
+  slippageBps?: number;
+  recipient?: string;
+};
+
+type VolumeStrategyParams = CexVolumeStrategyParams | DexVolumeStrategyParams;
 
 @Injectable()
 export class StrategyService
@@ -90,6 +111,8 @@ export class StrategyService
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
     @Optional()
     private readonly configService?: ConfigService,
+    @Optional()
+    private readonly dexVolumeStrategyService?: DexVolumeStrategyService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -222,6 +245,14 @@ export class StrategyService
         strategyInstance.parameters.clientId,
         strategyInstance.parameters.pricePushRate,
         strategyInstance.parameters.postOnlySide,
+        strategyInstance.parameters.executionVenue,
+        strategyInstance.parameters.dexId,
+        strategyInstance.parameters.chainId,
+        strategyInstance.parameters.tokenIn,
+        strategyInstance.parameters.tokenOut,
+        strategyInstance.parameters.feeTier,
+        strategyInstance.parameters.slippageBps,
+        strategyInstance.parameters.recipient,
       );
 
       return;
@@ -310,8 +341,8 @@ export class StrategyService
   }
 
   async executeVolumeStrategy(
-    exchangeName: string,
-    symbol: string,
+    exchangeName: string | undefined,
+    symbol: string | undefined,
     baseIncrementPercentage: number,
     baseIntervalTime: number,
     baseTradeAmount: number,
@@ -320,6 +351,14 @@ export class StrategyService
     clientId: string,
     pricePushRate: number,
     postOnlySide?: 'buy' | 'sell',
+    executionVenue: VolumeExecutionVenue = 'cex',
+    dexId?: DexAdapterId,
+    chainId?: number,
+    tokenIn?: string,
+    tokenOut?: string,
+    feeTier?: number,
+    slippageBps?: number,
+    recipient?: string,
   ) {
     const strategyKey = createStrategyKey({
       type: 'volume',
@@ -327,19 +366,39 @@ export class StrategyService
       client_id: clientId,
     });
 
-    const params: VolumeStrategyParams = {
-      exchangeName,
-      symbol,
-      baseIncrementPercentage,
-      baseIntervalTime,
-      baseTradeAmount,
-      numTrades,
-      userId,
-      clientId,
-      pricePushRate,
-      postOnlySide,
-      executedTrades: 0,
-    };
+    const params: VolumeStrategyParams =
+      executionVenue === 'dex'
+        ? this.buildDexVolumeParams({
+            exchangeName,
+            symbol,
+            baseIncrementPercentage,
+            baseIntervalTime,
+            baseTradeAmount,
+            numTrades,
+            userId,
+            clientId,
+            pricePushRate,
+            postOnlySide,
+            dexId,
+            chainId,
+            tokenIn,
+            tokenOut,
+            feeTier,
+            slippageBps,
+            recipient,
+          })
+        : this.buildCexVolumeParams({
+            exchangeName,
+            symbol,
+            baseIncrementPercentage,
+            baseIntervalTime,
+            baseTradeAmount,
+            numTrades,
+            userId,
+            clientId,
+            pricePushRate,
+            postOnlySide,
+          });
 
     const cadenceMs = Math.max(1000, Number(baseIntervalTime || 10) * 1000);
 
@@ -655,52 +714,69 @@ export class StrategyService
         return;
       }
 
-      const intents = await this.buildVolumeIntents(
-        session.strategyKey,
-        params,
-        ts,
-      );
+      let intents: StrategyOrderIntent[] = [];
+      let didExecute = false;
+
+      if (params.executionVenue === 'dex') {
+        didExecute = await this.executeDexVolumeCycle(
+          session.strategyKey,
+          params,
+          executedTrades,
+        );
+      } else {
+        intents = await this.buildVolumeIntents(
+          session.strategyKey,
+          params,
+          ts,
+        );
+        didExecute = intents.length > 0;
+      }
+
+      if (!didExecute) {
+        return;
+      }
+
+      const activeBeforePersist = this.sessions.get(session.strategyKey);
+
+      if (!this.isSameActiveSession(activeBeforePersist, session)) {
+        this.logger.warn(
+          `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
+        );
+
+        return;
+      }
+
+      const nextParams: VolumeStrategyParams = {
+        ...params,
+        executedTrades: executedTrades + 1,
+      };
+
+      await this.persistStrategyParams(session.strategyKey, nextParams);
+      const activeBeforePublish = this.sessions.get(session.strategyKey);
+
+      if (!this.isSameActiveSession(activeBeforePublish, session)) {
+        this.logger.warn(
+          `Skipping stale volume tick before publish for ${session.strategyKey}: active session changed`,
+        );
+
+        return;
+      }
 
       if (intents.length > 0) {
-        const activeBeforePersist = this.sessions.get(session.strategyKey);
-
-        if (!this.isSameActiveSession(activeBeforePersist, session)) {
-          this.logger.warn(
-            `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
-          );
-
-          return;
-        }
-
-        const nextParams: VolumeStrategyParams = {
-          ...params,
-          executedTrades: executedTrades + 1,
-        };
-
-        await this.persistStrategyParams(session.strategyKey, nextParams);
-        const activeBeforePublish = this.sessions.get(session.strategyKey);
-
-        if (!this.isSameActiveSession(activeBeforePublish, session)) {
-          this.logger.warn(
-            `Skipping stale volume tick before publish for ${session.strategyKey}: active session changed`,
-          );
-
-          return;
-        }
-
         await this.publishIntents(session.strategyKey, intents);
-        const currentSession = this.sessions.get(session.strategyKey);
+      }
 
-        if (this.isSameActiveSession(currentSession, session)) {
-          this.sessions.set(session.strategyKey, {
-            ...currentSession,
-            params: nextParams,
-          });
-        } else {
-          this.logger.warn(
-            `Skipping stale volume tick write-back for ${session.strategyKey}: active session changed`,
-          );
-        }
+      const currentSession = this.sessions.get(session.strategyKey);
+
+      if (this.isSameActiveSession(currentSession, session)) {
+        this.sessions.set(session.strategyKey, {
+          ...currentSession,
+          params: nextParams,
+        });
+      } else {
+        this.logger.warn(
+          `Skipping stale volume tick write-back for ${session.strategyKey}: active session changed`,
+        );
       }
     }
   }
@@ -718,9 +794,46 @@ export class StrategyService
     );
   }
 
+  private async executeDexVolumeCycle(
+    strategyKey: string,
+    params: DexVolumeStrategyParams,
+    executedTrades: number,
+  ): Promise<boolean> {
+    if (!this.dexVolumeStrategyService) {
+      this.logger.error(
+        `Dex volume service is not available. Cannot execute ${strategyKey}`,
+      );
+
+      return false;
+    }
+
+    const side = this.resolveVolumeSide(params.postOnlySide, executedTrades);
+
+    const result = await this.dexVolumeStrategyService.executeCycle({
+      dexId: params.dexId,
+      chainId: params.chainId,
+      tokenIn: params.tokenIn,
+      tokenOut: params.tokenOut,
+      feeTier: params.feeTier,
+      baseTradeAmount: params.baseTradeAmount,
+      baseIncrementPercentage: params.baseIncrementPercentage,
+      pricePushRate: params.pricePushRate,
+      executedTrades,
+      side,
+      slippageBps: params.slippageBps,
+      recipient: params.recipient,
+    });
+
+    this.logger.log(
+      `DEX volume cycle executed for ${strategyKey}: txHash=${result.txHash}, side=${result.side}, amountIn=${result.amountIn}`,
+    );
+
+    return true;
+  }
+
   private async buildVolumeIntents(
     strategyKey: string,
-    params: VolumeStrategyParams,
+    params: CexVolumeStrategyParams,
     ts: string,
   ): Promise<StrategyOrderIntent[]> {
     const exchange = this.exchangeInitService.getExchange(params.exchangeName);
@@ -747,11 +860,10 @@ export class StrategyService
       params.baseIncrementPercentage || 0,
     ).dividedBy(100);
 
-    const side: 'buy' | 'sell' = params.postOnlySide
-      ? params.postOnlySide
-      : Number(params.executedTrades || 0) % 2 === 0
-      ? 'buy'
-      : 'sell';
+    const side = this.resolveVolumeSide(
+      params.postOnlySide,
+      Number(params.executedTrades || 0),
+    );
     const price =
       side === 'buy'
         ? basePrice.multipliedBy(new BigNumber(1).minus(offsetMultiplier))
@@ -1107,6 +1219,123 @@ export class StrategyService
     }
 
     return volumePriceProductSum.dividedBy(volumeAccumulated);
+  }
+
+  private resolveVolumeSide(
+    postOnlySide: 'buy' | 'sell' | undefined,
+    executedTrades: number,
+  ): 'buy' | 'sell' {
+    if (postOnlySide) {
+      return postOnlySide;
+    }
+
+    return executedTrades % 2 === 0 ? 'buy' : 'sell';
+  }
+
+  private buildCexVolumeParams(input: {
+    exchangeName: string | undefined;
+    symbol: string | undefined;
+    baseIncrementPercentage: number;
+    baseIntervalTime: number;
+    baseTradeAmount: number;
+    numTrades: number;
+    userId: string;
+    clientId: string;
+    pricePushRate: number;
+    postOnlySide?: 'buy' | 'sell';
+  }): CexVolumeStrategyParams {
+    const exchangeName = String(input.exchangeName || '').trim();
+    const symbol = String(input.symbol || '').trim();
+
+    if (!exchangeName) {
+      throw new Error('exchangeName is required for cex volume strategy');
+    }
+    if (!symbol) {
+      throw new Error('symbol is required for cex volume strategy');
+    }
+
+    return {
+      executionVenue: 'cex',
+      exchangeName,
+      symbol,
+      baseIncrementPercentage: input.baseIncrementPercentage,
+      baseIntervalTime: input.baseIntervalTime,
+      baseTradeAmount: input.baseTradeAmount,
+      numTrades: input.numTrades,
+      userId: input.userId,
+      clientId: input.clientId,
+      pricePushRate: input.pricePushRate,
+      postOnlySide: input.postOnlySide,
+      executedTrades: 0,
+    };
+  }
+
+  private buildDexVolumeParams(input: {
+    exchangeName: string | undefined;
+    symbol: string | undefined;
+    baseIncrementPercentage: number;
+    baseIntervalTime: number;
+    baseTradeAmount: number;
+    numTrades: number;
+    userId: string;
+    clientId: string;
+    pricePushRate: number;
+    postOnlySide?: 'buy' | 'sell';
+    dexId?: DexAdapterId;
+    chainId?: number;
+    tokenIn?: string;
+    tokenOut?: string;
+    feeTier?: number;
+    slippageBps?: number;
+    recipient?: string;
+  }): DexVolumeStrategyParams {
+    if (!input.dexId) {
+      throw new Error('dexId is required for dex volume strategy');
+    }
+    if (!Number.isFinite(input.chainId) || Number(input.chainId) <= 0) {
+      throw new Error(
+        'chainId must be a positive number for dex volume strategy',
+      );
+    }
+
+    const tokenIn = String(input.tokenIn || '').trim();
+    const tokenOut = String(input.tokenOut || '').trim();
+
+    if (!tokenIn || !tokenOut) {
+      throw new Error(
+        'tokenIn and tokenOut are required for dex volume strategy',
+      );
+    }
+    if (!Number.isFinite(input.feeTier) || Number(input.feeTier) <= 0) {
+      throw new Error(
+        'feeTier must be a positive number for dex volume strategy',
+      );
+    }
+
+    const syntheticSymbol =
+      String(input.symbol || '').trim() || `${tokenIn}/${tokenOut}`;
+
+    return {
+      executionVenue: 'dex',
+      exchangeName: String(input.exchangeName || input.dexId),
+      symbol: syntheticSymbol,
+      baseIncrementPercentage: input.baseIncrementPercentage,
+      baseIntervalTime: input.baseIntervalTime,
+      baseTradeAmount: input.baseTradeAmount,
+      numTrades: input.numTrades,
+      userId: input.userId,
+      clientId: input.clientId,
+      pricePushRate: input.pricePushRate,
+      postOnlySide: input.postOnlySide,
+      executedTrades: 0,
+      dexId: input.dexId,
+      chainId: Number(input.chainId),
+      tokenIn,
+      tokenOut,
+      feeTier: Number(input.feeTier),
+      slippageBps: input.slippageBps,
+      recipient: input.recipient,
+    };
   }
 
   private toPositiveNumber(value: unknown): number | undefined {

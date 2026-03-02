@@ -10,9 +10,13 @@ import {
   MarketMakingOrder,
   SimplyGrowOrder,
 } from 'src/common/entities/orders/user-orders.entity';
+import { DexAdapterRegistry } from 'src/defi/adapter-registry';
+import { PancakeV3Adapter } from 'src/defi/adapters/pancakeV3.adapter';
+import { UniswapV3Adapter } from 'src/defi/adapters/uniswapV3.adapter';
 
 import { AdminModule } from '../../admin/admin.module';
 import { LoggerModule } from '../../infrastructure/logger/logger.module';
+import { Web3Module } from '../../web3/web3.module';
 import { DurabilityModule } from '../durability/durability.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { FeeModule } from '../fee/fee.module';
@@ -20,6 +24,7 @@ import { PerformanceModule } from '../performance/performance.module';
 import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
 import { AlpacaStratService } from './alpacastrat.service';
+import { DexVolumeStrategyService } from './dex-volume.strategy.service';
 import { QuoteExecutorManagerService } from './quote-executor-manager.service';
 import { StrategyController } from './strategy.controller';
 import { StrategyService } from './strategy.service';
@@ -48,6 +53,7 @@ import { TimeIndicatorStrategyService } from './time-indicator.service';
     DurabilityModule,
     ExecutionModule,
     TrackersModule,
+    Web3Module,
   ],
   controllers: [StrategyController],
   providers: [
@@ -58,6 +64,10 @@ import { TimeIndicatorStrategyService } from './time-indicator.service';
     StrategyIntentStoreService,
     QuoteExecutorManagerService,
     TimeIndicatorStrategyService,
+    UniswapV3Adapter,
+    PancakeV3Adapter,
+    DexAdapterRegistry,
+    DexVolumeStrategyService,
   ],
   exports: [StrategyService],
 })

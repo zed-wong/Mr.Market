@@ -212,6 +212,14 @@ export class StrategyController {
       clientId,
       pricePushRate,
       postOnlySide,
+      executionVenue,
+      dexId,
+      chainId,
+      tokenIn,
+      tokenOut,
+      feeTier,
+      slippageBps,
+      recipient,
     } = executeVolumeStrategyDto;
 
     return this.strategyService.executeVolumeStrategy(
@@ -225,6 +233,14 @@ export class StrategyController {
       clientId,
       pricePushRate,
       postOnlySide,
+      executionVenue,
+      dexId,
+      chainId,
+      tokenIn,
+      tokenOut,
+      feeTier,
+      slippageBps,
+      recipient,
     );
   }
 

@@ -3,15 +3,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsPositive,
   IsString,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+
+export type VolumeExecutionVenue = 'cex' | 'dex';
+export type DexAdapterId = 'uniswapV3' | 'pancakeV3';
 
 export class JoinStrategyDto {
   @ApiProperty({ description: 'User ID', example: 'user123' })
@@ -208,13 +213,97 @@ export class PureMarketMakingStrategyDto {
   currentBaseRatio?: number;
 }
 export class ExecuteVolumeStrategyDto {
-  @ApiProperty({ description: 'Name of the exchange' })
-  @IsString()
-  exchangeName: string;
+  @ApiPropertyOptional({
+    description:
+      'Execution venue for volume strategy. Defaults to cex when omitted.',
+    example: 'cex',
+    enum: ['cex', 'dex'],
+  })
+  @IsOptional()
+  @IsIn(['cex', 'dex'])
+  executionVenue?: VolumeExecutionVenue;
 
-  @ApiProperty({ description: 'Symbol to trade' })
+  @ApiPropertyOptional({
+    description: 'Name of the CEX exchange (required for cex venue)',
+  })
+  @ValidateIf(
+    (o: ExecuteVolumeStrategyDto) => (o.executionVenue ?? 'cex') === 'cex',
+  )
   @IsString()
-  symbol: string;
+  exchangeName?: string;
+
+  @ApiPropertyOptional({
+    description: 'CEX symbol to trade, e.g. BTC/USDT (required for cex venue)',
+  })
+  @ValidateIf(
+    (o: ExecuteVolumeStrategyDto) => (o.executionVenue ?? 'cex') === 'cex',
+  )
+  @IsString()
+  symbol?: string;
+
+  @ApiPropertyOptional({
+    description: 'DEX id (required for dex venue)',
+    example: 'uniswapV3',
+    enum: ['uniswapV3', 'pancakeV3'],
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsIn(['uniswapV3', 'pancakeV3'])
+  dexId?: DexAdapterId;
+
+  @ApiPropertyOptional({
+    description: 'EVM chain id used for DEX execution (required for dex venue)',
+    example: 1,
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsInt()
+  @IsPositive()
+  chainId?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Input token address for DEX execution (required for dex venue)',
+    example: '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsString()
+  tokenIn?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Output token address for DEX execution (required for dex venue)',
+    example: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsString()
+  tokenOut?: string;
+
+  @ApiPropertyOptional({
+    description: 'V3 fee tier in ppm (500, 3000, 10000) for dex venue',
+    example: 3000,
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsInt()
+  @IsPositive()
+  feeTier?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Slippage tolerance in bps for dex venue (defaults from incrementPercentage)',
+    example: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  slippageBps?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'DEX swap recipient address (defaults to operator wallet address)',
+    example: '0x1111111111111111111111111111111111111111',
+  })
+  @IsOptional()
+  @IsString()
+  recipient?: string;
 
   @ApiProperty({
     description:

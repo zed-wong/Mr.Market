@@ -171,6 +171,14 @@ describe('AdminStrategyService', () => {
         startStrategyDto.volumeParams.clientId,
         startStrategyDto.volumeParams.pricePushRate,
         startStrategyDto.volumeParams.postOnlySide,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
       );
     });
 
