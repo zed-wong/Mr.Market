@@ -136,11 +136,30 @@ export class DexVolumeStrategyService {
       throw new Error('Computed amountOutMinimum is non-positive');
     }
 
-    const owner = await signer.getAddress();
+    const owner = ethers.utils.getAddress(await signer.getAddress());
+
+    if (owner === ethers.constants.AddressZero) {
+      throw new Error('Invalid owner address: zero address is not allowed');
+    }
+
     const router = adapter.getAddresses(req.chainId).router;
-    const recipient = req.recipient
+    const requestedRecipient = req.recipient
       ? ethers.utils.getAddress(req.recipient)
-      : owner;
+      : undefined;
+
+    if (requestedRecipient === ethers.constants.AddressZero) {
+      throw new Error(
+        `Invalid recipient address: ${req.recipient}. Zero address is not allowed`,
+      );
+    }
+
+    const recipient = requestedRecipient ?? owner;
+
+    if (recipient === ethers.constants.AddressZero) {
+      throw new Error(
+        `Invalid recipient address: ${recipient}. owner=${owner} req.recipient=${req.recipient ?? 'undefined'}`,
+      );
+    }
 
     await ensureAllowance(signer, effectiveTokenIn, owner, router, amountIn);
 

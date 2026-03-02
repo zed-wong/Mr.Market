@@ -164,7 +164,9 @@ export class StrategyService
       if (session.nextRunAtMs > nowMs) {
         continue;
       }
-      if (!this.sessions.has(session.strategyKey)) {
+      const activeSession = this.sessions.get(session.strategyKey);
+
+      if (!activeSession || activeSession.runId !== capturedRunId) {
         continue;
       }
 
@@ -705,6 +707,15 @@ export class StrategyService
       const executedTrades = Number(params.executedTrades || 0);
 
       if (executedTrades >= Number(params.numTrades || 0)) {
+        const activeBeforeStop = this.sessions.get(session.strategyKey);
+
+        if (!this.isSameActiveSession(activeBeforeStop, session)) {
+          this.logger.warn(
+            `Skipping stale volume stop for ${session.strategyKey}: active session changed`,
+          );
+
+          return;
+        }
         await this.stopStrategyForUser(
           session.userId,
           session.clientId,
@@ -736,22 +747,6 @@ export class StrategyService
         return;
       }
 
-      const activeBeforePersist = this.sessions.get(session.strategyKey);
-
-      if (!this.isSameActiveSession(activeBeforePersist, session)) {
-        this.logger.warn(
-          `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
-        );
-
-        return;
-      }
-
-      const nextParams: VolumeStrategyParams = {
-        ...params,
-        executedTrades: executedTrades + 1,
-      };
-
-      await this.persistStrategyParams(session.strategyKey, nextParams);
       const activeBeforePublish = this.sessions.get(session.strategyKey);
 
       if (!this.isSameActiveSession(activeBeforePublish, session)) {
@@ -765,6 +760,23 @@ export class StrategyService
       if (intents.length > 0) {
         await this.publishIntents(session.strategyKey, intents);
       }
+
+      const nextParams: VolumeStrategyParams = {
+        ...params,
+        executedTrades: executedTrades + 1,
+      };
+
+      const activeBeforePersist = this.sessions.get(session.strategyKey);
+
+      if (!this.isSameActiveSession(activeBeforePersist, session)) {
+        this.logger.warn(
+          `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
+        );
+
+        return;
+      }
+
+      await this.persistStrategyParams(session.strategyKey, nextParams);
 
       const currentSession = this.sessions.get(session.strategyKey);
 

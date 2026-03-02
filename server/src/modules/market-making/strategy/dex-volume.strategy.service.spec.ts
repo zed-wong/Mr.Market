@@ -115,4 +115,45 @@ describe('DexVolumeStrategyService', () => {
       }),
     ).rejects.toThrow('No v3 pool found');
   });
+
+  it('throws when recipient is the zero address', async () => {
+    await expect(
+      service.executeCycle({
+        dexId: 'uniswapV3',
+        chainId: 1,
+        tokenIn: '0x0000000000000000000000000000000000000001',
+        tokenOut: '0x0000000000000000000000000000000000000002',
+        feeTier: 3000,
+        baseTradeAmount: 1,
+        baseIncrementPercentage: 0.1,
+        pricePushRate: 0,
+        executedTrades: 0,
+        side: 'buy',
+        recipient: ethers.constants.AddressZero,
+      }),
+    ).rejects.toThrow('Invalid recipient address');
+
+    expect(mockAdapter.exactInputSingle).not.toHaveBeenCalled();
+  });
+
+  it('throws when owner is the zero address', async () => {
+    signer.getAddress.mockResolvedValueOnce(ethers.constants.AddressZero);
+
+    await expect(
+      service.executeCycle({
+        dexId: 'uniswapV3',
+        chainId: 1,
+        tokenIn: '0x0000000000000000000000000000000000000001',
+        tokenOut: '0x0000000000000000000000000000000000000002',
+        feeTier: 3000,
+        baseTradeAmount: 1,
+        baseIncrementPercentage: 0.1,
+        pricePushRate: 0,
+        executedTrades: 0,
+        side: 'buy',
+      }),
+    ).rejects.toThrow('Invalid owner address');
+
+    expect(mockAdapter.exactInputSingle).not.toHaveBeenCalled();
+  });
 });

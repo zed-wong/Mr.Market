@@ -2,6 +2,7 @@
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsEthereumAddress,
   IsEnum,
   IsIn,
   IsInt,
@@ -265,7 +266,7 @@ export class ExecuteVolumeStrategyDto {
     example: '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
   })
   @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
-  @IsString()
+  @IsEthereumAddress()
   tokenIn?: string;
 
   @ApiPropertyOptional({
@@ -274,7 +275,7 @@ export class ExecuteVolumeStrategyDto {
     example: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   })
   @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
-  @IsString()
+  @IsEthereumAddress()
   tokenOut?: string;
 
   @ApiPropertyOptional({
@@ -302,7 +303,7 @@ export class ExecuteVolumeStrategyDto {
     example: '0x1111111111111111111111111111111111111111',
   })
   @IsOptional()
-  @IsString()
+  @IsEthereumAddress()
   recipient?: string;
 
   @ApiProperty({

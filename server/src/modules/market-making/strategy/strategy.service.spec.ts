@@ -337,6 +337,192 @@ describe('StrategyService', () => {
     dateNowSpy.mockRestore();
   });
 
+  it('skips stale session snapshot when active runId has changed', async () => {
+    const nowMs = 1_700_000_000_000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    const runSessionSpy = jest
+      .spyOn(service as any, 'runSession')
+      .mockImplementation(async (session: { strategyKey: string }) => {
+        if (session.strategyKey === 'a-strategy') {
+          const activeB = (service as any).sessions.get('b-strategy');
+          (service as any).sessions.set('b-strategy', {
+            ...activeB,
+            runId: 'run-b-new',
+          });
+        }
+      });
+
+    (service as any).sessions.set('a-strategy', {
+      runId: 'run-a',
+      strategyKey: 'a-strategy',
+      strategyType: 'pureMarketMaking',
+      userId: 'u1',
+      clientId: 'c1',
+      cadenceMs: 1000,
+      nextRunAtMs: nowMs,
+      params: {},
+    });
+    (service as any).sessions.set('b-strategy', {
+      runId: 'run-b-old',
+      strategyKey: 'b-strategy',
+      strategyType: 'pureMarketMaking',
+      userId: 'u2',
+      clientId: 'c2',
+      cadenceMs: 2000,
+      nextRunAtMs: nowMs,
+      params: {},
+    });
+
+    await expect(service.onTick('2026-02-27T00:00:00.000Z')).resolves.toBe(
+      undefined,
+    );
+
+    expect(runSessionSpy).toHaveBeenCalledTimes(1);
+    expect((runSessionSpy.mock.calls[0][0] as any).strategyKey).toBe(
+      'a-strategy',
+    );
+
+    dateNowSpy.mockRestore();
+  });
+
+  it('publishes cex volume intents before persisting strategy params', async () => {
+    const nowMs = 1_700_000_000_000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    const strategyKey = 'user1-client1-volume';
+    const publishIntentsSpy = jest
+      .spyOn(service as any, 'publishIntents')
+      .mockResolvedValue(undefined);
+    const persistStrategyParamsSpy = jest
+      .spyOn(service as any, 'persistStrategyParams')
+      .mockResolvedValue(undefined);
+
+    jest.spyOn(service as any, 'buildVolumeIntents').mockResolvedValue([
+      {
+        type: 'CREATE_LIMIT_ORDER',
+        intentId: 'intent-1',
+        strategyInstanceId: strategyKey,
+        strategyKey,
+        userId: 'user1',
+        clientId: 'client1',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        createdAt: '2026-03-01T00:00:00.000Z',
+        status: 'NEW',
+      },
+    ]);
+
+    (service as any).sessions.set(strategyKey, {
+      runId: 'run-1',
+      strategyKey,
+      strategyType: 'volume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: nowMs,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        executedTrades: 0,
+      },
+    });
+
+    await expect(service.onTick('2026-03-01T00:00:00.000Z')).resolves.toBe(
+      undefined,
+    );
+
+    expect(publishIntentsSpy).toHaveBeenCalledTimes(1);
+    expect(persistStrategyParamsSpy).toHaveBeenCalledTimes(1);
+    expect(publishIntentsSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      persistStrategyParamsSpy.mock.invocationCallOrder[0],
+    );
+    expect(
+      (service as any).sessions.get(strategyKey).params.executedTrades,
+    ).toBe(1);
+
+    dateNowSpy.mockRestore();
+  });
+
+  it('does not persist cex volume params when publish intents fails', async () => {
+    const nowMs = 1_700_000_000_000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    const strategyKey = 'user1-client1-volume';
+    const loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+    const persistStrategyParamsSpy = jest
+      .spyOn(service as any, 'persistStrategyParams')
+      .mockResolvedValue(undefined);
+
+    jest.spyOn(service as any, 'buildVolumeIntents').mockResolvedValue([
+      {
+        type: 'CREATE_LIMIT_ORDER',
+        intentId: 'intent-1',
+        strategyInstanceId: strategyKey,
+        strategyKey,
+        userId: 'user1',
+        clientId: 'client1',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        createdAt: '2026-03-01T00:00:00.000Z',
+        status: 'NEW',
+      },
+    ]);
+    jest
+      .spyOn(service as any, 'publishIntents')
+      .mockRejectedValue(new Error('publish failed'));
+
+    (service as any).sessions.set(strategyKey, {
+      runId: 'run-1',
+      strategyKey,
+      strategyType: 'volume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: nowMs,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        executedTrades: 0,
+      },
+    });
+
+    await expect(service.onTick('2026-03-01T00:00:00.000Z')).resolves.toBe(
+      undefined,
+    );
+
+    expect(persistStrategyParamsSpy).not.toHaveBeenCalled();
+    expect(
+      (service as any).sessions.get(strategyKey).params.executedTrades,
+    ).toBe(0);
+    expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+
+    dateNowSpy.mockRestore();
+  });
+
   it('registers dex volume strategy params when execution venue is dex', async () => {
     await service.executeVolumeStrategy(
       undefined,
