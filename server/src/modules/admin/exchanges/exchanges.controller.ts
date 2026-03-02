@@ -12,7 +12,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
-import { AddAPIKeyDto } from './exchanges.dto';
+import { AddAPIKeyDto, UpdateAPIKeyStateDto } from './exchanges.dto';
 
 @ApiTags('Admin/Exchanges')
 @Controller('admin/exchanges')
@@ -52,5 +52,25 @@ export class AdminExchangesController {
   @ApiResponse({ status: 200, description: 'API key removed successfully' })
   async removeAPIKey(@Param('key_id') key_id: string) {
     return await this.exchangeService.removeAPIKey(key_id);
+  }
+
+  @Delete('/keys/by-exchange/:exchange')
+  @ApiOperation({ summary: 'Remove all API keys for an exchange' })
+  @ApiResponse({
+    status: 200,
+    description: 'Exchange API keys removed successfully',
+  })
+  async removeAPIKeysByExchange(@Param('exchange') exchange: string) {
+    return await this.exchangeService.removeAPIKeysByExchange(exchange);
+  }
+
+  @Post('/keys/:key_id/update')
+  @ApiOperation({ summary: 'Update API key state' })
+  @ApiResponse({ status: 200, description: 'API key state updated' })
+  async updateAPIKeyState(
+    @Param('key_id') key_id: string,
+    @Body() data: UpdateAPIKeyStateDto,
+  ) {
+    return await this.exchangeService.updateAPIKeyState(key_id, data.enabled);
   }
 }

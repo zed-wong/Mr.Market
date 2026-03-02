@@ -64,7 +64,7 @@ export class ExchangeApiKeyService {
     let apiKeys: APIKeysConfig[] = [];
 
     try {
-      apiKeys = await this.exchangeRepository.readAllAPIKeys();
+      apiKeys = await this.exchangeRepository.readAllAPIKeys(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -76,16 +76,25 @@ export class ExchangeApiKeyService {
         return;
       }
 
-      throw error;
+      if (message.includes('no such column') && message.includes('enabled')) {
+        this.logger.warn(
+          'api_keys_config.enabled column is missing. Falling back to reading all API keys until migrations complete.',
+        );
+        apiKeys = await this.exchangeRepository.readAllAPIKeys(true);
+      } else {
+        throw error;
+      }
     }
 
     if (!apiKeys?.length) {
+      this.exchangeInstances = {};
       this.logger.warn(
         '[VIEW ONLY MODE] No API Keys loaded, no execution would be done on exchange. Configure exchange API keys in /manage page',
       );
 
       return;
     }
+    this.exchangeInstances = {};
     for (const key of apiKeys) {
       const keyId = key.key_id;
       const exchangeName = key.exchange;
@@ -107,17 +116,15 @@ export class ExchangeApiKeyService {
         }
       }
 
-      if (!this.exchangeInstances[keyId]) {
-        this.exchangeInstances[keyId] = new ccxt[exchangeName]({
-          apiKey,
-          secret: apiSecret,
-        });
-      }
+      this.exchangeInstances[keyId] = new ccxt[exchangeName]({
+        apiKey,
+        secret: apiSecret,
+      });
     }
   }
 
   async readAllAPIKeys() {
-    const keys = await this.exchangeRepository.readAllAPIKeys();
+    const keys = await this.exchangeRepository.readAllAPIKeys(true);
 
     return keys.map((k) => {
       return {
@@ -127,8 +134,30 @@ export class ExchangeApiKeyService {
     });
   }
 
-  async readDecryptedAPIKeys(): Promise<APIKeysConfig[]> {
-    const keys = await this.exchangeRepository.readAllAPIKeys();
+  async readDecryptedAPIKeys(
+    includeDisabled = false,
+  ): Promise<APIKeysConfig[]> {
+    let keys: APIKeysConfig[] = [];
+
+    try {
+      keys = await this.exchangeRepository.readAllAPIKeys(includeDisabled);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (
+        !includeDisabled &&
+        message.includes('no such column') &&
+        message.includes('enabled')
+      ) {
+        this.logger.warn(
+          'api_keys_config.enabled column is missing. Falling back to all API keys for decrypted reads.',
+        );
+        keys = await this.exchangeRepository.readAllAPIKeys(true);
+      } else {
+        throw error;
+      }
+    }
+
     const privateKey =
       this.configService.get<string>('admin.encryption_private_key') || '';
 
@@ -189,6 +218,7 @@ export class ExchangeApiKeyService {
         apiKeyConfig.name = account.label || 'default';
         apiKeyConfig.api_key = account.apiKey;
         apiKeyConfig.api_secret = encrypt(account.secret, publicKey);
+        apiKeyConfig.enabled = true;
 
         await this.exchangeRepository.addAPIKey(apiKeyConfig);
         savedCount += 1;
@@ -199,12 +229,25 @@ export class ExchangeApiKeyService {
   }
 
   async readSupportedExchanges(): Promise<string[]> {
-    return this.exchangeRepository.readSupportedExchanges();
+    try {
+      return this.exchangeRepository.readSupportedExchanges(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message.includes('no such column') && message.includes('enabled')) {
+        this.logger.warn(
+          'api_keys_config.enabled column is missing. Falling back to all supported exchanges.',
+        );
+        return this.exchangeRepository.readSupportedExchanges(true);
+      }
+
+      throw error;
+    }
   }
 
   async getAllAPIKeysBalance() {
     try {
-      const apiKeys: APIKeysConfig[] = await this.readDecryptedAPIKeys();
+      const apiKeys: APIKeysConfig[] = await this.readDecryptedAPIKeys(false);
       const balancePromises = apiKeys.map((apiKeyConfig) =>
         this.getBalance(
           apiKeyConfig.exchange,
@@ -518,9 +561,28 @@ export class ExchangeApiKeyService {
     amount: string,
   ): Promise<SuccessResponse | ErrorResponse> {
     const symbol = ''; // getSymbolByAssetID(asset_id);
-    const apiKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
-      exchange,
-    );
+    let apiKeys: APIKeysConfig[] = [];
+
+    try {
+      apiKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
+        exchange,
+        false,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message.includes('no such column') && message.includes('enabled')) {
+        this.logger.warn(
+          'api_keys_config.enabled column is missing. Falling back to all API keys for on-demand selection.',
+        );
+        apiKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
+          exchange,
+          true,
+        );
+      } else {
+        throw error;
+      }
+    }
 
     apiKeys.forEach(async (key) => {
       if (
@@ -667,6 +729,7 @@ export class ExchangeApiKeyService {
     );
 
     key.api_secret = storageEncryptedSecret;
+    key.enabled = key.enabled ?? true;
     const savedKey = await this.exchangeRepository.addAPIKey(key);
 
     // reload keys to update memory
@@ -675,18 +738,47 @@ export class ExchangeApiKeyService {
     return savedKey;
   }
 
-  async readAPIKey(keyId: string) {
-    return await this.exchangeRepository.readAPIKey(keyId);
+  async readAPIKey(keyId: string, includeDisabled = false) {
+    const key = await this.exchangeRepository.readAPIKey(keyId);
+
+    if (!key) {
+      return null;
+    }
+
+    if (!includeDisabled && !key.enabled) {
+      return null;
+    }
+
+    return key;
   }
 
   async findFirstAPIKeyByExchange(
     exchange: string,
   ): Promise<APIKeysConfig | null> {
-    const apiKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
-      exchange,
-    );
+    let apiKeys: APIKeysConfig[] = [];
 
-    if (!apiKeys) {
+    try {
+      apiKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
+        exchange,
+        false,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message.includes('no such column') && message.includes('enabled')) {
+        this.logger.warn(
+          'api_keys_config.enabled column is missing. Falling back to all API keys for exchange lookup.',
+        );
+        apiKeys = await this.exchangeRepository.readAllAPIKeysByExchange(
+          exchange,
+          true,
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    if (!apiKeys.length) {
       return null;
     }
 
@@ -694,7 +786,29 @@ export class ExchangeApiKeyService {
   }
 
   async removeAPIKey(keyId: string) {
-    return await this.exchangeRepository.removeAPIKey(keyId);
+    const result = await this.exchangeRepository.removeAPIKey(keyId);
+
+    await this.loadAPIKeys();
+
+    return result;
+  }
+
+  async removeAPIKeysByExchange(exchange: string) {
+    await this.exchangeRepository.removeAPIKeysByExchange(exchange);
+    await this.loadAPIKeys();
+  }
+
+  async updateAPIKeyState(keyId: string, enabled: boolean) {
+    const key = await this.readAPIKey(keyId, true);
+
+    if (!key) {
+      throw new BadRequestException(`API key ${keyId} not found`);
+    }
+
+    await this.exchangeRepository.updateAPIKeyState(keyId, enabled);
+    await this.loadAPIKeys();
+
+    return { key_id: keyId, enabled };
   }
 
   async createSpotOrder(order: SpotOrder) {

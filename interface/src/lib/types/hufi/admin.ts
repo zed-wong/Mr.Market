@@ -28,6 +28,7 @@ export interface AdminSingleKey {
   name: string;
   api_key: string;
   api_secret: string;
+  enabled?: boolean;
   state?: string; // Optional, computed or missing
   last_update?: string; // Optional
 }

@@ -17,12 +17,24 @@ describe('ExchangeApiKeyService', () => {
   const makeService = (overrides?: {
     readAllAPIKeys?: jest.Mock;
     addAPIKey?: jest.Mock;
+    readAPIKey?: jest.Mock;
+    updateAPIKeyState?: jest.Mock;
+    removeAPIKey?: jest.Mock;
+    removeAPIKeysByExchange?: jest.Mock;
     getConfig?: jest.Mock;
   }) => {
     const exchangeRepository = {
       readAllAPIKeys:
         overrides?.readAllAPIKeys || jest.fn().mockResolvedValue([]),
       addAPIKey: overrides?.addAPIKey || jest.fn().mockResolvedValue(undefined),
+      readAPIKey: overrides?.readAPIKey || jest.fn().mockResolvedValue(null),
+      updateAPIKeyState:
+        overrides?.updateAPIKeyState || jest.fn().mockResolvedValue(undefined),
+      removeAPIKey:
+        overrides?.removeAPIKey || jest.fn().mockResolvedValue(undefined),
+      removeAPIKeysByExchange:
+        overrides?.removeAPIKeysByExchange ||
+        jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const configService = {
@@ -124,5 +136,38 @@ describe('ExchangeApiKeyService', () => {
         api_secret: 'enc(secret)',
       }),
     );
+  });
+
+  it('updates API key enabled state', async () => {
+    const readAllAPIKeys = jest.fn().mockResolvedValue([]);
+    const readAPIKey = jest.fn().mockResolvedValue({
+      key_id: '1',
+      enabled: true,
+    });
+    const updateAPIKeyState = jest.fn().mockResolvedValue(undefined);
+    const { service } = makeService({
+      readAllAPIKeys,
+      readAPIKey,
+      updateAPIKeyState,
+    });
+
+    const result = await service.updateAPIKeyState('1', false);
+
+    expect(updateAPIKeyState).toHaveBeenCalledWith('1', false);
+    expect(result).toEqual({ key_id: '1', enabled: false });
+  });
+
+  it('removes all API keys by exchange and reloads key cache', async () => {
+    const readAllAPIKeys = jest.fn().mockResolvedValue([]);
+    const removeAPIKeysByExchange = jest.fn().mockResolvedValue(undefined);
+    const { service } = makeService({
+      readAllAPIKeys,
+      removeAPIKeysByExchange,
+    });
+
+    await service.removeAPIKeysByExchange('binance');
+
+    expect(removeAPIKeysByExchange).toHaveBeenCalledWith('binance');
+    expect(readAllAPIKeys).toHaveBeenCalled();
   });
 });

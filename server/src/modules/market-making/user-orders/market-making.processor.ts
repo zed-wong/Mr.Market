@@ -713,6 +713,15 @@ export class MarketMakingOrderProcessor {
       }
 
       const exchangeName = pairConfig.exchange_id;
+      const exchangeConfig = await this.growDataRepository.findExchangeById(
+        exchangeName,
+      );
+
+      if (!exchangeConfig || !exchangeConfig.enable) {
+        throw new Error(
+          `Exchange ${exchangeName} is disabled or not configured`,
+        );
+      }
 
       // Get API key for this exchange
       const apiKey = await this.exchangeService.findFirstAPIKeyByExchange(

@@ -15,6 +15,7 @@ import { SpotdataModule } from '../data/spot-data/spot-data.module';
 import { PerformanceService } from '../market-making/performance/performance.service';
 import { StrategyService } from '../market-making/strategy/strategy.service';
 import { MixinClientModule } from '../mixin/client/mixin-client.module';
+import { ExchangeModule } from '../mixin/exchange/exchange.module';
 import { Web3Module } from '../web3/web3.module';
 import { AdminController } from './admin.controller';
 import { AdminSpotService } from './admin-spot-management/admin-spot-management.service';
@@ -27,6 +28,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
 @Module({
   imports: [
     AdminExchangesModule,
+    ExchangeModule,
     GrowdataModule,
     SpotdataModule,
     MixinClientModule,

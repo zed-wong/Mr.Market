@@ -42,6 +42,33 @@ export const removeAPIKey = async (keyId: string, token: string): Promise<unknow
   }
 }
 
+export const removeAPIKeysByExchange = async (exchange: string, token: string): Promise<unknown> => {
+  try {
+    const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/keys/by-exchange/${exchange}`, {
+      method: "DELETE",
+      headers: getHeaders(token),
+    });
+    return handleApiResponse(response);
+  } catch (error) {
+    console.error("Error removing API keys by exchange:", error);
+    throw error;
+  }
+}
+
+export const updateAPIKeyState = async (keyId: string, enabled: boolean, token: string): Promise<unknown> => {
+  try {
+    const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/keys/${keyId}/update`, {
+      method: "POST",
+      headers: getHeaders(token),
+      body: JSON.stringify({ enabled }),
+    });
+    return handleApiResponse(response);
+  } catch (error) {
+    console.error("Error updating API key state:", error);
+    throw error;
+  }
+}
+
 export const getEncryptionPublicKey = async (token: string): Promise<{ publicKey: string }> => {
   try {
     const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/key-pair`, {

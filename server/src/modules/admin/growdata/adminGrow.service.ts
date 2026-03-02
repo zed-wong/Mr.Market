@@ -12,6 +12,7 @@ import {
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { GrowdataService } from 'src/modules/data/grow-data/grow-data.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 
 @Injectable()
@@ -22,6 +23,7 @@ export class AdminGrowService {
     private readonly growDataService: GrowdataService,
     private readonly growdataRepository: GrowdataRepository,
     private readonly mixinClientService: MixinClientService,
+    private readonly exchangeApiKeyService: ExchangeApiKeyService,
   ) {}
 
   private async resolveChainInfo(assetId?: string) {
@@ -78,6 +80,7 @@ export class AdminGrowService {
   }
 
   async removeExchange(exchange_id: string) {
+    await this.exchangeApiKeyService.removeAPIKeysByExchange(exchange_id);
     return this.growdataRepository.removeExchange(exchange_id);
   }
 
@@ -85,7 +88,7 @@ export class AdminGrowService {
     const exchanges = await this.growDataService.getAllExchanges();
 
     for (const exchange of exchanges) {
-      await this.growdataRepository.removeExchange(exchange.exchange_id);
+      await this.removeExchange(exchange.exchange_id);
     }
   }
 
