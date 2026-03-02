@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ValidationArguments,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
   IsArray,
   IsIn,
   IsInt,
@@ -10,6 +14,23 @@ import {
   Max,
   Min,
 } from 'class-validator';
+
+@ValidatorConstraint({ name: 'EmaOrderConstraint', async: false })
+export class EmaOrderConstraint implements ValidatorConstraintInterface {
+  validate(emaSlow: number, args: ValidationArguments): boolean {
+    const dto = args.object as TimeIndicatorStrategyDto;
+
+    if (typeof dto.emaFast !== 'number' || typeof emaSlow !== 'number') {
+      return true;
+    }
+
+    return dto.emaFast < emaSlow;
+  }
+
+  defaultMessage(): string {
+    return 'emaFast must be less than emaSlow';
+  }
+}
 
 export class TimeIndicatorStrategyDto {
   @ApiProperty({
@@ -49,14 +70,21 @@ export class TimeIndicatorStrategyDto {
   @IsPositive()
   lookback: number;
 
-  @ApiProperty({ description: 'Fast EMA period', example: 20 })
+  @ApiProperty({
+    description: 'Fast EMA period (must be less than emaSlow)',
+    example: 20,
+  })
   @IsInt()
   @IsPositive()
   emaFast: number;
 
-  @ApiProperty({ description: 'Slow EMA period', example: 50 })
+  @ApiProperty({
+    description: 'Slow EMA period (must be greater than emaFast)',
+    example: 50,
+  })
   @IsInt()
   @IsPositive()
+  @Validate(EmaOrderConstraint)
   emaSlow: number;
 
   @ApiProperty({ description: 'RSI calculation period', example: 14 })

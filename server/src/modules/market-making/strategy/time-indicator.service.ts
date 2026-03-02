@@ -16,6 +16,68 @@ import { StrategyIntentExecutionService } from './strategy-intent-execution.serv
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
+const DEFAULT_TIME_INDICATOR_QUOTES = [
+  'USDT',
+  'USDC',
+  'BUSD',
+  'USD',
+  'BTC',
+  'ETH',
+  'BNB',
+  'EUR',
+];
+
+export const TIME_INDICATOR_KNOWN_QUOTES = (
+  process.env.TIME_INDICATOR_KNOWN_QUOTES || DEFAULT_TIME_INDICATOR_QUOTES.join(',')
+)
+  .split(',')
+  .map((quote) => quote.trim().toUpperCase())
+  .filter((quote) => quote.length > 0);
+
+export function parseBaseQuoteSymbol(
+  symbol: string,
+  knownQuotes: readonly string[] = TIME_INDICATOR_KNOWN_QUOTES,
+): { base: string; quote: string } | null {
+  const normalizedSymbol = symbol.trim();
+
+  if (!normalizedSymbol) {
+    return null;
+  }
+
+  if (normalizedSymbol.includes('/')) {
+    const parts = normalizedSymbol.split('/');
+
+    if (parts.length !== 2) {
+      return null;
+    }
+
+    const [base, quote] = parts.map((part) => part.trim());
+
+    if (!base || !quote) {
+      return null;
+    }
+
+    return { base, quote };
+  }
+
+  const upper = normalizedSymbol.toUpperCase();
+  const quotes = [...knownQuotes]
+    .map((q) => q.trim().toUpperCase())
+    .filter((q) => q.length > 0)
+    .sort((a, b) => b.length - a.length);
+
+  for (const quote of quotes) {
+    if (upper.endsWith(quote) && upper.length > quote.length) {
+      return {
+        base: normalizedSymbol.slice(0, normalizedSymbol.length - quote.length),
+        quote: normalizedSymbol.slice(normalizedSymbol.length - quote.length),
+      };
+    }
+  }
+
+  return null;
+}
+
 @Injectable()
 export class TimeIndicatorStrategyService {
   private readonly logger = new CustomLogger(TimeIndicatorStrategyService.name);
@@ -29,17 +91,13 @@ export class TimeIndicatorStrategyService {
     private readonly strategyIntentStoreService: StrategyIntentStoreService,
     @InjectRepository(IndicatorStrategyHistory)
     private readonly historyRepo: Repository<IndicatorStrategyHistory>,
-  ) {}
+  ) {
+    this.logger.warn(
+      'Time-indicator strategy runtime state uses in-memory loops/inFlight and does not survive process restart.',
+    );
+  }
 
   async startIndicatorStrategy(dto: TimeIndicatorStrategyDto) {
-    if (
-      !Number.isFinite(dto.tickIntervalMs) ||
-      !Number.isInteger(dto.tickIntervalMs) ||
-      dto.tickIntervalMs <= 0
-    ) {
-      throw new Error('tickIntervalMs must be a finite positive integer');
-    }
-
     const key = `${dto.userId}:${dto.clientId}`;
 
     if (this.loops.has(key)) {
@@ -202,9 +260,9 @@ export class TimeIndicatorStrategyService {
 
     const signal = calcCross(prevEmaF, prevEmaS, lastEmaF, lastEmaS);
     const rsiBuyOk =
-      params.rsiBuyBelow === undefined || lastRsi <= params.rsiBuyBelow!;
+      params.rsiBuyBelow === undefined || lastRsi <= params.rsiBuyBelow;
     const rsiSellOk =
-      params.rsiSellAbove === undefined || lastRsi >= params.rsiSellAbove!;
+      params.rsiSellAbove === undefined || lastRsi >= params.rsiSellAbove;
     const hasRsiThresholds =
       params.rsiBuyBelow !== undefined && params.rsiSellAbove !== undefined;
 
@@ -336,8 +394,8 @@ export class TimeIndicatorStrategyService {
         exchange: ex.id,
         symbol,
         side,
-        amount: amountBase,
-        price: entryPrice,
+        amount: String(amountBase),
+        price: String(entryPrice),
         orderId: intent.intentId,
       }),
     );
@@ -412,38 +470,7 @@ export class TimeIndicatorStrategyService {
   private parseBaseQuote(
     symbol: string,
   ): { base: string; quote: string } | null {
-    if (symbol.includes('/')) {
-      const [base, quote] = symbol.split('/');
-
-      if (base && quote) {
-        return { base, quote };
-      }
-
-      return null;
-    }
-
-    const knownQuotes = [
-      'USDT',
-      'USDC',
-      'BUSD',
-      'USD',
-      'BTC',
-      'ETH',
-      'BNB',
-      'EUR',
-    ];
-    const upper = symbol.toUpperCase();
-
-    for (const q of knownQuotes) {
-      if (upper.endsWith(q) && upper.length > q.length) {
-        return {
-          base: symbol.slice(0, symbol.length - q.length),
-          quote: symbol.slice(symbol.length - q.length),
-        };
-      }
-    }
-
-    return null;
+    return parseBaseQuoteSymbol(symbol);
   }
 
   private toErrorDetails(error: unknown): { message: string; stack?: string } {

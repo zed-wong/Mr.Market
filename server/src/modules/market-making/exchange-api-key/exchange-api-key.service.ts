@@ -584,14 +584,14 @@ export class ExchangeApiKeyService {
       }
     }
 
-    apiKeys.forEach(async (key) => {
+    for (const key of apiKeys) {
       if (
         await this.checkExchangeBalanceEnough(
           key.exchange,
           key.api_key,
           key.api_secret,
-          amount,
           symbol,
+          amount,
         )
       ) {
         return {
@@ -602,7 +602,7 @@ export class ExchangeApiKeyService {
           secret: key.api_secret,
         };
       }
-    });
+    }
 
     return {
       type: 'error',

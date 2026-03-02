@@ -729,7 +729,33 @@ export class MarketMakingOrderProcessor {
       );
 
       if (!apiKey) {
-        throw new Error(`No API key found for exchange ${exchangeName}`);
+        const failureReason = `Exchange ${exchangeName} disabled/not configured`;
+
+        this.logger.error(
+          `${failureReason}. Refunding order ${orderId} instead of processing withdrawal.`,
+        );
+        try {
+          await this.refundMarketMakingPendingOrder(
+            orderId,
+            paymentState,
+            failureReason,
+          );
+          await this.userOrdersService.updateMarketMakingOrderState(
+            orderId,
+            'failed',
+          );
+
+          return;
+        } catch (refundError) {
+          const message =
+            refundError instanceof Error
+              ? refundError.message
+              : String(refundError);
+
+          throw new Error(
+            `Failed to reconcile order ${orderId} after exchange configuration failure: ${message}`,
+          );
+        }
       }
 
       this.logger.log(

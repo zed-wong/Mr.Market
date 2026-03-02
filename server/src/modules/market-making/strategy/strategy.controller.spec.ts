@@ -20,6 +20,7 @@ describe('StrategyController', () => {
   // let adminService: AdminStrategyService;
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       controllers: [StrategyController],
       providers: [

@@ -20,6 +20,11 @@ export async function ensureAllowance(
   needed: BigNumber,
 ) {
   const signerAddress = await signer.getAddress();
+  const normalizedToken = token.toLowerCase();
+
+  if (normalizedToken === ethers.constants.AddressZero.toLowerCase()) {
+    return;
+  }
 
   if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
     throw new Error(

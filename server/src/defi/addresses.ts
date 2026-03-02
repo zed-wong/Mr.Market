@@ -7,10 +7,6 @@ export type DexAddresses = {
   weth: string; // canonical wrapped native for the chain
 };
 
-/**
- * IMPORTANT: Only put addresses you are certain about.
- * Fill in Pancake v3 addresses
- */
 export const DEX_ADDRESSES: Record<DexId, Record<number, DexAddresses>> = {
   uniswapV3: {
     // Ethereum mainnet

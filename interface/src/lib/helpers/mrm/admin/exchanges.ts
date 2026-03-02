@@ -31,7 +31,7 @@ export const addAPIKey = async (keyDto: Partial<AdminSingleKey>, token: string):
 
 export const removeAPIKey = async (keyId: string, token: string): Promise<unknown> => {
   try {
-    const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/keys/${keyId}`, {
+    const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/keys/${encodeURIComponent(keyId)}`, {
       method: "DELETE",
       headers: getHeaders(token),
     });

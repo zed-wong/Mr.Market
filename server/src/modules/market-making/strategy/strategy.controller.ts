@@ -1,6 +1,5 @@
 // strategy.controller.ts
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -272,15 +271,6 @@ export class StrategyController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async start(@Body() dto: TimeIndicatorStrategyDto) {
-    if (
-      !Number.isFinite(dto.tickIntervalMs) ||
-      !Number.isInteger(dto.tickIntervalMs) ||
-      dto.tickIntervalMs <= 0
-    ) {
-      throw new BadRequestException(
-        'tickIntervalMs must be a finite positive integer',
-      );
-    }
     this.logger.warn(
       'Time-indicator run state is in-memory only; use persistent strategy state for multi-instance/restart safety.',
     );

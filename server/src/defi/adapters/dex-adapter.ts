@@ -5,7 +5,7 @@ import type { DexId } from '../addresses';
 export type QuoteSingleParams = {
   tokenIn: string;
   tokenOut: string;
-  fee: number; // v3 fee tier (500/3000/10000)
+  fee: number; // v3 fee tier (100/500/3000/10000)
   amountIn: BigNumber;
   sqrtPriceLimitX96?: BigNumber | string;
 };
@@ -19,6 +19,11 @@ export type ExactInputSingleParams = {
   amountIn: BigNumber;
   amountOutMinimum: BigNumber;
   sqrtPriceLimitX96?: BigNumber | string;
+};
+
+export type ExactInputExecutionOptions = {
+  confirmations?: number;
+  timeoutMs?: number;
 };
 
 export interface DexAdapter {
@@ -56,5 +61,6 @@ export interface DexAdapter {
     signer: ethers.Signer,
     chainId: number,
     p: ExactInputSingleParams,
+    options?: ExactInputExecutionOptions,
   ): Promise<ethers.providers.TransactionReceipt>;
 }
