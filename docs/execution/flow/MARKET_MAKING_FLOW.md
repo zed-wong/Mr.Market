@@ -50,12 +50,24 @@ flowchart TD
   S[Intent worker/executor sends exchange actions]
   T[stop_mm -> stopMarketMakingStrategyForOrder<br/>state=stopped]
 
-  A --> B --> C --> D --> E --> F
-  F -->|incomplete/timeout/invalid| G
-  F -->|complete| H --> I
-  I -->|No (current default)| J
-  I -->|Yes| K --> L --> M --> N
-  N --> O --> P --> Q --> R --> S
+  A --> B
+  B --> C
+  C --> D
+  D --> E
+  E --> F
+  F -->|incomplete_or_timeout_or_invalid| G
+  F -->|complete| H
+  H --> I
+  I -->|no_default_path| J
+  I -->|yes| K
+  K --> L
+  L --> M
+  M --> N
+  N --> O
+  O --> P
+  P --> Q
+  Q --> R
+  R --> S
   P --> T
 ```
 
