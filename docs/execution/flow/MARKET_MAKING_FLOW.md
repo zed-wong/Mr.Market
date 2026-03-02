@@ -33,7 +33,7 @@ flowchart TD
   B[User fetches enabled strategies<br/>GET /user-orders/market-making/strategies]
   C[User creates MM intent<br/>POST /user-orders/market-making/intent<br/>marketMakingPairId + strategyDefinitionId]
   D[Snapshot intake<br/>process_market_making_snapshots]
-  E[Ledger creditDeposit<br/>snapshot-credit:{snapshotId}]
+  E[Ledger creditDeposit<br/>snapshot-credit:snapshotId]
   F[check_payment_complete]
   G[Refund + failed]
   H[Order persisted with strategyDefinitionId<br/>state=payment_complete]
