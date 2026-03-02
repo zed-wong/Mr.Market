@@ -25,6 +25,50 @@ The old queue self-loop `execute_mm_cycle` has been removed.
 - Main MM queue processor: `server/src/modules/market-making/user-orders/market-making.processor.ts`
 - Strategy definition admin runtime: `server/src/modules/admin/strategy/adminStrategy.service.ts`
 
+## Flow Diagram
+
+```mermaid
+flowchart TD
+  A[Admin manages strategy definitions<br/>strategy_definitions + versions]
+  B[User fetches enabled strategies<br/>GET /user-orders/market-making/strategies]
+  C[User creates MM intent<br/>POST /user-orders/market-making/intent<br/>marketMakingPairId + strategyDefinitionId]
+  D[Snapshot intake<br/>process_market_making_snapshots]
+  E[Ledger creditDeposit<br/>snapshot-credit:{snapshotId}]
+  F[check_payment_complete]
+  G[Refund + failed]
+  H[Order persisted with strategyDefinitionId<br/>state=payment_complete]
+  I{withdraw_to_exchange queued?}
+  J[Default branch: stop at payment_complete]
+  K[withdraw_to_exchange]
+  L[monitor_mixin_withdrawal]
+  M[join_campaign]
+  N[start_mm]
+  O[Resolve strategy definition controllerType<br/>merge runtime config]
+  P[Start runtime session<br/>pureMarketMaking / arbitrage / volume]
+  Q[Tick loop<br/>ClockTickCoordinator -> StrategyService.onTick]
+  R[Strategy creates intents]
+  S[Intent worker/executor sends exchange actions]
+  T[stop_mm -> stopMarketMakingStrategyForOrder<br/>state=stopped]
+
+  A --> B --> C --> D --> E --> F
+  F -->|incomplete/timeout/invalid| G
+  F -->|complete| H --> I
+  I -->|No (current default)| J
+  I -->|Yes| K --> L --> M --> N
+  N --> O --> P --> Q --> R --> S
+  P --> T
+```
+
+### Main Elements
+
+- Strategy catalog: admin-defined strategy definitions and versions.
+- User intent: market making order intent must carry `strategyDefinitionId`.
+- Funds and payment state: snapshot intake, ledger crediting, and payment completion checks.
+- Queue orchestration: `process_market_making_snapshots`, `check_payment_complete`, optional withdrawal/campaign jobs, `start_mm`, `stop_mm`.
+- Runtime execution: `start_mm` resolves strategy type dynamically and registers sessions.
+- Tick and intents: tick loop drives strategy sessions, intents are executed by worker/executor path.
+- Ledger safety: all balance mutations go through `BalanceLedgerService`.
+
 ## End-to-End Flow
 
 ### 0) User creates a market making intent
