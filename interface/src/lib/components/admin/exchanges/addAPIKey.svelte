@@ -14,6 +14,11 @@
 
   let allCcxtExchanges: string[] = [];
   export let existingKeys: AdminSingleKey[] = [];
+  export let defaultExchange = "";
+  export let buttonClass =
+    "btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all";
+  export let buttonLabel = "";
+  export let invalidateKey = "admin:settings:exchanges";
 
   let AddNewExchange = "";
   let AddNewName = "";
@@ -76,7 +81,7 @@
     }
     toast.success($_("success"));
     setTimeout(() => {
-      invalidate("admin:settings:api-keys").finally(() => {
+      invalidate(invalidateKey).finally(() => {
         isAdding = false;
         closeDialog();
       });
@@ -87,13 +92,14 @@
     isAdding = false;
     isDropdownOpen = false;
     encryptionError = "";
-    AddNewExchange = "";
+    AddNewExchange = defaultExchange || "";
     AddNewName = "";
     AddNewApiKey = "";
     AddNewApiSecret = "";
   };
 
   function openDialog() {
+    AddNewExchange = defaultExchange || "";
     addDialogEl?.showModal();
   }
 
@@ -131,7 +137,7 @@
 
 <button
   type="button"
-  class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
+  class={buttonClass}
   on:click={openDialog}
 >
     <svg
@@ -148,7 +154,7 @@
         d="M12 4.5v15m7.5-7.5h-15"
       />
     </svg>
-    {$_("add_api_key")}
+    {buttonLabel || $_("add_api_key")}
   </button>
 
 <dialog
@@ -192,40 +198,49 @@
         <span class="label">
           <span class="label-text font-medium">{$_("exchange")}</span>
         </span>
-        <div class="dropdown w-full" class:dropdown-open={isDropdownOpen}>
+        {#if defaultExchange}
           <input
             type="text"
-            class="input input-bordered w-full focus:input-primary transition-all"
-            placeholder={$_("placeholder_exchange_id")}
-            bind:value={AddNewExchange}
-            on:focus={() => (isDropdownOpen = true)}
-            on:input={() => (isDropdownOpen = true)}
+            class="input input-bordered w-full"
+            value={defaultExchange}
+            disabled
           />
-          {#if isDropdownOpen && allCcxtExchanges.filter((e) => e
-                .toLowerCase()
-                .includes(AddNewExchange.toLowerCase())).length > 0}
-            <ul
-              class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-full max-h-60 overflow-y-auto block z-[50] mt-1 border border-base-200"
-            >
-              {#each allCcxtExchanges.filter((e) => e
+        {:else}
+          <div class="dropdown w-full" class:dropdown-open={isDropdownOpen}>
+            <input
+              type="text"
+              class="input input-bordered w-full focus:input-primary transition-all"
+              placeholder={$_("placeholder_exchange_id")}
+              bind:value={AddNewExchange}
+              on:focus={() => (isDropdownOpen = true)}
+              on:input={() => (isDropdownOpen = true)}
+            />
+            {#if isDropdownOpen && allCcxtExchanges.filter((e) => e
                   .toLowerCase()
-                  .includes(AddNewExchange.toLowerCase())) as exchangeId}
-                <li>
-                  <button
-                    type="button"
-                    class="w-full text-left"
-                    on:click={() => {
-                      AddNewExchange = exchangeId;
-                      isDropdownOpen = false;
-                    }}
-                  >
-                    {exchangeId}
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
+                  .includes(AddNewExchange.toLowerCase())).length > 0}
+              <ul
+                class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-full max-h-60 overflow-y-auto block z-[50] mt-1 border border-base-200"
+              >
+                {#each allCcxtExchanges.filter((e) => e
+                    .toLowerCase()
+                    .includes(AddNewExchange.toLowerCase())) as exchangeId}
+                  <li>
+                    <button
+                      type="button"
+                      class="w-full text-left"
+                      on:click={() => {
+                        AddNewExchange = exchangeId;
+                        isDropdownOpen = false;
+                      }}
+                    >
+                      {exchangeId}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        {/if}
       </div>
       <div class="form-control w-full">
         <span class="label">

@@ -2,6 +2,7 @@
   import clsx from "clsx";
   import { _ } from "svelte-i18n";
   import { invalidate } from "$app/navigation";
+  import { toast } from "svelte-sonner";
   import {
     updateExchange,
     removeExchange,
@@ -17,6 +18,16 @@
 
   let updatingIds: Record<string, boolean> = {};
   let deletingIds: Record<string, boolean> = {};
+
+  function getAdminToken(): string {
+    const token = localStorage.getItem("admin-access-token");
+
+    if (!token) {
+      throw new Error("Admin session is missing");
+    }
+
+    return token;
+  }
 
   // Pagination
   let currentPage = 1;
@@ -35,57 +46,41 @@
   ) {
     if (!exchange_id) return;
     updatingIds = { ...updatingIds, [exchange_id]: true };
-    const token = localStorage.getItem("admin-access-token");
-    if (!token) {
-      updatingIds = { ...updatingIds, [exchange_id]: false };
-      return;
-    }
 
     try {
+      const token = getAdminToken();
       await updateExchange(
         exchange_id,
         { exchange_id, name, enable, icon_url: iconUrl },
         token,
       );
+      await invalidate("admin:settings:exchanges");
     } catch (error) {
-      console.error("Failed to update exchange:", error);
-      updatingIds = { ...updatingIds, [exchange_id]: false };
-      return;
-    }
+      const message = error instanceof Error ? error.message : "Failed to update exchange";
 
-    setTimeout(() => {
-      invalidate("admin:settings:exchanges").finally(() => {
-        updatingIds = { ...updatingIds, [exchange_id]: false };
-      });
-    }, getRandomDelay());
+      toast.error(message);
+      console.error("Failed to update exchange:", error);
+    } finally {
+      updatingIds = { ...updatingIds, [exchange_id]: false };
+    }
   }
 
   async function DeleteExchange(exchange_id: string) {
     if (!exchange_id) return;
     deletingIds = { ...deletingIds, [exchange_id]: true };
-    const token = localStorage.getItem("admin-access-token");
-    if (!token) {
-      deletingIds = { ...deletingIds, [exchange_id]: false };
-      return;
-    }
 
     try {
+      const token = getAdminToken();
       await removeExchange(exchange_id, token);
+      await invalidate("admin:settings:exchanges");
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete exchange";
+
+      toast.error(message);
       console.error("Failed to delete exchange:", error);
+    } finally {
       deletingIds = { ...deletingIds, [exchange_id]: false };
-      return;
     }
-
-    setTimeout(() => {
-      invalidate("admin:settings:exchanges").finally(() => {
-        deletingIds = { ...deletingIds, [exchange_id]: false };
-      });
-    }, getRandomDelay());
-  }
-
-  function getRandomDelay() {
-    return Math.floor(Math.random() * (3000 - 2000 + 1)) + 2000;
   }
 </script>
 

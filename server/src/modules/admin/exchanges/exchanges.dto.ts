@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsString } from 'class-validator';
 
 export class AddAPIKeyDto {
   @ApiProperty({ description: 'The name of exchange' })
@@ -27,4 +27,10 @@ export class AddAPIKeyDto {
   @IsString()
   @IsNotEmpty()
   api_secret: string;
+}
+
+export class UpdateAPIKeyStateDto {
+  @ApiProperty({ description: 'Whether the API key is enabled' })
+  @IsBoolean()
+  enabled: boolean;
 }

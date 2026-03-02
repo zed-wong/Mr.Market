@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildAdminSidebarMenu } from "./sidebar-menu";
 
 describe("buildAdminSidebarMenu", () => {
-  it("keeps settings only and nests all settings children", () => {
+  it("keeps settings only and nests the supported settings children", () => {
     const menu = buildAdminSidebarMenu();
 
     expect(menu).toHaveLength(1);
@@ -15,7 +15,6 @@ describe("buildAdminSidebarMenu", () => {
       "spot-trading",
       "market-making",
       "fees",
-      "api-keys",
     ]);
   });
 });

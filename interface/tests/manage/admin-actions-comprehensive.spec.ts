@@ -12,6 +12,7 @@ type MockState = {
     exchange: string;
     name: string;
     api_key: string;
+    enabled: boolean;
     state: string;
     last_update: string;
   }[];
@@ -47,6 +48,7 @@ function createMockState(): MockState {
         exchange: "binance",
         name: "Binance Main",
         api_key: "binance-main-key-123456",
+        enabled: true,
         state: "alive",
         last_update: "2026-02-20",
       },
@@ -140,7 +142,11 @@ async function setupAdminMocks(page: Page, state: MockState) {
       icon_url: String(payload.icon_url || ""),
       enable: true,
     });
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true }),
+    });
   });
 
   await page.route("**/admin/grow/exchange/update/*", async (route) => {
@@ -157,56 +163,130 @@ async function setupAdminMocks(page: Page, state: MockState) {
         : item,
     );
     state.updateExchangeCalls += 1;
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true }),
+    });
   });
 
   await page.route("**/admin/grow/exchange/remove/*", async (route) => {
     const exchangeId = route.request().url().split("/").pop() || "";
-    state.exchanges = state.exchanges.filter((item) => item.exchange_id !== exchangeId);
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    state.exchanges = state.exchanges.filter(
+      (item) => item.exchange_id !== exchangeId,
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true }),
+    });
   });
 
   await page.route("**/admin/exchanges/key-pair", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ publicKey: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=" }),
+      body: JSON.stringify({
+        publicKey: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+      }),
     });
   });
 
-  await page.route("**/admin/exchanges/keys", async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(state.apiKeys) });
-      return;
+  await page.route("**/admin/exchanges/keys**", async (route) => {
+    const method = route.request().method();
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+
+    if (path.endsWith("/admin/exchanges/keys")) {
+      if (method === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(state.apiKeys),
+        });
+        return;
+      }
+
+      if (method === "POST") {
+        const payload = JSON.parse(route.request().postData() || "{}");
+        const apiKey = String(payload.api_key || "key-value-123456");
+        state.apiKeys.push({
+          key_id: `key-${Date.now()}`,
+          exchange: String(payload.exchange || "kraken"),
+          name: String(payload.name || "New Key"),
+          api_key: apiKey,
+          enabled: true,
+          state: "alive",
+          last_update: "2026-02-21",
+        });
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: true }),
+        });
+        return;
+      }
     }
 
-    if (route.request().method() === "POST") {
+    const updateMatch = path.match(/\/admin\/exchanges\/keys\/([^/]+)\/update$/);
+    if (updateMatch && method === "POST") {
+      const keyId = updateMatch[1];
       const payload = JSON.parse(route.request().postData() || "{}");
-      const apiKey = String(payload.api_key || "key-value-123456");
-      state.apiKeys.push({
-        key_id: `key-${Date.now()}`,
-        exchange: String(payload.exchange || "kraken"),
-        name: String(payload.name || "New Key"),
-        api_key: apiKey,
-        state: "alive",
-        last_update: "2026-02-21",
+      state.apiKeys = state.apiKeys.map((item) =>
+        item.key_id === keyId
+          ? { ...item, enabled: Boolean(payload.enabled) }
+          : item,
+      );
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
       });
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
       return;
     }
 
-    await route.fulfill({ status: 405, contentType: "application/json", body: JSON.stringify({ error: "method not allowed" }) });
-  });
+    const byExchangeMatch = path.match(
+      /\/admin\/exchanges\/keys\/by-exchange\/([^/]+)$/,
+    );
+    if (byExchangeMatch && method === "DELETE") {
+      const exchangeId = byExchangeMatch[1];
+      state.apiKeys = state.apiKeys.filter(
+        (item) => item.exchange !== exchangeId,
+      );
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      });
+      return;
+    }
 
-  await page.route("**/admin/exchanges/keys/*", async (route) => {
-    const keyId = route.request().url().split("/").pop() || "";
-    state.apiKeys = state.apiKeys.filter((item) => item.key_id !== keyId);
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    const deleteMatch = path.match(/\/admin\/exchanges\/keys\/([^/]+)$/);
+    if (deleteMatch && method === "DELETE") {
+      const keyId = deleteMatch[1];
+      state.apiKeys = state.apiKeys.filter((item) => item.key_id !== keyId);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 405,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "method not allowed" }),
+    });
   });
 
   await page.route("**/admin/fee/global", async (route) => {
     if (route.request().method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(state.globalFee) });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(state.globalFee),
+      });
       return;
     }
 
@@ -218,11 +298,19 @@ async function setupAdminMocks(page: Page, state: MockState) {
       };
       state.updateGlobalFeeCalls += 1;
       state.updateGlobalFeePayload = payload;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      });
       return;
     }
 
-    await route.fulfill({ status: 405, contentType: "application/json", body: JSON.stringify({ error: "method not allowed" }) });
+    await route.fulfill({
+      status: 405,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "method not allowed" }),
+    });
   });
 
   await page.route("**/admin/fee/overrides", async (route) => {
@@ -285,62 +373,69 @@ test.describe("admin settings actions", () => {
     await page.goto("/manage/settings");
     await settingsCards.filter({ hasText: /fees/i }).first().click();
     await expect(page).toHaveURL(/\/manage\/settings\/fees/);
-
-    await page.goto("/manage/settings");
-    await settingsCards.filter({ hasText: /api keys/i }).first().click();
-    await expect(page).toHaveURL(/\/manage\/settings\/api-keys/);
   });
 
-  test("exchanges page supports add, toggle, and delete actions", async ({ page }) => {
+  test("merged exchanges page supports exchange and API key actions", async ({
+    page,
+  }) => {
     await openAdminPage(page, "/manage/settings/exchanges");
 
     await page.getByRole("button", { name: /add exchange/i }).first().click();
 
-    const dialog = page.locator("dialog[open]");
-    const exchangeIdInput = dialog.locator("input").first();
+    const addExchangeDialog = page.locator("dialog[open]");
+    const exchangeIdInput = addExchangeDialog.locator("input").first();
     await exchangeIdInput.fill("kraken");
-    await dialog.getByRole("button", { name: /^kraken$/i }).click();
+    await addExchangeDialog.getByRole("button", { name: /^kraken$/i }).click();
+    await addExchangeDialog.locator("input").nth(1).fill("Kraken");
+    await addExchangeDialog.getByRole("button", { name: /add exchange/i }).click();
 
-    await dialog.locator("input").nth(1).fill("Kraken");
-    await dialog.getByRole("button", { name: /add exchange/i }).click();
+    let krakenCard = page.locator(".card", { hasText: "kraken" }).first();
+    await expect(krakenCard).toBeVisible({ timeout: 10000 });
 
-    await expect(page.locator("tr", { hasText: "kraken" })).toBeVisible({ timeout: 10000 });
+    await krakenCard.getByRole("button", { name: /disable|enable/i }).click();
+    await expect(krakenCard.getByText(/disabled|enabled/i).first()).toBeVisible({
+      timeout: 10000,
+    });
 
-    const krakenRow = page.locator("tr", { hasText: "kraken" });
-    await krakenRow.locator("button").first().click();
+    await krakenCard.getByRole("button", { name: /add api key/i }).click();
 
-    await expect
-      .poll(async () => (await page.locator("tr", { hasText: "kraken" }).count()) > 0)
-      .toBeTruthy();
+    const addApiKeyDialog = page.locator("dialog[open]");
+    await addApiKeyDialog.locator("input").nth(1).fill("Kraken Key");
+    await addApiKeyDialog.locator("input").nth(2).fill("kraken-api-key-111111");
+    await addApiKeyDialog.locator("input").nth(3).fill("kraken-secret");
+    await addApiKeyDialog.getByRole("button", { name: /add api key/i }).click();
 
-    page.once("dialog", (dialogEvent) => dialogEvent.accept());
-    await krakenRow.locator("button").nth(1).click();
-    await expect(page.locator("tr", { hasText: "kraken" })).toHaveCount(0, { timeout: 10000 });
-  });
-
-  test("api keys page supports add and delete key actions", async ({ page }) => {
-    await openAdminPage(page, "/manage/settings/api-keys");
-
-    await page.getByRole("button", { name: /add api key/i }).first().click();
-
-    const dialog = page.locator("dialog[open]");
-    await dialog.locator("input").first().fill("kraken");
-    await dialog.getByRole("button", { name: /^kraken$/i }).click();
-    await dialog.locator("input").nth(1).fill("Kraken Key");
-    await dialog.locator("input").nth(2).fill("kraken-api-key-111111");
-    await dialog.locator("input").nth(3).fill("kraken-secret");
-    await dialog.getByRole("button", { name: /add api key/i }).click();
+    krakenCard = page.locator(".card", { hasText: "kraken" }).first();
+    await krakenCard.getByRole("button", { name: /show api keys/i }).click();
 
     const keyRow = page.locator("tr", { hasText: "Kraken Key" });
     await expect(keyRow).toBeVisible({ timeout: 10000 });
 
-    await keyRow.locator("button").nth(1).click();
-    await keyRow.getByRole("button", { name: /confirm/i }).click();
+    await keyRow.getByRole("button", { name: /enabled|disabled/i }).click();
 
-    await expect(page.locator("tr", { hasText: "Kraken Key" })).toHaveCount(0, { timeout: 10000 });
+    page.once("dialog", (dialogEvent) => dialogEvent.accept());
+    await keyRow.getByRole("button", { name: /^delete$/i }).click();
+    await expect(page.locator("tr", { hasText: "Kraken Key" })).toHaveCount(0, {
+      timeout: 10000,
+    });
+
+    page.once("dialog", (dialogEvent) => dialogEvent.accept());
+    await krakenCard.getByRole("button", { name: /^delete$/i }).click();
+    await expect(page.locator(".card", { hasText: "kraken" })).toHaveCount(0, {
+      timeout: 10000,
+    });
   });
 
-  test("fees page supports save changes and manage override navigation", async ({ page }) => {
+  test("legacy api keys route returns not found", async ({ page }) => {
+    const response = await page.goto("/manage/settings/api-keys");
+    const status = response?.status() ?? 200;
+    expect([200, 404]).toContain(status);
+    await expect(page.getByText(/not found/i)).toBeVisible();
+  });
+
+  test("fees page supports save changes and manage override navigation", async ({
+    page,
+  }) => {
     await openAdminPage(page, "/manage/settings/fees");
 
     const spotFeeInput = page.locator("#spot-fee-input");
@@ -348,13 +443,18 @@ test.describe("admin settings actions", () => {
     await spotFeeInput.fill("0.0033");
 
     await page.getByRole("button", { name: /save changes/i }).click();
-    await page.locator("#confirm_modal").getByRole("button", { name: /confirm/i }).click();
+    await page
+      .locator("#confirm_modal")
+      .getByRole("button", { name: /confirm/i })
+      .click();
 
     await expect
       .poll(async () => (await spotFeeInput.inputValue()) === "0.0033")
       .toBeTruthy();
 
     await page.getByRole("button", { name: /^manage$/i }).first().click();
-    await expect(page).toHaveURL(/\/manage\/settings\/spot-trading|\/manage\/settings\/market-making/);
+    await expect(page).toHaveURL(
+      /\/manage\/settings\/spot-trading|\/manage\/settings\/market-making/,
+    );
   });
 });

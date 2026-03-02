@@ -23,4 +23,7 @@ export class APIKeysConfig {
 
   @Column()
   api_secret: string; // The secret
+
+  @Column({ default: true })
+  enabled: boolean; // Whether this API key can be used for execution
 }

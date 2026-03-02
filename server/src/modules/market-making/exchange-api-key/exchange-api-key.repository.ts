@@ -33,6 +33,10 @@ export class ExchangeApiKeyRepository {
     });
   }
 
+  async updateAPIKeyState(key_id: string, enabled: boolean) {
+    return await this.apiKeysRepository.update({ key_id }, { enabled });
+  }
+
   async removeAPIKey(key_id: string) {
     const apiKey = await this.apiKeysRepository.findOne({
       where: { key_id },
@@ -45,19 +49,41 @@ export class ExchangeApiKeyRepository {
     await this.apiKeysRepository.remove(apiKey);
   }
 
-  async readAllAPIKeys(): Promise<APIKeysConfig[]> {
-    return await this.apiKeysRepository.find();
+  async removeAPIKeysByExchange(exchange: string) {
+    await this.apiKeysRepository.delete({ exchange });
   }
 
-  async readAllAPIKeysByExchange(exchange: string): Promise<APIKeysConfig[]> {
-    return await this.apiKeysRepository.find({ where: { exchange } });
+  async readAllAPIKeys(includeDisabled = true): Promise<APIKeysConfig[]> {
+    if (includeDisabled) {
+      return await this.apiKeysRepository.find();
+    }
+
+    return await this.apiKeysRepository.find({ where: { enabled: true } });
   }
 
-  async readSupportedExchanges(): Promise<string[]> {
-    const rows = await this.apiKeysRepository
+  async readAllAPIKeysByExchange(
+    exchange: string,
+    includeDisabled = true,
+  ): Promise<APIKeysConfig[]> {
+    if (includeDisabled) {
+      return await this.apiKeysRepository.find({ where: { exchange } });
+    }
+
+    return await this.apiKeysRepository.find({
+      where: { exchange, enabled: true },
+    });
+  }
+
+  async readSupportedExchanges(includeDisabled = true): Promise<string[]> {
+    const query = this.apiKeysRepository
       .createQueryBuilder('api_key')
-      .select('DISTINCT api_key.exchange', 'exchange')
-      .getRawMany();
+      .select('DISTINCT api_key.exchange', 'exchange');
+
+    if (!includeDisabled) {
+      query.where('api_key.enabled = :enabled', { enabled: true });
+    }
+
+    const rows = await query.getRawMany();
 
     return rows
       .map((row) => row.exchange)
