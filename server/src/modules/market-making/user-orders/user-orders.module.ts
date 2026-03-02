@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
 import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
   MarketMakingOrder,
@@ -34,6 +35,7 @@ import { UserOrdersService } from './user-orders.service';
       MarketMakingOrder,
       MarketMakingPaymentState,
       MarketMakingOrderIntent,
+      StrategyDefinition,
       SimplyGrowOrder,
       MarketMakingHistory,
       ArbitrageHistory,

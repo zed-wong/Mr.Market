@@ -11,7 +11,10 @@ import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { createStrategyKey } from 'src/common/helpers/strategyKey';
+import {
+  createPureMarketMakingStrategyKey,
+  createStrategyKey,
+} from 'src/common/helpers/strategyKey';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -28,11 +31,11 @@ import {
 import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
-import { StrategyExecutorRegistry } from './strategy-executor.registry';
+import { StrategyControllerRegistry } from './strategy-controller.registry';
 import {
   StrategyRuntimeSession,
   StrategyType,
-} from './strategy-executor.types';
+} from './strategy-controller.types';
 
 type VolumeStrategyParams = {
   exchangeName: string;
@@ -76,7 +79,7 @@ export class StrategyService
     @Optional()
     private readonly configService?: ConfigService,
     @Optional()
-    private readonly strategyExecutorRegistry?: StrategyExecutorRegistry,
+    private readonly strategyControllerRegistry?: StrategyControllerRegistry,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -97,6 +100,11 @@ export class StrategyService
         strategyType: strategy.strategyType as StrategyType,
         userId: strategy.userId,
         clientId: strategy.clientId,
+        marketMakingOrderId:
+          strategy.marketMakingOrderId ||
+          (strategy.strategyType === 'pureMarketMaking'
+            ? strategy.clientId
+            : undefined),
         cadenceMs: this.getCadenceMs(
           strategy.parameters,
           strategy.strategyType,
@@ -159,6 +167,10 @@ export class StrategyService
     return await this.strategyInstanceRepository.find();
   }
 
+  getSupportedControllerTypes(): StrategyType[] {
+    return this.strategyControllerRegistry?.listControllerTypes() || [];
+  }
+
   async getStrategyInstanceKey(strategyKey: string): Promise<StrategyInstance> {
     return await this.strategyInstanceRepository.findOne({
       where: { strategyKey },
@@ -174,17 +186,17 @@ export class StrategyService
       throw new Error(`Strategy with key ${strategyKey} not found.`);
     }
 
-    const executor = this.strategyExecutorRegistry?.getExecutor(
+    const controller = this.strategyControllerRegistry?.getController(
       strategyInstance.strategyType,
     );
 
-    if (!executor) {
+    if (!controller) {
       throw new Error(
-        `No strategy executor registered for strategy type: ${strategyInstance.strategyType}`,
+        `No strategy controller registered for strategy type: ${strategyInstance.strategyType}`,
       );
     }
 
-    await executor.rerun(strategyInstance, this);
+    await controller.rerun(strategyInstance, this);
   }
 
   async startArbitrageStrategyForUser(
@@ -221,45 +233,64 @@ export class StrategyService
   async executePureMarketMakingStrategy(
     strategyParamsDto: PureMarketMakingStrategyDto,
   ) {
-    const { userId, clientId } = strategyParamsDto;
-    const strategyKey = createStrategyKey({
-      type: 'pureMarketMaking',
-      user_id: userId,
-      client_id: clientId,
-    });
+    const marketMakingOrderId =
+      strategyParamsDto.marketMakingOrderId || strategyParamsDto.clientId;
+
+    if (!marketMakingOrderId) {
+      throw new Error(
+        'Pure market making strategy requires marketMakingOrderId (or clientId fallback)',
+      );
+    }
+
+    const strategyKey = createPureMarketMakingStrategyKey(marketMakingOrderId);
+    const normalizedParams: PureMarketMakingStrategyDto = {
+      ...strategyParamsDto,
+      marketMakingOrderId,
+      clientId: marketMakingOrderId,
+    };
 
     const cadenceMs = Math.max(
       1000,
-      Number(strategyParamsDto.orderRefreshTime),
+      Number(normalizedParams.orderRefreshTime),
     );
 
     await this.upsertStrategyInstance(
       strategyKey,
-      userId,
-      clientId,
+      normalizedParams.userId,
+      marketMakingOrderId,
       'pureMarketMaking',
-      strategyParamsDto,
+      normalizedParams,
+      marketMakingOrderId,
     );
     this.upsertSession(
       strategyKey,
       'pureMarketMaking',
-      userId,
-      clientId,
+      normalizedParams.userId,
+      marketMakingOrderId,
       cadenceMs,
-      strategyParamsDto,
+      normalizedParams,
+      marketMakingOrderId,
     );
   }
 
   async executeMMCycle(strategyParamsDto: PureMarketMakingStrategyDto) {
-    const strategyKey = createStrategyKey({
-      type: 'pureMarketMaking',
-      user_id: strategyParamsDto.userId,
-      client_id: strategyParamsDto.clientId,
-    });
+    const marketMakingOrderId =
+      strategyParamsDto.marketMakingOrderId || strategyParamsDto.clientId;
+
+    if (!marketMakingOrderId) {
+      throw new Error(
+        'Pure market making cycle requires marketMakingOrderId (or clientId fallback)',
+      );
+    }
+    const strategyKey = createPureMarketMakingStrategyKey(marketMakingOrderId);
 
     const intents = await this.buildPureMarketMakingIntents(
       strategyKey,
-      strategyParamsDto,
+      {
+        ...strategyParamsDto,
+        clientId: marketMakingOrderId,
+        marketMakingOrderId,
+      },
       getRFC3339Timestamp(),
     );
 
@@ -326,11 +357,15 @@ export class StrategyService
       return;
     }
 
-    const strategyKey = createStrategyKey({
-      type: strategyType as StrategyType,
-      user_id: userId,
-      client_id: clientId,
-    });
+    const resolvedStrategyType = strategyType as StrategyType;
+    const strategyKey =
+      resolvedStrategyType === 'pureMarketMaking'
+        ? createPureMarketMakingStrategyKey(clientId)
+        : createStrategyKey({
+            type: resolvedStrategyType,
+            user_id: userId,
+            client_id: clientId,
+          });
 
     await this.strategyInstanceRepository.update(
       { strategyKey },
@@ -340,7 +375,7 @@ export class StrategyService
     this.sessions.delete(strategyKey);
 
     const stopIntent: StrategyOrderIntent = {
-      type: 'STOP_EXECUTOR',
+      type: 'STOP_CONTROLLER',
       intentId: `${strategyKey}:${Date.now()}:stop`,
       strategyInstanceId: strategyKey,
       strategyKey,
@@ -358,24 +393,43 @@ export class StrategyService
     await this.publishIntents(strategyKey, [stopIntent]);
   }
 
+  async stopMarketMakingStrategyForOrder(
+    marketMakingOrderId: string,
+    userId = 'system',
+  ): Promise<void> {
+    if (!marketMakingOrderId) {
+      return;
+    }
+    await this.stopStrategyForUser(
+      userId,
+      marketMakingOrderId,
+      'pureMarketMaking',
+    );
+  }
+
   async linkDefinitionToStrategyInstance(
     userId: string,
     clientId: string,
     strategyType: StrategyType,
     definitionId: string,
     definitionVersion = '1.0.0',
+    marketMakingOrderId?: string,
   ): Promise<void> {
-    const strategyKey = createStrategyKey({
-      type: strategyType,
-      user_id: userId,
-      client_id: clientId,
-    });
+    const strategyKey =
+      strategyType === 'pureMarketMaking'
+        ? createPureMarketMakingStrategyKey(marketMakingOrderId || clientId)
+        : createStrategyKey({
+            type: strategyType,
+            user_id: userId,
+            client_id: clientId,
+          });
 
     await this.strategyInstanceRepository.update(
       { strategyKey },
       {
         definitionId,
         definitionVersion,
+        marketMakingOrderId: marketMakingOrderId || undefined,
         updatedAt: new Date(),
       },
     );
@@ -503,12 +557,14 @@ export class StrategyService
     clientId: string,
     cadenceMs: number,
     params: StrategyRuntimeSession['params'],
+    marketMakingOrderId?: string,
   ): void {
     this.sessions.set(strategyKey, {
       strategyKey,
       strategyType,
       userId,
       clientId,
+      marketMakingOrderId,
       cadenceMs,
       params,
       nextRunAtMs: Date.now(),
@@ -521,6 +577,7 @@ export class StrategyService
     clientId: string,
     strategyType: StrategyType,
     parameters: Record<string, any>,
+    marketMakingOrderId?: string,
   ): Promise<void> {
     const existing = await this.strategyInstanceRepository.findOne({
       where: { strategyKey },
@@ -533,6 +590,7 @@ export class StrategyService
           status: 'running',
           strategyType,
           parameters,
+          marketMakingOrderId: marketMakingOrderId || null,
           updatedAt: new Date(),
         },
       );
@@ -546,6 +604,7 @@ export class StrategyService
       clientId,
       strategyType,
       parameters,
+      marketMakingOrderId: marketMakingOrderId || null,
       status: 'running',
       startPrice: await this.fetchStartPrice(strategyType, parameters),
     });
@@ -576,32 +635,34 @@ export class StrategyService
     parameters: Record<string, any>,
     strategyType: string,
   ): number {
-    const executor = this.strategyExecutorRegistry?.getExecutor(strategyType);
+    const controller = this.strategyControllerRegistry?.getController(
+      strategyType,
+    );
 
-    if (!executor) {
+    if (!controller) {
       throw new Error(
-        `No strategy executor registered for strategy type: ${strategyType}`,
+        `No strategy controller registered for strategy type: ${strategyType}`,
       );
     }
 
-    return executor.getCadenceMs(parameters, this);
+    return controller.getCadenceMs(parameters, this);
   }
 
   private async runSession(
     session: StrategyRuntimeSession,
     ts: string,
   ): Promise<void> {
-    const executor = this.strategyExecutorRegistry?.getExecutor(
+    const controller = this.strategyControllerRegistry?.getController(
       session.strategyType,
     );
 
-    if (!executor) {
+    if (!controller) {
       throw new Error(
-        `No strategy executor registered for strategy type: ${session.strategyType}`,
+        `No strategy controller registered for strategy type: ${session.strategyType}`,
       );
     }
 
-    await executor.runSession(session, ts, this);
+    await controller.runSession(session, ts, this);
   }
 
   async runPureMarketMakingSession(

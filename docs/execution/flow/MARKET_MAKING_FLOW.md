@@ -14,7 +14,7 @@ The runtime is now tick-driven and intent-driven.
 4. Ledger is the only balance mutation entrypoint.
 
 The old queue self-loop `execute_mm_cycle` has been removed.
-`start_mm` now registers the strategy session in `StrategyService`, and periodic execution comes from tick scheduling.
+`start_mm` now resolves the bound strategy definition for the order, starts the matching strategy runtime, and periodic execution comes from tick scheduling.
 
 ## Core Modules
 
@@ -26,6 +26,14 @@ The old queue self-loop `execute_mm_cycle` has been removed.
 - Strategy definition admin runtime: `server/src/modules/admin/strategy/adminStrategy.service.ts`
 
 ## End-to-End Flow
+
+### 0) User creates a market making intent
+
+1. User fetches enabled strategies from `GET /user-orders/market-making/strategies`.
+2. User creates intent via `POST /user-orders/market-making/intent` with:
+   - `marketMakingPairId`
+   - `strategyDefinitionId` (required, must exist and be enabled)
+3. Intent row is persisted in `market_making_order_intent` with `strategyDefinitionId`.
 
 ### 1) Snapshot intake and payment state tracking
 
@@ -39,7 +47,10 @@ The old queue self-loop `execute_mm_cycle` has been removed.
 
 1. `handleCheckPaymentComplete` verifies base, quote, and required fee coverage.
 2. If payment is incomplete and timeout/retries are exceeded, order is failed and refunded.
-3. If complete, intent state is updated and order state becomes `payment_complete`.
+3. If complete:
+   - intent state is updated
+   - market making order is created/updated with `strategyDefinitionId`
+   - order state becomes `payment_complete`
 
 Current behavior:
 - Queueing `withdraw_to_exchange` is still disabled in this flow.
@@ -59,25 +70,31 @@ If withdrawal path is enabled and used:
 
 `start_mm`:
 - Sets order state to `running`.
-- Builds `PureMarketMakingStrategyDto` from order config.
-- Calls `strategyService.executePureMarketMakingStrategy(...)`.
+- Loads bound `strategyDefinitionId` and resolves `controllerType`.
+- Merges definition defaults with order runtime config.
+- Dynamically dispatches by strategy type:
+  - `pureMarketMaking` -> `executePureMarketMakingStrategy(...)`
+  - `arbitrage` -> `startArbitrageStrategyForUser(...)`
+  - `volume` -> `executeVolumeStrategy(...)`
+- Links started strategy instance to definition metadata.
 - Does not enqueue `execute_mm_cycle`.
 
 `stop_mm`:
-- Calls `strategyService.stopStrategyForUser(...)`.
+- Calls `strategyService.stopMarketMakingStrategyForOrder(orderId)`.
 - Sets order state to `stopped`.
 
-### 4.1) Dynamic strategy definition path (admin)
+### 4.1) Dynamic strategy definition path
 
-In addition to `start_mm`, admin runtime now supports dynamic strategy definitions:
+Dynamic strategy definitions are used by both admin runtime and user MM order flow:
 
 1. Definitions are stored in `strategy_definitions` with config schema/defaults.
 2. Published snapshots are tracked in `strategy_definition_versions`.
-3. Admin start flow validates merged config against definition schema.
-4. Instance start links runtime row to definition using:
+3. User MM intent creation requires `strategyDefinitionId` and validates enabled definition.
+4. Admin start flow validates merged config against definition schema.
+5. Instance start links runtime row to definition using:
    - `strategy_instances.definitionId`
    - `strategy_instances.definitionVersion`
-5. Legacy instances can be backfilled through admin API:
+6. Legacy instances can be backfilled through admin API:
    - `POST /admin/strategy/instances/backfill-definition-links`
 
 ### 5) Tick-driven strategy execution
@@ -90,7 +107,7 @@ In addition to `start_mm`, admin runtime now supports dynamic strategy definitio
 6. Worker enforces safety gates: max global in-flight, max per-exchange in-flight, and one in-flight per strategy key.
 7. `StrategyIntentExecutionService` executes exchange actions, updates trackers, and records durability status.
 
-## Queue Jobs in Use
+## Queue Jobs Registered
 
 Queue: `market-making`
 
@@ -101,6 +118,10 @@ Queue: `market-making`
 - `join_campaign`
 - `start_mm`
 - `stop_mm`
+
+Current default lifecycle branch:
+- `check_payment_complete` does not enqueue `withdraw_to_exchange` (disabled in current implementation),
+  so withdrawal/campaign jobs are registered but typically not reached unless queued by another flow.
 
 Removed from runtime flow:
 
@@ -130,6 +151,7 @@ Failure paths can move to:
 `failed`
 
 Exact transitions depend on which queue branches are enabled in your environment.
+With current default branch (`withdraw_to_exchange` queueing disabled), many orders stop at `payment_complete`.
 
 ## Operational Notes
 
@@ -146,5 +168,5 @@ Exact transitions depend on which queue branches are enabled in your environment
 
 ## Last Updated
 
-- Date: 2026-02-28
+- Date: 2026-03-02
 - Status: Active

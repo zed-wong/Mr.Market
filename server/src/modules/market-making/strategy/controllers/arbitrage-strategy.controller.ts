@@ -3,13 +3,13 @@ import { StrategyInstance } from 'src/common/entities/market-making/strategy-ins
 
 import { ArbitrageStrategyDto } from '../strategy.dto';
 import {
-  StrategyExecutor,
+  StrategyController,
   StrategyRuntimeSession,
-} from '../strategy-executor.types';
+} from '../strategy-controller.types';
 import { StrategyService } from '../strategy.service';
 
 @Injectable()
-export class ArbitrageStrategyExecutor implements StrategyExecutor {
+export class ArbitrageStrategyController implements StrategyController {
   readonly strategyType = 'arbitrage' as const;
 
   getCadenceMs(parameters: Record<string, any>): number {

@@ -2,6 +2,7 @@ export type StrategyIntentType =
   | 'CREATE_LIMIT_ORDER'
   | 'CANCEL_ORDER'
   | 'REPLACE_ORDER'
+  | 'STOP_CONTROLLER'
   | 'STOP_EXECUTOR';
 
 export type StrategyIntentStatus = 'NEW' | 'SENT' | 'ACKED' | 'FAILED' | 'DONE';

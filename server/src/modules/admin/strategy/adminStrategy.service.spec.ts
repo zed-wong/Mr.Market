@@ -480,6 +480,7 @@ describe('AdminStrategyService', () => {
         'pureMarketMaking',
         'def-1',
         '1.0.3',
+        'client123',
       );
       expect(result).toEqual(
         expect.objectContaining({

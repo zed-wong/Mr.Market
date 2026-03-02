@@ -55,7 +55,7 @@ export class AdminStrategyService {
     const { strategyType, arbitrageParams, marketMakingParams, volumeParams } =
       startStrategyDto;
 
-    const definitionExecutorType =
+    const definitionControllerType =
       strategyType === 'marketMaking' ? 'pureMarketMaking' : strategyType;
     const legacyConfig =
       strategyType === 'arbitrage'
@@ -71,17 +71,24 @@ export class AdminStrategyService {
     if (legacyConfig?.userId && legacyConfig?.clientId) {
       const definition = await this.strategyDefinitionRepository.findOne({
         where: {
-          executorType: definitionExecutorType,
+          controllerType: definitionControllerType,
           enabled: true,
         },
         order: { createdAt: 'ASC' },
       });
 
       if (definition) {
+        const marketMakingOrderId =
+          definitionControllerType === 'pureMarketMaking' && marketMakingParams
+            ? marketMakingParams.marketMakingOrderId ||
+              marketMakingParams.clientId
+            : undefined;
+
         return this.startStrategyInstance({
           definitionId: definition.id,
           userId: legacyConfig.userId,
           clientId: legacyConfig.clientId,
+          marketMakingOrderId,
           config: legacyConfig as Record<string, unknown>,
         });
       }
@@ -319,6 +326,12 @@ export class AdminStrategyService {
   async createStrategyDefinition(
     dto: StrategyDefinitionDto,
   ): Promise<StrategyDefinition> {
+    const controllerType = dto.controllerType || dto.executorType;
+
+    if (!controllerType) {
+      throw new BadRequestException('controllerType is required');
+    }
+
     const existing = await this.strategyDefinitionRepository.findOne({
       where: { key: dto.key },
     });
@@ -333,7 +346,7 @@ export class AdminStrategyService {
       key: dto.key,
       name: dto.name,
       description: dto.description,
-      executorType: dto.executorType,
+      controllerType,
       configSchema: dto.configSchema,
       defaultConfig: dto.defaultConfig,
       enabled: true,
@@ -371,7 +384,13 @@ export class AdminStrategyService {
     dto: UpdateStrategyDefinitionDto,
   ): Promise<StrategyDefinition> {
     const definition = await this.getStrategyDefinition(id);
-    Object.assign(definition, dto);
+    definition.name = dto.name ?? definition.name;
+    definition.description = dto.description ?? definition.description;
+    definition.configSchema = dto.configSchema ?? definition.configSchema;
+    definition.defaultConfig = dto.defaultConfig ?? definition.defaultConfig;
+    definition.visibility = dto.visibility ?? definition.visibility;
+    definition.controllerType =
+      dto.controllerType || dto.executorType || definition.controllerType;
 
     return this.strategyDefinitionRepository.save(definition);
   }
@@ -406,8 +425,8 @@ export class AdminStrategyService {
     if (dto.description !== undefined) {
       definition.description = dto.description;
     }
-    if (dto.executorType !== undefined) {
-      definition.executorType = dto.executorType;
+    if (dto.controllerType !== undefined || dto.executorType !== undefined) {
+      definition.controllerType = dto.controllerType || dto.executorType;
     }
     if (dto.configSchema !== undefined) {
       definition.configSchema = dto.configSchema;
@@ -455,9 +474,11 @@ export class AdminStrategyService {
       status: string;
       userId: string;
       clientId: string;
+      marketMakingOrderId?: string;
       definitionId?: string;
       definitionKey?: string;
       definitionName?: string;
+      controllerType?: string;
       executorType?: string;
       createdAt: Date;
       updatedAt: Date;
@@ -479,6 +500,9 @@ export class AdminStrategyService {
       const definition = instance.definitionId
         ? definitionMap.get(instance.definitionId)
         : undefined;
+      const controllerType = definition
+        ? this.getDefinitionControllerType(definition)
+        : undefined;
 
       return {
         id: instance.id,
@@ -487,10 +511,12 @@ export class AdminStrategyService {
         status: instance.status,
         userId: instance.userId,
         clientId: instance.clientId,
+        marketMakingOrderId: instance.marketMakingOrderId,
         definitionId: instance.definitionId,
         definitionKey: definition?.key,
         definitionName: definition?.name,
-        executorType: definition?.executorType,
+        controllerType,
+        executorType: controllerType,
         createdAt: instance.createdAt,
         updatedAt: instance.updatedAt,
       };
@@ -499,9 +525,15 @@ export class AdminStrategyService {
 
   async startStrategyInstance(
     dto: StartStrategyInstanceDto,
-  ): Promise<{ message: string; definitionId: string; executorType: string }> {
+  ): Promise<{
+    message: string;
+    definitionId: string;
+    controllerType: string;
+    executorType: string;
+  }> {
     const { definition, mergedConfig, strategyType } =
       await this.resolveDefinitionStartConfig(dto);
+    const controllerType = this.getDefinitionControllerType(definition);
 
     await this.startByStrategyType(strategyType, mergedConfig);
     await this.strategyService.linkDefinitionToStrategyInstance(
@@ -510,12 +542,16 @@ export class AdminStrategyService {
       strategyType,
       definition.id,
       definition.currentVersion || '1.0.0',
+      strategyType === 'pureMarketMaking'
+        ? (dto.marketMakingOrderId || dto.clientId)
+        : undefined,
     );
 
     return {
       message: `Started strategy instance from definition ${definition.key}`,
       definitionId: definition.id,
-      executorType: definition.executorType,
+      controllerType,
+      executorType: controllerType,
     };
   }
 
@@ -525,36 +561,46 @@ export class AdminStrategyService {
     valid: true;
     definitionId: string;
     definitionKey: string;
+    controllerType: string;
     executorType: string;
     mergedConfig: Record<string, any>;
   }> {
     const { definition, mergedConfig } = await this.resolveDefinitionStartConfig(dto);
+    const controllerType = this.getDefinitionControllerType(definition);
 
     return {
       valid: true,
       definitionId: definition.id,
       definitionKey: definition.key,
-      executorType: definition.executorType,
+      controllerType,
+      executorType: controllerType,
       mergedConfig,
     };
   }
 
   async stopStrategyInstance(
     dto: StopStrategyInstanceDto,
-  ): Promise<{ message: string; definitionId: string; executorType: string }> {
+  ): Promise<{
+    message: string;
+    definitionId: string;
+    controllerType: string;
+    executorType: string;
+  }> {
     const definition = await this.getStrategyDefinition(dto.definitionId);
-    const strategyType = this.toStrategyType(definition.executorType);
+    const controllerType = this.getDefinitionControllerType(definition);
+    const strategyType = this.toStrategyType(controllerType);
 
     await this.strategyService.stopStrategyForUser(
       dto.userId,
-      dto.clientId,
+      dto.marketMakingOrderId || dto.clientId,
       strategyType,
     );
 
     return {
       message: `Stopped strategy instance from definition ${definition.key}`,
       definitionId: definition.id,
-      executorType: definition.executorType,
+      controllerType,
+      executorType: controllerType,
     };
   }
 
@@ -566,7 +612,9 @@ export class AdminStrategyService {
     const definitions = await this.strategyDefinitionRepository.find({
       where: { enabled: true },
     });
-    const byExecutor = new Map(definitions.map((d) => [d.executorType, d]));
+    const byController = new Map(
+      definitions.map((d) => [this.getDefinitionControllerType(d), d]),
+    );
 
     let updated = 0;
     let skipped = 0;
@@ -577,8 +625,10 @@ export class AdminStrategyService {
         continue;
       }
 
-      const executorType = this.mapStrategyTypeToExecutor(instance.strategyType);
-      const definition = byExecutor.get(executorType);
+      const controllerType = this.mapStrategyTypeToController(
+        instance.strategyType,
+      );
+      const definition = byController.get(controllerType);
 
       if (!definition) {
         skipped += 1;
@@ -643,6 +693,9 @@ export class AdminStrategyService {
     strategyType: 'arbitrage' | 'pureMarketMaking' | 'volume';
   }> {
     const definition = await this.getStrategyDefinition(dto.definitionId);
+    const strategyType = this.toStrategyType(
+      this.getDefinitionControllerType(definition),
+    );
 
     if (!definition.enabled) {
       throw new BadRequestException(
@@ -650,11 +703,17 @@ export class AdminStrategyService {
       );
     }
 
+    const marketMakingOrderId =
+      strategyType === 'pureMarketMaking'
+        ? dto.marketMakingOrderId || dto.clientId
+        : undefined;
+
     const mergedConfig = {
       ...(definition.defaultConfig || {}),
       ...(dto.config || {}),
       userId: dto.userId,
-      clientId: dto.clientId,
+      clientId: marketMakingOrderId || dto.clientId,
+      ...(marketMakingOrderId ? { marketMakingOrderId } : {}),
     } as Record<string, any>;
 
     this.validateConfigAgainstSchema(mergedConfig, definition.configSchema || {});
@@ -662,11 +721,11 @@ export class AdminStrategyService {
     return {
       definition,
       mergedConfig,
-      strategyType: this.toStrategyType(definition.executorType),
+      strategyType,
     };
   }
 
-  private mapStrategyTypeToExecutor(strategyType: string): string {
+  private mapStrategyTypeToController(strategyType: string): string {
     if (strategyType === 'marketMaking') {
       return 'pureMarketMaking';
     }
@@ -675,20 +734,20 @@ export class AdminStrategyService {
   }
 
   private toStrategyType(
-    executorType: string,
+    controllerType: string,
   ): 'arbitrage' | 'pureMarketMaking' | 'volume' {
-    if (executorType === 'arbitrage') {
+    if (controllerType === 'arbitrage') {
       return 'arbitrage';
     }
-    if (executorType === 'pureMarketMaking') {
+    if (controllerType === 'pureMarketMaking') {
       return 'pureMarketMaking';
     }
-    if (executorType === 'volume') {
+    if (controllerType === 'volume') {
       return 'volume';
     }
 
     throw new BadRequestException(
-      `Unsupported executorType ${executorType}. Allowed: arbitrage, pureMarketMaking, volume`,
+      `Unsupported controllerType ${controllerType}. Allowed: arbitrage, pureMarketMaking, volume`,
     );
   }
 
@@ -716,13 +775,25 @@ export class AdminStrategyService {
     const snapshot = this.strategyDefinitionVersionRepository.create({
       definitionId: definition.id,
       version,
-      executorType: definition.executorType,
+      controllerType: this.getDefinitionControllerType(definition),
       configSchema: definition.configSchema,
       defaultConfig: definition.defaultConfig,
       description: definition.description,
     });
 
     await this.strategyDefinitionVersionRepository.save(snapshot);
+  }
+
+  private getDefinitionControllerType(
+    definition: Partial<StrategyDefinition>,
+  ): string {
+    const controllerType = definition.controllerType || definition.executorType;
+
+    if (!controllerType) {
+      throw new BadRequestException('Strategy definition controllerType is missing');
+    }
+
+    return controllerType;
   }
 
   private validateConfigAgainstSchema(

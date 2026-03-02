@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { Job } from 'bull';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
@@ -24,6 +25,7 @@ import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { LocalCampaignService } from '../local-campaign/local-campaign.service';
 import { NetworkMappingService } from '../network-mapping/network-mapping.service';
 import { StrategyService } from '../strategy/strategy.service';
+import { StrategyType } from '../strategy/strategy-controller.types';
 import { UserOrdersService } from './user-orders.service';
 
 interface ProcessSnapshotJobData {
@@ -78,11 +80,20 @@ export class MarketMakingOrderProcessor {
     private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
+    @InjectRepository(StrategyDefinition)
+    private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
     private readonly balanceLedgerService: BalanceLedgerService,
   ) {}
 
   private readonly WITHDRAWAL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
   private readonly RETRY_DELAY_MS = 30000; // 30 seconds
+
+  private getStrategyTypeFromControllerType(controllerType: string): StrategyType {
+    if (controllerType === 'arbitrage') return 'arbitrage';
+    if (controllerType === 'pureMarketMaking') return 'pureMarketMaking';
+    if (controllerType === 'volume') return 'volume';
+    throw new Error(`Unsupported controller type: ${controllerType}`);
+  }
 
   private async refundUser(snapshot: SafeSnapshot, reason: string) {
     this.logger.warn(`Refunding snapshot ${snapshot.snapshot_id}: ${reason}`);
@@ -613,6 +624,26 @@ export class MarketMakingOrderProcessor {
         `Payment complete for order ${orderId}. Base: ${paymentState.baseAssetAmount}, Quote: ${paymentState.quoteAssetAmount}`,
       );
 
+      const orderIntent = await this.marketMakingOrderIntentRepository.findOne({
+        where: { orderId },
+      });
+
+      if (!orderIntent?.strategyDefinitionId) {
+        this.logger.error(
+          `Order intent ${orderId} missing strategyDefinitionId; failing order`,
+        );
+        await this.userOrdersService.updateMarketMakingOrderState(
+          orderId,
+          'failed',
+        );
+        await this.refundMarketMakingPendingOrder(
+          orderId,
+          paymentState,
+          'missing strategy definition binding',
+        );
+        return;
+      }
+
       await this.marketMakingOrderIntentRepository.update(
         { orderId },
         {
@@ -635,6 +666,7 @@ export class MarketMakingOrderProcessor {
           userId: paymentState.userId,
           pair: pairConfig.symbol,
           exchangeName: pairConfig.exchange_id,
+          strategyDefinitionId: orderIntent.strategyDefinitionId,
           state: 'payment_complete',
           createdAt: getRFC3339Timestamp(),
           // Defaults - should be updated from frontend/memo
@@ -651,6 +683,14 @@ export class MarketMakingOrderProcessor {
         });
 
         await this.marketMakingRepository.save(mmOrder);
+      } else if (
+        !existingOrder.strategyDefinitionId &&
+        orderIntent.strategyDefinitionId
+      ) {
+        await this.marketMakingRepository.update(
+          { orderId },
+          { strategyDefinitionId: orderIntent.strategyDefinitionId },
+        );
       }
 
       await this.userOrdersService.updateMarketMakingOrderState(
@@ -724,7 +764,7 @@ export class MarketMakingOrderProcessor {
       }
 
       this.logger.log(
-        `Using API key ${apiKey.key_id} for exchange ${exchangeName}`,
+        `Using admin API key ${apiKey.key_id} for exchange ${exchangeName}`,
       );
 
       // Get accurate network identifiers using NetworkMappingService
@@ -974,35 +1014,115 @@ export class MarketMakingOrderProcessor {
       'running',
     );
 
-    const toNumber = (value?: string | number | null, fallback = 0) =>
-      new BigNumber(value ?? fallback).toNumber();
+    try {
+      if (!order.strategyDefinitionId) {
+        throw new Error(`Order ${orderId} has no strategyDefinitionId`);
+      }
 
-    await this.strategyService.executePureMarketMakingStrategy({
-      ...order,
-      pair: order.pair.replaceAll('-ERC20', ''),
-      clientId: orderId,
-      bidSpread: toNumber(order.bidSpread),
-      askSpread: toNumber(order.askSpread),
-      orderAmount: toNumber(order.orderAmount),
-      orderRefreshTime: toNumber(order.orderRefreshTime),
-      numberOfLayers: toNumber(order.numberOfLayers),
-      amountChangePerLayer: toNumber(order.amountChangePerLayer),
-      ceilingPrice: toNumber(order.ceilingPrice),
-      floorPrice: toNumber(order.floorPrice),
-    });
+      const definition = await this.strategyDefinitionRepository.findOne({
+        where: { id: order.strategyDefinitionId, enabled: true },
+      });
+
+      if (!definition) {
+        throw new Error(
+          `Strategy definition ${order.strategyDefinitionId} not found or disabled`,
+        );
+      }
+
+      const controllerType = definition.controllerType || definition.executorType;
+      const strategyType = this.getStrategyTypeFromControllerType(
+        controllerType,
+      );
+      const toNumber = (value?: string | number | null, fallback = 0) =>
+        new BigNumber(value ?? fallback).toNumber();
+      const normalizedPair = order.pair.replaceAll('-ERC20', '');
+
+      const runtimeConfig: Record<string, any> = {
+        ...(definition.defaultConfig || {}),
+        userId: order.userId,
+        clientId: orderId,
+        marketMakingOrderId: orderId,
+        pair: normalizedPair,
+        exchangeName: order.exchangeName,
+        bidSpread: toNumber(order.bidSpread),
+        askSpread: toNumber(order.askSpread),
+        orderAmount: toNumber(order.orderAmount),
+        orderRefreshTime: toNumber(order.orderRefreshTime),
+        numberOfLayers: toNumber(order.numberOfLayers),
+        priceSourceType:
+          order.priceSourceType || (definition.defaultConfig as any)?.priceSourceType,
+        amountChangePerLayer: toNumber(order.amountChangePerLayer),
+        amountChangeType:
+          order.amountChangeType ||
+          (definition.defaultConfig as any)?.amountChangeType ||
+          'fixed',
+        ceilingPrice: toNumber(order.ceilingPrice),
+        floorPrice: toNumber(order.floorPrice),
+      };
+
+      if (strategyType === 'pureMarketMaking') {
+        await this.strategyService.executePureMarketMakingStrategy(
+          runtimeConfig as any,
+        );
+      } else if (strategyType === 'arbitrage') {
+        await this.strategyService.startArbitrageStrategyForUser(
+          runtimeConfig as any,
+          Number(runtimeConfig.checkIntervalSeconds || 10),
+          Number(runtimeConfig.maxOpenOrders || 1),
+        );
+      } else if (strategyType === 'volume') {
+        const incrementPercentage =
+          runtimeConfig.incrementPercentage ??
+          runtimeConfig.baseIncrementPercentage;
+        const intervalTime =
+          runtimeConfig.intervalTime ?? runtimeConfig.baseIntervalTime;
+        const tradeAmount =
+          runtimeConfig.tradeAmount ?? runtimeConfig.baseTradeAmount;
+
+        await this.strategyService.executeVolumeStrategy(
+          String(runtimeConfig.exchangeName || order.exchangeName),
+          String(runtimeConfig.symbol || normalizedPair),
+          Number(incrementPercentage || 0),
+          Number(intervalTime || 10),
+          Number(tradeAmount || 0),
+          Number(runtimeConfig.numTrades || 1),
+          String(runtimeConfig.userId || order.userId),
+          String(runtimeConfig.clientId || orderId),
+          Number(runtimeConfig.pricePushRate || 0),
+          runtimeConfig.postOnlySide,
+        );
+      }
+
+      await this.strategyService.linkDefinitionToStrategyInstance(
+        order.userId,
+        orderId,
+        strategyType,
+        definition.id,
+        definition.currentVersion || '1.0.0',
+        strategyType === 'pureMarketMaking' ? orderId : undefined,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const trace = error instanceof Error ? error.stack : undefined;
+      this.logger.error(
+        `Failed to start MM for order ${orderId}: ${message}`,
+        trace,
+      );
+      await this.userOrdersService.updateMarketMakingOrderState(
+        orderId,
+        'failed',
+      );
+      throw error;
+    }
   }
 
   @Process('stop_mm')
   async handleStopMM(job: Job<{ userId: string; orderId: string }>) {
-    const { userId, orderId } = job.data;
+    const { orderId } = job.data;
 
-    this.logger.log(`Stopping MM for user ${userId}, order ${orderId}`);
+    this.logger.log(`Stopping MM for order ${orderId}`);
 
-    await this.strategyService.stopStrategyForUser(
-      userId,
-      orderId,
-      'pureMarketMaking',
-    );
+    await this.strategyService.stopMarketMakingStrategyForOrder(orderId);
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,
       'stopped',

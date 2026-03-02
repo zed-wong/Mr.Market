@@ -84,6 +84,20 @@ export class UserOrdersController {
     return await this.userOrdersService.findMarketMakingByUserId(userId);
   }
 
+  @Get('/market-making/strategies')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get enabled market making strategies configured by admin',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enabled strategy definitions available for MM order intent.',
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  async getEnabledMarketMakingStrategies() {
+    return await this.userOrdersService.listEnabledMarketMakingStrategies();
+  }
+
   @Get('/market-making/:id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get all market making by user' })
@@ -109,7 +123,7 @@ export class UserOrdersController {
     @Body()
     body: {
       marketMakingPairId: string;
-      userId?: string;
+      strategyDefinitionId: string;
     },
   ) {
     return await this.userOrdersService.createMarketMakingOrderIntent(body);

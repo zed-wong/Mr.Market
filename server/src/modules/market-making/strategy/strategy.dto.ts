@@ -87,6 +87,13 @@ export class PureMarketMakingStrategyDto {
   @ApiProperty({ description: 'User ID' })
   userId: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Market-making order id that owns this runtime strategy instance',
+    example: 'f8a5c2fd-c802-4f6f-b6cf-2ab7af4f3532',
+  })
+  marketMakingOrderId?: string;
+
   @ApiProperty({ description: 'Client ID' })
   clientId: string;
 

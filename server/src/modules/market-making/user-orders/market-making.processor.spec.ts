@@ -7,6 +7,7 @@ describe('MarketMakingOrderProcessor', () => {
       updateMarketMakingOrderState: jest.fn(),
       findMarketMakingByOrderId: jest.fn().mockResolvedValue({
         orderId: 'order-1',
+        strategyDefinitionId: 'strategy-def-1',
         userId: 'user-1',
         pair: 'BTC-USDT-ERC20',
         exchangeName: 'binance',
@@ -25,7 +26,11 @@ describe('MarketMakingOrderProcessor', () => {
     const strategyService = {
       executeMMCycle: jest.fn(),
       executePureMarketMakingStrategy: jest.fn(),
+      startArbitrageStrategyForUser: jest.fn(),
+      executeVolumeStrategy: jest.fn(),
       stopStrategyForUser: jest.fn(),
+      stopMarketMakingStrategyForOrder: jest.fn(),
+      linkDefinitionToStrategyInstance: jest.fn(),
     };
     const paymentStateRepository = {
       findOne: jest.fn().mockResolvedValue(null),
@@ -44,6 +49,14 @@ describe('MarketMakingOrderProcessor', () => {
       findOne: jest.fn().mockResolvedValue({ userId: 'user-1' }),
       create: jest.fn(),
       save: jest.fn(),
+    };
+    const strategyDefinitionRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'strategy-def-1',
+        enabled: true,
+        controllerType: 'pureMarketMaking',
+        defaultConfig: {},
+      }),
     };
 
     const processor = new MarketMakingOrderProcessor(
@@ -80,6 +93,7 @@ describe('MarketMakingOrderProcessor', () => {
       paymentStateRepository as any,
       { update: jest.fn(), findOne: jest.fn(), save: jest.fn() } as any,
       marketMakingRepository as any,
+      strategyDefinitionRepository as any,
       balanceLedgerService as any,
     );
 

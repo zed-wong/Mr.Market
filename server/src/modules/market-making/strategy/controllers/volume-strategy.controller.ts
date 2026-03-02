@@ -2,13 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
 import {
-  StrategyExecutor,
+  StrategyController,
   StrategyRuntimeSession,
-} from '../strategy-executor.types';
+} from '../strategy-controller.types';
 import { StrategyService } from '../strategy.service';
 
 @Injectable()
-export class VolumeStrategyExecutor implements StrategyExecutor {
+export class VolumeStrategyController implements StrategyController {
   readonly strategyType = 'volume' as const;
 
   getCadenceMs(parameters: Record<string, any>): number {

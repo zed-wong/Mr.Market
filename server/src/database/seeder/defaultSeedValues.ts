@@ -357,7 +357,7 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     key: 'pure-market-making',
     name: 'Pure Market Making',
     description: 'Layered maker quotes around a selected price source.',
-    executorType: 'pureMarketMaking',
+    controllerType: 'pureMarketMaking',
     configSchema: {
       type: 'object',
       required: [
@@ -397,7 +397,7 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     key: 'arbitrage',
     name: 'Arbitrage',
     description: 'Cross-exchange arbitrage monitor with profitability threshold.',
-    executorType: 'arbitrage',
+    controllerType: 'arbitrage',
     configSchema: {
       type: 'object',
       required: [
@@ -434,7 +434,7 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     key: 'volume',
     name: 'Volume',
     description: 'Alternating post-only trades to generate controlled volume.',
-    executorType: 'volume',
+    controllerType: 'volume',
     configSchema: {
       type: 'object',
       required: [

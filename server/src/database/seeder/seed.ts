@@ -139,7 +139,9 @@ async function seedStrategyDefinitions(
           description: definition.description
             ? String(definition.description)
             : undefined,
-          executorType: String(definition.executorType),
+          controllerType: String(
+            definition.controllerType || definition.executorType,
+          ),
           configSchema: (definition.configSchema || {}) as Record<
             string,
             unknown
@@ -168,7 +170,7 @@ async function seedStrategyDefinitions(
         versionRepository.create({
           definitionId: saved.id,
           version: saved.currentVersion || '1.0.0',
-          executorType: saved.executorType,
+          controllerType: saved.controllerType,
           configSchema: saved.configSchema,
           defaultConfig: saved.defaultConfig,
           description: saved.description,

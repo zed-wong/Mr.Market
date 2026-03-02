@@ -20,8 +20,16 @@ export class StrategyDefinitionVersion {
   @Column()
   version: string;
 
-  @Column()
-  executorType: string;
+  @Column({ name: 'executorType' })
+  controllerType: string;
+
+  get executorType(): string {
+    return this.controllerType;
+  }
+
+  set executorType(value: string) {
+    this.controllerType = value;
+  }
 
   @Column('simple-json')
   configSchema: Record<string, unknown>;

@@ -37,6 +37,9 @@ export class StrategyInstance {
   @Column({ nullable: true, default: '1.0.0' })
   definitionVersion?: string;
 
+  @Column({ nullable: true })
+  marketMakingOrderId?: string;
+
   @Column()
   startPrice: number;
 

@@ -171,7 +171,7 @@ describe('StrategyService', () => {
     await service.executeMMCycle(strategyParamsDto);
 
     const intents = service.getLatestIntentsForStrategy(
-      '1-client1-pureMarketMaking',
+      'client1-pureMarketMaking',
     );
 
     expect(intents.length).toBe(2);
@@ -226,10 +226,10 @@ describe('StrategyService', () => {
     await service.stopStrategyForUser('1', 'client1', 'pureMarketMaking');
 
     const intents = service.getLatestIntentsForStrategy(
-      '1-client1-pureMarketMaking',
+      'client1-pureMarketMaking',
     );
 
-    expect(intents.some((intent) => intent.type === 'STOP_EXECUTOR')).toBe(
+    expect(intents.some((intent) => intent.type === 'STOP_CONTROLLER')).toBe(
       true,
     );
   });
@@ -262,7 +262,7 @@ describe('StrategyService', () => {
       service.executeMMCycle(strategyParamsDto),
     ).resolves.not.toThrow();
     expect(
-      service.getLatestIntentsForStrategy('1-client1-pureMarketMaking'),
+      service.getLatestIntentsForStrategy('client1-pureMarketMaking'),
     ).toHaveLength(2);
   });
 

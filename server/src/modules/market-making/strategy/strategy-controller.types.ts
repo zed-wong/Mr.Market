@@ -9,12 +9,13 @@ export type StrategyRuntimeSession = {
   strategyType: StrategyType;
   userId: string;
   clientId: string;
+  marketMakingOrderId?: string;
   cadenceMs: number;
   nextRunAtMs: number;
   params: Record<string, any>;
 };
 
-export interface StrategyExecutor {
+export interface StrategyController {
   readonly strategyType: StrategyType;
   getCadenceMs(parameters: Record<string, any>, service: StrategyService): number;
   runSession(

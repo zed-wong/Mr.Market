@@ -22,20 +22,20 @@ import { PerformanceModule } from '../performance/performance.module';
 import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
 import { AlpacaStratService } from './alpacastrat.service';
-import { ArbitrageStrategyExecutor } from './executors/arbitrage-strategy.executor';
-import { PureMarketMakingStrategyExecutor } from './executors/pure-market-making-strategy.executor';
-import { VolumeStrategyExecutor } from './executors/volume-strategy.executor';
+import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
+import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
+import { VolumeStrategyController } from './controllers/volume-strategy.controller';
 import { QuoteExecutorManagerService } from './quote-executor-manager.service';
 import { StrategyController } from './strategy.controller';
-import { StrategyExecutorRegistry } from './strategy-executor.registry';
+import { StrategyControllerRegistry } from './strategy-controller.registry';
 import { StrategyService } from './strategy.service';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 import { StrategyIntentWorkerService } from './strategy-intent-worker.service';
-import { StrategyExecutor } from './strategy-executor.types';
+import { StrategyController as StrategyRuntimeController } from './strategy-controller.types';
 import { TimeIndicatorStrategyService } from './time-indicator.service';
 
-const STRATEGY_EXECUTORS = 'STRATEGY_EXECUTORS';
+const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
 
 @Module({
   imports: [
@@ -69,27 +69,27 @@ const STRATEGY_EXECUTORS = 'STRATEGY_EXECUTORS';
     StrategyIntentStoreService,
     QuoteExecutorManagerService,
     TimeIndicatorStrategyService,
-    ArbitrageStrategyExecutor,
-    PureMarketMakingStrategyExecutor,
-    VolumeStrategyExecutor,
+    ArbitrageStrategyController,
+    PureMarketMakingStrategyController,
+    VolumeStrategyController,
     {
-      provide: STRATEGY_EXECUTORS,
+      provide: STRATEGY_CONTROLLERS,
       useFactory: (
-        arbitrage: ArbitrageStrategyExecutor,
-        pureMarketMaking: PureMarketMakingStrategyExecutor,
-        volume: VolumeStrategyExecutor,
-      ): StrategyExecutor[] => [arbitrage, pureMarketMaking, volume],
+        arbitrage: ArbitrageStrategyController,
+        pureMarketMaking: PureMarketMakingStrategyController,
+        volume: VolumeStrategyController,
+      ): StrategyRuntimeController[] => [arbitrage, pureMarketMaking, volume],
       inject: [
-        ArbitrageStrategyExecutor,
-        PureMarketMakingStrategyExecutor,
-        VolumeStrategyExecutor,
+        ArbitrageStrategyController,
+        PureMarketMakingStrategyController,
+        VolumeStrategyController,
       ],
     },
     {
-      provide: StrategyExecutorRegistry,
-      useFactory: (executors: StrategyExecutor[]) =>
-        new StrategyExecutorRegistry(executors),
-      inject: [STRATEGY_EXECUTORS],
+      provide: StrategyControllerRegistry,
+      useFactory: (controllers: StrategyRuntimeController[]) =>
+        new StrategyControllerRegistry(controllers),
+      inject: [STRATEGY_CONTROLLERS],
     },
   ],
   exports: [StrategyService],

@@ -160,10 +160,17 @@ export class StrategyDefinitionDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Executor type that maps to local executor implementation',
+    description:
+      'Controller type that maps to local strategy intent-generation implementation',
     example: 'pureMarketMaking',
   })
-  executorType: string;
+  controllerType: string;
+
+  @ApiPropertyOptional({
+    description: 'Deprecated alias for controllerType',
+    example: 'pureMarketMaking',
+  })
+  executorType?: string;
 
   @ApiProperty({
     description: 'JSON schema for validating instance configs',
@@ -207,7 +214,10 @@ export class UpdateStrategyDefinitionDto {
   @ApiPropertyOptional({ description: 'Optional description' })
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Executor type' })
+  @ApiPropertyOptional({ description: 'Controller type' })
+  controllerType?: string;
+
+  @ApiPropertyOptional({ description: 'Deprecated alias for controllerType' })
   executorType?: string;
 
   @ApiPropertyOptional({ description: 'JSON schema' })
@@ -227,7 +237,10 @@ export class PublishStrategyDefinitionVersionDto {
   @ApiPropertyOptional({ description: 'Optional description' })
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Executor type' })
+  @ApiPropertyOptional({ description: 'Controller type' })
+  controllerType?: string;
+
+  @ApiPropertyOptional({ description: 'Deprecated alias for controllerType' })
   executorType?: string;
 
   @ApiPropertyOptional({ description: 'JSON schema' })
@@ -262,6 +275,12 @@ export class StartStrategyInstanceDto {
   clientId: string;
 
   @ApiPropertyOptional({
+    description:
+      'Order id binding for pure market making runtime, when strategy should be tied to an MM order',
+  })
+  marketMakingOrderId?: string;
+
+  @ApiPropertyOptional({
     description: 'Config overrides merged on top of definition defaultConfig',
     example: {
       pair: 'ETH/USDT',
@@ -285,4 +304,10 @@ export class StopStrategyInstanceDto {
     description: 'Client ID associated with the strategy instance',
   })
   clientId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Order id binding for pure market making runtime, when strategy is tied to an MM order',
+  })
+  marketMakingOrderId?: string;
 }
