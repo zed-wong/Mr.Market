@@ -55,5 +55,6 @@ export function clampJitter(base: number, jitterPct: number) {
       `clampJitter produced non-finite value for base=${base}, jitterPct=${jitterPct}`,
     );
   }
+
   return Math.max(0, computedPrice);
 }

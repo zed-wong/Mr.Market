@@ -7,7 +7,7 @@ export class CreateStrategyExecutionHistoryTable1771400000000
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE "strategy_execution_history" ("id" varchar PRIMARY KEY NOT NULL, "userId" varchar NOT NULL, "clientId" varchar, "exchange" varchar NOT NULL, "pair" varchar NOT NULL, "side" varchar CHECK( "side" IN ('buy','sell') ), "amount" text, "price" text, "strategyType" varchar NOT NULL, "strategyInstanceId" varchar, "orderId" varchar, "status" varchar, "metadata" text, "executedAt" datetime NOT NULL DEFAULT (datetime('now')))` ,
+      `CREATE TABLE "strategy_execution_history" ("id" varchar PRIMARY KEY NOT NULL, "userId" varchar NOT NULL, "clientId" varchar, "exchange" varchar NOT NULL, "pair" varchar NOT NULL, "side" varchar CHECK( "side" IN ('buy','sell') ), "amount" text, "price" text, "strategyType" varchar NOT NULL, "strategyInstanceId" varchar, "orderId" varchar, "status" varchar, "metadata" text, "executedAt" datetime NOT NULL DEFAULT (datetime('now')))`,
     );
     await queryRunner.query(
       `CREATE INDEX "IDX_strategy_execution_history_user" ON "strategy_execution_history" ("userId")`,

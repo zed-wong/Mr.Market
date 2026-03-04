@@ -157,7 +157,9 @@ export class DexVolumeStrategyService {
 
     if (recipient === ethers.constants.AddressZero) {
       throw new Error(
-        `Invalid recipient address: ${recipient}. owner=${owner} req.recipient=${req.recipient ?? 'undefined'}`,
+        `Invalid recipient address: ${recipient}. owner=${owner} req.recipient=${
+          req.recipient ?? 'undefined'
+        }`,
       );
     }
 

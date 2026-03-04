@@ -28,12 +28,12 @@ import { VolumeStrategyController } from './controllers/volume-strategy.controll
 import { DexModule } from './dex.module';
 import { QuoteExecutorManagerService } from './quote-executor-manager.service';
 import { StrategyController } from './strategy.controller';
-import { StrategyControllerRegistry } from './strategy-controller.registry';
 import { StrategyService } from './strategy.service';
+import { StrategyControllerRegistry } from './strategy-controller.registry';
+import { StrategyController as StrategyRuntimeController } from './strategy-controller.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 import { StrategyIntentWorkerService } from './strategy-intent-worker.service';
-import { StrategyController as StrategyRuntimeController } from './strategy-controller.types';
 import { TimeIndicatorStrategyService } from './time-indicator.service';
 
 const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';

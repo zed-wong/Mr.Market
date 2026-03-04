@@ -88,7 +88,9 @@ export class MarketMakingOrderProcessor {
   private readonly WITHDRAWAL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
   private readonly RETRY_DELAY_MS = 30000; // 30 seconds
 
-  private getStrategyTypeFromControllerType(controllerType: string): StrategyType {
+  private getStrategyTypeFromControllerType(
+    controllerType: string,
+  ): StrategyType {
     if (controllerType === 'arbitrage') return 'arbitrage';
     if (controllerType === 'pureMarketMaking') return 'pureMarketMaking';
     if (controllerType === 'volume') return 'volume';
@@ -641,6 +643,7 @@ export class MarketMakingOrderProcessor {
           paymentState,
           'missing strategy definition binding',
         );
+
         return;
       }
 
@@ -1029,10 +1032,10 @@ export class MarketMakingOrderProcessor {
         );
       }
 
-      const controllerType = definition.controllerType || definition.executorType;
-      const strategyType = this.getStrategyTypeFromControllerType(
-        controllerType,
-      );
+      const controllerType =
+        definition.controllerType || definition.executorType;
+      const strategyType =
+        this.getStrategyTypeFromControllerType(controllerType);
       const toNumber = (value?: string | number | null, fallback = 0) =>
         new BigNumber(value ?? fallback).toNumber();
       const normalizedPair = order.pair.replaceAll('-ERC20', '');
@@ -1050,7 +1053,8 @@ export class MarketMakingOrderProcessor {
         orderRefreshTime: toNumber(order.orderRefreshTime),
         numberOfLayers: toNumber(order.numberOfLayers),
         priceSourceType:
-          order.priceSourceType || (definition.defaultConfig as any)?.priceSourceType,
+          order.priceSourceType ||
+          (definition.defaultConfig as any)?.priceSourceType,
         amountChangePerLayer: toNumber(order.amountChangePerLayer),
         amountChangeType:
           order.amountChangeType ||
@@ -1104,6 +1108,7 @@ export class MarketMakingOrderProcessor {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const trace = error instanceof Error ? error.stack : undefined;
+
       this.logger.error(
         `Failed to start MM for order ${orderId}: ${message}`,
         trace,

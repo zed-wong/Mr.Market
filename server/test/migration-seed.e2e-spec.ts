@@ -10,9 +10,9 @@ import {
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
 } from '../src/common/entities/data/grow-data.entity';
+import { SpotdataTradingPair } from '../src/common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../src/common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from '../src/common/entities/market-making/strategy-definition-version.entity';
-import { SpotdataTradingPair } from '../src/common/entities/data/spot-data.entity';
 
 describe('Database migration and seed scripts (e2e)', () => {
   jest.setTimeout(240000);

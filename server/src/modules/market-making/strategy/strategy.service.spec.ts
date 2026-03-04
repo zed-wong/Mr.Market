@@ -320,6 +320,7 @@ describe('StrategyService', () => {
       .mockImplementation(async (session: { strategyKey: string }) => {
         if (session.strategyKey === 'a-strategy') {
           const activeB = (service as any).sessions.get('b-strategy');
+
           (service as any).sessions.set('b-strategy', {
             ...activeB,
             runId: 'run-b-new',

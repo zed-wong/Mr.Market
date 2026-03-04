@@ -18,7 +18,10 @@ export type StrategyRuntimeSession = {
 
 export interface StrategyController {
   readonly strategyType: StrategyType;
-  getCadenceMs(parameters: Record<string, any>, service: StrategyService): number;
+  getCadenceMs(
+    parameters: Record<string, any>,
+    service: StrategyService,
+  ): number;
   runSession(
     session: StrategyRuntimeSession,
     ts: string,

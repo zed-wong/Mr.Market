@@ -4,8 +4,8 @@ import {
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
 } from 'src/common/entities/data/grow-data.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 
 export const defaultSpotdataTradingPairs: SpotdataTradingPair[] = [
   {
@@ -396,7 +396,8 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
   {
     key: 'arbitrage',
     name: 'Arbitrage',
-    description: 'Cross-exchange arbitrage monitor with profitability threshold.',
+    description:
+      'Cross-exchange arbitrage monitor with profitability threshold.',
     controllerType: 'arbitrage',
     configSchema: {
       type: 'object',

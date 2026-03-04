@@ -7,9 +7,13 @@ import {
 } from 'typeorm';
 
 @Entity('strategy_definition_versions')
-@Index('IDX_strategy_definition_versions_definition_id_version', ['definitionId', 'version'], {
-  unique: true,
-})
+@Index(
+  'IDX_strategy_definition_versions_definition_id_version',
+  ['definitionId', 'version'],
+  {
+    unique: true,
+  },
+)
 export class StrategyDefinitionVersion {
   @PrimaryGeneratedColumn('uuid')
   id: string;

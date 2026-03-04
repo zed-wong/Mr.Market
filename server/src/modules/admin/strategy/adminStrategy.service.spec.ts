@@ -14,10 +14,10 @@ import { StrategyService } from '../../market-making/strategy/strategy.service';
 import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,
-  StopStrategyInstanceDto,
-  StartStrategyInstanceDto,
   StartStrategyDto,
+  StartStrategyInstanceDto,
   StopStrategyDto,
+  StopStrategyInstanceDto,
 } from './admin-strategy.dto';
 import { AdminStrategyService } from './adminStrategy.service';
 
@@ -475,14 +475,18 @@ describe('AdminStrategyService', () => {
 
       const result = await service.startStrategyInstance(dto);
 
-      expect(strategyService.executePureMarketMakingStrategy).toHaveBeenCalledWith(
+      expect(
+        strategyService.executePureMarketMakingStrategy,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 'user123',
           clientId: 'client123',
           pair: 'ETH/USDT',
         }),
       );
-      expect(strategyService.linkDefinitionToStrategyInstance).toHaveBeenCalledWith(
+      expect(
+        strategyService.linkDefinitionToStrategyInstance,
+      ).toHaveBeenCalledWith(
         'user123',
         'client123',
         'pureMarketMaking',

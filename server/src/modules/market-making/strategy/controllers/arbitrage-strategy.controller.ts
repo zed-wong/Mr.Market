@@ -2,18 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
 import { ArbitrageStrategyDto } from '../strategy.dto';
+import { StrategyService } from '../strategy.service';
 import {
   StrategyController,
   StrategyRuntimeSession,
 } from '../strategy-controller.types';
-import { StrategyService } from '../strategy.service';
 
 @Injectable()
 export class ArbitrageStrategyController implements StrategyController {
   readonly strategyType = 'arbitrage' as const;
 
   getCadenceMs(parameters: Record<string, any>): number {
-    return Math.max(1000, Number(parameters?.checkIntervalSeconds || 10) * 1000);
+    return Math.max(
+      1000,
+      Number(parameters?.checkIntervalSeconds || 10) * 1000,
+    );
   }
 
   async runSession(

@@ -14,16 +14,16 @@ import {
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
 } from '../../common/entities/data/grow-data.entity';
+import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../../common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from '../../common/entities/market-making/strategy-definition-version.entity';
-import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import {
   defaultCustomConfig,
   defaultExchanges,
   defaultMarketMakingPairs,
-  defaultStrategyDefinitions,
   defaultSimplyGrowTokens,
   defaultSpotdataTradingPairs,
+  defaultStrategyDefinitions,
 } from './defaultSeedValues';
 
 async function connectToDatabase() {

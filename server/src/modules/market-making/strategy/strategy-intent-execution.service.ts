@@ -204,7 +204,10 @@ export class StrategyIntentExecutionService {
         });
       }
 
-      if (intent.type === 'STOP_CONTROLLER' || intent.type === 'STOP_EXECUTOR') {
+      if (
+        intent.type === 'STOP_CONTROLLER' ||
+        intent.type === 'STOP_EXECUTOR'
+      ) {
         this.logger.log(`Received ${intent.type} for ${intent.strategyKey}`);
       }
 

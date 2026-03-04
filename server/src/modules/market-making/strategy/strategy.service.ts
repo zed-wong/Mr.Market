@@ -31,14 +31,14 @@ import {
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
 } from './strategy.dto';
-import { StrategyOrderIntent } from './strategy-intent.types';
-import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
-import { StrategyIntentStoreService } from './strategy-intent-store.service';
 import { StrategyControllerRegistry } from './strategy-controller.registry';
 import {
   StrategyRuntimeSession,
   StrategyType,
 } from './strategy-controller.types';
+import { StrategyOrderIntent } from './strategy-intent.types';
+import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
+import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
 type BaseVolumeStrategyParams = {
   exchangeName: string;
@@ -332,10 +332,7 @@ export class StrategyService
       clientId: marketMakingOrderId,
     };
 
-    const cadenceMs = Math.max(
-      1000,
-      Number(normalizedParams.orderRefreshTime),
-    );
+    const cadenceMs = Math.max(1000, Number(normalizedParams.orderRefreshTime));
 
     await this.upsertStrategyInstance(
       strategyKey,
@@ -747,9 +744,8 @@ export class StrategyService
     parameters: Record<string, any>,
     strategyType: string,
   ): number {
-    const controller = this.strategyControllerRegistry?.getController(
-      strategyType,
-    );
+    const controller =
+      this.strategyControllerRegistry?.getController(strategyType);
 
     if (controller) {
       return controller.getCadenceMs(parameters, this);
@@ -813,13 +809,22 @@ export class StrategyService
     params: PureMarketMakingStrategyDto,
     ts: string,
   ): Promise<void> {
-    const intents = await this.buildPureMarketMakingIntents(strategyKey, params, ts);
+    const intents = await this.buildPureMarketMakingIntents(
+      strategyKey,
+      params,
+      ts,
+    );
+
     await this.publishIntents(strategyKey, intents);
   }
 
   async runArbitrageSession(params: ArbitrageStrategyDto): Promise<void> {
-    const exchangeA = this.exchangeInitService.getExchange(params.exchangeAName);
-    const exchangeB = this.exchangeInitService.getExchange(params.exchangeBName);
+    const exchangeA = this.exchangeInitService.getExchange(
+      params.exchangeAName,
+    );
+    const exchangeB = this.exchangeInitService.getExchange(
+      params.exchangeBName,
+    );
 
     await this.evaluateArbitrageOpportunityVWAP(exchangeA, exchangeB, params);
   }

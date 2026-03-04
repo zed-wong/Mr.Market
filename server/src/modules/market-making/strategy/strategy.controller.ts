@@ -22,8 +22,8 @@ import {
 } from '@nestjs/swagger';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
+import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import {
   ArbitrageStrategyDto,
   ExecuteVolumeStrategyDto,

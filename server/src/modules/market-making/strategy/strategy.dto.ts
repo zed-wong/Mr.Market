@@ -2,8 +2,8 @@
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsEthereumAddress,
   IsEnum,
+  IsEthereumAddress,
   IsIn,
   IsInt,
   IsNumber,

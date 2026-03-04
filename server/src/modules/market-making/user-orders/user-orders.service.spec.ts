@@ -76,10 +76,9 @@ describe('UserOrdersService', () => {
     simplyGrowRepository = testingModule.get<Repository<SimplyGrowOrder>>(
       getRepositoryToken(SimplyGrowOrder),
     );
-    strategyDefinitionRepository =
-      testingModule.get<Repository<StrategyDefinition>>(
-        getRepositoryToken(StrategyDefinition),
-      );
+    strategyDefinitionRepository = testingModule.get<
+      Repository<StrategyDefinition>
+    >(getRepositoryToken(StrategyDefinition));
     jest.clearAllMocks();
   });
 
@@ -165,20 +164,18 @@ describe('UserOrdersService', () => {
 
   describe('listEnabledMarketMakingStrategies', () => {
     it('returns enabled strategy definitions for user selection', async () => {
-      jest
-        .spyOn(strategyDefinitionRepository, 'find')
-        .mockResolvedValueOnce([
-          {
-            id: 'strategy-1',
-            key: 'mm-basic',
-            name: 'Basic MM',
-            description: 'basic strategy',
-            controllerType: 'pureMarketMaking',
-            defaultConfig: { bidSpread: 0.1 },
-            configSchema: { type: 'object' },
-            currentVersion: '1.0.0',
-          } as unknown as StrategyDefinition,
-        ]);
+      jest.spyOn(strategyDefinitionRepository, 'find').mockResolvedValueOnce([
+        {
+          id: 'strategy-1',
+          key: 'mm-basic',
+          name: 'Basic MM',
+          description: 'basic strategy',
+          controllerType: 'pureMarketMaking',
+          defaultConfig: { bidSpread: 0.1 },
+          configSchema: { type: 'object' },
+          currentVersion: '1.0.0',
+        } as unknown as StrategyDefinition,
+      ]);
 
       const result = await service.listEnabledMarketMakingStrategies();
 
@@ -200,5 +197,4 @@ describe('UserOrdersService', () => {
       ]);
     });
   });
-
 });

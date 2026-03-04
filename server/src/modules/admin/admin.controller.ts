@@ -31,13 +31,13 @@ import { AdminGrowService } from './growdata/adminGrow.service';
 import {
   GetDepositAddressDto,
   GetSupportedNetworksDto,
-  StopStrategyInstanceDto,
-  StartStrategyInstanceDto,
-  StrategyDefinitionDto,
-  PublishStrategyDefinitionVersionDto,
   GetTokenSymbolDto,
+  PublishStrategyDefinitionVersionDto,
   StartStrategyDto,
+  StartStrategyInstanceDto,
   StopStrategyDto,
+  StopStrategyInstanceDto,
+  StrategyDefinitionDto,
   UpdateStrategyDefinitionDto,
 } from './strategy/admin-strategy.dto';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
@@ -163,7 +163,9 @@ export class AdminController {
   }
 
   @Post('strategy/instances/validate')
-  @ApiOperation({ summary: 'Validate strategy instance config from definition' })
+  @ApiOperation({
+    summary: 'Validate strategy instance config from definition',
+  })
   @ApiBody({ type: StartStrategyInstanceDto })
   async validateStrategyInstance(@Body() dto: StartStrategyInstanceDto) {
     return this.adminStrategyService.validateStrategyInstanceConfig(dto);
@@ -179,11 +181,15 @@ export class AdminController {
   @Get('strategy/instances')
   @ApiOperation({ summary: 'List strategy instances with definition metadata' })
   async getStrategyInstances(@Query('runningOnly') runningOnly?: string) {
-    return this.adminStrategyService.getStrategyInstances(runningOnly === 'true');
+    return this.adminStrategyService.getStrategyInstances(
+      runningOnly === 'true',
+    );
   }
 
   @Post('strategy/instances/backfill-definition-links')
-  @ApiOperation({ summary: 'Backfill legacy strategy instance definition links' })
+  @ApiOperation({
+    summary: 'Backfill legacy strategy instance definition links',
+  })
   async backfillStrategyInstanceDefinitions() {
     return this.adminStrategyService.backfillLegacyStrategyInstanceDefinitions();
   }

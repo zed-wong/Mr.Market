@@ -253,7 +253,8 @@ export class PublishStrategyDefinitionVersionDto {
   visibility?: string;
 
   @ApiPropertyOptional({
-    description: 'Explicit semantic version. If absent, patch version is incremented.',
+    description:
+      'Explicit semantic version. If absent, patch version is incremented.',
     example: '1.0.1',
   })
   version?: string;

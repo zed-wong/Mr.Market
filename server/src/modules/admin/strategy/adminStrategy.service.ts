@@ -15,20 +15,20 @@ import { In, Repository } from 'typeorm';
 
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { PerformanceService } from '../../market-making/performance/performance.service';
-import { StrategyService } from '../../market-making/strategy/strategy.service';
 import {
   ArbitrageStrategyDto,
   PureMarketMakingStrategyDto,
 } from '../../market-making/strategy/strategy.dto';
+import { StrategyService } from '../../market-making/strategy/strategy.service';
 import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,
-  StopStrategyInstanceDto,
-  StartStrategyInstanceDto,
-  StartStrategyDto,
-  StrategyDefinitionDto,
-  StopStrategyDto,
   PublishStrategyDefinitionVersionDto,
+  StartStrategyDto,
+  StartStrategyInstanceDto,
+  StopStrategyDto,
+  StopStrategyInstanceDto,
+  StrategyDefinitionDto,
   UpdateStrategyDefinitionDto,
 } from './admin-strategy.dto';
 
@@ -364,6 +364,7 @@ export class AdminStrategyService {
     });
 
     const saved = await this.strategyDefinitionRepository.save(definition);
+
     await this.createDefinitionVersionSnapshot(saved, saved.currentVersion);
 
     return saved;
@@ -392,6 +393,7 @@ export class AdminStrategyService {
     dto: UpdateStrategyDefinitionDto,
   ): Promise<StrategyDefinition> {
     const definition = await this.getStrategyDefinition(id);
+
     definition.name = dto.name ?? definition.name;
     definition.description = dto.description ?? definition.description;
     definition.configSchema = dto.configSchema ?? definition.configSchema;
@@ -412,14 +414,13 @@ export class AdminStrategyService {
       ? this.validateVersion(dto.version)
       : this.incrementPatchVersion(definition.currentVersion || '1.0.0');
 
-    const existingVersion = await this.strategyDefinitionVersionRepository.findOne(
-      {
+    const existingVersion =
+      await this.strategyDefinitionVersionRepository.findOne({
         where: {
           definitionId: definition.id,
           version: nextVersion,
         },
-      },
-    );
+      });
 
     if (existingVersion) {
       throw new BadRequestException(
@@ -448,6 +449,7 @@ export class AdminStrategyService {
 
     definition.currentVersion = nextVersion;
     const saved = await this.strategyDefinitionRepository.save(definition);
+
     await this.createDefinitionVersionSnapshot(saved, nextVersion);
 
     return saved;
@@ -469,6 +471,7 @@ export class AdminStrategyService {
     enabled: boolean,
   ): Promise<StrategyDefinition> {
     const definition = await this.getStrategyDefinition(id);
+
     definition.enabled = enabled;
 
     return this.strategyDefinitionRepository.save(definition);
@@ -495,7 +498,9 @@ export class AdminStrategyService {
     const instances = runningOnly
       ? await this.strategyService.getRunningStrategies()
       : await this.strategyService.getAllStrategies();
-    const definitionIds = [...new Set(instances.map((i) => i.definitionId).filter(Boolean))] as string[];
+    const definitionIds = [
+      ...new Set(instances.map((i) => i.definitionId).filter(Boolean)),
+    ] as string[];
 
     const definitions = definitionIds.length
       ? await this.strategyDefinitionRepository.find({
@@ -531,9 +536,7 @@ export class AdminStrategyService {
     });
   }
 
-  async startStrategyInstance(
-    dto: StartStrategyInstanceDto,
-  ): Promise<{
+  async startStrategyInstance(dto: StartStrategyInstanceDto): Promise<{
     message: string;
     definitionId: string;
     controllerType: string;
@@ -551,7 +554,7 @@ export class AdminStrategyService {
       definition.id,
       definition.currentVersion || '1.0.0',
       strategyType === 'pureMarketMaking'
-        ? (dto.marketMakingOrderId || dto.clientId)
+        ? dto.marketMakingOrderId || dto.clientId
         : undefined,
     );
 
@@ -563,9 +566,7 @@ export class AdminStrategyService {
     };
   }
 
-  async validateStrategyInstanceConfig(
-    dto: StartStrategyInstanceDto,
-  ): Promise<{
+  async validateStrategyInstanceConfig(dto: StartStrategyInstanceDto): Promise<{
     valid: true;
     definitionId: string;
     definitionKey: string;
@@ -573,7 +574,8 @@ export class AdminStrategyService {
     executorType: string;
     mergedConfig: Record<string, any>;
   }> {
-    const { definition, mergedConfig } = await this.resolveDefinitionStartConfig(dto);
+    const { definition, mergedConfig } =
+      await this.resolveDefinitionStartConfig(dto);
     const controllerType = this.getDefinitionControllerType(definition);
 
     return {
@@ -586,9 +588,7 @@ export class AdminStrategyService {
     };
   }
 
-  async stopStrategyInstance(
-    dto: StopStrategyInstanceDto,
-  ): Promise<{
+  async stopStrategyInstance(dto: StopStrategyInstanceDto): Promise<{
     message: string;
     definitionId: string;
     controllerType: string;
@@ -724,7 +724,10 @@ export class AdminStrategyService {
       ...(marketMakingOrderId ? { marketMakingOrderId } : {}),
     } as Record<string, any>;
 
-    this.validateConfigAgainstSchema(mergedConfig, definition.configSchema || {});
+    this.validateConfigAgainstSchema(
+      mergedConfig,
+      definition.configSchema || {},
+    );
 
     return {
       definition,
@@ -798,7 +801,9 @@ export class AdminStrategyService {
     const controllerType = definition.controllerType || definition.executorType;
 
     if (!controllerType) {
-      throw new BadRequestException('Strategy definition controllerType is missing');
+      throw new BadRequestException(
+        'Strategy definition controllerType is missing',
+      );
     }
 
     return controllerType;
@@ -824,11 +829,15 @@ export class AdminStrategyService {
 
     for (const field of required) {
       if (config[field] === undefined || config[field] === null) {
-        throw new BadRequestException(`Missing required config field: ${field}`);
+        throw new BadRequestException(
+          `Missing required config field: ${field}`,
+        );
       }
     }
 
-    for (const [field, rule] of Object.entries<Record<string, any>>(properties)) {
+    for (const [field, rule] of Object.entries<Record<string, any>>(
+      properties,
+    )) {
       const fieldPath = path ? `${path}.${field}` : field;
 
       if (config[field] === undefined || config[field] === null) {
@@ -837,16 +846,24 @@ export class AdminStrategyService {
       const value = config[field];
 
       if (rule.type === 'string' && typeof value !== 'string') {
-        throw new BadRequestException(`Config field ${fieldPath} must be string`);
+        throw new BadRequestException(
+          `Config field ${fieldPath} must be string`,
+        );
       }
       if (rule.type === 'number' && typeof value !== 'number') {
-        throw new BadRequestException(`Config field ${fieldPath} must be number`);
+        throw new BadRequestException(
+          `Config field ${fieldPath} must be number`,
+        );
       }
       if (rule.type === 'boolean' && typeof value !== 'boolean') {
-        throw new BadRequestException(`Config field ${fieldPath} must be boolean`);
+        throw new BadRequestException(
+          `Config field ${fieldPath} must be boolean`,
+        );
       }
       if (rule.type === 'array' && !Array.isArray(value)) {
-        throw new BadRequestException(`Config field ${fieldPath} must be array`);
+        throw new BadRequestException(
+          `Config field ${fieldPath} must be array`,
+        );
       }
       if (rule.type === 'object') {
         if (typeof value !== 'object' || Array.isArray(value)) {
@@ -876,6 +893,7 @@ export class AdminStrategyService {
       for (const field of Object.keys(config)) {
         if (!knownFields.has(field)) {
           const fieldPath = path ? `${path}.${field}` : field;
+
           throw new BadRequestException(
             `Config field ${fieldPath} is not allowed`,
           );
