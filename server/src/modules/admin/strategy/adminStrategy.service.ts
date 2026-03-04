@@ -116,6 +116,14 @@ export class AdminStrategyService {
         volumeParams.clientId,
         volumeParams.pricePushRate,
         volumeParams.postOnlySide,
+        volumeParams.executionVenue,
+        volumeParams.dexId,
+        volumeParams.chainId,
+        volumeParams.tokenIn,
+        volumeParams.tokenOut,
+        volumeParams.feeTier,
+        volumeParams.slippageBps,
+        volumeParams.recipient,
       );
     } else {
       throw new BadRequestException('Invalid strategy parameters');

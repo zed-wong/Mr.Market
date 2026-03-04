@@ -1,7 +1,10 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Repository } from 'typeorm';
 
 import { DurabilityService } from '../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
@@ -22,6 +25,9 @@ export class StrategyIntentExecutionService {
   constructor(
     private readonly configService: ConfigService,
     private readonly exchangeConnectorAdapterService: ExchangeConnectorAdapterService,
+    @Optional()
+    @InjectRepository(StrategyExecutionHistory)
+    private readonly strategyExecutionHistoryRepository?: Repository<StrategyExecutionHistory>,
     @Optional()
     private readonly durabilityService?: DurabilityService,
     @Optional()
@@ -135,6 +141,25 @@ export class StrategyIntentExecutionService {
           await this.strategyIntentStoreService?.attachMixinOrderId(
             intent.intentId,
             String(result.id),
+          );
+          await this.strategyExecutionHistoryRepository?.save(
+            this.strategyExecutionHistoryRepository.create({
+              userId: intent.userId,
+              clientId: intent.clientId,
+              exchange: intent.exchange,
+              pair: intent.pair,
+              side: intent.side,
+              amount: intent.qty,
+              price: intent.price,
+              strategyType: this.extractStrategyType(intent.strategyKey),
+              strategyInstanceId: intent.strategyInstanceId,
+              orderId: String(result.id),
+              status: result?.status || 'open',
+              metadata: {
+                intentId: intent.intentId,
+                intentType: intent.type,
+              },
+            }),
           );
           this.exchangeOrderTrackerService?.upsertOrder({
             strategyKey: intent.strategyKey,
@@ -272,5 +297,15 @@ export class StrategyIntentExecutionService {
     }
 
     return defaultValue;
+  }
+
+  private extractStrategyType(strategyKey: string): string {
+    const parts = strategyKey.split('-');
+
+    if (parts.length <= 2) {
+      return strategyKey;
+    }
+
+    return parts.slice(2).join('-');
   }
 }

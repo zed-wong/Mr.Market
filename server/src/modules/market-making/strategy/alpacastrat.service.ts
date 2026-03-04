@@ -2,8 +2,7 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
-import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { createStrategyKey } from 'src/common/helpers/strategyKey';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -29,10 +28,8 @@ export class AlpacaStratService implements OnModuleDestroy {
   constructor(
     private exchangeInitService: ExchangeInitService,
     private strategyService: StrategyService,
-    @InjectRepository(MarketMakingHistory)
-    private orderRepository: Repository<MarketMakingHistory>,
-    @InjectRepository(ArbitrageHistory)
-    private arbitrageHistoryRepository: Repository<ArbitrageHistory>,
+    @InjectRepository(StrategyExecutionHistory)
+    private strategyExecutionHistoryRepository: Repository<StrategyExecutionHistory>,
   ) {}
 
   onModuleDestroy(): void {
@@ -331,20 +328,26 @@ export class AlpacaStratService implements OnModuleDestroy {
       .multipliedBy(amount)
       .minus(new BigNumber(buyPrice).multipliedBy(amount));
 
-    const arbitrageOrder = this.arbitrageHistoryRepository.create({
+    const arbitrageOrder = this.strategyExecutionHistoryRepository.create({
       userId,
       clientId,
+      strategyType: 'arbitrage',
+      exchange: exchangeAName,
       pair,
-      exchangeAName,
-      exchangeBName,
+      side: 'buy',
       amount: amount.toString(),
-      buyPrice: buyPrice.toString(),
-      sellPrice: sellPrice.toString(),
-      profit: profitLoss.toNumber(),
+      price: buyPrice.toString(),
+      status: 'closed',
+      metadata: {
+        exchangeAName,
+        exchangeBName,
+        sellPrice: sellPrice.toString(),
+        profit: profitLoss.toNumber(),
+      },
       executedAt: new Date(),
     });
 
-    await this.arbitrageHistoryRepository.save(arbitrageOrder);
+    await this.strategyExecutionHistoryRepository.save(arbitrageOrder);
   }
 
   // VWAP Calculation for given amount

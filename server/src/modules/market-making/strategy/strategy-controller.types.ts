@@ -5,6 +5,7 @@ import type { StrategyService } from './strategy.service';
 export type StrategyType = 'arbitrage' | 'pureMarketMaking' | 'volume';
 
 export type StrategyRuntimeSession = {
+  runId: string;
   strategyKey: string;
   strategyType: StrategyType;
   userId: string;

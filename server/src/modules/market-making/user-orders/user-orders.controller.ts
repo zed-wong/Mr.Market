@@ -9,7 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 
 import { UserOrdersService } from './user-orders.service';
 
@@ -139,7 +139,7 @@ export class UserOrdersController {
   @ApiResponse({ status: 400, description: 'Bad request.' })
   async getUserOrders(
     @Param('userId') userId: string,
-  ): Promise<MarketMakingHistory[]> {
+  ): Promise<StrategyExecutionHistory[]> {
     return await this.userOrdersService.getUserOrders(userId);
   }
 

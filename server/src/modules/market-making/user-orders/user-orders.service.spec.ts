@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
   MarketMakingOrder,
@@ -56,11 +55,7 @@ describe('UserOrdersService', () => {
           useClass: Repository,
         },
         {
-          provide: getRepositoryToken(MarketMakingHistory),
-          useClass: Repository,
-        },
-        {
-          provide: getRepositoryToken(ArbitrageHistory),
+          provide: getRepositoryToken(StrategyExecutionHistory),
           useClass: Repository,
         },
         {

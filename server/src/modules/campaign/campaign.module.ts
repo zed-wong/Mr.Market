@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Campaign } from 'src/common/entities/campaign/campaign.entity';
 import { HufiScoreSnapshot } from 'src/common/entities/campaign/hufi-score-snapshot.entity';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 
 import { ExchangeInitModule } from '../infrastructure/exchange-init/exchange-init.module';
 import { Web3Module } from '../web3/web3.module';
@@ -17,7 +17,7 @@ import { HufiScoreEstimatorService } from './hufi-score-estimator.service';
     TypeOrmModule.forFeature([
       Campaign,
       HufiScoreSnapshot,
-      MarketMakingHistory,
+      StrategyExecutionHistory,
     ]),
   ],
   providers: [CampaignService, CampaignSyncService, HufiScoreEstimatorService],

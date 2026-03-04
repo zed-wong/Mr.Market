@@ -1,9 +1,23 @@
 // strategy.dto.ts
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import {
+  IsEthereumAddress,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+
+export type VolumeExecutionVenue = 'cex' | 'dex';
+export type DexAdapterId = 'uniswapV3' | 'pancakeV3';
 
 export class JoinStrategyDto {
   @ApiProperty({ description: 'User ID', example: 'user123' })
@@ -207,33 +221,128 @@ export class PureMarketMakingStrategyDto {
   currentBaseRatio?: number;
 }
 export class ExecuteVolumeStrategyDto {
-  @ApiProperty({ description: 'Name of the exchange' })
-  exchangeName: string;
+  @ApiPropertyOptional({
+    description:
+      'Execution venue for volume strategy. Defaults to cex when omitted.',
+    example: 'cex',
+    enum: ['cex', 'dex'],
+  })
+  @IsOptional()
+  @IsIn(['cex', 'dex'])
+  executionVenue?: VolumeExecutionVenue;
 
-  @ApiProperty({ description: 'Symbol to trade' })
-  symbol: string;
+  @ApiPropertyOptional({
+    description: 'Name of the CEX exchange (required for cex venue)',
+  })
+  @ValidateIf(
+    (o: ExecuteVolumeStrategyDto) => (o.executionVenue ?? 'cex') === 'cex',
+  )
+  @IsString()
+  exchangeName?: string;
+
+  @ApiPropertyOptional({
+    description: 'CEX symbol to trade, e.g. BTC/USDT (required for cex venue)',
+  })
+  @ValidateIf(
+    (o: ExecuteVolumeStrategyDto) => (o.executionVenue ?? 'cex') === 'cex',
+  )
+  @IsString()
+  symbol?: string;
+
+  @ApiPropertyOptional({
+    description: 'DEX id (required for dex venue)',
+    example: 'uniswapV3',
+    enum: ['uniswapV3', 'pancakeV3'],
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsIn(['uniswapV3', 'pancakeV3'])
+  dexId?: DexAdapterId;
+
+  @ApiPropertyOptional({
+    description: 'EVM chain id used for DEX execution (required for dex venue)',
+    example: 1,
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsInt()
+  @IsPositive()
+  chainId?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Input token address for DEX execution (required for dex venue)',
+    example: '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsEthereumAddress()
+  tokenIn?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Output token address for DEX execution (required for dex venue)',
+    example: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsEthereumAddress()
+  tokenOut?: string;
+
+  @ApiPropertyOptional({
+    description: 'V3 fee tier in ppm (500, 3000, 10000) for dex venue',
+    example: 3000,
+  })
+  @ValidateIf((o: ExecuteVolumeStrategyDto) => o.executionVenue === 'dex')
+  @IsInt()
+  @IsPositive()
+  feeTier?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Slippage tolerance in bps for dex venue (defaults from incrementPercentage)',
+    example: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  slippageBps?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'DEX swap recipient address (defaults to operator wallet address)',
+    example: '0x1111111111111111111111111111111111111111',
+  })
+  @IsOptional()
+  @IsEthereumAddress()
+  recipient?: string;
 
   @ApiProperty({
     description:
       'Percentage increment for offsetting from midPrice (initial offset)',
   })
+  @IsNumber()
   incrementPercentage: number;
 
   @ApiProperty({
     description: 'Time interval (in seconds) between each trade execution',
   })
+  @IsInt()
+  @IsPositive()
   intervalTime: number;
 
   @ApiProperty({ description: 'Base amount to trade per order' })
+  @IsNumber()
+  @IsPositive()
   tradeAmount: number;
 
   @ApiProperty({ description: 'Number of total trades to execute' })
+  @IsInt()
+  @Min(0)
   numTrades: number;
 
   @ApiProperty({ description: 'User ID' })
+  @IsString()
   userId: string;
 
   @ApiProperty({ description: 'Client ID' })
+  @IsString()
   clientId: string;
 
   @ApiProperty({
@@ -241,11 +350,14 @@ export class ExecuteVolumeStrategyDto {
       'Rate at which to push the price upward after each successful trade, in percent',
     example: 1,
   })
+  @IsNumber()
   pricePushRate: number; // <--- NEW PARAM to push price after each trade
   @ApiPropertyOptional({
     description: 'The first trade is a buy or sell',
     example: 'buy',
   })
+  @IsOptional()
+  @IsEnum(Side)
   postOnlySide?: Side;
 }
 

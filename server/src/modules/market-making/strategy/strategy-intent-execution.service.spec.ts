@@ -70,6 +70,7 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       createConfigService(true),
       exchangeConnectorAdapterService as any,
+      undefined,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
@@ -104,6 +105,7 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       createConfigService(false),
       exchangeConnectorAdapterService as any,
+      undefined,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
@@ -137,6 +139,7 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       configService,
       exchangeConnectorAdapterService as any,
+      undefined,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
@@ -155,6 +158,7 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       createConfigService(true),
       exchangeConnectorAdapterService as any,
+      undefined,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
@@ -182,6 +186,7 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       createConfigService(true),
       exchangeConnectorAdapterService as any,
+      undefined,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
@@ -204,6 +209,7 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       createConfigService(true),
       exchangeConnectorAdapterService as any,
+      undefined,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
@@ -248,6 +254,7 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       configService,
       exchangeConnectorAdapterService as any,
+      undefined,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,

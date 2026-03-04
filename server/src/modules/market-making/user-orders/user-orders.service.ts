@@ -7,10 +7,9 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Queue } from 'bull';
 import { randomUUID } from 'crypto';
-import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
   MarketMakingOrder,
@@ -40,10 +39,8 @@ export class UserOrdersService {
     private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
     @InjectRepository(SimplyGrowOrder)
     private readonly simplyGrowRepository: Repository<SimplyGrowOrder>,
-    @InjectRepository(MarketMakingHistory)
-    private readonly marketMakingHistoryRepository: Repository<MarketMakingHistory>,
-    @InjectRepository(ArbitrageHistory)
-    private readonly arbitrageHistoryRepository: Repository<ArbitrageHistory>,
+    @InjectRepository(StrategyExecutionHistory)
+    private readonly strategyExecutionHistoryRepository: Repository<StrategyExecutionHistory>,
     @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
     private readonly growdataRepository: GrowdataRepository,
   ) {}
@@ -282,16 +279,24 @@ export class UserOrdersService {
   }
 
   // Methods moved from StrategyService
-  async getUserOrders(userId: string): Promise<MarketMakingHistory[]> {
-    return await this.marketMakingHistoryRepository.find({
-      where: { userId },
+  async getUserOrders(userId: string): Promise<StrategyExecutionHistory[]> {
+    return await this.strategyExecutionHistoryRepository.find({
+      where: {
+        userId,
+        strategyType: 'market-making',
+      },
       order: { executedAt: 'DESC' },
     });
   }
 
-  async getUserArbitrageHistorys(userId: string): Promise<ArbitrageHistory[]> {
-    return await this.arbitrageHistoryRepository.find({
-      where: { userId },
+  async getUserArbitrageHistorys(
+    userId: string,
+  ): Promise<StrategyExecutionHistory[]> {
+    return await this.strategyExecutionHistoryRepository.find({
+      where: {
+        userId,
+        strategyType: 'arbitrage',
+      },
       order: { executedAt: 'DESC' },
     });
   }

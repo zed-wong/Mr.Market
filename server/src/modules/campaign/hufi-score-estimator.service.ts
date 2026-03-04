@@ -3,15 +3,15 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { HufiScoreSnapshot } from 'src/common/entities/campaign/hufi-score-snapshot.entity';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { Between, Repository } from 'typeorm';
 
 @Injectable()
 export class HufiScoreEstimatorService {
   constructor(
-    @InjectRepository(MarketMakingHistory)
-    private readonly marketMakingHistoryRepository: Repository<MarketMakingHistory>,
+    @InjectRepository(StrategyExecutionHistory)
+    private readonly strategyExecutionHistoryRepository: Repository<StrategyExecutionHistory>,
     @InjectRepository(HufiScoreSnapshot)
     private readonly hufiScoreSnapshotRepository: Repository<HufiScoreSnapshot>,
   ) {}
@@ -34,8 +34,9 @@ export class HufiScoreEstimatorService {
 
     end.setUTCDate(end.getUTCDate() + 1);
 
-    const fills = await this.marketMakingHistoryRepository.find({
+    const fills = await this.strategyExecutionHistoryRepository.find({
       where: {
+        strategyType: 'market-making',
         status: 'closed',
         executedAt: Between(start, end),
       },

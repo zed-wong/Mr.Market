@@ -29,12 +29,11 @@ import { LedgerEntry } from './common/entities/ledger/ledger-entry.entity';
 import { RewardAllocation } from './common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from './common/entities/ledger/reward-ledger.entity';
 import { ShareLedgerEntry } from './common/entities/ledger/share-ledger-entry.entity';
-import { ArbitrageHistory } from './common/entities/market-making/arbitrage-order.entity';
-import { MarketMakingHistory } from './common/entities/market-making/market-making-order.entity';
 import { MarketMakingOrderIntent } from './common/entities/market-making/market-making-order-intent.entity';
 import { Performance } from './common/entities/market-making/performance.entity';
 import { StrategyDefinition } from './common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from './common/entities/market-making/strategy-definition-version.entity';
+import { StrategyExecutionHistory } from './common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from './common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from './common/entities/market-making/strategy-order-intent.entity';
 import {
@@ -125,8 +124,7 @@ function buildRedisConfig(configService: ConfigService) {
       type: 'sqlite',
       database: process.env.DATABASE_PATH || 'data/mr_market.db',
       entities: [
-        ArbitrageHistory,
-        MarketMakingHistory,
+        StrategyExecutionHistory,
         StrategyInstance,
         StrategyDefinition,
         StrategyDefinitionVersion,
