@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 
 import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([MarketMakingHistory])],
+  imports: [TypeOrmModule.forFeature([StrategyExecutionHistory])],
   controllers: [MetricsController],
   providers: [MetricsService],
 })

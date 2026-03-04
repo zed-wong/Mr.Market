@@ -1,15 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import * as ccxt from 'ccxt';
 import { Side } from 'src/common/constants/side';
-import { IndicatorStrategyHistory } from 'src/common/entities/indicator-strategy-history.entity';
 import { SignalType } from 'src/common/enum/signaltype';
 import { createStrategyKey } from 'src/common/helpers/strategyKey';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
-import { Repository } from 'typeorm';
 
 import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
@@ -27,8 +24,6 @@ export class TimeIndicatorStrategyService {
     private readonly performanceService: PerformanceService,
     private readonly strategyIntentExecutionService: StrategyIntentExecutionService,
     private readonly strategyIntentStoreService: StrategyIntentStoreService,
-    @InjectRepository(IndicatorStrategyHistory)
-    private readonly historyRepo: Repository<IndicatorStrategyHistory>,
   ) {}
 
   async startIndicatorStrategy(dto: TimeIndicatorStrategyDto) {
@@ -328,19 +323,6 @@ export class TimeIndicatorStrategyService {
 
     await this.strategyIntentStoreService.upsertIntent(intent);
     await this.strategyIntentExecutionService.consumeIntents([intent]);
-
-    await this.historyRepo.save(
-      this.historyRepo.create({
-        userId,
-        clientId,
-        exchange: ex.id,
-        symbol,
-        side,
-        amount: amountBase,
-        price: entryPrice,
-        orderId: intent.intentId,
-      }),
-    );
 
     const slPct = safePct(params.stopLossPct);
     const tpPct = safePct(params.takeProfitPct);

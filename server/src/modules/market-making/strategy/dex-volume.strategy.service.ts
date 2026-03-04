@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
 import { BigNumber as EthersBigNumber, ethers } from 'ethers';
+import type { DexId } from 'src/common/constants/defi-addresses';
 import { DexAdapterRegistry } from 'src/defi/adapter-registry';
-import type { DexId } from 'src/defi/addresses';
 import { ensureAllowance, readDecimals } from 'src/defi/utils/erc20';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Web3Service } from 'src/modules/web3/web3.service';

@@ -4,9 +4,8 @@ import { CustomConfigEntity } from 'src/common/entities/admin/custom-config.enti
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
-import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { DexAdapterRegistry } from 'src/defi/adapter-registry';
@@ -35,8 +34,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
     SpotdataModule,
     MixinClientModule,
     TypeOrmModule.forFeature([
-      MarketMakingHistory,
-      ArbitrageHistory,
+      StrategyExecutionHistory,
       StrategyInstance,
       MixinUser,
       Contribution,

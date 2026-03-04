@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import type { DexId } from 'src/common/constants/defi-addresses';
 
 import type { DexAdapter } from './adapters/dex-adapter';
 import { PancakeV3Adapter } from './adapters/pancakeV3.adapter';
 import { UniswapV3Adapter } from './adapters/uniswapV3.adapter';
-import type { DexId } from './addresses';
 
 @Injectable()
 export class DexAdapterRegistry {

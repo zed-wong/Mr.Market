@@ -3,8 +3,6 @@ import { InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
@@ -53,21 +51,6 @@ describe('StrategyService', () => {
   };
   let dexVolumeStrategyService: {
     executeCycle: jest.Mock;
-  };
-
-  const mockOrderRepository = {
-    find: jest.fn(),
-    findOne: jest.fn(),
-    save: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-  };
-
-  const mockArbitrageOrderRepository = {
-    find: jest.fn(),
-    findOne: jest.fn(),
-    save: jest.fn(),
-    create: jest.fn(),
   };
 
   const mockStrategyInstanceRepository = {
@@ -121,14 +104,6 @@ describe('StrategyService', () => {
               return defaultValue;
             }),
           },
-        },
-        {
-          provide: getRepositoryToken(MarketMakingHistory),
-          useValue: mockOrderRepository,
-        },
-        {
-          provide: getRepositoryToken(ArbitrageHistory),
-          useValue: mockArbitrageOrderRepository,
         },
         {
           provide: getRepositoryToken(StrategyInstance),

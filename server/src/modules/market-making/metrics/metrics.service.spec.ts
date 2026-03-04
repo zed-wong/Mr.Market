@@ -1,16 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 
 import { MetricsService } from './metrics.service';
 
-type MarketMakingHistoryRepoMock = {
+type StrategyExecutionHistoryRepoMock = {
   query: jest.Mock;
 };
 
 describe('MetricsService', () => {
   let service: MetricsService;
-  let repository: MarketMakingHistoryRepoMock;
+  let repository: StrategyExecutionHistoryRepoMock;
 
   beforeEach(async () => {
     repository = {
@@ -21,7 +21,7 @@ describe('MetricsService', () => {
       providers: [
         MetricsService,
         {
-          provide: getRepositoryToken(MarketMakingHistory),
+          provide: getRepositoryToken(StrategyExecutionHistory),
           useValue: repository,
         },
       ],

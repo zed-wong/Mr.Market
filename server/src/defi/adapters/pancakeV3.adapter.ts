@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { BigNumber, ethers } from 'ethers';
+import { DEFI_ADDRESSES } from 'src/common/constants/defi-addresses';
 
 import {
   UNISWAP_V3_FACTORY_ABI,
   UNISWAP_V3_QUOTER_V2_ABI,
   UNISWAP_V3_ROUTER_ABI,
 } from '../abis';
-import { DEX_ADDRESSES } from '../addresses';
 import {
   DexAdapter,
   ExactInputSingleParams,
@@ -14,18 +14,18 @@ import {
 } from './dex-adapter';
 
 /**
- * Pancake v3 is a Uniswap v3 fork; ABIs are compatible. Addresses must be set in DEX_ADDRESSES.pancakeV3.
+ * Pancake v3 is a Uniswap v3 fork; ABIs are compatible. Addresses must be set in DEFI_ADDRESSES.pancakeV3.
  */
 @Injectable()
 export class PancakeV3Adapter implements DexAdapter {
   readonly id = 'pancakeV3' as const;
 
   supportsChain(chainId: number): boolean {
-    return !!DEX_ADDRESSES.pancakeV3[chainId];
+    return !!DEFI_ADDRESSES.pancakeV3[chainId];
   }
 
   getAddresses(chainId: number) {
-    const a = DEX_ADDRESSES.pancakeV3[chainId];
+    const a = DEFI_ADDRESSES.pancakeV3[chainId];
 
     if (!a) throw new Error(`PancakeV3 not configured for chain ${chainId}`);
 

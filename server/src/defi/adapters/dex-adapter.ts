@@ -1,6 +1,6 @@
 import { BigNumber, ethers } from 'ethers';
 
-import type { DexId } from '../addresses';
+import type { DexId } from 'src/common/constants/defi-addresses';
 
 export type QuoteSingleParams = {
   tokenIn: string;
