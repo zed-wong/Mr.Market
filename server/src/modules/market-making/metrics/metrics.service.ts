@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
@@ -9,8 +9,8 @@ export class MetricsService {
   private readonly logger = new CustomLogger(MetricsService.name);
 
   constructor(
-    @InjectRepository(MarketMakingHistory)
-    private readonly orderRepository: Repository<MarketMakingHistory>,
+    @InjectRepository(StrategyExecutionHistory)
+    private readonly orderRepository: Repository<StrategyExecutionHistory>,
   ) {}
 
   public async getStrategyMetrics() {
@@ -22,8 +22,8 @@ export class MetricsService {
         DATE("executedAt") AS date,
         COUNT(*) AS orders,
         SUM("amount" * "price") AS volume
-      FROM market_making_history
-      WHERE status = 'closed'
+      FROM strategy_execution_history
+      WHERE "status" = 'closed' AND "strategyType" = 'market-making'
       GROUP BY "exchange", "userId", "clientId", date
       ORDER BY "exchange", "userId", "clientId", date
       `,
@@ -35,7 +35,8 @@ export class MetricsService {
         "clientId",
         DATE("executedAt") AS date,
         SUM("amount" * "price") AS volume
-      FROM market_making_history
+      FROM strategy_execution_history
+      WHERE "strategyType" = 'market-making'
       GROUP BY "exchange", "userId", "clientId", date
       ORDER BY "exchange", "userId", "clientId", date
       `);

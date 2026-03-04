@@ -1,8 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as ccxt from 'ccxt';
-import { ArbitrageHistory } from 'src/common/entities/market-making/arbitrage-order.entity';
-import { MarketMakingHistory } from 'src/common/entities/market-making/market-making-order.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { AlpacaStratService } from 'src/modules/market-making/strategy/alpacastrat.service';
@@ -17,6 +16,9 @@ describe('AlpacaStratService', () => {
   let exchangeInitService: ExchangeInitService;
 
   beforeEach(async () => {
+    jest
+      .spyOn(global, 'setInterval')
+      .mockImplementation(() => 1 as unknown as NodeJS.Timeout);
     moduleRef = await Test.createTestingModule({
       providers: [
         AlpacaStratService,
@@ -34,11 +36,7 @@ describe('AlpacaStratService', () => {
           },
         },
         {
-          provide: getRepositoryToken(MarketMakingHistory),
-          useClass: Repository,
-        },
-        {
-          provide: getRepositoryToken(ArbitrageHistory),
+          provide: getRepositoryToken(StrategyExecutionHistory),
           useClass: Repository,
         },
       ],
@@ -51,6 +49,7 @@ describe('AlpacaStratService', () => {
 
   afterEach(async () => {
     await moduleRef.close();
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
