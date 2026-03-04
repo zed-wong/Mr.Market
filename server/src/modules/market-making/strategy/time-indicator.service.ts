@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as ccxt from 'ccxt';
 import { Side } from 'src/common/constants/side';
-import { SignalType } from 'src/common/enum/signaltype';
+import { SignalType } from 'src/common/constants/signal';
 import { createStrategyKey } from 'src/common/helpers/strategyKey';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
