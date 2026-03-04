@@ -8,14 +8,11 @@ import { Performance } from 'src/common/entities/market-making/performance.entit
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
-import { DexAdapterRegistry } from 'src/defi/adapter-registry';
-import { PancakeV3Adapter } from 'src/defi/adapters/pancakeV3.adapter';
-import { UniswapV3Adapter } from 'src/defi/adapters/uniswapV3.adapter';
 
 import { GrowdataModule } from '../data/grow-data/grow-data.module';
 import { SpotdataModule } from '../data/spot-data/spot-data.module';
 import { PerformanceService } from '../market-making/performance/performance.service';
-import { DexVolumeStrategyService } from '../market-making/strategy/dex-volume.strategy.service';
+import { DexModule } from '../market-making/strategy/dex.module';
 import { StrategyService } from '../market-making/strategy/strategy.service';
 import { MixinClientModule } from '../mixin/client/mixin-client.module';
 import { Web3Module } from '../web3/web3.module';
@@ -43,16 +40,13 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
       GrowdataMarketMakingPair,
       SpotdataTradingPair,
     ]),
+    DexModule,
     Web3Module,
   ],
   controllers: [AdminController, AdminFeeController],
   providers: [
     AdminStrategyService,
     StrategyService,
-    UniswapV3Adapter,
-    PancakeV3Adapter,
-    DexAdapterRegistry,
-    DexVolumeStrategyService,
     PerformanceService,
     AdminGrowService,
     AdminSpotService,
