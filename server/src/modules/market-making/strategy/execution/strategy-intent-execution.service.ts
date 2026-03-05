@@ -9,9 +9,9 @@ import { Repository } from 'typeorm';
 import { DurabilityService } from '../../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
 import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
-import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
 import { DexAdapterId } from '../config/strategy.dto';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
+import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
 @Injectable()

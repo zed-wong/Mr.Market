@@ -3,11 +3,11 @@ import { StrategyInstance } from 'src/common/entities/market-making/strategy-ins
 
 import { ExecutorAction } from '../config/executor-action.types';
 import { PureMarketMakingStrategyDto } from '../config/strategy.dto';
-import { StrategyService } from '../strategy.service';
 import {
   StrategyController,
   StrategyRuntimeSession,
 } from '../config/strategy-controller.types';
+import { StrategyService } from '../strategy.service';
 
 @Injectable()
 export class PureMarketMakingStrategyController implements StrategyController {

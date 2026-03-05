@@ -1,9 +1,13 @@
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
-import type { ExecutorAction } from './executor-action.types';
 import type { StrategyService } from '../strategy.service';
+import type { ExecutorAction } from './executor-action.types';
 
-export type StrategyType = 'arbitrage' | 'pureMarketMaking' | 'volume' | 'timeIndicator';
+export type StrategyType =
+  | 'arbitrage'
+  | 'pureMarketMaking'
+  | 'volume'
+  | 'timeIndicator';
 
 export type StrategyRuntimeSession = {
   runId: string;

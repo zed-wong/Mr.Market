@@ -5,6 +5,8 @@
 - Remove legacy `StrategyController` `/strategy/*` API surface and keep strategy runtime control on shared admin (`/admin/strategy/*`) and queue/user-orders flows only
 - Complete strategy runtime folder reorganization under `server/src/modules/market-making/strategy` into `config`, `controllers`, `intent`, `execution`, `data`, and `dex`, and update admin imports/docs to new paths
 - Add comprehensive backend design logic doc tree under `docs/code/server` with module map, module purpose, business flows, and entity ownership matrix
+- Fix `StrategyControllerRegistry` constructor corruption so `getController` and `listControllerTypes` are available to strategy runtime and test compilation
+- Stabilize interface CI checks by running E2E tests sequentially (`test:e2e --workers=1`) and making `test` wait for E2E before unit tests
 
 ## 2026-03-04
 

@@ -7,11 +7,11 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
 import { PerformanceService } from '../performance/performance.service';
-import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
-import { StrategyService } from './strategy.service';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
+import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
+import { StrategyService } from './strategy.service';
 
 class PerformanceServiceMock {
   recordPerformance = jest.fn();

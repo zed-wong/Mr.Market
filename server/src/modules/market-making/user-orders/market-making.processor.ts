@@ -24,9 +24,9 @@ import { FeeService } from '../fee/fee.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { LocalCampaignService } from '../local-campaign/local-campaign.service';
 import { NetworkMappingService } from '../network-mapping/network-mapping.service';
-import { StrategyService } from '../strategy/strategy.service';
 import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from '../strategy/execution/strategy-runtime-dispatcher.service';
+import { StrategyService } from '../strategy/strategy.service';
 import { UserOrdersService } from './user-orders.service';
 
 interface ProcessSnapshotJobData {

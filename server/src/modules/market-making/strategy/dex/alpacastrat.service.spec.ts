@@ -4,8 +4,8 @@ import * as ccxt from 'ccxt';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { AlpacaStratService } from 'src/modules/market-making/strategy/dex/alpacastrat.service';
 import { ArbitrageStrategyDto } from 'src/modules/market-making/strategy/config/strategy.dto';
+import { AlpacaStratService } from 'src/modules/market-making/strategy/dex/alpacastrat.service';
 import { Repository } from 'typeorm';
 
 import { StrategyService } from '../strategy.service';

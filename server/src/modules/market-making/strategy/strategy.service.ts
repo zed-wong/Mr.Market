@@ -28,7 +28,6 @@ import {
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
 } from './config/strategy.dto';
-import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import {
   StrategyRuntimeSession,
   StrategyType,
@@ -38,10 +37,11 @@ import {
   StrategyExecutionCategory,
 } from './config/strategy-execution-category';
 import { StrategyOrderIntent } from './config/strategy-intent.types';
-import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
-import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
+import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
+import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
+import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
 
 type BaseVolumeStrategyParams = {
   exchangeName: string;
@@ -1468,7 +1468,9 @@ export class StrategyService
 
   // ========== Time Indicator Strategy ==========
 
-  async executeTimeIndicatorStrategy(params: TimeIndicatorStrategyDto): Promise<void> {
+  async executeTimeIndicatorStrategy(
+    params: TimeIndicatorStrategyDto,
+  ): Promise<void> {
     const { userId, clientId } = params;
     const strategyKey = createStrategyKey({
       type: 'timeIndicator',
@@ -1508,13 +1510,16 @@ export class StrategyService
       this.logger.debug(
         `[${exchangeName}:${symbol}] Outside time window — skipping.`,
       );
+
       return [];
     }
 
     // Exchange validation
     const ex = this.exchangeInitService.getExchange(exchangeName);
+
     if (!ex) {
       this.logger.error(`Exchange '${exchangeName}' is not initialized.`);
+
       return [];
     }
 
@@ -1524,14 +1529,15 @@ export class StrategyService
       }
     } catch (e: unknown) {
       const { message } = this.toErrorDetails(e);
-      this.logger.error(
-        `[${exchangeName}] loadMarkets failed: ${message}`,
-      );
+
+      this.logger.error(`[${exchangeName}] loadMarkets failed: ${message}`);
+
       return [];
     }
 
     if (!ex.markets[symbol]) {
       this.logger.error(`[${exchangeName}] Unknown symbol '${symbol}'.`);
+
       return [];
     }
 
@@ -1539,6 +1545,7 @@ export class StrategyService
       this.logger.error(
         `[${exchangeName}:${symbol}] Unsupported timeframe '${params.timeframe}'.`,
       );
+
       return [];
     }
 
@@ -1546,14 +1553,17 @@ export class StrategyService
     if (params.maxConcurrentPositions && params.maxConcurrentPositions > 0) {
       try {
         const openOrders = await ex.fetchOpenOrders(symbol);
+
         if (openOrders.length >= params.maxConcurrentPositions) {
           this.logger.warn(
             `[${exchangeName}:${symbol}] Open orders (${openOrders.length}) >= maxConcurrentPositions (${params.maxConcurrentPositions}). Skipping.`,
           );
+
           return [];
         }
       } catch (e: unknown) {
         const { message } = this.toErrorDetails(e);
+
         this.logger.warn(
           `[${exchangeName}:${symbol}] fetchOpenOrders failed (${message}). Proceeding anyway.`,
         );
@@ -1571,6 +1581,7 @@ export class StrategyService
 
     if (!ohlcv || ohlcv.length < minBarsNeeded) {
       this.logger.warn(`[${exchangeName}:${symbol}] Not enough candles yet.`);
+
       return [];
     }
 
@@ -1595,6 +1606,7 @@ export class StrategyService
       this.logger.debug(
         `[${exchangeName}:${symbol}] Indicators not ready (NaN).`,
       );
+
       return [];
     }
 
@@ -1617,6 +1629,7 @@ export class StrategyService
         this.logger.warn(
           `[${exchangeName}:${symbol}] RSI mode requires both rsiBuyBelow and rsiSellAbove thresholds.`,
         );
+
         return [];
       }
       if (rsiBuyOk && !rsiSellOk) side = 'buy';
@@ -1628,27 +1641,31 @@ export class StrategyService
 
     if (!side) {
       this.logger.debug(`[${exchangeName}:${symbol}] No trade signal.`);
+
       return [];
     }
 
     // Balance & sizing
     const parsedSymbol = this.parseBaseQuote(symbol);
+
     if (!parsedSymbol) {
       this.logger.error(
         `[${exchangeName}] Unable to parse symbol '${symbol}' into base/quote`,
       );
+
       return [];
     }
     const { base, quote } = parsedSymbol;
 
     let balances;
+
     try {
       balances = await ex.fetchBalance();
     } catch (e: unknown) {
       const { message } = this.toErrorDetails(e);
-      this.logger.error(
-        `[${exchangeName}] fetchBalance failed: ${message}`,
-      );
+
+      this.logger.error(`[${exchangeName}] fetchBalance failed: ${message}`);
+
       return [];
     }
 
@@ -1662,12 +1679,14 @@ export class StrategyService
       this.logger.warn(
         `[${exchangeName}:${symbol}] Insufficient ${base} to sell.`,
       );
+
       return [];
     }
     if (side === 'buy' && freeQuote < amountBaseRaw * last * 1.01) {
       this.logger.warn(
         `[${exchangeName}:${symbol}] Insufficient ${quote} to buy.`,
       );
+
       return [];
     }
 
@@ -1686,6 +1705,7 @@ export class StrategyService
       amountBase * last < market.limits.cost.min
     ) {
       const needed = market.limits.cost.min / last;
+
       amountBase = amountPrec(Math.max(amountBase, needed));
     }
 
@@ -1749,12 +1769,15 @@ export class StrategyService
   ): Promise<number[][]> {
     try {
       const limit = Math.max(lookback, 200);
+
       return await ex.fetchOHLCV(symbol, timeframe, undefined, limit);
     } catch (e: unknown) {
       const { message } = this.toErrorDetails(e);
+
       this.logger.error(
         `fetchOHLCV error on ${ex.id} ${symbol} ${timeframe}: ${message}`,
       );
+
       return [];
     }
   }
@@ -1764,9 +1787,11 @@ export class StrategyService
   ): { base: string; quote: string } | null {
     if (symbol.includes('/')) {
       const [base, quote] = symbol.split('/');
+
       if (base && quote) {
         return { base, quote };
       }
+
       return null;
     }
 
@@ -1798,6 +1823,7 @@ export class StrategyService
     if (error instanceof Error) {
       return { message: error.message, stack: error.stack };
     }
+
     return { message: String(error) };
   }
 
@@ -1815,6 +1841,7 @@ export class StrategyService
         out.push(v);
       } else {
         const e = (v - prev) * k + prev;
+
         out.push(e);
         prev = e;
       }
@@ -1832,6 +1859,7 @@ export class StrategyService
 
     for (let i = 1; i < series.length; i++) {
       const ch = series[i] - series[i - 1];
+
       gains.push(ch > 0 ? ch : 0);
       losses.push(ch < 0 ? -ch : 0);
     }
@@ -1847,6 +1875,7 @@ export class StrategyService
       }
       const rs = avgLoss === 0 ? Number.POSITIVE_INFINITY : avgGain / avgLoss;
       const val = 100 - 100 / (1 + rs);
+
       rsiArr[i + 1] = val;
     }
 
@@ -1855,6 +1884,7 @@ export class StrategyService
 
   private avg(arr: number[]): number {
     if (!arr.length) return 0;
+
     return arr.reduce((a, b) => a + b, 0) / arr.length;
   }
 
@@ -1871,13 +1901,16 @@ export class StrategyService
 
     if (wasBelow && nowAbove) return 'CROSS_UP';
     if (wasAbove && nowBelow) return 'CROSS_DOWN';
+
     return 'NONE';
   }
 
   private safePct(v?: number): number | undefined {
     if (v === undefined || v === null) return undefined;
     const n = Number(v);
+
     if (!Number.isFinite(n) || n <= 0) return undefined;
+
     return n;
   }
 }

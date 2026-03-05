@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import { StrategyController, StrategyType } from '../config/strategy-controller.types';
+import {
+  StrategyController,
+  StrategyType,
+} from '../config/strategy-controller.types';
 
 @Injectable()
 export class StrategyControllerRegistry {
@@ -13,18 +16,11 @@ export class StrategyControllerRegistry {
     for (const controller of controllers) {
       if (this.controllersByType.has(controller.strategyType)) {
         throw new Error(
-          `Duplicate strategyType '${controller.strategyType}' detected in StrategyControllerRegistry. ` +
-            `Controller '${controller.constructor.name}' conflicts with existing controller.`,
-  constructor(controllers: StrategyController[]) {
-    for (const controller of controllers) {
-      if (this.controllersByType.has(controller.strategyType)) {
-        throw new Error(
           `Duplicate strategy controller registered for type "${controller.strategyType}"`,
         );
       }
       this.controllersByType.set(controller.strategyType, controller);
     }
-  }
   }
 
   getController(strategyType: string): StrategyController | undefined {

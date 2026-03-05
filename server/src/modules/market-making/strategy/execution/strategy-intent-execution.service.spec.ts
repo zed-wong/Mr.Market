@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
 
-import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
+import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 
 const createExecutionHistoryRepository = () => ({

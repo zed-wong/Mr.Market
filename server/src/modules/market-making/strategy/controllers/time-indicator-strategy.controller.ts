@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
 import { ExecutorAction } from '../config/executor-action.types';
-import { TimeIndicatorStrategyDto } from '../config/timeIndicator.dto';
 import {
   StrategyController,
   StrategyRuntimeSession,
 } from '../config/strategy-controller.types';
+import { TimeIndicatorStrategyDto } from '../config/timeIndicator.dto';
 import { StrategyService } from '../strategy.service';
 
 @Injectable()

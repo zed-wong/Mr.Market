@@ -4,12 +4,12 @@ import {
   ArbitrageStrategyDto,
   PureMarketMakingStrategyDto,
 } from '../config/strategy.dto';
-import { TimeIndicatorStrategyDto } from '../config/timeIndicator.dto';
 import { StrategyType } from '../config/strategy-controller.types';
 import {
   normalizeExecutionCategory,
   toLegacyExecutionVenue,
 } from '../config/strategy-execution-category';
+import { TimeIndicatorStrategyDto } from '../config/timeIndicator.dto';
 import { StrategyService } from '../strategy.service';
 
 @Injectable()
