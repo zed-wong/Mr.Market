@@ -1,13 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Contribution } from 'src/common/entities/campaign/contribution.entity';
-import { IndicatorStrategyHistory } from 'src/common/entities/indicator-strategy-history.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from 'src/common/entities/market-making/strategy-definition-version.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
-import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import {
   MarketMakingOrder,
   SimplyGrowOrder,
@@ -29,7 +26,6 @@ import { VolumeStrategyController } from './controllers/volume-strategy.controll
 import { DexModule } from './dex.module';
 import { ExecutorOrchestratorService } from './executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './quote-executor-manager.service';
-import { StrategyController } from './strategy.controller';
 import { StrategyService } from './strategy.service';
 import { StrategyConfigResolverService } from './strategy-config-resolver.service';
 import { StrategyControllerRegistry } from './strategy-controller.registry';
@@ -50,14 +46,11 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     TypeOrmModule.forFeature([
       SimplyGrowOrder,
       MarketMakingOrder,
-      Contribution,
-      MixinUser,
       StrategyInstance,
       StrategyDefinition,
       StrategyDefinitionVersion,
       StrategyExecutionHistory,
       StrategyOrderIntentEntity,
-      IndicatorStrategyHistory,
     ]),
     FeeModule,
     TickModule,
@@ -68,7 +61,6 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     DexModule,
     Web3Module,
   ],
-  controllers: [StrategyController],
   providers: [
     StrategyService,
     AlpacaStratService,

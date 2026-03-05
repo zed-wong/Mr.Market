@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-03-05
+
+- Remove legacy `StrategyController` `/strategy/*` API surface and keep strategy runtime control on shared admin (`/admin/strategy/*`) and queue/user-orders flows only
+
 ## 2026-02-28
 
 - Add dynamic strategy definition architecture (`strategy_definitions`, `strategy_definition_versions`) and instance linkage fields on `strategy_instances`

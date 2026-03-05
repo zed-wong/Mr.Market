@@ -96,9 +96,6 @@ describe('AdminStrategyService', () => {
             linkDefinitionToStrategyInstance: jest.fn(),
             getAllStrategies: jest.fn().mockResolvedValue([]),
             getRunningStrategies: jest.fn().mockResolvedValue([]),
-            getStrategyInstanceKey: jest
-              .fn()
-              .mockResolvedValue({ status: 'running' }),
           },
         },
         {
@@ -315,69 +312,6 @@ describe('AdminStrategyService', () => {
         stopStrategyDto.userId,
         stopStrategyDto.clientId,
       );
-    });
-  });
-
-  describe('joinStrategy', () => {
-    it('should create a contribution and save it', async () => {
-      const joinData = {
-        userId: 'user123',
-        clientId: 'client123',
-        strategyKey: 'strategyKey',
-        amount: 100,
-        transactionHash: '0x123',
-        tokenSymbol: 'ETH',
-        chainId: 1,
-        tokenAddress: '0xabc',
-      };
-
-      mockMixinUserRepository.findOne.mockResolvedValue({ user_id: 'user123' });
-      mockContributionRepository.create.mockReturnValue(joinData);
-      mockContributionRepository.save.mockResolvedValue(joinData);
-
-      const result = await service.joinStrategy(
-        joinData.userId,
-        joinData.clientId,
-        joinData.strategyKey,
-        joinData.amount,
-        joinData.transactionHash,
-        joinData.tokenSymbol,
-        joinData.chainId,
-        joinData.tokenAddress,
-      );
-
-      expect(result).toEqual({
-        message: `User ${joinData.userId} has joined the strategy with ${joinData.amount} funds`,
-      });
-      expect(mockContributionRepository.save).toHaveBeenCalledWith(joinData);
-    });
-
-    it('should throw error if user does not exist', async () => {
-      const joinData = {
-        userId: 'user123',
-        clientId: 'client123',
-        strategyKey: 'strategyKey',
-        amount: 100,
-        transactionHash: '0x123',
-        tokenSymbol: 'ETH',
-        chainId: 1,
-        tokenAddress: '0xabc',
-      };
-
-      mockMixinUserRepository.findOne.mockResolvedValue(null);
-
-      await expect(
-        service.joinStrategy(
-          joinData.userId,
-          joinData.clientId,
-          joinData.strategyKey,
-          joinData.amount,
-          joinData.transactionHash,
-          joinData.tokenSymbol,
-          joinData.chainId,
-          joinData.tokenAddress,
-        ),
-      ).rejects.toThrow(BadRequestException);
     });
   });
 
