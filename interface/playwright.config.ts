@@ -42,11 +42,18 @@ export default defineConfig({
     /* Test against mobile viewports. */
     {
       name: 'chromium',
-      use: { ...devices['Galaxy S9+'] },
+      use: { ...devices['Galaxy S24'] },
     },
     {
       name: 'webkit',
-      use: { ...devices['iPhone 14'] },
+      use: { ...devices['iPhone 15 Pro'] },
+    },
+    {
+      name: 'firefox-mobile',
+      use: {
+        ...devices['Desktop Firefox'],
+        viewport: { width: 390, height: 844 },
+      },
     },
   ],
 
