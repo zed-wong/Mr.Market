@@ -1,12 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BigNumber, ethers } from 'ethers';
-import { DexAdapterRegistry } from 'src/defi/adapter-registry';
-import { ensureAllowance, readDecimals } from 'src/defi/utils/erc20';
+import { DexAdapterRegistry } from 'src/modules/defi/adapter-registry';
+import { ensureAllowance, readDecimals } from 'src/modules/defi/utils/erc20';
 import { Web3Service } from 'src/modules/web3/web3.service';
 
 import { DexVolumeStrategyService } from './dex-volume.strategy.service';
 
-jest.mock('src/defi/utils/erc20', () => ({
+jest.mock('src/modules/defi/utils/erc20', () => ({
   ensureAllowance: jest.fn().mockResolvedValue(undefined),
   readDecimals: jest.fn().mockResolvedValue(6),
 }));
