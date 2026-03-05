@@ -21,26 +21,27 @@ import { Repository } from 'typeorm';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
-import { ExecutorAction } from './executor-action.types';
-import { ExecutorOrchestratorService } from './executor-orchestrator.service';
-import { QuoteExecutorManagerService } from './quote-executor-manager.service';
+import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
-} from './strategy.dto';
-import { StrategyControllerRegistry } from './strategy-controller.registry';
+} from './config/strategy.dto';
+import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import {
   StrategyRuntimeSession,
   StrategyType,
-} from './strategy-controller.types';
+} from './config/strategy-controller.types';
 import {
   normalizeExecutionCategory,
   StrategyExecutionCategory,
-} from './strategy-execution-category';
-import { StrategyOrderIntent } from './strategy-intent.types';
-import { StrategyMarketDataProviderService } from './strategy-market-data-provider.service';
+} from './config/strategy-execution-category';
+import { StrategyOrderIntent } from './config/strategy-intent.types';
+import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
+import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
+import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
+import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
 
 type BaseVolumeStrategyParams = {
   exchangeName: string;
@@ -1463,5 +1464,420 @@ export class StrategyService
         updatedAt: new Date(),
       },
     );
+  }
+
+  // ========== Time Indicator Strategy ==========
+
+  async executeTimeIndicatorStrategy(params: TimeIndicatorStrategyDto): Promise<void> {
+    const { userId, clientId } = params;
+    const strategyKey = createStrategyKey({
+      type: 'timeIndicator',
+      user_id: userId,
+      client_id: clientId,
+    });
+
+    const cadenceMs = Math.max(1000, Number(params.tickIntervalMs || 60000));
+
+    await this.upsertStrategyInstance(
+      strategyKey,
+      userId,
+      clientId,
+      'timeIndicator',
+      params,
+    );
+
+    this.upsertSession(
+      strategyKey,
+      'timeIndicator',
+      userId,
+      clientId,
+      cadenceMs,
+      params,
+    );
+  }
+
+  async buildTimeIndicatorActions(
+    session: StrategyRuntimeSession,
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    const params = session.params as TimeIndicatorStrategyDto;
+    const { userId, clientId, exchangeName, symbol } = params;
+
+    // Time window check
+    if (!this.isWithinTimeWindow(params)) {
+      this.logger.debug(
+        `[${exchangeName}:${symbol}] Outside time window — skipping.`,
+      );
+      return [];
+    }
+
+    // Exchange validation
+    const ex = this.exchangeInitService.getExchange(exchangeName);
+    if (!ex) {
+      this.logger.error(`Exchange '${exchangeName}' is not initialized.`);
+      return [];
+    }
+
+    try {
+      if (!ex.markets || Object.keys(ex.markets).length === 0) {
+        await ex.loadMarkets();
+      }
+    } catch (e: unknown) {
+      const { message } = this.toErrorDetails(e);
+      this.logger.error(
+        `[${exchangeName}] loadMarkets failed: ${message}`,
+      );
+      return [];
+    }
+
+    if (!ex.markets[symbol]) {
+      this.logger.error(`[${exchangeName}] Unknown symbol '${symbol}'.`);
+      return [];
+    }
+
+    if (ex.timeframes && !ex.timeframes[params.timeframe]) {
+      this.logger.error(
+        `[${exchangeName}:${symbol}] Unsupported timeframe '${params.timeframe}'.`,
+      );
+      return [];
+    }
+
+    // Max concurrent positions check
+    if (params.maxConcurrentPositions && params.maxConcurrentPositions > 0) {
+      try {
+        const openOrders = await ex.fetchOpenOrders(symbol);
+        if (openOrders.length >= params.maxConcurrentPositions) {
+          this.logger.warn(
+            `[${exchangeName}:${symbol}] Open orders (${openOrders.length}) >= maxConcurrentPositions (${params.maxConcurrentPositions}). Skipping.`,
+          );
+          return [];
+        }
+      } catch (e: unknown) {
+        const { message } = this.toErrorDetails(e);
+        this.logger.warn(
+          `[${exchangeName}:${symbol}] fetchOpenOrders failed (${message}). Proceeding anyway.`,
+        );
+      }
+    }
+
+    // Fetch candles
+    const ohlcv = await this.fetchCandles(
+      ex,
+      symbol,
+      params.timeframe,
+      params.lookback,
+    );
+    const minBarsNeeded = Math.max(params.emaSlow, params.rsiPeriod) + 2;
+
+    if (!ohlcv || ohlcv.length < minBarsNeeded) {
+      this.logger.warn(`[${exchangeName}:${symbol}] Not enough candles yet.`);
+      return [];
+    }
+
+    // Calculate indicators
+    const closes = ohlcv.map((c) => c[4]);
+    const emaF = this.calcEma(closes, params.emaFast);
+    const emaS = this.calcEma(closes, params.emaSlow);
+    const rsiV = this.calcRsi(closes, params.rsiPeriod);
+
+    const last = closes[closes.length - 1];
+    const lastEmaF = emaF[emaF.length - 1];
+    const lastEmaS = emaS[emaS.length - 1];
+    const prevEmaF = emaF[emaF.length - 2];
+    const prevEmaS = emaS[emaS.length - 2];
+    const lastRsi = rsiV[rsiV.length - 1];
+
+    if (
+      [lastEmaF, lastEmaS, prevEmaF, prevEmaS, lastRsi].some(
+        (x) => x === undefined || Number.isNaN(x),
+      )
+    ) {
+      this.logger.debug(
+        `[${exchangeName}:${symbol}] Indicators not ready (NaN).`,
+      );
+      return [];
+    }
+
+    // Determine signal
+    const signal = this.calcCross(prevEmaF!, prevEmaS!, lastEmaF!, lastEmaS!);
+    const rsiBuyOk =
+      params.rsiBuyBelow === undefined || lastRsi! <= params.rsiBuyBelow!;
+    const rsiSellOk =
+      params.rsiSellAbove === undefined || lastRsi! >= params.rsiSellAbove!;
+    const hasRsiThresholds =
+      params.rsiBuyBelow !== undefined && params.rsiSellAbove !== undefined;
+
+    let side: 'buy' | 'sell' | null = null;
+
+    if (params.indicatorMode === 'ema') {
+      if (signal === 'CROSS_UP') side = 'buy';
+      else if (signal === 'CROSS_DOWN') side = 'sell';
+    } else if (params.indicatorMode === 'rsi') {
+      if (!hasRsiThresholds) {
+        this.logger.warn(
+          `[${exchangeName}:${symbol}] RSI mode requires both rsiBuyBelow and rsiSellAbove thresholds.`,
+        );
+        return [];
+      }
+      if (rsiBuyOk && !rsiSellOk) side = 'buy';
+      else if (rsiSellOk && !rsiBuyOk) side = 'sell';
+    } else if (params.indicatorMode === 'both') {
+      if (signal === 'CROSS_UP' && rsiBuyOk) side = 'buy';
+      else if (signal === 'CROSS_DOWN' && rsiSellOk) side = 'sell';
+    }
+
+    if (!side) {
+      this.logger.debug(`[${exchangeName}:${symbol}] No trade signal.`);
+      return [];
+    }
+
+    // Balance & sizing
+    const parsedSymbol = this.parseBaseQuote(symbol);
+    if (!parsedSymbol) {
+      this.logger.error(
+        `[${exchangeName}] Unable to parse symbol '${symbol}' into base/quote`,
+      );
+      return [];
+    }
+    const { base, quote } = parsedSymbol;
+
+    let balances;
+    try {
+      balances = await ex.fetchBalance();
+    } catch (e: unknown) {
+      const { message } = this.toErrorDetails(e);
+      this.logger.error(
+        `[${exchangeName}] fetchBalance failed: ${message}`,
+      );
+      return [];
+    }
+
+    const amountBaseRaw =
+      params.orderMode === 'base' ? params.orderSize : params.orderSize / last;
+
+    const freeBase = balances.free?.[base] ?? 0;
+    const freeQuote = balances.free?.[quote] ?? 0;
+
+    if (side === 'sell' && freeBase < amountBaseRaw * 1.01) {
+      this.logger.warn(
+        `[${exchangeName}:${symbol}] Insufficient ${base} to sell.`,
+      );
+      return [];
+    }
+    if (side === 'buy' && freeQuote < amountBaseRaw * last * 1.01) {
+      this.logger.warn(
+        `[${exchangeName}:${symbol}] Insufficient ${quote} to buy.`,
+      );
+      return [];
+    }
+
+    const market = ex.markets[symbol];
+    const amountPrec = (x: number) =>
+      parseFloat(ex.amountToPrecision(symbol, x));
+    const pricePrec = (x: number) => parseFloat(ex.priceToPrecision(symbol, x));
+
+    let amountBase = amountPrec(amountBaseRaw);
+
+    if (market?.limits?.amount?.min && amountBase < market.limits.amount.min) {
+      amountBase = amountPrec(market.limits.amount.min);
+    }
+    if (
+      market?.limits?.cost?.min &&
+      amountBase * last < market.limits.cost.min
+    ) {
+      const needed = market.limits.cost.min / last;
+      amountBase = amountPrec(Math.max(amountBase, needed));
+    }
+
+    const bps = params.slippageBps ?? 10;
+    const entryPriceRaw =
+      side === 'buy' ? last * (1 - bps / 10_000) : last * (1 + bps / 10_000);
+    const entryPrice = pricePrec(entryPriceRaw);
+
+    this.logger.log(
+      `[${exchangeName}:${symbol}] ${side.toUpperCase()} ${amountBase} @ ${entryPrice} (EMA${
+        params.emaFast
+      }/${params.emaSlow}, RSI=${lastRsi!.toFixed(2)})`,
+    );
+
+    return [
+      {
+        type: 'CREATE_LIMIT_ORDER',
+        intentId: `${session.strategyKey}:${ts}:indicator-entry`,
+        strategyInstanceId: session.strategyKey,
+        strategyKey: session.strategyKey,
+        userId,
+        clientId,
+        exchange: ex.id,
+        pair: symbol,
+        side,
+        price: String(entryPrice),
+        qty: String(amountBase),
+        executionCategory: 'clob_cex',
+        metadata: {
+          emaFast: lastEmaF,
+          emaSlow: lastEmaS,
+          rsi: lastRsi,
+          signal,
+          stopLossPct: this.safePct(params.stopLossPct),
+          takeProfitPct: this.safePct(params.takeProfitPct),
+        },
+        createdAt: ts,
+        status: 'NEW',
+      },
+    ];
+  }
+
+  private isWithinTimeWindow(params: TimeIndicatorStrategyDto): boolean {
+    const now = new Date();
+    const wd = now.getDay();
+    const hr = now.getHours();
+
+    if (params.allowedWeekdays?.length && !params.allowedWeekdays.includes(wd))
+      return false;
+    if (params.allowedHours?.length && !params.allowedHours.includes(hr))
+      return false;
+
+    return true;
+  }
+
+  private async fetchCandles(
+    ex: any,
+    symbol: string,
+    timeframe: string,
+    lookback: number,
+  ): Promise<number[][]> {
+    try {
+      const limit = Math.max(lookback, 200);
+      return await ex.fetchOHLCV(symbol, timeframe, undefined, limit);
+    } catch (e: unknown) {
+      const { message } = this.toErrorDetails(e);
+      this.logger.error(
+        `fetchOHLCV error on ${ex.id} ${symbol} ${timeframe}: ${message}`,
+      );
+      return [];
+    }
+  }
+
+  private parseBaseQuote(
+    symbol: string,
+  ): { base: string; quote: string } | null {
+    if (symbol.includes('/')) {
+      const [base, quote] = symbol.split('/');
+      if (base && quote) {
+        return { base, quote };
+      }
+      return null;
+    }
+
+    const knownQuotes = [
+      'USDT',
+      'USDC',
+      'BUSD',
+      'USD',
+      'BTC',
+      'ETH',
+      'BNB',
+      'EUR',
+    ];
+    const upper = symbol.toUpperCase();
+
+    for (const q of knownQuotes) {
+      if (upper.endsWith(q) && upper.length > q.length) {
+        return {
+          base: symbol.slice(0, symbol.length - q.length),
+          quote: symbol.slice(symbol.length - q.length),
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private toErrorDetails(error: unknown): { message: string; stack?: string } {
+    if (error instanceof Error) {
+      return { message: error.message, stack: error.stack };
+    }
+    return { message: String(error) };
+  }
+
+  private calcEma(series: number[], period: number): number[] {
+    if (period <= 0) return series.map(() => NaN);
+    const k = 2 / (period + 1);
+    const out: number[] = [];
+    let prev: number | undefined;
+
+    for (let i = 0; i < series.length; i++) {
+      const v = series[i];
+
+      if (i === 0 || prev === undefined) {
+        prev = v;
+        out.push(v);
+      } else {
+        const e = (v - prev) * k + prev;
+        out.push(e);
+        prev = e;
+      }
+    }
+
+    return out;
+  }
+
+  private calcRsi(series: number[], period: number): number[] {
+    if (period <= 0 || series.length < period + 1)
+      return new Array(series.length).fill(NaN);
+
+    const gains: number[] = [];
+    const losses: number[] = [];
+
+    for (let i = 1; i < series.length; i++) {
+      const ch = series[i] - series[i - 1];
+      gains.push(ch > 0 ? ch : 0);
+      losses.push(ch < 0 ? -ch : 0);
+    }
+
+    let avgGain = this.avg(gains.slice(0, period));
+    let avgLoss = this.avg(losses.slice(0, period));
+    const rsiArr = new Array(series.length).fill(NaN);
+
+    for (let i = period - 1; i < gains.length; i++) {
+      if (i >= period) {
+        avgGain = (avgGain * (period - 1) + gains[i]) / period;
+        avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+      }
+      const rs = avgLoss === 0 ? Number.POSITIVE_INFINITY : avgGain / avgLoss;
+      const val = 100 - 100 / (1 + rs);
+      rsiArr[i + 1] = val;
+    }
+
+    return rsiArr;
+  }
+
+  private avg(arr: number[]): number {
+    if (!arr.length) return 0;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }
+
+  private calcCross(
+    prevFast: number,
+    prevSlow: number,
+    fast: number,
+    slow: number,
+  ): 'CROSS_UP' | 'CROSS_DOWN' | 'NONE' {
+    const wasBelow = prevFast <= prevSlow;
+    const nowAbove = fast > slow;
+    const wasAbove = prevFast >= prevSlow;
+    const nowBelow = fast < slow;
+
+    if (wasBelow && nowAbove) return 'CROSS_UP';
+    if (wasAbove && nowBelow) return 'CROSS_DOWN';
+    return 'NONE';
+  }
+
+  private safePct(v?: number): number | undefined {
+    if (v === undefined || v === null) return undefined;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    return n;
   }
 }

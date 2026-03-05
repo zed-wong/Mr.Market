@@ -19,23 +19,23 @@ import { FeeModule } from '../fee/fee.module';
 import { PerformanceModule } from '../performance/performance.module';
 import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
-import { AlpacaStratService } from './alpacastrat.service';
+import { AlpacaStratService } from './dex/alpacastrat.service';
+import { DexModule } from './dex/dex.module';
+import { StrategyConfigResolverService } from './dex/strategy-config-resolver.service';
+import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
+import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
+import { StrategyController as StrategyRuntimeController } from './config/strategy-controller.types';
+import { StrategyIntentExecutionService } from './execution/strategy-intent-execution.service';
+import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
+import { StrategyIntentWorkerService } from './execution/strategy-intent-worker.service';
+import { StrategyRuntimeDispatcherService } from './execution/strategy-runtime-dispatcher.service';
+import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
+import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
+import { TimeIndicatorStrategyController } from './controllers/time-indicator-strategy.controller';
 import { VolumeStrategyController } from './controllers/volume-strategy.controller';
-import { DexModule } from './dex.module';
-import { ExecutorOrchestratorService } from './executor-orchestrator.service';
-import { QuoteExecutorManagerService } from './quote-executor-manager.service';
 import { StrategyService } from './strategy.service';
-import { StrategyConfigResolverService } from './strategy-config-resolver.service';
-import { StrategyControllerRegistry } from './strategy-controller.registry';
-import { StrategyController as StrategyRuntimeController } from './strategy-controller.types';
-import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
-import { StrategyIntentStoreService } from './strategy-intent-store.service';
-import { StrategyIntentWorkerService } from './strategy-intent-worker.service';
-import { StrategyMarketDataProviderService } from './strategy-market-data-provider.service';
-import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
-import { TimeIndicatorStrategyService } from './time-indicator.service';
 
 const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
 
@@ -72,21 +72,23 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyConfigResolverService,
     StrategyRuntimeDispatcherService,
     StrategyMarketDataProviderService,
-    TimeIndicatorStrategyService,
     ArbitrageStrategyController,
     PureMarketMakingStrategyController,
     VolumeStrategyController,
+    TimeIndicatorStrategyController,
     {
       provide: STRATEGY_CONTROLLERS,
       useFactory: (
         arbitrage: ArbitrageStrategyController,
         pureMarketMaking: PureMarketMakingStrategyController,
         volume: VolumeStrategyController,
-      ): StrategyRuntimeController[] => [arbitrage, pureMarketMaking, volume],
+        timeIndicator: TimeIndicatorStrategyController,
+      ): StrategyRuntimeController[] => [arbitrage, pureMarketMaking, volume, timeIndicator],
       inject: [
         ArbitrageStrategyController,
         PureMarketMakingStrategyController,
         VolumeStrategyController,
+        TimeIndicatorStrategyController,
       ],
     },
     {
