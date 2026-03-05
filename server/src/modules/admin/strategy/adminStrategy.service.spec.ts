@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
@@ -11,6 +11,8 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { PerformanceService } from '../../market-making/performance/performance.service';
 import { StrategyService } from '../../market-making/strategy/strategy.service';
+import { StrategyConfigResolverService } from '../../market-making/strategy/strategy-config-resolver.service';
+import { StrategyRuntimeDispatcherService } from '../../market-making/strategy/strategy-runtime-dispatcher.service';
 import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,
@@ -26,6 +28,21 @@ describe('AdminStrategyService', () => {
   let web3Service: Web3Service;
   let strategyService: StrategyService;
 
+  const startByStrategyTypeSpy = jest
+    .fn()
+    .mockImplementation(
+      async (strategyType: string, config: Record<string, any>) => {
+        return Promise.resolve({ strategyType, config });
+      },
+    );
+  const stopByStrategyTypeSpy = jest
+    .fn()
+    .mockImplementation(
+      async (strategyType: string, userId: string, clientId: string) => {
+        return Promise.resolve({ strategyType, userId, clientId });
+      },
+    );
+
   const mockContributionRepository = {
     findOne: jest.fn(),
     save: jest.fn(),
@@ -40,6 +57,7 @@ describe('AdminStrategyService', () => {
     findOne: jest.fn(),
     findOneBy: jest.fn(),
     find: jest.fn(),
+    delete: jest.fn(),
     save: jest.fn(),
     create: jest.fn((payload) => payload),
   };
@@ -47,12 +65,14 @@ describe('AdminStrategyService', () => {
   const mockStrategyDefinitionVersionRepository = {
     findOne: jest.fn(),
     find: jest.fn(),
+    delete: jest.fn(),
     save: jest.fn(),
     create: jest.fn((payload) => payload),
   };
 
   const mockStrategyInstanceRepository = {
     find: jest.fn(),
+    findOne: jest.fn(),
     update: jest.fn(),
   };
 
@@ -63,7 +83,7 @@ describe('AdminStrategyService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    const module: TestingModule = await Test.createTestingModule({
+    const module = await Test.createTestingModule({
       providers: [
         AdminStrategyService,
         {
@@ -79,6 +99,59 @@ describe('AdminStrategyService', () => {
             getStrategyInstanceKey: jest
               .fn()
               .mockResolvedValue({ status: 'running' }),
+          },
+        },
+        {
+          provide: StrategyRuntimeDispatcherService,
+          useValue: {
+            toStrategyType: jest.fn((controllerType: string) => {
+              if (controllerType === 'arbitrage') return 'arbitrage';
+              if (controllerType === 'pureMarketMaking')
+                return 'pureMarketMaking';
+              if (controllerType === 'volume') return 'volume';
+              throw new BadRequestException('Unsupported controllerType');
+            }),
+            mapStrategyTypeToController: jest.fn((strategyType: string) =>
+              strategyType === 'marketMaking'
+                ? 'pureMarketMaking'
+                : strategyType,
+            ),
+            startByStrategyType: startByStrategyTypeSpy,
+            stopByStrategyType: stopByStrategyTypeSpy,
+          },
+        },
+        {
+          provide: StrategyConfigResolverService,
+          useValue: {
+            getDefinitionControllerType: jest.fn(
+              (definition) =>
+                definition.controllerType || definition.executorType,
+            ),
+            resolveDefinitionStartConfig: jest
+              .fn()
+              .mockImplementation((definition, dto) => {
+                const strategyType =
+                  definition.controllerType === 'arbitrage'
+                    ? 'arbitrage'
+                    : definition.controllerType === 'volume'
+                    ? 'volume'
+                    : 'pureMarketMaking';
+                const marketMakingOrderId =
+                  strategyType === 'pureMarketMaking'
+                    ? dto.marketMakingOrderId || dto.clientId
+                    : undefined;
+
+                return {
+                  strategyType,
+                  mergedConfig: {
+                    ...(definition.defaultConfig || {}),
+                    ...(dto.config || {}),
+                    userId: dto.userId,
+                    clientId: marketMakingOrderId || dto.clientId,
+                    ...(marketMakingOrderId ? { marketMakingOrderId } : {}),
+                  },
+                };
+              }),
           },
         },
         {
@@ -146,12 +219,9 @@ describe('AdminStrategyService', () => {
 
       await service.startStrategy(startStrategyDto);
 
-      expect(
-        strategyService.startArbitrageStrategyForUser,
-      ).toHaveBeenCalledWith(
-        startStrategyDto.arbitrageParams,
-        startStrategyDto.checkIntervalSeconds,
-        startStrategyDto.maxOpenOrders,
+      expect(startByStrategyTypeSpy).toHaveBeenCalledWith(
+        'arbitrage',
+        expect.objectContaining({ pair: 'ETH/USDT' }),
       );
     });
 
@@ -176,9 +246,10 @@ describe('AdminStrategyService', () => {
 
       await service.startStrategy(startStrategyDto);
 
-      expect(
-        strategyService.executePureMarketMakingStrategy,
-      ).toHaveBeenCalledWith(startStrategyDto.marketMakingParams);
+      expect(startByStrategyTypeSpy).toHaveBeenCalledWith(
+        'pureMarketMaking',
+        startStrategyDto.marketMakingParams,
+      );
     });
 
     it('should start a volume strategy', async () => {
@@ -200,25 +271,21 @@ describe('AdminStrategyService', () => {
 
       await service.startStrategy(startStrategyDto);
 
-      expect(strategyService.executeVolumeStrategy).toHaveBeenCalledWith(
-        startStrategyDto.volumeParams.exchangeName,
-        startStrategyDto.volumeParams.symbol,
-        startStrategyDto.volumeParams.incrementPercentage,
-        startStrategyDto.volumeParams.intervalTime,
-        startStrategyDto.volumeParams.tradeAmount,
-        startStrategyDto.volumeParams.numTrades,
-        startStrategyDto.volumeParams.userId,
-        startStrategyDto.volumeParams.clientId,
-        startStrategyDto.volumeParams.pricePushRate,
-        startStrategyDto.volumeParams.postOnlySide,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
+      expect(startByStrategyTypeSpy).toHaveBeenCalledWith(
+        'volume',
+        expect.objectContaining({
+          exchangeName: startStrategyDto.volumeParams.exchangeName,
+          symbol: startStrategyDto.volumeParams.symbol,
+          incrementPercentage:
+            startStrategyDto.volumeParams.incrementPercentage,
+          intervalTime: startStrategyDto.volumeParams.intervalTime,
+          tradeAmount: startStrategyDto.volumeParams.tradeAmount,
+          numTrades: startStrategyDto.volumeParams.numTrades,
+          userId: startStrategyDto.volumeParams.userId,
+          clientId: startStrategyDto.volumeParams.clientId,
+          pricePushRate: startStrategyDto.volumeParams.pricePushRate,
+          postOnlySide: startStrategyDto.volumeParams.postOnlySide,
+        }),
       );
     });
 
@@ -243,10 +310,10 @@ describe('AdminStrategyService', () => {
 
       await service.stopStrategy(stopStrategyDto);
 
-      expect(strategyService.stopStrategyForUser).toHaveBeenCalledWith(
+      expect(stopByStrategyTypeSpy).toHaveBeenCalledWith(
+        'arbitrage',
         stopStrategyDto.userId,
         stopStrategyDto.clientId,
-        stopStrategyDto.strategyType,
       );
     });
   });
@@ -475,9 +542,8 @@ describe('AdminStrategyService', () => {
 
       const result = await service.startStrategyInstance(dto);
 
-      expect(
-        strategyService.executePureMarketMakingStrategy,
-      ).toHaveBeenCalledWith(
+      expect(startByStrategyTypeSpy).toHaveBeenCalledWith(
+        'pureMarketMaking',
         expect.objectContaining({
           userId: 'user123',
           clientId: 'client123',
@@ -567,10 +633,10 @@ describe('AdminStrategyService', () => {
 
       const result = await service.stopStrategyInstance(dto);
 
-      expect(strategyService.stopStrategyForUser).toHaveBeenCalledWith(
+      expect(stopByStrategyTypeSpy).toHaveBeenCalledWith(
+        'pureMarketMaking',
         'user123',
         'client123',
-        'pureMarketMaking',
       );
       expect(result).toEqual(
         expect.objectContaining({
@@ -643,6 +709,64 @@ describe('AdminStrategyService', () => {
         }),
       );
       expect(mockStrategyDefinitionVersionRepository.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('removeStrategyDefinition', () => {
+    it('removes a disabled, unlinked definition', async () => {
+      mockStrategyDefinitionRepository.findOne.mockResolvedValue({
+        id: 'def-remove-1',
+        key: 'volume',
+        enabled: false,
+      });
+      mockStrategyInstanceRepository.findOne.mockResolvedValue(null);
+      mockStrategyDefinitionVersionRepository.delete.mockResolvedValue({});
+      mockStrategyDefinitionRepository.delete = jest.fn().mockResolvedValue({});
+
+      const result = await service.removeStrategyDefinition({
+        definitionId: 'def-remove-1',
+      });
+
+      expect(
+        mockStrategyDefinitionVersionRepository.delete,
+      ).toHaveBeenCalledWith({
+        definitionId: 'def-remove-1',
+      });
+      expect(mockStrategyDefinitionRepository.delete).toHaveBeenCalledWith({
+        id: 'def-remove-1',
+      });
+      expect(result).toEqual({
+        message: 'Removed strategy definition volume',
+        definitionId: 'def-remove-1',
+      });
+    });
+
+    it('rejects removing an enabled definition', async () => {
+      mockStrategyDefinitionRepository.findOne.mockResolvedValue({
+        id: 'def-remove-2',
+        key: 'pure-mm',
+        enabled: true,
+      });
+
+      await expect(
+        service.removeStrategyDefinition({ definitionId: 'def-remove-2' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects removing a linked definition', async () => {
+      mockStrategyDefinitionRepository.findOne.mockResolvedValue({
+        id: 'def-remove-3',
+        key: 'arbitrage',
+        enabled: false,
+      });
+      mockStrategyInstanceRepository.findOne.mockResolvedValue({
+        id: 1,
+        definitionId: 'def-remove-3',
+      });
+
+      await expect(
+        service.removeStrategyDefinition({ definitionId: 'def-remove-3' }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
+import { ExecutorAction } from '../executor-action.types';
 import { StrategyService } from '../strategy.service';
 import {
   StrategyController,
@@ -15,12 +16,20 @@ export class VolumeStrategyController implements StrategyController {
     return Math.max(1000, Number(parameters?.baseIntervalTime || 10) * 1000);
   }
 
-  async runSession(
+  async decideActions(
     session: StrategyRuntimeSession,
     ts: string,
     service: StrategyService,
+  ): Promise<ExecutorAction[]> {
+    return await service.buildVolumeSessionActions(session, ts);
+  }
+
+  async onActionsPublished(
+    session: StrategyRuntimeSession,
+    actions: ExecutorAction[],
+    service: StrategyService,
   ): Promise<void> {
-    await service.runVolumeSession(session, ts);
+    await service.onVolumeActionsPublished(session, actions);
   }
 
   async rerun(

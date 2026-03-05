@@ -229,6 +229,11 @@ export class StrategyIntentWorkerService
       price: intentEntity.price,
       qty: intentEntity.qty,
       mixinOrderId: intentEntity.mixinOrderId,
+      executionCategory: intentEntity.executionCategory as
+        | StrategyOrderIntent['executionCategory']
+        | undefined,
+      metadata:
+        (intentEntity.metadata as StrategyOrderIntent['metadata']) || undefined,
       createdAt: intentEntity.createdAt,
       status: intentEntity.status as StrategyOrderIntent['status'],
     };

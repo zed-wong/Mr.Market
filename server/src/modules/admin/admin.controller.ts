@@ -155,6 +155,14 @@ export class AdminController {
     return this.adminStrategyService.setStrategyDefinitionEnabled(id, false);
   }
 
+  @Delete('strategy/definitions/:id/remove')
+  @ApiOperation({ summary: 'Remove strategy definition' })
+  async removeStrategyDefinition(@Param('id') id: string) {
+    return this.adminStrategyService.removeStrategyDefinition({
+      definitionId: id,
+    });
+  }
+
   @Post('strategy/instances/start')
   @ApiOperation({ summary: 'Start strategy instance from definition' })
   @ApiBody({ type: StartStrategyInstanceDto })

@@ -15,15 +15,14 @@ import { In, Repository } from 'typeorm';
 
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { PerformanceService } from '../../market-making/performance/performance.service';
-import {
-  ArbitrageStrategyDto,
-  PureMarketMakingStrategyDto,
-} from '../../market-making/strategy/strategy.dto';
 import { StrategyService } from '../../market-making/strategy/strategy.service';
+import { StrategyConfigResolverService } from '../../market-making/strategy/strategy-config-resolver.service';
+import { StrategyRuntimeDispatcherService } from '../../market-making/strategy/strategy-runtime-dispatcher.service';
 import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,
   PublishStrategyDefinitionVersionDto,
+  RemoveStrategyDefinitionDto,
   StartStrategyDto,
   StartStrategyInstanceDto,
   StopStrategyDto,
@@ -36,6 +35,8 @@ import {
 export class AdminStrategyService {
   constructor(
     private readonly strategyService: StrategyService,
+    private readonly strategyConfigResolver: StrategyConfigResolverService,
+    private readonly strategyRuntimeDispatcher: StrategyRuntimeDispatcherService,
     private readonly performanceService: PerformanceService,
     private readonly exchangeInitService: ExchangeInitService,
     private readonly web3Service: Web3Service,
@@ -95,36 +96,27 @@ export class AdminStrategyService {
     }
 
     if (strategyType === 'arbitrage' && arbitrageParams) {
-      return this.strategyService.startArbitrageStrategyForUser(
-        arbitrageParams, // Only pass arbitrage parameters
-        startStrategyDto.checkIntervalSeconds,
-        startStrategyDto.maxOpenOrders,
-      );
+      await this.strategyRuntimeDispatcher.startByStrategyType('arbitrage', {
+        ...arbitrageParams,
+        checkIntervalSeconds: startStrategyDto.checkIntervalSeconds,
+        maxOpenOrders: startStrategyDto.maxOpenOrders,
+      });
+
+      return;
     } else if (strategyType === 'marketMaking' && marketMakingParams) {
-      return this.strategyService.executePureMarketMakingStrategy(
-        marketMakingParams, // Only pass market making parameters
+      await this.strategyRuntimeDispatcher.startByStrategyType(
+        'pureMarketMaking',
+        marketMakingParams,
       );
+
+      return;
     } else if (strategyType === 'volume' && volumeParams) {
-      return this.strategyService.executeVolumeStrategy(
-        volumeParams.exchangeName,
-        volumeParams.symbol,
-        volumeParams.incrementPercentage,
-        volumeParams.intervalTime,
-        volumeParams.tradeAmount,
-        volumeParams.numTrades,
-        volumeParams.userId,
-        volumeParams.clientId,
-        volumeParams.pricePushRate,
-        volumeParams.postOnlySide,
-        volumeParams.executionVenue,
-        volumeParams.dexId,
-        volumeParams.chainId,
-        volumeParams.tokenIn,
-        volumeParams.tokenOut,
-        volumeParams.feeTier,
-        volumeParams.slippageBps,
-        volumeParams.recipient,
+      await this.strategyRuntimeDispatcher.startByStrategyType(
+        'volume',
+        volumeParams as Record<string, any>,
       );
+
+      return;
     } else {
       throw new BadRequestException('Invalid strategy parameters');
     }
@@ -133,14 +125,14 @@ export class AdminStrategyService {
   async stopStrategy(stopStrategyDto: StopStrategyDto) {
     const { userId, clientId } = stopStrategyDto;
     const strategyType =
-      stopStrategyDto.strategyType === 'marketMaking'
-        ? 'pureMarketMaking'
-        : stopStrategyDto.strategyType;
+      this.strategyRuntimeDispatcher.mapStrategyTypeToController(
+        stopStrategyDto.strategyType,
+      );
 
-    return this.strategyService.stopStrategyForUser(
+    return this.strategyRuntimeDispatcher.stopByStrategyType(
+      strategyType,
       userId,
       clientId,
-      strategyType,
     );
   }
   async getDepositAddress(getDepositAddressDto: GetDepositAddressDto) {
@@ -477,6 +469,40 @@ export class AdminStrategyService {
     return this.strategyDefinitionRepository.save(definition);
   }
 
+  async removeStrategyDefinition(dto: RemoveStrategyDefinitionDto): Promise<{
+    message: string;
+    definitionId: string;
+  }> {
+    const definition = await this.getStrategyDefinition(dto.definitionId);
+
+    if (definition.enabled) {
+      throw new BadRequestException(
+        `Strategy definition ${definition.key} must be disabled before removal`,
+      );
+    }
+
+    const linkedInstance = await this.strategyInstanceRepository.findOne({
+      where: { definitionId: definition.id },
+      order: { updatedAt: 'DESC' },
+    });
+
+    if (linkedInstance) {
+      throw new BadRequestException(
+        `Strategy definition ${definition.key} is linked to existing strategy instances and cannot be removed`,
+      );
+    }
+
+    await this.strategyDefinitionVersionRepository.delete({
+      definitionId: definition.id,
+    });
+    await this.strategyDefinitionRepository.delete({ id: definition.id });
+
+    return {
+      message: `Removed strategy definition ${definition.key}`,
+      definitionId: definition.id,
+    };
+  }
+
   async getStrategyInstances(runningOnly = false): Promise<
     Array<{
       id: number;
@@ -514,7 +540,7 @@ export class AdminStrategyService {
         ? definitionMap.get(instance.definitionId)
         : undefined;
       const controllerType = definition
-        ? this.getDefinitionControllerType(definition)
+        ? this.strategyConfigResolver.getDefinitionControllerType(definition)
         : undefined;
 
       return {
@@ -542,11 +568,16 @@ export class AdminStrategyService {
     controllerType: string;
     executorType: string;
   }> {
-    const { definition, mergedConfig, strategyType } =
-      await this.resolveDefinitionStartConfig(dto);
-    const controllerType = this.getDefinitionControllerType(definition);
+    const definition = await this.getStrategyDefinition(dto.definitionId);
+    const { mergedConfig, strategyType } =
+      this.strategyConfigResolver.resolveDefinitionStartConfig(definition, dto);
+    const controllerType =
+      this.strategyConfigResolver.getDefinitionControllerType(definition);
 
-    await this.startByStrategyType(strategyType, mergedConfig);
+    await this.strategyRuntimeDispatcher.startByStrategyType(
+      strategyType,
+      mergedConfig,
+    );
     await this.strategyService.linkDefinitionToStrategyInstance(
       dto.userId,
       dto.clientId,
@@ -574,9 +605,11 @@ export class AdminStrategyService {
     executorType: string;
     mergedConfig: Record<string, any>;
   }> {
-    const { definition, mergedConfig } =
-      await this.resolveDefinitionStartConfig(dto);
-    const controllerType = this.getDefinitionControllerType(definition);
+    const definition = await this.getStrategyDefinition(dto.definitionId);
+    const { mergedConfig } =
+      this.strategyConfigResolver.resolveDefinitionStartConfig(definition, dto);
+    const controllerType =
+      this.strategyConfigResolver.getDefinitionControllerType(definition);
 
     return {
       valid: true,
@@ -595,13 +628,15 @@ export class AdminStrategyService {
     executorType: string;
   }> {
     const definition = await this.getStrategyDefinition(dto.definitionId);
-    const controllerType = this.getDefinitionControllerType(definition);
-    const strategyType = this.toStrategyType(controllerType);
+    const controllerType =
+      this.strategyConfigResolver.getDefinitionControllerType(definition);
+    const strategyType =
+      this.strategyRuntimeDispatcher.toStrategyType(controllerType);
 
-    await this.strategyService.stopStrategyForUser(
+    await this.strategyRuntimeDispatcher.stopByStrategyType(
+      strategyType,
       dto.userId,
       dto.marketMakingOrderId || dto.clientId,
-      strategyType,
     );
 
     return {
@@ -621,7 +656,10 @@ export class AdminStrategyService {
       where: { enabled: true },
     });
     const byController = new Map(
-      definitions.map((d) => [this.getDefinitionControllerType(d), d]),
+      definitions.map((d) => [
+        this.strategyConfigResolver.getDefinitionControllerType(d),
+        d,
+      ]),
     );
 
     let updated = 0;
@@ -633,9 +671,10 @@ export class AdminStrategyService {
         continue;
       }
 
-      const controllerType = this.mapStrategyTypeToController(
-        instance.strategyType,
-      );
+      const controllerType =
+        this.strategyRuntimeDispatcher.mapStrategyTypeToController(
+          instance.strategyType,
+        );
       const definition = byController.get(controllerType);
 
       if (!definition) {
@@ -655,111 +694,6 @@ export class AdminStrategyService {
     }
 
     return { updated, skipped };
-  }
-
-  private async startByStrategyType(
-    strategyType: 'arbitrage' | 'pureMarketMaking' | 'volume',
-    config: Record<string, any>,
-  ): Promise<void> {
-    if (strategyType === 'arbitrage') {
-      await this.strategyService.startArbitrageStrategyForUser(
-        config as ArbitrageStrategyDto,
-        config.checkIntervalSeconds,
-        config.maxOpenOrders,
-      );
-
-      return;
-    }
-
-    if (strategyType === 'pureMarketMaking') {
-      await this.strategyService.executePureMarketMakingStrategy(
-        config as PureMarketMakingStrategyDto,
-      );
-
-      return;
-    }
-
-    await this.strategyService.executeVolumeStrategy(
-      config.exchangeName,
-      config.symbol,
-      config.incrementPercentage,
-      config.intervalTime,
-      config.tradeAmount,
-      config.numTrades,
-      config.userId,
-      config.clientId,
-      config.pricePushRate,
-      config.postOnlySide,
-    );
-  }
-
-  private async resolveDefinitionStartConfig(
-    dto: StartStrategyInstanceDto,
-  ): Promise<{
-    definition: StrategyDefinition;
-    mergedConfig: Record<string, any>;
-    strategyType: 'arbitrage' | 'pureMarketMaking' | 'volume';
-  }> {
-    const definition = await this.getStrategyDefinition(dto.definitionId);
-    const strategyType = this.toStrategyType(
-      this.getDefinitionControllerType(definition),
-    );
-
-    if (!definition.enabled) {
-      throw new BadRequestException(
-        `Strategy definition ${definition.key} is disabled`,
-      );
-    }
-
-    const marketMakingOrderId =
-      strategyType === 'pureMarketMaking'
-        ? dto.marketMakingOrderId || dto.clientId
-        : undefined;
-
-    const mergedConfig = {
-      ...(definition.defaultConfig || {}),
-      ...(dto.config || {}),
-      userId: dto.userId,
-      clientId: marketMakingOrderId || dto.clientId,
-      ...(marketMakingOrderId ? { marketMakingOrderId } : {}),
-    } as Record<string, any>;
-
-    this.validateConfigAgainstSchema(
-      mergedConfig,
-      definition.configSchema || {},
-    );
-
-    return {
-      definition,
-      mergedConfig,
-      strategyType,
-    };
-  }
-
-  private mapStrategyTypeToController(strategyType: string): string {
-    if (strategyType === 'marketMaking') {
-      return 'pureMarketMaking';
-    }
-
-    return strategyType;
-  }
-
-  private toStrategyType(
-    controllerType: string,
-  ): 'arbitrage' | 'pureMarketMaking' | 'volume' {
-    if (controllerType === 'arbitrage') {
-      return 'arbitrage';
-    }
-    if (controllerType === 'pureMarketMaking') {
-      return 'pureMarketMaking';
-    }
-    if (controllerType === 'volume') {
-      return 'volume';
-    }
-
-    throw new BadRequestException(
-      `Unsupported controllerType ${controllerType}. Allowed: arbitrage, pureMarketMaking, volume`,
-    );
   }
 
   private validateVersion(version: string): string {
@@ -786,120 +720,14 @@ export class AdminStrategyService {
     const snapshot = this.strategyDefinitionVersionRepository.create({
       definitionId: definition.id,
       version,
-      controllerType: this.getDefinitionControllerType(definition),
+      controllerType:
+        this.strategyConfigResolver.getDefinitionControllerType(definition),
       configSchema: definition.configSchema,
       defaultConfig: definition.defaultConfig,
       description: definition.description,
     });
 
     await this.strategyDefinitionVersionRepository.save(snapshot);
-  }
-
-  private getDefinitionControllerType(
-    definition: Partial<StrategyDefinition>,
-  ): string {
-    const controllerType = definition.controllerType || definition.executorType;
-
-    if (!controllerType) {
-      throw new BadRequestException(
-        'Strategy definition controllerType is missing',
-      );
-    }
-
-    return controllerType;
-  }
-
-  private validateConfigAgainstSchema(
-    config: Record<string, any>,
-    schema: Record<string, any>,
-    path = '',
-  ): void {
-    const schemaType = schema?.type;
-
-    if (schemaType && schemaType !== 'object') {
-      throw new BadRequestException('Only object config schemas are supported');
-    }
-
-    const required = Array.isArray(schema?.required) ? schema.required : [];
-    const properties =
-      schema?.properties && typeof schema.properties === 'object'
-        ? schema.properties
-        : {};
-    const additionalProperties = schema?.additionalProperties;
-
-    for (const field of required) {
-      if (config[field] === undefined || config[field] === null) {
-        throw new BadRequestException(
-          `Missing required config field: ${field}`,
-        );
-      }
-    }
-
-    for (const [field, rule] of Object.entries<Record<string, any>>(
-      properties,
-    )) {
-      const fieldPath = path ? `${path}.${field}` : field;
-
-      if (config[field] === undefined || config[field] === null) {
-        continue;
-      }
-      const value = config[field];
-
-      if (rule.type === 'string' && typeof value !== 'string') {
-        throw new BadRequestException(
-          `Config field ${fieldPath} must be string`,
-        );
-      }
-      if (rule.type === 'number' && typeof value !== 'number') {
-        throw new BadRequestException(
-          `Config field ${fieldPath} must be number`,
-        );
-      }
-      if (rule.type === 'boolean' && typeof value !== 'boolean') {
-        throw new BadRequestException(
-          `Config field ${fieldPath} must be boolean`,
-        );
-      }
-      if (rule.type === 'array' && !Array.isArray(value)) {
-        throw new BadRequestException(
-          `Config field ${fieldPath} must be array`,
-        );
-      }
-      if (rule.type === 'object') {
-        if (typeof value !== 'object' || Array.isArray(value)) {
-          throw new BadRequestException(
-            `Config field ${fieldPath} must be object`,
-          );
-        }
-        this.validateConfigAgainstSchema(value, rule, fieldPath);
-      }
-      if (rule.minimum !== undefined && typeof value === 'number') {
-        if (value < Number(rule.minimum)) {
-          throw new BadRequestException(
-            `Config field ${fieldPath} must be >= ${rule.minimum}`,
-          );
-        }
-      }
-      if (Array.isArray(rule.enum) && !rule.enum.includes(value)) {
-        throw new BadRequestException(
-          `Config field ${fieldPath} must be one of: ${rule.enum.join(', ')}`,
-        );
-      }
-    }
-
-    if (additionalProperties === false) {
-      const knownFields = new Set(Object.keys(properties));
-
-      for (const field of Object.keys(config)) {
-        if (!knownFields.has(field)) {
-          const fieldPath = path ? `${path}.${field}` : field;
-
-          throw new BadRequestException(
-            `Config field ${fieldPath} is not allowed`,
-          );
-        }
-      }
-    }
   }
 
   //   async getStrategyPerformance(strategyKey: string) {

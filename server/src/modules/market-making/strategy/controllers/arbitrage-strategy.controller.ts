@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
+import { ExecutorAction } from '../executor-action.types';
 import { ArbitrageStrategyDto } from '../strategy.dto';
 import { StrategyService } from '../strategy.service';
 import {
@@ -19,12 +20,16 @@ export class ArbitrageStrategyController implements StrategyController {
     );
   }
 
-  async runSession(
+  async decideActions(
     session: StrategyRuntimeSession,
-    _ts: string,
+    ts: string,
     service: StrategyService,
-  ): Promise<void> {
-    await service.runArbitrageSession(session.params as ArbitrageStrategyDto);
+  ): Promise<ExecutorAction[]> {
+    return await service.buildArbitrageActions(
+      session.strategyKey,
+      session.params as ArbitrageStrategyDto,
+      ts,
+    );
   }
 
   async rerun(

@@ -20,9 +20,12 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
+import { Repository } from 'typeorm';
 
-import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import {
   ArbitrageStrategyDto,
@@ -33,6 +36,8 @@ import {
   StopVolumeStrategyDto,
 } from './strategy.dto';
 import { StrategyService } from './strategy.service';
+import { normalizeExecutionCategory } from './strategy-execution-category';
+import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
 import { TimeIndicatorStrategyService } from './time-indicator.service';
 import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
@@ -44,8 +49,12 @@ export class StrategyController {
   private readonly logger = new Logger(StrategyController.name);
   constructor(
     private readonly strategyService: StrategyService,
-    private readonly adminService: AdminStrategyService,
+    private readonly strategyRuntimeDispatcher: StrategyRuntimeDispatcherService,
     private readonly timeIndicatorStrategyService: TimeIndicatorStrategyService,
+    @InjectRepository(Contribution)
+    private readonly contributionRepository: Repository<Contribution>,
+    @InjectRepository(MixinUser)
+    private readonly mixinUserRepository: Repository<MixinUser>,
   ) {}
 
   @Get('running')
@@ -118,16 +127,40 @@ export class StrategyController {
       tokenAddress,
     } = joinStrategyDto;
 
-    return this.adminService.joinStrategy(
+    const strategy = await this.strategyService.getStrategyInstanceKey(
+      strategyKey,
+    );
+
+    if (!strategy || strategy.status !== 'running') {
+      throw new BadRequestException(`Strategy ${strategyKey} is not active`);
+    }
+
+    const mixinUser = await this.mixinUserRepository.findOne({
+      where: { user_id: userId },
+    });
+
+    if (!mixinUser) {
+      throw new BadRequestException(`User ${userId} does not exist`);
+    }
+
+    const contribution = this.contributionRepository.create({
       userId,
       clientId,
-      strategyKey,
+      mixinUser,
+      strategy,
       amount,
       transactionHash,
+      status: 'pending',
       tokenSymbol,
       chainId,
       tokenAddress,
-    );
+    });
+
+    await this.contributionRepository.save(contribution);
+
+    return {
+      message: `User ${userId} has joined the strategy with ${amount} funds`,
+    };
   }
 
   @Post('/execute-arbitrage')
@@ -139,11 +172,11 @@ export class StrategyController {
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
   async executeArbitrage(@Body() strategyParamsDto: ArbitrageStrategyDto) {
-    return this.strategyService.startArbitrageStrategyForUser(
-      strategyParamsDto,
-      strategyParamsDto.checkIntervalSeconds,
-      strategyParamsDto.maxOpenOrders,
-    );
+    return this.strategyRuntimeDispatcher.startByStrategyType('arbitrage', {
+      ...strategyParamsDto,
+      checkIntervalSeconds: strategyParamsDto.checkIntervalSeconds,
+      maxOpenOrders: strategyParamsDto.maxOpenOrders,
+    });
   }
 
   @Get('/stop-arbitrage')
@@ -160,10 +193,10 @@ export class StrategyController {
     @Query('userId') userId: string,
     @Query('clientId') clientId: string,
   ) {
-    return await this.strategyService.stopStrategyForUser(
+    return this.strategyRuntimeDispatcher.stopByStrategyType(
+      'arbitrage',
       userId,
       clientId,
-      'arbitrage',
     );
   }
 
@@ -179,9 +212,9 @@ export class StrategyController {
   async executePureMarketMaking(
     @Body() strategyParamsDto: PureMarketMakingStrategyDto,
   ) {
-    // Passing the entire DTO to the service
-    return this.strategyService.executePureMarketMakingStrategy(
-      strategyParamsDto,
+    return this.strategyRuntimeDispatcher.startByStrategyType(
+      'pureMarketMaking',
+      strategyParamsDto as Record<string, any>,
     );
   }
 
@@ -200,11 +233,10 @@ export class StrategyController {
     @Query('userId') userId: string,
     @Query('clientId') clientId: string,
   ) {
-    // This assumes you have a method in StrategyService to stop strategies by type
-    return this.strategyService.stopStrategyForUser(
+    return this.strategyRuntimeDispatcher.stopByStrategyType(
+      'pureMarketMaking',
       userId,
       clientId,
-      'pureMarketMaking',
     );
   }
 
@@ -246,9 +278,14 @@ export class StrategyController {
       feeTier,
       slippageBps,
       recipient,
+      executionCategory,
     } = executeVolumeStrategyDto;
 
-    return this.strategyService.executeVolumeStrategy(
+    const normalizedExecutionCategory = normalizeExecutionCategory(
+      executionCategory || executionVenue,
+    );
+
+    return this.strategyRuntimeDispatcher.startByStrategyType('volume', {
       exchangeName,
       symbol,
       incrementPercentage,
@@ -267,7 +304,8 @@ export class StrategyController {
       feeTier,
       slippageBps,
       recipient,
-    );
+      executionCategory: normalizedExecutionCategory,
+    });
   }
 
   @Post('/stop-volume-strategy')
@@ -281,7 +319,8 @@ export class StrategyController {
   async stopVolumeStrategy(
     @Body() stopVolumeStrategyDto: StopVolumeStrategyDto,
   ) {
-    return this.strategyService.stopVolumeStrategy(
+    return this.strategyRuntimeDispatcher.stopByStrategyType(
+      'volume',
       stopVolumeStrategyDto.userId,
       stopVolumeStrategyDto.clientId,
     );

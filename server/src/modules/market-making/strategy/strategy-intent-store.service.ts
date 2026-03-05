@@ -34,6 +34,8 @@ export class StrategyIntentStoreService {
       price: intent.price,
       qty: intent.qty,
       mixinOrderId: intent.mixinOrderId,
+      executionCategory: intent.executionCategory,
+      metadata: intent.metadata,
       status: intent.status,
       errorReason: undefined,
       createdAt: existing?.createdAt || intent.createdAt,

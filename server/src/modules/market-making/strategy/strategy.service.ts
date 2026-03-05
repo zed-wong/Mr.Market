@@ -5,10 +5,8 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
-import * as ccxt from 'ccxt';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import {
@@ -23,7 +21,8 @@ import { Repository } from 'typeorm';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
-import { DexVolumeStrategyService } from './dex-volume.strategy.service';
+import { ExecutorAction } from './executor-action.types';
+import { ExecutorOrchestratorService } from './executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './quote-executor-manager.service';
 import {
   ArbitrageStrategyDto,
@@ -36,9 +35,12 @@ import {
   StrategyRuntimeSession,
   StrategyType,
 } from './strategy-controller.types';
+import {
+  normalizeExecutionCategory,
+  StrategyExecutionCategory,
+} from './strategy-execution-category';
 import { StrategyOrderIntent } from './strategy-intent.types';
-import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
-import { StrategyIntentStoreService } from './strategy-intent-store.service';
+import { StrategyMarketDataProviderService } from './strategy-market-data-provider.service';
 
 type BaseVolumeStrategyParams = {
   exchangeName: string;
@@ -50,16 +52,18 @@ type BaseVolumeStrategyParams = {
   userId: string;
   clientId: string;
   pricePushRate: number;
-  executionVenue: VolumeExecutionVenue;
+  executionCategory: StrategyExecutionCategory;
+  executionVenue?: VolumeExecutionVenue;
   postOnlySide?: 'buy' | 'sell';
   executedTrades?: number;
 };
 
 type CexVolumeStrategyParams = BaseVolumeStrategyParams & {
-  executionVenue: 'cex';
+  executionCategory: 'clob_cex' | 'clob_dex';
 };
 
-type DexVolumeStrategyParams = BaseVolumeStrategyParams & {
+type AmmDexVolumeStrategyParams = BaseVolumeStrategyParams & {
+  executionCategory: 'amm_dex';
   executionVenue: 'dex';
   dexId: DexAdapterId;
   chainId: number;
@@ -70,7 +74,9 @@ type DexVolumeStrategyParams = BaseVolumeStrategyParams & {
   recipient?: string;
 };
 
-type VolumeStrategyParams = CexVolumeStrategyParams | DexVolumeStrategyParams;
+type VolumeStrategyParams =
+  | CexVolumeStrategyParams
+  | AmmDexVolumeStrategyParams;
 
 @Injectable()
 export class StrategyService
@@ -94,19 +100,15 @@ export class StrategyService
     @Optional()
     private readonly clockTickCoordinatorService?: ClockTickCoordinatorService,
     @Optional()
-    private readonly strategyIntentExecutionService?: StrategyIntentExecutionService,
-    @Optional()
-    private readonly strategyIntentStoreService?: StrategyIntentStoreService,
-    @Optional()
     private readonly quoteExecutorManagerService?: QuoteExecutorManagerService,
     @Optional()
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
     @Optional()
-    private readonly configService?: ConfigService,
-    @Optional()
     private readonly strategyControllerRegistry?: StrategyControllerRegistry,
     @Optional()
-    private readonly dexVolumeStrategyService?: DexVolumeStrategyService,
+    private readonly executorOrchestratorService?: ExecutorOrchestratorService,
+    @Optional()
+    private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -236,50 +238,9 @@ export class StrategyService
       return;
     }
 
-    if (strategyInstance.strategyType === 'arbitrage') {
-      await this.startArbitrageStrategyForUser(
-        strategyInstance.parameters as ArbitrageStrategyDto,
-        strategyInstance.parameters.checkIntervalSeconds,
-        strategyInstance.parameters.maxOpenOrders,
-      );
-
-      return;
-    }
-
-    if (strategyInstance.strategyType === 'pureMarketMaking') {
-      await this.executePureMarketMakingStrategy(
-        strategyInstance.parameters as PureMarketMakingStrategyDto,
-      );
-
-      return;
-    }
-
-    if (strategyInstance.strategyType === 'volume') {
-      await this.executeVolumeStrategy(
-        strategyInstance.parameters.exchangeName,
-        strategyInstance.parameters.symbol,
-        strategyInstance.parameters.baseIncrementPercentage,
-        strategyInstance.parameters.baseIntervalTime,
-        strategyInstance.parameters.baseTradeAmount,
-        strategyInstance.parameters.numTrades,
-        strategyInstance.parameters.userId,
-        strategyInstance.parameters.clientId,
-        strategyInstance.parameters.pricePushRate,
-        strategyInstance.parameters.postOnlySide,
-        strategyInstance.parameters.executionVenue,
-        strategyInstance.parameters.dexId,
-        strategyInstance.parameters.chainId,
-        strategyInstance.parameters.tokenIn,
-        strategyInstance.parameters.tokenOut,
-        strategyInstance.parameters.feeTier,
-        strategyInstance.parameters.slippageBps,
-        strategyInstance.parameters.recipient,
-      );
-
-      return;
-    }
-
-    throw new Error(`Unknown strategy type: ${strategyInstance.strategyType}`);
+    throw new Error(
+      `Strategy controller for type ${strategyInstance.strategyType} is not registered`,
+    );
   }
 
   async startArbitrageStrategyForUser(
@@ -364,7 +325,7 @@ export class StrategyService
     }
     const strategyKey = createPureMarketMakingStrategyKey(marketMakingOrderId);
 
-    const intents = await this.buildPureMarketMakingIntents(
+    const actions = await this.buildPureMarketMakingActions(
       strategyKey,
       {
         ...strategyParamsDto,
@@ -374,7 +335,7 @@ export class StrategyService
       getRFC3339Timestamp(),
     );
 
-    await this.publishIntents(strategyKey, intents);
+    await this.publishIntents(strategyKey, actions);
   }
 
   async executeVolumeStrategy(
@@ -396,6 +357,7 @@ export class StrategyService
     feeTier?: number,
     slippageBps?: number,
     recipient?: string,
+    executionCategoryInput?: string,
   ) {
     const strategyKey = createStrategyKey({
       type: 'volume',
@@ -403,9 +365,19 @@ export class StrategyService
       client_id: clientId,
     });
 
+    const executionCategory = normalizeExecutionCategory(
+      executionCategoryInput || executionVenue,
+    );
+
+    if (executionCategory === 'clob_dex') {
+      throw new Error(
+        'executionCategory clob_dex is not implemented yet. Use clob_cex or amm_dex',
+      );
+    }
+
     const params: VolumeStrategyParams =
-      executionVenue === 'dex'
-        ? this.buildDexVolumeParams({
+      executionCategory === 'amm_dex'
+        ? this.buildAmmDexVolumeParams({
             exchangeName,
             symbol,
             baseIncrementPercentage,
@@ -424,7 +396,8 @@ export class StrategyService
             slippageBps,
             recipient,
           })
-        : this.buildCexVolumeParams({
+        : this.buildClobVolumeParams({
+            executionCategory,
             exchangeName,
             symbol,
             baseIncrementPercentage,
@@ -547,16 +520,28 @@ export class StrategyService
     return this.stopStrategyForUser(userId, clientId, 'volume');
   }
 
-  async evaluateArbitrageOpportunityVWAP(
-    exchangeA: ccxt.Exchange,
-    exchangeB: ccxt.Exchange,
+  async buildArbitrageActions(
+    strategyKey: string,
     strategyParamsDto: ArbitrageStrategyDto,
-  ) {
+    ts: string,
+  ): Promise<ExecutorAction[]> {
     const { userId, clientId, pair, amountToTrade, minProfitability } =
       strategyParamsDto;
 
-    const orderBookA = await exchangeA.fetchOrderBook(pair);
-    const orderBookB = await exchangeB.fetchOrderBook(pair);
+    if (!this.strategyMarketDataProviderService) {
+      throw new Error('strategy market data provider is not available');
+    }
+
+    const orderBookA =
+      await this.strategyMarketDataProviderService.getOrderBook(
+        strategyParamsDto.exchangeAName,
+        pair,
+      );
+    const orderBookB =
+      await this.strategyMarketDataProviderService.getOrderBook(
+        strategyParamsDto.exchangeBName,
+        pair,
+      );
 
     const vwapA = this.calculateVWAPForAmount(orderBookA, amountToTrade, 'buy');
     const vwapB = this.calculateVWAPForAmount(
@@ -566,87 +551,108 @@ export class StrategyService
     );
 
     if (vwapA.isLessThanOrEqualTo(0) || vwapB.isLessThanOrEqualTo(0)) {
-      return;
+      return [];
     }
 
-    const strategyKey = createStrategyKey({
-      type: 'arbitrage',
-      user_id: userId,
-      client_id: clientId,
-    });
-
     const threshold = new BigNumber(minProfitability);
-    const intents: StrategyOrderIntent[] = [];
-    const ts = getRFC3339Timestamp();
+    const actions: ExecutorAction[] = [];
+    const executionCategory =
+      String(
+        (strategyParamsDto as any).executionCategory || '',
+      ).toLowerCase() === 'clob_dex'
+        ? 'clob_dex'
+        : 'clob_cex';
 
     if (vwapB.minus(vwapA).dividedBy(vwapA).isGreaterThanOrEqualTo(threshold)) {
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           userId,
           clientId,
-          exchangeA.id,
+          strategyParamsDto.exchangeAName,
           pair,
           'buy',
           vwapA,
           new BigNumber(amountToTrade),
           ts,
           'arb-a-buy',
+          executionCategory,
         ),
       );
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           userId,
           clientId,
-          exchangeB.id,
+          strategyParamsDto.exchangeBName,
           pair,
           'sell',
           vwapB,
           new BigNumber(amountToTrade),
           ts,
           'arb-b-sell',
+          executionCategory,
         ),
       );
     }
 
     if (vwapA.minus(vwapB).dividedBy(vwapB).isGreaterThanOrEqualTo(threshold)) {
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           userId,
           clientId,
-          exchangeB.id,
+          strategyParamsDto.exchangeBName,
           pair,
           'buy',
           vwapB,
           new BigNumber(amountToTrade),
           ts,
           'arb-b-buy',
+          executionCategory,
         ),
       );
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           userId,
           clientId,
-          exchangeA.id,
+          strategyParamsDto.exchangeAName,
           pair,
           'sell',
           vwapA,
           new BigNumber(amountToTrade),
           ts,
           'arb-a-sell',
+          executionCategory,
         ),
       );
     }
 
-    if (intents.length > 0) {
-      await this.publishIntents(strategyKey, intents);
+    return actions;
+  }
+
+  async evaluateArbitrageOpportunityVWAP(
+    strategyParamsDto: ArbitrageStrategyDto,
+  ) {
+    const strategyKey = createStrategyKey({
+      type: 'arbitrage',
+      user_id: strategyParamsDto.userId,
+      client_id: strategyParamsDto.clientId,
+    });
+
+    const actions = await this.buildArbitrageActions(
+      strategyKey,
+      strategyParamsDto,
+      getRFC3339Timestamp(),
+    );
+
+    if (actions.length > 0) {
+      await this.publishIntents(strategyKey, actions);
     }
   }
 
@@ -726,6 +732,35 @@ export class StrategyService
     parameters: Record<string, any>,
   ): Promise<number> {
     if (strategyType === 'volume') {
+      const venue = String(parameters.executionVenue || '').toLowerCase();
+      const category = String(parameters.executionCategory || '').toLowerCase();
+
+      if (venue === 'dex' || category === 'amm_dex') {
+        return 0;
+      }
+
+      const referenceExchange = String(parameters.exchangeName || '').trim();
+      const referencePair = String(parameters.symbol || '').trim();
+
+      if (
+        this.strategyMarketDataProviderService &&
+        referenceExchange &&
+        referencePair
+      ) {
+        try {
+          const ref =
+            await this.strategyMarketDataProviderService.getReferencePrice(
+              referenceExchange,
+              referencePair,
+              PriceSourceType.MID_PRICE,
+            );
+
+          return Number(ref || 0);
+        } catch {
+          return 0;
+        }
+      }
+
       return 0;
     }
 
@@ -751,18 +786,9 @@ export class StrategyService
       return controller.getCadenceMs(parameters, this);
     }
 
-    if (strategyType === 'arbitrage') {
-      return Math.max(
-        1000,
-        Number(parameters?.checkIntervalSeconds || 10) * 1000,
-      );
-    }
-
-    if (strategyType === 'pureMarketMaking') {
-      return Math.max(1000, Number(parameters?.orderRefreshTime || 10000));
-    }
-
-    return Math.max(1000, Number(parameters?.baseIntervalTime || 10) * 1000);
+    throw new Error(
+      `Strategy controller for type ${strategyType} is not registered`,
+    );
   }
 
   private async runSession(
@@ -774,127 +800,40 @@ export class StrategyService
     );
 
     if (controller) {
-      await controller.runSession(session, ts, this);
+      const actions = await controller.decideActions(session, ts, this);
 
-      return;
-    }
+      if (actions.length > 0) {
+        await this.publishIntents(session.strategyKey, actions);
 
-    if (session.strategyType === 'pureMarketMaking') {
-      await this.runPureMarketMakingSession(
-        session.strategyKey,
-        session.params as PureMarketMakingStrategyDto,
-        ts,
-      );
-
-      return;
-    }
-
-    if (session.strategyType === 'arbitrage') {
-      await this.runArbitrageSession(session.params as ArbitrageStrategyDto);
-
-      return;
-    }
-
-    if (session.strategyType === 'volume') {
-      await this.runVolumeSession(session, ts);
-
-      return;
-    }
-
-    throw new Error(`Unknown strategy type: ${session.strategyType}`);
-  }
-
-  async runPureMarketMakingSession(
-    strategyKey: string,
-    params: PureMarketMakingStrategyDto,
-    ts: string,
-  ): Promise<void> {
-    const intents = await this.buildPureMarketMakingIntents(
-      strategyKey,
-      params,
-      ts,
-    );
-
-    await this.publishIntents(strategyKey, intents);
-  }
-
-  async runArbitrageSession(params: ArbitrageStrategyDto): Promise<void> {
-    const exchangeA = this.exchangeInitService.getExchange(
-      params.exchangeAName,
-    );
-    const exchangeB = this.exchangeInitService.getExchange(
-      params.exchangeBName,
-    );
-
-    await this.evaluateArbitrageOpportunityVWAP(exchangeA, exchangeB, params);
-  }
-
-  async runVolumeSession(
-    session: StrategyRuntimeSession,
-    ts: string,
-  ): Promise<void> {
-    const params = session.params as VolumeStrategyParams;
-    const executedTrades = Number(params.executedTrades || 0);
-    const activeRunId = session.runId;
-
-    const isSameActiveSession = (
-      active: StrategyRuntimeSession | undefined,
-    ): active is StrategyRuntimeSession =>
-      !!active &&
-      active.userId === session.userId &&
-      active.clientId === session.clientId &&
-      active.strategyType === session.strategyType &&
-      active.runId === activeRunId;
-
-    const executeDexVolumeCycle = async (
-      strategyKey: string,
-      dexParams: DexVolumeStrategyParams,
-      executedTradesCount: number,
-    ): Promise<boolean> => {
-      if (!this.dexVolumeStrategyService) {
-        this.logger.error(
-          `Dex volume service is not available. Cannot execute ${strategyKey}`,
-        );
-
-        return false;
+        if (typeof controller.onActionsPublished === 'function') {
+          await controller.onActionsPublished(session, actions, this);
+        }
       }
 
-      const side = this.resolveVolumeSide(
-        dexParams.postOnlySide,
-        executedTradesCount,
-      );
+      return;
+    }
 
-      const result = await this.dexVolumeStrategyService.executeCycle({
-        dexId: dexParams.dexId,
-        chainId: dexParams.chainId,
-        tokenIn: dexParams.tokenIn,
-        tokenOut: dexParams.tokenOut,
-        feeTier: dexParams.feeTier,
-        baseTradeAmount: dexParams.baseTradeAmount,
-        baseIncrementPercentage: dexParams.baseIncrementPercentage,
-        pricePushRate: dexParams.pricePushRate,
-        executedTrades: executedTradesCount,
-        side,
-        slippageBps: dexParams.slippageBps,
-        recipient: dexParams.recipient,
-      });
+    throw new Error(
+      `Strategy controller for type ${session.strategyType} is not registered`,
+    );
+  }
 
-      this.logger.log(
-        `DEX volume cycle executed for ${strategyKey}: txHash=${result.txHash}, side=${result.side}, amountIn=${result.amountIn}`,
-      );
-
-      return true;
-    };
+  async buildVolumeSessionActions(
+    session: StrategyRuntimeSession,
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    const params = session.params as VolumeStrategyParams;
+    const executedTrades = Number(params.executedTrades || 0);
 
     if (executedTrades >= Number(params.numTrades || 0)) {
       const activeBeforeStop = this.sessions.get(session.strategyKey);
 
-      if (!isSameActiveSession(activeBeforeStop)) {
+      if (!this.isSameActiveSession(activeBeforeStop, session)) {
         this.logger.warn(
           `Skipping stale volume stop for ${session.strategyKey}: active session changed`,
         );
 
-        return;
+        return [];
       }
 
       await this.stopStrategyForUser(
@@ -903,49 +842,60 @@ export class StrategyService
         session.strategyType,
       );
 
+      return [];
+    }
+
+    if (params.executionCategory === 'amm_dex') {
+      const side = this.resolveVolumeSide(params.postOnlySide, executedTrades);
+      const amountIn = this.computeAmmAmountIn(params, executedTrades);
+
+      return [
+        {
+          type: 'EXECUTE_AMM_SWAP',
+          intentId: `${session.strategyKey}:${ts}:amm-${executedTrades}`,
+          strategyInstanceId: session.strategyKey,
+          strategyKey: session.strategyKey,
+          userId: session.userId,
+          clientId: session.clientId,
+          exchange: params.exchangeName,
+          pair: params.symbol,
+          side,
+          price: '0',
+          qty: amountIn,
+          executionCategory: 'amm_dex',
+          metadata: {
+            dexId: params.dexId,
+            chainId: params.chainId,
+            tokenIn: params.tokenIn,
+            tokenOut: params.tokenOut,
+            feeTier: params.feeTier,
+            baseTradeAmount: params.baseTradeAmount,
+            baseIncrementPercentage: params.baseIncrementPercentage,
+            pricePushRate: params.pricePushRate,
+            executedTrades,
+            slippageBps: params.slippageBps,
+            recipient: params.recipient,
+          },
+          createdAt: ts,
+          status: 'NEW',
+        },
+      ];
+    }
+
+    return await this.buildVolumeActions(session.strategyKey, params, ts);
+  }
+
+  async onVolumeActionsPublished(
+    session: StrategyRuntimeSession,
+    actions: ExecutorAction[],
+  ): Promise<void> {
+    if (actions.length === 0) {
       return;
     }
-
-    let intents: StrategyOrderIntent[] = [];
-    let didExecute = false;
-
-    if (params.executionVenue === 'dex') {
-      didExecute = await executeDexVolumeCycle(
-        session.strategyKey,
-        params,
-        executedTrades,
-      );
-    } else {
-      intents = await this.buildVolumeIntents(session.strategyKey, params, ts);
-      didExecute = intents.length > 0;
-    }
-
-    if (!didExecute) {
-      return;
-    }
-
-    const activeBeforePublish = this.sessions.get(session.strategyKey);
-
-    if (!isSameActiveSession(activeBeforePublish)) {
-      this.logger.warn(
-        `Skipping stale volume tick before publish for ${session.strategyKey}: active session changed`,
-      );
-
-      return;
-    }
-
-    if (intents.length > 0) {
-      await this.publishIntents(session.strategyKey, intents);
-    }
-
-    const nextParams: VolumeStrategyParams = {
-      ...params,
-      executedTrades: executedTrades + 1,
-    };
 
     const activeBeforePersist = this.sessions.get(session.strategyKey);
 
-    if (!isSameActiveSession(activeBeforePersist)) {
+    if (!this.isSameActiveSession(activeBeforePersist, session)) {
       this.logger.warn(
         `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
       );
@@ -953,39 +903,58 @@ export class StrategyService
       return;
     }
 
+    const params = activeBeforePersist.params as VolumeStrategyParams;
+    const nextParams: VolumeStrategyParams = {
+      ...params,
+      executedTrades: Number(params.executedTrades || 0) + 1,
+    };
+
     await this.persistStrategyParams(session.strategyKey, nextParams);
 
     const currentSession = this.sessions.get(session.strategyKey);
 
-    if (isSameActiveSession(currentSession)) {
+    if (this.isSameActiveSession(currentSession, session)) {
       this.sessions.set(session.strategyKey, {
         ...currentSession,
         params: nextParams,
       });
-    } else {
-      this.logger.warn(
-        `Skipping stale volume tick write-back for ${session.strategyKey}: active session changed`,
-      );
+
+      return;
     }
+
+    this.logger.warn(
+      `Skipping stale volume tick write-back for ${session.strategyKey}: active session changed`,
+    );
   }
 
-  private async buildVolumeIntents(
+  private isSameActiveSession(
+    active: StrategyRuntimeSession | undefined,
+    expected: StrategyRuntimeSession,
+  ): active is StrategyRuntimeSession {
+    return (
+      !!active &&
+      active.userId === expected.userId &&
+      active.clientId === expected.clientId &&
+      active.strategyType === expected.strategyType &&
+      active.runId === expected.runId
+    );
+  }
+
+  async buildVolumeActions(
     strategyKey: string,
     params: CexVolumeStrategyParams,
     ts: string,
-  ): Promise<StrategyOrderIntent[]> {
-    const exchange = this.exchangeInitService.getExchange(params.exchangeName);
-    const orderBook = await exchange.fetchOrderBook(params.symbol);
-    const bestBid = this.toPositiveNumber(orderBook?.bids?.[0]?.[0]);
-    const bestAsk = this.toPositiveNumber(orderBook?.asks?.[0]?.[0]);
+  ): Promise<ExecutorAction[]> {
+    if (!this.strategyMarketDataProviderService) {
+      throw new Error('strategy market data provider is not available');
+    }
 
-    if (bestBid === undefined || bestAsk === undefined) {
-      this.logger.warn(
-        `Skipping volume cycle for ${strategyKey}: missing best bid/ask on ${params.exchangeName} ${params.symbol}`,
+    const { bestBid, bestAsk } =
+      await this.strategyMarketDataProviderService.getBestBidAsk(
+        params.exchangeName,
+        params.symbol,
       );
 
-      return [];
-    }
     const mid = new BigNumber(bestBid).plus(bestAsk).dividedBy(2);
     const pushMultiplier = new BigNumber(1).plus(
       new BigNumber(params.pricePushRate || 0)
@@ -1036,27 +1005,27 @@ export class StrategyService
         strategyKey,
         params.userId,
         params.clientId,
-        exchange.id,
+        params.exchangeName,
         params.symbol,
         side,
         price,
         qty,
         ts,
         `volume-${params.executedTrades || 0}`,
+        params.executionCategory,
       ),
     ];
   }
 
-  private async buildPureMarketMakingIntents(
+  async buildPureMarketMakingActions(
     strategyKey: string,
     params: PureMarketMakingStrategyDto,
     ts: string,
-  ): Promise<StrategyOrderIntent[]> {
-    const intents: StrategyOrderIntent[] = [];
-    const exchange = this.exchangeInitService.getExchange(params.exchangeName);
+  ): Promise<ExecutorAction[]> {
+    const actions: ExecutorAction[] = [];
     const priceExchange = params.oracleExchangeName
-      ? this.exchangeInitService.getExchange(params.oracleExchangeName)
-      : exchange;
+      ? params.oracleExchangeName
+      : params.exchangeName;
     let priceSource: BigNumber;
 
     try {
@@ -1072,7 +1041,7 @@ export class StrategyService
         `Skipping cycle for ${strategyKey}: cannot resolve price source for ${params.exchangeName} ${params.pair} (${error.message})`,
       );
 
-      return intents;
+      return actions;
     }
 
     if (!priceSource.isFinite() || priceSource.isLessThanOrEqualTo(0)) {
@@ -1082,7 +1051,7 @@ export class StrategyService
         } ${params.pair}`,
       );
 
-      return intents;
+      return actions;
     }
 
     const openOrders =
@@ -1134,24 +1103,25 @@ export class StrategyService
         continue;
       }
 
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           params.userId,
           params.clientId,
-          exchange.id,
+          params.exchangeName,
           params.pair,
           quote.side,
           quotePrice,
           new BigNumber(quote.qty),
           ts,
           `mm-layer-${quote.layer}-${quote.side}`,
+          'clob_cex',
         ),
       );
     }
 
-    return intents;
+    return actions;
   }
 
   private buildLegacyQuotes(
@@ -1233,6 +1203,8 @@ export class StrategyService
     qty: BigNumber,
     ts: string,
     suffix: string,
+    executionCategory?: StrategyExecutionCategory,
+    metadata?: Record<string, unknown>,
   ): StrategyOrderIntent {
     return {
       type: 'CREATE_LIMIT_ORDER',
@@ -1246,6 +1218,8 @@ export class StrategyService
       side,
       price: price.toFixed(),
       qty: qty.toFixed(),
+      executionCategory,
+      metadata,
       createdAt: ts,
       status: 'NEW',
     };
@@ -1253,73 +1227,48 @@ export class StrategyService
 
   private async publishIntents(
     strategyKey: string,
-    intents: StrategyOrderIntent[],
+    intents: ExecutorAction[],
   ): Promise<void> {
     if (intents.length === 0) {
       return;
     }
 
-    this.latestIntentsByStrategy.set(strategyKey, intents);
-    for (const intent of intents) {
-      await this.strategyIntentStoreService?.upsertIntent(intent);
+    const publishedIntents =
+      await this.executorOrchestratorService?.dispatchActions(
+        strategyKey,
+        intents as ExecutorAction[],
+      );
+
+    if (publishedIntents && publishedIntents.length > 0) {
+      this.latestIntentsByStrategy.set(strategyKey, publishedIntents);
+
+      return;
     }
 
-    const intentExecutionDriver = String(
-      this.configService?.get('strategy.intent_execution_driver', 'worker') ||
-        'worker',
-    ).toLowerCase();
-
-    if (intentExecutionDriver === 'sync') {
-      await this.strategyIntentExecutionService?.consumeIntents(intents);
-    }
-
-    this.logger.log(
-      `Published ${intents.length} intents for ${strategyKey} (driver=${intentExecutionDriver})`,
-    );
+    throw new Error('executor orchestrator did not publish intents');
   }
 
   private async getPriceSource(
-    exchange: ccxt.Exchange,
+    exchangeName: string,
     pair: string,
     priceSourceType: PriceSourceType,
   ): Promise<number> {
-    const orderBook = await exchange.fetchOrderBook(pair);
-    const bestBid = this.toPositiveNumber(orderBook?.bids?.[0]?.[0]);
-    const bestAsk = this.toPositiveNumber(orderBook?.asks?.[0]?.[0]);
-
-    if (priceSourceType === PriceSourceType.MID_PRICE) {
-      if (bestBid !== undefined && bestAsk !== undefined) {
-        return new BigNumber(bestBid).plus(bestAsk).dividedBy(2).toNumber();
-      }
+    if (!this.strategyMarketDataProviderService) {
+      throw new Error('strategy market data provider is not available');
     }
 
-    if (priceSourceType === PriceSourceType.BEST_BID) {
-      if (bestBid !== undefined) {
-        return Number(bestBid);
-      }
-    }
-
-    if (priceSourceType === PriceSourceType.BEST_ASK) {
-      if (bestAsk !== undefined) {
-        return Number(bestAsk);
-      }
-    }
-
-    const ticker = await exchange.fetchTicker(pair);
-    const fallbackPrice =
-      this.toPositiveNumber(ticker?.last) ??
-      this.toPositiveNumber(ticker?.bid) ??
-      this.toPositiveNumber(ticker?.ask);
-
-    if (fallbackPrice !== undefined) {
-      return fallbackPrice;
-    }
-
-    throw new Error('no usable price in order book or ticker');
+    return await this.strategyMarketDataProviderService.getReferencePrice(
+      exchangeName,
+      pair,
+      priceSourceType,
+    );
   }
 
   private calculateVWAPForAmount(
-    orderBook: ccxt.OrderBook,
+    orderBook: {
+      bids?: Array<[number, number]>;
+      asks?: Array<[number, number]>;
+    },
     amountToTrade: number,
     direction: 'buy' | 'sell',
   ): BigNumber {
@@ -1369,7 +1318,33 @@ export class StrategyService
     return executedTrades % 2 === 0 ? 'buy' : 'sell';
   }
 
-  private buildCexVolumeParams(input: {
+  private computeAmmAmountIn(
+    params: AmmDexVolumeStrategyParams,
+    executedTrades: number,
+  ): string {
+    const baseAmount = new BigNumber(params.baseTradeAmount || 0);
+
+    if (!baseAmount.isFinite() || baseAmount.isLessThanOrEqualTo(0)) {
+      return '0';
+    }
+
+    const pushMultiplier = new BigNumber(1).plus(
+      new BigNumber(params.pricePushRate || 0)
+        .dividedBy(100)
+        .multipliedBy(executedTrades),
+    );
+    const incrementMultiplier = new BigNumber(1).plus(
+      new BigNumber(params.baseIncrementPercentage || 0).dividedBy(100),
+    );
+
+    return baseAmount
+      .multipliedBy(pushMultiplier)
+      .multipliedBy(incrementMultiplier)
+      .toFixed();
+  }
+
+  private buildClobVolumeParams(input: {
+    executionCategory: 'clob_cex' | 'clob_dex';
     exchangeName: string | undefined;
     symbol: string | undefined;
     baseIncrementPercentage: number;
@@ -1392,6 +1367,7 @@ export class StrategyService
     }
 
     return {
+      executionCategory: input.executionCategory,
       executionVenue: 'cex',
       exchangeName,
       symbol,
@@ -1407,7 +1383,7 @@ export class StrategyService
     };
   }
 
-  private buildDexVolumeParams(input: {
+  private buildAmmDexVolumeParams(input: {
     exchangeName: string | undefined;
     symbol: string | undefined;
     baseIncrementPercentage: number;
@@ -1425,7 +1401,7 @@ export class StrategyService
     feeTier?: number;
     slippageBps?: number;
     recipient?: string;
-  }): DexVolumeStrategyParams {
+  }): AmmDexVolumeStrategyParams {
     if (!input.dexId) {
       throw new Error('dexId is required for dex volume strategy');
     }
@@ -1453,6 +1429,7 @@ export class StrategyService
       String(input.symbol || '').trim() || `${tokenIn}/${tokenOut}`;
 
     return {
+      executionCategory: 'amm_dex',
       executionVenue: 'dex',
       exchangeName: String(input.exchangeName || input.dexId),
       symbol: syntheticSymbol,
@@ -1473,16 +1450,6 @@ export class StrategyService
       slippageBps: input.slippageBps,
       recipient: input.recipient,
     };
-  }
-
-  private toPositiveNumber(value: unknown): number | undefined {
-    const parsed = Number(value);
-
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return undefined;
-    }
-
-    return parsed;
   }
 
   private async persistStrategyParams(

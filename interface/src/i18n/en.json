@@ -665,7 +665,7 @@
   "strategy_stop_success": "Strategy instance stopped",
   "strategy_stop_failed": "Failed to stop strategy instance",
   "strategy_instance_missing_definition": "This instance is missing a linked strategy definition"
-  ,"strategy_definition_required_fields": "Definition key, name, and executor type are required"
+  ,"strategy_definition_required_fields": "Definition key, name, and controller type are required"
   ,"strategy_definition_create_success": "Strategy definition created"
   ,"strategy_definition_create_failed": "Failed to create strategy definition"
   ,"strategy_definition_toggle_success": "Strategy definition state updated"
@@ -681,5 +681,8 @@
   ,"publish": "Publish"
   ,"enable": "Enable"
   ,"disable": "Disable"
+  ,"remove": "Remove"
   ,"strategy_definition_versions_load_failed": "Failed to load strategy definition versions"
+  ,"strategy_definition_remove_success": "Strategy definition removed"
+  ,"strategy_definition_remove_failed": "Failed to remove strategy definition"
 }

@@ -25,7 +25,8 @@ import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { LocalCampaignService } from '../local-campaign/local-campaign.service';
 import { NetworkMappingService } from '../network-mapping/network-mapping.service';
 import { StrategyService } from '../strategy/strategy.service';
-import { StrategyType } from '../strategy/strategy-controller.types';
+import { StrategyConfigResolverService } from '../strategy/strategy-config-resolver.service';
+import { StrategyRuntimeDispatcherService } from '../strategy/strategy-runtime-dispatcher.service';
 import { UserOrdersService } from './user-orders.service';
 
 interface ProcessSnapshotJobData {
@@ -74,6 +75,8 @@ export class MarketMakingOrderProcessor {
     private readonly exchangeService: ExchangeApiKeyService,
     private readonly networkMappingService: NetworkMappingService,
     private readonly mixinClientService: MixinClientService,
+    private readonly strategyConfigResolver: StrategyConfigResolverService,
+    private readonly strategyRuntimeDispatcher: StrategyRuntimeDispatcherService,
     @InjectRepository(MarketMakingPaymentState)
     private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
     @InjectRepository(MarketMakingOrderIntent)
@@ -87,15 +90,6 @@ export class MarketMakingOrderProcessor {
 
   private readonly WITHDRAWAL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
   private readonly RETRY_DELAY_MS = 30000; // 30 seconds
-
-  private getStrategyTypeFromControllerType(
-    controllerType: string,
-  ): StrategyType {
-    if (controllerType === 'arbitrage') return 'arbitrage';
-    if (controllerType === 'pureMarketMaking') return 'pureMarketMaking';
-    if (controllerType === 'volume') return 'volume';
-    throw new Error(`Unsupported controller type: ${controllerType}`);
-  }
 
   private async refundUser(snapshot: SafeSnapshot, reason: string) {
     this.logger.warn(`Refunding snapshot ${snapshot.snapshot_id}: ${reason}`);
@@ -1033,18 +1027,13 @@ export class MarketMakingOrderProcessor {
       }
 
       const controllerType =
-        definition.controllerType || definition.executorType;
-      const strategyType =
-        this.getStrategyTypeFromControllerType(controllerType);
+        this.strategyConfigResolver.getDefinitionControllerType(definition);
       const toNumber = (value?: string | number | null, fallback = 0) =>
         new BigNumber(value ?? fallback).toNumber();
       const normalizedPair = order.pair.replaceAll('-ERC20', '');
 
-      const runtimeConfig: Record<string, any> = {
+      const orderConfig: Record<string, any> = {
         ...(definition.defaultConfig || {}),
-        userId: order.userId,
-        clientId: orderId,
-        marketMakingOrderId: orderId,
         pair: normalizedPair,
         exchangeName: order.exchangeName,
         bidSpread: toNumber(order.bidSpread),
@@ -1064,38 +1053,18 @@ export class MarketMakingOrderProcessor {
         floorPrice: toNumber(order.floorPrice),
       };
 
-      if (strategyType === 'pureMarketMaking') {
-        await this.strategyService.executePureMarketMakingStrategy(
-          runtimeConfig as any,
-        );
-      } else if (strategyType === 'arbitrage') {
-        await this.strategyService.startArbitrageStrategyForUser(
-          runtimeConfig as any,
-          Number(runtimeConfig.checkIntervalSeconds || 10),
-          Number(runtimeConfig.maxOpenOrders || 1),
-        );
-      } else if (strategyType === 'volume') {
-        const incrementPercentage =
-          runtimeConfig.incrementPercentage ??
-          runtimeConfig.baseIncrementPercentage;
-        const intervalTime =
-          runtimeConfig.intervalTime ?? runtimeConfig.baseIntervalTime;
-        const tradeAmount =
-          runtimeConfig.tradeAmount ?? runtimeConfig.baseTradeAmount;
+      const { mergedConfig, strategyType } =
+        this.strategyConfigResolver.resolveDefinitionStartConfig(definition, {
+          userId: order.userId,
+          clientId: orderId,
+          marketMakingOrderId: orderId,
+          config: orderConfig,
+        });
 
-        await this.strategyService.executeVolumeStrategy(
-          String(runtimeConfig.exchangeName || order.exchangeName),
-          String(runtimeConfig.symbol || normalizedPair),
-          Number(incrementPercentage || 0),
-          Number(intervalTime || 10),
-          Number(tradeAmount || 0),
-          Number(runtimeConfig.numTrades || 1),
-          String(runtimeConfig.userId || order.userId),
-          String(runtimeConfig.clientId || orderId),
-          Number(runtimeConfig.pricePushRate || 0),
-          runtimeConfig.postOnlySide,
-        );
-      }
+      await this.strategyRuntimeDispatcher.startByStrategyType(
+        strategyType,
+        mergedConfig,
+      );
 
       await this.strategyService.linkDefinitionToStrategyInstance(
         order.userId,
@@ -1123,11 +1092,35 @@ export class MarketMakingOrderProcessor {
 
   @Process('stop_mm')
   async handleStopMM(job: Job<{ userId: string; orderId: string }>) {
-    const { orderId } = job.data;
+    const { orderId, userId } = job.data;
 
     this.logger.log(`Stopping MM for order ${orderId}`);
 
-    await this.strategyService.stopMarketMakingStrategyForOrder(orderId);
+    const order = await this.userOrdersService.findMarketMakingByOrderId(
+      orderId,
+    );
+    let strategyType =
+      this.strategyRuntimeDispatcher.toStrategyType('pureMarketMaking');
+
+    if (order?.strategyDefinitionId) {
+      const definition = await this.strategyDefinitionRepository.findOne({
+        where: { id: order.strategyDefinitionId },
+      });
+
+      if (definition) {
+        const controllerType =
+          this.strategyConfigResolver.getDefinitionControllerType(definition);
+
+        strategyType =
+          this.strategyRuntimeDispatcher.toStrategyType(controllerType);
+      }
+    }
+
+    await this.strategyRuntimeDispatcher.stopByStrategyType(
+      strategyType,
+      order?.userId || userId || 'system',
+      orderId,
+    );
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,
       'stopped',

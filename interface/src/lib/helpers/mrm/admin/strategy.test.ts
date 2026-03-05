@@ -6,6 +6,7 @@ import {
   listStrategyDefinitionVersions,
   listStrategyInstances,
   publishStrategyDefinitionVersion,
+  removeStrategyDefinition,
   startStrategyInstance,
   validateStrategyInstance,
 } from "./strategy";
@@ -143,5 +144,24 @@ describe("admin strategy helper", () => {
     const result = await backfillStrategyInstanceDefinitionLinks("token");
 
     expect(result).toEqual({ updated: 2, skipped: 1 });
+  });
+
+  it("removes strategy definition", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message: "removed", definitionId: "d1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const result = await removeStrategyDefinition("d1", "token");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:3000/admin/strategy/definitions/d1/remove",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(result).toEqual({ message: "removed", definitionId: "d1" });
   });
 });

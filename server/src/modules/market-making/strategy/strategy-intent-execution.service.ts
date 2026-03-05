@@ -9,6 +9,8 @@ import { Repository } from 'typeorm';
 import { DurabilityService } from '../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
+import { DexVolumeStrategyService } from './dex-volume.strategy.service';
+import { DexAdapterId } from './strategy.dto';
 import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
@@ -34,6 +36,8 @@ export class StrategyIntentExecutionService {
     private readonly strategyIntentStoreService?: StrategyIntentStoreService,
     @Optional()
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
+    @Optional()
+    private readonly dexVolumeStrategyService?: DexVolumeStrategyService,
   ) {
     this.executeIntents = this.toBoolean(
       this.configService.get('strategy.execute_intents', false),
@@ -202,6 +206,93 @@ export class StrategyIntentExecutionService {
               : 'failed',
           updatedAt: getRFC3339Timestamp(),
         });
+      }
+
+      if (intent.type === 'EXECUTE_AMM_SWAP') {
+        if (!this.dexVolumeStrategyService) {
+          throw new Error('Dex volume strategy service is not available');
+        }
+
+        const metadata =
+          intent.metadata && typeof intent.metadata === 'object'
+            ? intent.metadata
+            : {};
+        const dexId = String(
+          (metadata as Record<string, unknown>).dexId || '',
+        ) as DexAdapterId;
+        const chainId = Number(
+          (metadata as Record<string, unknown>).chainId || 0,
+        );
+        const tokenIn = String(
+          (metadata as Record<string, unknown>).tokenIn || '',
+        );
+        const tokenOut = String(
+          (metadata as Record<string, unknown>).tokenOut || '',
+        );
+        const feeTier = Number(
+          (metadata as Record<string, unknown>).feeTier || 0,
+        );
+
+        if (!dexId || !chainId || !tokenIn || !tokenOut || !feeTier) {
+          throw new Error('EXECUTE_AMM_SWAP intent metadata is incomplete');
+        }
+
+        const executedTradesRaw = Number(
+          (metadata as Record<string, unknown>).executedTrades,
+        );
+        const side = intent.side;
+
+        const result = await this.runWithRetries(() =>
+          this.dexVolumeStrategyService!.executeCycle({
+            dexId,
+            chainId,
+            tokenIn,
+            tokenOut,
+            feeTier,
+            baseTradeAmount: Number(
+              (metadata as Record<string, unknown>).baseTradeAmount || 0,
+            ),
+            baseIncrementPercentage: Number(
+              (metadata as Record<string, unknown>).baseIncrementPercentage ||
+                0,
+            ),
+            pricePushRate: Number(
+              (metadata as Record<string, unknown>).pricePushRate || 0,
+            ),
+            executedTrades: Number.isFinite(executedTradesRaw)
+              ? executedTradesRaw
+              : 0,
+            side,
+            slippageBps: Number(
+              (metadata as Record<string, unknown>).slippageBps || 0,
+            ),
+            recipient:
+              String((metadata as Record<string, unknown>).recipient || '') ||
+              undefined,
+          }),
+        );
+
+        await this.strategyExecutionHistoryRepository?.save(
+          this.strategyExecutionHistoryRepository.create({
+            userId: intent.userId,
+            clientId: intent.clientId,
+            exchange: intent.exchange,
+            pair: intent.pair,
+            side: intent.side,
+            amount: intent.qty,
+            price: intent.price,
+            strategyType: this.extractStrategyType(intent.strategyKey),
+            strategyInstanceId: intent.strategyInstanceId,
+            orderId: result.txHash,
+            status: 'filled',
+            metadata: {
+              intentId: intent.intentId,
+              intentType: intent.type,
+              executionCategory: intent.executionCategory,
+              txHash: result.txHash,
+            },
+          }),
+        );
       }
 
       if (

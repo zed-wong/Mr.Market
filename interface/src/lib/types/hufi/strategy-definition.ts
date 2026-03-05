@@ -3,7 +3,8 @@ export type StrategyDefinition = {
   key: string;
   name: string;
   description?: string;
-  executorType: string;
+  controllerType: string;
+  executorType?: string;
   configSchema: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
   enabled: boolean;
@@ -18,7 +19,8 @@ export type StrategyDefinitionPayload = {
   key: string;
   name: string;
   description?: string;
-  executorType: string;
+  controllerType: string;
+  executorType?: string;
   configSchema: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
   visibility?: string;
@@ -28,6 +30,7 @@ export type StrategyDefinitionPayload = {
 export type PublishStrategyDefinitionVersionPayload = {
   name?: string;
   description?: string;
+  controllerType?: string;
   executorType?: string;
   configSchema?: Record<string, unknown>;
   defaultConfig?: Record<string, unknown>;
@@ -58,6 +61,7 @@ export type StrategyInstanceView = {
   definitionId?: string;
   definitionKey?: string;
   definitionName?: string;
+  controllerType?: string;
   executorType?: string;
   createdAt: string;
   updatedAt: string;
@@ -67,25 +71,33 @@ export type ValidateStrategyInstanceResponse = {
   valid: true;
   definitionId: string;
   definitionKey: string;
-  executorType: string;
+  controllerType: string;
+  executorType?: string;
   mergedConfig: Record<string, unknown>;
 };
 
 export type StartStopStrategyInstanceResponse = {
   message: string;
   definitionId: string;
-  executorType: string;
+  controllerType: string;
+  executorType?: string;
 };
 
 export type StrategyDefinitionVersion = {
   id: string;
   definitionId: string;
   version: string;
-  executorType: string;
+  controllerType: string;
+  executorType?: string;
   configSchema: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
   description?: string;
   createdAt: string;
+};
+
+export type RemoveStrategyDefinitionResponse = {
+  message: string;
+  definitionId: string;
 };
 
 export type BackfillDefinitionLinksResponse = {

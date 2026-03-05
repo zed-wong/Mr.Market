@@ -76,8 +76,6 @@ export class AlpacaStratService implements OnModuleDestroy {
 
       if (allOrdersFilled && currentOpenOrders < maxOpenOrders) {
         await this.strategyService.evaluateArbitrageOpportunityVWAP(
-          alpacaExchange,
-          exchangeB,
           strategyParamsDto,
         );
       } else {

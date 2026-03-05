@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
+import { ExecutorAction } from '../executor-action.types';
 import { PureMarketMakingStrategyDto } from '../strategy.dto';
 import { StrategyService } from '../strategy.service';
 import {
@@ -16,12 +17,12 @@ export class PureMarketMakingStrategyController implements StrategyController {
     return Math.max(1000, Number(parameters?.orderRefreshTime || 10000));
   }
 
-  async runSession(
+  async decideActions(
     session: StrategyRuntimeSession,
     ts: string,
     service: StrategyService,
-  ): Promise<void> {
-    await service.runPureMarketMakingSession(
+  ): Promise<ExecutorAction[]> {
+    return await service.buildPureMarketMakingActions(
       session.strategyKey,
       session.params as PureMarketMakingStrategyDto,
       ts,

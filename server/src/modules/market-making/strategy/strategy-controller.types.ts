@@ -1,5 +1,6 @@
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
+import type { ExecutorAction } from './executor-action.types';
 import type { StrategyService } from './strategy.service';
 
 export type StrategyType = 'arbitrage' | 'pureMarketMaking' | 'volume';
@@ -22,13 +23,18 @@ export interface StrategyController {
     parameters: Record<string, any>,
     service: StrategyService,
   ): number;
-  runSession(
+  rerun(
+    strategyInstance: StrategyInstance,
+    service: StrategyService,
+  ): Promise<void>;
+  decideActions(
     session: StrategyRuntimeSession,
     ts: string,
     service: StrategyService,
-  ): Promise<void>;
-  rerun(
-    strategyInstance: StrategyInstance,
+  ): Promise<ExecutorAction[]>;
+  onActionsPublished?(
+    session: StrategyRuntimeSession,
+    actions: ExecutorAction[],
     service: StrategyService,
   ): Promise<void>;
 }

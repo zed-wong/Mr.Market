@@ -3,6 +3,7 @@ import { getHeaders, handleApiResponse } from "$lib/helpers/mrm/common";
 import type {
   BackfillDefinitionLinksResponse,
   PublishStrategyDefinitionVersionPayload,
+  RemoveStrategyDefinitionResponse,
   StartStopStrategyInstanceResponse,
   StartStrategyInstancePayload,
   StopStrategyInstancePayload,
@@ -124,6 +125,21 @@ export const disableStrategyDefinition = async (
     `${MRM_BACKEND_URL}/admin/strategy/definitions/${id}/disable`,
     {
       method: 'POST',
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const removeStrategyDefinition = async (
+  id: string,
+  token: string,
+): Promise<RemoveStrategyDefinitionResponse> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/strategy/definitions/${id}/remove`,
+    {
+      method: 'DELETE',
       headers: getHeaders(token),
     },
   );

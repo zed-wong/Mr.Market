@@ -1,8 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
 
+import { DexVolumeStrategyService } from './dex-volume.strategy.service';
 import { StrategyOrderIntent } from './strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
+
+const createExecutionHistoryRepository = () => ({
+  create: jest.fn((payload) => payload),
+  save: jest.fn().mockResolvedValue(undefined),
+});
 
 describe('StrategyIntentExecutionService', () => {
   const exchangeConnectorAdapterService = {
@@ -17,6 +23,19 @@ describe('StrategyIntentExecutionService', () => {
   const exchangeOrderTrackerService = {
     upsertOrder: jest.fn(),
   };
+
+  const dexVolumeStrategyService = {
+    executeCycle: jest.fn().mockResolvedValue({
+      txHash: '0xamm',
+      side: 'buy',
+      tokenIn: '0x1',
+      tokenOut: '0x2',
+      amountIn: '100',
+      quotedAmountOut: '99',
+      minAmountOut: '95',
+      slippageBps: 100,
+    }),
+  } as unknown as DexVolumeStrategyService;
 
   const intentStoreService = {
     updateIntentStatus: jest.fn().mockResolvedValue(undefined),
@@ -67,13 +86,15 @@ describe('StrategyIntentExecutionService', () => {
   });
 
   it('executes CREATE_LIMIT_ORDER intents once (idempotent)', async () => {
+    const executionHistoryRepository = createExecutionHistoryRepository();
     const service = new StrategyIntentExecutionService(
       createConfigService(true),
       exchangeConnectorAdapterService as any,
-      undefined,
+      executionHistoryRepository as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
     );
 
     await service.consumeIntents([baseIntent, baseIntent]);
@@ -102,13 +123,15 @@ describe('StrategyIntentExecutionService', () => {
   });
 
   it('does not execute intents when execution is disabled', async () => {
+    const executionHistoryRepository = createExecutionHistoryRepository();
     const service = new StrategyIntentExecutionService(
       createConfigService(false),
       exchangeConnectorAdapterService as any,
-      undefined,
+      executionHistoryRepository as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
     );
 
     await service.consumeIntents([baseIntent]);
@@ -139,10 +162,11 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       configService,
       exchangeConnectorAdapterService as any,
-      undefined,
+      createExecutionHistoryRepository() as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
     );
 
     await service.consumeIntents([
@@ -155,13 +179,15 @@ describe('StrategyIntentExecutionService', () => {
   });
 
   it('executes CANCEL_ORDER through exchange adapter', async () => {
+    const executionHistoryRepository = createExecutionHistoryRepository();
     const service = new StrategyIntentExecutionService(
       createConfigService(true),
       exchangeConnectorAdapterService as any,
-      undefined,
+      executionHistoryRepository as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
     );
     const cancelIntent: StrategyOrderIntent = {
       ...baseIntent,
@@ -186,10 +212,11 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       createConfigService(true),
       exchangeConnectorAdapterService as any,
-      undefined,
+      createExecutionHistoryRepository() as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
     );
 
     await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
@@ -209,10 +236,11 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       createConfigService(true),
       exchangeConnectorAdapterService as any,
-      undefined,
+      createExecutionHistoryRepository() as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
     );
 
     await service.consumeIntents([{ ...baseIntent, intentId: 'retry-intent' }]);
@@ -254,10 +282,11 @@ describe('StrategyIntentExecutionService', () => {
     const service = new StrategyIntentExecutionService(
       configService,
       exchangeConnectorAdapterService as any,
-      undefined,
+      createExecutionHistoryRepository() as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
     );
 
     await service.consumeIntents([
@@ -267,5 +296,83 @@ describe('StrategyIntentExecutionService', () => {
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
     ).toHaveBeenCalledTimes(3);
+  });
+
+  it('executes EXECUTE_AMM_SWAP through dex volume strategy service', async () => {
+    const service = new StrategyIntentExecutionService(
+      createConfigService(true),
+      exchangeConnectorAdapterService as any,
+      {
+        create: jest.fn((payload) => payload),
+        save: jest.fn().mockResolvedValue(undefined),
+      } as any,
+      durabilityService as any,
+      intentStoreService as any,
+      exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
+    );
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'amm-intent-1',
+        type: 'EXECUTE_AMM_SWAP',
+        executionCategory: 'amm_dex',
+        metadata: {
+          dexId: 'uniswapV3',
+          chainId: 1,
+          tokenIn: '0x0000000000000000000000000000000000000001',
+          tokenOut: '0x0000000000000000000000000000000000000002',
+          feeTier: 3000,
+          baseTradeAmount: 1,
+          baseIncrementPercentage: 0.1,
+          pricePushRate: 0,
+          executedTrades: 0,
+          slippageBps: 100,
+        },
+      },
+    ]);
+
+    expect(dexVolumeStrategyService.executeCycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dexId: 'uniswapV3',
+        chainId: 1,
+        side: 'buy',
+      }),
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'amm-intent-1',
+      'DONE',
+    );
+  });
+
+  it('rejects EXECUTE_AMM_SWAP with incomplete metadata', async () => {
+    const service = new StrategyIntentExecutionService(
+      createConfigService(true),
+      exchangeConnectorAdapterService as any,
+      {
+        create: jest.fn((payload) => payload),
+        save: jest.fn().mockResolvedValue(undefined),
+      } as any,
+      durabilityService as any,
+      intentStoreService as any,
+      exchangeOrderTrackerService as any,
+      dexVolumeStrategyService,
+    );
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'amm-intent-bad',
+          type: 'EXECUTE_AMM_SWAP',
+          executionCategory: 'amm_dex',
+          metadata: {
+            dexId: 'uniswapV3',
+            chainId: 1,
+          },
+        },
+      ]),
+    ).rejects.toThrow('EXECUTE_AMM_SWAP intent metadata is incomplete');
   });
 });

@@ -32,6 +32,78 @@ describe('MarketMakingOrderProcessor', () => {
       stopMarketMakingStrategyForOrder: jest.fn(),
       linkDefinitionToStrategyInstance: jest.fn(),
     };
+    const strategyConfigResolver = {
+      getDefinitionControllerType: jest.fn(
+        (definition) => definition.controllerType || definition.executorType,
+      ),
+      resolveDefinitionStartConfig: jest.fn((definition, payload) => ({
+        strategyType: definition.controllerType || definition.executorType,
+        mergedConfig: {
+          ...(definition.defaultConfig || {}),
+          userId: payload.userId,
+          clientId: payload.marketMakingOrderId || payload.clientId,
+          ...(payload.marketMakingOrderId
+            ? { marketMakingOrderId: payload.marketMakingOrderId }
+            : {}),
+          ...(payload.config || {}),
+        },
+      })),
+    };
+    const strategyRuntimeDispatcher = {
+      toStrategyType: jest.fn((controllerType: string) => {
+        if (controllerType === 'arbitrage') return 'arbitrage';
+        if (controllerType === 'pureMarketMaking') return 'pureMarketMaking';
+        if (controllerType === 'volume') return 'volume';
+        throw new Error(`Unsupported controller type: ${controllerType}`);
+      }),
+      startByStrategyType: jest
+        .fn()
+        .mockImplementation(
+          async (strategyType: string, runtimeConfig: any) => {
+            if (strategyType === 'pureMarketMaking') {
+              await strategyService.executePureMarketMakingStrategy(
+                runtimeConfig,
+              );
+
+              return;
+            }
+            if (strategyType === 'arbitrage') {
+              await strategyService.startArbitrageStrategyForUser(
+                runtimeConfig,
+                Number(runtimeConfig.checkIntervalSeconds || 10),
+                Number(runtimeConfig.maxOpenOrders || 1),
+              );
+
+              return;
+            }
+            if (strategyType === 'volume') {
+              await strategyService.executeVolumeStrategy(
+                String(runtimeConfig.exchangeName),
+                String(runtimeConfig.symbol),
+                Number(runtimeConfig.incrementPercentage || 0),
+                Number(runtimeConfig.intervalTime || 10),
+                Number(runtimeConfig.tradeAmount || 0),
+                Number(runtimeConfig.numTrades || 1),
+                String(runtimeConfig.userId),
+                String(runtimeConfig.clientId),
+                Number(runtimeConfig.pricePushRate || 0),
+                runtimeConfig.postOnlySide,
+              );
+            }
+          },
+        ),
+      stopByStrategyType: jest
+        .fn()
+        .mockImplementation(
+          async (strategyType: string, userId: string, clientId: string) => {
+            await strategyService.stopStrategyForUser(
+              userId,
+              clientId,
+              strategyType,
+            );
+          },
+        ),
+    };
     const paymentStateRepository = {
       findOne: jest.fn().mockResolvedValue(null),
       create: jest.fn((payload) => payload),
@@ -90,6 +162,8 @@ describe('MarketMakingOrderProcessor', () => {
       } as any,
       { getNetworkForAsset: jest.fn() } as any,
       {} as any,
+      strategyConfigResolver as any,
+      strategyRuntimeDispatcher as any,
       paymentStateRepository as any,
       { update: jest.fn(), findOne: jest.fn(), save: jest.fn() } as any,
       marketMakingRepository as any,
@@ -101,6 +175,8 @@ describe('MarketMakingOrderProcessor', () => {
       processor,
       userOrdersService,
       strategyService,
+      strategyConfigResolver,
+      strategyRuntimeDispatcher,
       paymentStateRepository,
       transactionService,
       marketMakingRepository,
@@ -303,7 +379,12 @@ describe('MarketMakingOrderProcessor', () => {
   });
 
   it('starts MM by registering strategy session without execute_mm_cycle queue loop', async () => {
-    const { processor, strategyService, userOrdersService } = createProcessor();
+    const {
+      processor,
+      strategyRuntimeDispatcher,
+      strategyConfigResolver,
+      userOrdersService,
+    } = createProcessor();
     const queue = {
       add: jest.fn(),
     };
@@ -317,9 +398,8 @@ describe('MarketMakingOrderProcessor', () => {
       'order-1',
       'running',
     );
-    expect(
-      strategyService.executePureMarketMakingStrategy,
-    ).toHaveBeenCalledWith(
+    expect(strategyRuntimeDispatcher.startByStrategyType).toHaveBeenCalledWith(
+      'pureMarketMaking',
       expect.objectContaining({
         userId: 'user-1',
         clientId: 'order-1',
@@ -332,6 +412,16 @@ describe('MarketMakingOrderProcessor', () => {
         numberOfLayers: 2,
       }),
     );
+    expect(
+      strategyConfigResolver.resolveDefinitionStartConfig,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'strategy-def-1' }),
+      expect.objectContaining({
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+      }),
+    );
     expect(queue.add).not.toHaveBeenCalledWith(
       'execute_mm_cycle',
       expect.anything(),
@@ -340,7 +430,8 @@ describe('MarketMakingOrderProcessor', () => {
   });
 
   it('does nothing when start_mm order is missing', async () => {
-    const { processor, strategyService, userOrdersService } = createProcessor();
+    const { processor, strategyRuntimeDispatcher, userOrdersService } =
+      createProcessor();
 
     userOrdersService.findMarketMakingByOrderId.mockResolvedValueOnce(null);
     const queue = {
@@ -353,8 +444,36 @@ describe('MarketMakingOrderProcessor', () => {
     } as any);
 
     expect(
-      strategyService.executePureMarketMakingStrategy,
+      strategyRuntimeDispatcher.startByStrategyType,
     ).not.toHaveBeenCalled();
     expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('stops MM via runtime dispatcher and updates order state', async () => {
+    const {
+      processor,
+      strategyRuntimeDispatcher,
+      strategyService,
+      userOrdersService,
+    } = createProcessor();
+
+    await processor.handleStopMM({
+      data: { userId: 'user-1', orderId: 'order-1' },
+    } as any);
+
+    expect(strategyRuntimeDispatcher.stopByStrategyType).toHaveBeenCalledWith(
+      'pureMarketMaking',
+      'user-1',
+      'order-1',
+    );
+    expect(strategyService.stopStrategyForUser).toHaveBeenCalledWith(
+      'user-1',
+      'order-1',
+      'pureMarketMaking',
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'stopped',
+    );
   });
 });

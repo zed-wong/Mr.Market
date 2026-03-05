@@ -1,18 +1,19 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { IndicatorStrategyHistory } from 'src/common/entities/indicator-strategy-history.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from 'src/common/entities/market-making/strategy-definition-version.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
+import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import {
   MarketMakingOrder,
   SimplyGrowOrder,
 } from 'src/common/entities/orders/user-orders.entity';
 
-import { AdminModule } from '../../admin/admin.module';
+import { MarketdataModule } from '../../data/market-data/market-data.module';
 import { LoggerModule } from '../../infrastructure/logger/logger.module';
 import { Web3Module } from '../../web3/web3.module';
 import { DurabilityModule } from '../durability/durability.module';
@@ -26,14 +27,18 @@ import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.co
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { VolumeStrategyController } from './controllers/volume-strategy.controller';
 import { DexModule } from './dex.module';
+import { ExecutorOrchestratorService } from './executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './quote-executor-manager.service';
 import { StrategyController } from './strategy.controller';
 import { StrategyService } from './strategy.service';
+import { StrategyConfigResolverService } from './strategy-config-resolver.service';
 import { StrategyControllerRegistry } from './strategy-controller.registry';
 import { StrategyController as StrategyRuntimeController } from './strategy-controller.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 import { StrategyIntentWorkerService } from './strategy-intent-worker.service';
+import { StrategyMarketDataProviderService } from './strategy-market-data-provider.service';
+import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
 import { TimeIndicatorStrategyService } from './time-indicator.service';
 
 const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
@@ -42,11 +47,11 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
   imports: [
     PerformanceModule,
     LoggerModule,
-    ConfigModule,
-    AdminModule,
     TypeOrmModule.forFeature([
       SimplyGrowOrder,
       MarketMakingOrder,
+      Contribution,
+      MixinUser,
       StrategyInstance,
       StrategyDefinition,
       StrategyDefinitionVersion,
@@ -59,6 +64,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     DurabilityModule,
     ExecutionModule,
     TrackersModule,
+    MarketdataModule,
     DexModule,
     Web3Module,
   ],
@@ -69,7 +75,11 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyIntentExecutionService,
     StrategyIntentWorkerService,
     StrategyIntentStoreService,
+    ExecutorOrchestratorService,
     QuoteExecutorManagerService,
+    StrategyConfigResolverService,
+    StrategyRuntimeDispatcherService,
+    StrategyMarketDataProviderService,
     TimeIndicatorStrategyService,
     ArbitrageStrategyController,
     PureMarketMakingStrategyController,
@@ -94,6 +104,10 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
       inject: [STRATEGY_CONTROLLERS],
     },
   ],
-  exports: [StrategyService],
+  exports: [
+    StrategyService,
+    StrategyConfigResolverService,
+    StrategyRuntimeDispatcherService,
+  ],
 })
 export class StrategyModule {}

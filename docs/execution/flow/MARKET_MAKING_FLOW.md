@@ -10,8 +10,9 @@ The runtime is now tick-driven and intent-driven.
 
 1. Trackers update local exchange state on each tick.
 2. Strategy builds intents from current state.
-3. Intent executor sends exchange actions with idempotency and retries.
-4. Ledger is the only balance mutation entrypoint.
+3. Controllers emit executor actions and orchestrator writes intents.
+4. Intent executor sends exchange actions with idempotency and retries.
+5. Ledger is the only balance mutation entrypoint.
 
 The old queue self-loop `execute_mm_cycle` has been removed.
 `start_mm` now resolves the bound strategy definition for the order, starts the matching strategy runtime, and periodic execution comes from tick scheduling.
@@ -77,7 +78,7 @@ flowchart TD
 - User intent: market making order intent must carry `strategyDefinitionId`.
 - Funds and payment state: snapshot intake, ledger crediting, and payment completion checks.
 - Queue orchestration: `process_market_making_snapshots`, `check_payment_complete`, optional withdrawal/campaign jobs, `start_mm`, `stop_mm`.
-- Runtime execution: `start_mm` resolves strategy type dynamically and registers sessions.
+- Runtime execution: `start_mm` resolves strategy type dynamically, validates merged config, and registers sessions.
 - Tick and intents: tick loop drives strategy sessions, intents are executed by worker/executor path.
 - Ledger safety: all balance mutations go through `BalanceLedgerService`.
 
@@ -157,7 +158,7 @@ Dynamic strategy definitions are used by both admin runtime and user MM order fl
 
 1. `ClockTickCoordinatorService` calls `onTick` for registered components in order.
 2. `StrategyService.onTick` runs active sessions by cadence.
-3. For each session, strategy creates intents (create/cancel/stop) and persists them.
+3. For each session, controller emits actions and orchestrator persists intents (create/cancel/stop).
 4. Tick does not synchronously execute intents when `strategy.intent_execution_driver=worker`.
 5. `StrategyIntentWorkerService` polls pending intents and dispatches async execution.
 6. Worker enforces safety gates: max global in-flight, max per-exchange in-flight, and one in-flight per strategy key.
@@ -217,9 +218,10 @@ With current default branch (`withdraw_to_exchange` queueing disabled), many ord
 - `strategy.intent_execution_driver=sync` keeps legacy inline execution behavior and can increase tick latency.
   Tick both generates and executes intents in the same path, so slow exchange calls directly extend tick duration.
 - Strategy definitions are now DB-backed and can be managed in admin settings (`/manage/settings/strategies`).
-- For migration/cutover details, follow `docs/plans/2026-02-28-dynamic-strategy-architecture-transition-plan.md`.
+- For migration/cutover details, follow `docs/plans/2026-03-04-dynamic-strategy-architecture-transition-plan.md`.
 - `withdraw_to_exchange` path is currently validation/refund mode in this implementation.
 - Tick coordinator is now the periodic execution source for active strategy sessions.
+- Volume routing uses execution categories (`clob_cex`, `clob_dex`, `amm_dex`) while still accepting legacy `executionVenue` alias.
 - Reconciliation and trackers should be monitored to detect drift between local state and exchange state.
 
 ## Last Updated

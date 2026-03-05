@@ -1,16 +1,17 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Contribution } from 'src/common/entities/campaign/contribution.entity';
+import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 
-import { AdminStrategyService } from '../../admin/strategy/adminStrategy.service';
 import { StrategyController } from './strategy.controller';
 import { StrategyService } from './strategy.service';
+import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
 import { TimeIndicatorStrategyService } from './time-indicator.service';
 import { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
 describe('StrategyController', () => {
   let controller: StrategyController;
-  const mockAdminService = {
-    joinStrategy: jest.fn().mockResolvedValue(undefined),
-  };
   const mockStrategyService = {
     getRunningStrategies: jest.fn().mockResolvedValue([]),
     getAllStrategies: jest.fn().mockResolvedValue([]),
@@ -18,11 +19,20 @@ describe('StrategyController', () => {
       .fn()
       .mockReturnValue(['arbitrage', 'pureMarketMaking', 'volume']),
     rerunStrategy: jest.fn().mockResolvedValue(undefined),
-    startArbitrageStrategyForUser: jest.fn().mockResolvedValue(undefined),
-    executePureMarketMakingStrategy: jest.fn().mockResolvedValue(undefined),
-    executeVolumeStrategy: jest.fn().mockResolvedValue(undefined),
-    stopStrategyForUser: jest.fn().mockResolvedValue(undefined),
-    stopVolumeStrategy: jest.fn().mockResolvedValue(undefined),
+    getStrategyInstanceKey: jest
+      .fn()
+      .mockResolvedValue({ strategyKey: 's1', status: 'running' }),
+  };
+  const mockStrategyRuntimeDispatcher = {
+    startByStrategyType: jest.fn().mockResolvedValue(undefined),
+    stopByStrategyType: jest.fn().mockResolvedValue(undefined),
+  };
+  const mockContributionRepository = {
+    create: jest.fn((payload) => payload),
+    save: jest.fn().mockResolvedValue(undefined),
+  };
+  const mockMixinUserRepository = {
+    findOne: jest.fn().mockResolvedValue({ user_id: 'user-1' }),
   };
   const mockTimeIndicatorStrategyService = {
     executeIndicatorStrategy: jest.fn(),
@@ -35,16 +45,24 @@ describe('StrategyController', () => {
       controllers: [StrategyController],
       providers: [
         {
-          provide: AdminStrategyService,
-          useValue: mockAdminService,
-        },
-        {
           provide: StrategyService,
           useValue: mockStrategyService,
         },
         {
           provide: TimeIndicatorStrategyService,
           useValue: mockTimeIndicatorStrategyService,
+        },
+        {
+          provide: StrategyRuntimeDispatcherService,
+          useValue: mockStrategyRuntimeDispatcher,
+        },
+        {
+          provide: getRepositoryToken(Contribution),
+          useValue: mockContributionRepository,
+        },
+        {
+          provide: getRepositoryToken(MixinUser),
+          useValue: mockMixinUserRepository,
         },
       ],
     }).compile();
@@ -61,6 +79,94 @@ describe('StrategyController', () => {
     expect(controller.getSupportedControllers()).toEqual({
       controllers: ['arbitrage', 'pureMarketMaking', 'volume'],
     });
+  });
+
+  it('dispatches execute arbitrage via runtime dispatcher', async () => {
+    await controller.executeArbitrage({
+      userId: 'user-1',
+      clientId: 'client-1',
+      pair: 'BTC/USDT',
+      amountToTrade: 1,
+      minProfitability: 0.01,
+      exchangeAName: 'binance',
+      exchangeBName: 'mexc',
+      checkIntervalSeconds: 10,
+      maxOpenOrders: 2,
+    });
+
+    expect(
+      mockStrategyRuntimeDispatcher.startByStrategyType,
+    ).toHaveBeenCalledWith(
+      'arbitrage',
+      expect.objectContaining({ pair: 'BTC/USDT' }),
+    );
+  });
+
+  it('joins strategy when runtime is active and user exists', async () => {
+    const dto = {
+      userId: 'user-1',
+      clientId: 'client-1',
+      strategyKey: 'user-1-client-1-pureMarketMaking',
+      amount: 100,
+      transactionHash: '0xabc',
+      tokenSymbol: 'USDT',
+      chainId: 1,
+      tokenAddress: '0x123',
+    };
+
+    const result = await controller.joinStrategy(dto);
+
+    expect(mockStrategyService.getStrategyInstanceKey).toHaveBeenCalledWith(
+      dto.strategyKey,
+    );
+    expect(mockContributionRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: dto.userId,
+        clientId: dto.clientId,
+        amount: dto.amount,
+        status: 'pending',
+      }),
+    );
+    expect(mockContributionRepository.save).toHaveBeenCalled();
+    expect(result).toEqual({
+      message: `User ${dto.userId} has joined the strategy with ${dto.amount} funds`,
+    });
+  });
+
+  it('rejects join when strategy is not active', async () => {
+    mockStrategyService.getStrategyInstanceKey.mockResolvedValueOnce({
+      status: 'stopped',
+    });
+
+    await expect(
+      controller.joinStrategy({
+        userId: 'user-1',
+        clientId: 'client-1',
+        strategyKey: 's1',
+        amount: 10,
+        transactionHash: '0xabc',
+        tokenSymbol: 'USDT',
+        chainId: 1,
+        tokenAddress: '0x123',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects join when user does not exist', async () => {
+    mockMixinUserRepository.findOne.mockResolvedValueOnce(null);
+
+    await expect(
+      controller.joinStrategy({
+        userId: 'missing-user',
+        clientId: 'client-1',
+        strategyKey: 's1',
+        amount: 10,
+        transactionHash: '0xabc',
+        tokenSymbol: 'USDT',
+        chainId: 1,
+        tokenAddress: '0x123',
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('should execute indicator strategy', async () => {

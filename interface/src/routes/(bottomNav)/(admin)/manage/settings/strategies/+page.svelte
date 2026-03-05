@@ -11,6 +11,7 @@
         enableStrategyDefinition,
         listStrategyDefinitionVersions,
         publishStrategyDefinitionVersion,
+        removeStrategyDefinition,
         startStrategyInstance,
         stopStrategyInstance,
         validateStrategyInstance,
@@ -43,7 +44,7 @@
         key: "",
         name: "",
         description: "",
-        executorType: "pureMarketMaking",
+        controllerType: "pureMarketMaking",
         configSchema: {
             type: "object",
             required: ["pair", "exchangeName"],
@@ -152,7 +153,7 @@
     }
 
     async function onCreateDefinition() {
-        if (!createPayload.key || !createPayload.name || !createPayload.executorType) {
+        if (!createPayload.key || !createPayload.name || !createPayload.controllerType) {
             toast.error($_("strategy_definition_required_fields"));
             return;
         }
@@ -162,6 +163,7 @@
             await createStrategyDefinition(
                 {
                     ...createPayload,
+                    executorType: createPayload.controllerType,
                     configSchema: parseObjectJson(createSchemaText),
                     defaultConfig: parseObjectJson(createDefaultConfigText),
                 },
@@ -194,6 +196,26 @@
                 error instanceof Error
                     ? error.message
                     : $_("strategy_definition_toggle_failed"),
+            );
+        }
+    }
+
+    async function onRemoveDefinition(definition: StrategyDefinition) {
+        try {
+            const token = getAdminToken();
+            await removeStrategyDefinition(definition.id, token);
+            toast.success($_("strategy_definition_remove_success"));
+
+            if (selectedDefinitionId === definition.id) {
+                selectedDefinitionId = "";
+            }
+
+            await refreshStrategies(false);
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : $_("strategy_definition_remove_failed"),
             );
         }
     }
@@ -362,7 +384,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div class="card bg-base-100 border border-base-300 shadow-sm">
             <div class="card-body gap-4">
-                <h2 class="card-title text-base">{$_("start_strategy_instance")}</h2>
+                <span class="card-title text-base">{$_("start_strategy_instance")}</span>
 
                 <label class="form-control">
                     <span class="label-text">{$_("strategy_definition")}</span>
@@ -370,7 +392,7 @@
                         <option value="">{$_("select_strategy_definition")}</option>
                         {#each definitions as definition}
                             <option value={definition.id}>
-                                {definition.name} ({definition.executorType})
+                                {definition.name} ({definition.controllerType})
                             </option>
                         {/each}
                     </select>
@@ -396,7 +418,9 @@
                     <div class="rounded-lg border border-base-300 bg-base-200 p-3">
                         <div class="flex flex-wrap items-center gap-2 mb-2">
                             <span class="badge badge-outline">{selectedDefinition.key}</span>
-                            <span class="badge badge-outline">{selectedDefinition.executorType}</span>
+                            <span class="badge badge-outline">
+                                {selectedDefinition.controllerType}
+                            </span>
                             <span class="badge badge-outline">v{selectedDefinition.currentVersion}</span>
                         </div>
                         <div class="text-xs font-semibold mb-1">{$_("default_config_preview")}</div>
@@ -417,7 +441,7 @@
 
         <div class="card bg-base-100 border border-base-300 shadow-sm">
             <div class="card-body gap-4">
-                <h2 class="card-title text-base">{$_("strategy_definitions")}</h2>
+                <span class="card-title text-base">{$_("strategy_definitions")}</span>
 
                 <div class="rounded-lg border border-base-300 bg-base-200 p-3 space-y-2">
                     <div class="text-sm font-medium">{$_("create_strategy_definition")}</div>
@@ -426,7 +450,7 @@
                         <input class="input input-bordered input-sm" placeholder="name" bind:value={createPayload.name} />
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <select class="select select-bordered select-sm" bind:value={createPayload.executorType}>
+                        <select class="select select-bordered select-sm" bind:value={createPayload.controllerType}>
                             <option value="pureMarketMaking">pureMarketMaking</option>
                             <option value="arbitrage">arbitrage</option>
                             <option value="volume">volume</option>
@@ -456,7 +480,7 @@
                 </div>
 
                 {#if definitions.length === 0}
-                    <p class="text-sm text-base-content/60">{$_("no_data")}</p>
+                    <span class="text-sm text-base-content/60">{$_("no_data")}</span>
                 {:else}
                     <div class="space-y-2 max-h-60 overflow-auto pr-1">
                         {#each definitions as definition}
@@ -472,11 +496,11 @@
                                         class="text-left min-w-0 flex-1"
                                         on:click={() => (selectedDefinitionId = definition.id)}
                                     >
-                                        <div class="font-medium truncate">{definition.name}</div>
-                                        <div class="text-xs text-base-content/60 break-all">
-                                            {definition.key} | {definition.executorType} | v{definition.currentVersion}
-                                        </div>
-                                    </button>
+                                            <div class="font-medium truncate">{definition.name}</div>
+                                            <div class="text-xs text-base-content/60 break-all">
+                                                {definition.key} | {definition.controllerType} | v{definition.currentVersion}
+                                            </div>
+                                        </button>
                                     <div class="flex items-center gap-2">
                                         <span
                                             class={definition.enabled
@@ -491,6 +515,14 @@
                                             on:click={() => onToggleDefinition(definition)}
                                         >
                                             {definition.enabled ? $_("disable") : $_("enable")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-xs btn-error btn-outline"
+                                            disabled={definition.enabled}
+                                            on:click={() => onRemoveDefinition(definition)}
+                                        >
+                                            {$_("remove")}
                                         </button>
                                     </div>
                                 </div>
@@ -513,12 +545,12 @@
 
                             <div class="text-sm font-medium">{$_("strategy_definition_versions")}</div>
                             {#if selectedDefinitionVersions.length === 0}
-                                <p class="text-sm text-base-content/60">{$_("no_data")}</p>
+                                <span class="text-sm text-base-content/60">{$_("no_data")}</span>
                             {:else}
                                 <div class="max-h-28 overflow-auto space-y-1">
                                     {#each selectedDefinitionVersions as version}
                                         <div class="text-xs">
-                                            v{version.version} - {version.executorType}
+                                            v{version.version} - {version.controllerType}
                                         </div>
                                     {/each}
                                 </div>
@@ -532,10 +564,10 @@
 
     <div class="card bg-base-100 border border-base-300 shadow-sm">
         <div class="card-body gap-4">
-            <h2 class="card-title text-base">{$_("strategy_instances")}</h2>
+            <span class="card-title text-base">{$_("strategy_instances")}</span>
 
             {#if instances.length === 0}
-                <p class="text-sm text-base-content/60">{$_("no_data")}</p>
+                <span class="text-sm text-base-content/60">{$_("no_data")}</span>
             {:else}
                 <div class="overflow-x-auto">
                     <table class="table table-zebra">

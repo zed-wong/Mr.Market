@@ -53,6 +53,8 @@ const createHeadIntent = (
   side: 'buy',
   price: '100',
   qty: '1',
+  executionCategory: 'clob_cex',
+  metadata: null,
   status,
   createdAt: '2026-02-11T00:00:00.000Z',
   updatedAt: '2026-02-11T00:00:00.000Z',
@@ -183,5 +185,41 @@ describe('StrategyIntentWorkerService', () => {
     );
     expect(maxActiveByExchange).toBe(1);
     await service.onModuleDestroy();
+  });
+
+  it('maps execution category and metadata from stored intent entity', async () => {
+    const strategyIntentStoreService = {
+      listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),
+      getHeadIntent: jest.fn().mockResolvedValue({
+        ...createHeadIntent('s1', 's1-amm', 'uniswapV3'),
+        type: 'EXECUTE_AMM_SWAP',
+        executionCategory: 'amm_dex',
+        metadata: { dexId: 'uniswapV3', chainId: 1 },
+      }),
+    };
+    const strategyIntentExecutionService = {
+      hasProcessedIntent: jest.fn().mockReturnValue(false),
+      consumeIntents: jest.fn(async () => {}),
+    };
+
+    const service = new StrategyIntentWorkerService(
+      createConfigService(),
+      strategyIntentStoreService as any,
+      strategyIntentExecutionService as any,
+    );
+
+    await service.onModuleInit();
+    await waitFor(
+      () => strategyIntentExecutionService.consumeIntents.mock.calls.length > 0,
+    );
+    await service.onModuleDestroy();
+
+    expect(strategyIntentExecutionService.consumeIntents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: 'EXECUTE_AMM_SWAP',
+        executionCategory: 'amm_dex',
+        metadata: expect.objectContaining({ dexId: 'uniswapV3', chainId: 1 }),
+      }),
+    ]);
   });
 });

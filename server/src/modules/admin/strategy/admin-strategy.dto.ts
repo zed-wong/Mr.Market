@@ -164,7 +164,7 @@ export class StrategyDefinitionDto {
       'Controller type that maps to local strategy intent-generation implementation',
     example: 'pureMarketMaking',
   })
-  controllerType: string;
+  controllerType?: string;
 
   @ApiPropertyOptional({
     description: 'Deprecated alias for controllerType',
@@ -228,6 +228,14 @@ export class UpdateStrategyDefinitionDto {
 
   @ApiPropertyOptional({ description: 'Definition visibility' })
   visibility?: string;
+}
+
+export class RemoveStrategyDefinitionDto {
+  @ApiProperty({
+    description: 'Strategy definition id',
+    example: 'bfcdd76d-bbcb-4f85-b645-c5f6a5cc3981',
+  })
+  definitionId: string;
 }
 
 export class PublishStrategyDefinitionVersionDto {
