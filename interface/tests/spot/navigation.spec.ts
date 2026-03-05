@@ -17,7 +17,10 @@ test('open/close pair selector', async ({ page }) => {
   await expect(pairDialog).toHaveClass(/modal-open/);
 
   // Close
-  await page.locator('#select_pair_modal form.modal-backdrop button').last().click();
+  await page
+    .locator('#select_pair_modal form.modal-backdrop button')
+    .last()
+    .click({ force: true });
   await expect(pairDialog).not.toHaveClass(/modal-open/);
 });
 

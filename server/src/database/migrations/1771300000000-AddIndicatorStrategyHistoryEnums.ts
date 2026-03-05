@@ -23,7 +23,6 @@ export class AddIndicatorStrategyHistoryEnums1771300000000
           "amount" float NOT NULL,
           "side" varchar CHECK("side" IN ('buy','sell')) NOT NULL,
           "strategy" varchar NOT NULL DEFAULT ('timeIndicator'),
-          "strategy" varchar NOT NULL DEFAULT ('timeIndicator'),
           "orderId" varchar,
           "executedAt" datetime NOT NULL DEFAULT (datetime('now'))
         )`,

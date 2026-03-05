@@ -121,7 +121,7 @@ test("market-making quick add focuses on asset selection after clicking Add", as
   await page.goto("/manage/settings/market-making");
 
   const loginHeading = page.getByRole("heading", { name: /login/i });
-  const addPairLauncher = page.getByRole("button", { name: /add pair/i });
+  const addPairLauncher = page.getByTestId("market-making-add-pair");
 
   await expect
     .poll(async () => {
@@ -134,7 +134,7 @@ test("market-making quick add focuses on asset selection after clicking Add", as
   if (await loginHeading.isVisible().catch(() => false)) {
     await page.locator('input[type="password"]').fill("password");
     await page.getByRole("button", { name: /^login$/i }).click();
-    await page.waitForURL(/\/manage\/settings/, { timeout: 10000 });
+    await expect(loginHeading).not.toBeVisible({ timeout: 10000 });
     await page.goto("/manage/settings/market-making");
   }
 
