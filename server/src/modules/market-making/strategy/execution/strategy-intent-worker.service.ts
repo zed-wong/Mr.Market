@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
-import { StrategyOrderIntent } from './strategy-intent.types';
+import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 

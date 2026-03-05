@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { StrategyController, StrategyType } from './strategy-controller.types';
+import { StrategyController, StrategyType } from '../config/strategy-controller.types';
 
 @Injectable()
 export class StrategyControllerRegistry {

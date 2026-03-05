@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
-import { ExecutorAction } from '../executor-action.types';
-import { PureMarketMakingStrategyDto } from '../strategy.dto';
+import { ExecutorAction } from '../config/executor-action.types';
+import { PureMarketMakingStrategyDto } from '../config/strategy.dto';
 import { StrategyService } from '../strategy.service';
 import {
   StrategyController,
   StrategyRuntimeSession,
-} from '../strategy-controller.types';
+} from '../config/strategy-controller.types';
 
 @Injectable()
 export class PureMarketMakingStrategyController implements StrategyController {

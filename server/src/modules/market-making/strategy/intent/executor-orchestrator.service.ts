@@ -2,10 +2,10 @@ import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
-import { ExecutorAction } from './executor-action.types';
-import { StrategyOrderIntent } from './strategy-intent.types';
-import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
-import { StrategyIntentStoreService } from './strategy-intent-store.service';
+import { ExecutorAction } from '../config/executor-action.types';
+import { StrategyOrderIntent } from '../config/strategy-intent.types';
+import { StrategyIntentExecutionService } from '../execution/strategy-intent-execution.service';
+import { StrategyIntentStoreService } from '../execution/strategy-intent-store.service';
 
 @Injectable()
 export class ExecutorOrchestratorService {

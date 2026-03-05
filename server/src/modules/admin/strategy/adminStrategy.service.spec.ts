@@ -11,8 +11,8 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { PerformanceService } from '../../market-making/performance/performance.service';
 import { StrategyService } from '../../market-making/strategy/strategy.service';
-import { StrategyConfigResolverService } from '../../market-making/strategy/strategy-config-resolver.service';
-import { StrategyRuntimeDispatcherService } from '../../market-making/strategy/strategy-runtime-dispatcher.service';
+import { StrategyConfigResolverService } from '../../market-making/strategy/dex/strategy-config-resolver.service';
+import { StrategyRuntimeDispatcherService } from '../../market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,

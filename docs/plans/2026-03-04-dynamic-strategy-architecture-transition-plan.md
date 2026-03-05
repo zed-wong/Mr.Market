@@ -16,14 +16,14 @@
 ## Current Reusable Modules (Do Not Rewrite)
 - Tick scheduler: `server/src/modules/market-making/tick/clock-tick-coordinator.service.ts`
 - Runtime sessions + persistence: `server/src/modules/market-making/strategy/strategy.service.ts`
-- Controller registry: `server/src/modules/market-making/strategy/strategy-controller.registry.ts`
+- Controller registry: `server/src/modules/market-making/strategy/controllers/strategy-controller.registry.ts`
 - Intent transport:
-  - `server/src/modules/market-making/strategy/strategy-intent.types.ts`
-  - `server/src/modules/market-making/strategy/strategy-intent-store.service.ts`
-  - `server/src/modules/market-making/strategy/strategy-intent-worker.service.ts`
-  - `server/src/modules/market-making/strategy/strategy-intent-execution.service.ts`
+  - `server/src/modules/market-making/strategy/config/strategy-intent.types.ts`
+  - `server/src/modules/market-making/strategy/execution/strategy-intent-store.service.ts`
+  - `server/src/modules/market-making/strategy/execution/strategy-intent-worker.service.ts`
+  - `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
 - Exchange execution adapter: `server/src/modules/market-making/execution/exchange-connector-adapter.service.ts`
-- DEX execution service: `server/src/modules/market-making/strategy/dex-volume.strategy.service.ts`
+- DEX execution service: `server/src/modules/market-making/strategy/dex/dex-volume.strategy.service.ts`
 - Trackers:
   - `server/src/modules/market-making/trackers/order-book-tracker.service.ts`
   - `server/src/modules/market-making/trackers/private-stream-tracker.service.ts`
@@ -80,7 +80,7 @@
 ### Files
 - `server/src/modules/admin/admin.module.ts`
 - `server/src/modules/market-making/strategy/strategy.module.ts`
-- `server/src/modules/market-making/strategy/strategy.controller.ts`
+- `server/src/modules/market-making/strategy/controllers/*`
 - `server/src/modules/admin/admin.controller.ts` (if route movement is needed)
 
 ### Notes
@@ -106,8 +106,8 @@
   - one strategy type mapping path
 
 ### Files (new)
-- `server/src/modules/market-making/strategy/strategy-config-resolver.service.ts`
-- `server/src/modules/market-making/strategy/strategy-runtime-dispatcher.service.ts`
+- `server/src/modules/market-making/strategy/dex/strategy-config-resolver.service.ts`
+- `server/src/modules/market-making/strategy/execution/strategy-runtime-dispatcher.service.ts`
 
 ### Files (modify)
 - `server/src/modules/admin/strategy/adminStrategy.service.ts`
@@ -128,12 +128,12 @@
 - Keep worker/execution services unchanged in this phase.
 
 ### Files (new)
-- `server/src/modules/market-making/strategy/executor-action.types.ts`
-- `server/src/modules/market-making/strategy/executor-orchestrator.service.ts`
-- `server/src/modules/market-making/strategy/executor-orchestrator.service.spec.ts`
+- `server/src/modules/market-making/strategy/config/executor-action.types.ts`
+- `server/src/modules/market-making/strategy/intent/executor-orchestrator.service.ts`
+- `server/src/modules/market-making/strategy/intent/executor-orchestrator.service.spec.ts`
 
 ### Files (modify)
-- `server/src/modules/market-making/strategy/strategy-intent.types.ts` (if action mapping needs expansion)
+- `server/src/modules/market-making/strategy/config/strategy-intent.types.ts` (if action mapping needs expansion)
 - `server/src/modules/market-making/strategy/strategy.module.ts`
 
 ### Exit Criteria
@@ -152,8 +152,8 @@
 - Keep direct exchange calls only as last-resort compatibility, then remove gradually.
 
 ### Files (new)
-- `server/src/modules/market-making/strategy/strategy-market-data-provider.service.ts`
-- `server/src/modules/market-making/strategy/strategy-market-data-provider.service.spec.ts`
+- `server/src/modules/market-making/strategy/data/strategy-market-data-provider.service.ts`
+- `server/src/modules/market-making/strategy/data/strategy-market-data-provider.service.spec.ts`
 
 ### Files (modify)
 - `server/src/modules/market-making/strategy/strategy.module.ts` (import `MarketdataModule`)
@@ -190,7 +190,7 @@
 - `server/src/modules/market-making/strategy/controllers/arbitrage-strategy.controller.ts`
 - `server/src/modules/market-making/strategy/controllers/volume-strategy.controller.ts`
 - `server/src/modules/market-making/strategy/strategy.service.ts`
-- `server/src/modules/market-making/strategy/strategy-controller.types.ts`
+- `server/src/modules/market-making/strategy/config/strategy-controller.types.ts`
 
 ### Exit Criteria
 - Controllers emit actions.
@@ -240,7 +240,7 @@
 
 ### Required Changes (Minimal Surface)
 - Update DTO/domain types:
-  - `server/src/modules/market-making/strategy/strategy.dto.ts`
+- `server/src/modules/market-making/strategy/config/strategy.dto.ts`
   - replace/extend `VolumeExecutionVenue` to include category naming.
 - Add execution category resolver:
   - new helper/service in strategy module to resolve legacy payloads.
@@ -248,7 +248,7 @@
   - `server/src/modules/market-making/strategy/strategy.service.ts`
   - store normalized `executionCategory` in session params.
 - Update intent execution routing:
-  - `server/src/modules/market-making/strategy/strategy-intent-execution.service.ts`
+  - `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
   - route by execution category.
 - Keep `DexVolumeStrategyService` unchanged except call-site contract updates.
 - Update admin and processor path compatibility:
@@ -321,7 +321,7 @@
 
 ### Files
 - `server/src/modules/market-making/strategy/strategy.service.ts`
-- `server/src/modules/market-making/strategy/strategy.controller.ts`
+- `server/src/modules/market-making/strategy/controllers/*`
 - `server/src/modules/admin/strategy/adminStrategy.service.ts`
 
 ### Exit Criteria

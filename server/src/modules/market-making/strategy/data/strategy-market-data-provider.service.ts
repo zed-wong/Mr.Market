@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 
-import { MarketdataService } from '../../data/market-data/market-data.service';
-import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
-import { OrderBookTrackerService } from '../trackers/order-book-tracker.service';
+import { MarketdataService } from '../../../data/market-data/market-data.service';
+import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
+import { OrderBookTrackerService } from '../../trackers/order-book-tracker.service';
 
 type BookLevel = [number, number];
 

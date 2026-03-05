@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
-import { StrategyService } from './strategy.service';
+import { StrategyService } from '../strategy.service';
 import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
 
 describe('StrategyRuntimeDispatcherService', () => {

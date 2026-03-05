@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
 import { StrategyConfigResolverService } from './strategy-config-resolver.service';
-import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
+import { StrategyRuntimeDispatcherService } from '../execution/strategy-runtime-dispatcher.service';
 
 describe('StrategyConfigResolverService', () => {
   let service: StrategyConfigResolverService;

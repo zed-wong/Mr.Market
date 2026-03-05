@@ -5,7 +5,7 @@ import {
   ArbitrageStrategyDto,
   ExecuteVolumeStrategyDto,
   PureMarketMakingStrategyDto,
-} from '../../market-making/strategy/strategy.dto';
+} from '../../market-making/strategy/config/strategy.dto';
 
 // Unified DTO for starting strategies that handles all types
 export class StartStrategyDto {

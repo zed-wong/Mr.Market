@@ -10,6 +10,22 @@ This is the living document for intent runtime validation and related entities.
   - `consumer-receipt.entity.ts`
 - Orchestration intents emitted by pause/withdraw flow.
 
+## Strategy Runtime File Layout (Current)
+
+Strategy runtime files are organized by execution stage under `server/src/modules/market-making/strategy`:
+
+- `config/` for strategy DTOs and shared strategy intent/controller/execution types.
+- `controllers/` for strategy-specific decision logic.
+- `intent/` for action orchestration and quote-to-intent mapping.
+- `execution/` for intent worker/store/executor/dispatcher runtime path.
+- `data/` for market data provider used by runtime controllers/services.
+- `dex/` for DEX-specific strategy services and module wiring.
+
+Important intent execution files live at:
+
+- `server/src/modules/market-making/strategy/execution/strategy-intent-worker.service.ts`
+- `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
+
 ## Runtime Validation Rules
 
 - Every external side effect must have durable intent evidence.

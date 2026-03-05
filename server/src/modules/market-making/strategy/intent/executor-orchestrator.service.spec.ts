@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
-import { ExecutorAction } from './executor-action.types';
+import { ExecutorAction } from '../config/executor-action.types';
 import { ExecutorOrchestratorService } from './executor-orchestrator.service';
 
 describe('ExecutorOrchestratorService', () => {

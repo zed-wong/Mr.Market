@@ -6,12 +6,12 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
-import { DurabilityService } from '../durability/durability.service';
-import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
-import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
-import { DexVolumeStrategyService } from './dex-volume.strategy.service';
-import { DexAdapterId } from './strategy.dto';
-import { StrategyOrderIntent } from './strategy-intent.types';
+import { DurabilityService } from '../../durability/durability.service';
+import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
+import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
+import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
+import { DexAdapterId } from '../config/strategy.dto';
+import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
 @Injectable()

@@ -7,7 +7,7 @@ import { Not, Repository } from 'typeorm';
 import {
   StrategyIntentStatus,
   StrategyOrderIntent,
-} from './strategy-intent.types';
+} from '../config/strategy-intent.types';
 
 @Injectable()
 export class StrategyIntentStoreService {

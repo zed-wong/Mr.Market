@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 
-import { StrategyType } from './strategy-controller.types';
-import { normalizeExecutionCategory } from './strategy-execution-category';
-import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
+import { StrategyType } from '../config/strategy-controller.types';
+import { normalizeExecutionCategory } from '../config/strategy-execution-category';
+import { StrategyRuntimeDispatcherService } from '../execution/strategy-runtime-dispatcher.service';
 
 @Injectable()
 export class StrategyConfigResolverService {

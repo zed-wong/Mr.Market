@@ -15,8 +15,8 @@ This document covers backend end-to-end testing for market making:
 - MM order processor and queue chain: `server/src/modules/market-making/user-orders/market-making.processor.ts`
 - Tick runtime: `server/src/modules/market-making/tick/clock-tick-coordinator.service.ts`
 - Strategy orchestration: `server/src/modules/market-making/strategy/strategy.service.ts`
-- Intent worker: `server/src/modules/market-making/strategy/strategy-intent-worker.service.ts`
-- Intent execution: `server/src/modules/market-making/strategy/strategy-intent-execution.service.ts`
+- Intent worker: `server/src/modules/market-making/strategy/execution/strategy-intent-worker.service.ts`
+- Intent execution: `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
 - Strategy definition admin service: `server/src/modules/admin/strategy/adminStrategy.service.ts`
 - Balance ledger: `server/src/modules/market-making/ledger/balance-ledger.service.ts`
 - Performance API/service: `server/src/modules/market-making/performance/performance.service.ts`

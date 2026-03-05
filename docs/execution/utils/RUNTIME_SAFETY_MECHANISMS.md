@@ -47,7 +47,7 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 - Strategy intent execution retries exchange calls with bounded retries + exponential backoff.
 - Payment checks and withdrawal confirmation enforce timeouts and fail/refund on expiry.
 - Files:
-  - `server/src/modules/market-making/strategy/strategy-intent-execution.service.ts`
+  - `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
   - `server/src/modules/market-making/user-orders/market-making.processor.ts`
 
 ## 6) Worker concurrency gates
@@ -57,7 +57,7 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
   - per-exchange max in-flight,
   - one in-flight per strategy key,
   - no duplicate dispatch for already processed/in-flight intent.
-- File: `server/src/modules/market-making/strategy/strategy-intent-worker.service.ts`
+- File: `server/src/modules/market-making/strategy/execution/strategy-intent-worker.service.ts`
 
 ## 7) Tick-loop safety
 

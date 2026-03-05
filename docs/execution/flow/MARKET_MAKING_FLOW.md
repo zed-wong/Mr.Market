@@ -21,7 +21,7 @@ The old queue self-loop `execute_mm_cycle` has been removed.
 
 - Tick coordinator: `server/src/modules/market-making/tick/clock-tick-coordinator.service.ts`
 - Strategy runtime: `server/src/modules/market-making/strategy/strategy.service.ts`
-- Intent execution: `server/src/modules/market-making/strategy/strategy-intent-execution.service.ts`
+- Intent execution: `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
 - Ledger: `server/src/modules/market-making/ledger/balance-ledger.service.ts`
 - Main MM queue processor: `server/src/modules/market-making/user-orders/market-making.processor.ts`
 - Strategy definition admin runtime: `server/src/modules/admin/strategy/adminStrategy.service.ts`

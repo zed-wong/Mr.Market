@@ -14,7 +14,7 @@ import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { GrowdataModule } from '../data/grow-data/grow-data.module';
 import { SpotdataModule } from '../data/spot-data/spot-data.module';
 import { PerformanceService } from '../market-making/performance/performance.service';
-import { DexModule } from '../market-making/strategy/dex.module';
+import { DexModule } from '../market-making/strategy/dex/dex.module';
 import { StrategyModule } from '../market-making/strategy/strategy.module';
 import { MixinClientModule } from '../mixin/client/mixin-client.module';
 import { Web3Module } from '../web3/web3.module';
