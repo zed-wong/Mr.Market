@@ -11,6 +11,12 @@ export class StrategyControllerRegistry {
 
   constructor(controllers: StrategyController[]) {
     for (const controller of controllers) {
+      if (this.controllersByType.has(controller.strategyType)) {
+        throw new Error(
+          `Duplicate strategyType '${controller.strategyType}' detected in StrategyControllerRegistry. ` +
+            `Controller '${controller.constructor.name}' conflicts with existing controller.`,
+        );
+      }
       this.controllersByType.set(controller.strategyType, controller);
     }
   }
