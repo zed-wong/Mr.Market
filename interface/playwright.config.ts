@@ -62,7 +62,7 @@ export default defineConfig({
       command:
         'cd ../server && rm -f data/mr_market.playwright.db && DATABASE_PATH=data/mr_market.playwright.db ADMIN_PASSWORD=password JWT_SECRET=playwright bun run start:dev',
       url: 'http://127.0.0.1:3000',
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       ignoreHTTPSErrors: true,
     },
   ],
