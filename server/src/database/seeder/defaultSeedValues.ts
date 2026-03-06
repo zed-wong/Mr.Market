@@ -6,6 +6,7 @@ import {
 } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import { loadStrategyYaml } from './strategy-yaml.loader';
 
 export const defaultSpotdataTradingPairs: SpotdataTradingPair[] = [
   {
@@ -354,41 +355,12 @@ export const defaultCustomConfig: CustomConfigEntity = {
 
 export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
   {
-    key: 'pure-market-making',
+    key: 'pure_market_making',
     name: 'Pure Market Making',
-    description: 'Layered maker quotes around a selected price source.',
-    controllerType: 'pureMarketMaking',
-    configSchema: {
-      type: 'object',
-      required: [
-        'pair',
-        'exchangeName',
-        'bidSpread',
-        'askSpread',
-        'orderAmount',
-        'orderRefreshTime',
-      ],
-      properties: {
-        pair: { type: 'string' },
-        exchangeName: { type: 'string' },
-        bidSpread: { type: 'number', minimum: 0 },
-        askSpread: { type: 'number', minimum: 0 },
-        orderAmount: { type: 'number', minimum: 0 },
-        orderRefreshTime: { type: 'number', minimum: 1000 },
-      },
-    },
-    defaultConfig: {
-      pair: 'BTC/USDT',
-      exchangeName: 'binance',
-      bidSpread: 0.1,
-      askSpread: 0.1,
-      orderAmount: 0.01,
-      orderRefreshTime: 15000,
-      numberOfLayers: 1,
-      priceSourceType: 'MID_PRICE',
-      amountChangePerLayer: 0,
-      amountChangeType: 'fixed',
-    },
+    description: 'Place buy and sell orders on both sides of the order book',
+    controllerType: 'pure_market_making',
+    configSchema: loadStrategyYaml('pure-market-making.yaml'),
+    defaultConfig: {},
     enabled: true,
     visibility: 'system',
     createdBy: 'seed',
@@ -396,37 +368,10 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
   {
     key: 'arbitrage',
     name: 'Arbitrage',
-    description:
-      'Cross-exchange arbitrage monitor with profitability threshold.',
+    description: 'Cross-exchange arbitrage between two exchanges',
     controllerType: 'arbitrage',
-    configSchema: {
-      type: 'object',
-      required: [
-        'pair',
-        'amountToTrade',
-        'minProfitability',
-        'exchangeAName',
-        'exchangeBName',
-      ],
-      properties: {
-        pair: { type: 'string' },
-        amountToTrade: { type: 'number', minimum: 0 },
-        minProfitability: { type: 'number', minimum: 0 },
-        exchangeAName: { type: 'string' },
-        exchangeBName: { type: 'string' },
-        checkIntervalSeconds: { type: 'number', minimum: 1 },
-        maxOpenOrders: { type: 'number', minimum: 1 },
-      },
-    },
-    defaultConfig: {
-      pair: 'BTC/USDT',
-      amountToTrade: 0.01,
-      minProfitability: 0.002,
-      exchangeAName: 'binance',
-      exchangeBName: 'mexc',
-      checkIntervalSeconds: 10,
-      maxOpenOrders: 1,
-    },
+    configSchema: loadStrategyYaml('arbitrage.yaml'),
+    defaultConfig: {},
     enabled: true,
     visibility: 'system',
     createdBy: 'seed',
@@ -434,39 +379,21 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
   {
     key: 'volume',
     name: 'Volume',
-    description: 'Alternating post-only trades to generate controlled volume.',
+    description: 'Generate volume with controlled swaps',
     controllerType: 'volume',
-    configSchema: {
-      type: 'object',
-      required: [
-        'exchangeName',
-        'symbol',
-        'incrementPercentage',
-        'intervalTime',
-        'tradeAmount',
-        'numTrades',
-      ],
-      properties: {
-        exchangeName: { type: 'string' },
-        symbol: { type: 'string' },
-        incrementPercentage: { type: 'number', minimum: 0 },
-        intervalTime: { type: 'number', minimum: 1 },
-        tradeAmount: { type: 'number', minimum: 0 },
-        numTrades: { type: 'number', minimum: 1 },
-        pricePushRate: { type: 'number', minimum: 0 },
-        postOnlySide: { type: 'string', enum: ['buy', 'sell'] },
-      },
-    },
-    defaultConfig: {
-      exchangeName: 'binance',
-      symbol: 'BTC/USDT',
-      incrementPercentage: 0.1,
-      intervalTime: 10,
-      tradeAmount: 0.001,
-      numTrades: 10,
-      pricePushRate: 0,
-      postOnlySide: 'buy',
-    },
+    configSchema: loadStrategyYaml('volume.yaml'),
+    defaultConfig: {},
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+  {
+    key: 'time_indicator',
+    name: 'Time Indicator',
+    description: 'Trade based on EMA/RSI indicators',
+    controllerType: 'time_indicator',
+    configSchema: loadStrategyYaml('time-indicator.yaml'),
+    defaultConfig: {},
     enabled: true,
     visibility: 'system',
     createdBy: 'seed',
