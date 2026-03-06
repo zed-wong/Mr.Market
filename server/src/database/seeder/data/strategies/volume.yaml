@@ -1,0 +1,39 @@
+# Volume Strategy Configuration
+# Hummingbot-compatible YAML definition for volume execution strategy
+
+strategy: volume
+execution_mode: amm_dex
+
+exchanges:
+  - exchange: uniswap_v3
+    chain_id: 1
+    candles:
+      - id: price_data
+        trading_pair: WBTC-USDC
+        interval: 5m
+
+controller:
+  candles: price_data
+  dex_id: uniswapV3
+  token_in: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+  token_out: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+  fee_tier: 3000
+  slippage_bps: 100
+  swap_slippages:
+    - token_in: WETH
+      token_out: USDC
+      slippage_bps: 50
+    - token_in: USDC
+      token_out: WETH
+      slippage_bps: 75
+  swap_interval: 60
+  increment_percentage: 0.5
+  interval_time: 30
+  trade_amount: 0.1
+  num_trades: 100
+  price_push_rate: 1.0
+  post_only_side: null
+  cycle_limits:
+    max_cycle_volume: 10.0
+    max_cycle_trades: 50
+    cycle_reset_interval: 3600

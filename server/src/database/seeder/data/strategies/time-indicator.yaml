@@ -1,0 +1,59 @@
+# Time Indicator Strategy Configuration
+# Hummingbot-compatible YAML definition for time-based technical indicator strategy
+
+strategy: time_indicator
+
+exchanges:
+  - exchange: binance
+    candles:
+      - id: indicator_data
+        trading_pair: BTC-USDT
+        interval: 5m
+
+controller:
+  candles: indicator_data
+
+  # Technical Indicators Configuration
+  indicators:
+    - type: ema
+      fast_period: 20
+      slow_period: 50
+    - type: rsi
+      period: 14
+
+  # Trading Thresholds
+  buy_threshold:
+    ema_crossover: true
+    rsi_below: 35
+  sell_threshold:
+    ema_crossover: true
+    rsi_above: 65
+
+  # Indicator Mode
+  indicator_mode: both
+
+  # Execution Parameters
+  lookback: 300
+  order_mode: quote
+  order_size: 100
+  slippage_bps: 10
+  max_concurrent_positions: 2
+  tick_interval_ms: 60000
+
+  # Time Constraints
+  allowed_weekdays:
+    - 1  # Monday
+    - 2  # Tuesday
+    - 3  # Wednesday
+    - 4  # Thursday
+    - 5  # Friday
+  allowed_hours:
+    - 9
+    - 10
+    - 11
+    - 15
+    - 16
+
+  # Risk Controls
+  stop_loss_pct: 3.0
+  take_profit_pct: 3.0
