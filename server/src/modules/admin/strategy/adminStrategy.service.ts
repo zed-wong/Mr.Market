@@ -2,7 +2,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ethers } from 'ethers';
-import * as yaml from 'yaml';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from 'src/common/entities/market-making/strategy-definition-version.entity';
@@ -13,6 +12,7 @@ import {
   getTokenSymbolByContractAddress,
 } from 'src/common/helpers/blockchain-utils';
 import { In, Repository } from 'typeorm';
+import * as yaml from 'yaml';
 
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { PerformanceService } from '../../market-making/performance/performance.service';

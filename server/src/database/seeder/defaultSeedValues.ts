@@ -6,6 +6,7 @@ import {
 } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+
 import { loadStrategyYaml } from './strategy-yaml.loader';
 
 export const defaultSpotdataTradingPairs: SpotdataTradingPair[] = [

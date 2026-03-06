@@ -125,6 +125,7 @@ export class AdminController {
 
     res.setHeader('Content-Type', 'text/yaml');
     res.setHeader('Content-Disposition', `attachment; filename="${id}.yaml"`);
+
     return res.send(yaml);
   }
 

@@ -17,11 +17,10 @@ export type StrategyYamlConfig = {
   controller: Record<string, unknown>;
 };
 
-export function loadStrategyYaml(
-  filename: string,
-): StrategyYamlConfig {
+export function loadStrategyYaml(filename: string): StrategyYamlConfig {
   const filePath = path.join(STRATEGY_YAML_DIR, filename);
   const content = fs.readFileSync(filePath, 'utf-8');
+
   return yaml.parse(content) as StrategyYamlConfig;
 }
 
