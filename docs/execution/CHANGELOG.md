@@ -1,5 +1,13 @@
 # Execution Flow Changelog
 
+## 2026-03-06
+
+- Add Hummingbot-compatible YAML strategy definitions in seeders (pure-market-making, arbitrage, volume, time-indicator)
+- Add YAML loader utility for parsing strategy definition files from seeder data directory
+- Add export endpoint for strategy definitions (GET /admin/strategy/definitions/:id/export)
+- Update strategy seeder to load definitions from YAML files instead of hardcoded TypeScript objects
+- Align YAML field names with DTO structure (camelCase) and add required fields (userId, clientId, pair, exchangeName)
+
 ## 2026-03-05
 
 - Remove legacy `StrategyController` `/strategy/*` API surface and keep strategy runtime control on shared admin (`/admin/strategy/*`) and queue/user-orders flows only
