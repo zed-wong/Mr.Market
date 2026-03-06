@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -115,6 +116,16 @@ export class AdminController {
   @ApiOperation({ summary: 'Get strategy definition' })
   async getStrategyDefinition(@Param('id') id: string) {
     return this.adminStrategyService.getStrategyDefinition(id);
+  }
+
+  @Get('strategy/definitions/:id/export')
+  @ApiOperation({ summary: 'Export strategy definition as YAML' })
+  async exportStrategyDefinition(@Param('id') id: string, @Res() res: any) {
+    const yaml = await this.adminStrategyService.exportStrategyDefinition(id);
+
+    res.setHeader('Content-Type', 'text/yaml');
+    res.setHeader('Content-Disposition', `attachment; filename="${id}.yaml"`);
+    return res.send(yaml);
   }
 
   @Post('strategy/definitions/:id/update')

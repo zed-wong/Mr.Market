@@ -2,6 +2,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ethers } from 'ethers';
+import * as yaml from 'yaml';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from 'src/common/entities/market-making/strategy-definition-version.entity';
@@ -501,6 +502,26 @@ export class AdminStrategyService {
       message: `Removed strategy definition ${definition.key}`,
       definitionId: definition.id,
     };
+  }
+
+  async exportStrategyDefinition(key: string): Promise<string> {
+    const definition = await this.strategyDefinitionRepository.findOne({
+      where: { key },
+    });
+
+    if (!definition) {
+      throw new BadRequestException(`Strategy definition not found: ${key}`);
+    }
+
+    // Convert to YAML
+    const yamlContent = yaml.stringify({
+      strategy: definition.controllerType,
+      name: definition.name,
+      description: definition.description,
+      ...definition.configSchema,
+    });
+
+    return yamlContent;
   }
 
   async getStrategyInstances(runningOnly = false): Promise<
