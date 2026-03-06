@@ -3,6 +3,15 @@
 
 strategy: arbitrage
 
+# REQUIRED USER IDENTIFICATION - Replace with actual values when using
+userId: USER_ID_HERE  # Replace with actual user ID
+clientId: CLIENT_ID_HERE  # Replace with actual client ID
+pair: ETH-USDT  # Trading pair to monitor for arbitrage
+
+# EXCHANGE CONFIGURATION - Two exchanges for arbitrage
+exchangeAName: binance  # First exchange
+exchangeBName: coinbase  # Second exchange
+
 exchanges:
   - exchange: binance
     candles:
@@ -17,10 +26,10 @@ exchanges:
 
 controller:
   candles: binance_market
-  min_profitability: 0.01
-  amount_to_trade: 1.0
-  check_interval_seconds: 10
-  max_open_orders: 5
-  gas_adjustment_factor: 1.0
-  target_profitability: 0.015
-  slippage_tolerance: 0.005
+  minProfitability: 0.01
+  amountToTrade: 1.0
+  checkIntervalSeconds: 10
+  maxOpenOrders: 5
+  gasAdjustmentFactor: 1.0
+  targetProfitability: 0.015
+  slippageTolerance: 0.005
