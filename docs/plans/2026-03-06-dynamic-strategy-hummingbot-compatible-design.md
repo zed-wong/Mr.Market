@@ -41,9 +41,10 @@
 ## File Structure
 
 ```
-server/src/database/seeds/
-├── index.ts                          # runs all seeds
-├── 01-strategies.ts                 # strategy definition seeds
+server/src/database/seeder/
+├── seed.ts                          # runs all seeds
+├── defaultSeedValues.ts            # strategy definition seeds
+├── strategy-yaml.loader.ts         # YAML file loader
 └── data/
     └── strategies/
         ├── pure-market-making.yaml
@@ -284,18 +285,18 @@ interface StrategyRule {
 
 ## API Endpoints
 
-### Export Strategy
+### Export Strategy Definition
 
 ```typescript
-// GET /admin/strategies/:key/export
+// GET /admin/strategy/definitions/:id/export
 // Returns: YAML file
-// Headers: Content-Disposition: attachment; filename="pure_market_making.yaml"
+// Headers: Content-Disposition: attachment; filename="{id}.yaml"
 ```
 
-### Import Strategy (Phase 2)
+### Import Strategy Definition (Phase 2)
 
 ```typescript
-// POST /admin/strategies/import
+// POST /admin/strategy/definitions/import
 // Body: multipart/form-data (YAML file)
 // Returns: Created strategy definition
 ```
@@ -309,40 +310,34 @@ interface StrategyRule {
 ## Seeder Loading
 
 ```typescript
-// database/seeds/01-strategies.ts
+// database/seeder/strategy-yaml.loader.ts
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { parse } from 'yaml';
+import * as yaml from 'yaml';
 
 const STRATEGY_YAML_DIR = join(__dirname, 'data/strategies');
 
-function loadStrategyYaml(filename: string) {
-  const content = readFileSync(join(STRATEGY_YAML_DIR, filename), 'utf-8');
-  return parse(content);
+export function loadStrategyYaml(filename: string) {
+  const filePath = join(STRATEGY_YAML_DIR, filename);
+  const content = readFileSync(filePath, 'utf-8');
+  return yaml.parse(content);
 }
 
-export async function seedStrategies(dataSource: DataSource) {
-  const strategies = [
-    {
-      key: 'pure_market_making',
-      name: 'Pure Market Making',
-      description: 'Place buy and sell orders on both sides of the order book',
-      controllerType: 'pure_market_making',
-      configSchema: loadStrategyYaml('pure-market-making.yaml'),
-      defaultConfig: {},  // derived from YAML for user reference
-      enabled: true,
-      visibility: 'system',
-      currentVersion: '1.0.0',
-    },
-    // ... other strategies
-  ];
-
-  for (const strategy of strategies) {
-    await dataSource
-      .getRepository(StrategyDefinition)
-      .upsert(strategy, { conflictPaths: ['key'] });
-  }
-}
+// database/seeder/defaultSeedValues.ts
+export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
+  {
+    key: 'pure_market_making',
+    name: 'Pure Market Making',
+    description: 'Place buy and sell orders on both sides of the order book',
+    controllerType: 'pure_market_making',
+    configSchema: loadStrategyYaml('pure-market-making.yaml'),
+    defaultConfig: {},  // derived from YAML for user reference
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+  // ... other strategies (arbitrage, volume, time_indicator)
+];
 ```
 
 ## Verification
@@ -359,7 +354,9 @@ export async function seedStrategies(dataSource: DataSource) {
 | `server/src/common/entities/market-making/strategy-definition.entity.ts` | DB entity |
 | `server/src/modules/market-making/strategy/dex/strategy-config-resolver.service.ts` | Config merge |
 | `server/src/modules/admin/strategy/adminStrategy.service.ts` | Admin CRUD |
-| `server/src/database/seeds/index.ts` | Seed runner |
+| `server/src/database/seeder/strategy-yaml.loader.ts` | YAML file loader |
+| `server/src/database/seeder/defaultSeedValues.ts` | Strategy definition seeds |
+| `server/src/modules/admin/admin.controller.ts` | API endpoints |
 
 ## Changelog
 
