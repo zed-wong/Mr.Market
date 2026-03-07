@@ -1,5 +1,11 @@
 # Dynamic Strategy Definition - Hummingbot-Compatible Design
 
+**Status:** Deprecated
+**Superseded By:** `docs/plans/2026-03-06-pooled-executor-architecture.md`
+
+> Historical design exploration only.
+> This document proposes strategy-definition storage and config flows that do not match the current pooled executor architecture source of truth.
+
 ## Goal
 
 - Strategy definitions fully compatible with Hummingbot strategy config format

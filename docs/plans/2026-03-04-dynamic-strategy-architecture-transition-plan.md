@@ -1,5 +1,11 @@
 # Dynamic Strategy Architecture Transition Plan (Reuse-First Update)
 
+**Status:** Deprecated
+**Superseded By:** `docs/plans/2026-03-06-pooled-executor-architecture.md`
+
+> Historical transition plan retained for reference.
+> Use the March 6 pooled executor architecture document for current runtime architecture decisions.
+
 ## Goal
 - Apply controller + orchestrator + executor architecture (Hummingbot style) with minimum risk.
 - Keep strategy definitions dynamic in DB.

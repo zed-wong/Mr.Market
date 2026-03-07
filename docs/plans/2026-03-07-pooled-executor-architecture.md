@@ -2,7 +2,11 @@
 
 **Version:** 2.0
 **Date:** 2026-03-07
-**Status:** Design Document
+**Status:** Current Source of Truth
+**Scope:** Active target architecture for pooled market-making runtime
+
+> This is the authoritative architecture document for the pooled runtime as of 2026-03-07.
+> If another plan in `docs/plans/` conflicts with this document, follow this document unless a newer doc explicitly states that it replaces this one.
 
 ---
 
@@ -15,7 +19,7 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 1. **Pooled Execution**: One executor per exchange-trading-pair shared across all users
 2. **Hummingbot Compatibility**: Controller/orchestrator/executor separation with tick-driven execution
 3. **Multi-User Isolation**: Per-order session state with shared execution context
-4. **Filesystem Scripts**: TypeScript execution scripts loaded from filesystem (hot-reloadable)
+4. **DB-Based Scripts**: TypeScript execution scripts stored in DB (source of truth)
 5. **Campaign Integration**: Trade tracking, scoring, and reward distribution for HuFi campaigns
 6. **Order-Level Transparency**: Users can see revenue breakdown per order
 7. **Performance Optimization**: Non-blocking trade recording to minimize execution latency
@@ -56,13 +60,13 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │  ExecutorRegistry                                                 │   │
-│  │  - Map: "BINANCE:BTC-USDT" → ExchangePairExecutor                │   │
-│  │  - getOrCreateExecutor(exchange, pair)                           │   │
-│  │  - removeExecutor(exchange, pair)                                │   │
+│  │  - Map: "BINANCE:main:BTC-USDT" → ExchangePairExecutor         │   │
+│  │  - getOrCreateExecutor(exchange, account, pair)                │   │
+│  │  - removeExecutor(exchange, account, pair)                     │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  ExchangePairExecutor (BINANCE:BTC-USDT)                         │   │
+│  │  ExchangePairExecutor (BINANCE:main:BTC-USDT)                    │   │
 │  │  ├─ Shared Resources (per executor)                              │   │
 │  │  │  ├─ OrderBookTracker (exchange order book - market data)      │   │
 │  │  │  ├─ PrivateStreamTracker (user fills/status from exchange)   │   │
@@ -198,9 +202,9 @@ interface StrategyDefinition {
   name: string;
   description?: string;
 
-  // Schema reference (filesystem)
-  configSchemaPath: string;         // e.g., "strategies/schemas/pure-market-making.toml"
-  scriptPath: string;                // e.g., "strategies/scripts/pure-market-making.ts"
+  // DB-based script reference (source of truth)
+  currentScriptId: string;           // FK to StrategyScript
+  configSchemaId: string;            // FK to StrategyConfigSchema
 
   // Metadata
   enabled: boolean;
@@ -210,6 +214,42 @@ interface StrategyDefinition {
 
   createdAt: Date;
   updatedAt: Date;
+}
+```
+
+#### StrategyScript Entity (NEW - DB-based scripts)
+
+```typescript
+interface StrategyScript {
+  id: string;
+  strategyKey: string;               // e.g., "pure_market_making"
+  version: string;                   // e.g., "1.0.0"
+
+  // The actual script content (source of truth in DB)
+  scriptContent: string;            // TypeScript source code
+  scriptHash: string;               // SHA-256 of scriptContent
+
+  // Metadata
+  enabled: boolean;
+  createdById: string;               // Admin who created this version
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+#### StrategyConfigSchema Entity (NEW)
+
+```typescript
+interface StrategyConfigSchema {
+  id: string;
+  strategyKey: string;
+  version: string;
+
+  // Schema definition (immutable per version)
+  schemaContent: string;             // TOML/JSON schema
+  defaultConfig: string;             // JSON default config
+
+  createdAt: Date;
 }
 ```
 
@@ -533,30 +573,33 @@ group = "Risk Management"
 
 ```typescript
 class ExecutorRegistry {
-  // Map: "BINANCE:BTC-USDT" -> ExchangePairExecutor
+  // Map: "BINANCE:main:BTC-USDT" -> ExchangePairExecutor
+  // Key includes account to support multiple API keys/subaccounts
   private executors: Map<string, ExchangePairExecutor> = new Map();
 
-  // Get or create executor for exchange-pair
+  // Get or create executor for exchange-account-pair
   getOrCreateExecutor(
     exchange: string,
+    account: string,   // e.g., "main", "subaccount-1", "api-key-1"
     pair: string
   ): ExchangePairExecutor;
 
   // Remove executor when no orders remain
-  removeExecutor(exchange: string, pair: string): void;
+  removeExecutor(exchange: string, account: string, pair: string): void;
 
   // Get all active executors
   getActiveExecutors(): ExchangePairExecutor[];
 }
 ```
 
-**Purpose**: Manages lifecycle of pooled executors per exchange-pair.
+**Purpose**: Manages lifecycle of pooled executors per exchange-account-pair.
 
 #### ExchangePairExecutor
 
 ```typescript
 class ExchangePairExecutor implements TickComponent {
   readonly exchange: string;
+  readonly account: string;  // NEW: supports multiple API keys per exchange
   readonly pair: string;
 
   // Shared resources per executor
@@ -568,18 +611,81 @@ class ExchangePairExecutor implements TickComponent {
   // Campaign tracking (Redis-based, non-blocking)
   private tradeAggregator: InMemoryTradeAggregator;
 
+  // Balance management (EXISTING - reuses BalanceLedgerService)
+  private balanceLedger: BalanceLedgerService;
+
   // Per-order isolation
   private strategySessions: Map<string, StrategySession> = new Map();
 
-  // Lifecycle
-  addOrder(
+  // Lifecycle - with balance reservation (P3)
+  async addOrder(
     orderId: string,
     userId: string,
+    account: string,            // NEW: account for executor key
     campaignId: string | null,  // campaign context
     strategyConfig: RuntimeConfig
-  ): StrategySession;
+  ): Promise<StrategySession> {
+    // 1. Estimate required balance for this strategy
+    const requiredBalance = this.estimateRequiredBalance(strategyConfig, strategyConfig.pair);
 
-  removeOrder(orderId: string): void;  // Also flushes Redis data to SQLite
+    // 2. Use EXISTING BalanceLedgerService.lockFunds()
+    const lockResult = await this.balanceLedger.lockFunds({
+      userId: userId,
+      assetId: this.getBaseAsset(strategyConfig.pair),  // e.g., "BTC"
+      amount: requiredBalance.base.toString(),
+      idempotencyKey: `reserve:${orderId}`,
+      refType: 'MARKET_MAKING_ORDER',
+      refId: orderId,
+    });
+
+    // 3. Verify lock succeeded (fails fast if insufficient balance)
+    if (!lockResult.balance.availableBalance.gte(requiredBalance.base)) {
+      throw new Error(
+        `Insufficient balance for ${strategyConfig.pair}: ` +
+        `need ${requiredBalance.base}, have ${lockResult.balance.availableBalance}`
+      );
+    }
+
+    // 4. Create session with reservation info
+    const session = new StrategySession({
+      orderId,
+      userId,
+      account,
+      runtimeConfig: strategyConfig,
+      reservation: {
+        lockedAmount: requiredBalance.base,
+        lockedAt: new Date(),
+      },
+    });
+
+    // 5. Add to executor
+    this.strategySessions.set(orderId, session);
+
+    return session;
+  }
+
+  // Also releases balance reservation on stop
+  async removeOrder(orderId: string): Promise<void> {
+    const session = this.strategySessions.get(orderId);
+
+    // 1. Release balance reservation using existing unlockFunds()
+    if (session?.reservation) {
+      await this.balanceLedger.unlockFunds({
+        userId: session.userId,
+        assetId: session.baseAsset,
+        amount: session.reservation.lockedAmount,
+        idempotencyKey: `release:${orderId}`,
+        refType: 'MARKET_MAKING_ORDER',
+        refId: orderId,
+      });
+    }
+
+    // 2. Flush Redis data to SQLite
+    await this.tradeAggregator.flushOrder(orderId, new Date());
+
+    // 3. Remove session
+    this.strategySessions.delete(orderId);
+  }
 
   // Tick execution (drives all sessions)
   async onTick(ts: string): Promise<void>;
@@ -835,19 +941,83 @@ class StrategyScriptLoader {
     return script;
   }
 
-  watchAndReload(scriptPath: string): void {
-    const watcher = chokidar.watch(scriptPath);
-
-    watcher.on('change', async () => {
-      console.log(`Script changed: ${scriptPath}, reloading...`);
-
-      try {
-        await this.loadScript(scriptPath);
-        console.log(`Successfully reloaded: ${scriptPath}`);
-      } catch (error) {
-        console.error(`Failed to reload script: ${error.message}`);
-      }
+  // NEW: DB-based script loading (source of truth)
+  async loadScriptFromDB(scriptId: string): Promise<IStrategyScript> {
+    // 1. Fetch script content from DB
+    const scriptEntity = await this.strategyScriptRepository.findOne({
+      where: { id: scriptId }
     });
+
+    if (!scriptEntity) {
+      throw new Error(`Script not found: ${scriptId}`);
+    }
+
+    // 2. Verify hash matches (tamper detection)
+    const contentHash = this.computeHash(scriptEntity.scriptContent);
+    if (contentHash !== scriptEntity.scriptHash) {
+      throw new Error(`Script hash mismatch for ${scriptId} - possible tampering`);
+    }
+
+    // 3. Compile TypeScript at runtime
+    const compiled = await this.compileTypeScript(scriptEntity.scriptContent);
+
+    // 4. Create instance
+    const script = new compiled.default();
+
+    // 5. Verify it implements the interface
+    if (!this.isValidScript(script)) {
+      throw new Error(`Script ${scriptId} does not implement IStrategyScript`);
+    }
+
+    // 6. Cache by script ID
+    this.cache.set(scriptEntity.id, script);
+
+    return script;
+  }
+
+  // NEW: Load script for a specific order (uses captured script reference)
+  async loadScriptForOrder(orderId: string): Promise<IStrategyScript> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId }
+    });
+
+    if (!order) {
+      throw new Error(`Order not found: ${orderId}`);
+    }
+
+    // For active/running orders, use the captured script reference
+    // This ensures reproducibility - order runs same logic as when created
+    return this.loadScriptFromDB(order.strategyScriptId);
+  }
+
+  // NEW: Publish new script version (DB update, not filesystem)
+  async publishScriptVersion(
+    strategyKey: string,
+    version: string,
+    scriptContent: string,
+    createdById: string
+  ): Promise<StrategyScript> {
+    const scriptHash = this.computeHash(scriptContent);
+
+    // Compile to verify syntax before saving
+    await this.compileTypeScript(scriptContent);
+
+    const script = await this.strategyScriptRepository.save({
+      strategyKey,
+      version,
+      scriptContent,
+      scriptHash,
+      enabled: true,
+      createdById,
+    });
+
+    // Update definition to point to new script
+    await this.strategyDefinitionRepository.update(
+      { key: strategyKey },
+      { currentScriptId: script.id }
+    );
+
+    return script;
   }
 
   private isValidScript(script: any): script is IStrategyScript {
@@ -860,6 +1030,57 @@ class StrategyScriptLoader {
       typeof script.onFill === 'function' &&
       typeof script.onError === 'function'
     );
+  }
+
+  private computeHash(content: string): string {
+    return createHash('sha256').update(content).digest('hex');
+  }
+
+  private async compileTypeScript(source: string): Promise<any> {
+    // Use TypeScript compiler to compile at runtime
+    const result = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS }
+    });
+    const jsCode = result.outputText;
+    // Execute in sandboxed context...
+    return eval(jsCode);
+  }
+}
+
+// NEW: Seeder - Load template scripts to DB on server start
+async function seedStrategyScripts(dataSource: DataSource) {
+  const templates = [
+    {
+      strategyKey: 'pure_market_making',
+      version: '1.0.0',
+      scriptContent: await fs.readFile('seeds/strategies/pure-market-making.ts', 'utf-8'),
+    },
+    {
+      strategyKey: 'arbitrage',
+      version: '1.0.0',
+      scriptContent: await fs.readFile('seeds/strategies/arbitrage.ts', 'utf-8'),
+    },
+    {
+      strategyKey: 'volume',
+      version: '1.0.0',
+      scriptContent: await fs.readFile('seeds/strategies/volume.ts', 'utf-8'),
+    },
+  ];
+
+  for (const template of templates) {
+    const existing = await dataSource.getRepository(StrategyScript).findOne({
+      where: { strategyKey: template.strategyKey, version: template.version }
+    });
+
+    if (!existing) {
+      const hash = createHash('sha256').update(template.scriptContent).digest('hex');
+      await dataSource.getRepository(StrategyScript).save({
+        ...template,
+        scriptHash: hash,
+        enabled: true,
+        createdById: 'system',
+      });
+    }
   }
 }
 ```
@@ -1401,9 +1622,10 @@ const config = {
    └─ Resolve strategyDefinitionKey from order
    └─ Get StrategyDefinition (config schema + script path)
    └─ Resolve Config: defaultConfig + userConfigOverrides → RuntimeConfig
-   └─ Bind to ExchangePairExecutor (get or create for exchange-pair)
+   └─ Bind to ExchangePairExecutor (get or create for exchange-account-pair)
    └─ Create StrategySession with runtime config
-   └─ Load execution script from filesystem (strategies/scripts/*.ts)
+   └─ Load execution script from DB (StrategyScript table)
+   └─ Capture strategySnapshot in MarketMakingOrder for reproducibility
 ```
 
 ### 2. Execution Loop Flow
@@ -1599,21 +1821,58 @@ The market making execution loop must be extremely fast. Here's how we minimize 
    - During daily reward processing (one write per order per day)
 4. **Redis AOF persistence** survives restarts
 
-### Redis Fallback
+### Redis Required - No Fallback (P4)
 
-If Redis is unavailable, use in-memory Map:
+Redis is a **required dependency** - no fallback allowed. If Redis is unavailable, the server fails fast on startup.
 
 ```typescript
-async recordTrade(tradeData: TradeData): Promise<void> {
-  if (this.redis?.isReady) {
-    // Use Redis (fast)
+class InMemoryTradeAggregator {
+  private redis: Redis;
+
+  constructor() {
+    // CRITICAL: Fail fast if Redis unavailable
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST,
+      port: Number(process.env.REDIS_PORT),
+      lazyConnect: false,
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => {
+        if (times > 3) {
+          console.error('[FATAL] Redis unavailable - cannot start without Redis');
+          process.exit(1);
+        }
+        return Math.min(times * 100, 3000);
+      },
+    });
+
+    this.redis.on('error', (err) => {
+      console.error('[FATAL] Redis error:', err);
+      process.exit(1);
+    });
+  }
+
+  async onModuleInit() {
+    try {
+      await this.redis.ping();
+      console.log('✅ Redis connection verified');
+    } catch (err) {
+      console.error('[FATAL] Cannot start without Redis:', err);
+      process.exit(1);
+    }
+  }
+
+  // No fallback - if Redis is down, this throws
+  async recordTrade(tradeData: TradeData): Promise<void> {
     await this.redis.hincrbyfloat(...);
-  } else {
-    // Fallback to in-memory (slower but keeps system running)
-    this.inMemoryMap.getOrCreate(tradeData.orderId).increment(tradeData);
   }
 }
 ```
+
+**Rationale:**
+- No silent data loss
+- Operational clarity: Redis is required, not optional
+- Simpler code without fallback logic
+- Fail fast prevents inconsistent state
 
 ---
 
@@ -1814,7 +2073,17 @@ interface MarketMakingOrder {
   campaignId?: string;
 
   exchange: string;
+  account: string;  // NEW: supports multiple API keys per exchange
   pair: string;
+
+  // NEW: Immutable strategy snapshot for reproducibility
+  // Captured at order creation time - never changes for this order
+  strategySnapshot: {
+    strategyScriptId: string;      // FK to StrategyScript
+    strategyScriptHash: string;    // Hash for verification
+    resolvedConfig: string;        // JSON snapshot of full RuntimeConfig
+    createdAt: Date;               // When snapshot was taken
+  };
 
   state: 'payment_pending' | 'payment_complete' | 'campaign_joined'
        | 'running' | 'stopped' | 'failed';
@@ -1830,7 +2099,7 @@ interface MarketMakingOrder {
 interface OrderExecutionBinding {
   id: string;
   orderId: string;
-  executorKey: string;  // "BINANCE:BTC-USDT"
+  executorKey: string;  // "BINANCE:main:BTC-USDT" (includes account)
   sessionKey: string;   // Unique session identifier
   boundAt: Date;
   unboundAt?: Date;
@@ -2050,23 +2319,29 @@ server/src/
 │       └── strategy/
 │           └── adminStrategy.service.ts
 │
-├── strategies/                     # Strategy definitions
-│   ├── schemas/                    # Config schema files
+├── strategies/                     # Strategy templates (seed files only)
+│   ├── schemas/                    # Config schema templates
 │   │   ├── pure-market-making.toml
 │   │   ├── arbitrage.toml
 │   │   └── volume.toml
 │   │
-│   └── scripts/                    # Execution scripts
+│   └── scripts/                    # Script templates (seeded to DB)
 │       ├── pure-market-making.ts
 │       ├── arbitrage.ts
 │       ├── volume.ts
 │       └── types.ts                # Shared type definitions
+│
+├── seeds/
+│   └── strategies/                 # Server start seeder
+│       └── strategy-seeder.ts      # Loads templates to DB
 │
 └── common/
     └── entities/
         ├── market-making/
         │   ├── market-making-order.entity.ts
         │   ├── strategy-definition.entity.ts
+        │   ├── strategy-script.entity.ts       # NEW: DB-based scripts
+        │   ├── strategy-config-schema.entity.ts # NEW: Config schema
         │   ├── user-strategy-config.entity.ts
         │   └── order-daily-summary.entity.ts
         │
@@ -2255,7 +2530,7 @@ Response: {
 
 **Issue**: Redis is down
 - **Check**: Is Redis connection healthy?
-- **Check**: System falls back to in-memory Map (no data loss, just slower)
+- **Check**: Server should fail on startup if Redis unavailable - check process logs
 
 **Issue**: Data lost after Redis restart
 - **Check**: Is AOF persistence enabled?
@@ -2309,23 +2584,27 @@ Response: {
 
 ### Key Design Decisions:
 
-1. **Two-Part Strategy Definition**: Config Schema (TOML/JSON) + Execution Script (TypeScript)
-2. **Pooled Execution**: One executor per exchange-trading-pair shared across all users
+1. **Two-Part Strategy Definition**: Config Schema (DB) + Execution Script (DB)
+2. **Pooled Execution**: One executor per exchange-account-pair (supports multiple API keys)
 3. **Multi-User Support**: UserStrategyConfig for pro users to override defaults
 4. **Campaign-Agnostic**: Campaigns linked at exchange-pair level, not strategy
 5. **Redis-Based Trade Aggregation**: No per-fill DB writes, uses HINCRBY
-6. **Hummingbot Compatible**: Import/export YAML configs
-7. **Hot-Reloadable Scripts**: TypeScript scripts with chokidar watcher
+6. **Redis Required**: No fallback - fail fast on startup if Redis unavailable
+7. **Balance Reservation**: Reuses existing BalanceLedgerService.lockFunds()
+8. **Order Reproducibility**: strategySnapshot captures script/config at order creation
+9. **DB-Based Scripts**: Scripts stored in DB (source of truth), seeded on server start
 
 ### File Naming Conventions:
 
-- **Config schemas**: `{key}.toml` or `{key}.json`
-- **Scripts**: `{key}.ts`
+- **Config schemas**: `{key}.toml` or `{key}.json` (seeded to DB)
+- **Scripts**: `{key}.ts` (seeded to DB)
 - **Hummingbot imports**: Preserve original YAML in DB, convert to our format
 
 ### Database Storage:
 
-- **StrategyDefinition**: schema + script paths (references files on disk)
+- **StrategyScript**: Script content in DB with hash verification
+- **StrategyConfigSchema**: Config schema in DB
+- **MarketMakingOrder.strategySnapshot**: Immutable snapshot for reproducibility
 - **UserStrategyConfig**: user overrides (not full configs)
 - **OrderDailySummary**: daily trading summaries (not per-fill records)
 
@@ -2334,6 +2613,24 @@ This architecture provides a clean separation between configuration, execution l
 ---
 
 ## Changelog
+
+- **2026-03-07** (continued): Addressed critical architecture issues
+  - **P1**: Added account parameter to executor key (exchange:account:pair)
+    - Supports multiple API keys/subaccounts per exchange
+    - ExecutorRegistry updated to include account
+  - **P2**: Added strategySnapshot to MarketMakingOrder for reproducibility
+    - Captures script ID, hash, and resolved config at order creation
+    - Order always uses captured logic, not mutable definitions
+  - **P3**: Added balance reservation using existing BalanceLedgerService
+    - Reuses lockFunds()/unlockFunds() from BalanceLedgerService
+    - Fails fast if insufficient balance before creating session
+  - **P4**: Removed Redis fallback - fail fast on startup
+    - Server exits if Redis unavailable
+    - No silent data loss
+  - **P5**: Changed from filesystem scripts to DB-based scripts
+    - Scripts stored in StrategyScript table
+    - Seeded from templates on server start
+    - Publish new versions via DB update (not filesystem)
 
 - **2026-03-07**: Merged strategy definition protocol into pooled executor architecture
   - Added comprehensive TOML/JSON config schema format with examples
@@ -2349,6 +2646,6 @@ This architecture provides a clean separation between configuration, execution l
   - Write OrderDailySummary to SQLite only on stop or daily cron
   - Added flush on order stop
   - Added reconciliation via exchange API
-  - Added Redis fallback when unavailable
+  - ~~Added Redis fallback when unavailable~~ (removed)
   - Added timezone configuration (UTC default, admin configurable)
   - Unified order history and campaign tracking (same data source)
