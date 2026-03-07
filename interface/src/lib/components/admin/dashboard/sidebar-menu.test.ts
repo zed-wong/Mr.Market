@@ -15,6 +15,7 @@ describe("buildAdminSidebarMenu", () => {
       "spot-trading",
       "market-making",
       "fees",
+      "strategies",
       "api-keys",
     ]);
   });

@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { createStrategyKey } from 'src/common/helpers/strategyKey';
+import {
+  createPureMarketMakingStrategyKey,
+  createStrategyKey,
+} from 'src/common/helpers/strategyKey';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
 
@@ -42,11 +45,14 @@ export class PauseWithdrawOrchestratorService {
       command.strategyType,
     );
 
-    const strategyKey = createStrategyKey({
-      type: command.strategyType,
-      user_id: command.userId,
-      client_id: command.clientId,
-    });
+    const strategyKey =
+      command.strategyType === 'pureMarketMaking'
+        ? createPureMarketMakingStrategyKey(command.clientId)
+        : createStrategyKey({
+            type: command.strategyType,
+            user_id: command.userId,
+            client_id: command.clientId,
+          });
 
     await this.cancelUntilDrained(strategyKey);
 

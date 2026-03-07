@@ -1,5 +1,7 @@
 .vercel
+.claude
 node_modules
+.worktrees/
 dist
 .env
 .env.*

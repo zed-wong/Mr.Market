@@ -24,6 +24,9 @@ export class MarketMakingOrder {
   @Column()
   exchangeName: string;
 
+  @Column({ nullable: true })
+  strategyDefinitionId?: string;
+
   @Column()
   bidSpread: string;
 

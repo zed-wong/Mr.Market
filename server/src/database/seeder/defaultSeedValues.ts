@@ -5,6 +5,9 @@ import {
   GrowdataSimplyGrowToken,
 } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+
+import { loadStrategyYaml } from './strategy-yaml.loader';
 
 export const defaultSpotdataTradingPairs: SpotdataTradingPair[] = [
   {
@@ -350,3 +353,50 @@ export const defaultCustomConfig: CustomConfigEntity = {
   max_balance_single_api_key: '0',
   funding_account: '',
 };
+
+export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
+  {
+    key: 'pure_market_making',
+    name: 'Pure Market Making',
+    description: 'Place buy and sell orders on both sides of the order book',
+    controllerType: 'pure_market_making',
+    configSchema: loadStrategyYaml('pure-market-making.yaml'),
+    defaultConfig: {},
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+  {
+    key: 'arbitrage',
+    name: 'Arbitrage',
+    description: 'Cross-exchange arbitrage between two exchanges',
+    controllerType: 'arbitrage',
+    configSchema: loadStrategyYaml('arbitrage.yaml'),
+    defaultConfig: {},
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+  {
+    key: 'volume',
+    name: 'Volume',
+    description: 'Generate volume with controlled swaps',
+    controllerType: 'volume',
+    configSchema: loadStrategyYaml('volume.yaml'),
+    defaultConfig: {},
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+  {
+    key: 'time_indicator',
+    name: 'Time Indicator',
+    description: 'Trade based on EMA/RSI indicators',
+    controllerType: 'time_indicator',
+    configSchema: loadStrategyYaml('time-indicator.yaml'),
+    defaultConfig: {},
+    enabled: true,
+    visibility: 'system',
+    createdBy: 'seed',
+  },
+];

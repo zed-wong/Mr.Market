@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -8,11 +7,11 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
 import { PerformanceService } from '../performance/performance.service';
-import { DexVolumeStrategyService } from './dex-volume.strategy.service';
-import { PureMarketMakingStrategyDto } from './strategy.dto';
+import { PureMarketMakingStrategyDto } from './config/strategy.dto';
+import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
+import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
+import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { StrategyService } from './strategy.service';
-import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
-import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
 class PerformanceServiceMock {
   recordPerformance = jest.fn();
@@ -20,17 +19,9 @@ class PerformanceServiceMock {
 
 class ExchangeInitServiceMock {
   getExchange(exchangeName: string): any {
-    if (exchangeName === 'unknownExchange') {
-      throw new InternalServerErrorException('Exchange not configured');
-    }
-
     return {
       id: exchangeName,
       name: exchangeName,
-      fetchOrderBook: jest.fn().mockResolvedValue({
-        bids: [[100, 10]],
-        asks: [[101, 10]],
-      }),
       fetchTicker: jest.fn().mockResolvedValue({ last: 100.5 }),
     };
   }
@@ -42,15 +33,13 @@ class ExchangeInitServiceMock {
 
 describe('StrategyService', () => {
   let service: StrategyService;
-  let exchangeInitService: ExchangeInitService;
-  let strategyIntentExecutionService: {
-    consumeIntents: jest.Mock;
+  let executorOrchestratorService: {
+    dispatchActions: jest.Mock;
   };
-  let strategyIntentStoreService: {
-    upsertIntent: jest.Mock;
-  };
-  let dexVolumeStrategyService: {
-    executeCycle: jest.Mock;
+  let strategyMarketDataProviderService: {
+    getReferencePrice: jest.Mock;
+    getBestBidAsk: jest.Mock;
+    getOrderBook: jest.Mock;
   };
 
   const mockStrategyInstanceRepository = {
@@ -62,17 +51,22 @@ describe('StrategyService', () => {
   };
 
   beforeEach(async () => {
-    strategyIntentExecutionService = {
-      consumeIntents: jest.fn().mockResolvedValue(undefined),
+    executorOrchestratorService = {
+      dispatchActions: jest.fn(async (_strategyKey: string, actions: any[]) =>
+        actions.map((action: any) => ({
+          ...action,
+          status: action.status || 'NEW',
+        })),
+      ),
     };
-    strategyIntentStoreService = {
-      upsertIntent: jest.fn().mockResolvedValue(undefined),
-    };
-    dexVolumeStrategyService = {
-      executeCycle: jest.fn().mockResolvedValue({
-        txHash: '0xabc',
-        side: 'buy',
-        amountIn: '1000000',
+    strategyMarketDataProviderService = {
+      getReferencePrice: jest.fn().mockResolvedValue(100.5),
+      getBestBidAsk: jest
+        .fn()
+        .mockResolvedValue({ bestBid: 100, bestAsk: 101 }),
+      getOrderBook: jest.fn().mockResolvedValue({
+        bids: [[100, 10]],
+        asks: [[101, 10]],
       }),
     };
 
@@ -82,29 +76,23 @@ describe('StrategyService', () => {
         { provide: PerformanceService, useClass: PerformanceServiceMock },
         { provide: ExchangeInitService, useClass: ExchangeInitServiceMock },
         {
-          provide: StrategyIntentExecutionService,
-          useValue: strategyIntentExecutionService,
+          provide: ExecutorOrchestratorService,
+          useValue: executorOrchestratorService,
         },
         {
-          provide: StrategyIntentStoreService,
-          useValue: strategyIntentStoreService,
-        },
-        {
-          provide: DexVolumeStrategyService,
-          useValue: dexVolumeStrategyService,
-        },
-        {
-          provide: ConfigService,
+          provide: StrategyControllerRegistry,
           useValue: {
-            get: jest.fn((key: string, defaultValue?: string) => {
-              if (key === 'strategy.intent_execution_driver') {
-                return 'worker';
-              }
-
-              return defaultValue;
-            }),
+            getController: jest.fn().mockReturnValue(undefined),
+            listControllerTypes: jest
+              .fn()
+              .mockReturnValue(['arbitrage', 'pureMarketMaking', 'volume']),
           },
         },
+        {
+          provide: StrategyMarketDataProviderService,
+          useValue: strategyMarketDataProviderService,
+        },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
         {
           provide: getRepositoryToken(StrategyInstance),
           useValue: mockStrategyInstanceRepository,
@@ -113,7 +101,6 @@ describe('StrategyService', () => {
     }).compile();
 
     service = module.get<StrategyService>(StrategyService);
-    exchangeInitService = module.get(ExchangeInitService);
 
     jest.clearAllMocks();
   });
@@ -161,14 +148,64 @@ describe('StrategyService', () => {
     await service.executeMMCycle(strategyParamsDto);
 
     const intents = service.getLatestIntentsForStrategy(
-      '1-client1-pureMarketMaking',
+      'client1-pureMarketMaking',
     );
 
     expect(intents.length).toBe(2);
     expect(intents[0].type).toBe('CREATE_LIMIT_ORDER');
   });
 
-  it('publishes intents without consuming synchronously when worker driver is enabled', async () => {
+  it('uses controller decideActions path for pure market making sessions', async () => {
+    const nowMs = 1_700_000_000_000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    const strategyKey = 'client1-pureMarketMaking';
+    const buildActionsSpy = jest.spyOn(service, 'buildPureMarketMakingActions');
+
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockReturnValue({
+        decideActions: jest.fn(
+          async (session: any, ts: string, svc: any) =>
+            await svc.buildPureMarketMakingActions(
+              session.strategyKey,
+              session.params,
+              ts,
+            ),
+        ),
+      }),
+    };
+
+    (service as any).sessions.set(strategyKey, {
+      runId: 'run-1',
+      strategyKey,
+      strategyType: 'pureMarketMaking',
+      userId: '1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: nowMs,
+      params: {
+        userId: '1',
+        clientId: 'client1',
+        pair: 'BTC/USDT',
+        exchangeName: 'bitfinex',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+    });
+
+    await service.onTick('2026-03-04T00:00:00.000Z');
+
+    expect(buildActionsSpy).toHaveBeenCalledTimes(1);
+
+    dateNowSpy.mockRestore();
+  });
+
+  it('publishes intents through orchestrator', async () => {
     const strategyParamsDto: PureMarketMakingStrategyDto = {
       userId: '1',
       clientId: 'client1',
@@ -188,10 +225,15 @@ describe('StrategyService', () => {
 
     await service.executeMMCycle(strategyParamsDto);
 
-    expect(strategyIntentStoreService.upsertIntent).toHaveBeenCalledTimes(2);
-    expect(
-      strategyIntentExecutionService.consumeIntents,
-    ).not.toHaveBeenCalled();
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
+      'client1-pureMarketMaking',
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'CREATE_LIMIT_ORDER' }),
+      ]),
+    );
   });
 
   it('stops a strategy and emits a stop intent', async () => {
@@ -215,21 +257,24 @@ describe('StrategyService', () => {
     await service.executePureMarketMakingStrategy(strategyParamsDto);
     await service.stopStrategyForUser('1', 'client1', 'pureMarketMaking');
 
-    const intents = service.getLatestIntentsForStrategy(
-      '1-client1-pureMarketMaking',
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
+      'client1-pureMarketMaking',
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'STOP_CONTROLLER' }),
+      ]),
     );
 
-    expect(intents.some((intent) => intent.type === 'STOP_EXECUTOR')).toBe(
+    const intents = service.getLatestIntentsForStrategy(
+      'client1-pureMarketMaking',
+    );
+
+    expect(intents.some((intent) => intent.type === 'STOP_CONTROLLER')).toBe(
       true,
     );
   });
 
   it('falls back to ticker price when order book is empty', async () => {
-    jest.spyOn(exchangeInitService, 'getExchange').mockReturnValue({
-      id: 'bitfinex',
-      fetchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
-      fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
-    } as any);
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
     const strategyParamsDto: PureMarketMakingStrategyDto = {
       userId: '1',
@@ -252,7 +297,7 @@ describe('StrategyService', () => {
       service.executeMMCycle(strategyParamsDto),
     ).resolves.not.toThrow();
     expect(
-      service.getLatestIntentsForStrategy('1-client1-pureMarketMaking'),
+      service.getLatestIntentsForStrategy('client1-pureMarketMaking'),
     ).toHaveLength(2);
   });
 
@@ -320,6 +365,7 @@ describe('StrategyService', () => {
       .mockImplementation(async (session: { strategyKey: string }) => {
         if (session.strategyKey === 'a-strategy') {
           const activeB = (service as any).sessions.get('b-strategy');
+
           (service as any).sessions.set('b-strategy', {
             ...activeB,
             runId: 'run-b-new',
@@ -371,7 +417,7 @@ describe('StrategyService', () => {
       .spyOn(service as any, 'persistStrategyParams')
       .mockResolvedValue(undefined);
 
-    jest.spyOn(service as any, 'buildVolumeIntents').mockResolvedValue([
+    jest.spyOn(service as any, 'buildVolumeActions').mockResolvedValue([
       {
         type: 'CREATE_LIMIT_ORDER',
         intentId: 'intent-1',
@@ -388,6 +434,25 @@ describe('StrategyService', () => {
         status: 'NEW',
       },
     ]);
+
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockImplementation((strategyType: string) => {
+        if (strategyType !== 'volume') {
+          return undefined;
+        }
+
+        return {
+          decideActions: jest.fn(
+            async (session: any, ts: string, svc: any) =>
+              await svc.buildVolumeSessionActions(session, ts),
+          ),
+          onActionsPublished: jest.fn(
+            async (session: any, actions: any[], svc: any) =>
+              await svc.onVolumeActionsPublished(session, actions),
+          ),
+        };
+      }),
+    };
 
     (service as any).sessions.set(strategyKey, {
       runId: 'run-1',
@@ -407,6 +472,7 @@ describe('StrategyService', () => {
         userId: 'user1',
         clientId: 'client1',
         pricePushRate: 0,
+        executionCategory: 'clob_cex',
         executionVenue: 'cex',
         postOnlySide: 'buy',
         executedTrades: 0,
@@ -440,7 +506,7 @@ describe('StrategyService', () => {
       .spyOn(service as any, 'persistStrategyParams')
       .mockResolvedValue(undefined);
 
-    jest.spyOn(service as any, 'buildVolumeIntents').mockResolvedValue([
+    jest.spyOn(service as any, 'buildVolumeActions').mockResolvedValue([
       {
         type: 'CREATE_LIMIT_ORDER',
         intentId: 'intent-1',
@@ -479,6 +545,7 @@ describe('StrategyService', () => {
         userId: 'user1',
         clientId: 'client1',
         pricePushRate: 0,
+        executionCategory: 'clob_cex',
         executionVenue: 'cex',
         postOnlySide: 'buy',
         executedTrades: 0,
@@ -524,11 +591,38 @@ describe('StrategyService', () => {
 
     expect(session).toBeDefined();
     expect(session.params.executionVenue).toBe('dex');
+    expect(session.params.executionCategory).toBe('amm_dex');
     expect(session.params.dexId).toBe('uniswapV3');
     expect(session.params.chainId).toBe(1);
   });
 
-  it('executes dex volume cycle via dex service and increments executed trades', async () => {
+  it('throws explicit error for clob_dex until adapter is implemented', async () => {
+    await expect(
+      service.executeVolumeStrategy(
+        'dydx',
+        'ETH/USDC',
+        0.1,
+        10,
+        1,
+        5,
+        'user1',
+        'client1',
+        0,
+        undefined,
+        'cex',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'clob_dex',
+      ),
+    ).rejects.toThrow('executionCategory clob_dex is not implemented yet');
+  });
+
+  it('publishes amm_dex swap intents and increments executed trades', async () => {
     const nowMs = 1_700_000_000_000;
     const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
     const strategyKey = 'user1-client1-volume';
@@ -551,6 +645,7 @@ describe('StrategyService', () => {
         userId: 'user1',
         clientId: 'client1',
         pricePushRate: 0,
+        executionCategory: 'amm_dex',
         executionVenue: 'dex',
         postOnlySide: 'buy',
         executedTrades: 0,
@@ -563,17 +658,44 @@ describe('StrategyService', () => {
       },
     });
 
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockImplementation((strategyType: string) => {
+        if (strategyType !== 'volume') {
+          return undefined;
+        }
+
+        return {
+          decideActions: jest.fn(
+            async (session: any, ts: string, svc: any) =>
+              await svc.buildVolumeSessionActions(session, ts),
+          ),
+          onActionsPublished: jest.fn(
+            async (session: any, actions: any[], svc: any) =>
+              await svc.onVolumeActionsPublished(session, actions),
+          ),
+        };
+      }),
+    };
+
     await service.onTick('2026-03-01T00:00:00.000Z');
 
-    expect(dexVolumeStrategyService.executeCycle).toHaveBeenCalledTimes(1);
-    expect(dexVolumeStrategyService.executeCycle).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dexId: 'uniswapV3',
-        chainId: 1,
-        side: 'buy',
-      }),
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledTimes(
+      1,
     );
-    expect(strategyIntentStoreService.upsertIntent).not.toHaveBeenCalled();
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
+      strategyKey,
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'EXECUTE_AMM_SWAP',
+          executionCategory: 'amm_dex',
+          metadata: expect.objectContaining({
+            dexId: 'uniswapV3',
+            chainId: 1,
+            tokenIn: '0x0000000000000000000000000000000000000001',
+          }),
+        }),
+      ]),
+    );
     expect(
       (service as any).sessions.get(strategyKey).params.executedTrades,
     ).toBe(1);

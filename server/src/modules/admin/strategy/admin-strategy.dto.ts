@@ -5,7 +5,7 @@ import {
   ArbitrageStrategyDto,
   ExecuteVolumeStrategyDto,
   PureMarketMakingStrategyDto,
-} from '../../market-making/strategy/strategy.dto';
+} from '../../market-making/strategy/config/strategy.dto';
 
 // Unified DTO for starting strategies that handles all types
 export class StartStrategyDto {
@@ -138,4 +138,185 @@ export class JoinStrategyDto {
 
   @IsDecimal()
   amount: number;
+}
+
+export class StrategyDefinitionDto {
+  @ApiProperty({
+    description: 'Stable definition key',
+    example: 'pure-market-making',
+  })
+  key: string;
+
+  @ApiProperty({
+    description: 'Display name',
+    example: 'Pure Market Making',
+  })
+  name: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional human-readable description',
+    example: 'Layered bid/ask quoting around an oracle mid price.',
+  })
+  description?: string;
+
+  @ApiProperty({
+    description:
+      'Controller type that maps to local strategy intent-generation implementation',
+    example: 'pureMarketMaking',
+  })
+  controllerType?: string;
+
+  @ApiPropertyOptional({
+    description: 'Deprecated alias for controllerType',
+    example: 'pureMarketMaking',
+  })
+  executorType?: string;
+
+  @ApiProperty({
+    description: 'JSON schema for validating instance configs',
+    example: {
+      type: 'object',
+      required: ['pair', 'exchangeName'],
+      properties: {
+        pair: { type: 'string' },
+        exchangeName: { type: 'string' },
+      },
+    },
+  })
+  configSchema: Record<string, unknown>;
+
+  @ApiProperty({
+    description: 'Default config values used by admin UI and instance creation',
+    example: {
+      pair: 'BTC/USDT',
+      exchangeName: 'binance',
+    },
+  })
+  defaultConfig: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description: 'Definition visibility scope',
+    example: 'system',
+  })
+  visibility?: string;
+
+  @ApiPropertyOptional({
+    description: 'Creator identity',
+    example: 'seed',
+  })
+  createdBy?: string;
+}
+
+export class UpdateStrategyDefinitionDto {
+  @ApiPropertyOptional({ description: 'Display name' })
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Optional description' })
+  description?: string;
+
+  @ApiPropertyOptional({ description: 'Controller type' })
+  controllerType?: string;
+
+  @ApiPropertyOptional({ description: 'Deprecated alias for controllerType' })
+  executorType?: string;
+
+  @ApiPropertyOptional({ description: 'JSON schema' })
+  configSchema?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Default config values' })
+  defaultConfig?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Definition visibility' })
+  visibility?: string;
+}
+
+export class RemoveStrategyDefinitionDto {
+  @ApiProperty({
+    description: 'Strategy definition id',
+    example: 'bfcdd76d-bbcb-4f85-b645-c5f6a5cc3981',
+  })
+  definitionId: string;
+}
+
+export class PublishStrategyDefinitionVersionDto {
+  @ApiPropertyOptional({ description: 'Display name' })
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Optional description' })
+  description?: string;
+
+  @ApiPropertyOptional({ description: 'Controller type' })
+  controllerType?: string;
+
+  @ApiPropertyOptional({ description: 'Deprecated alias for controllerType' })
+  executorType?: string;
+
+  @ApiPropertyOptional({ description: 'JSON schema' })
+  configSchema?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Default config values' })
+  defaultConfig?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Definition visibility' })
+  visibility?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Explicit semantic version. If absent, patch version is incremented.',
+    example: '1.0.1',
+  })
+  version?: string;
+}
+
+export class StartStrategyInstanceDto {
+  @ApiProperty({
+    description: 'Strategy definition id',
+    example: 'bfcdd76d-bbcb-4f85-b645-c5f6a5cc3981',
+  })
+  definitionId: string;
+
+  @ApiProperty({ description: 'User ID associated with the strategy instance' })
+  userId: string;
+
+  @ApiProperty({
+    description: 'Client ID associated with the strategy instance',
+  })
+  clientId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Order id binding for pure market making runtime, when strategy should be tied to an MM order',
+  })
+  marketMakingOrderId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Config overrides merged on top of definition defaultConfig',
+    example: {
+      pair: 'ETH/USDT',
+      exchangeName: 'mexc',
+    },
+  })
+  config?: Record<string, unknown>;
+}
+
+export class StopStrategyInstanceDto {
+  @ApiProperty({
+    description: 'Strategy definition id',
+    example: 'bfcdd76d-bbcb-4f85-b645-c5f6a5cc3981',
+  })
+  definitionId: string;
+
+  @ApiProperty({ description: 'User ID associated with the strategy instance' })
+  userId: string;
+
+  @ApiProperty({
+    description: 'Client ID associated with the strategy instance',
+  })
+  clientId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Order id binding for pure market making runtime, when strategy is tied to an MM order',
+  })
+  marketMakingOrderId?: string;
 }

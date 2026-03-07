@@ -20,6 +20,16 @@
 2. comprehensive order tracking, including volume created, profit made, placed order count, filled order amount, success/failure/cancel count.
 3. campaign reward trading, calculate reward based on performance.
 
+### Dynamic strategy management
+- [x] 1. Add DB-backed strategy definitions (`strategy_definitions`) and link runtime instances with `definitionId`/`definitionVersion`
+- [x] 2. Add strategy definition version snapshots (`strategy_definition_versions`) and publish/list flow
+- [x] 3. Add admin APIs for definition lifecycle and instance lifecycle (validate/start/stop/list/backfill)
+- [x] 4. Add seed defaults for built-in executors (pureMarketMaking/arbitrage/volume)
+- [x] 5. Add admin strategy manage UI page under settings
+- [ ] 6. Replace custom schema checks with a full JSON Schema validator
+- [ ] 7. Add feature flag gating for dynamic definition flow in production environments
+- [ ] 8. Add audit logs/permissions split for strategy definition management operations
+
 ## Interface
 
 ### Connect payment state to confirm payment page
@@ -34,6 +44,7 @@
 ### Admin page
 - [] 1. Add a setup guide for initialization that is step by step, allowing admin to have basic understanding of how setting works, and makes it easier to set up all the things
 - [] 2. Support sorting and filter in manage market making pairs/spot trading pairs
+- [x] 3. Add manage strategies page aligned with existing settings page design
 
 ### Admin exchanges management
 1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page

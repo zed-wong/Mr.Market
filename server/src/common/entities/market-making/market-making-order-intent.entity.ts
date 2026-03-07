@@ -21,6 +21,9 @@ export class MarketMakingOrderIntent {
   @Column()
   marketMakingPairId: string;
 
+  @Column({ nullable: true })
+  strategyDefinitionId?: string;
+
   @Column({ default: 'pending' })
   state: MarketMakingOrderIntentState;
 

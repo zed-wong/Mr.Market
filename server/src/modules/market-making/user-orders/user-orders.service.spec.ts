@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
-import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -18,17 +18,15 @@ import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.reposit
 import { Repository } from 'typeorm';
 
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
-import { StrategyService } from '../strategy/strategy.service';
 import { UserOrdersService } from './user-orders.service';
 
 jest.mock('../../infrastructure/logger/logger.service');
-jest.mock('../strategy/strategy.service');
 
 describe('UserOrdersService', () => {
   let service: UserOrdersService;
-  let strategyService: StrategyService;
   let marketMakingRepository: Repository<MarketMakingOrder>;
   let simplyGrowRepository: Repository<SimplyGrowOrder>;
+  let strategyDefinitionRepository: Repository<StrategyDefinition>;
   let testingModule: TestingModule;
 
   beforeEach(async () => {
@@ -36,8 +34,6 @@ describe('UserOrdersService', () => {
       providers: [
         UserOrdersService,
         CustomLogger,
-        StrategyService,
-        ConfigService,
         {
           provide: getRepositoryToken(MarketMakingOrder),
           useClass: Repository,
@@ -52,6 +48,10 @@ describe('UserOrdersService', () => {
         },
         {
           provide: getRepositoryToken(MarketMakingOrderIntent),
+          useClass: Repository,
+        },
+        {
+          provide: getRepositoryToken(StrategyDefinition),
           useClass: Repository,
         },
         {
@@ -70,13 +70,15 @@ describe('UserOrdersService', () => {
     }).compile();
 
     service = testingModule.get<UserOrdersService>(UserOrdersService);
-    strategyService = testingModule.get<StrategyService>(StrategyService);
     marketMakingRepository = testingModule.get<Repository<MarketMakingOrder>>(
       getRepositoryToken(MarketMakingOrder),
     );
     simplyGrowRepository = testingModule.get<Repository<SimplyGrowOrder>>(
       getRepositoryToken(SimplyGrowOrder),
     );
+    strategyDefinitionRepository = testingModule.get<
+      Repository<StrategyDefinition>
+    >(getRepositoryToken(StrategyDefinition));
     jest.clearAllMocks();
   });
 
@@ -160,79 +162,39 @@ describe('UserOrdersService', () => {
     });
   });
 
-  it('should correctly handle both active and paused orders', async () => {
-    // Mock data for running and paused orders
-    const mockActiveMMOrders = [
-      {
-        orderId: 'mm1',
-        userId: 'user1',
-        pair: 'BTC/USDT',
-        exchangeName: 'ExchangeA',
-        bidSpread: 0.001,
-        askSpread: 0.001,
-        orderAmount: 0.5,
-        orderRefreshTime: 60, // Seconds
-        numberOfLayers: 1,
-        priceSourceType: PriceSourceType.MID_PRICE,
-        amountChangePerLayer: 0.1,
-        amountChangeType: 'percentage' as 'fixed' | 'percentage',
-        ceilingPrice: 60000,
-        floorPrice: 50000,
-        balanceA: 100,
-        balanceB: 1000,
-        state: 'created' as MarketMakingStates,
-        createdAt: new Date(),
-        rewardAddress: '0x0000000000000000000000000000000000000000',
-      },
-    ] as unknown as MarketMakingOrder[];
-    const mockPausedMMOrders = [
-      {
-        orderId: 'mm1',
-        userId: 'user1',
-        pair: 'BTC/USDT',
-        exchangeName: 'ExchangeA',
-        bidSpread: 0.001,
-        askSpread: 0.001,
-        orderAmount: 0.5,
-        orderRefreshTime: 60, // Seconds
-        numberOfLayers: 1,
-        priceSourceType: PriceSourceType.MID_PRICE,
-        amountChangePerLayer: 0.1,
-        amountChangeType: 'percentage' as 'fixed' | 'percentage',
-        ceilingPrice: 60000,
-        floorPrice: 50000,
-        balanceA: 100,
-        balanceB: 1000,
-        state: 'paused' as MarketMakingStates,
-        createdAt: new Date(),
-        rewardAddress: '0x0000000000000000000000000000000000000000',
-      },
-    ] as unknown as MarketMakingOrder[];
+  describe('listEnabledMarketMakingStrategies', () => {
+    it('returns enabled strategy definitions for user selection', async () => {
+      jest.spyOn(strategyDefinitionRepository, 'find').mockResolvedValueOnce([
+        {
+          id: 'strategy-1',
+          key: 'mm-basic',
+          name: 'Basic MM',
+          description: 'basic strategy',
+          controllerType: 'pureMarketMaking',
+          defaultConfig: { bidSpread: 0.1 },
+          configSchema: { type: 'object' },
+          currentVersion: '1.0.0',
+        } as unknown as StrategyDefinition,
+      ]);
 
-    jest
-      .spyOn(marketMakingRepository, 'findBy')
-      .mockImplementation(async (criteria: any) => {
-        if (criteria.state === 'created') return mockActiveMMOrders;
-        if (criteria.state === 'paused') return mockPausedMMOrders;
+      const result = await service.listEnabledMarketMakingStrategies();
 
-        return [];
+      expect(strategyDefinitionRepository.find).toHaveBeenCalledWith({
+        where: { enabled: true },
+        order: { updatedAt: 'DESC' },
       });
-
-    const queueAddSpy = jest.spyOn(
-      testingModule.get('BullQueue_market-making'),
-      'add',
-    );
-
-    // Execute the method under test
-    await service.updateExecutionBasedOnOrders();
-
-    expect(queueAddSpy).toHaveBeenCalledWith('start_mm', {
-      userId: 'user1',
-      orderId: 'mm1',
-    });
-    expect(queueAddSpy).toHaveBeenCalledWith('stop_mm', {
-      userId: 'user1',
-      orderId: 'mm1',
+      expect(result).toEqual([
+        {
+          id: 'strategy-1',
+          key: 'mm-basic',
+          name: 'Basic MM',
+          description: 'basic strategy',
+          controllerType: 'pureMarketMaking',
+          defaultConfig: { bidSpread: 0.1 },
+          configSchema: { type: 'object' },
+          currentVersion: '1.0.0',
+        },
+      ]);
     });
   });
 });

@@ -42,11 +42,18 @@ export default defineConfig({
     /* Test against mobile viewports. */
     {
       name: 'chromium',
-      use: { ...devices['Galaxy S9+'] },
+      use: { ...devices['Galaxy S24'] },
     },
     {
       name: 'webkit',
-      use: { ...devices['iPhone 14'] },
+      use: { ...devices['iPhone 15 Pro'] },
+    },
+    {
+      name: 'firefox-mobile',
+      use: {
+        ...devices['Desktop Firefox'],
+        viewport: { width: 390, height: 844 },
+      },
     },
   ],
 
@@ -59,7 +66,8 @@ export default defineConfig({
       ignoreHTTPSErrors: true,
     },
     {
-      command: 'cd ../server && bun run start:dev',
+      command:
+        'cd ../server && rm -f data/mr_market.playwright.db && DATABASE_PATH=data/mr_market.playwright.db ADMIN_PASSWORD=playwright JWT_SECRET=playwright bun run start:dev',
       url: 'http://127.0.0.1:3000',
       reuseExistingServer: true,
       ignoreHTTPSErrors: true,

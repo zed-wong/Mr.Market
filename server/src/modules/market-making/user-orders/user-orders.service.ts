@@ -4,12 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Queue } from 'bull';
 import { randomUUID } from 'crypto';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -30,13 +29,14 @@ export class UserOrdersService {
   private readonly logger = new CustomLogger(UserOrdersService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
     @InjectRepository(MarketMakingPaymentState)
     private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
     @InjectRepository(MarketMakingOrderIntent)
     private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
+    @InjectRepository(StrategyDefinition)
+    private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
     @InjectRepository(SimplyGrowOrder)
     private readonly simplyGrowRepository: Repository<SimplyGrowOrder>,
     @InjectRepository(StrategyExecutionHistory)
@@ -205,12 +205,15 @@ export class UserOrdersService {
 
   async createMarketMakingOrderIntent(params: {
     marketMakingPairId: string;
-    userId?: string;
+    strategyDefinitionId: string;
   }) {
-    const { marketMakingPairId, userId } = params;
+    const { marketMakingPairId, strategyDefinitionId } = params;
 
     if (!marketMakingPairId) {
       throw new BadRequestException('marketMakingPairId is required');
+    }
+    if (!strategyDefinitionId) {
+      throw new BadRequestException('strategyDefinitionId is required');
     }
 
     const pair = await this.growdataRepository.findMarketMakingPairById(
@@ -219,6 +222,14 @@ export class UserOrdersService {
 
     if (!pair || !pair.enable) {
       throw new NotFoundException('Market making pair not found');
+    }
+
+    const definition = await this.strategyDefinitionRepository.findOne({
+      where: { id: strategyDefinitionId, enabled: true },
+    });
+
+    if (!definition) {
+      throw new NotFoundException('Strategy definition not found or disabled');
     }
 
     const orderId = randomUUID();
@@ -235,8 +246,9 @@ export class UserOrdersService {
 
     const intent = this.marketMakingOrderIntentRepository.create({
       orderId,
-      userId: userId || null,
+      userId: null,
       marketMakingPairId,
+      strategyDefinitionId,
       state: 'pending',
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -246,6 +258,24 @@ export class UserOrdersService {
     await this.marketMakingOrderIntentRepository.save(intent);
 
     return { orderId, memo, expiresAt };
+  }
+
+  async listEnabledMarketMakingStrategies() {
+    const definitions = await this.strategyDefinitionRepository.find({
+      where: { enabled: true },
+      order: { updatedAt: 'DESC' },
+    });
+
+    return definitions.map((definition) => ({
+      id: definition.id,
+      key: definition.key,
+      name: definition.name,
+      description: definition.description,
+      controllerType: definition.controllerType || definition.executorType,
+      defaultConfig: definition.defaultConfig || {},
+      configSchema: definition.configSchema || {},
+      currentVersion: definition.currentVersion,
+    }));
   }
 
   // Methods moved from StrategyService
@@ -269,58 +299,6 @@ export class UserOrdersService {
       },
       order: { executedAt: 'DESC' },
     });
-  }
-
-  // Timeout worker
-  @Cron('*/60 * * * * *') // 60s
-  async clearTimeoutOrders() {
-    // Read all MarketMakingPaymentState
-    const created = await this.findMarketMakingPaymentStateByState('created');
-
-    // Check if created time over timeout 10m
-    created.forEach((item) => {
-      // check if timeout, refund if timeout, update state to timeout
-      if (item.createdAt) {
-        // Logic was empty in original file, keeping it empty or TODO
-      }
-    });
-  }
-
-  // Get all created order to run in strategy
-  @Cron('*/60 * * * * *') // 60s
-  async updateExecutionBasedOnOrders() {
-    const enabled = this.configService.get<string>('strategy.run');
-
-    if (enabled === 'false') {
-      return;
-    }
-
-    // Get orders states that are created
-    const activeMM = await this.marketMakingRepository.findBy({
-      state: 'created',
-    });
-
-    if (activeMM) {
-      activeMM.forEach(async (mm) => {
-        await this.marketMakingQueue.add('start_mm', {
-          userId: mm.userId,
-          orderId: mm.orderId,
-        });
-      });
-    }
-
-    const pausedMM = await this.marketMakingRepository.findBy({
-      state: 'paused',
-    });
-
-    if (pausedMM) {
-      pausedMM.forEach(async (mm) => {
-        await this.marketMakingQueue.add('stop_mm', {
-          userId: mm.userId,
-          orderId: mm.orderId,
-        });
-      });
-    }
   }
 
   async stopMarketMaking(userId: string, orderId: string) {

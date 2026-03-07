@@ -27,6 +27,7 @@
 
 <button
   type="button"
+  data-testid="spot-trading-add-pair"
   class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
   on:click={openDialog}
 >

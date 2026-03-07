@@ -90,7 +90,7 @@ export class HealthService {
 
     if (!exchange) {
       throw new BadRequestException(
-        'Exchange not found, use GET /strategy/supported-exchanges to get supported exchanges',
+        'Exchange not found, use GET /admin/grow/exchange/supported to get supported exchanges',
       );
     }
     const balance = await exchange.fetchBalance();

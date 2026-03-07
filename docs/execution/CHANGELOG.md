@@ -1,5 +1,45 @@
 # Execution Flow Changelog
 
+## 2026-03-06
+
+- Add Hummingbot-compatible YAML strategy definitions in seeders (pure-market-making, arbitrage, volume, time-indicator)
+- Add YAML loader utility for parsing strategy definition files from seeder data directory
+- Add export endpoint for strategy definitions (GET /admin/strategy/definitions/:id/export)
+- Update strategy seeder to load definitions from YAML files instead of hardcoded TypeScript objects
+- Align YAML field names with DTO structure (camelCase) and add required fields (userId, clientId, pair, exchangeName)
+
+## 2026-03-05
+
+- Remove legacy `StrategyController` `/strategy/*` API surface and keep strategy runtime control on shared admin (`/admin/strategy/*`) and queue/user-orders flows only
+- Complete strategy runtime folder reorganization under `server/src/modules/market-making/strategy` into `config`, `controllers`, `intent`, `execution`, `data`, and `dex`, and update admin imports/docs to new paths
+- Add comprehensive backend design logic doc tree under `docs/code/server` with module map, module purpose, business flows, and entity ownership matrix
+- Fix `StrategyControllerRegistry` constructor corruption so `getController` and `listControllerTypes` are available to strategy runtime and test compilation
+- Stabilize interface CI checks by running E2E tests sequentially (`test:e2e --workers=1`) and making `test` wait for E2E before unit tests
+
+## 2026-03-04
+
+- Rename dynamic strategy transition plan doc to `docs/plans/2026-03-04-dynamic-strategy-architecture-transition-plan.md` and remove AdminModule <- StrategyModule runtime coupling by moving `strategy/join` contribution creation into `StrategyController`
+- Add shared `StrategyConfigResolverService` and `StrategyRuntimeDispatcherService`, and wire admin strategy instance start/validate/stop plus `start_mm` dispatch through shared resolver/dispatcher paths
+- Add `ExecutorOrchestratorService` with `ExecutorAction` model and route strategy intent publishing through orchestrator adapter while keeping existing intent worker/execution pipeline
+- Add `decideActions` controller contract and migrate pure market making runtime to controller action emission path with orchestrator-backed intent publish flow
+- Route `stop_mm` through shared strategy resolver/dispatcher flow and add execution-category (`clob_cex`/`clob_dex`/`amm_dex`) mapping support in runtime dispatcher for volume start
+- Complete controller-decide runtime cutover, add strategy market data provider and AMM swap intent metadata persistence/execution, and add admin strategy definition remove API plus UI action
+- Remove StrategyService legacy runtime fallbacks so controller registry + orchestrator are the only strategy runtime execution path, and align start_mm queue flow to shared config resolver validation
+
+
+## 2026-02-28
+
+- Add dynamic strategy definition architecture (`strategy_definitions`, `strategy_definition_versions`) and instance linkage fields on `strategy_instances`
+- Add admin strategy definition lifecycle APIs (create/list/get/update/enable/disable/publish versions)
+- Add admin strategy instance APIs (validate/start/stop/list)
+- Add legacy strategy instance backfill endpoint
+- Add seeded built-in strategy definitions (pure market making, arbitrage, volume) with version snapshots
+- Add executor registry abstraction and executor modules for strategy runtime dispatch
+- Add admin strategy manage settings page
+- Add typed interface helper APIs/tests
+- Add migration and transition guides for dynamic strategy cutover under `docs/plans/*`
+
+
 ## 2026-02-27
 
 - Harden pause-withdraw orchestration with durable pending/completed/failed intents and idempotent ledger rollback on external withdrawal failure

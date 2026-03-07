@@ -225,16 +225,18 @@ Primary files:
 ### 7.2 Strategy execution lifecycle
 
 1. Strategy APIs call `StrategyService` start/stop methods.
-2. Running state is persisted in `StrategyInstance` table.
+2. Running state is persisted in `StrategyInstance` table, with definition linkage (`definitionId`, `definitionVersion`) for dynamic strategy configs.
 3. In-memory map tracks interval handles and runtime state.
-4. Intervals execute arbitrage/market-making/volume logic and place/cancel orders.
+4. Executor registry resolves strategy type to implementation and intervals execute arbitrage/market-making/volume logic.
 5. Orders/history are persisted for audit and metrics.
 
 Primary files:
 - `server/src/modules/market-making/strategy/strategy.service.ts`
-- `server/src/common/entities/strategy-instances.entity.ts`
-- `server/src/common/entities/market-making-order.entity.ts`
-- `server/src/common/entities/arbitrage-order.entity.ts`
+- `server/src/common/entities/market-making/strategy-instances.entity.ts`
+- `server/src/common/entities/market-making/strategy-definition.entity.ts`
+- `server/src/common/entities/market-making/strategy-definition-version.entity.ts`
+- `server/src/common/entities/market-making/market-making-order.entity.ts`
+- `server/src/common/entities/market-making/arbitrage-order.entity.ts`
 
 ### 7.3 Withdrawal flow
 
@@ -277,15 +279,15 @@ Config files:
 Key entities in `server/src/common/entities` include:
 
 - Trading/history: `trade`, `spot-order`, `market-making-order`, `arbitrage-order`, `performance`
-- Strategy and user orders: `strategy-instances`, `user-orders`, `market-making-order-intent`, `payment-state`
+- Strategy and user orders: `strategy-definition`, `strategy-definition-version`, `strategy-instances`, `user-orders`, `market-making-order-intent`, `payment-state`
 - Exchange credentials and misc config: `api-keys`, `custom-config`
-- Mixin domain: `mixin-user`, `mixin-message`, `mixin-release`, `transaction`, `withdrawal`
+- Mixin domain: `mixin-user`, `mixin-message`, `mixin-release`, `withdrawal`
 - Metadata/config catalogs: `grow-data`, `spot-data`
 - Campaigns: `campaign`, `campaign-participation`, `contribution`
 
 ### 8.3 Migrations and seeding
 
-Migrations are under `server/src/database/migrations/*` and include the initial schema plus incremental additions for payment state, order intent, and grow metadata extensions.
+Migrations are under `server/src/database/migrations/*` and include the initial schema plus incremental additions for payment state, order intent, grow metadata, and dynamic strategy definition/version tables.
 
 Seed script: `server/src/database/seeder/seed.ts`
 
@@ -293,6 +295,7 @@ Seed script: `server/src/database/seeder/seed.ts`
 - Seeds grow exchanges and market-making pairs
 - Seeds simply-grow tokens
 - Seeds custom config defaults
+- Seeds strategy definitions and definition versions
 
 ## 9) Cross-Cutting Concerns
 

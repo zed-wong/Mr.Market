@@ -7,7 +7,7 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 @Entity()
 export class APIKeysConfig {
   @PrimaryGeneratedColumn()
-  key_id: string; // The UUID used for identity API key
+  key_id: string; // The UUID for an admin-owned exchange API key
 
   @Column()
   exchange: string; // The identifier of exchange
