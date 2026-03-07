@@ -1,7 +1,7 @@
 # Mr.Market Pooled Executor Architecture
 
-**Version:** 1.0
-**Date:** 2026-03-06
+**Version:** 2.0
+**Date:** 2026-03-07
 **Status:** Design Document
 
 ---
@@ -62,18 +62,18 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  ExchangePairExecutor (BINANCE:BTC-USDT)                        │   │
+│  │  ExchangePairExecutor (BINANCE:BTC-USDT)                         │   │
 │  │  ├─ Shared Resources (per executor)                              │   │
 │  │  │  ├─ OrderBookTracker (exchange order book - market data)      │   │
-│  │  │  ├─ PrivateStreamTracker (user fills/status from exchange)    │   │
-│  │  │  ├─ MarketDataProvider (aggregates market data)               │   │
+│  │  │  ├─ PrivateStreamTracker (user fills/status from exchange)   │   │
+│  │  │  ├─ MarketDataProvider (aggregates market data)              │   │
 │  │  │  └─ ClientOrderTracker (shadow ledger for order state)       │   │
 │  │  │                                                              │   │
 │  │  ├─ Campaign Tracking (NEW)                                     │   │
-│  │  │  └─ CampaignTradeTracker (async trade recording)             │   │
+│  │  │  └─ InMemoryTradeAggregator (Redis-based)                    │   │
 │  │  │                                                              │   │
-│  │  └─ Strategy Sessions (per-order isolation)                       │   │
-│  │     ├─ StrategySession (User A's order state)                    │   │
+│  │  └─ Strategy Sessions (per-order isolation)                      │   │
+│  │     ├─ StrategySession (User A's order state)                   │   │
 │  │     ├─ StrategySession (User B's order state)                    │   │
 │  │     └─ StrategySession (User C's order state)                    │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
@@ -82,41 +82,41 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Execution Script Layer                              │
-│           (TypeScript scripts loaded from filesystem)                    │
+│                    Strategy Definition Layer                             │
+│         (TOML/JSON Config Schema + TypeScript Execution Script)          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  ScriptLoader                                                     │   │
-│  │  - loadScript(scriptPath): IStrategyScript                       │   │
-│  │  - watchAndReload(scriptPath): hot-reload on file changes        │   │
-│  │  - cache: Map<string, IStrategyScript>                           │   │
+│  │  Config Schema (TOML/JSON)                                        │   │
+│  │  ├─ Metadata (name, version, description)                        │   │
+│  │  ├─ Parameters (configurable fields + defaults)                 │   │
+│  │  └─ Constraints (min/max, validation rules)                      │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  IStrategyScript (Interface)                                     │   │
-│  │  - validateConfig(config): boolean                               │   │
-│  │  - createSession(config): StrategySessionState                  │   │
-│  │  - onTick(session, marketData): ExecutorAction[]                │   │
-│  │  - onOrderFilled(session, fill): ExecutorAction[]               │   │
-│  │  - onError(session, error): ExecutorAction[]                    │   │
+│  │  Execution Script (TypeScript)                                   │   │
+│  │  ├─ Implements IStrategyScript interface                         │   │
+│  │  ├─ validateConfig(config): boolean                              │   │
+│  │  ├─ createSession(config): SessionState                          │   │
+│  │  ├─ onTick(session, marketData): Action[]                       │   │
+│  │  ├─ onFill(session, fill): Action[]                             │   │
+│  │  └─ onError(session, error): Action[]                           │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  File Structure:                                                         │
 │  strategies/                                                             │
-│    scripts/                                                              │
-│      pure-market-making.ts                                              │
-│      arbitrage.ts                                                        │
-│      volume.ts                                                           │
-│      time-indicator.ts                                                  │
-│    templates/                                                            │
-│      pure-market-making.yaml.template                                   │
+│    schemas/                     # Config schema files                     │
+│      pure-market-making.toml                                            │
+│      arbitrage.toml                                                      │
+│    scripts/                       # Execution scripts                    │
+│      pure-market-making.ts                                                │
+│      arbitrage.ts                                                           │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     Exchange Connector Layer                              │
+│                       Exchange Connector Layer                           │
 │              (Hummingbot-style connector normalization)                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
@@ -130,56 +130,49 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  Intent Orchestrator & Execution                                 │   │
+│  │  Intent Orchestrator & Execution                                  │   │
 │  │  - ExecutorOrchestrator: Actions → Intents                       │   │
-│  │  - StrategyIntentStore: Persist intents to DB                   │   │
+│  │  - StrategyIntentStore: Persist intents to DB                    │   │
 │  │  - StrategyIntentWorker: Async worker for execution              │   │
-│  │  - StrategyIntentExecution: Execute exchange actions             │   │
+│  │  - StrategyIntentExecution: Execute exchange actions              │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                   Campaign Orchestration Layer                           │
+│                   Campaign Orchestration Layer                          │
 │              (HuFi campaign integration and reward distribution)         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │  CampaignService (EXISTING - HuFi Integration)                   │   │
 │  │  - getCampaigns(): Fetch HuFi campaigns                         │   │
-│  │  - joinCampaignWithAuth(): Join campaigns on behalf of bot       │   │
+│  │  - joinCampaignWithAuth(): Join campaigns on behalf of bot        │   │
 │  │  - Hourly cron to auto-join new campaigns                        │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  CampaignTradeTracker (NEW)                                      │   │
-│  │  - recordTrade(fill): Async trade recording (non-blocking)       │   │
+│  │  InMemoryTradeAggregator (Redis-based)                          │   │
+│  │  - recordTrade(fill): Redis HINCRBY (no DB write)                │   │
 │  │  - calculateOrderScore(orderId, date): BigNumber                 │   │
 │  │  - calculateTotalDailyVolume(date): BigNumber                    │   │
 │  │  - getParticipantScore(campaignId, userId): BigNumber            │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  OrderRevenueTracker (NEW)                                       │   │
-│  │  - accumulateTrade(tradeData): Update order-level revenue        │   │
-│  │  - getOrderRevenueBreakdown(orderId): OrderRevenueResponse       │   │
-│  │  - Daily revenue breakdown per order                                │   │
-│  │  - Order history (same data, just query from OrderDailySummary)  │   │
+│  │  - flushOrder(orderId, date): Write to SQLite                    │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │  CampaignRewardAccounting (NEW)                                  │   │
 │  │  - processDailyRewards(campaignId, date): Calculate rewards      │   │
-│  │  - Determine reward pool (target met or proportional)            │   │
+│  │  - Determine reward pool (target met or proportional)             │   │
 │  │  - Calculate user shares based on scores                         │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  CampaignRewardDistributor (NEW)                                │   │
+│  │  CampaignRewardDistributor (NEW)                                 │   │
 │  │  - distributeReward(userId, amount, campaignId, date)            │   │
-│  │  - Credit user balances via BalanceLedger                       │   │
-│  │  - Mixin internal transfers for distribution                    │   │
+│  │  - Credit user balances via BalanceLedger                        │   │
+│  │  - Mixin internal transfers for distribution                     │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -191,6 +184,11 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 
 ### 1. Strategy Definition Layer
 
+Mr.Market uses a **two-part strategy definition** model:
+
+1. **Config Schema** (TOML/JSON) - Defines what parameters exist, their types, defaults, and validation rules
+2. **Execution Script** (TypeScript) - Defines the trading logic and how decisions are made
+
 #### StrategyDefinition Entity
 
 ```typescript
@@ -200,24 +198,22 @@ interface StrategyDefinition {
   name: string;
   description?: string;
 
-  // Script reference (filesystem)
+  // Schema reference (filesystem)
+  configSchemaPath: string;         // e.g., "strategies/schemas/pure-market-making.toml"
   scriptPath: string;                // e.g., "strategies/scripts/pure-market-making.ts"
-
-  // Config management
-  configSchema: JSONSchema;          // What's configurable
-  defaultConfig: Record<string, any>; // Admin-set defaults
 
   // Metadata
   enabled: boolean;
   visibility: 'system' | 'public';
   currentVersion: string;
+  importSource: 'custom' | 'hummingbot';
 
   createdAt: Date;
   updatedAt: Date;
 }
 ```
 
-#### UserStrategyConfig Entity (NEW)
+#### UserStrategyConfig Entity
 
 ```typescript
 interface UserStrategyConfig {
@@ -235,9 +231,305 @@ interface UserStrategyConfig {
 
 ---
 
-### 2. Pooled Executor Layer
+### 2. Config Schema (TOML/JSON)
 
-#### ExecutorRegistry (NEW)
+#### Schema Structure
+
+```toml
+# strategy-name.toml
+
+[metadata]
+name = "Pure Market Making"
+key = "pure_market_making"
+version = "1.0.0"
+description = "Place buy and sell orders on both sides of the order book"
+author = "Mr.Market"
+
+[permissions]
+can_be_modified_by_pro_user = true
+can_be_exported = true
+import_source = "hummingbot"  # "hummingbot" | "custom"
+
+[[parameters]]
+# Parameter definition
+```
+
+#### Parameter Definition Format
+
+Each parameter defines:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | string | Yes | Unique parameter identifier |
+| `name` | string | Yes | Display name |
+| `type` | string | Yes | Data type: `number`, `boolean`, `string`, `array`, `object` |
+| `default` | varies | Yes | Default value (matches type) |
+| `min` | number | No | Minimum value (for number type) |
+| `max` | number | No | Maximum value (for number type) |
+| `enum` | array | No | Allowed values (for enum/selection) |
+| `required` | boolean | No | Whether user must provide value |
+| `description` | string | Yes | Human-readable explanation |
+| `group` | string | No | Logical grouping (e.g., "Risk Management") |
+| `advanced` | boolean | No | Hide from normal users, show to pro users only |
+
+#### Example: Pure Market Making
+
+```toml
+# pure-market-making.toml
+
+[metadata]
+name = "Pure Market Making"
+key = "pure_market_making"
+version = "1.0.0"
+description = "Place buy and sell orders on both sides of the order book"
+author = "Mr.Market"
+
+[permissions]
+can_be_modified_by_pro_user = true
+can_be_exported = true
+import_source = "custom"
+
+[[parameters]]
+key = "bid_spread"
+name = "Bid Spread"
+type = "number"
+default = 0.001
+min = 0
+max = 1
+description = "Spread from mid price for buy orders (0.001 = 0.1%)"
+
+[[parameters]]
+key = "ask_spread"
+name = "Ask Spread"
+type = "number"
+default = 0.001
+min = 0
+max = 1
+description = "Spread from mid price for sell orders (0.001 = 0.1%)"
+
+[[parameters]]
+key = "order_amount"
+name = "Order Amount"
+type = "number"
+default = 0.001
+min = 0
+description = "Amount of base asset per order"
+
+[[parameters]]
+key = "order_refresh_time"
+name = "Order Refresh Time"
+type = "number"
+default = 60
+min = 1
+description = "Seconds between order refresh cycles"
+group = "Timing"
+
+[[parameters]]
+key = "order_levels"
+name = "Order Levels"
+type = "number"
+default = 1
+min = 1
+max = 10
+description = "Number of order levels to place on each side"
+group = "Advanced"
+
+[[parameters]]
+key = "order_level_spread"
+name = "Order Level Spread"
+type = "number"
+default = 0.01
+min = 0
+max = 1
+description = "Spread between order levels"
+group = "Advanced"
+advanced = true
+
+[[parameters]]
+key = "max_position"
+name = "Maximum Position"
+type = "number"
+default = 1000
+min = 0
+description = "Maximum position size to accumulate"
+group = "Risk Management"
+
+[[parameters]]
+key = "inventory_skew_enabled"
+name = "Enable Inventory Skew"
+type = "boolean"
+default = false
+description = "Adjust quoting based on accumulated inventory"
+group = "Advanced"
+
+[[parameters]]
+key = "inventory_target_base_pct"
+name = "Inventory Target Base Percentage"
+type = "number"
+default = 50
+min = 0
+max = 100
+description = "Target base asset percentage of total portfolio"
+group = "Advanced"
+advanced = true
+```
+
+#### Example: Arbitrage
+
+```toml
+# arbitrage.toml
+
+[metadata]
+name = "Arbitrage"
+key = "arbitrage"
+version = "1.0.0"
+description = "Cross-exchange arbitrage between two exchanges"
+author = "Mr.Market"
+
+[permissions]
+can_be_modified_by_pro_user = true
+can_be_exported = true
+import_source = "hummingbot"
+
+[[parameters]]
+key = "min_profitability"
+name = "Minimum Profitability"
+type = "number"
+default = 0.001
+min = 0
+max = 1
+description = "Minimum profit threshold to execute arbitrage (0.001 = 0.1%)"
+
+[[parameters]]
+key = "gas_adjustment_factor"
+name = "Gas Adjustment Factor"
+type = "number"
+default = 1.1
+min = 1
+max = 10
+description = "Multiplier for estimated gas costs (DEX only)"
+
+[[parameters]]
+key = "order_amount"
+name = "Order Amount"
+type = "number"
+default = 0.001
+min = 0
+description = "Order amount for arbitrage"
+
+[[parameters]]
+key = "max_order_age"
+name = "Maximum Order Age"
+type = "number"
+default = 300
+min = 10
+description = "Maximum order lifetime in seconds"
+group = "Timing"
+```
+
+#### Example: Volume Strategy
+
+```toml
+# volume.toml
+
+[metadata]
+name = "Volume Strategy"
+key = "volume"
+version = "1.0.0"
+description = "Generate trading volume with controlled swaps"
+author = "Mr.Market"
+
+[permissions]
+can_be_modified_by_pro_user = false
+can_be_exported = true
+import_source = "custom"
+
+[[parameters]]
+key = "execution_mode"
+name = "Execution Mode"
+type = "string"
+default = "amm_dex"
+enum = ["amm_dex", "clob_cex", "clob_dex"]
+description = "Exchange type to execute on"
+
+[[parameters]]
+key = "swap_slippages"
+name = "Swap Slippages"
+type = "array"
+default = [0.01, 0.02, 0.03]
+description = "Allowed slippage tolerances"
+
+[[parameters]]
+key = "swap_interval"
+name = "Swap Interval"
+type = "number"
+default = 60
+min = 1
+description = "Seconds between swap cycles"
+group = "Timing"
+
+[[parameters]]
+key = "max_cycle_count"
+name = "Maximum Cycle Count"
+type = "number"
+default = 1000
+min = 1
+description = "Maximum number of swap cycles to execute"
+
+[[parameters]]
+key = "max_swap_amount_per_cycle"
+name = "Maximum Swap Amount Per Cycle"
+type = "number"
+default = 1000
+min = 0
+description = "Maximum swap amount per cycle"
+group = "Risk Management"
+```
+
+#### Alternative: JSON Format
+
+```json
+{
+  "metadata": {
+    "name": "Pure Market Making",
+    "key": "pure_market_making",
+    "version": "1.0.0",
+    "description": "Place buy and sell orders on both sides of the order book",
+    "author": "Mr.Market"
+  },
+  "permissions": {
+    "can_be_modified_by_pro_user": true,
+    "can_be_exported": true,
+    "import_source": "custom"
+  },
+  "parameters": [
+    {
+      "key": "bid_spread",
+      "name": "Bid Spread",
+      "type": "number",
+      "default": 0.001,
+      "min": 0,
+      "max": 1,
+      "description": "Spread from mid price for buy orders (0.001 = 0.1%)"
+    },
+    {
+      "key": "ask_spread",
+      "name": "Ask Spread",
+      "type": "number",
+      "default": 0.001,
+      "min": 0,
+      "max": 1,
+      "description": "Spread from mid price for sell orders (0.001 = 0.1%)"
+    }
+  ]
+}
+```
+
+---
+
+### 3. Pooled Executor Layer
+
+#### ExecutorRegistry
 
 ```typescript
 class ExecutorRegistry {
@@ -260,7 +552,7 @@ class ExecutorRegistry {
 
 **Purpose**: Manages lifecycle of pooled executors per exchange-pair.
 
-#### ExchangePairExecutor (NEW)
+#### ExchangePairExecutor
 
 ```typescript
 class ExchangePairExecutor implements TickComponent {
@@ -283,7 +575,7 @@ class ExchangePairExecutor implements TickComponent {
   addOrder(
     orderId: string,
     userId: string,
-    campaignId: string | null,  // NEW: campaign context
+    campaignId: string | null,  // campaign context
     strategyConfig: RuntimeConfig
   ): StrategySession;
 
@@ -307,7 +599,7 @@ class ExchangePairExecutor implements TickComponent {
 - **Campaign context**: Each order knows its campaign
 - **Flush on stop**: When order stops, flush Redis data to SQLite
 
-#### StrategySession (NEW)
+#### StrategySession
 
 ```typescript
 class StrategySession {
@@ -341,119 +633,298 @@ class StrategySession {
 
 ---
 
-### 3. Execution Script Layer
+### 4. Execution Script Layer
 
 #### IStrategyScript Interface
 
+Every execution script must implement this interface:
+
 ```typescript
-interface IStrategyScript {
-  // Script metadata
+import BigNumber from 'bignumber.js';
+
+/**
+ * Interface for strategy execution scripts
+ * All strategy scripts must implement this interface
+ */
+export interface IStrategyScript {
+  /**
+   * Unique identifier for this strategy
+   * Must match the key in config schema
+   */
   readonly strategyKey: string;
+
+  /**
+   * Version of this script
+   * Used for tracking script changes
+   */
   readonly version: string;
 
-  // Config validation
-  validateConfig(config: Record<string, any>): boolean;
+  /**
+   * Validate the runtime configuration before execution
+   *
+   * @param config - Runtime config (defaults + user overrides merged)
+   * @returns true if config is valid, false otherwise
+   */
+  validateConfig(config: RuntimeConfig): boolean;
 
-  // Session lifecycle
-  createSession(config: RuntimeConfig): StrategySessionState;
+  /**
+   * Create a new session state for an order
+   *
+   * @param config - Validated runtime config
+   * @returns Initial session state object
+   */
+  createSession(config: RuntimeConfig): SessionState;
 
-  // Execution methods (called per-session)
+  /**
+   * Called on each tick to determine trading actions
+   *
+   * @param session - The session state (mutates this in place)
+   * @param marketData - Current market data snapshot
+   * @returns Array of actions to execute (may be empty)
+   */
   onTick(
-    session: StrategySessionState,
+    session: SessionState,
     marketData: MarketDataSnapshot
   ): ExecutorAction[];
 
-  onOrderFilled(
-    session: StrategySessionState,
-    fill: OrderFill
+  /**
+   * Called when an order is filled
+   *
+   * @param session - The session state (mutates this in place)
+   * @param fill - Fill event details
+   * @returns Array of follow-up actions (may be empty)
+   */
+  onFill(
+    session: SessionState,
+    fill: FillEvent
   ): ExecutorAction[];
 
+  /**
+   * Called when an error occurs
+   *
+   * @param session - The session state (mutates this in place)
+   * @param error - The error that occurred
+   * @returns Array of recovery actions (may be empty)
+   */
   onError(
-    session: StrategySessionState,
+    session: SessionState,
     error: Error
   ): ExecutorAction[];
 }
 ```
 
-#### ScriptLoader (NEW)
+#### Type Definitions
 
 ```typescript
-class ScriptLoader {
-  // Load TypeScript script from filesystem
-  async loadScript(scriptPath: string): Promise<IStrategyScript>;
+/**
+ * Runtime configuration passed to scripts
+ * Merged from: defaultConfig + userConfigOverrides
+ */
+interface RuntimeConfig {
+  // Order identity
+  orderId: string;
+  userId: string;
+  exchange: string;
+  pair: string;
+  campaignId?: string;
 
-  // Hot-reload on file changes (watcher)
-  watchAndReload(scriptPath: string): void;
+  // All strategy parameters (from config schema)
+  [key: string]: any;
 
-  // Cache loaded scripts
-  private cache: Map<string, IStrategyScript> = new Map();
+  // Execution context
+  executionContext: {
+    tickSizeMs: number;
+    maxOrderAge: number;
+    minOrderAge: number;
+    // ... other execution context
+  };
+}
 
-  // Get cached script
-  getScript(strategyKey: string): IStrategyScript | undefined;
+/**
+ * Session state maintained by the script
+ * Opaque to the script - can be any structure
+ */
+interface SessionState {
+  // Script can define any structure
+  [key: string]: any;
+}
+
+/**
+ * Market data snapshot provided on each tick
+ */
+interface MarketDataSnapshot {
+  // Order book data
+  bestBid: string;        // Best bid price
+  bestAsk: string;        // Best ask price
+  bidVolume: string;     // Volume at best bid
+  askVolume: string;     // Volume at best ask
+
+  // Mid price (derived)
+  midPrice: string;
+
+  // Timestamp
+  timestamp: number;
+
+  // Additional market data (as needed)
+  [key: string]: any;
+}
+
+/**
+ * Fill event from exchange
+ */
+interface FillEvent {
+  // Order details
+  orderId: string;
+  exchangeOrderId: string;
+  side: 'BUY' | 'SELL';
+
+  // Execution details
+  executionType: 'maker' | 'taker';
+  filledAmount: string;   // Actual filled amount
+  price: string;
+
+  // Timestamp
+  timestamp: number;
+
+  // Additional fill data
+  [key: string]: any;
+}
+
+/**
+ * Action to be executed on exchange
+ */
+interface ExecutorAction {
+  // Action type
+  type: 'CREATE_LIMIT_ORDER'
+      | 'CANCEL_ORDER'
+      | 'STOP_EXECUTOR'
+      | 'UPDATE_ORDER';
+
+  // Action-specific fields
+  [key: string]: any;
 }
 ```
 
-**Features**:
-- **Hot-reload**: Watch filesystem for changes and reload scripts
-- **Caching**: Keep loaded scripts in memory for performance
-- **Type safety**: TypeScript compilation at load time
+#### ScriptLoader (Hot Reload)
+
+```typescript
+class StrategyScriptLoader {
+  private cache: Map<string, IStrategyScript> = new Map();
+
+  async loadScript(scriptPath: string): Promise<IStrategyScript> {
+    // Clear require cache to force reload
+    delete require.cache[require.resolve(scriptPath)];
+
+    // Import the script module
+    const scriptModule = await import(scriptPath);
+
+    // Get the script class (should be default export)
+    const ScriptClass = scriptModule.default;
+
+    // Create instance
+    const script = new ScriptClass();
+
+    // Verify it implements the interface
+    if (!this.isValidScript(script)) {
+      throw new Error(`Script at ${scriptPath} does not implement IStrategyScript`);
+    }
+
+    // Cache it
+    this.cache.set(script.strategyKey, script);
+
+    return script;
+  }
+
+  watchAndReload(scriptPath: string): void {
+    const watcher = chokidar.watch(scriptPath);
+
+    watcher.on('change', async () => {
+      console.log(`Script changed: ${scriptPath}, reloading...`);
+
+      try {
+        await this.loadScript(scriptPath);
+        console.log(`Successfully reloaded: ${scriptPath}`);
+      } catch (error) {
+        console.error(`Failed to reload script: ${error.message}`);
+      }
+    });
+  }
+
+  private isValidScript(script: any): script is IStrategyScript {
+    return (
+      typeof script.strategyKey === 'string' &&
+      typeof script.version === 'string' &&
+      typeof script.validateConfig === 'function' &&
+      typeof script.createSession === 'function' &&
+      typeof script.onTick === 'function' &&
+      typeof script.onFill === 'function' &&
+      typeof script.onError === 'function'
+    );
+  }
+}
+```
 
 #### Example Script: Pure Market Making
 
 ```typescript
 // strategies/scripts/pure-market-making.ts
+
+import BigNumber from 'bignumber.js';
 import {
   IStrategyScript,
-  StrategySessionState,
-  ExecutorAction,
+  RuntimeConfig,
+  SessionState,
   MarketDataSnapshot,
-  OrderFill
+  FillEvent,
+  ExecutorAction,
 } from '../types';
 
 export class PureMarketMakingStrategy implements IStrategyScript {
   readonly strategyKey = 'pure_market_making';
   readonly version = '1.0.0';
 
-  validateConfig(config: Record<string, any>): boolean {
+  validateConfig(config: RuntimeConfig): boolean {
     return (
       typeof config.bid_spread === 'number' &&
       typeof config.ask_spread === 'number' &&
       typeof config.order_amount === 'number' &&
-      typeof config.order_levels === 'number'
+      typeof config.order_levels === 'number' &&
+      typeof config.order_refresh_time === 'number' &&
+      BigNumber(config.order_amount).isFinite() &&
+      BigNumber(config.bid_spread).isFinite() &&
+      BigNumber(config.ask_spread).isFinite()
     );
   }
 
-  createSession(config: RuntimeConfig): StrategySessionState {
+  createSession(config: RuntimeConfig): SessionState {
     return {
       orderId: config.orderId,
       userId: config.userId,
-      lastTick: Date.now(),
+      lastTickTime: 0,
       activeOrders: [],
-      position: { base: '0', quote: '0' },
-      lastRefreshTime: 0,
+      position: {
+        base: '0',
+        quote: '0',
+      },
+      totalTradedVolume: '0',
     };
   }
 
   onTick(
-    session: StrategySessionState,
+    session: SessionState,
     marketData: MarketDataSnapshot
   ): ExecutorAction[] {
-    const config = session.runtimeConfig;
     const actions: ExecutorAction[] = [];
+    const config = session.runtimeConfig as RuntimeConfig;
 
     // Calculate mid price
     const midPrice = BigNumber(marketData.bestBid)
       .plus(marketData.bestAsk)
       .div(2);
 
-    // Calculate bid/ask prices
-    const bidPrice = midPrice.multipliedBy(1 - config.bid_spread);
-    const askPrice = midPrice.multipliedBy(1 + config.ask_spread);
-
-    // Check if we need to refresh orders
     const now = Date.now();
     const shouldRefresh =
-      now - session.lastRefreshTime >= config.order_refresh_time * 1000;
+      now - session.lastTickTime >= config.order_refresh_time * 1000;
 
     if (shouldRefresh) {
       // Cancel existing orders
@@ -468,43 +939,54 @@ export class PureMarketMakingStrategy implements IStrategyScript {
       for (let level = 0; level < config.order_levels; level++) {
         const levelSpread = config.order_level_spread * level;
 
+        const bidPrice = midPrice
+          .multipliedBy(1 - config.bid_spread - levelSpread)
+          .toFixed();
+        const askPrice = midPrice
+          .multipliedBy(1 + config.ask_spread + levelSpread)
+          .toFixed();
+
         actions.push({
           type: 'CREATE_LIMIT_ORDER',
           side: 'BUY',
-          price: bidPrice.multipliedBy(1 - levelSpread).toFixed(),
+          price: bidPrice,
           amount: config.order_amount,
-          clientId: `${session.orderId}-bid-${level}`,
+          clientId: `${config.orderId}-bid-${level}`,
         });
 
         actions.push({
           type: 'CREATE_LIMIT_ORDER',
           side: 'SELL',
-          price: askPrice.multipliedBy(1 + levelSpread).toFixed(),
+          price: askPrice,
           amount: config.order_amount,
-          clientId: `${session.orderId}-ask-${level}`,
+          clientId: `${config.orderId}-ask-${level}`,
         });
       }
 
-      session.lastRefreshTime = now;
+      session.lastTickTime = now;
     }
 
     return actions;
   }
 
-  onOrderFilled(
-    session: StrategySessionState,
-    fill: OrderFill
-  ): ExecutorAction[] {
+  onFill(session: SessionState, fill: FillEvent): ExecutorAction[] {
     // Update position
+    const filledAmount = BigNumber(fill.filledAmount);
+
     if (fill.side === 'BUY') {
       session.position.base = BigNumber(session.position.base)
-        .plus(fill.amount)
+        .plus(filledAmount)
         .toFixed();
     } else {
       session.position.base = BigNumber(session.position.base)
-        .minus(fill.amount)
+        .minus(filledAmount)
         .toFixed();
     }
+
+    // Update traded volume
+    session.totalTradedVolume = BigNumber(session.totalTradedVolume)
+      .plus(filledAmount)
+      .toFixed();
 
     // Remove filled order from active orders
     session.activeOrders = session.activeOrders.filter(
@@ -512,14 +994,10 @@ export class PureMarketMakingStrategy implements IStrategyScript {
     );
 
     // Re-quote immediately
-    return this.onTick(session, session.lastMarketData);
+    return this.onTick(session, { ...fill, midPrice: fill.price });
   }
 
-  onError(
-    session: StrategySessionState,
-    error: Error
-  ): ExecutorAction[] {
-    // Log error and pause strategy
+  onError(session: SessionState, error: Error): ExecutorAction[] {
     console.error(`Strategy error for order ${session.orderId}:`, error);
 
     // Cancel all active orders
@@ -533,7 +1011,119 @@ export class PureMarketMakingStrategy implements IStrategyScript {
 
 ---
 
-### 4. Campaign Integration Layer
+### 5. Config Resolution Flow
+
+```typescript
+// Config resolution happens in StrategyConfigResolverService
+
+class StrategyConfigResolverService {
+  async resolveConfig(
+    strategyDefinitionKey: string,
+    userId?: string,
+    orderId?: string
+  ): Promise<RuntimeConfig> {
+    const definition = await this.strategyDefinitionRepository.findOne({
+      where: { key: strategyDefinitionKey }
+    });
+
+    if (!definition) {
+      throw new Error(`Strategy not found: ${strategyDefinitionKey}`);
+    }
+
+    // 1. Load default config from definition
+    let config = { ...definition.defaultConfig };
+
+    // 2. Apply user overrides if pro user
+    if (userId && orderId) {
+      const userConfig = await this.userStrategyConfigRepository.findOne({
+        where: {
+          userId,
+          strategyDefinitionKey: strategyDefinitionKey
+        }
+      });
+
+      if (userConfig && userConfig.configOverrides) {
+        config = { ...config, ...userConfig.configOverrides };
+      }
+    }
+
+    // 3. Add execution context
+    config.executionContext = {
+      tickSizeMs: Number(this.configService.get('STRATEGY_TICK_SIZE_MS', 1000)),
+      // ... other context
+    };
+
+    // 4. Add order identity (if provided)
+    if (orderId) {
+      config.orderId = orderId;
+    }
+
+    // 5. Get campaign for this exchange-pair
+    if (orderId) {
+      const order = await this.orderRepository.findOne({ where: { id: orderId } });
+      if (order) {
+        const campaign = await this.getActiveCampaign(order.exchange, order.pair);
+        config.campaignId = campaign?.id;
+      }
+    }
+
+    // 6. Validate against schema
+    const valid = this.validateAgainstSchema(config, definition.configSchema);
+    if (!valid) {
+      throw new Error('Invalid configuration');
+    }
+
+    return config as RuntimeConfig;
+  }
+}
+```
+
+---
+
+### 6. Campaign Integration (Separate from Strategy)
+
+Campaigns are **NOT** part of strategy definition. They are linked at the **exchange-pair** level.
+
+```typescript
+// Campaign is linked to exchange-pair, not strategy
+class CampaignLinker {
+  async getActiveCampaign(exchange: string, pair: string): Promise<Campaign | null> {
+    // Find active campaign for this exchange-pair
+    return await this.campaignRepository.findOne({
+      where: {
+        exchange,
+        pair,
+        state: 'active',
+        startDate: LessThanOrEqual(new Date()),
+        endDate: GreaterThanOrEqual(new Date()),
+      }
+    });
+  }
+
+  // When order starts, it inherits the active campaign for its pair
+  async linkOrderToCampaign(orderId: string): Promise<void> {
+    const order = await this.orderRepository.findOne({ where: { id: orderId } });
+
+    if (order) {
+      const campaign = await this.getActiveCampaign(order.exchange, order.pair);
+
+      // Campaign is stored on order, not in strategy
+      order.campaignId = campaign?.id;
+      await this.orderRepository.save(order);
+    }
+  }
+}
+```
+
+**Key Points:**
+- Strategy has NO knowledge of campaigns
+- Campaigns are determined by exchange-pair
+- All orders on same pair use same campaign
+- Order references campaignId, but strategy doesn't care
+
+---
+
+### 7. Redis-Based Trade Aggregation
 
 #### Design Principles
 
@@ -544,7 +1134,7 @@ export class PureMarketMakingStrategy implements IStrategyScript {
 
 This design reduces DB writes from ~400/second to ~100/day (a 17,000× reduction).
 
-#### Redis-Based Trade Aggregator
+#### InMemoryTradeAggregator
 
 ```typescript
 /**
@@ -642,10 +1232,10 @@ interface OrderDailySummary {
 
   // Trading activity (aggregated for the day)
   makerVolume: string;             // Total MAKER volume
-  takerBuyVolume: string;           // Total TAKER_BUY volume
-  takerSellVolume: string;          // Total TAKER_SELL volume
-  totalScore: string;               // Weighted score (volume × weight)
-  tradeCount: number;               // Number of trades
+  takerBuyVolume: string;          // Total TAKER_BUY volume
+  takerSellVolume: string;         // Total TAKER_SELL volume
+  totalScore: string;              // Weighted score (volume × weight)
+  tradeCount: number;              // Number of trades
 
   // Reward attribution (filled after reward calculation)
   attributedReward?: string;
@@ -779,24 +1369,6 @@ const config = {
 };
 ```
 
-#### Redis Fallback
-
-```typescript
-class HybridTradeAggregator {
-  private redis: Redis | null = null;
-  private fallbackMap: Map<string, Map<string, any>> = new Map();
-
-  async recordTrade(tradeData: TradeData): Promise<void> {
-    if (this.redis?.isReady) {
-      // Use Redis
-      await this.redisRecord(tradeData);
-    } else {
-      // Fallback to in-memory (will lose on restart, but system keeps running)
-      this.inMemoryRecord(tradeData);
-    }
-  }
-}
-
 ---
 
 ## Complete Execution Flows
@@ -826,9 +1398,9 @@ class HybridTradeAggregator {
    └─ join_campaign (creates local campaign participation)
 
 5. START MARKET MAKING (start_mm)
-   └─ Resolve strategyDefinitionId from order
-   └─ Get UserStrategyConfig (user's overrides or defaults)
-   └─ Merge: defaultConfig + userOverrides → RuntimeConfig
+   └─ Resolve strategyDefinitionKey from order
+   └─ Get StrategyDefinition (config schema + script path)
+   └─ Resolve Config: defaultConfig + userConfigOverrides → RuntimeConfig
    └─ Bind to ExchangePairExecutor (get or create for exchange-pair)
    └─ Create StrategySession with runtime config
    └─ Load execution script from filesystem (strategies/scripts/*.ts)
@@ -842,8 +1414,8 @@ ClockTickCoordinator ticks at global cadence (e.g., 1s)
    ▼
 For each ExchangePairExecutor:
    │
-   ├─ OrderBookTracker.onTick() (order 1 - market data)
-   ├─ PrivateStreamTracker.onTick() (order 2 - user fills)
+   ├─ OrderBookTracker.onTick() (market data)
+   ├─ PrivateStreamTracker.onTick() (user fills)
    │
    ▼
    For each StrategySession in executor:
@@ -985,14 +1557,14 @@ ReconciliationService.reconcile(orderId, date)
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Market Making Hot Path                        │
-│                  (Must be < 1ms, unchanged)                      │
+│                  (Must be < 1ms, unchanged)                    │
 └─────────────────────────────────────────────────────────────────┘
                           │
                           ▼ (Redis HINCRBY - O(1), super fast)
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Redis (Real-Time)                              │
 │  Key: "trade:{orderId}:{date}"                                  │
-│  Fields: maker_volume, taker_buy_volume, taker_sell_volume,   │
+│  Fields: maker_volume, taker_buy_volume, taker_sell_volume,     │
 │          total_score, trade_count                               │
 │                                                                  │
 │  Operations: ALL IN-MEMORY, NO DB WRITES                       │
@@ -1027,28 +1599,6 @@ The market making execution loop must be extremely fast. Here's how we minimize 
    - During daily reward processing (one write per order per day)
 4. **Redis AOF persistence** survives restarts
 
-### Background Processing
-
-Trade recording happens in Redis, not SQLite:
-
-```typescript
-// Fill arrives (in hot path)
-async onFill(fill: OrderFill): Promise<void> {
-  session.onFill(fill);
-
-  // Redis HINCRBY - super fast, O(1)
-  await this.tradeAggregator.recordTrade({
-    orderId: fill.orderId,
-    userId: fill.userId,
-    tradeType: fill.executionType === 'maker' ? 'MAKER' : 'TAKER',
-    volume: fill.filledAmount,  // Use FILLED amount, not order amount!
-    timestamp: fill.timestamp,
-  });
-
-  // Return immediately - no await on DB write!
-}
-```
-
 ### Redis Fallback
 
 If Redis is unavailable, use in-memory Map:
@@ -1067,6 +1617,187 @@ async recordTrade(tradeData: TradeData): Promise<void> {
 
 ---
 
+## Importing Hummingbot Strategies
+
+### YAML Import Feature
+
+Admin can import Hummingbot YAML configs via admin page:
+
+```typescript
+// POST /admin/strategy/definitions/import-hummingbot
+// Body: multipart/form-data with YAML file
+
+async importHummingbotYAML(yamlContent: string): Promise<StrategyDefinition> {
+  // Parse Hummingbot YAML
+  const hummingbotConfig = parseHummingbotYAML(yamlContent);
+
+  // Convert to our TOML/JSON format
+  const configSchema = convertToMrMarketConfig(hummingbotConfig);
+
+  // Create strategy definition
+  const definition = this.strategyDefinitionRepository.create({
+    key: hummingbotConfig.strategy,
+    name: `${hummingbotConfig.strategy} (Imported)`,
+    description: `Imported from Hummingbot`,
+    configSchema: configSchema,
+    defaultConfig: hummingbotConfig.parameters,
+    importSource: 'hummingbot',
+    permissions: {
+      can_be_modified_by_pro_user: false,  // Imported strategies are locked
+      can_be_exported: true,
+    },
+  });
+
+  return definition;
+}
+```
+
+### Hummingbot YAML Example
+
+```yaml
+# Hummingbot pure_market_marketing_config.yml
+strategy: pure_market_making
+
+order_levels: 1
+order_level_spread: 0.01
+
+bid_spread: 0.001
+ask_spread: 0.001
+
+order_amount: 0.001
+order_refresh_time: 60
+max_order_age: 1800
+order_refresh_tolerance_pct: 0.0
+
+inventory_skew_enabled: false
+inventory_target_base_pct: 50
+
+inventory_range_multiplier: 1
+price_ceiling: -1
+price_floor: -1
+
+hanging_orders_enabled: false
+hanging_orders_cancel_pct: 0.01
+```
+
+**Converted to TOML:**
+
+```toml
+[metadata]
+name = "Pure Market Making"
+key = "pure_market_making"
+version = "1.0.0"
+description = "Imported from Hummingbot"
+author = "Hummingbot"
+import_source = "hummingbot"
+
+[permissions]
+can_be_modified_by_pro_user = false  # Locked for imported strategies
+
+[[parameters]]
+key = "order_levels"
+name = "Order Levels"
+type = "number"
+default = 1
+min = 1
+max = 10
+
+[[parameters]]
+key = "bid_spread"
+name = "Bid Spread"
+type = "number"
+default = 0.001
+min = 0
+max = 1
+
+[[parameters]]
+key = "ask_spread"
+name = "Ask Spread"
+type = "number"
+default = 0.001
+min = 0
+max = 1
+
+# ... (other parameters)
+```
+
+---
+
+## Validation Rules
+
+### Config Schema Validation
+
+```typescript
+class ConfigSchemaValidator {
+  validateConfig(
+    config: Record<string, any>,
+    schema: ParameterDefinition[]
+  ): ValidationResult {
+    const errors: string[] = [];
+
+    for (const param of schema) {
+      const value = config[param.key];
+
+      // Check required fields
+      if (param.required && value === undefined) {
+        errors.push(`Missing required field: ${param.name}`);
+        continue;
+      }
+
+      // Skip validation if value is undefined
+      if (value === undefined) {
+        continue;
+      }
+
+      // Type validation
+      switch (param.type) {
+        case 'number':
+          if (typeof value !== 'number' || isNaN(value)) {
+            errors.push(`${param.name} must be a number`);
+          }
+          if (param.min !== undefined && value < param.min) {
+            errors.push(`${param.name} must be >= ${param.min}`);
+          }
+          if (param.max !== undefined && value > param.max) {
+            errors.push(`${param.name} must be <= ${param.max}`);
+          }
+          break;
+
+        case 'boolean':
+          if (typeof value !== 'boolean') {
+            errors.push(`${param.name} must be a boolean`);
+          }
+          break;
+
+        case 'string':
+          if (typeof value !== 'string') {
+            errors.push(`${param.name} must be a string`);
+          }
+          break;
+
+        case 'array':
+          if (!Array.isArray(value)) {
+            errors.push(`${param.name} must be an array`);
+          }
+          break;
+      }
+
+      // Enum validation
+      if (param.enum && !param.enum.includes(value)) {
+        errors.push(`${param.name} must be one of: ${param.enum.join(', ')}`);
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+}
+```
+
+---
+
 ## Data Models
 
 ### Core Entities
@@ -1078,7 +1809,9 @@ interface MarketMakingOrder {
   userId: string;
   marketMakingPairId: string;
   strategyDefinitionId: string;
-  campaignId?: string;           // Linked campaign (if any)
+
+  // Campaign link (NOT part of strategy!)
+  campaignId?: string;
 
   exchange: string;
   pair: string;
@@ -1131,6 +1864,32 @@ interface UserStrategyConfig {
   strategyDefinitionKey: string;
   configOverrides: Record<string, any>;
   isDefault: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Campaign - HuFi campaign
+interface Campaign {
+  id: string;
+
+  // Campaign details
+  exchange: string;
+  pair: string;
+  name: string;
+  description: string;
+
+  // Campaign timing
+  startDate: Date;
+  endDate: Date;
+
+  // Reward details
+  totalFund: string;              // BigNumber as string
+  durationDays: number;
+  dailyTarget: string;             // BigNumber as string
+
+  // Campaign state
+  state: 'pending' | 'active' | 'completed' | 'failed';
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1203,17 +1962,17 @@ PATCH /admin/strategy/definitions/:id/publish
 PATCH /admin/strategy/definitions/:id/enable
 PATCH /admin/strategy/definitions/:id/disable
 
-// Export strategy definition as YAML (NEW)
+// Export strategy definition as YAML
 GET /admin/strategy/definitions/:key/export
 Response: YAML file download
 Headers: Content-Disposition: attachment; filename="{key}.yaml"
 
-// Import strategy definition from YAML (FUTURE)
+// Import strategy definition from YAML
 POST /admin/strategy/definitions/import
 Body: multipart/form-data (YAML file)
 Response: Created strategy definition
 
-// User Strategy Config Management (NEW)
+// User Strategy Config Management
 GET /admin/users/:userId/strategy-configs
 POST /admin/users/:userId/strategy-configs
 PUT /admin/users/:userId/strategy-configs/:configId
@@ -1234,86 +1993,86 @@ POST /admin/campaigns/:campaignId/process-rewards
 server/src/
 ├── modules/
 │   ├── market-making/
-│   │   ├── orchestration/          # NEW: Pooled executor orchestration
+│   │   ├── orchestration/          # Pooled executor orchestration
 │   │   │   ├── executor-registry.service.ts
 │   │   │   ├── exchange-pair-executor.service.ts
 │   │   │   └── strategy-session.service.ts
 │   │   │
-│   │   ├── scripts/                # NEW: Script loading
+│   │   ├── scripts/                # Script loading & validation
 │   │   │   ├── script-loader.service.ts
-│   │   │   └── script-registry.service.ts
+│   │   │   ├── script-registry.service.ts
+│   │   │   └── config-schema-validator.service.ts
 │   │   │
-│   │   ├── campaigns/              # NEW: Campaign tracking & rewards
-│   │   │   ├── campaign-trade-tracker.service.ts
-│   │   │   ├── order-revenue-tracker.service.ts
+│   │   ├── campaigns/              # Campaign tracking & rewards
+│   │   │   ├── in-memory-trade-aggregator.service.ts
 │   │   │   ├── campaign-reward-accounting.service.ts
 │   │   │   └── campaign-reward-distributor.service.ts
 │   │   │
 │   │   ├── strategy/
-│   │   │   ├── execution/          # EXISTING: Intent pipeline
+│   │   │   ├── execution/          # Intent pipeline
 │   │   │   │   ├── strategy-intent-store.service.ts
 │   │   │   │   ├── strategy-intent-worker.service.ts
 │   │   │   │   └── strategy-intent-execution.service.ts
 │   │   │   │
-│   │   │   ├── intent/             # EXISTING: Orchestrator
+│   │   │   ├── intent/             # Orchestrator
 │   │   │   │   └── executor-orchestrator.service.ts
 │   │   │   │
-│   │   │   └── dex/                # MODIFIED: Config resolution
+│   │   │   └── config/             # Config resolution
 │   │   │       └── strategy-config-resolver.service.ts
 │   │   │
-│   │   ├── trackers/               # EXISTING: Market data
+│   │   ├── trackers/               # Market data
 │   │   │   ├── order-book-tracker.service.ts
 │   │   │   └── private-stream-tracker.service.ts
 │   │   │
-│   │   ├── execution/              # EXISTING: Exchange connector
+│   │   ├── execution/              # Exchange connector
 │   │   │   └── exchange-connector-adapter.service.ts
 │   │   │
-│   │   ├── ledger/                 # EXISTING: Balance ledger
+│   │   ├── ledger/                 # Balance ledger
 │   │   │   └── balance-ledger.service.ts
 │   │   │
-│   │   ├── user-orders/            # EXISTING: Order processing
+│   │   ├── user-orders/            # Order processing
 │   │   │   ├── user-orders.service.ts
 │   │   │   └── market-making.processor.ts
 │   │   │
-│   │   └── tick/                   # EXISTING: Global tick
+│   │   └── tick/                   # Global tick
 │   │       └── clock-tick-coordinator.service.ts
 │   │
-│   ├── campaign/                   # EXISTING: HuFi integration
+│   ├── campaign/                   # HuFi integration
 │   │   └── campaign.service.ts
 │   │
-│   ├── mixin/                      # EXISTING: Mixin integration
+│   ├── mixin/                      # Mixin integration
 │   │   ├── snapshots/
 │   │   │   └── snapshots.service.ts
 │   │   └── transaction/
 │   │       └── transaction.service.ts
 │   │
-│   └── admin/                      # MODIFIED: Add script management
+│   └── admin/                      # Admin endpoints
 │       └── strategy/
 │           └── adminStrategy.service.ts
 │
-├── strategies/                     # NEW: Strategy scripts
-│   ├── scripts/
-│   │   ├── pure-market-making.ts
-│   │   ├── arbitrage.ts
-│   │   ├── volume.ts
-│   │   └── time-indicator.ts
+├── strategies/                     # Strategy definitions
+│   ├── schemas/                    # Config schema files
+│   │   ├── pure-market-making.toml
+│   │   ├── arbitrage.toml
+│   │   └── volume.toml
 │   │
-│   └── templates/
-│       ├── pure-market-making.yaml.template
-│       ├── arbitrage.yaml.template
-│       ├── volume.yaml.template
-│       └── time-indicator.yaml.template
+│   └── scripts/                    # Execution scripts
+│       ├── pure-market-making.ts
+│       ├── arbitrage.ts
+│       ├── volume.ts
+│       └── types.ts                # Shared type definitions
 │
 └── common/
     └── entities/
         ├── market-making/
-        │   ├── market-making-order.entity.ts        # EXISTING
-        │   ├── strategy-definition.entity.ts        # MODIFIED: Add scriptPath
-        │   └── user-strategy-config.entity.ts       # NEW
+        │   ├── market-making-order.entity.ts
+        │   ├── strategy-definition.entity.ts
+        │   ├── user-strategy-config.entity.ts
+        │   └── order-daily-summary.entity.ts
         │
         └── ledger/
-            ├── ledger-entry.entity.ts               # EXISTING
-            └── balance-read-model.entity.ts         # EXISTING
+            ├── ledger-entry.entity.ts
+            └── balance-read-model.entity.ts
 ```
 
 ---
@@ -1328,15 +2087,14 @@ server/src/
 2. Create `ExecutorRegistry` service
 3. Create `ExchangePairExecutor` class
 4. Create `StrategySession` class
-5. Create `CampaignTradeTracker` service
-6. Create `OrderRevenueTracker` service
-7. Create `CampaignRewardAccounting` service
-8. Create `CampaignRewardDistributor` service
+5. Create `InMemoryTradeAggregator` service
+6. Create `CampaignRewardAccounting` service
+7. Create `CampaignRewardDistributor` service
 
 **Testing**:
 - Unit tests for each new component
 - Integration tests for campaign flow
-- Load tests for trade recording queue
+- Load tests for trade recording
 
 ### Phase 2: Modify Existing Services (Medium Risk)
 
@@ -1357,10 +2115,9 @@ server/src/
 **Objective**: Migrate existing data to new model.
 
 1. Add migration for `UserStrategyConfig` table
-2. Add migration for `CampaignTradeRecord` table
-3. Add migration for `OrderRevenueRecord` table
-4. Add migration for `OrderExecutionBinding` table
-5. Backfill existing orders with execution bindings
+2. Add migration for `OrderDailySummary` table
+3. Add migration for `OrderExecutionBinding` table
+4. Backfill existing orders with execution bindings
 
 **Testing**:
 - Migration rollback tests
@@ -1415,57 +2172,6 @@ CAMPAIGN_REDIS_TTL=259200                      # 72 hours in seconds
 REDIS_TRADE_BUFFER_TTL=72                      # 72 hours
 ```
 
-### Strategy Configuration
-
-```yaml
-# strategies/templates/pure-market-making.yaml.template
-strategy: pure_market_making
-
-exchanges:
-  - exchange: binance
-    candles:
-      - id: market_data
-        trading_pair: BTC-USDT
-        interval: 1m
-
-controller:
-  candles: market_data
-
-  # Spread configuration
-  bid_spread: 0.001
-  ask_spread: 0.001
-  minimum_spread: -100
-
-  # Order configuration
-  order_amount: 0.001
-  order_refresh_time: 60
-  max_order_age: 1800
-  order_refresh_tolerance_pct: 0
-
-  # Multi-level orders
-  order_levels: 1
-  order_level_amount: 0
-  order_level_spread: 0.01
-
-  # Risk controls
-  max_position: 1000
-  price_ceiling: -1
-  price_floor: -1
-
-  # Features
-  ping_pong_enabled: false
-  hanging_orders_enabled: false
-  hanging_orders_cancel_pct: 0.01
-
-  # Inventory
-  inventory_skew_enabled: false
-  inventory_target_base_pct: 50
-  inventory_range_multiplier: 1
-
-  # Timing
-  filled_order_delay: 60
-```
-
 ---
 
 ## Monitoring & Observability
@@ -1516,15 +2222,6 @@ Response: {
   lastProcessedAt: string;
   isHealthy: boolean;
 }
-
-// Trade recording health
-GET /health/trade-recording
-Response: {
-  queueDepth: number;
-  processingRate: number; // trades per second
-  lastProcessedAt: string;
-  isHealthy: boolean;
-};
 ```
 
 ---
@@ -1583,6 +2280,7 @@ Response: {
 | **Executor** | Pooled execution context for an exchange-trading-pair |
 | **Session** | Isolated state for a single user's order |
 | **Strategy Script** | TypeScript file defining execution logic |
+| **Config Schema** | TOML/JSON file defining strategy parameters |
 | **Intent** | Action to be executed on exchange |
 | **Orchestrator** | Converts actions to intents and persists them |
 | **Worker** | Async background processor for intents |
@@ -1607,7 +2305,44 @@ Response: {
 
 ---
 
+## Summary
+
+### Key Design Decisions:
+
+1. **Two-Part Strategy Definition**: Config Schema (TOML/JSON) + Execution Script (TypeScript)
+2. **Pooled Execution**: One executor per exchange-trading-pair shared across all users
+3. **Multi-User Support**: UserStrategyConfig for pro users to override defaults
+4. **Campaign-Agnostic**: Campaigns linked at exchange-pair level, not strategy
+5. **Redis-Based Trade Aggregation**: No per-fill DB writes, uses HINCRBY
+6. **Hummingbot Compatible**: Import/export YAML configs
+7. **Hot-Reloadable Scripts**: TypeScript scripts with chokidar watcher
+
+### File Naming Conventions:
+
+- **Config schemas**: `{key}.toml` or `{key}.json`
+- **Scripts**: `{key}.ts`
+- **Hummingbot imports**: Preserve original YAML in DB, convert to our format
+
+### Database Storage:
+
+- **StrategyDefinition**: schema + script paths (references files on disk)
+- **UserStrategyConfig**: user overrides (not full configs)
+- **OrderDailySummary**: daily trading summaries (not per-fill records)
+
+This architecture provides a clean separation between configuration, execution logic, and multi-user customization while maintaining logical compatibility with Hummingbot.
+
+---
+
 ## Changelog
+
+- **2026-03-07**: Merged strategy definition protocol into pooled executor architecture
+  - Added comprehensive TOML/JSON config schema format with examples
+  - Added detailed type definitions (RuntimeConfig, SessionState, etc.)
+  - Added complete config resolution flow
+  - Added campaign linkage at exchange-pair level
+  - Added Hummingbot YAML import feature
+  - Added validation rules implementation
+  - Added enhanced ScriptLoader with chokidar hot reload
 
 - **2026-03-06**: Added Redis-based trade aggregation (no per-fill DB writes)
   - Use Redis HINCRBY for real-time aggregation
