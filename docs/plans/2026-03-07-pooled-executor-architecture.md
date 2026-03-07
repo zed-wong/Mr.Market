@@ -19,12 +19,92 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 1. **Pooled Execution**: One executor per exchange-trading-pair shared across all users
 2. **Hummingbot Compatibility**: Controller/orchestrator/executor separation with tick-driven execution
 3. **Multi-User Isolation**: Per-order session state with shared execution context
-4. **DB-Based Scripts**: TypeScript execution scripts stored in DB (source of truth)
+4. **Template-First Runtime**: Curated strategy family templates are the primary runtime path; DB-based custom scripts are an advanced opt-in lane
 5. **Campaign Integration**: Trade tracking, scoring, and reward distribution for HuFi campaigns
 6. **Order-Level Transparency**: Users can see revenue breakdown per order
 7. **Performance Optimization**: Non-blocking trade recording to minimize execution latency
+8. **Curated User Protection**: Curated Mr.Market strategy families are the default trusted path; admin-authored strategies are supported but explicitly lower-trust
 
 ---
+
+## Product Trust Model
+
+Mr.Market serves many non-professional users. The strategy system must balance useful customization with clear protection boundaries.
+
+For the first product phase:
+
+1. Mr.Market provides a small curated set of **strategy family templates**
+2. Instance admins may **enable or disable** these strategy families
+3. Users may **customize config values** within schema-defined guardrails
+4. Users do **not** edit strategy logic directly
+5. Instance admins may publish **custom strategies**, but these must be clearly labeled as lower-trust than curated Mr.Market templates
+6. Active orders always run a **pinned immutable snapshot** and never silently switch logic
+7. **Template-first approach**: Templates are the default and primary user path in the UI/UX
+
+Initial curated strategy families:
+
+- `pureMarketMaking`
+- `signalAwareMarketMaking`
+- `arbitrage`
+- `volume`
+
+**Template Priority in UX:**
+- Templates are displayed prominently as "Recommended" or "Mr.Market Verified"
+- Templates are the default selection when creating new orders
+- Custom strategies are shown in an "Advanced" section with clear warnings
+- The UI guides users toward templates unless they explicitly opt into custom strategies
+
+Anything outside these curated families must be treated as a custom strategy from a product-trust perspective, even if it reuses the same runtime controller contract.
+
+## Script Version Lifecycle
+
+### Template Family Scripts (Curated by Mr.Market)
+
+Template scripts are first-party code maintained and tested by the Mr.Market team:
+
+**Testing and Deployment:**
+- Scripts are thoroughly tested internally before being seeded to the database
+- Deployed via DB migration with incremental version numbers
+- Marked with `trustLevel: 'template_family'` and `visibility: 'system'`
+
+**Version Management:**
+- Existing orders continue running their captured snapshot (no automatic updates)
+- New orders use the latest seeded version
+- Emergency rollback: disable old version, seed new version as separate script
+- Orders are never affected by script updates after creation (snapshot isolation)
+
+**Bug Response:**
+- Template bugs are rare due to pre-seeding testing
+- If critical issues are found, new orders can use updated templates
+- Existing orders remain on their snapshot unless explicitly stopped and restarted
+
+### Custom Admin Scripts
+
+Custom scripts are authored by instance admins and have a more flexible lifecycle:
+
+**Publishing:**
+- Scripts are versioned on publish with hash verification
+- Marked with `trustLevel: 'custom_admin'` and `visibility: 'public'`
+- Instance admins control version lifecycle
+
+**Version Management:**
+- Same snapshot rules apply (orders never auto-update)
+- Admins can publish updates as new script versions
+- Existing orders unaffected by new versions
+
+**Bug Response:**
+- Instance admins are responsible for testing their custom scripts
+- Bugs are expected more frequently in custom scripts
+- Users are warned about lower trust level for custom strategies
+
+### Key Principle: Snapshot Isolation
+
+Regardless of template or custom source, **orders never silently switch behavior**:
+
+- At order creation, a `strategySnapshot` captures the exact script ID, hash, and config
+- The order runs this snapshot until it is explicitly stopped
+- Script updates (template or custom) do not affect active orders
+- This ensures reproducibility and prevents unintended behavior changes
 
 ## Architecture Overview
 
@@ -47,7 +127,7 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 │  │  MarketMakingOrder (user order + strategyDefinitionId)           │   │
 │  │  OrderExecutionBinding (binds order to executor)                │   │
 │  │  BalanceLedger (single-writer for user funds)                   │   │
-│  │  UserStrategyConfig (user's config overrides per strategy)       │   │
+│  │  UserStrategyPreset (optional reusable preset)                   │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -60,13 +140,13 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │  ExecutorRegistry                                                 │   │
-│  │  - Map: "BINANCE:main:BTC-USDT" → ExchangePairExecutor         │   │
-│  │  - getOrCreateExecutor(exchange, account, pair)                │   │
-│  │  - removeExecutor(exchange, account, pair)                     │   │
+│  │  - Map: "BINANCE:uuid-123:BTC-USDT" → ExchangePairExecutor     │   │
+│  │  - getOrCreateExecutor(exchange, apiKeyId, pair)               │   │
+│  │  - removeExecutor(exchange, apiKeyId, pair)                    │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  ExchangePairExecutor (BINANCE:main:BTC-USDT)                    │   │
+│  │  ExchangePairExecutor (BINANCE:apiKeyId-123:BTC-USDT)            │   │
 │  │  ├─ Shared Resources (per executor)                              │   │
 │  │  │  ├─ OrderBookTracker (exchange order book - market data)      │   │
 │  │  │  ├─ PrivateStreamTracker (user fills/status from exchange)   │   │
@@ -87,7 +167,7 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    Strategy Definition Layer                             │
-│         (TOML/JSON Config Schema + TypeScript Execution Script)          │
+│     (Template Family Catalog + Config Schema + Optional Custom Script)   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
@@ -98,21 +178,23 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  Execution Script (TypeScript)                                   │   │
-│  │  ├─ Implements IStrategyScript interface                         │   │
-│  │  ├─ validateConfig(config): boolean                              │   │
-│  │  ├─ createSession(config): SessionState                          │   │
+│  │  Runtime Logic Artifact (DB-Backed)                              │   │
+│  │  ├─ Template family artifact (default, higher priority)         │   │
+│  │  ├─ Custom admin artifact (advanced, lower-trust)               │   │
+│  │  ├─ All artifacts stored in DB (single source of truth)         │   │
+│  │  ├─ Implements IStrategyScript interface                        │   │
+│  │  ├─ validateConfig(config): boolean                             │   │
+│  │  ├─ createSession(config): SessionState                         │   │
 │  │  ├─ onTick(session, marketData): Action[]                       │   │
-│  │  ├─ onFill(session, fill): Action[]                             │   │
-│  │  └─ onError(session, error): Action[]                           │   │
+│  │  └─ onFill(session, fill): Action[]                             │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
-│  File Structure:                                                         │
+│  Template Seed Files (for DB migration only):                            │
 │  strategies/                                                             │
-│    schemas/                     # Config schema files                     │
+│    schemas/                     # Config schema templates                │
 │      pure-market-making.toml                                            │
 │      arbitrage.toml                                                      │
-│    scripts/                       # Execution scripts                    │
+│    scripts/                       # Runtime logic templates               │
 │      pure-market-making.ts                                                │
 │      arbitrage.ts                                                           │
 │                                                                          │
@@ -188,10 +270,29 @@ Mr.Market is a multi-user market making bot that operates on centralized and dec
 
 ### 1. Strategy Definition Layer
 
-Mr.Market uses a **two-part strategy definition** model:
+Mr.Market uses a **template-first strategy definition** model:
 
 1. **Config Schema** (TOML/JSON) - Defines what parameters exist, their types, defaults, and validation rules
-2. **Execution Script** (TypeScript) - Defines the trading logic and how decisions are made
+2. **Runtime Logic Artifact** (TypeScript artifact) - Defines the trading logic and how decisions are made
+
+#### Strategy Catalog Policy
+
+The strategy catalog has two trust tiers:
+
+1. **Template Family Strategy** - curated by Mr.Market and suitable for normal users by default
+2. **Custom Strategy** - created by instance admin and available with explicit lower-trust labeling
+
+The default product experience must prioritize curated family templates. Custom strategies are allowed, but must never be presented as equivalent to first-party trusted templates.
+
+#### Runtime Scope For This Phase
+
+For this phase, the recommended and expected product path is:
+
+1. Curated Mr.Market strategy family templates
+2. User-level config customization within schema guardrails
+3. Admin enable/disable control over which curated families are available
+
+Custom strategies remain supported as an advanced instance-level extension path, but they are not the primary product surface and should not drive the default UX or operational model.
 
 #### StrategyDefinition Entity
 
@@ -209,6 +310,14 @@ interface StrategyDefinition {
   // Metadata
   enabled: boolean;
   visibility: 'system' | 'public';
+  trustLevel: 'template_family' | 'custom_admin';
+  controllerType:
+    | 'pureMarketMaking'
+    | 'signalAwareMarketMaking'
+    | 'arbitrage'
+    | 'volume';
+  templateFamilyKey?: string;        // set for curated Mr.Market families
+  createdByType: 'mr_market' | 'instance_admin';
   currentVersion: string;
   importSource: 'custom' | 'hummingbot';
 
@@ -217,7 +326,7 @@ interface StrategyDefinition {
 }
 ```
 
-#### StrategyScript Entity (NEW - DB-based scripts)
+#### StrategyScript Entity (NEW - advanced custom strategy lane)
 
 ```typescript
 interface StrategyScript {
@@ -225,7 +334,7 @@ interface StrategyScript {
   strategyKey: string;               // e.g., "pure_market_making"
   version: string;                   // e.g., "1.0.0"
 
-  // The actual script content (source of truth in DB)
+  // The actual script content (custom strategy source in DB)
   scriptContent: string;            // TypeScript source code
   scriptHash: string;               // SHA-256 of scriptContent
 
@@ -253,21 +362,69 @@ interface StrategyConfigSchema {
 }
 ```
 
-#### UserStrategyConfig Entity
+#### UserStrategyPreset Entity
 
 ```typescript
-interface UserStrategyConfig {
+interface UserStrategyPreset {
   id: string;
   userId: string;                    // Mixin user ID
-  strategyDefinitionKey: string;     // e.g., "pure_market_making"
-  configOverrides: Record<string, any>; // User's overrides
-  isDefault: boolean;                // User's default config for this strategy
+  strategyDefinitionId: string;
+  name: string;                      // e.g. "Conservative BTC preset"
+  configOverrides: Record<string, any>;
+  isDefault: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
 ```
 
-**Purpose**: Allows pro users to customize strategy parameters while normal users use defaults.
+**Purpose**: Provides a reusable convenience preset for future orders. It is not the live runtime config source for active orders.
+
+#### Preset Binding Rule
+
+`UserStrategyPreset` may be selected during order creation, but runtime execution must only read from `MarketMakingOrder.strategySnapshot`.
+
+Config provenance flow:
+
+1. load template default config
+2. optionally apply `UserStrategyPreset.configOverrides`
+3. optionally apply one-off order overrides
+4. validate merged config against `StrategyConfigSchema`
+5. persist final merged config into `MarketMakingOrder.strategySnapshot.resolvedConfig`
+
+After order creation, the runtime must not read `UserStrategyPreset` again. The preset is linked for convenience and audit only.
+
+#### Trust and Labeling Rules
+
+User-facing surfaces must clearly distinguish curated strategies from admin-authored ones.
+
+- `trustLevel = template_family`
+  - Label as `Mr.Market Strategy Template`
+  - Show template family name and published version
+  - May be shown as recommended/default
+- `trustLevel = custom_admin`
+  - Label as `Custom Strategy (made by instance admin)`
+  - Show publisher identity and version
+  - Never show as the default trusted option
+  - Require explicit warning copy in user-facing UI before first use
+
+This labeling applies to:
+
+- strategy picker
+- strategy detail page
+- order creation confirmation
+- active order detail page
+- order history page
+
+#### Customization Boundaries
+
+For the first product phase:
+
+- Users may customize config within schema-defined min/max/enum constraints
+- Users may not edit strategy logic
+- Admins may enable/disable curated template families for their instance
+- Admins may create and publish custom strategies
+- Admins may not silently replace a user-selected template family strategy with custom logic on an active order
+- User presets must never become a mutable dependency for active orders
 
 ---
 
@@ -573,33 +730,33 @@ group = "Risk Management"
 
 ```typescript
 class ExecutorRegistry {
-  // Map: "BINANCE:main:BTC-USDT" -> ExchangePairExecutor
-  // Key includes account to support multiple API keys/subaccounts
+  // Map: "BINANCE:uuid-123:BTC-USDT" -> ExchangePairExecutor
+  // Key includes apiKeyId to support multiple API keys/subaccounts per exchange
   private executors: Map<string, ExchangePairExecutor> = new Map();
 
-  // Get or create executor for exchange-account-pair
+  // Get or create executor for exchange-apiKeyId-pair
   getOrCreateExecutor(
     exchange: string,
-    account: string,   // e.g., "main", "subaccount-1", "api-key-1"
+    apiKeyId: string,   // UUID reference to UserApiKey entity
     pair: string
   ): ExchangePairExecutor;
 
   // Remove executor when no orders remain
-  removeExecutor(exchange: string, account: string, pair: string): void;
+  removeExecutor(exchange: string, apiKeyId: string, pair: string): void;
 
   // Get all active executors
   getActiveExecutors(): ExchangePairExecutor[];
 }
 ```
 
-**Purpose**: Manages lifecycle of pooled executors per exchange-account-pair.
+**Purpose**: Manages lifecycle of pooled executors per exchange-apiKeyId-pair.
 
 #### ExchangePairExecutor
 
 ```typescript
 class ExchangePairExecutor implements TickComponent {
   readonly exchange: string;
-  readonly account: string;  // NEW: supports multiple API keys per exchange
+  readonly apiKeyId: string;  // UUID reference to UserApiKey entity
   readonly pair: string;
 
   // Shared resources per executor
@@ -621,7 +778,7 @@ class ExchangePairExecutor implements TickComponent {
   async addOrder(
     orderId: string,
     userId: string,
-    account: string,            // NEW: account for executor key
+    apiKeyId: string,           // UUID reference to UserApiKey entity
     campaignId: string | null,  // campaign context
     strategyConfig: RuntimeConfig
   ): Promise<StrategySession> {
@@ -739,18 +896,18 @@ class StrategySession {
 
 ---
 
-### 4. Execution Script Layer
+### 4. Runtime Logic Artifact Layer
 
 #### IStrategyScript Interface
 
-Every execution script must implement this interface:
+Every runtime logic artifact must implement this interface:
 
 ```typescript
 import BigNumber from 'bignumber.js';
 
 /**
- * Interface for strategy execution scripts
- * All strategy scripts must implement this interface
+ * Interface for runtime strategy logic artifacts
+ * Both curated template artifacts and custom admin artifacts must implement this interface
  */
 export interface IStrategyScript {
   /**
@@ -768,7 +925,7 @@ export interface IStrategyScript {
   /**
    * Validate the runtime configuration before execution
    *
-   * @param config - Runtime config (defaults + user overrides merged)
+ * @param config - Runtime config (defaults + preset/order overrides merged)
    * @returns true if config is valid, false otherwise
    */
   validateConfig(config: RuntimeConfig): boolean;
@@ -911,37 +1068,15 @@ interface ExecutorAction {
 }
 ```
 
-#### ScriptLoader (Hot Reload)
+#### StrategyScriptLoader
 
 ```typescript
 class StrategyScriptLoader {
   private cache: Map<string, IStrategyScript> = new Map();
 
-  async loadScript(scriptPath: string): Promise<IStrategyScript> {
-    // Clear require cache to force reload
-    delete require.cache[require.resolve(scriptPath)];
-
-    // Import the script module
-    const scriptModule = await import(scriptPath);
-
-    // Get the script class (should be default export)
-    const ScriptClass = scriptModule.default;
-
-    // Create instance
-    const script = new ScriptClass();
-
-    // Verify it implements the interface
-    if (!this.isValidScript(script)) {
-      throw new Error(`Script at ${scriptPath} does not implement IStrategyScript`);
-    }
-
-    // Cache it
-    this.cache.set(script.strategyKey, script);
-
-    return script;
-  }
-
-  // NEW: DB-based script loading (source of truth)
+  // All strategy artifacts (templates and custom) are stored in DB
+  // Template artifacts are seeded as approved versions
+  // Custom admin artifacts use the same loader, but lower-trust labeling
   async loadScriptFromDB(scriptId: string): Promise<IStrategyScript> {
     // 1. Fetch script content from DB
     const scriptEntity = await this.strategyScriptRepository.findOne({
@@ -990,7 +1125,7 @@ class StrategyScriptLoader {
     return this.loadScriptFromDB(order.strategyScriptId);
   }
 
-  // NEW: Publish new script version (DB update, not filesystem)
+  // Publish a new approved runtime artifact version
   async publishScriptVersion(
     strategyKey: string,
     version: string,
@@ -1254,7 +1389,7 @@ class StrategyConfigResolverService {
     // 1. Load default config from definition
     let config = { ...definition.defaultConfig };
 
-    // 2. Apply user overrides if pro user
+    // 2. Apply optional preset overrides
     if (userId && orderId) {
       const userConfig = await this.userStrategyConfigRepository.findOne({
         where: {
@@ -1622,7 +1757,7 @@ const config = {
    └─ Resolve strategyDefinitionKey from order
    └─ Get StrategyDefinition (config schema + script path)
    └─ Resolve Config: defaultConfig + userConfigOverrides → RuntimeConfig
-   └─ Bind to ExchangePairExecutor (get or create for exchange-account-pair)
+   └─ Bind to ExchangePairExecutor (get or create for exchange-apiKeyId-pair)
    └─ Create StrategySession with runtime config
    └─ Load execution script from DB (StrategyScript table)
    └─ Capture strategySnapshot in MarketMakingOrder for reproducibility
@@ -2055,6 +2190,17 @@ class ConfigSchemaValidator {
 }
 ```
 
+### Trust-Aware Validation Rules
+
+In addition to config type validation:
+
+1. Curated template families must declare one of the supported family controller types
+2. Admin-authored strategies must set `trustLevel = custom_admin`
+3. Preset overrides and order overrides must never mutate executable logic references or trust metadata
+4. Disabled strategy families may be hidden for new orders, but this must not alter active order snapshots
+5. Orders using admin-authored strategies must persist trust labels in their immutable strategy snapshot for later audit and display
+6. Active runtime must read only `MarketMakingOrder.strategySnapshot.resolvedConfig`, never `UserStrategyPreset`
+
 ---
 
 ## Data Models
@@ -2073,7 +2219,7 @@ interface MarketMakingOrder {
   campaignId?: string;
 
   exchange: string;
-  account: string;  // NEW: supports multiple API keys per exchange
+  apiKeyId: string;  // UUID reference to UserApiKey entity
   pair: string;
 
   // NEW: Immutable strategy snapshot for reproducibility
@@ -2082,6 +2228,10 @@ interface MarketMakingOrder {
     strategyScriptId: string;      // FK to StrategyScript
     strategyScriptHash: string;    // Hash for verification
     resolvedConfig: string;        // JSON snapshot of full RuntimeConfig
+    sourcePresetId?: string;       // optional preset used at order creation
+    trustLevel: 'template_family' | 'custom_admin';
+    displayLabel: string;          // e.g. "Mr.Market Strategy Template" or "Custom Strategy (made by instance admin)"
+    publishedByType: 'mr_market' | 'instance_admin';
     createdAt: Date;               // When snapshot was taken
   };
 
@@ -2126,11 +2276,12 @@ interface OrderDailySummary {
   updatedAt: Date;
 }
 
-// UserStrategyConfig - User's strategy config overrides
-interface UserStrategyConfig {
+// UserStrategyPreset - Optional reusable preset for future orders
+interface UserStrategyPreset {
   id: string;
   userId: string;
-  strategyDefinitionKey: string;
+  strategyDefinitionId: string;
+  name: string;
   configOverrides: Record<string, any>;
   isDefault: boolean;
   createdAt: Date;
@@ -2178,16 +2329,25 @@ Response: {
     key: string;
     name: string;
     description: string;
+    trustLevel: 'template_family' | 'custom_admin';
+    displayLabel: string;
+    recommended: boolean;
     configSchema: JSONSchema;
     defaultConfig: Record<string, any>;
   }>;
 }
+
+// Get user's saved presets for a strategy
+GET /user-orders/market-making/strategies/:strategyDefinitionId/presets
+Response: { presets: UserStrategyPreset[] }
 
 // Create order intent (before sending Mixin transfer)
 POST /user-orders/market-making/intent
 Body: {
   marketMakingPairId: string;
   strategyDefinitionId: string;
+  sourcePresetId?: string;
+  orderConfigOverrides?: Record<string, any>;
   expiresAt: string; // ISO datetime
 }
 Response: {
@@ -2199,6 +2359,11 @@ Response: {
 GET /user-orders/market-making/orders/:orderId
 Response: {
   order: MarketMakingOrder;
+  strategyTrust: {
+    trustLevel: 'template_family' | 'custom_admin';
+    displayLabel: string;
+    publishedByType: 'mr_market' | 'instance_admin';
+  };
   currentPerformance: { ... };
 }
 
@@ -2222,7 +2387,7 @@ Response: { success: boolean; }
 ### Admin Endpoints
 
 ```typescript
-// Strategy Definition CRUD
+// Strategy catalog
 GET /admin/strategy/definitions
 POST /admin/strategy/definitions
 PUT /admin/strategy/definitions/:id
@@ -2230,6 +2395,21 @@ DELETE /admin/strategy/definitions/:id
 PATCH /admin/strategy/definitions/:id/publish
 PATCH /admin/strategy/definitions/:id/enable
 PATCH /admin/strategy/definitions/:id/disable
+
+// Curated strategy family controls
+GET /admin/strategy/families
+PATCH /admin/strategy/families/:familyKey/enable
+PATCH /admin/strategy/families/:familyKey/disable
+
+// Custom strategy authoring (advanced/lower-trust lane)
+POST /admin/strategy/custom-definitions
+PUT /admin/strategy/custom-definitions/:id
+PATCH /admin/strategy/custom-definitions/:id/publish
+PATCH /admin/strategy/custom-definitions/:id/enable
+PATCH /admin/strategy/custom-definitions/:id/disable
+
+// Custom strategies must be explicitly marked as admin-authored
+// and are shown to users as "Custom Strategy (made by instance admin)"
 
 // Export strategy definition as YAML
 GET /admin/strategy/definitions/:key/export
@@ -2241,11 +2421,11 @@ POST /admin/strategy/definitions/import
 Body: multipart/form-data (YAML file)
 Response: Created strategy definition
 
-// User Strategy Config Management
-GET /admin/users/:userId/strategy-configs
-POST /admin/users/:userId/strategy-configs
-PUT /admin/users/:userId/strategy-configs/:configId
-DELETE /admin/users/:userId/strategy-configs/:configId
+// User Strategy Preset Management
+GET /admin/users/:userId/strategy-presets
+POST /admin/users/:userId/strategy-presets
+PUT /admin/users/:userId/strategy-presets/:presetId
+DELETE /admin/users/:userId/strategy-presets/:presetId
 
 // Campaign Management
 GET /admin/campaigns
@@ -2319,21 +2499,21 @@ server/src/
 │       └── strategy/
 │           └── adminStrategy.service.ts
 │
-├── strategies/                     # Strategy templates (seed files only)
+├── strategies/                     # Strategy templates (seed files for DB migration only)
 │   ├── schemas/                    # Config schema templates
 │   │   ├── pure-market-making.toml
 │   │   ├── arbitrage.toml
 │   │   └── volume.toml
 │   │
-│   └── scripts/                    # Script templates (seeded to DB)
+│   └── scripts/                    # Script template files (seeded to DB, not used at runtime)
 │       ├── pure-market-making.ts
 │       ├── arbitrage.ts
 │       ├── volume.ts
 │       └── types.ts                # Shared type definitions
 │
 ├── seeds/
-│   └── strategies/                 # Server start seeder
-│       └── strategy-seeder.ts      # Loads templates to DB
+│   └── strategies/                 # DB migration seeder
+│       └── strategy-seeder.ts      # Loads template artifacts to DB on initial setup
 │
 └── common/
     └── entities/
@@ -2342,7 +2522,7 @@ server/src/
         │   ├── strategy-definition.entity.ts
         │   ├── strategy-script.entity.ts       # NEW: DB-based scripts
         │   ├── strategy-config-schema.entity.ts # NEW: Config schema
-        │   ├── user-strategy-config.entity.ts
+        │   ├── user-strategy-preset.entity.ts
         │   └── order-daily-summary.entity.ts
         │
         └── ledger/
@@ -2376,7 +2556,7 @@ server/src/
 **Objective**: Integrate new components with existing services.
 
 1. Update `StrategyService` to use `ExchangePairExecutor`
-2. Update `StrategyConfigResolver` for `UserStrategyConfig`
+2. Update `StrategyConfigResolver` for `UserStrategyPreset`
 3. Update admin strategy endpoints for script management
 4. Update `start_mm` queue processor
 
@@ -2389,7 +2569,7 @@ server/src/
 
 **Objective**: Migrate existing data to new model.
 
-1. Add migration for `UserStrategyConfig` table
+1. Add migration for `UserStrategyPreset` table
 2. Add migration for `OrderDailySummary` table
 3. Add migration for `OrderExecutionBinding` table
 4. Backfill existing orders with execution bindings
@@ -2584,42 +2764,47 @@ Response: {
 
 ### Key Design Decisions:
 
-1. **Two-Part Strategy Definition**: Config Schema (DB) + Execution Script (DB)
-2. **Pooled Execution**: One executor per exchange-account-pair (supports multiple API keys)
-3. **Multi-User Support**: UserStrategyConfig for pro users to override defaults
+1. **Template-First Strategy Definition**: Curated family templates are the primary product path, with config schema + runtime logic artifact stored in DB
+2. **Pooled Execution**: One executor per exchange-apiKeyId-pair (supports multiple API keys per exchange)
+3. **Multi-User Support**: Users customize approved config values via optional presets and per-order overrides without changing strategy logic
 4. **Campaign-Agnostic**: Campaigns linked at exchange-pair level, not strategy
 5. **Redis-Based Trade Aggregation**: No per-fill DB writes, uses HINCRBY
 6. **Redis Required**: No fallback - fail fast on startup if Redis unavailable
 7. **Balance Reservation**: Reuses existing BalanceLedgerService.lockFunds()
 8. **Order Reproducibility**: strategySnapshot captures script/config at order creation
-9. **DB-Based Scripts**: Scripts stored in DB (source of truth), seeded on server start
+9. **Trust Tiers**: Curated Mr.Market templates are the trusted default; admin-authored strategies are supported as explicitly labeled lower-trust custom strategies
 
 ### File Naming Conventions:
 
-- **Config schemas**: `{key}.toml` or `{key}.json` (seeded to DB)
-- **Scripts**: `{key}.ts` (seeded to DB)
+- **Config schema seed files**: `{key}.toml` or `{key}.json` (for DB migration only, not used at runtime)
+- **Template artifact seed files**: `{key}.ts` (for DB migration only, not used at runtime)
+- **All runtime artifacts**: Stored in DB (StrategyScript table) with hash verification
+- **Custom runtime artifacts**: Stored in DB and published through admin custom strategy flow
 - **Hummingbot imports**: Preserve original YAML in DB, convert to our format
 
-### Database Storage:
+### Database Storage (Single Source of Truth):
 
-- **StrategyScript**: Script content in DB with hash verification
-- **StrategyConfigSchema**: Config schema in DB
+- **All strategy artifacts (templates and custom)**: Stored in StrategyScript table
+- **All config schemas**: Stored in StrategyConfigSchema table
+- **Template artifacts**: Seeded via DB migration, marked with `trustLevel: 'template_family'`
+- **Custom artifacts**: Created by admins via API, marked with `trustLevel: 'custom_admin'`
 - **MarketMakingOrder.strategySnapshot**: Immutable snapshot for reproducibility
-- **UserStrategyConfig**: user overrides (not full configs)
+- **UserStrategyPreset**: Optional reusable preset for future orders only
 - **OrderDailySummary**: daily trading summaries (not per-fill records)
 
-This architecture provides a clean separation between configuration, execution logic, and multi-user customization while maintaining logical compatibility with Hummingbot.
+This architecture provides a clean separation between curated strategy families, user-safe configuration, advanced custom admin extensions, and pinned runtime execution while maintaining logical compatibility with Hummingbot.
 
 ---
 
 ## Changelog
 
 - **2026-03-07** (continued): Addressed critical architecture issues
-  - **P1**: Added account parameter to executor key (exchange:account:pair)
+  - **P1**: Added apiKeyId parameter to executor key (exchange:apiKeyId:pair)
     - Supports multiple API keys/subaccounts per exchange
-    - ExecutorRegistry updated to include account
+    - References UserApiKey entity for unambiguous credential mapping
+    - ExecutorRegistry updated to use apiKeyId instead of account string
   - **P2**: Added strategySnapshot to MarketMakingOrder for reproducibility
-    - Captures script ID, hash, and resolved config at order creation
+    - Captures script ID, hash, resolved config, and optional sourcePresetId at order creation
     - Order always uses captured logic, not mutable definitions
   - **P3**: Added balance reservation using existing BalanceLedgerService
     - Reuses lockFunds()/unlockFunds() from BalanceLedgerService
@@ -2628,9 +2813,15 @@ This architecture provides a clean separation between configuration, execution l
     - Server exits if Redis unavailable
     - No silent data loss
   - **P5**: Changed from filesystem scripts to DB-based scripts
-    - Scripts stored in StrategyScript table
-    - Seeded from templates on server start
+    - All strategy artifacts (templates and custom) stored in DB for single source of truth
+    - Template artifacts are seeded from first-party templates via DB migration
+    - Custom admin artifacts use the same runtime contract, but are lower-trust
     - Publish new versions via DB update (not filesystem)
+  - **P6**: Added template-first trust model
+    - Curated Mr.Market family templates are the default user path (primary product lane)
+    - Templates are pre-tested by Mr.Market team before seeding
+    - Users customize config via presets/order overrides only, not strategy logic
+    - Admin-authored strategies are labeled `Custom Strategy (made by instance admin)`
 
 - **2026-03-07**: Merged strategy definition protocol into pooled executor architecture
   - Added comprehensive TOML/JSON config schema format with examples
@@ -2639,7 +2830,7 @@ This architecture provides a clean separation between configuration, execution l
   - Added campaign linkage at exchange-pair level
   - Added Hummingbot YAML import feature
   - Added validation rules implementation
-  - Added enhanced ScriptLoader with chokidar hot reload
+  - Added strategy artifact loading flow for approved DB-backed runtime artifacts
 
 - **2026-03-06**: Added Redis-based trade aggregation (no per-fill DB writes)
   - Use Redis HINCRBY for real-time aggregation
