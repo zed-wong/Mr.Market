@@ -2840,3 +2840,22 @@ This architecture provides a clean separation between curated strategy families,
   - ~~Added Redis fallback when unavailable~~ (removed)
   - Added timezone configuration (UTC default, admin configurable)
   - Unified order history and campaign tracking (same data source)
+
+---
+
+## Follow-Up Issues
+
+1. **Incomplete pooled balance reservation**: The current design only locks one side of the pair. Spot market making and many arbitrage paths need dual-asset reservation or stricter controller-specific reservation logic to avoid cross-session overcommit.
+2. **Unsandboxed runtime code execution**: DB-stored TypeScript is still compiled and executed in-process. Trust labels improve UX, but do not mitigate arbitrary code execution risk from bad custom strategies or compromised publish paths.
+3. **Partial snapshot isolation**: `strategySnapshot` pins script id/hash and resolved config, but does not yet pin an immutable published definition/config version. Auditability and exact reconstruction of the user-selected strategy version remain weaker than they should be.
+4. **Mutable current pointers remain in the catalog**: `StrategyDefinition.currentScriptId` and `currentVersion` still invite implementation drift toward mutable runtime resolution instead of strict immutable published versions.
+5. **Custom strategy visibility is underspecified**: The doc still suggests `visibility: 'public'` for admin-authored custom strategies, which conflicts with the instance-scoped lower-trust product model.
+6. **Preset version binding is weak**: `UserStrategyPreset` links only to `strategyDefinitionId`, not to a published version. Presets can become semantically stale as schemas/defaults evolve unless order creation always validates against a pinned published version.
+7. **Bug-response policy is incomplete**: The plan says active orders stay on their snapshot, but does not define forced disable, restart blocking, migration prompts, or emergency stop policy for known-bad strategy versions.
+8. **Role model in schema is stale**: Fields like `can_be_modified_by_pro_user` and `advanced` are not fully reconciled with the newer product model where normal users can tweak config within guardrails.
+9. **Intent/runtime safety gates need expansion**: The current flow mentions generic limits, but does not yet fully specify pair-level self-conflict prevention, dual-asset free-balance checks, or controller-family-specific reservation rules before intent persistence.
+10. **Executor key wording is inconsistent**: The headline still says one executor per exchange-trading-pair, while the actual design keys executors by exchange + API key + pair.
+11. **Execution-account naming is inconsistent**: `account`, `apiKeyId`, and example UUID-style labels are all used for the same concept, which risks duplication and mapping bugs in implementation.
+12. **Preset API semantics need tightening**: The preset retrieval API does not yet clearly define behavior for disabled families, hidden custom strategies, or instance-scoped visibility/trust filtering.
+13. **Script vs artifact terminology still drifts**: The doc uses both terms for runtime logic. The runtime model should standardize on one term for immutable runtime content and reserve the other for authoring/source concepts.
+14. **Custom-strategy policy consequences are still light**: The trust model calls for lower-trust labeling, but concrete enforced consequences such as extra confirmation, no default selection, separate ranking, or stricter monitoring are not yet fully specified.
