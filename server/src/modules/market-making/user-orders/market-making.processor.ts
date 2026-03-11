@@ -8,7 +8,6 @@ import { MarketMakingOrderIntent } from 'src/common/entities/market-making/marke
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
-import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { MarketMakingCreateMemoDetails } from 'src/common/types/memo/memo';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
@@ -27,6 +26,7 @@ import { NetworkMappingService } from '../network-mapping/network-mapping.servic
 import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from '../strategy/execution/strategy-runtime-dispatcher.service';
 import { StrategyService } from '../strategy/strategy.service';
+import { mapStrategySnapshotToMarketMakingOrderFields } from './market-making-order-snapshot.utils';
 import { UserOrdersService } from './user-orders.service';
 
 interface ProcessSnapshotJobData {
@@ -90,6 +90,23 @@ export class MarketMakingOrderProcessor {
 
   private readonly WITHDRAWAL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
   private readonly RETRY_DELAY_MS = 30000; // 30 seconds
+
+  private buildOrderSnapshotOverrides(params: {
+    orderId: string;
+    userId: string;
+    pair: string;
+    exchangeName: string;
+    configOverrides?: Record<string, unknown> | null;
+  }): Record<string, unknown> {
+    return {
+      ...(params.configOverrides || {}),
+      userId: params.userId,
+      clientId: params.orderId,
+      marketMakingOrderId: params.orderId,
+      pair: params.pair.replaceAll('-ERC20', ''),
+      exchangeName: params.exchangeName,
+    };
+  }
 
   private async refundUser(snapshot: SafeSnapshot, reason: string) {
     this.logger.warn(`Refunding snapshot ${snapshot.snapshot_id}: ${reason}`);
@@ -640,18 +657,19 @@ export class MarketMakingOrderProcessor {
 
         return;
       }
-
-      await this.marketMakingOrderIntentRepository.update(
-        { orderId },
-        {
-          state: 'completed',
-          updatedAt: getRFC3339Timestamp(),
-        },
-      );
-
-      paymentState.state = 'payment_complete';
-      paymentState.updatedAt = getRFC3339Timestamp();
-      await this.paymentStateRepository.save(paymentState);
+      const strategySnapshot =
+        await this.strategyConfigResolver.resolveForOrderSnapshot(
+          orderIntent.strategyDefinitionId,
+          this.buildOrderSnapshotOverrides({
+            orderId,
+            userId: paymentState.userId,
+            pair: pairConfig.symbol,
+            exchangeName: pairConfig.exchange_id,
+            configOverrides: orderIntent.configOverrides,
+          }),
+        );
+      const orderConfigFields =
+        mapStrategySnapshotToMarketMakingOrderFields(strategySnapshot);
 
       const existingOrder = await this.marketMakingRepository.findOne({
         where: { orderId },
@@ -664,31 +682,37 @@ export class MarketMakingOrderProcessor {
           pair: pairConfig.symbol,
           exchangeName: pairConfig.exchange_id,
           strategyDefinitionId: orderIntent.strategyDefinitionId,
+          strategySnapshot,
           state: 'payment_complete',
           createdAt: getRFC3339Timestamp(),
-          // Defaults - should be updated from frontend/memo
-          bidSpread: '0.001',
-          askSpread: '0.001',
-          orderAmount: '0',
-          orderRefreshTime: '10000',
-          numberOfLayers: '1',
-          priceSourceType: PriceSourceType.MID_PRICE,
-          amountChangePerLayer: '0',
-          amountChangeType: 'fixed',
-          ceilingPrice: '0',
-          floorPrice: '0',
+          ...orderConfigFields,
         });
 
         await this.marketMakingRepository.save(mmOrder);
-      } else if (
-        !existingOrder.strategyDefinitionId &&
-        orderIntent.strategyDefinitionId
-      ) {
+      } else {
         await this.marketMakingRepository.update(
           { orderId },
-          { strategyDefinitionId: orderIntent.strategyDefinitionId },
+          {
+            strategyDefinitionId:
+              existingOrder.strategyDefinitionId ||
+              orderIntent.strategyDefinitionId,
+            strategySnapshot,
+            ...orderConfigFields,
+          },
         );
       }
+
+      await this.marketMakingOrderIntentRepository.update(
+        { orderId },
+        {
+          state: 'completed',
+          updatedAt: getRFC3339Timestamp(),
+        },
+      );
+
+      paymentState.state = 'payment_complete';
+      paymentState.updatedAt = getRFC3339Timestamp();
+      await this.paymentStateRepository.save(paymentState);
 
       await this.userOrdersService.updateMarketMakingOrderState(
         orderId,
@@ -1012,68 +1036,36 @@ export class MarketMakingOrderProcessor {
     );
 
     try {
-      if (!order.strategyDefinitionId) {
-        throw new Error(`Order ${orderId} has no strategyDefinitionId`);
-      }
-
-      const definition = await this.strategyDefinitionRepository.findOne({
-        where: { id: order.strategyDefinitionId, enabled: true },
-      });
-
-      if (!definition) {
+      if (!order.strategySnapshot?.resolvedConfig) {
         throw new Error(
-          `Strategy definition ${order.strategyDefinitionId} not found or disabled`,
+          `Order ${orderId} has no strategySnapshot. Run backfill:mm-order-snapshots before start_mm.`,
         );
       }
 
-      const controllerType =
-        this.strategyConfigResolver.getDefinitionControllerType(definition);
-      const toNumber = (value?: string | number | null, fallback = 0) =>
-        new BigNumber(value ?? fallback).toNumber();
-      const normalizedPair = order.pair.replaceAll('-ERC20', '');
-
-      const orderConfig: Record<string, any> = {
-        ...(definition.defaultConfig || {}),
-        pair: normalizedPair,
-        exchangeName: order.exchangeName,
-        bidSpread: toNumber(order.bidSpread),
-        askSpread: toNumber(order.askSpread),
-        orderAmount: toNumber(order.orderAmount),
-        orderRefreshTime: toNumber(order.orderRefreshTime),
-        numberOfLayers: toNumber(order.numberOfLayers),
-        priceSourceType:
-          order.priceSourceType ||
-          (definition.defaultConfig as any)?.priceSourceType,
-        amountChangePerLayer: toNumber(order.amountChangePerLayer),
-        amountChangeType:
-          order.amountChangeType ||
-          (definition.defaultConfig as any)?.amountChangeType ||
-          'fixed',
-        ceilingPrice: toNumber(order.ceilingPrice),
-        floorPrice: toNumber(order.floorPrice),
-      };
-
-      const { mergedConfig, strategyType } =
-        this.strategyConfigResolver.resolveDefinitionStartConfig(definition, {
-          userId: order.userId,
-          clientId: orderId,
-          marketMakingOrderId: orderId,
-          config: orderConfig,
-        });
+      const { controllerType, definitionVersion, resolvedConfig } =
+        order.strategySnapshot;
+      const strategyType =
+        this.strategyRuntimeDispatcher.toStrategyType(controllerType);
 
       await this.strategyRuntimeDispatcher.startByStrategyType(
         strategyType,
-        mergedConfig,
+        resolvedConfig as Record<string, any>,
       );
 
-      await this.strategyService.linkDefinitionToStrategyInstance(
-        order.userId,
-        orderId,
-        strategyType,
-        definition.id,
-        definition.currentVersion || '1.0.0',
-        strategyType === 'pureMarketMaking' ? orderId : undefined,
-      );
+      if (order.strategyDefinitionId) {
+        await this.strategyService.linkDefinitionToStrategyInstance(
+          order.userId,
+          orderId,
+          strategyType,
+          order.strategyDefinitionId,
+          definitionVersion || '1.0.0',
+          strategyType === 'pureMarketMaking' ? orderId : undefined,
+        );
+      } else {
+        this.logger.warn(
+          `Order ${orderId} started from strategySnapshot without strategyDefinitionId binding`,
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const trace = error instanceof Error ? error.stack : undefined;

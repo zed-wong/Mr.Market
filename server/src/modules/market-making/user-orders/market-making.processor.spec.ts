@@ -36,6 +36,25 @@ describe('MarketMakingOrderProcessor', () => {
       getDefinitionControllerType: jest.fn(
         (definition) => definition.controllerType || definition.executorType,
       ),
+      resolveForOrderSnapshot: jest.fn(
+        async (_definitionId, overrides = {}) => ({
+          definitionVersion: '1.0.0',
+          controllerType: 'pureMarketMaking',
+          resolvedConfig: {
+            bidSpread: 0.001,
+            askSpread: 0.001,
+            orderAmount: 0,
+            orderRefreshTime: 10000,
+            numberOfLayers: 1,
+            priceSourceType: 'MID_PRICE',
+            amountChangePerLayer: 0,
+            amountChangeType: 'fixed',
+            ceilingPrice: 0,
+            floorPrice: 0,
+            ...overrides,
+          },
+        }),
+      ),
       resolveDefinitionStartConfig: jest.fn((definition, payload) => ({
         strategyType: definition.controllerType || definition.executorType,
         mergedConfig: {
@@ -119,7 +138,12 @@ describe('MarketMakingOrderProcessor', () => {
     };
     const marketMakingRepository = {
       findOne: jest.fn().mockResolvedValue({ userId: 'user-1' }),
-      create: jest.fn(),
+      create: jest.fn((payload) => payload),
+      save: jest.fn(),
+    };
+    const marketMakingOrderIntentRepository = {
+      update: jest.fn(),
+      findOne: jest.fn(),
       save: jest.fn(),
     };
     const strategyDefinitionRepository = {
@@ -165,7 +189,7 @@ describe('MarketMakingOrderProcessor', () => {
       strategyConfigResolver as any,
       strategyRuntimeDispatcher as any,
       paymentStateRepository as any,
-      { update: jest.fn(), findOne: jest.fn(), save: jest.fn() } as any,
+      marketMakingOrderIntentRepository as any,
       marketMakingRepository as any,
       strategyDefinitionRepository as any,
       balanceLedgerService as any,
@@ -179,8 +203,10 @@ describe('MarketMakingOrderProcessor', () => {
       strategyRuntimeDispatcher,
       paymentStateRepository,
       transactionService,
+      marketMakingOrderIntentRepository,
       marketMakingRepository,
       balanceLedgerService,
+      strategyDefinitionRepository,
     };
   };
 
@@ -378,16 +404,34 @@ describe('MarketMakingOrderProcessor', () => {
     expect(debitOrder).toBeLessThan(transferOrder);
   });
 
-  it('starts MM by registering strategy session without execute_mm_cycle queue loop', async () => {
-    const {
-      processor,
-      strategyRuntimeDispatcher,
-      strategyConfigResolver,
-      userOrdersService,
-    } = createProcessor();
+  it('starts MM from snapshot without execute_mm_cycle queue loop', async () => {
+    const { processor, strategyRuntimeDispatcher, userOrdersService } =
+      createProcessor();
     const queue = {
       add: jest.fn(),
     };
+
+    userOrdersService.findMarketMakingByOrderId.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'user-1',
+      strategyDefinitionId: 'strategy-def-1',
+      strategySnapshot: {
+        definitionVersion: '1.0.0',
+        controllerType: 'pureMarketMaking',
+        resolvedConfig: {
+          userId: 'user-1',
+          clientId: 'order-1',
+          marketMakingOrderId: 'order-1',
+          pair: 'BTC-USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.1,
+          askSpread: 0.2,
+          orderAmount: 10,
+          orderRefreshTime: 15000,
+          numberOfLayers: 2,
+        },
+      },
+    });
 
     await processor.handleStartMM({
       data: { userId: 'user-1', orderId: 'order-1' },
@@ -412,20 +456,166 @@ describe('MarketMakingOrderProcessor', () => {
         numberOfLayers: 2,
       }),
     );
-    expect(
-      strategyConfigResolver.resolveDefinitionStartConfig,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'strategy-def-1' }),
-      expect.objectContaining({
-        userId: 'user-1',
-        clientId: 'order-1',
-        marketMakingOrderId: 'order-1',
-      }),
-    );
     expect(queue.add).not.toHaveBeenCalledWith(
       'execute_mm_cycle',
       expect.anything(),
       expect.anything(),
+    );
+  });
+
+  it('starts MM from strategy snapshot before legacy definition lookup', async () => {
+    const {
+      processor,
+      strategyRuntimeDispatcher,
+      strategyConfigResolver,
+      strategyDefinitionRepository,
+      userOrdersService,
+    } = createProcessor();
+
+    userOrdersService.findMarketMakingByOrderId.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'user-1',
+      strategyDefinitionId: 'strategy-def-1',
+      strategySnapshot: {
+        definitionVersion: '2.0.0',
+        controllerType: 'pureMarketMaking',
+        resolvedConfig: {
+          userId: 'user-1',
+          clientId: 'order-1',
+          marketMakingOrderId: 'order-1',
+          pair: 'BTC-USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.25,
+          askSpread: 0.3,
+          orderAmount: 12,
+          orderRefreshTime: 12000,
+          numberOfLayers: 2,
+        },
+      },
+    });
+
+    await processor.handleStartMM({
+      data: { userId: 'user-1', orderId: 'order-1' },
+      queue: { add: jest.fn() },
+    } as any);
+
+    expect(strategyRuntimeDispatcher.startByStrategyType).toHaveBeenCalledWith(
+      'pureMarketMaking',
+      expect.objectContaining({
+        pair: 'BTC-USDT',
+        bidSpread: 0.25,
+        askSpread: 0.3,
+      }),
+    );
+    expect(
+      strategyConfigResolver.resolveDefinitionStartConfig,
+    ).not.toHaveBeenCalled();
+    expect(strategyDefinitionRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('fails start_mm when strategy snapshot is missing after cutover', async () => {
+    const {
+      processor,
+      userOrdersService,
+      strategyConfigResolver,
+      strategyDefinitionRepository,
+      userOrdersService: { updateMarketMakingOrderState },
+    } = createProcessor();
+
+    userOrdersService.findMarketMakingByOrderId.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'user-1',
+      strategyDefinitionId: 'strategy-def-1',
+      strategySnapshot: null,
+    });
+
+    await expect(
+      processor.handleStartMM({
+        data: { userId: 'user-1', orderId: 'order-1' },
+        queue: { add: jest.fn() },
+      } as any),
+    ).rejects.toThrow(
+      'Order order-1 has no strategySnapshot. Run backfill:mm-order-snapshots before start_mm.',
+    );
+
+    expect(updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'failed',
+    );
+    expect(
+      strategyConfigResolver.resolveDefinitionStartConfig,
+    ).not.toHaveBeenCalled();
+    expect(strategyDefinitionRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('stores strategy snapshot when payment becomes complete', async () => {
+    const {
+      processor,
+      paymentStateRepository,
+      marketMakingOrderIntentRepository,
+      marketMakingRepository,
+      strategyConfigResolver,
+      userOrdersService,
+    } = createProcessor();
+
+    paymentStateRepository.findOne.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'user-1',
+      baseAssetId: 'asset-base',
+      baseAssetAmount: '10',
+      quoteAssetId: 'asset-quote',
+      quoteAssetAmount: '20',
+      baseFeeAssetId: 'asset-fee-base',
+      baseFeeAssetAmount: '1',
+      quoteFeeAssetId: 'asset-fee-quote',
+      quoteFeeAssetAmount: '2',
+      requiredBaseWithdrawalFee: '0',
+      requiredQuoteWithdrawalFee: '0',
+      requiredStrategyFeePercentage: '0',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    marketMakingOrderIntentRepository.findOne.mockResolvedValueOnce({
+      orderId: 'order-1',
+      strategyDefinitionId: 'strategy-def-1',
+      configOverrides: {
+        bidSpread: 0.002,
+        orderRefreshTime: 15000,
+      },
+    });
+    marketMakingRepository.findOne.mockResolvedValueOnce(null);
+    marketMakingRepository.save.mockImplementation(async (payload) => payload);
+
+    await processor.handleCheckPaymentComplete({
+      data: { orderId: 'order-1', marketMakingPairId: 'pair-1' },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+      queue: { add: jest.fn() },
+    } as any);
+
+    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
+      'strategy-def-1',
+      expect.objectContaining({
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        exchangeName: 'binance',
+        bidSpread: 0.002,
+        orderRefreshTime: 15000,
+      }),
+    );
+    expect(marketMakingRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        strategyDefinitionId: 'strategy-def-1',
+        strategySnapshot: expect.objectContaining({
+          controllerType: 'pureMarketMaking',
+        }),
+      }),
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'payment_complete',
     );
   });
 

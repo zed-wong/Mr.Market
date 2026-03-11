@@ -1,18 +1,25 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import { Repository } from 'typeorm';
 
 import { StrategyType } from '../config/strategy-controller.types';
+import { normalizeControllerType } from '../config/strategy-controller-aliases';
 import { normalizeExecutionCategory } from '../config/strategy-execution-category';
 import { StrategyRuntimeDispatcherService } from '../execution/strategy-runtime-dispatcher.service';
 
 @Injectable()
 export class StrategyConfigResolverService {
   constructor(
+    @InjectRepository(StrategyDefinition)
+    private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
     private readonly strategyRuntimeDispatcher: StrategyRuntimeDispatcherService,
   ) {}
 
   getDefinitionControllerType(definition: Partial<StrategyDefinition>): string {
-    const controllerType = definition.controllerType || definition.executorType;
+    const controllerType = normalizeControllerType(
+      definition.controllerType || definition.executorType,
+    );
 
     if (!controllerType) {
       throw new BadRequestException(
@@ -31,49 +38,104 @@ export class StrategyConfigResolverService {
       marketMakingOrderId?: string;
       config?: Record<string, unknown>;
     },
+    options?: {
+      skipEnabledCheck?: boolean;
+    },
   ): {
     mergedConfig: Record<string, any>;
     strategyType: StrategyType;
   } {
-    if (!definition.enabled) {
-      throw new BadRequestException(
-        `Strategy definition ${definition.key} is disabled`,
-      );
+    if (!options?.skipEnabledCheck) {
+      this.ensureDefinitionEnabled(definition);
     }
-
-    const strategyType = this.strategyRuntimeDispatcher.toStrategyType(
-      this.getDefinitionControllerType(definition),
-    );
+    const strategyType = this.toStrategyType(definition);
     const marketMakingOrderId =
       strategyType === 'pureMarketMaking'
         ? payload.marketMakingOrderId || payload.clientId
         : undefined;
 
-    const mergedConfig = {
+    const mergedConfig = this.normalizeAndValidateConfig(definition, {
       ...(definition.defaultConfig || {}),
       ...(payload.config || {}),
       userId: payload.userId,
       clientId: marketMakingOrderId || payload.clientId,
       ...(marketMakingOrderId ? { marketMakingOrderId } : {}),
-    } as Record<string, any>;
-
-    if (strategyType === 'volume') {
-      mergedConfig.executionCategory = normalizeExecutionCategory(
-        mergedConfig.executionCategory || mergedConfig.executionVenue,
-      );
-      mergedConfig.executionVenue =
-        mergedConfig.executionCategory === 'amm_dex' ? 'dex' : 'cex';
-    }
-
-    this.validateConfigAgainstSchema(
-      mergedConfig,
-      definition.configSchema || {},
-    );
+    });
 
     return {
       mergedConfig,
       strategyType,
     };
+  }
+
+  async resolveForOrderSnapshot(
+    definitionId: string,
+    overrides?: Record<string, unknown>,
+  ): Promise<{
+    definitionVersion: string;
+    controllerType: string;
+    resolvedConfig: Record<string, unknown>;
+  }> {
+    const definition = await this.strategyDefinitionRepository.findOne({
+      where: { id: definitionId },
+    });
+
+    if (!definition) {
+      throw new BadRequestException(
+        `Strategy definition ${definitionId} not found`,
+      );
+    }
+
+    const controllerType = this.getDefinitionControllerType(definition);
+    const resolvedConfig = this.normalizeAndValidateConfig(definition, {
+      ...(definition.defaultConfig || {}),
+      ...(overrides || {}),
+    });
+
+    return {
+      definitionVersion: definition.currentVersion || '1.0.0',
+      controllerType,
+      resolvedConfig,
+    };
+  }
+
+  private ensureDefinitionEnabled(definition: StrategyDefinition): void {
+    if (!definition.enabled) {
+      throw new BadRequestException(
+        `Strategy definition ${definition.key} is disabled`,
+      );
+    }
+  }
+
+  private toStrategyType(
+    definition: Partial<StrategyDefinition>,
+  ): StrategyType {
+    return this.strategyRuntimeDispatcher.toStrategyType(
+      this.getDefinitionControllerType(definition),
+    );
+  }
+
+  private normalizeAndValidateConfig(
+    definition: Partial<StrategyDefinition>,
+    config: Record<string, any>,
+  ): Record<string, any> {
+    const strategyType = this.toStrategyType(definition);
+    const normalizedConfig = { ...config };
+
+    if (strategyType === 'volume') {
+      normalizedConfig.executionCategory = normalizeExecutionCategory(
+        normalizedConfig.executionCategory || normalizedConfig.executionVenue,
+      );
+      normalizedConfig.executionVenue =
+        normalizedConfig.executionCategory === 'amm_dex' ? 'dex' : 'cex';
+    }
+
+    this.validateConfigAgainstSchema(
+      normalizedConfig,
+      definition.configSchema || {},
+    );
+
+    return normalizedConfig;
   }
 
   validateConfigAgainstSchema(

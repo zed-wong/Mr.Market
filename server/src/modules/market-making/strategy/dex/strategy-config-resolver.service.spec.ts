@@ -1,10 +1,16 @@
 import { BadRequestException } from '@nestjs/common';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import { Repository } from 'typeorm';
 
 import { StrategyRuntimeDispatcherService } from '../execution/strategy-runtime-dispatcher.service';
 import { StrategyConfigResolverService } from './strategy-config-resolver.service';
 
 describe('StrategyConfigResolverService', () => {
   let service: StrategyConfigResolverService;
+  let strategyDefinitionRepository: Pick<
+    Repository<StrategyDefinition>,
+    'findOne'
+  >;
   const dispatcher = {
     toStrategyType: jest.fn((controllerType: string) => {
       if (controllerType === 'arbitrage') return 'arbitrage';
@@ -16,7 +22,13 @@ describe('StrategyConfigResolverService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new StrategyConfigResolverService(dispatcher);
+    strategyDefinitionRepository = {
+      findOne: jest.fn(),
+    };
+    service = new StrategyConfigResolverService(
+      strategyDefinitionRepository as Repository<StrategyDefinition>,
+      dispatcher,
+    );
   });
 
   it('reads controllerType and accepts executorType alias', () => {
@@ -28,6 +40,11 @@ describe('StrategyConfigResolverService', () => {
     expect(
       service.getDefinitionControllerType({ executorType: 'volume' } as any),
     ).toBe('volume');
+    expect(
+      service.getDefinitionControllerType({
+        controllerType: 'pure_market_making',
+      } as any),
+    ).toBe('pureMarketMaking');
   });
 
   it('throws when controller type missing', () => {
@@ -88,6 +105,46 @@ describe('StrategyConfigResolverService', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('can resolve start config for disabled definitions when enabled check is skipped', () => {
+    const result = service.resolveDefinitionStartConfig(
+      {
+        key: 'disabled',
+        enabled: false,
+        controllerType: 'pure_market_making',
+        defaultConfig: {},
+        configSchema: {
+          type: 'object',
+          required: ['pair', 'exchangeName', 'userId', 'clientId'],
+          properties: {
+            pair: { type: 'string' },
+            exchangeName: { type: 'string' },
+            userId: { type: 'string' },
+            clientId: { type: 'string' },
+          },
+        },
+      } as any,
+      {
+        userId: 'u1',
+        clientId: 'c1',
+        marketMakingOrderId: 'order-1',
+        config: {
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+        },
+      },
+      { skipEnabledCheck: true },
+    );
+
+    expect(result.strategyType).toBe('pureMarketMaking');
+    expect(result.mergedConfig).toEqual(
+      expect.objectContaining({
+        userId: 'u1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+      }),
+    );
+  });
+
   it('normalizes volume execution category from executionVenue alias', () => {
     const result = service.resolveDefinitionStartConfig(
       {
@@ -140,5 +197,57 @@ describe('StrategyConfigResolverService', () => {
         },
       ),
     ).toThrow(BadRequestException);
+  });
+
+  it('builds order snapshot payload from stored definition and overrides', async () => {
+    strategyDefinitionRepository.findOne = jest.fn().mockResolvedValueOnce({
+      id: 'definition-1',
+      enabled: false,
+      controllerType: 'pureMarketMaking',
+      currentVersion: '2.1.0',
+      defaultConfig: {
+        bidSpread: 0.001,
+        askSpread: 0.001,
+        orderRefreshTime: 10000,
+      },
+      configSchema: {
+        type: 'object',
+        required: ['pair', 'exchangeName', 'userId', 'clientId'],
+        properties: {
+          pair: { type: 'string' },
+          exchangeName: { type: 'string' },
+          userId: { type: 'string' },
+          clientId: { type: 'string' },
+          bidSpread: { type: 'number' },
+          askSpread: { type: 'number' },
+          orderRefreshTime: { type: 'number' },
+        },
+      },
+    } as unknown as StrategyDefinition);
+
+    const result = await service.resolveForOrderSnapshot('definition-1', {
+      pair: 'BTC/USDT',
+      exchangeName: 'binance',
+      userId: 'user-1',
+      clientId: 'order-1',
+      bidSpread: 0.0025,
+    });
+
+    expect(strategyDefinitionRepository.findOne).toHaveBeenCalledWith({
+      where: { id: 'definition-1' },
+    });
+    expect(result).toEqual({
+      definitionVersion: '2.1.0',
+      controllerType: 'pureMarketMaking',
+      resolvedConfig: {
+        bidSpread: 0.0025,
+        askSpread: 0.001,
+        orderRefreshTime: 10000,
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        userId: 'user-1',
+        clientId: 'order-1',
+      },
+    });
   });
 });

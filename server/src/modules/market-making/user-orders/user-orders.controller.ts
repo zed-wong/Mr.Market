@@ -124,6 +124,7 @@ export class UserOrdersController {
     body: {
       marketMakingPairId: string;
       strategyDefinitionId: string;
+      configOverrides?: Record<string, unknown>;
     },
   ) {
     return await this.userOrdersService.createMarketMakingOrderIntent(body);

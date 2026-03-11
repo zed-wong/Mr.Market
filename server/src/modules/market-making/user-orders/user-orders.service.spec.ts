@@ -26,7 +26,9 @@ describe('UserOrdersService', () => {
   let service: UserOrdersService;
   let marketMakingRepository: Repository<MarketMakingOrder>;
   let simplyGrowRepository: Repository<SimplyGrowOrder>;
+  let marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>;
   let strategyDefinitionRepository: Repository<StrategyDefinition>;
+  let growdataRepository: GrowdataRepository;
   let testingModule: TestingModule;
 
   beforeEach(async () => {
@@ -64,7 +66,9 @@ describe('UserOrdersService', () => {
         },
         {
           provide: GrowdataRepository,
-          useValue: {},
+          useValue: {
+            findMarketMakingPairById: jest.fn(),
+          },
         },
       ],
     }).compile();
@@ -79,6 +83,11 @@ describe('UserOrdersService', () => {
     strategyDefinitionRepository = testingModule.get<
       Repository<StrategyDefinition>
     >(getRepositoryToken(StrategyDefinition));
+    marketMakingOrderIntentRepository = testingModule.get<
+      Repository<MarketMakingOrderIntent>
+    >(getRepositoryToken(MarketMakingOrderIntent));
+    growdataRepository =
+      testingModule.get<GrowdataRepository>(GrowdataRepository);
     jest.clearAllMocks();
   });
 
@@ -195,6 +204,62 @@ describe('UserOrdersService', () => {
           currentVersion: '1.0.0',
         },
       ]);
+    });
+  });
+
+  describe('createMarketMakingOrderIntent', () => {
+    it('persists configOverrides when creating market-making intent', async () => {
+      jest
+        .spyOn(growdataRepository, 'findMarketMakingPairById')
+        .mockResolvedValueOnce({ enable: true } as any);
+      jest
+        .spyOn(strategyDefinitionRepository, 'findOne')
+        .mockResolvedValueOnce({
+          id: 'strategy-1',
+          enabled: true,
+        } as StrategyDefinition);
+      jest
+        .spyOn(marketMakingOrderIntentRepository, 'create')
+        .mockImplementation((payload) => payload as any);
+      const saveSpy = jest
+        .spyOn(marketMakingOrderIntentRepository, 'save')
+        .mockImplementation(async (payload) => payload as any);
+
+      const result = await service.createMarketMakingOrderIntent({
+        marketMakingPairId: 'pair-1',
+        strategyDefinitionId: 'strategy-1',
+        configOverrides: {
+          bidSpread: 0.002,
+          orderRefreshTime: 15000,
+        },
+      });
+
+      expect(result).toEqual({
+        orderId: expect.any(String),
+        memo: expect.any(String),
+        expiresAt: expect.any(String),
+      });
+      expect(saveSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-1',
+          configOverrides: {
+            bidSpread: 0.002,
+            orderRefreshTime: 15000,
+          },
+          state: 'pending',
+        }),
+      );
+    });
+
+    it('rejects non-object configOverrides payloads', async () => {
+      await expect(
+        service.createMarketMakingOrderIntent({
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-1',
+          configOverrides: [] as any,
+        }),
+      ).rejects.toThrow('configOverrides must be an object');
     });
   });
 });

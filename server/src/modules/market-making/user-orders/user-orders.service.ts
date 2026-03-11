@@ -206,14 +206,24 @@ export class UserOrdersService {
   async createMarketMakingOrderIntent(params: {
     marketMakingPairId: string;
     strategyDefinitionId: string;
+    configOverrides?: Record<string, unknown>;
   }) {
-    const { marketMakingPairId, strategyDefinitionId } = params;
+    const { marketMakingPairId, strategyDefinitionId, configOverrides } =
+      params;
 
     if (!marketMakingPairId) {
       throw new BadRequestException('marketMakingPairId is required');
     }
     if (!strategyDefinitionId) {
       throw new BadRequestException('strategyDefinitionId is required');
+    }
+    if (
+      configOverrides !== undefined &&
+      (configOverrides === null ||
+        Array.isArray(configOverrides) ||
+        typeof configOverrides !== 'object')
+    ) {
+      throw new BadRequestException('configOverrides must be an object');
     }
 
     const pair = await this.growdataRepository.findMarketMakingPairById(
@@ -249,6 +259,7 @@ export class UserOrdersService {
       userId: null,
       marketMakingPairId,
       strategyDefinitionId,
+      configOverrides: configOverrides ?? null,
       state: 'pending',
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),

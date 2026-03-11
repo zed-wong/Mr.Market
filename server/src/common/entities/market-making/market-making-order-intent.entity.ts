@@ -24,6 +24,9 @@ export class MarketMakingOrderIntent {
   @Column({ nullable: true })
   strategyDefinitionId?: string;
 
+  @Column('simple-json', { nullable: true })
+  configOverrides?: Record<string, unknown> | null;
+
   @Column({ default: 'pending' })
   state: MarketMakingOrderIntentState;
 
