@@ -6,18 +6,19 @@ This file maps key entities to module ownership and business usage.
 
 | Entity | Primary owner module | Also used by | Business purpose |
 | --- | --- | --- | --- |
-| `StrategyDefinition` | `market-making/strategy` | `admin/strategy`, `user-orders` | Defines strategy contract and default behavior. |
-| `StrategyDefinitionVersion` | `market-making/strategy` | `admin/strategy` | Versioned snapshots for safe rollout. |
-| `StrategyInstance` | `market-making/strategy` | `admin/strategy`, `user-orders` | Running or stopped strategy session state. |
+| `StrategyDefinition` | `market-making/strategy` | `admin/strategy`, `user-orders` | Defines strategy contract with JSON config schema and default config. |
+| `StrategyDefinitionVersion` | `market-making/strategy` | `admin/strategy` | Versioned snapshots for safe rollout (kept for admin publish flow). |
+| `StrategyInstance` | `market-making/strategy` | `admin/strategy`, `user-orders` | Runtime/session lifecycle metadata; strategy config source of truth now comes from MarketMakingOrder.strategySnapshot. |
 | `StrategyExecutionHistory` | `market-making/strategy` | `metrics`, `campaign`, `user-orders` | Historical performance and lifecycle evidence. |
 | `StrategyOrderIntentEntity` | `market-making/strategy` | `reconciliation` | Durable action intent queue with status transitions. |
-| `MarketMakingOrderIntent` | `market-making/user-orders` | `mixin/snapshots` | Payment-linked intent before active order run. |
+| `MarketMakingOrderIntent` | `market-making/user-orders` | `mixin/snapshots` | Payment-linked intent with configOverrides before active order run. |
+| `MarketMakingOrder` | `market-making/user-orders` | `strategy`, `admin`, `exchange-api-key` | User market-making order with pinned strategySnapshot. |
+| `ExchangeOrderMapping` | `market-making/execution` | `strategy` | Fill routing fallback when clientOrderId parsing fails. |
 
 ## User order and payment entities
 
 | Entity | Primary owner module | Also used by | Business purpose |
 | --- | --- | --- | --- |
-| `MarketMakingOrder` | `market-making/user-orders` | `strategy`, `admin`, `exchange-api-key` | User market-making order lifecycle state. |
 | `SimplyGrowOrder` | `market-making/user-orders` | `strategy`, `admin` | Grow product order state. |
 | `MarketMakingPaymentState` | `market-making/user-orders` | `mixin/snapshots` | Tracks paid/pending/failure settlement states. |
 | `SpotOrder` | spot/order modules | `app root` | Spot trading order persistence. |

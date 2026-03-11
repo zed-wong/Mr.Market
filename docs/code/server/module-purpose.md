@@ -134,6 +134,18 @@ This file explains each backend module with three questions:
 - Why: strategy execution needs one stable adapter layer over different exchanges.
 - Where: used by strategy intent execution and orchestrator drain/cancel flows.
 
+### `market-making/execution/fill-routing.service.ts`
+
+- What: resolves fill events to orders using clientOrderId parsing and ExchangeOrderMapping fallback.
+- Why: pooled executors need deterministic fill routing by exchange:pair.
+- Where: used by private stream tracker when processing fill events.
+
+### `market-making/execution/exchange-order-mapping.service.ts`
+
+- What: manages ExchangeOrderMapping entity for fill routing fallback.
+- Why: provides recovery path when clientOrderId parsing fails.
+- Where: used by fill-routing.service and intent execution when placing orders.
+
 ### `market-making/ledger/ledger.module.ts`
 
 - What: balance ledger with append-only entries and read-model balance updates.

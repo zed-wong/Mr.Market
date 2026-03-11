@@ -104,9 +104,55 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 - Clears intent only after successful transfer by writing a completed intent.
 - File: `server/src/modules/market-making/orchestration/pause-withdraw-orchestrator.service.ts`
 
+## 12) Fill routing fallback chain
+
+- Fill arrives with `clientOrderId` from exchange private stream.
+- `FillRoutingService` attempts resolution in order:
+  1. Parse `clientOrderId` format `{orderId}:{seq}` → route to order
+  2. Lookup `ExchangeOrderMapping` by `clientOrderId` → route to order
+  3. Lookup `ExchangeOrderMapping` by `exchangeOrderId` → route to order
+  4. Log as orphaned fill with exchange/pair/side/time for manual review
+- This ensures fills are routed even when clientOrderId parsing fails.
+- Files:
+  - `server/src/modules/market-making/execution/fill-routing.service.ts`
+  - `server/src/modules/market-making/execution/exchange-order-mapping.service.ts`
+  - `server/src/common/helpers/client-order-id.ts`
+
+## 13) Executor lifecycle safety
+
+- `ExecutorRegistry` manages `ExchangePairExecutor` per `exchange:pair`.
+- Executors are created on-demand when first order is added.
+- Executors are removed automatically when no orders remain (`removeExecutorIfEmpty`).
+- Each executor maintains isolated `strategySessions` map keyed by `orderId`.
+- Tick execution checks `session.nextRunAtMs` before dispatch.
+- Session runId guards against stale execution after order removal.
+- Files:
+  - `server/src/modules/market-making/strategy/execution/executor-registry.ts`
+  - `server/src/modules/market-making/strategy/execution/exchange-pair-executor.ts`
+
+## 14) clientOrderId format validation
+
+- `buildClientOrderId()` validates:
+  - `orderId` is non-empty and contains no `:` character
+  - `seq` is a non-negative integer
+- `parseClientOrderId()` validates:
+  - Exactly two parts separated by `:`
+  - Second part is numeric string
+  - Result is a safe integer
+- This prevents parsing errors and injection through clientOrderId.
+- File: `server/src/common/helpers/client-order-id.ts`
+
+## 15) Order snapshot requirement
+
+- `start_mm` requires order to have `strategySnapshot` with `resolvedConfig`.
+- Throws error if snapshot is missing, forcing backfill first.
+- This ensures all orders have pinned config before runtime execution.
+- File: `server/src/modules/market-making/user-orders/market-making.processor.ts`
+
 ## Notes
 
 - Reconciliation and outbox are complementary:
   - outbox/receipts reduce duplicate side effects and preserve event history,
   - reconciliation detects bad states that still happen despite safeguards.
 - Current outbox path is write-focused in this codebase; dispatch/forwarding behavior should be documented when an outbox publisher is added.
+- Fill routing fallback chain ensures no fills are lost due to parsing failures.

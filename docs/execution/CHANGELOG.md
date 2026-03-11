@@ -1,5 +1,17 @@
 # Execution Flow Changelog
 
+## 2026-03-11
+
+- Add pooled executor architecture with ExecutorRegistry managing ExchangePairExecutor per exchange:pair
+- Add strategySnapshot to MarketMakingOrder with definitionVersion, controllerType, and resolvedConfig
+- Add configOverrides to MarketMakingOrderIntent for user-provided config at order creation
+- Add StrategyConfigResolverService.resolveForOrderSnapshot() for config resolution at order creation
+- Add clientOrderId format helpers in common/helpers/client-order-id.ts (format: {orderId}:{seq})
+- Add ExchangeOrderMapping entity and service for fill routing fallback
+- Add FillRoutingService with clientOrderId parsing and fallback chain
+- Migrate StrategyService to use ExecutorRegistry for pooled execution
+- Move runtime config source of truth to MarketMakingOrder.strategySnapshot while keeping StrategyInstance for lifecycle metadata
+
 ## 2026-03-06
 
 - Add Hummingbot-compatible YAML strategy definitions in seeders (pure-market-making, arbitrage, volume, time-indicator)

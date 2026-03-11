@@ -86,6 +86,16 @@ This map is based on the root wiring in `server/src/app.module.ts` and each `*.m
 - `modules/market-making/execution/execution.module.ts`
   - Depends on: `ConfigModule`.
   - Main role: exchange execution adapter.
+- `modules/market-making/execution/fill-routing.service.ts`
+  - Main role: fill event routing with clientOrderId parsing and fallback.
+- `modules/market-making/execution/exchange-order-mapping.service.ts`
+  - Main role: ExchangeOrderMapping entity management for fill recovery.
+- `modules/market-making/strategy/execution/executor-registry.ts`
+  - Main role: pooled executor lifecycle per exchange:pair.
+- `modules/market-making/strategy/execution/exchange-pair-executor.ts`
+  - Main role: shared market-data/tick boundary for orders on same exchange:pair.
+- `common/helpers/client-order-id.ts`
+  - Main role: build/parse clientOrderId format `{orderId}:{seq}`.
 - `modules/market-making/ledger/ledger.module.ts`
   - Depends on: TypeORM ledger entities, `DurabilityModule`.
   - Main role: internal balance ledger.

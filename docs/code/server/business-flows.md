@@ -4,24 +4,28 @@ This file maps runtime logic to business behavior.
 
 ## Flow 1: User market-making order lifecycle
 
-1. Client creates order intent through user-orders API.
+1. Client creates order intent through user-orders API with strategyDefinitionId and optional configOverrides.
 2. Snapshot polling detects payment snapshots and validates memo payload.
 3. Snapshot processor enqueues market-making job.
 4. Market-making processor checks payment state and business constraints.
-5. System creates/updates order records and starts strategy runtime.
-6. Optional campaign join/local-campaign steps are scheduled.
+5. System resolves strategy config: loads definition, merges defaultConfig + configOverrides, validates against configSchema.
+6. System creates MarketMakingOrder with pinned strategySnapshot (definitionVersion, controllerType, resolvedConfig).
+7. `start_mm` later attaches the order to ExchangePairExecutor(exchange, pair) for pooled execution.
+8. Optional campaign join/local-campaign steps are scheduled.
 
 ### Main modules in this flow
 
 - `mixin/snapshots`
 - `market-making/user-orders`
-- `market-making/strategy`
+- `market-making/strategy` (config resolution)
+- `market-making/strategy/execution/executor-registry` (pooled executors)
 - `market-making/fee`
 - `campaign` and `market-making/local-campaign`
 
 ### Why this flow exists
 
 - It turns external funding events into an active trading lifecycle with durable records.
+- Orders snapshot resolved config at creation - runtime never re-resolves.
 
 ## Flow 2: Strategy runtime intent pipeline
 
@@ -35,6 +39,7 @@ This file maps runtime logic to business behavior.
 ### Main modules in this flow
 
 - `market-making/strategy`
+- `market-making/strategy/execution/executor-registry` (pooled executors)
 - `market-making/execution`
 - `market-making/durability`
 - `market-making/trackers`
@@ -43,6 +48,19 @@ This file maps runtime logic to business behavior.
 ### Why this flow exists
 
 - It separates decision logic from side effects and keeps retries/idempotency manageable.
+
+## Flow 2b: Pooled executor tick loop
+
+1. Tick module triggers executor registry iteration.
+2. ExecutorRegistry dispatches tick to each ExchangePairExecutor (by exchange:pair).
+3. ExchangePairExecutor loads market data and iterates strategy sessions.
+4. Each session calls controller onTick() to compute actions.
+5. Actions flow through executor orchestrator and intent pipeline.
+
+### Why this flow exists
+
+- Pooled executors share market data and reduce per-order overhead.
+- Execution boundary is exchange:pair for this phase.
 
 ## Flow 3: Tick-driven system loop
 
@@ -60,6 +78,28 @@ This file maps runtime logic to business behavior.
 ### Why this flow exists
 
 - It provides predictable periodic execution for strategy/tracker subsystems.
+
+## Flow 3b: Fill routing with pooled executors
+
+1. Private stream tracker receives fill event with clientOrderId.
+2. FillRoutingService parses clientOrderId format `{orderId}:{seq}`.
+3. If parse success: route to ExchangePairExecutor by order's exchange:pair.
+4. If parse fail: fallback to ExchangeOrderMapping lookup by clientOrderId.
+5. If still fail: lookup by exchangeOrderId.
+6. If all fail: log orphaned fill for manual review.
+7. ExchangePairExecutor.onFill() dispatches to strategy session.
+
+### Main modules in this flow
+
+- `market-making/trackers/private-stream-tracker`
+- `market-making/execution/fill-routing.service`
+- `market-making/execution/exchange-order-mapping.service`
+- `market-making/strategy/execution/executor-registry`
+
+### Why this flow exists
+
+- Pooled executors need deterministic fill routing by orderId.
+- Fallback chain provides recovery for parsing failures.
 
 ## Flow 4: Pause and withdraw orchestration
 
