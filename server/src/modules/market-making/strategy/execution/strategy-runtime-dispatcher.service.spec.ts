@@ -20,7 +20,11 @@ describe('StrategyRuntimeDispatcherService', () => {
   it('maps controller type to strategy type', () => {
     expect(service.toStrategyType('arbitrage')).toBe('arbitrage');
     expect(service.toStrategyType('pureMarketMaking')).toBe('pureMarketMaking');
+    expect(service.toStrategyType('pure_market_making')).toBe(
+      'pureMarketMaking',
+    );
     expect(service.toStrategyType('volume')).toBe('volume');
+    expect(service.toStrategyType('time_indicator')).toBe('timeIndicator');
   });
 
   it('throws on unsupported controller type', () => {

@@ -2,12 +2,14 @@ import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
+import { buildClientOrderId } from 'src/common/helpers/client-order-id';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { DurabilityService } from '../../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
+import { ExchangeOrderMappingService } from '../../execution/exchange-order-mapping.service';
 import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
 import { DexAdapterId } from '../config/strategy.dto';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
@@ -23,6 +25,7 @@ export class StrategyIntentExecutionService {
   private readonly executeIntents: boolean;
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
+  private readonly nextClientOrderSeqByOrderId = new Map<string, number>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -36,6 +39,8 @@ export class StrategyIntentExecutionService {
     private readonly strategyIntentStoreService?: StrategyIntentStoreService,
     @Optional()
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
+    @Optional()
+    private readonly exchangeOrderMappingService?: ExchangeOrderMappingService,
     @Optional()
     private readonly dexVolumeStrategyService?: DexVolumeStrategyService,
   ) {
@@ -131,6 +136,8 @@ export class StrategyIntentExecutionService {
 
     try {
       if (intent.type === 'CREATE_LIMIT_ORDER') {
+        const orderId = this.resolveOrderIdForClientOrderId(intent);
+        const clientOrderId = await this.reserveClientOrderId(orderId);
         const result = await this.runWithRetries(() =>
           this.exchangeConnectorAdapterService.placeLimitOrder(
             intent.exchange,
@@ -138,6 +145,7 @@ export class StrategyIntentExecutionService {
             intent.side,
             intent.qty,
             intent.price,
+            clientOrderId,
           ),
         );
 
@@ -146,6 +154,11 @@ export class StrategyIntentExecutionService {
             intent.intentId,
             String(result.id),
           );
+          await this.exchangeOrderMappingService?.createMapping({
+            orderId,
+            exchangeOrderId: String(result.id),
+            clientOrderId,
+          });
           await this.strategyExecutionHistoryRepository?.save(
             this.strategyExecutionHistoryRepository.create({
               userId: intent.userId,
@@ -162,6 +175,7 @@ export class StrategyIntentExecutionService {
               metadata: {
                 intentId: intent.intentId,
                 intentType: intent.type,
+                clientOrderId,
               },
             }),
           );
@@ -170,6 +184,7 @@ export class StrategyIntentExecutionService {
             exchange: intent.exchange,
             pair: intent.pair,
             exchangeOrderId: String(result.id),
+            clientOrderId,
             side: intent.side,
             price: intent.price,
             qty: intent.qty,
@@ -345,6 +360,31 @@ export class StrategyIntentExecutionService {
       });
       throw error;
     }
+  }
+
+  private resolveOrderIdForClientOrderId(intent: StrategyOrderIntent): string {
+    const metadataOrderId =
+      intent.metadata &&
+      typeof intent.metadata === 'object' &&
+      typeof (intent.metadata as Record<string, unknown>).orderId === 'string'
+        ? String((intent.metadata as Record<string, unknown>).orderId)
+        : undefined;
+
+    return metadataOrderId || intent.clientId;
+  }
+
+  private async reserveClientOrderId(orderId: string): Promise<string> {
+    const current = this.nextClientOrderSeqByOrderId.get(orderId);
+    const nextSeq =
+      current ??
+      (await this.exchangeOrderMappingService?.countMappingsForOrder(
+        orderId,
+      )) ??
+      0;
+
+    this.nextClientOrderSeqByOrderId.set(orderId, nextSeq + 1);
+
+    return buildClientOrderId(orderId, nextSeq);
   }
 
   private async runWithRetries<T>(work: () => Promise<T>): Promise<T> {

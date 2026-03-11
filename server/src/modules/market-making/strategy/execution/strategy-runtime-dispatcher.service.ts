@@ -5,6 +5,7 @@ import {
   PureMarketMakingStrategyDto,
 } from '../config/strategy.dto';
 import { StrategyType } from '../config/strategy-controller.types';
+import { normalizeControllerType } from '../config/strategy-controller-aliases';
 import {
   normalizeExecutionCategory,
   toLegacyExecutionVenue,
@@ -35,16 +36,18 @@ export class StrategyRuntimeDispatcherService {
   }
 
   toStrategyType(controllerType: string): StrategyType {
-    if (controllerType === 'arbitrage') {
+    const normalizedControllerType = normalizeControllerType(controllerType);
+
+    if (normalizedControllerType === 'arbitrage') {
       return 'arbitrage';
     }
-    if (controllerType === 'pureMarketMaking') {
+    if (normalizedControllerType === 'pureMarketMaking') {
       return 'pureMarketMaking';
     }
-    if (controllerType === 'volume') {
+    if (normalizedControllerType === 'volume') {
       return 'volume';
     }
-    if (controllerType === 'timeIndicator') {
+    if (normalizedControllerType === 'timeIndicator') {
       return 'timeIndicator';
     }
 

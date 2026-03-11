@@ -24,9 +24,11 @@ export class ExchangeConnectorAdapterService {
     side: 'buy' | 'sell',
     qty: string,
     price: string,
+    clientOrderId?: string,
   ): Promise<any> {
     return await this.withRateLimit(exchangeName, async () => {
       const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const params = clientOrderId ? { clientOrderId } : undefined;
 
       return await exchange.createOrder(
         pair,
@@ -34,6 +36,7 @@ export class ExchangeConnectorAdapterService {
         side,
         Number(qty),
         Number(price),
+        params,
       );
     });
   }

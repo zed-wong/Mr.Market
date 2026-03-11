@@ -40,6 +40,7 @@ import { StrategyOrderIntent } from './config/strategy-intent.types';
 import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
+import { ExecutorRegistry } from './execution/executor-registry';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
 
@@ -79,12 +80,19 @@ type VolumeStrategyParams =
   | CexVolumeStrategyParams
   | AmmDexVolumeStrategyParams;
 
+type PooledExecutorTarget = {
+  exchange: string;
+  pair: string;
+  orderId: string;
+};
+
 @Injectable()
 export class StrategyService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new CustomLogger(StrategyService.name);
   private readonly sessions = new Map<string, StrategyRuntimeSession>();
+  private readonly pooledStrategyKeys = new Set<string>();
   private readonly latestIntentsByStrategy = new Map<
     string,
     StrategyOrderIntent[]
@@ -110,6 +118,8 @@ export class StrategyService
     private readonly executorOrchestratorService?: ExecutorOrchestratorService,
     @Optional()
     private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
+    @Optional()
+    private readonly executorRegistry?: ExecutorRegistry,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -125,29 +135,27 @@ export class StrategyService
     const nowMs = Date.now();
 
     for (const strategy of runningStrategies) {
-      this.sessions.set(strategy.strategyKey, {
-        runId: this.generateRunId(),
-        strategyKey: strategy.strategyKey,
-        strategyType: strategy.strategyType as StrategyType,
-        userId: strategy.userId,
-        clientId: strategy.clientId,
-        marketMakingOrderId:
-          strategy.marketMakingOrderId ||
+      await this.upsertSession(
+        strategy.strategyKey,
+        strategy.strategyType as StrategyType,
+        strategy.userId,
+        strategy.clientId,
+        this.getCadenceMs(strategy.parameters, strategy.strategyType),
+        strategy.parameters,
+        strategy.marketMakingOrderId ||
           (strategy.strategyType === 'pureMarketMaking'
             ? strategy.clientId
             : undefined),
-        cadenceMs: this.getCadenceMs(
-          strategy.parameters,
-          strategy.strategyType,
-        ),
-        nextRunAtMs: nowMs,
-        params: strategy.parameters,
-      });
+        nowMs,
+        this.generateRunId(),
+      );
     }
   }
 
   async stop(): Promise<void> {
     this.sessions.clear();
+    this.pooledStrategyKeys.clear();
+    this.executorRegistry?.clear();
   }
 
   async health(): Promise<boolean> {
@@ -155,10 +163,59 @@ export class StrategyService
   }
 
   async onTick(ts: string): Promise<void> {
+    await this.onTickForPooledExecutors(ts);
+    await this.onTickForLegacySessions(ts);
+  }
+
+  async routeFillForExchangePair(
+    exchange: string,
+    pair: string,
+    fill: {
+      orderId?: string;
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      receivedAt?: string;
+      payload?: Record<string, unknown>;
+    },
+  ): Promise<boolean> {
+    const executor = this.executorRegistry?.getExecutor(exchange, pair);
+
+    if (!executor) {
+      return false;
+    }
+
+    await executor.onFill(fill);
+
+    return true;
+  }
+
+  private async onTickForPooledExecutors(ts: string): Promise<void> {
+    const executors = this.executorRegistry?.getActiveExecutors() || [];
+
+    for (const executor of executors) {
+      try {
+        await executor.onTick(ts);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const errorTrace = error instanceof Error ? error.stack : undefined;
+
+        this.logger.error(
+          `onTick executor failed for exchange=${executor.exchange} pair=${executor.pair} ts=${ts}: ${errorMessage}`,
+          errorTrace,
+        );
+      }
+    }
+  }
+
+  private async onTickForLegacySessions(ts: string): Promise<void> {
     const nowMs = Date.now();
-    const sessions = [...this.sessions.values()].sort((a, b) =>
-      a.strategyKey.localeCompare(b.strategyKey),
-    );
+    const sessions = [...this.sessions.values()]
+      .filter((session) => !this.pooledStrategyKeys.has(session.strategyKey))
+      .sort((a, b) => a.strategyKey.localeCompare(b.strategyKey));
 
     for (const session of sessions) {
       const capturedRunId = session.runId;
@@ -265,7 +322,7 @@ export class StrategyService
       'arbitrage',
       { ...strategyParamsDto, checkIntervalSeconds, maxOpenOrders },
     );
-    this.upsertSession(
+    await this.upsertSession(
       strategyKey,
       'arbitrage',
       userId,
@@ -304,7 +361,7 @@ export class StrategyService
       normalizedParams,
       marketMakingOrderId,
     );
-    this.upsertSession(
+    await this.upsertSession(
       strategyKey,
       'pureMarketMaking',
       normalizedParams.userId,
@@ -420,7 +477,7 @@ export class StrategyService
       'volume',
       params,
     );
-    this.upsertSession(
+    await this.upsertSession(
       strategyKey,
       'volume',
       userId,
@@ -454,7 +511,9 @@ export class StrategyService
       { status: 'stopped', updatedAt: new Date() },
     );
 
-    this.sessions.delete(strategyKey);
+    const activeSession = this.sessions.get(strategyKey);
+
+    await this.removeSession(strategyKey, activeSession);
 
     const stopIntent: StrategyOrderIntent = {
       type: 'STOP_CONTROLLER',
@@ -665,7 +724,7 @@ export class StrategyService
     return this.latestIntentsByStrategy.get(strategyKey) || [];
   }
 
-  private upsertSession(
+  private async upsertSession(
     strategyKey: string,
     strategyType: StrategyType,
     userId: string,
@@ -673,9 +732,72 @@ export class StrategyService
     cadenceMs: number,
     params: StrategyRuntimeSession['params'],
     marketMakingOrderId?: string,
-  ): void {
-    this.sessions.set(strategyKey, {
-      runId: this.generateRunId(),
+    nextRunAtMs = Date.now(),
+    runId = this.generateRunId(),
+  ): Promise<StrategyRuntimeSession> {
+    const existingSession = this.sessions.get(strategyKey);
+
+    if (existingSession) {
+      await this.detachSessionFromExecutor(existingSession);
+    }
+
+    const pooledTarget = this.resolvePooledExecutorTarget(
+      strategyType,
+      params,
+      clientId,
+      marketMakingOrderId,
+    );
+
+    if (this.executorRegistry && pooledTarget) {
+      const executor = this.executorRegistry.getOrCreateExecutor(
+        pooledTarget.exchange,
+        pooledTarget.pair,
+        {
+          onTick: async (session, ts) => {
+            await this.runSession(session, ts);
+          },
+          onTickError: async (session, error, ts) => {
+            this.logSessionTickError(session.strategyKey, ts, error);
+          },
+          onFillError: async (session, error, fill) => {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            const errorTrace = error instanceof Error ? error.stack : undefined;
+
+            this.logger.error(
+              `onFill handler failed for strategyKey=${
+                session.strategyKey
+              } exchange=${pooledTarget.exchange} pair=${
+                pooledTarget.pair
+              } clientOrderId=${fill.clientOrderId || ''}: ${errorMessage}`,
+              errorTrace,
+            );
+          },
+        },
+      );
+      const pooledSession = await executor.addOrder(
+        pooledTarget.orderId,
+        userId,
+        {
+          strategyKey,
+          strategyType,
+          clientId,
+          cadenceMs,
+          params,
+          marketMakingOrderId,
+          nextRunAtMs,
+          runId,
+        },
+      );
+
+      this.sessions.set(strategyKey, pooledSession);
+      this.pooledStrategyKeys.add(strategyKey);
+
+      return pooledSession;
+    }
+
+    const session: StrategyRuntimeSession = {
+      runId,
       strategyKey,
       strategyType,
       userId,
@@ -683,8 +805,13 @@ export class StrategyService
       marketMakingOrderId,
       cadenceMs,
       params,
-      nextRunAtMs: Date.now(),
-    });
+      nextRunAtMs,
+    };
+
+    this.sessions.set(strategyKey, session);
+    this.pooledStrategyKeys.delete(strategyKey);
+
+    return session;
   }
 
   private async upsertStrategyInstance(
@@ -915,10 +1042,8 @@ export class StrategyService
     const currentSession = this.sessions.get(session.strategyKey);
 
     if (this.isSameActiveSession(currentSession, session)) {
-      this.sessions.set(session.strategyKey, {
-        ...currentSession,
-        params: nextParams,
-      });
+      currentSession.params = nextParams;
+      this.sessions.set(session.strategyKey, currentSession);
 
       return;
     }
@@ -1488,7 +1613,7 @@ export class StrategyService
       params,
     );
 
-    this.upsertSession(
+    await this.upsertSession(
       strategyKey,
       'timeIndicator',
       userId,
@@ -1746,6 +1871,126 @@ export class StrategyService
         status: 'NEW',
       },
     ];
+  }
+
+  private async removeSession(
+    strategyKey: string,
+    session = this.sessions.get(strategyKey),
+  ): Promise<void> {
+    if (session) {
+      await this.detachSessionFromExecutor(session);
+    }
+
+    this.sessions.delete(strategyKey);
+    this.pooledStrategyKeys.delete(strategyKey);
+  }
+
+  private async detachSessionFromExecutor(
+    session: StrategyRuntimeSession,
+  ): Promise<void> {
+    if (!this.executorRegistry) {
+      this.pooledStrategyKeys.delete(session.strategyKey);
+
+      return;
+    }
+
+    const pooledTarget = this.resolvePooledExecutorTarget(
+      session.strategyType,
+      session.params,
+      session.clientId,
+      session.marketMakingOrderId,
+    );
+
+    if (!pooledTarget) {
+      this.pooledStrategyKeys.delete(session.strategyKey);
+
+      return;
+    }
+
+    const executor = this.executorRegistry.getExecutor(
+      pooledTarget.exchange,
+      pooledTarget.pair,
+    );
+
+    if (!executor) {
+      this.pooledStrategyKeys.delete(session.strategyKey);
+
+      return;
+    }
+
+    await executor.removeOrder(pooledTarget.orderId);
+    this.executorRegistry.removeExecutorIfEmpty(
+      pooledTarget.exchange,
+      pooledTarget.pair,
+    );
+    this.pooledStrategyKeys.delete(session.strategyKey);
+  }
+
+  private resolvePooledExecutorTarget(
+    strategyType: StrategyType,
+    params: StrategyRuntimeSession['params'],
+    clientId: string,
+    marketMakingOrderId?: string,
+  ): PooledExecutorTarget | null {
+    if (strategyType === 'pureMarketMaking') {
+      const exchange = String(
+        (params as PureMarketMakingStrategyDto).exchangeName || '',
+      ).trim();
+      const pair = String(
+        (params as PureMarketMakingStrategyDto).pair || '',
+      ).trim();
+      const orderId = String(marketMakingOrderId || clientId || '').trim();
+
+      if (exchange && pair && orderId) {
+        return { exchange, pair, orderId };
+      }
+
+      return null;
+    }
+
+    if (strategyType === 'volume') {
+      const exchange = String(
+        (params as VolumeStrategyParams).exchangeName || '',
+      ).trim();
+      const pair = String((params as VolumeStrategyParams).symbol || '').trim();
+      const orderId = String(clientId || '').trim();
+
+      if (exchange && pair && orderId) {
+        return { exchange, pair, orderId };
+      }
+
+      return null;
+    }
+
+    if (strategyType === 'timeIndicator') {
+      const exchange = String(
+        (params as TimeIndicatorStrategyDto).exchangeName || '',
+      ).trim();
+      const pair = String(
+        (params as TimeIndicatorStrategyDto).symbol || '',
+      ).trim();
+      const orderId = String(clientId || '').trim();
+
+      if (exchange && pair && orderId) {
+        return { exchange, pair, orderId };
+      }
+    }
+
+    return null;
+  }
+
+  private logSessionTickError(
+    strategyKey: string,
+    ts: string,
+    error: unknown,
+  ): void {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorTrace = error instanceof Error ? error.stack : undefined;
+
+    this.logger.error(
+      `onTick runSession failed for strategyKey=${strategyKey} ts=${ts}: ${errorMessage}`,
+      errorTrace,
+    );
   }
 
   private isWithinTimeWindow(params: TimeIndicatorStrategyDto): boolean {
