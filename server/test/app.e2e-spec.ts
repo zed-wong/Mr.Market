@@ -1,25 +1,52 @@
-import { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as request from 'supertest';
 
-import { AppModule } from './../src/app.module';
+import { AppController } from '../src/app.controller';
 
-describe('AppController (e2e)', () => {
-  let app: INestApplication;
+describe('AppController (integration)', () => {
+  let controller: AppController;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+      controllers: [AppController],
+      providers: [
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'mixin.app_id') {
+                return 'test-mixin-app';
+              }
+              if (key === 'hufi.recording_oracle.api_url') {
+                return 'https://oracle.test';
+              }
+              if (key === 'hufi.campaign_launcher.api_url') {
+                return 'https://launcher.test';
+              }
+
+              return undefined;
+            }),
+          },
+        },
+      ],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    await app.init();
+    controller = moduleFixture.get(AppController);
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  it('returns server information payload', () => {
+    const result = controller.getAppInfo();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        mixin_app_id: 'test-mixin-app',
+        recording_oracle_url: 'https://oracle.test',
+        campaign_launcher_url: 'https://launcher.test',
+      }),
+    );
+    expect(typeof result.app_hash).toBe('string');
+    expect(result.timestamp).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/,
+    );
   });
 });

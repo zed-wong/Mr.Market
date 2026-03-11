@@ -1,4 +1,3 @@
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -13,23 +12,44 @@ import {
 import { SpotdataTradingPair } from '../src/common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../src/common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from '../src/common/entities/market-making/strategy-definition-version.entity';
+import { runSeed } from '../src/database/seeder/seed';
 
 describe('Database migration and seed scripts (e2e)', () => {
   jest.setTimeout(240000);
 
   const serverRoot = path.resolve(__dirname, '..');
+  const migrationsRoot = path.join(serverRoot, 'src/database/migrations');
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mr-market-migrate-'));
   const dbPath = path.join(tempDir, 'migration-seed-test.db');
 
-  const runCommand = (command: string) => {
-    execSync(command, {
-      cwd: serverRoot,
-      env: {
-        ...process.env,
-        DATABASE_PATH: dbPath,
+  const loadMigrationClasses = (): Function[] => {
+    return fs
+      .readdirSync(migrationsRoot)
+      .filter((file) => file.endsWith('.ts'))
+      .sort()
+      .flatMap((file) =>
+        Object.values(
+          require(path.join(migrationsRoot, file)) as Record<string, Function>,
+        ),
+      )
+      .filter((value): value is Function => typeof value === 'function');
+  };
+
+  const runMigrations = async () => {
+    const dataSource = new DataSource({
+      type: 'sqlite',
+      database: dbPath,
+      synchronize: false,
+      migrations: loadMigrationClasses(),
+      migrationsTableName: 'migrations_typeorm',
+      extra: {
+        flags: ['-WAL'],
       },
-      stdio: 'pipe',
     });
+
+    await dataSource.initialize();
+    await dataSource.runMigrations();
+    await dataSource.destroy();
   };
 
   afterAll(() => {
@@ -41,7 +61,7 @@ describe('Database migration and seed scripts (e2e)', () => {
   });
 
   it('runs migration:run and creates expected tables', async () => {
-    runCommand('bun run migration:run');
+    await runMigrations();
 
     const dataSource = new DataSource({
       type: 'sqlite',
@@ -65,7 +85,9 @@ describe('Database migration and seed scripts (e2e)', () => {
   });
 
   it('runs migration:seed and inserts baseline rows', async () => {
-    runCommand('bun run migration:seed');
+    process.env.DATABASE_PATH = dbPath;
+    await runMigrations();
+    await runSeed();
 
     const dataSource = new DataSource({
       type: 'sqlite',

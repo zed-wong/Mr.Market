@@ -26,7 +26,7 @@ import {
   defaultStrategyDefinitions,
 } from './defaultSeedValues';
 
-async function connectToDatabase() {
+export async function connectToDatabase() {
   dotenv.config();
   const dbPath = process.env.DATABASE_PATH || 'data/mr_market.db';
   const dbDir = path.dirname(dbPath);
@@ -61,7 +61,7 @@ async function connectToDatabase() {
   }
 }
 
-async function seedSpotdataTradingPair(
+export async function seedSpotdataTradingPair(
   repository: Repository<SpotdataTradingPair>,
 ) {
   for (const pair of defaultSpotdataTradingPairs) {
@@ -74,7 +74,9 @@ async function seedSpotdataTradingPair(
   console.log('Seeding SpotdataTradingPair complete!');
 }
 
-async function seedGrowdataExchange(repository: Repository<GrowdataExchange>) {
+export async function seedGrowdataExchange(
+  repository: Repository<GrowdataExchange>,
+) {
   for (const exchange of defaultExchanges) {
     const exists = await repository.findOneBy({
       exchange_id: exchange.exchange_id,
@@ -87,7 +89,7 @@ async function seedGrowdataExchange(repository: Repository<GrowdataExchange>) {
   console.log('Seeding GrowdataExchange complete!');
 }
 
-async function seedGrowdataMarketMakingPair(
+export async function seedGrowdataMarketMakingPair(
   repository: Repository<GrowdataMarketMakingPair>,
 ) {
   for (const pair of defaultMarketMakingPairs) {
@@ -100,7 +102,7 @@ async function seedGrowdataMarketMakingPair(
   console.log('Seeding GrowdataMarketMakingPair complete!');
 }
 
-async function seedGrowdataSimplyGrowToken(
+export async function seedGrowdataSimplyGrowToken(
   repository: Repository<GrowdataSimplyGrowToken>,
 ) {
   for (const token of defaultSimplyGrowTokens) {
@@ -113,7 +115,9 @@ async function seedGrowdataSimplyGrowToken(
   console.log('Seeding GrowdataSimplyGrowToken complete!');
 }
 
-async function seedCustomConfig(repository: Repository<CustomConfigEntity>) {
+export async function seedCustomConfig(
+  repository: Repository<CustomConfigEntity>,
+) {
   const exists = await repository.findOneBy({
     config_id: defaultCustomConfig.config_id,
   });
@@ -124,7 +128,7 @@ async function seedCustomConfig(repository: Repository<CustomConfigEntity>) {
   console.log('Seeding CustomConfigEntity complete!');
 }
 
-async function seedStrategyDefinitions(
+export async function seedStrategyDefinitions(
   repository: Repository<StrategyDefinition>,
   versionRepository: Repository<StrategyDefinitionVersion>,
 ) {
@@ -181,7 +185,7 @@ async function seedStrategyDefinitions(
   console.log('Seeding StrategyDefinition complete!');
 }
 
-async function run() {
+export async function runSeed() {
   const dataSource = await connectToDatabase();
 
   await seedSpotdataTradingPair(dataSource.getRepository(SpotdataTradingPair));
@@ -201,4 +205,9 @@ async function run() {
   await dataSource.destroy();
 }
 
-run();
+if (require.main === module) {
+  runSeed().catch((error) => {
+    console.error('Seed run failed', error);
+    process.exit(1);
+  });
+}
