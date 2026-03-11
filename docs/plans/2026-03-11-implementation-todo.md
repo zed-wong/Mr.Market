@@ -1,7 +1,7 @@
 # Pooled Executor Implementation TODO
 
 **Date:** 2026-03-11
-**Status:** Ready for Execution
+**Status:** Implemented in code
 **Related:** [Architecture Doc](./2026-03-07-pooled-executor-architecture.md)
 
 ---
@@ -290,6 +290,8 @@ Not found → log orphaned fill for manual review
 ### #16 [EVALUATE] Remove StrategyDefinitionVersion table
 
 **Description:** Evaluate after snapshot mechanism is stable
+
+**Result (2026-03-11):** Keep `StrategyDefinitionVersion` for now. See [2026-03-11-strategy-definition-version-evaluation.md](./2026-03-11-strategy-definition-version-evaluation.md)
 
 **Dependencies to address:**
 - Admin publish flow
