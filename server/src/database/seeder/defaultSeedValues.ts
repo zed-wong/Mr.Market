@@ -7,7 +7,15 @@ import {
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 
-import { loadStrategyYaml } from './strategy-yaml.loader';
+import arbitrageSeedDefinition from './data/strategies/arbitrage.json';
+import pureMarketMakingSeedDefinition from './data/strategies/pure-market-making.json';
+import timeIndicatorSeedDefinition from './data/strategies/time-indicator.json';
+import volumeSeedDefinition from './data/strategies/volume.json';
+
+type SeededStrategyDefinitionConfig = {
+  configSchema: Record<string, unknown>;
+  defaultConfig: Record<string, unknown>;
+};
 
 export const defaultSpotdataTradingPairs: SpotdataTradingPair[] = [
   {
@@ -359,9 +367,13 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     key: 'pure_market_making',
     name: 'Pure Market Making',
     description: 'Place buy and sell orders on both sides of the order book',
-    controllerType: 'pure_market_making',
-    configSchema: loadStrategyYaml('pure-market-making.yaml'),
-    defaultConfig: {},
+    controllerType: 'pureMarketMaking',
+    configSchema: (
+      pureMarketMakingSeedDefinition as SeededStrategyDefinitionConfig
+    ).configSchema,
+    defaultConfig: (
+      pureMarketMakingSeedDefinition as SeededStrategyDefinitionConfig
+    ).defaultConfig,
     enabled: true,
     visibility: 'system',
     createdBy: 'seed',
@@ -371,8 +383,10 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     name: 'Arbitrage',
     description: 'Cross-exchange arbitrage between two exchanges',
     controllerType: 'arbitrage',
-    configSchema: loadStrategyYaml('arbitrage.yaml'),
-    defaultConfig: {},
+    configSchema: (arbitrageSeedDefinition as SeededStrategyDefinitionConfig)
+      .configSchema,
+    defaultConfig: (arbitrageSeedDefinition as SeededStrategyDefinitionConfig)
+      .defaultConfig,
     enabled: true,
     visibility: 'system',
     createdBy: 'seed',
@@ -382,8 +396,10 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     name: 'Volume',
     description: 'Generate volume with controlled swaps',
     controllerType: 'volume',
-    configSchema: loadStrategyYaml('volume.yaml'),
-    defaultConfig: {},
+    configSchema: (volumeSeedDefinition as SeededStrategyDefinitionConfig)
+      .configSchema,
+    defaultConfig: (volumeSeedDefinition as SeededStrategyDefinitionConfig)
+      .defaultConfig,
     enabled: true,
     visibility: 'system',
     createdBy: 'seed',
@@ -392,9 +408,13 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     key: 'time_indicator',
     name: 'Time Indicator',
     description: 'Trade based on EMA/RSI indicators',
-    controllerType: 'time_indicator',
-    configSchema: loadStrategyYaml('time-indicator.yaml'),
-    defaultConfig: {},
+    controllerType: 'timeIndicator',
+    configSchema: (
+      timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig
+    ).configSchema,
+    defaultConfig: (
+      timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig
+    ).defaultConfig,
     enabled: true,
     visibility: 'system',
     createdBy: 'seed',

@@ -704,6 +704,54 @@ describe('AdminStrategyService', () => {
     });
   });
 
+  describe('exportStrategyDefinition', () => {
+    it('exports strategy definitions as JSON', async () => {
+      mockStrategyDefinitionRepository.findOne.mockResolvedValue({
+        key: 'pure_market_making',
+        name: 'Pure Market Making',
+        description:
+          'Place buy and sell orders on both sides of the order book',
+        controllerType: 'pureMarketMaking',
+        configSchema: {
+          type: 'object',
+          required: ['userId', 'clientId'],
+        },
+        defaultConfig: {
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+        },
+        enabled: true,
+        visibility: 'system',
+        currentVersion: '1.0.0',
+        createdBy: 'seed',
+      });
+
+      const exported = await service.exportStrategyDefinition(
+        'pure_market_making',
+      );
+
+      expect(JSON.parse(exported)).toEqual({
+        key: 'pure_market_making',
+        name: 'Pure Market Making',
+        description:
+          'Place buy and sell orders on both sides of the order book',
+        controllerType: 'pureMarketMaking',
+        configSchema: {
+          type: 'object',
+          required: ['userId', 'clientId'],
+        },
+        defaultConfig: {
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+        },
+        enabled: true,
+        visibility: 'system',
+        currentVersion: '1.0.0',
+        createdBy: 'seed',
+      });
+    });
+  });
+
   describe('backfillLegacyStrategyInstanceDefinitions', () => {
     it('links legacy instances to matching definitions', async () => {
       mockStrategyInstanceRepository.find.mockResolvedValue([

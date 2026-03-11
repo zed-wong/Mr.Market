@@ -119,14 +119,14 @@ export class AdminController {
   }
 
   @Get('strategy/definitions/:id/export')
-  @ApiOperation({ summary: 'Export strategy definition as YAML' })
+  @ApiOperation({ summary: 'Export strategy definition as JSON' })
   async exportStrategyDefinition(@Param('id') id: string, @Res() res: any) {
-    const yaml = await this.adminStrategyService.exportStrategyDefinition(id);
+    const json = await this.adminStrategyService.exportStrategyDefinition(id);
 
-    res.setHeader('Content-Type', 'text/yaml');
-    res.setHeader('Content-Disposition', `attachment; filename="${id}.yaml"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${id}.json"`);
 
-    return res.send(yaml);
+    return res.send(json);
   }
 
   @Post('strategy/definitions/:id/update')

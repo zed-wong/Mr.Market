@@ -1,0 +1,70 @@
+{
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "userId",
+      "clientId",
+      "pair",
+      "exchangeName",
+      "bidSpread",
+      "askSpread",
+      "orderAmount",
+      "orderRefreshTime",
+      "numberOfLayers",
+      "priceSourceType",
+      "amountChangePerLayer",
+      "amountChangeType"
+    ],
+    "properties": {
+      "userId": { "type": "string" },
+      "clientId": { "type": "string" },
+      "marketMakingOrderId": { "type": "string" },
+      "pair": { "type": "string" },
+      "exchangeName": { "type": "string" },
+      "oracleExchangeName": { "type": "string" },
+      "bidSpread": { "type": "number", "minimum": 0 },
+      "askSpread": { "type": "number", "minimum": 0 },
+      "orderAmount": { "type": "number", "minimum": 0 },
+      "orderRefreshTime": { "type": "number", "minimum": 1000 },
+      "numberOfLayers": { "type": "number", "minimum": 1 },
+      "priceSourceType": {
+        "type": "string",
+        "enum": ["MID_PRICE", "BEST_BID", "BEST_ASK", "LAST_PRICE"]
+      },
+      "amountChangePerLayer": { "type": "number" },
+      "amountChangeType": {
+        "type": "string",
+        "enum": ["fixed", "percentage"]
+      },
+      "ceilingPrice": { "type": "number", "minimum": 0 },
+      "floorPrice": { "type": "number", "minimum": 0 },
+      "hangingOrdersEnabled": { "type": "boolean" },
+      "makerHeavyMode": { "type": "boolean" },
+      "makerHeavyBiasBps": { "type": "number", "minimum": 0 },
+      "inventoryTargetBaseRatio": { "type": "number", "minimum": 0 },
+      "inventorySkewFactor": { "type": "number", "minimum": 0 },
+      "currentBaseRatio": { "type": "number", "minimum": 0 }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "pair": "BTC/USDT",
+    "exchangeName": "binance",
+    "bidSpread": 0.001,
+    "askSpread": 0.001,
+    "orderAmount": 0.001,
+    "orderRefreshTime": 15000,
+    "numberOfLayers": 1,
+    "priceSourceType": "MID_PRICE",
+    "amountChangePerLayer": 0,
+    "amountChangeType": "percentage",
+    "ceilingPrice": 0,
+    "floorPrice": 0,
+    "hangingOrdersEnabled": false,
+    "makerHeavyMode": false,
+    "makerHeavyBiasBps": 20,
+    "inventoryTargetBaseRatio": 0.5,
+    "inventorySkewFactor": 0.25,
+    "currentBaseRatio": 0.5
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "userId",
+      "clientId",
+      "pair",
+      "amountToTrade",
+      "minProfitability",
+      "exchangeAName",
+      "exchangeBName"
+    ],
+    "properties": {
+      "userId": { "type": "string" },
+      "clientId": { "type": "string" },
+      "pair": { "type": "string" },
+      "amountToTrade": { "type": "number", "minimum": 0 },
+      "minProfitability": { "type": "number", "minimum": 0 },
+      "exchangeAName": { "type": "string" },
+      "exchangeBName": { "type": "string" },
+      "checkIntervalSeconds": { "type": "number", "minimum": 1 },
+      "maxOpenOrders": { "type": "number", "minimum": 1 }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "pair": "ETH/USDT",
+    "amountToTrade": 1,
+    "minProfitability": 0.01,
+    "exchangeAName": "binance",
+    "exchangeBName": "mexc",
+    "checkIntervalSeconds": 10,
+    "maxOpenOrders": 5
+  }
+}

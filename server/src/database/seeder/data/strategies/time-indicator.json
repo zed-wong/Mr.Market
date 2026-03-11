@@ -1,0 +1,71 @@
+{
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "userId",
+      "clientId",
+      "exchangeName",
+      "symbol",
+      "timeframe",
+      "lookback",
+      "emaFast",
+      "emaSlow",
+      "rsiPeriod",
+      "indicatorMode",
+      "orderMode",
+      "orderSize",
+      "tickIntervalMs"
+    ],
+    "properties": {
+      "userId": { "type": "string" },
+      "clientId": { "type": "string" },
+      "exchangeName": { "type": "string" },
+      "symbol": { "type": "string" },
+      "timeframe": { "type": "string" },
+      "lookback": { "type": "number", "minimum": 1 },
+      "emaFast": { "type": "number", "minimum": 1 },
+      "emaSlow": { "type": "number", "minimum": 1 },
+      "rsiPeriod": { "type": "number", "minimum": 1 },
+      "rsiBuyBelow": { "type": "number", "minimum": 0 },
+      "rsiSellAbove": { "type": "number", "minimum": 0 },
+      "indicatorMode": {
+        "type": "string",
+        "enum": ["ema", "rsi", "both"]
+      },
+      "allowedWeekdays": { "type": "array" },
+      "allowedHours": { "type": "array" },
+      "orderMode": {
+        "type": "string",
+        "enum": ["base", "quote"]
+      },
+      "orderSize": { "type": "number", "minimum": 0 },
+      "slippageBps": { "type": "number", "minimum": 0 },
+      "maxConcurrentPositions": { "type": "number", "minimum": 0 },
+      "tickIntervalMs": { "type": "number", "minimum": 1 },
+      "stopLossPct": { "type": "number", "minimum": 0 },
+      "takeProfitPct": { "type": "number", "minimum": 0 }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "exchangeName": "binance",
+    "symbol": "BTC/USDT",
+    "timeframe": "5m",
+    "lookback": 300,
+    "emaFast": 20,
+    "emaSlow": 50,
+    "rsiPeriod": 14,
+    "rsiBuyBelow": 35,
+    "rsiSellAbove": 65,
+    "indicatorMode": "both",
+    "allowedWeekdays": [1, 2, 3, 4, 5],
+    "allowedHours": [9, 10, 11, 15, 16],
+    "orderMode": "quote",
+    "orderSize": 100,
+    "slippageBps": 10,
+    "maxConcurrentPositions": 2,
+    "tickIntervalMs": 60000,
+    "stopLossPct": 3,
+    "takeProfitPct": 3
+  }
+}

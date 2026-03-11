@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { createRequire } from 'module';
 import * as os from 'os';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
@@ -21,18 +22,24 @@ describe('Database migration and seed scripts (e2e)', () => {
   const migrationsRoot = path.join(serverRoot, 'src/database/migrations');
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mr-market-migrate-'));
   const dbPath = path.join(tempDir, 'migration-seed-test.db');
+  const requireFromTest = createRequire(__filename);
 
-  const loadMigrationClasses = (): Function[] => {
+  type MigrationClass = new (...args: never[]) => unknown;
+
+  const loadMigrationClasses = (): MigrationClass[] => {
     return fs
       .readdirSync(migrationsRoot)
       .filter((file) => file.endsWith('.ts'))
       .sort()
-      .flatMap((file) =>
-        Object.values(
-          require(path.join(migrationsRoot, file)) as Record<string, Function>,
-        ),
-      )
-      .filter((value): value is Function => typeof value === 'function');
+      .flatMap((file) => {
+        const moduleExports = requireFromTest(
+          path.join(migrationsRoot, file),
+        ) as Record<string, unknown>;
+
+        return Object.values(moduleExports).filter(
+          (value): value is MigrationClass => typeof value === 'function',
+        );
+      });
   };
 
   const runMigrations = async () => {
@@ -125,6 +132,11 @@ describe('Database migration and seed scripts (e2e)', () => {
     const strategyDefinitionVersions = await dataSource
       .getRepository(StrategyDefinitionVersion)
       .count();
+    const pureMarketMakingDefinition = await dataSource
+      .getRepository(StrategyDefinition)
+      .findOneByOrFail({
+        key: 'pure_market_making',
+      });
 
     expect(spotPairs).toBeGreaterThan(0);
     expect(exchanges).toBeGreaterThan(0);
@@ -133,6 +145,19 @@ describe('Database migration and seed scripts (e2e)', () => {
     expect(customConfigs).toBeGreaterThan(0);
     expect(strategyDefinitions).toBeGreaterThan(0);
     expect(strategyDefinitionVersions).toBeGreaterThan(0);
+    expect(pureMarketMakingDefinition.controllerType).toBe('pureMarketMaking');
+    expect(pureMarketMakingDefinition.configSchema).toEqual(
+      expect.objectContaining({
+        type: 'object',
+        additionalProperties: false,
+      }),
+    );
+    expect(pureMarketMakingDefinition.defaultConfig).toEqual(
+      expect.objectContaining({
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+      }),
+    );
 
     await dataSource.destroy();
   });

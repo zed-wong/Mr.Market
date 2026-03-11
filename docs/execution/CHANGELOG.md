@@ -11,6 +11,7 @@
 - Add FillRoutingService with clientOrderId parsing and fallback chain
 - Migrate StrategyService to use ExecutorRegistry for pooled execution
 - Move runtime config source of truth to MarketMakingOrder.strategySnapshot while keeping StrategyInstance for lifecycle metadata
+- Replace YAML-based strategy seed/export artifacts with JSON definitions and JSON export payloads
 
 ## 2026-03-06
 
@@ -38,7 +39,6 @@
 - Complete controller-decide runtime cutover, add strategy market data provider and AMM swap intent metadata persistence/execution, and add admin strategy definition remove API plus UI action
 - Remove StrategyService legacy runtime fallbacks so controller registry + orchestrator are the only strategy runtime execution path, and align start_mm queue flow to shared config resolver validation
 
-
 ## 2026-02-28
 
 - Add dynamic strategy definition architecture (`strategy_definitions`, `strategy_definition_versions`) and instance linkage fields on `strategy_instances`
@@ -50,7 +50,6 @@
 - Add admin strategy manage settings page
 - Add typed interface helper APIs/tests
 - Add migration and transition guides for dynamic strategy cutover under `docs/plans/*`
-
 
 ## 2026-02-27
 

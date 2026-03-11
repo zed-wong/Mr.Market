@@ -85,36 +85,36 @@ This allows admins to manage strategy configurations without code changes, while
 
 ```typescript
 // server/src/common/entities/market-making/strategy-definition.entity.ts
-@Entity('strategy_definitions')
+@Entity("strategy_definitions")
 export class StrategyDefinition {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column({ unique: true })
-  key: string;                    // e.g., 'pure_market_making'
+  key: string; // e.g., 'pure_market_making'
 
   @Column()
-  name: string;                   // e.g., 'Pure Market Making'
+  name: string; // e.g., 'Pure Market Making'
 
   @Column({ nullable: true })
   description?: string;
 
   @Column()
-  controllerType: string;         // Maps to built-in controller
+  controllerType: string; // Maps to built-in controller
 
-  @Column('simple-json')
-  configSchema: Record<string, unknown>;   // JSON Schema
+  @Column("simple-json")
+  configSchema: Record<string, unknown>; // JSON Schema
 
-  @Column('simple-json')
-  defaultConfig: Record<string, unknown>;  // Default values
+  @Column("simple-json")
+  defaultConfig: Record<string, unknown>; // Default values
 
   @Column({ default: true })
   enabled: boolean;
 
-  @Column({ default: 'system' })
-  visibility: 'system' | 'instance';
+  @Column({ default: "system" })
+  visibility: "system" | "instance";
 
-  @Column({ default: '1.0.0' })
+  @Column({ default: "1.0.0" })
   currentVersion: string;
 
   @Column({ nullable: true })
@@ -165,12 +165,12 @@ Config schema follows standard JSON Schema specification:
 
 ## Built-in Controller Types
 
-| controllerType | Controller Class | Description |
-|----------------|-----------------|-------------|
+| controllerType     | Controller Class                     | Description                               |
+| ------------------ | ------------------------------------ | ----------------------------------------- |
 | `pureMarketMaking` | `PureMarketMakingStrategyController` | Classic market making with bid/ask spread |
-| `arbitrage` | `ArbitrageStrategyController` | Cross-exchange arbitrage |
-| `volume` | `VolumeStrategyController` | Volume generation |
-| `timeIndicator` | `TimeIndicatorStrategyController` | EMA/RSI based trading |
+| `arbitrage`        | `ArbitrageStrategyController`        | Cross-exchange arbitrage                  |
+| `volume`           | `VolumeStrategyController`           | Volume generation                         |
+| `timeIndicator`    | `TimeIndicatorStrategyController`    | EMA/RSI based trading                     |
 
 Controller registry location: `server/src/modules/market-making/strategy/controllers/strategy-controller.registry.ts`
 
@@ -220,41 +220,41 @@ async resolveForOrderSnapshot(
 // server/src/common/entities/orders/user-orders.entity.ts
 
 type MarketMakingOrderStrategySnapshot = {
-  definitionVersion: string;       // For audit/reference only
-  controllerType: string;          // Maps to StrategyType
-  resolvedConfig: Record<string, unknown>;  // Actual config used
+  definitionVersion: string; // For audit/reference only
+  controllerType: string; // Maps to StrategyType
+  resolvedConfig: Record<string, unknown>; // Actual config used
 };
 
 @Entity()
 class MarketMakingOrder {
   // ...
 
-  @Column('simple-json', { nullable: true })
+  @Column("simple-json", { nullable: true })
   strategySnapshot?: MarketMakingOrderStrategySnapshot;
 }
 ```
 
 ## Seeding Default Definitions
 
-Default strategy definitions are seeded from YAML files:
+Default strategy definitions are seeded from JSON files:
 
 ```bash
 bun run migration:seed
 ```
 
-YAML files location: `server/src/database/seeder/data/strategies/`
+JSON files location: `server/src/database/seeder/data/strategies/`
 
-- `pure-market-making.yaml`
-- `arbitrage.yaml`
-- `volume.yaml`
-- `time-indicator.yaml`
+- `pure-market-making.json`
+- `arbitrage.json`
+- `volume.json`
+- `time-indicator.json`
 
 Seed logic: `server/src/database/seeder/seed.ts`
 
 ```typescript
 export async function seedStrategyDefinitions(
   repository: Repository<StrategyDefinition>,
-  versionRepository: Repository<StrategyDefinitionVersion>,
+  versionRepository: Repository<StrategyDefinitionVersion>
 ) {
   for (const definition of defaultStrategyDefinitions) {
     // Check if already exists by key
@@ -269,10 +269,10 @@ export async function seedStrategyDefinitions(
           controllerType: definition.controllerType,
           configSchema: definition.configSchema,
           defaultConfig: definition.defaultConfig,
-          currentVersion: '1.0.0',
+          currentVersion: "1.0.0",
           enabled: true,
-          visibility: 'system',
-        }),
+          visibility: "system",
+        })
       );
     }
 
@@ -310,7 +310,7 @@ PUT /admin/strategy/definitions/:id
 PATCH /admin/strategy/definitions/:id/enable
 PATCH /admin/strategy/definitions/:id/disable
 
-// Export as YAML
+// Export as JSON
 GET /admin/strategy/definitions/:id/export
 ```
 
@@ -374,6 +374,7 @@ order.strategySnapshot = {
 Orders store resolved config at creation time. Runtime never re-resolves.
 
 **Why?**
+
 - Definition changes don't affect running orders
 - Reproducible behavior for auditing
 - No race conditions between definition updates and order execution
@@ -383,6 +384,7 @@ Orders store resolved config at creation time. Runtime never re-resolves.
 Only JSON Schema is supported for config validation.
 
 **Why?**
+
 - Simple and widely understood
 - No runtime compilation needed
 - Easy to validate in both frontend and backend
@@ -392,6 +394,7 @@ Only JSON Schema is supported for config validation.
 Controller code is built into the server, not stored in DB.
 
 **Why?**
+
 - Security: No arbitrary code execution
 - Reliability: Tested code, not ad-hoc scripts
 - Simplicity: No sandboxing or compilation needed
@@ -427,6 +430,7 @@ bun run test:e2e backfill-market-making-order-snapshots.e2e-spec.ts
 ```
 
 Backfill process:
+
 1. Query orders where `strategySnapshot IS NULL`
 2. Resolve config using order's existing fields
 3. Save snapshot to order
@@ -434,6 +438,7 @@ Backfill process:
 ### For Definition Updates
 
 When admin updates a definition:
+
 1. `currentVersion` can be incremented manually
 2. New orders will use updated config
 3. Existing orders keep their pinned snapshot
@@ -465,11 +470,11 @@ server/src/
 └── database/seeder/
     ├── seed.ts                             # Seed script
     ├── defaultSeedValues.ts                # Default values
-    └── data/strategies/                    # YAML definitions
-        ├── pure-market-making.yaml
-        ├── arbitrage.yaml
-        ├── volume.yaml
-        └── time-indicator.yaml
+    └── data/strategies/                    # JSON definitions
+        ├── pure-market-making.json
+        ├── arbitrage.json
+        ├── volume.json
+        └── time-indicator.json
 ```
 
 ## Related Documentation

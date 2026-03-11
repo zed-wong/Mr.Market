@@ -12,7 +12,6 @@ import {
   getTokenSymbolByContractAddress,
 } from 'src/common/helpers/blockchain-utils';
 import { In, Repository } from 'typeorm';
-import * as yaml from 'yaml';
 
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { PerformanceService } from '../../market-making/performance/performance.service';
@@ -513,15 +512,22 @@ export class AdminStrategyService {
       throw new BadRequestException(`Strategy definition not found: ${key}`);
     }
 
-    // Convert to YAML
-    const yamlContent = yaml.stringify({
-      strategy: definition.controllerType,
-      name: definition.name,
-      description: definition.description,
-      ...definition.configSchema,
-    });
-
-    return yamlContent;
+    return JSON.stringify(
+      {
+        key: definition.key,
+        name: definition.name,
+        description: definition.description,
+        controllerType: definition.controllerType || definition.executorType,
+        configSchema: definition.configSchema || {},
+        defaultConfig: definition.defaultConfig || {},
+        enabled: definition.enabled,
+        visibility: definition.visibility,
+        currentVersion: definition.currentVersion,
+        createdBy: definition.createdBy,
+      },
+      null,
+      2,
+    );
   }
 
   async getStrategyInstances(runningOnly = false): Promise<
