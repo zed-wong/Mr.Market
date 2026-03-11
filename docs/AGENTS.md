@@ -8,6 +8,8 @@ When the code is updated, update the related docs as well.
 
 Update docs/execution/CHANGELOG.md when the code is updated, keep the CHANGELOG.md simple, Keep each changes in one line.
 
+Keep docs under docs/code/ update to date, as the md version of the code.
+
 ## UI
 use daisyui and tailwindcss for styling, use text-base-100 class for white text and text-base-content for black text, use bg-base-100 class for white background and bg-base-content for black background. 
 use bg-base-content/60 or bg-base-300 for gray. 
@@ -35,3 +37,6 @@ use svelte 4 syntax, never use svelte 5 syntax
 
 ## Commit message
 Don't add sisyphus or calude or any other agent related information to commit message
+
+## Dependency manager
+Always use bun instead of npm, yarn or pnpm.
