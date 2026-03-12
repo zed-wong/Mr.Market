@@ -25,6 +25,11 @@ Follow KISS, YAGNI, and DRY. Don't add unnecessary code. Reuse existing codebase
 ## Dependencies
 Use bun (not npm/yarn/pnpm)
 
+## Package Dependencies
+- Keep dependencies minimal in package.json — only add when truly necessary
+- Prefer well-established, widely-used libraries over niche or unmaintained ones
+- Before adding a new dependency, evaluate if the functionality can be achieved with existing packages or minimal custom code
+
 ## Commits
 No agent signatures (Claude, sisyphus, etc.) in commit messages
 
