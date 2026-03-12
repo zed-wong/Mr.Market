@@ -61,11 +61,7 @@ describe('StrategyControllerRegistry', () => {
     const pure = new PureMarketMakingStrategyController();
     const arbitrage = new ArbitrageStrategyController();
     const volume = new VolumeStrategyController();
-    const registry = new StrategyControllerRegistry([
-      pure,
-      arbitrage,
-      volume,
-    ]);
+    const registry = new StrategyControllerRegistry([pure, arbitrage, volume]);
 
     expect(registry.getController('pureMarketMaking')).toBe(pure);
     expect(registry.getController('arbitrage')).toBe(arbitrage);
@@ -100,7 +96,11 @@ describe('StrategyControllerRegistry', () => {
     expect(controller.getCadenceMs({ orderRefreshTime: 2500 })).toBe(2500);
 
     await expect(
-      controller.decideActions(session as any, '2026-03-11T00:00:00.000Z', service as any),
+      controller.decideActions(
+        session as any,
+        '2026-03-11T00:00:00.000Z',
+        service as any,
+      ),
     ).resolves.toEqual([{ type: 'CREATE_LIMIT_ORDER' }]);
     await expect(
       controller.rerun(strategyInstance, service as any),

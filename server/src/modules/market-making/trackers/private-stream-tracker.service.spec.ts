@@ -1,3 +1,8 @@
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
+import { FillRoutingService } from '../execution/fill-routing.service';
+import { ExecutorRegistry } from '../strategy/execution/executor-registry';
+import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 import { PrivateStreamTrackerService } from './private-stream-tracker.service';
 
 describe('PrivateStreamTrackerService', () => {
@@ -29,17 +34,17 @@ describe('PrivateStreamTrackerService', () => {
           seq: 0,
           source: 'clientOrderId',
         }),
-      } as any,
+      } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-      } as any,
+      } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue(undefined),
         findExecutorByOrderId: jest.fn().mockReturnValue({
           onFill,
         }),
-      } as any,
+      } as unknown as ExecutorRegistry,
     );
 
     service.queueAccountEvent({
@@ -72,7 +77,7 @@ describe('PrivateStreamTrackerService', () => {
           orderId: 'legacy-order',
           source: 'exchangeOrderMapping',
         }),
-      } as any,
+      } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue({
           strategyKey: 'strategy-1',
@@ -87,13 +92,13 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder,
-      } as any,
+      } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
           onFill: jest.fn().mockResolvedValue(undefined),
         }),
         findExecutorByOrderId: jest.fn(),
-      } as any,
+      } as unknown as ExecutorRegistry,
     );
 
     service.queueAccountEvent({
@@ -124,18 +129,19 @@ describe('PrivateStreamTrackerService', () => {
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue(null),
-      } as any,
+      } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-      } as any,
+      } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue(undefined),
         findExecutorByOrderId: jest.fn().mockReturnValue(undefined),
-      } as any,
+      } as unknown as ExecutorRegistry,
     );
+    const logger = Reflect.get(service, 'logger') as CustomLogger;
     const warnSpy = jest
-      .spyOn((service as any).logger, 'warn')
+      .spyOn(logger, 'warn')
       .mockImplementation(() => undefined);
 
     service.queueAccountEvent({

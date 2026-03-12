@@ -864,7 +864,9 @@ describe('StrategyService', () => {
     await service.start();
 
     expect(
-      executorRegistry.getExecutor('binance', 'BTC/USDT')?.getSession('order-1'),
+      executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getSession('order-1'),
     ).toEqual(
       expect.objectContaining({
         strategyKey: 'order-1-pureMarketMaking',
@@ -901,9 +903,9 @@ describe('StrategyService', () => {
       getController: jest.fn().mockReturnValue({ rerun }),
     };
 
-    await expect(service.rerunStrategy('order-1-pureMarketMaking')).resolves.toBe(
-      undefined,
-    );
+    await expect(
+      service.rerunStrategy('order-1-pureMarketMaking'),
+    ).resolves.toBe(undefined);
     expect(rerun).toHaveBeenCalledWith(
       expect.objectContaining({
         strategyKey: 'order-1-pureMarketMaking',
@@ -927,7 +929,9 @@ describe('StrategyService', () => {
     await expect(service.rerunStrategy('missing')).rejects.toThrow(
       'Strategy with key missing not found.',
     );
-    await expect(service.rerunStrategy('order-1-pureMarketMaking')).rejects.toThrow(
+    await expect(
+      service.rerunStrategy('order-1-pureMarketMaking'),
+    ).rejects.toThrow(
       'Strategy controller for type pureMarketMaking is not registered',
     );
   });
@@ -975,7 +979,10 @@ describe('StrategyService', () => {
     (service as any).sessions.set('volume-key', session);
 
     await expect(
-      service.buildVolumeSessionActions(session as any, '2026-03-11T00:00:00.000Z'),
+      service.buildVolumeSessionActions(
+        session as any,
+        '2026-03-11T00:00:00.000Z',
+      ),
     ).resolves.toEqual([]);
     expect(stopStrategyForUserSpy).toHaveBeenCalledWith(
       'user-1',
@@ -990,7 +997,10 @@ describe('StrategyService', () => {
     stopStrategyForUserSpy.mockClear();
 
     await expect(
-      service.buildVolumeSessionActions(session as any, '2026-03-11T00:00:00.000Z'),
+      service.buildVolumeSessionActions(
+        session as any,
+        '2026-03-11T00:00:00.000Z',
+      ),
     ).resolves.toEqual([]);
     expect(stopStrategyForUserSpy).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -1059,11 +1069,9 @@ describe('StrategyService', () => {
 
   it('passes open order counts into quote manager and respects pure market making filters', async () => {
     (service as any).exchangeOrderTrackerService = {
-      getOpenOrders: jest.fn().mockReturnValue([
-        { side: 'buy' },
-        { side: 'buy' },
-        { side: 'sell' },
-      ]),
+      getOpenOrders: jest
+        .fn()
+        .mockReturnValue([{ side: 'buy' }, { side: 'buy' }, { side: 'sell' }]),
     };
     (service as any).quoteExecutorManagerService = {
       buildQuotes: jest.fn().mockReturnValue([
@@ -1148,7 +1156,9 @@ describe('StrategyService', () => {
       ),
     ).resolves.toEqual([]);
 
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValueOnce(0);
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValueOnce(
+      0,
+    );
     await expect(
       service.buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
@@ -1215,17 +1225,15 @@ describe('StrategyService', () => {
     jest
       .spyOn(exchangeInitService, 'getExchange')
       .mockReturnValue(exchange as any);
-    jest
-      .spyOn(service as any, 'fetchCandles')
-      .mockResolvedValue([
-        [0, 0, 0, 0, 90],
-        [0, 0, 0, 0, 95],
-        [0, 0, 0, 0, 100],
-        [0, 0, 0, 0, 100],
-        [0, 0, 0, 0, 100],
-        [0, 0, 0, 0, 100],
-        [0, 0, 0, 0, 100],
-      ]);
+    jest.spyOn(service as any, 'fetchCandles').mockResolvedValue([
+      [0, 0, 0, 0, 90],
+      [0, 0, 0, 0, 95],
+      [0, 0, 0, 0, 100],
+      [0, 0, 0, 0, 100],
+      [0, 0, 0, 0, 100],
+      [0, 0, 0, 0, 100],
+      [0, 0, 0, 0, 100],
+    ]);
     jest
       .spyOn(service as any, 'calcEma')
       .mockReturnValueOnce([90, 95, 99, 101, 103, 104, 105])

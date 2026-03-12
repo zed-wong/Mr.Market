@@ -1,6 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 
 import { ExecutorAction } from '../config/executor-action.types';
+import { StrategyIntentExecutionService } from '../execution/strategy-intent-execution.service';
+import { StrategyIntentStoreService } from '../execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './executor-orchestrator.service';
 
 describe('ExecutorOrchestratorService', () => {
@@ -46,8 +48,8 @@ describe('ExecutorOrchestratorService', () => {
   it('persists actions as NEW intents and skips sync consume in worker mode', async () => {
     const service = new ExecutorOrchestratorService(
       createConfigService('worker'),
-      strategyIntentStoreService as any,
-      strategyIntentExecutionService as any,
+      strategyIntentStoreService as unknown as StrategyIntentStoreService,
+      strategyIntentExecutionService as unknown as StrategyIntentExecutionService,
     );
 
     const intents = await service.dispatchActions('u1-c1-pureMarketMaking', [
@@ -72,8 +74,8 @@ describe('ExecutorOrchestratorService', () => {
   it('consumes intents synchronously in sync mode', async () => {
     const service = new ExecutorOrchestratorService(
       createConfigService('sync'),
-      strategyIntentStoreService as any,
-      strategyIntentExecutionService as any,
+      strategyIntentStoreService as unknown as StrategyIntentStoreService,
+      strategyIntentExecutionService as unknown as StrategyIntentExecutionService,
     );
 
     await service.dispatchActions('u1-c1-pureMarketMaking', [baseAction]);
@@ -89,8 +91,8 @@ describe('ExecutorOrchestratorService', () => {
   it('keeps explicit status when provided', async () => {
     const service = new ExecutorOrchestratorService(
       createConfigService('worker'),
-      strategyIntentStoreService as any,
-      strategyIntentExecutionService as any,
+      strategyIntentStoreService as unknown as StrategyIntentStoreService,
+      strategyIntentExecutionService as unknown as StrategyIntentExecutionService,
     );
 
     await service.dispatchActions('u1-c1-pureMarketMaking', [
@@ -108,8 +110,8 @@ describe('ExecutorOrchestratorService', () => {
   it('returns empty list for empty action set', async () => {
     const service = new ExecutorOrchestratorService(
       createConfigService('worker'),
-      strategyIntentStoreService as any,
-      strategyIntentExecutionService as any,
+      strategyIntentStoreService as unknown as StrategyIntentStoreService,
+      strategyIntentExecutionService as unknown as StrategyIntentExecutionService,
     );
 
     const intents = await service.dispatchActions('u1-c1-pureMarketMaking', []);

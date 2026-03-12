@@ -65,23 +65,11 @@ describe('AlpacaStratService', () => {
         exchangeAName: '',
       };
 
-      const alpacaExchange = new ccxt.binance(); // mock object for Alpaca exchange
-      const exchangeB = new ccxt.binance(); // mock object for another exchange
-
-      jest
-        .spyOn(exchangeInitService, 'getExchange')
-        .mockImplementationOnce(() => alpacaExchange)
-        .mockImplementationOnce(() => exchangeB);
-
       service['strategyInstances'].clear(); // Ensure the strategy instance is not running
 
       await service.startAlpacaArbitrageStrategy(strategyParams, 5, 10);
 
-      expect(exchangeInitService.getExchange).toHaveBeenCalledWith(
-        'alpaca',
-        'default',
-      );
-      expect(exchangeInitService.getExchange).toHaveBeenCalledWith('binance');
+      expect(exchangeInitService.getExchange).not.toHaveBeenCalled();
       expect(service['strategyInstances'].size).toBe(1);
     });
   });

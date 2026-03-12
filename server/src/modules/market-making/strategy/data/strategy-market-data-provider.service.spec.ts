@@ -1,5 +1,8 @@
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 
+import { MarketdataService } from '../../../data/market-data/market-data.service';
+import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
+import { OrderBookTrackerService } from '../../trackers/order-book-tracker.service';
 import { StrategyMarketDataProviderService } from './strategy-market-data-provider.service';
 
 describe('StrategyMarketDataProviderService', () => {
@@ -18,9 +21,9 @@ describe('StrategyMarketDataProviderService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     service = new StrategyMarketDataProviderService(
-      orderBookTrackerService as any,
-      exchangeConnectorAdapterService as any,
-      marketdataService as any,
+      orderBookTrackerService as unknown as OrderBookTrackerService,
+      exchangeConnectorAdapterService as unknown as ExchangeConnectorAdapterService,
+      marketdataService as unknown as MarketdataService,
     );
   });
 

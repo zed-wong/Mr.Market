@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ConfigService } from '@nestjs/config';
+import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
@@ -196,8 +196,7 @@ const createHistoryRepository = (rows: any[] = []) => ({
   save: jest.fn(async (value) => {
     const row = {
       id: `history-${rows.length + 1}`,
-      executedAt:
-        value.executedAt || new Date('2026-03-11T00:00:00.000Z'),
+      executedAt: value.executedAt || new Date('2026-03-11T00:00:00.000Z'),
       ...value,
     };
 
@@ -214,7 +213,9 @@ const createStrategyInstanceRepository = (rows: any[] = []) => ({
   }),
   create: jest.fn((value) => value),
   save: jest.fn(async (value) => {
-    const index = rows.findIndex((row) => row.strategyKey === value.strategyKey);
+    const index = rows.findIndex(
+      (row) => row.strategyKey === value.strategyKey,
+    );
 
     if (index >= 0) {
       rows[index] = { ...value };
@@ -413,7 +414,10 @@ describe('Strategy runtime architecture', () => {
       ),
     ).toHaveLength(2);
 
-    const executor = fixture.executorRegistry.getExecutor('binance', 'BTC/USDT');
+    const executor = fixture.executorRegistry.getExecutor(
+      'binance',
+      'BTC/USDT',
+    );
     const onFill = jest.fn();
 
     executor?.configure({ onFill });
@@ -465,13 +469,16 @@ describe('Strategy runtime architecture', () => {
       createPureParams('order-2', 'user-2'),
     );
 
-    const executor = fixture.executorRegistry.getExecutor('binance', 'BTC/USDT');
+    const executor = fixture.executorRegistry.getExecutor(
+      'binance',
+      'BTC/USDT',
+    );
     const onFill = jest.fn();
 
     expect(fixture.executorRegistry.getActiveExecutors()).toHaveLength(1);
-    expect(executor?.getActiveSessions().map((session) => session.orderId)).toEqual(
-      ['order-1', 'order-2'],
-    );
+    expect(
+      executor?.getActiveSessions().map((session) => session.orderId),
+    ).toEqual(['order-1', 'order-2']);
 
     await fixture.strategyService.onTick('2026-03-11T00:00:00.000Z');
 

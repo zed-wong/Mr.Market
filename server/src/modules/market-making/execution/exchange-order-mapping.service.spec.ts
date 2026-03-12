@@ -32,6 +32,7 @@ describe('ExchangeOrderMappingService', () => {
       exchangeOrderId: 'ex-1',
       clientOrderId: 'order-1:0',
     };
+
     repository.findOneBy.mockResolvedValue(existing);
     const service = new ExchangeOrderMappingService(repository as any);
 

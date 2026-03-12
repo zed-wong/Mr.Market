@@ -31,7 +31,7 @@ describe('AdminStrategyService', () => {
   const startByStrategyTypeSpy = jest
     .fn()
     .mockImplementation(
-      async (strategyType: string, config: Record<string, any>) => {
+      async (strategyType: string, config: Record<string, unknown>) => {
         return Promise.resolve({ strategyType, config });
       },
     );

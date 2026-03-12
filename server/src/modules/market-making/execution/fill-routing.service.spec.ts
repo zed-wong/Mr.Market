@@ -1,10 +1,12 @@
+import { ExchangeOrderMappingService } from './exchange-order-mapping.service';
 import { FillRoutingService } from './fill-routing.service';
 
 describe('FillRoutingService', () => {
   it('resolves order directly from parseable clientOrderId', async () => {
     const service = new FillRoutingService({
       findByClientOrderId: jest.fn(),
-    } as any);
+      findByExchangeOrderId: jest.fn(),
+    } as unknown as ExchangeOrderMappingService);
 
     await expect(
       service.resolveOrderFromClientOrderId('order-1:3'),
@@ -22,7 +24,9 @@ describe('FillRoutingService', () => {
       }),
       findByExchangeOrderId: jest.fn(),
     };
-    const service = new FillRoutingService(exchangeOrderMappingService as any);
+    const service = new FillRoutingService(
+      exchangeOrderMappingService as unknown as ExchangeOrderMappingService,
+    );
 
     await expect(
       service.resolveOrderFromClientOrderId('legacy-client-oid'),
@@ -39,7 +43,7 @@ describe('FillRoutingService', () => {
     const service = new FillRoutingService({
       findByClientOrderId: jest.fn().mockResolvedValue(null),
       findByExchangeOrderId: jest.fn().mockResolvedValue(null),
-    } as any);
+    } as unknown as ExchangeOrderMappingService);
 
     await expect(
       service.resolveOrderFromClientOrderId('legacy-client-oid'),
@@ -56,7 +60,9 @@ describe('FillRoutingService', () => {
         orderId: 'mapped-by-exchange-order',
       }),
     };
-    const service = new FillRoutingService(exchangeOrderMappingService as any);
+    const service = new FillRoutingService(
+      exchangeOrderMappingService as unknown as ExchangeOrderMappingService,
+    );
 
     await expect(
       service.resolveOrderForFill({

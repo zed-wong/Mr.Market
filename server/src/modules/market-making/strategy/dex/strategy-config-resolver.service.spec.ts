@@ -19,6 +19,9 @@ describe('StrategyConfigResolverService', () => {
       throw new BadRequestException('Unsupported controllerType');
     }),
   } as unknown as StrategyRuntimeDispatcherService;
+  const asStrategyDefinition = (
+    value: Partial<StrategyDefinition>,
+  ): StrategyDefinition => value as StrategyDefinition;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -35,27 +38,29 @@ describe('StrategyConfigResolverService', () => {
     expect(
       service.getDefinitionControllerType({
         controllerType: 'arbitrage',
-      } as any),
+      } as Partial<StrategyDefinition>),
     ).toBe('arbitrage');
     expect(
-      service.getDefinitionControllerType({ executorType: 'volume' } as any),
+      service.getDefinitionControllerType({
+        executorType: 'volume',
+      } as Partial<StrategyDefinition>),
     ).toBe('volume');
     expect(
       service.getDefinitionControllerType({
         controllerType: 'pure_market_making',
-      } as any),
+      } as Partial<StrategyDefinition>),
     ).toBe('pureMarketMaking');
   });
 
   it('throws when controller type missing', () => {
-    expect(() => service.getDefinitionControllerType({} as any)).toThrow(
-      BadRequestException,
-    );
+    expect(() =>
+      service.getDefinitionControllerType({} as Partial<StrategyDefinition>),
+    ).toThrow(BadRequestException);
   });
 
   it('merges config for pure market making with marketMakingOrderId override', () => {
     const result = service.resolveDefinitionStartConfig(
-      {
+      asStrategyDefinition({
         key: 'pure-mm',
         enabled: true,
         controllerType: 'pureMarketMaking',
@@ -67,7 +72,7 @@ describe('StrategyConfigResolverService', () => {
             pair: { type: 'string' },
           },
         },
-      } as any,
+      }),
       {
         userId: 'u1',
         clientId: 'c1',
@@ -90,13 +95,13 @@ describe('StrategyConfigResolverService', () => {
   it('rejects disabled definition', () => {
     expect(() =>
       service.resolveDefinitionStartConfig(
-        {
+        asStrategyDefinition({
           key: 'disabled',
           enabled: false,
           controllerType: 'volume',
           defaultConfig: {},
           configSchema: {},
-        } as any,
+        }),
         {
           userId: 'u1',
           clientId: 'c1',
@@ -107,7 +112,7 @@ describe('StrategyConfigResolverService', () => {
 
   it('can resolve start config for disabled definitions when enabled check is skipped', () => {
     const result = service.resolveDefinitionStartConfig(
-      {
+      asStrategyDefinition({
         key: 'disabled',
         enabled: false,
         controllerType: 'pure_market_making',
@@ -122,7 +127,7 @@ describe('StrategyConfigResolverService', () => {
             clientId: { type: 'string' },
           },
         },
-      } as any,
+      }),
       {
         userId: 'u1',
         clientId: 'c1',
@@ -147,7 +152,7 @@ describe('StrategyConfigResolverService', () => {
 
   it('normalizes volume execution category from executionVenue alias', () => {
     const result = service.resolveDefinitionStartConfig(
-      {
+      asStrategyDefinition({
         key: 'volume',
         enabled: true,
         controllerType: 'volume',
@@ -173,7 +178,7 @@ describe('StrategyConfigResolverService', () => {
             symbol: { type: 'string' },
           },
         },
-      } as any,
+      }),
       {
         userId: 'u1',
         clientId: 'c1',
