@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 
 import {
   ArbitrageStrategyDto,
+  DexAdapterId,
   PureMarketMakingStrategyDto,
 } from '../config/strategy.dto';
 import { StrategyType } from '../config/strategy-controller.types';
@@ -13,25 +14,32 @@ import {
 import { TimeIndicatorStrategyDto } from '../config/timeIndicator.dto';
 import { StrategyService } from '../strategy.service';
 
+type RuntimeStrategyConfig = Record<string, unknown>;
+
 @Injectable()
 export class StrategyRuntimeDispatcherService {
   constructor(private readonly strategyService: StrategyService) {}
 
   private resolveVolumeExecutionVenue(
-    config: Record<string, any>,
+    config: RuntimeStrategyConfig,
   ): 'cex' | 'dex' {
     if (config.executionCategory !== undefined) {
-      const normalized = normalizeExecutionCategory(config.executionCategory);
+      const normalized = normalizeExecutionCategory(
+        this.readString(config.executionCategory),
+      );
 
       return toLegacyExecutionVenue(normalized);
     }
 
-    return config.executionVenue === 'dex' ? 'dex' : 'cex';
+    return this.readString(config.executionVenue) === 'dex' ? 'dex' : 'cex';
   }
 
-  private resolveVolumeExecutionCategory(config: Record<string, any>): string {
+  private resolveVolumeExecutionCategory(
+    config: RuntimeStrategyConfig,
+  ): string {
     return normalizeExecutionCategory(
-      config.executionCategory || config.executionVenue,
+      this.readString(config.executionCategory) ||
+        this.readString(config.executionVenue),
     );
   }
 
@@ -66,11 +74,11 @@ export class StrategyRuntimeDispatcherService {
 
   async startByStrategyType(
     strategyType: StrategyType,
-    config: Record<string, any>,
+    config: RuntimeStrategyConfig,
   ): Promise<void> {
     if (strategyType === 'arbitrage') {
       await this.strategyService.startArbitrageStrategyForUser(
-        config as ArbitrageStrategyDto,
+        config as unknown as ArbitrageStrategyDto,
         Number(config.checkIntervalSeconds || 10),
         Number(config.maxOpenOrders || 1),
       );
@@ -80,7 +88,7 @@ export class StrategyRuntimeDispatcherService {
 
     if (strategyType === 'pureMarketMaking') {
       await this.strategyService.executePureMarketMakingStrategy(
-        config as PureMarketMakingStrategyDto,
+        config as unknown as PureMarketMakingStrategyDto,
       );
 
       return;
@@ -88,7 +96,7 @@ export class StrategyRuntimeDispatcherService {
 
     if (strategyType === 'timeIndicator') {
       await this.strategyService.executeTimeIndicatorStrategy(
-        config as TimeIndicatorStrategyDto,
+        config as unknown as TimeIndicatorStrategyDto,
       );
 
       return;
@@ -98,24 +106,30 @@ export class StrategyRuntimeDispatcherService {
     const executionCategory = this.resolveVolumeExecutionCategory(config);
 
     await this.strategyService.executeVolumeStrategy(
-      config.exchangeName,
-      config.symbol,
-      Number(config.incrementPercentage ?? config.baseIncrementPercentage ?? 0),
-      Number(config.intervalTime ?? config.baseIntervalTime ?? 10),
-      Number(config.tradeAmount ?? config.baseTradeAmount ?? 0),
-      Number(config.numTrades || 1),
-      config.userId,
-      config.clientId,
-      Number(config.pricePushRate || 0),
-      config.postOnlySide,
+      this.readString(config.exchangeName),
+      this.readString(config.symbol),
+      this.readNumber(config.incrementPercentage) ??
+        this.readNumber(config.baseIncrementPercentage) ??
+        0,
+      this.readNumber(config.intervalTime) ??
+        this.readNumber(config.baseIntervalTime) ??
+        10,
+      this.readNumber(config.tradeAmount) ??
+        this.readNumber(config.baseTradeAmount) ??
+        0,
+      this.readNumber(config.numTrades) ?? 1,
+      this.readString(config.userId) || '',
+      this.readString(config.clientId) || '',
+      this.readNumber(config.pricePushRate) ?? 0,
+      this.readSide(config.postOnlySide),
       executionVenue,
-      config.dexId,
-      config.chainId,
-      config.tokenIn,
-      config.tokenOut,
-      config.feeTier,
-      config.slippageBps,
-      config.recipient,
+      this.readDexAdapterId(config.dexId),
+      this.readNumber(config.chainId),
+      this.readString(config.tokenIn),
+      this.readString(config.tokenOut),
+      this.readNumber(config.feeTier),
+      this.readNumber(config.slippageBps),
+      this.readString(config.recipient),
       executionCategory,
     );
   }
@@ -130,5 +144,28 @@ export class StrategyRuntimeDispatcherService {
       clientId,
       strategyType,
     );
+  }
+
+  private readString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private readNumber(value: unknown): number | undefined {
+    const parsed =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim().length > 0
+        ? Number(value)
+        : undefined;
+
+    return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  private readSide(value: unknown): 'buy' | 'sell' | undefined {
+    return value === 'buy' || value === 'sell' ? value : undefined;
+  }
+
+  private readDexAdapterId(value: unknown): DexAdapterId | undefined {
+    return value === 'uniswapV3' || value === 'pancakeV3' ? value : undefined;
   }
 }

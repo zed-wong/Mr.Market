@@ -13,7 +13,7 @@ import { StrategyService } from '../strategy.service';
 export class TimeIndicatorStrategyController implements StrategyController {
   readonly strategyType = 'timeIndicator' as const;
 
-  getCadenceMs(parameters: Record<string, any>): number {
+  getCadenceMs(parameters: Record<string, unknown>): number {
     return Math.max(1000, Number(parameters?.tickIntervalMs || 60000));
   }
 

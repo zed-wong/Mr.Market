@@ -12,7 +12,7 @@ import { StrategyService } from '../strategy.service';
 export class VolumeStrategyController implements StrategyController {
   readonly strategyType = 'volume' as const;
 
-  getCadenceMs(parameters: Record<string, any>): number {
+  getCadenceMs(parameters: Record<string, unknown>): number {
     return Math.max(1000, Number(parameters?.baseIntervalTime || 10) * 1000);
   }
 

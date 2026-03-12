@@ -106,14 +106,14 @@ export class AdminStrategyService {
     } else if (strategyType === 'marketMaking' && marketMakingParams) {
       await this.strategyRuntimeDispatcher.startByStrategyType(
         'pureMarketMaking',
-        marketMakingParams,
+        marketMakingParams as unknown as Record<string, unknown>,
       );
 
       return;
     } else if (strategyType === 'volume' && volumeParams) {
       await this.strategyRuntimeDispatcher.startByStrategyType(
         'volume',
-        volumeParams as Record<string, any>,
+        volumeParams as unknown as Record<string, unknown>,
       );
 
       return;

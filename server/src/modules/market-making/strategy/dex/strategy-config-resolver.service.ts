@@ -8,6 +8,16 @@ import { normalizeControllerType } from '../config/strategy-controller-aliases';
 import { normalizeExecutionCategory } from '../config/strategy-execution-category';
 import { StrategyRuntimeDispatcherService } from '../execution/strategy-runtime-dispatcher.service';
 
+type StrategyConfig = Record<string, unknown>;
+type StrategyConfigSchema = {
+  type?: string;
+  required?: string[];
+  properties?: Record<string, StrategyConfigSchema>;
+  additionalProperties?: boolean;
+  minimum?: number;
+  enum?: unknown[];
+};
+
 @Injectable()
 export class StrategyConfigResolverService {
   constructor(
@@ -42,7 +52,7 @@ export class StrategyConfigResolverService {
       skipEnabledCheck?: boolean;
     },
   ): {
-    mergedConfig: Record<string, any>;
+    mergedConfig: StrategyConfig;
     strategyType: StrategyType;
   } {
     if (!options?.skipEnabledCheck) {
@@ -55,7 +65,7 @@ export class StrategyConfigResolverService {
         : undefined;
 
     const mergedConfig = this.normalizeAndValidateConfig(definition, {
-      ...(definition.defaultConfig || {}),
+      ...this.toConfig(definition.defaultConfig),
       ...(payload.config || {}),
       userId: payload.userId,
       clientId: marketMakingOrderId || payload.clientId,
@@ -88,7 +98,7 @@ export class StrategyConfigResolverService {
 
     const controllerType = this.getDefinitionControllerType(definition);
     const resolvedConfig = this.normalizeAndValidateConfig(definition, {
-      ...(definition.defaultConfig || {}),
+      ...this.toConfig(definition.defaultConfig),
       ...(overrides || {}),
     });
 
@@ -117,14 +127,15 @@ export class StrategyConfigResolverService {
 
   private normalizeAndValidateConfig(
     definition: Partial<StrategyDefinition>,
-    config: Record<string, any>,
-  ): Record<string, any> {
+    config: StrategyConfig,
+  ): StrategyConfig {
     const strategyType = this.toStrategyType(definition);
-    const normalizedConfig = { ...config };
+    const normalizedConfig: StrategyConfig = { ...config };
 
     if (strategyType === 'volume') {
       normalizedConfig.executionCategory = normalizeExecutionCategory(
-        normalizedConfig.executionCategory || normalizedConfig.executionVenue,
+        this.readString(normalizedConfig.executionCategory) ||
+          this.readString(normalizedConfig.executionVenue),
       );
       normalizedConfig.executionVenue =
         normalizedConfig.executionCategory === 'amm_dex' ? 'dex' : 'cex';
@@ -132,15 +143,15 @@ export class StrategyConfigResolverService {
 
     this.validateConfigAgainstSchema(
       normalizedConfig,
-      definition.configSchema || {},
+      this.toConfigSchema(definition.configSchema),
     );
 
     return normalizedConfig;
   }
 
   validateConfigAgainstSchema(
-    config: Record<string, any>,
-    schema: Record<string, any>,
+    config: StrategyConfig,
+    schema: StrategyConfigSchema,
     path = '',
   ): void {
     const schemaType = schema?.type;
@@ -164,9 +175,7 @@ export class StrategyConfigResolverService {
       }
     }
 
-    for (const [field, rule] of Object.entries<Record<string, any>>(
-      properties,
-    )) {
+    for (const [field, rule] of Object.entries(properties)) {
       const fieldPath = path ? `${path}.${field}` : field;
 
       if (config[field] === undefined || config[field] === null) {
@@ -200,7 +209,11 @@ export class StrategyConfigResolverService {
             `Config field ${fieldPath} must be object`,
           );
         }
-        this.validateConfigAgainstSchema(value, rule, fieldPath);
+        this.validateConfigAgainstSchema(
+          value as Record<string, unknown>,
+          rule,
+          fieldPath,
+        );
       }
       if (rule.minimum !== undefined && typeof value === 'number') {
         if (value < Number(rule.minimum)) {
@@ -229,5 +242,25 @@ export class StrategyConfigResolverService {
         }
       }
     }
+  }
+
+  private readString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private toConfig(value: unknown): StrategyConfig {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as StrategyConfig;
+  }
+
+  private toConfigSchema(value: unknown): StrategyConfigSchema {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as StrategyConfigSchema;
   }
 }

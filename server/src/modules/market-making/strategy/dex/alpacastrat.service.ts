@@ -45,7 +45,7 @@ export class AlpacaStratService implements OnModuleDestroy {
     checkIntervalSeconds: number,
     maxOpenOrders: number,
   ) {
-    const { userId, clientId, pair, exchangeBName } = strategyParamsDto;
+    const { userId, clientId, pair } = strategyParamsDto;
     const strategyKey = createStrategyKey({
       type: 'alpaca-arbitrage',
       user_id: userId,
@@ -59,12 +59,6 @@ export class AlpacaStratService implements OnModuleDestroy {
 
       return;
     }
-
-    const alpacaExchange = this.exchangeInitService.getExchange(
-      'alpaca',
-      'default',
-    );
-    const exchangeB = this.exchangeInitService.getExchange(exchangeBName);
 
     this.logger.log(
       `Starting Alpaca arbitrage strategy for user ${userId}, client ${clientId}.`,

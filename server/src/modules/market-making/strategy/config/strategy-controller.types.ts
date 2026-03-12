@@ -18,13 +18,13 @@ export type StrategyRuntimeSession = {
   marketMakingOrderId?: string;
   cadenceMs: number;
   nextRunAtMs: number;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
 };
 
 export interface StrategyController {
   readonly strategyType: StrategyType;
   getCadenceMs(
-    parameters: Record<string, any>,
+    parameters: Record<string, unknown>,
     service: StrategyService,
   ): number;
   rerun(

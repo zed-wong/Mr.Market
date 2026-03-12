@@ -328,7 +328,7 @@ export class StrategyService
       userId,
       clientId,
       cadenceMs,
-      strategyParamsDto,
+      strategyParamsDto as unknown as StrategyRuntimeSession['params'],
     );
   }
 
@@ -367,7 +367,7 @@ export class StrategyService
       normalizedParams.userId,
       marketMakingOrderId,
       cadenceMs,
-      normalizedParams,
+      normalizedParams as unknown as StrategyRuntimeSession['params'],
       marketMakingOrderId,
     );
   }
@@ -1619,7 +1619,7 @@ export class StrategyService
       userId,
       clientId,
       cadenceMs,
-      params,
+      params as unknown as StrategyRuntimeSession['params'],
     );
   }
 
@@ -1627,7 +1627,7 @@ export class StrategyService
     session: StrategyRuntimeSession,
     ts: string,
   ): Promise<ExecutorAction[]> {
-    const params = session.params as TimeIndicatorStrategyDto;
+    const params = session.params as unknown as TimeIndicatorStrategyDto;
     const { userId, clientId, exchangeName, symbol } = params;
 
     // Time window check
@@ -1934,10 +1934,10 @@ export class StrategyService
   ): PooledExecutorTarget | null {
     if (strategyType === 'pureMarketMaking') {
       const exchange = String(
-        (params as PureMarketMakingStrategyDto).exchangeName || '',
+        (params as unknown as PureMarketMakingStrategyDto).exchangeName || '',
       ).trim();
       const pair = String(
-        (params as PureMarketMakingStrategyDto).pair || '',
+        (params as unknown as PureMarketMakingStrategyDto).pair || '',
       ).trim();
       const orderId = String(marketMakingOrderId || clientId || '').trim();
 
@@ -1950,9 +1950,11 @@ export class StrategyService
 
     if (strategyType === 'volume') {
       const exchange = String(
-        (params as VolumeStrategyParams).exchangeName || '',
+        (params as unknown as VolumeStrategyParams).exchangeName || '',
       ).trim();
-      const pair = String((params as VolumeStrategyParams).symbol || '').trim();
+      const pair = String(
+        (params as unknown as VolumeStrategyParams).symbol || '',
+      ).trim();
       const orderId = String(clientId || '').trim();
 
       if (exchange && pair && orderId) {
@@ -1964,10 +1966,10 @@ export class StrategyService
 
     if (strategyType === 'timeIndicator') {
       const exchange = String(
-        (params as TimeIndicatorStrategyDto).exchangeName || '',
+        (params as unknown as TimeIndicatorStrategyDto).exchangeName || '',
       ).trim();
       const pair = String(
-        (params as TimeIndicatorStrategyDto).symbol || '',
+        (params as unknown as TimeIndicatorStrategyDto).symbol || '',
       ).trim();
       const orderId = String(clientId || '').trim();
 

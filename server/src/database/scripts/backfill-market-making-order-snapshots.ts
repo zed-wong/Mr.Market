@@ -13,6 +13,7 @@ import {
 } from '../../common/entities/orders/user-orders.entity';
 import { StrategyConfigResolverService } from '../../modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from '../../modules/market-making/strategy/execution/strategy-runtime-dispatcher.service';
+import type { StrategyService } from '../../modules/market-making/strategy/strategy.service';
 import { buildLegacyMarketMakingOrderRuntimeConfig } from '../../modules/market-making/user-orders/market-making-order-snapshot.utils';
 
 type BackfillResult = {
@@ -66,7 +67,7 @@ export async function runMarketMakingOrderSnapshotBackfill(): Promise<BackfillRe
     const strategyDefinitionRepository =
       dataSource.getRepository(StrategyDefinition);
     const strategyRuntimeDispatcher = new StrategyRuntimeDispatcherService(
-      {} as any,
+      {} as unknown as StrategyService,
     );
     const strategyConfigResolver = new StrategyConfigResolverService(
       strategyDefinitionRepository,

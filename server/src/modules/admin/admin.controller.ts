@@ -18,6 +18,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SpotdataTradingPairDto } from './admin-spot-management/admin-spot-management.dto';
@@ -120,7 +121,10 @@ export class AdminController {
 
   @Get('strategy/definitions/:id/export')
   @ApiOperation({ summary: 'Export strategy definition as JSON' })
-  async exportStrategyDefinition(@Param('id') id: string, @Res() res: any) {
+  async exportStrategyDefinition(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
     const json = await this.adminStrategyService.exportStrategyDefinition(id);
 
     res.setHeader('Content-Type', 'application/json');

@@ -13,7 +13,7 @@ import { StrategyService } from '../strategy.service';
 export class PureMarketMakingStrategyController implements StrategyController {
   readonly strategyType = 'pureMarketMaking' as const;
 
-  getCadenceMs(parameters: Record<string, any>): number {
+  getCadenceMs(parameters: Record<string, unknown>): number {
     return Math.max(1000, Number(parameters?.orderRefreshTime || 10000));
   }
 
@@ -24,7 +24,7 @@ export class PureMarketMakingStrategyController implements StrategyController {
   ): Promise<ExecutorAction[]> {
     return await service.buildPureMarketMakingActions(
       session.strategyKey,
-      session.params as PureMarketMakingStrategyDto,
+      session.params as unknown as PureMarketMakingStrategyDto,
       ts,
     );
   }

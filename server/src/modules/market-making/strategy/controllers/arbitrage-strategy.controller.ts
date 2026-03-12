@@ -13,7 +13,7 @@ import { StrategyService } from '../strategy.service';
 export class ArbitrageStrategyController implements StrategyController {
   readonly strategyType = 'arbitrage' as const;
 
-  getCadenceMs(parameters: Record<string, any>): number {
+  getCadenceMs(parameters: Record<string, unknown>): number {
     return Math.max(
       1000,
       Number(parameters?.checkIntervalSeconds || 10) * 1000,
@@ -27,7 +27,7 @@ export class ArbitrageStrategyController implements StrategyController {
   ): Promise<ExecutorAction[]> {
     return await service.buildArbitrageActions(
       session.strategyKey,
-      session.params as ArbitrageStrategyDto,
+      session.params as unknown as ArbitrageStrategyDto,
       ts,
     );
   }
