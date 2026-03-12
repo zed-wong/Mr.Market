@@ -92,9 +92,19 @@ describe('Database migration and seed scripts (e2e)', () => {
   });
 
   it('runs migration:seed and inserts baseline rows', async () => {
-    process.env.DATABASE_PATH = dbPath;
-    await runMigrations();
-    await runSeed();
+    const prevDbPath = process.env.DATABASE_PATH;
+
+    try {
+      process.env.DATABASE_PATH = dbPath;
+      await runMigrations();
+      await runSeed();
+    } finally {
+      if (prevDbPath === undefined) {
+        delete process.env.DATABASE_PATH;
+      } else {
+        process.env.DATABASE_PATH = prevDbPath;
+      }
+    }
 
     const dataSource = new DataSource({
       type: 'sqlite',

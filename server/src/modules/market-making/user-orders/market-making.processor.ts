@@ -1037,9 +1037,7 @@ export class MarketMakingOrderProcessor {
 
     try {
       if (!order.strategySnapshot?.resolvedConfig) {
-        throw new Error(
-          `Order ${orderId} has no strategySnapshot. Run backfill:mm-order-snapshots before start_mm.`,
-        );
+        throw new Error(`Order ${orderId} has no strategySnapshot.`);
       }
 
       const { controllerType, definitionVersion, resolvedConfig } =

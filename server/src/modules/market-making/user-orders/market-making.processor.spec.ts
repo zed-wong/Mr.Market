@@ -534,9 +534,7 @@ describe('MarketMakingOrderProcessor', () => {
         data: { userId: 'user-1', orderId: 'order-1' },
         queue: { add: jest.fn() },
       } as any),
-    ).rejects.toThrow(
-      'Order order-1 has no strategySnapshot. Run backfill:mm-order-snapshots before start_mm.',
-    );
+    ).rejects.toThrow('Order order-1 has no strategySnapshot.');
 
     expect(updateMarketMakingOrderState).toHaveBeenCalledWith(
       'order-1',

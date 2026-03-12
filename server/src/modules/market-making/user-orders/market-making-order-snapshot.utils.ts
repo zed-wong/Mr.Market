@@ -27,44 +27,6 @@ function toStoredAmountChangeType(value: unknown): 'fixed' | 'percentage' {
   return value === 'percentage' ? 'percentage' : 'fixed';
 }
 
-export function buildLegacyMarketMakingOrderRuntimeConfig(
-  order: Pick<
-    MarketMakingOrder,
-    | 'pair'
-    | 'exchangeName'
-    | 'bidSpread'
-    | 'askSpread'
-    | 'orderAmount'
-    | 'orderRefreshTime'
-    | 'numberOfLayers'
-    | 'priceSourceType'
-    | 'amountChangePerLayer'
-    | 'amountChangeType'
-    | 'ceilingPrice'
-    | 'floorPrice'
-  >,
-  definitionDefaultConfig: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    pair: order.pair.replaceAll('-ERC20', ''),
-    exchangeName: order.exchangeName,
-    bidSpread: toConfigNumber(order.bidSpread),
-    askSpread: toConfigNumber(order.askSpread),
-    orderAmount: toConfigNumber(order.orderAmount),
-    orderRefreshTime: toConfigNumber(order.orderRefreshTime),
-    numberOfLayers: toConfigNumber(order.numberOfLayers),
-    priceSourceType:
-      order.priceSourceType || definitionDefaultConfig.priceSourceType,
-    amountChangePerLayer: toConfigNumber(order.amountChangePerLayer),
-    amountChangeType:
-      order.amountChangeType ||
-      definitionDefaultConfig.amountChangeType ||
-      'fixed',
-    ceilingPrice: toConfigNumber(order.ceilingPrice),
-    floorPrice: toConfigNumber(order.floorPrice),
-  };
-}
-
 export function mapStrategySnapshotToMarketMakingOrderFields(
   strategySnapshot: MarketMakingOrderStrategySnapshot,
 ): Pick<
