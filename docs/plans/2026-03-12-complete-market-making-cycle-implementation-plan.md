@@ -4,7 +4,7 @@
 
 **Goal:** Complete the full market-making business cycle from user payment to market making execution with metrics tracking
 
-**Architecture:** Intent-driven order flow with triple verification for deposit tracking. Phases are sequential: Withdrawal → Deposit Tracking → Campaign Join → Market Making Execution.
+**Architecture:** Intent-driven order flow with triple verification for deposit tracking. Supports single and dual asset orders.
 **Tech Stack:** NestJS, CCXT, Bull Queue, Mixin SDK, ethers
 
 **Related Design Doc:** `docs/plans/2026-03-12-complete-market-making-cycle-design.en.md`
@@ -17,24 +17,32 @@
 - `ExchangeApiKeyService` - `server/src/modules/market-making/exchange-api-key/exchange-api-key.service.ts`
   - Has `getDepositAddress()`, `findFirstAPIKeyByExchange()`
 - `CampaignService` - `server/src/modules/campaign/campaign.service.ts`
-  - Has `getCampaigns()`, `joinCampaignWithAuth()`, `get_auth_nonce()`, `authenticate_web3_user()`, `join_campaign()`
+  - Has `getCampaigns()`, `joinCampaignWithAuth(wallet, key, chainId, address)`
 - `WithdrawalService` - `server/src/modules/mixin/withdrawal/withdrawal.service.ts`
-  - Has `createWithdrawal()`
+  - Has `executeWithdrawal(asset_id, destination, memo, amount, requestKey?)`
 - `MarketMakingOrderProcessor` - `server/src/modules/market-making/user-orders/market-making.processor.ts`
   - Already has `@Process('withdraw_to_exchange')` and `@Process('join_campaign')` handlers
 
-### Required Config
-- System wallet private key for HuFi signing (stored in config)
-- Chain RPC URLs for on-chain tracking
+### Existing State Definitions (`states.ts`)
+```typescript
+type MarketMakingStates =
+  | 'payment_pending' | 'payment_incomplete' | 'payment_complete'
+  | 'withdrawing' | 'withdrawal_confirmed'
+  | 'deposit_confirming' | 'deposit_confirmed'
+  | 'joining_campaign' | 'campaign_joined'
+  | 'created' | 'running' | 'paused' | 'stopped'
+  | 'failed' | 'refunded' | 'deleted';
+```
 
-### Queues (Already registered in user-orders.module.ts)
-- `market-making` queue with BullModule.registerQueue
+### Required Config
+- System wallet: `hufi.system_wallet_address`, `hufi.system_wallet_private_key`
+- Chain RPC URLs: `chains.ethereumRpcUrl`, `chains.bscRpcUrl`
 
 ---
 
 ## Chunk 1: Entity & Database Updates
 
-### Task 1: Add tracking fields to MarketMakingOrder entity
+### Task 1: Add dual-asset tracking fields to MarketMakingOrder
 
 **Files:**
 - Modify: `server/src/common/entities/orders/user-orders.entity.ts`
@@ -44,34 +52,61 @@
 ```typescript
 // user-orders.entity.ts - Add to MarketMakingOrder class
 
+// === Withdrawal Tracking (dual-asset) ===
 @Column({ nullable: true })
-withdrawalTxHash?: string;
+baseWithdrawalTxHash?: string;
 
 @Column({ nullable: true })
-withdrawalTraceId?: string;
+baseWithdrawalTraceId?: string;
 
 @Column({ nullable: true })
-depositAddress?: string;
+baseDepositAddress?: string;
 
 @Column({ nullable: true })
-depositNetwork?: string;
+baseDepositNetwork?: string;
 
 @Column({ nullable: true })
-depositConfirmedAt?: Date;
+quoteWithdrawalTxHash?: string;
+
+@Column({ nullable: true })
+quoteWithdrawalTraceId?: string;
+
+@Column({ nullable: true })
+quoteDepositAddress?: string;
+
+@Column({ nullable: true })
+quoteDepositNetwork?: string;
+
+@Column({ default: false })
+isSingleAssetOrder?: boolean;
+
+// === Deposit Tracking Status ===
+@Column({ nullable: true })
+baseDepositConfirmedAt?: Date;
+
+@Column({ nullable: true })
+quoteDepositConfirmedAt?: Date;
 
 @Column('simple-json', { nullable: true })
 depositTrackingStatus?: {
-  mixinStatus: { confirmed: boolean; txHash: string; traceId: string };
-  onchainStatus: { confirmed: boolean; txHash: string; confirmations: number; requiredConfirmations: number };
-  exchangeStatus: { received: boolean; txId: string; amount: string };
-  fullyConfirmed: boolean;
+  base: {
+    mixinConfirmed: boolean;
+    onchainConfirmations: number;
+    exchangeReceived: boolean;
+  };
+  quote?: {
+    mixinConfirmed: boolean;
+    onchainConfirmations: number;
+    exchangeReceived: boolean;
+  };
+  allConfirmed: boolean;
 };
 ```
 
 - [ ] **Step 2: Run migration**
 
-Run: `cd server && bun run migration:generate -- -n AddDepositTrackingFields`
-Expected: Migration file created in `server/src/migrations/`
+Run: `cd server && bun run migration:generate -- -n AddDualAssetDepositTrackingFields`
+Expected: Migration file created
 
 - [ ] **Step 3: Run migration**
 
@@ -82,20 +117,22 @@ Expected: Migration applied successfully
 
 ```bash
 git add server/src/common/entities/orders/user-orders.entity.ts server/src/migrations/
-git commit -m "feat(entity): add deposit tracking fields to MarketMakingOrder"
+git commit -m "feat(entity): add dual-asset deposit tracking fields"
 ```
 
 ---
 
 ## Chunk 2: Deposit Tracking Service
 
-### Task 2: Implement ChainTrackerService
+### Task 2: Create DepositModule with tracking services
 
 **Files:**
+- Create: `server/src/modules/market-making/deposit/deposit.module.ts`
 - Create: `server/src/modules/market-making/deposit/chain-tracker.service.ts`
-- Create: `server/src/modules/market-making/deposit/chain-tracker.service.spec.ts`
+- Create: `server/src/modules/market-making/deposit/deposit-tracking.service.ts`
+- Create: `server/src/modules/market-making/deposit/deposit-tracking.service.spec.ts`
 
-- [ ] **Step 1: Implement ChainTrackerService**
+- [ ] **Step 1: Create ChainTrackerService**
 
 ```typescript
 // chain-tracker.service.ts
@@ -103,7 +140,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 
-interface OnchainStatus {
+export interface OnchainStatus {
   confirmed: boolean;
   txHash: string;
   confirmations: number;
@@ -124,10 +161,6 @@ export class ChainTrackerService {
         rpcUrl: this.configService.get('chains.bscRpcUrl') || '',
         requiredConfirmations: 15,
       },
-      bitcoin: {
-        rpcUrl: '',
-        requiredConfirmations: 6,
-      },
     };
   }
 
@@ -135,10 +168,6 @@ export class ChainTrackerService {
     const config = this.chainConfigs[chain];
     if (!config) {
       throw new Error(`Unsupported chain: ${chain}`);
-    }
-
-    if (chain === 'bitcoin') {
-      return this.getBitcoinTransaction(txHash, config.requiredConfirmations);
     }
 
     const provider = new ethers.JsonRpcProvider(config.rpcUrl);
@@ -158,45 +187,86 @@ export class ChainTrackerService {
       requiredConfirmations: config.requiredConfirmations,
     };
   }
+}
+```
 
-  private async getBitcoinTransaction(txHash: string, required: number): Promise<OnchainStatus> {
-    // Use block explorer API for Bitcoin
-    // Implementation depends on chosen API (blockstream, blockchain.com, etc.)
-    throw new Error('Bitcoin tracking not implemented');
+- [ ] **Step 2: Create DepositTrackingService with Cron**
+
+```typescript
+// deposit-tracking.service.ts
+import { InjectQueue } from '@nestjs/bull';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Cron } from '@nestjs/schedule';
+import { Queue } from 'bull';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import { Repository, In } from 'typeorm';
+import { ChainTrackerService } from './chain-tracker.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
+interface LegTrackingResult {
+  mixinConfirmed: boolean;
+  onchainConfirmations: number;
+  exchangeReceived: boolean;
+}
+
+interface DepositTrackingResult {
+  base: LegTrackingResult;
+  quote?: LegTrackingResult;
+  allConfirmed: boolean;
+}
+
+@Injectable()
+export class DepositTrackingService {
+  private readonly logger = new CustomLogger(DepositTrackingService.name);
+
+  constructor(
+    @InjectRepository(MarketMakingOrder)
+    private readonly orderRepository: Repository<MarketMakingOrder>,
+    private readonly chainTracker: ChainTrackerService,
+    @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
+  ) {}
+
+  @Cron('*/30 * * * * *') // Every 30 seconds
+  async checkPendingDeposits() {
+    const orders = await this.orderRepository.find({
+      where: { state: In(['withdrawing', 'withdrawal_confirmed', 'deposit_confirming']) },
+    });
+
+    for (const order of orders) {
+      try {
+        const result = await this.trackDeposit(order);
+
+        await this.orderRepository.update(order.orderId, {
+          depositTrackingStatus: result,
+        });
+
+        if (result.allConfirmed) {
+          await this.orderRepository.update(order.orderId, {
+            state: 'deposit_confirmed',
+            baseDepositConfirmedAt: result.base.exchangeReceived ? new Date() : undefined,
+            quoteDepositConfirmedAt: result.quote?.exchangeReceived ? new Date() : undefined,
+          });
+
+          await this.marketMakingQueue.add('join_campaign', { orderId: order.orderId });
+        }
+      } catch (error) {
+        this.logger.error(`Error tracking deposit for order ${order.orderId}: ${error.message}`);
+      }
+    }
+  }
+
+  async trackDeposit(order: MarketMakingOrder): Promise<DepositTrackingResult> {
+    // Implementation: triple verification per leg
+    // 1. Mixin withdrawal status
+    // 2. On-chain confirmations
+    // 3. Exchange deposit received
+    // ...
   }
 }
 ```
 
-- [ ] **Step 2: Write unit tests**
-
-```typescript
-// chain-tracker.service.spec.ts
-describe('ChainTrackerService', () => {
-  it('should get transaction from ethereum chain', async () => {
-    // ...
-  });
-
-  it('should throw for unsupported chain', async () => {
-    // ...
-  });
-});
-```
-
-- [ ] **Step 3: Run tests**
-
-Run: `bun test server/src/modules/market-making/deposit/chain-tracker.service.spec.ts`
-Expected: All tests pass
-
----
-
-### Task 3: Implement DepositTrackingService
-
-**Files:**
-- Create: `server/src/modules/market-making/deposit/deposit.module.ts`
-- Create: `server/src/modules/market-making/deposit/deposit-tracking.service.ts`
-- Create: `server/src/modules/market-making/deposit/deposit-tracking.service.spec.ts`
-
-- [ ] **Step 1: Create DepositModule**
+- [ ] **Step 3: Create DepositModule**
 
 ```typescript
 // deposit.module.ts
@@ -218,91 +288,11 @@ import { ChainTrackerService } from './chain-tracker.service';
 export class DepositModule {}
 ```
 
-- [ ] **Step 2: Implement DepositTrackingService**
+- [ ] **Step 4: Write unit tests**
 
-```typescript
-// deposit-tracking.service.ts
-import { InjectQueue } from '@nestjs/bull';
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Cron } from '@nestjs/schedule';
-import { Queue } from 'bull';
-import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
-import { Repository, In } from 'typeorm';
-import { ChainTrackerService } from './chain-tracker.service';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+- [ ] **Step 5: Register DepositModule in UserOrdersModule**
 
-interface DepositTrackingResult {
-  mixinStatus: { confirmed: boolean; txHash: string; traceId: string };
-  onchainStatus: { confirmed: boolean; txHash: string; confirmations: number; requiredConfirmations: number };
-  exchangeStatus: { received: boolean; txId: string; amount: string };
-  fullyConfirmed: boolean;
-}
-
-@Injectable()
-export class DepositTrackingService {
-  private readonly logger = new CustomLogger(DepositTrackingService.name);
-  private readonly TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
-
-  constructor(
-    @InjectRepository(MarketMakingOrder)
-    private readonly orderRepository: Repository<MarketMakingOrder>,
-    private readonly chainTracker: ChainTrackerService,
-    @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
-  ) {}
-
-  @Cron('*/30 * * * * *')
-  async checkPendingDeposits() {
-    const orders = await this.orderRepository.find({
-      where: { state: In(['withdrawal_pending', 'withdrawal_confirmed']) },
-    });
-
-    for (const order of orders) {
-      try {
-        const result = await this.trackDeposit(order);
-
-        if (result.fullyConfirmed) {
-          await this.orderRepository.update(order.orderId, {
-            state: 'deposit_confirmed',
-            depositConfirmedAt: new Date(),
-          });
-          await this.marketMakingQueue.add('join_campaign', { orderId: order.orderId });
-        } else {
-          await this.orderRepository.update(order.orderId, {
-            depositTrackingStatus: result,
-          });
-        }
-      } catch (error) {
-        this.logger.error(`Error tracking deposit for order ${order.orderId}: ${error.message}`);
-      }
-    }
-  }
-
-  async trackDeposit(order: MarketMakingOrder): Promise<DepositTrackingResult> {
-    // Triple verification: Mixin → On-chain → Exchange
-    // Implementation details...
-  }
-}
-```
-
-- [ ] **Step 3: Write unit tests**
-
-- [ ] **Step 4: Register DepositModule in UserOrdersModule**
-
-```typescript
-// user-orders.module.ts
-import { DepositModule } from '../deposit/deposit.module';
-
-@Module({
-  imports: [
-    // ... existing imports
-    DepositModule,
-  ],
-})
-export class UserOrdersModule {}
-```
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add server/src/modules/market-making/deposit/
@@ -313,48 +303,76 @@ git commit -m "feat(deposit): add deposit tracking with triple verification"
 
 ## Chunk 3: Enable Withdrawal Flow
 
-### Task 4: Enable real withdrawal in MarketMakingOrderProcessor
+### Task 3: Enable real withdrawal in MarketMakingOrderProcessor
 
 **Files:**
 - Modify: `server/src/modules/market-making/user-orders/market-making.processor.ts`
 
-- [ ] **Step 1: Remove validation mode refund logic**
+- [ ] **Step 1: Update processWithdrawToExchange for dual-asset support**
 
-Locate lines 865-878 where validation mode refunds are done, replace with real withdrawal logic.
-
-- [ ] **Step 2: Enable real withdrawal code**
-
-Uncomment and update the existing withdrawal code block in `processWithdrawToExchange()`.
-
-- [ ] **Step 3: Update order with tracking info**
+Locate the withdrawal code block and update to support single/dual asset:
 
 ```typescript
+// Determine if single asset order
+const isSingleAsset = !paymentState.quoteAssetId ||
+  paymentState.quoteAssetId === paymentState.baseAssetId;
+
+// Execute base withdrawal
+const baseWithdrawal = await this.withdrawalService.executeWithdrawal(
+  paymentState.baseAssetId,
+  baseDepositAddress.address,
+  baseDepositAddress.memo || `MM:${orderId}:base`,
+  paymentState.baseAssetAmount,
+  `${orderId}:base`,
+);
+
+// Execute quote withdrawal (if dual-asset)
+let quoteWithdrawal = null;
+if (!isSingleAsset) {
+  quoteWithdrawal = await this.withdrawalService.executeWithdrawal(
+    paymentState.quoteAssetId,
+    quoteDepositAddress.address,
+    quoteDepositAddress.memo || `MM:${orderId}:quote`,
+    paymentState.quoteAssetAmount,
+    `${orderId}:quote`,
+  );
+}
+
+// Update order with tracking info
 await this.marketMakingRepository.update(orderId, {
-  state: 'withdrawal_pending',
-  withdrawalTxHash: baseWithdrawal.transaction_hash,
-  withdrawalTraceId: baseWithdrawal.trace_id,
-  depositAddress: baseDepositAddress.address,
-  depositNetwork: baseNetwork,
+  state: 'withdrawing',
+  baseWithdrawalTxHash: baseWithdrawal[0]?.transaction_hash,
+  baseWithdrawalTraceId: `${orderId}:base`,
+  baseDepositAddress: baseDepositAddress.address,
+  baseDepositNetwork: baseNetwork,
+  quoteWithdrawalTxHash: quoteWithdrawal?.[0]?.transaction_hash,
+  quoteWithdrawalTraceId: isSingleAsset ? null : `${orderId}:quote`,
+  quoteDepositAddress: quoteDepositAddress?.address,
+  quoteDepositNetwork: isSingleAsset ? null : quoteNetwork,
+  isSingleAssetOrder: isSingleAsset,
 });
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 2: Remove validation mode refund logic**
+
+Remove the `this.refundMarketMakingPendingOrder(...)` call at line 869-873.
+
+- [ ] **Step 3: Run tests**
 
 Run: `bun test server/src/modules/market-making/user-orders/market-making.processor.spec.ts`
-Expected: All tests pass
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add server/src/modules/market-making/user-orders/market-making.processor.ts
-git commit -m "feat(withdrawal): enable real withdrawal to exchange"
+git commit -m "feat(withdrawal): enable real dual-asset withdrawal to exchange"
 ```
 
 ---
 
 ## Chunk 4: HuFi Integration
 
-### Task 5: Implement HuFi Integration
+### Task 4: Implement HuFi Integration
 
 **Files:**
 - Create: `server/src/modules/market-making/hufi/hufi.module.ts`
@@ -369,12 +387,13 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
+import { CampaignDataDto } from 'src/modules/campaign/campaign.dto';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 interface JoinCampaignResult {
   success: boolean;
-  campaignId?: string;
-  txHash?: string;
+  campaignAddress?: string;
+  chainId?: number;
   reason?: string;
   error?: string;
 }
@@ -404,25 +423,34 @@ export class HuFiIntegrationService {
         return { success: false, reason: 'wallet_not_configured' };
       }
 
-      const result = await this.campaignService.joinCampaignWithAuth(
+      // Call existing CampaignService.joinCampaignWithAuth
+      await this.campaignService.joinCampaignWithAuth(
         walletAddress,
         privateKey,
         matchingCampaign.chainId,
         matchingCampaign.address,
       );
 
-      return { success: true, campaignId: matchingCampaign.address, txHash: result?.txHash };
+      return {
+        success: true,
+        campaignAddress: matchingCampaign.address,
+        chainId: matchingCampaign.chainId,
+      };
     } catch (error) {
       this.logger.error(`HuFi join failed (non-blocking): ${error.message}`);
       return { success: false, reason: 'join_failed', error: error.message };
     }
   }
 
-  private findMatchingCampaign(campaigns: any[], order: MarketMakingOrder): any | null {
+  private findMatchingCampaign(campaigns: CampaignDataDto[], order: MarketMakingOrder): CampaignDataDto | null {
+    // Extract base symbol from pair (e.g., "BTC/USDT" → "BTC")
+    const baseSymbol = order.pair.split('/')[0];
+
     return campaigns.find(c =>
-      c.pair === order.pair &&
-      c.exchange === order.exchangeName &&
-      c.status !== 'Complete'
+      c.symbol === baseSymbol &&
+      c.exchangeName === order.exchangeName &&
+      c.status !== 'Complete' &&
+      c.endBlock * 1000 >= Date.now()
     ) || null;
   }
 }
@@ -450,36 +478,7 @@ export class HuFiModule {}
 
 - [ ] **Step 5: Integrate into processJoinCampaign**
 
-```typescript
-// market-making.processor.ts
-import { HuFiIntegrationService } from '../hufi/hufi-integration.service';
-
-@Process('join_campaign')
-async handleJoinCampaign(job: Job<{ orderId: string }>) {
-  const { orderId } = job.data;
-  const order = await this.userOrdersService.findMarketMakingByOrderId(orderId);
-
-  const result = await this.huFiIntegrationService.joinCampaign(order);
-
-  if (result.success) {
-    this.logger.log(`HuFi campaign joined: ${result.campaignId}`);
-  } else {
-    this.logger.log(`HuFi join skipped: ${result.reason}`);
-  }
-
-  await (job.queue as any).add('start_mm', { orderId });
-}
-```
-
-- [ ] **Step 6: Add config for system wallet**
-
-```bash
-# Add to .env or config
-HUFI_SYSTEM_WALLET_ADDRESS=0x...
-HUFI_SYSTEM_WALLET_PRIVATE_KEY=...
-```
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add server/src/modules/market-making/hufi/
@@ -488,72 +487,29 @@ git commit -m "feat(hufi): integrate HuFi campaign join with EVM signing"
 
 ---
 
-## Chunk 5: Market Making Metrics Tracking
+## Chunk 5: Metrics Tracking
 
-### Task 6: Add order metrics tracking
+### Task 5: Add order metrics tracking
 
 **Files:**
 - Create: `server/src/common/entities/market-making/order-metrics.entity.ts`
 - Create: `server/src/modules/market-making/metrics/order-metrics.service.ts`
-- Create: `server/src/modules/market-making/metrics/order-metrics.service.spec.ts`
-- Modify: `server/src/modules/market-making/strategy/execution/exchange-pair-executor.ts`
 
 - [ ] **Step 1: Create OrderMetrics entity**
 
-```typescript
-// order-metrics.entity.ts
-@Entity()
-export class OrderMetrics {
-  @PrimaryColumn()
-  orderId: string;
-
-  @Column({ default: 0 })
-  placedCount: number;
-
-  @Column({ default: 0 })
-  filledCount: number;
-
-  @Column({ default: 0 })
-  cancelledCount: number;
-
-  @Column({ default: 0 })
-  failedCount: number;
-
-  @Column({ type: 'decimal', precision: 30, scale: 18, default: '0' })
-  totalVolume: string;
-
-  @Column({ type: 'decimal', precision: 30, scale: 18, default: '0' })
-  totalProfit: string;
-
-  @Column()
-  updatedAt: Date;
-}
-```
-
 - [ ] **Step 2: Run migration**
 
-- [ ] **Step 3: Create OrderMetricsService with persistence cron**
+- [ ] **Step 3: Create OrderMetricsService**
 
-- [ ] **Step 4: Integrate metrics into ExchangePairExecutor**
+- [ ] **Step 4: Integrate into ExchangePairExecutor**
 
-- [ ] **Step 5: Write unit tests**
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add server/src/modules/market-making/metrics/
-git commit -m "feat(metrics): add order metrics tracking for market making"
-```
+- [ ] **Step 5: Commit**
 
 ---
 
-## Chunk 6: E2E Testing
+## Chunk 6: Testing & Integration
 
-### Task 7: Write E2E tests
-
-**Files:**
-- Create: `server/src/modules/market-making/deposit/deposit-tracking.e2e.spec.ts`
-- Create: `server/src/modules/market-making/hufi/hufi-integration.e2e.spec.ts`
+### Task 6: E2E testing and final integration
 
 - [ ] **Step 1: Write deposit tracking E2E test**
 
@@ -563,34 +519,18 @@ git commit -m "feat(metrics): add order metrics tracking for market making"
 
 - [ ] **Step 4: Manual test with real funds (optional)**
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add server/src/modules/market-making/deposit/deposit-tracking.e2e.spec.ts
-git add server/src/modules/market-making/hufi/hufi-integration.e2e.spec.ts
-git commit -m "test: add E2E tests for deposit tracking and HuFi integration"
-```
+- [ ] **Step 5: Final commit**
 
 ---
 
 ## Summary
 
-| Phase | Tasks | Estimated Time |
-|-------|-------|----------------|
-| Chunk 1 | Entity updates | 0.5 day |
-| Chunk 2 | Deposit tracking service | 1 day |
-| Chunk 3 | Enable withdrawal | 0.5 day |
-| Chunk 4 | HuFi integration | 1 day |
-| Chunk 5 | Metrics tracking | 0.5 day |
-| Chunk 6 | E2E testing | 0.5 day |
+| Chunk | Tasks | Time |
+|-------|-------|------|
+| 1 | Entity updates | 0.5 day |
+| 2 | Deposit tracking | 1 day |
+| 3 | Enable withdrawal | 0.5 day |
+| 4 | HuFi integration | 1 day |
+| 5 | Metrics | 0.5 day |
+| 6 | Testing | 0.5 day |
 | **Total** | | **4 days** |
-
----
-
-## Execution Notes
-
-- Each chunk should be committed separately
-- Tests must pass before moving to next chunk
-- Use feature flags to enable/disable new flows in production
-- Monitor logs closely during initial real fund testing
-- HuFi join failure is non-blocking - market making continues regardless

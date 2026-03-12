@@ -18,7 +18,52 @@ User Payment (Mixin) → Withdraw to Exchange → Deposit Tracking → HuFi Camp
 
 ---
 
-## 2. Overall Architecture
+## 2. Existing Codebase
+
+### Existing Services (Do NOT recreate)
+- `ExchangeApiKeyService` - `exchange-api-key.service.ts`
+  - `getDepositAddress()`, `findFirstAPIKeyByExchange()`
+- `CampaignService` - `campaign.service.ts`
+  - `getCampaigns()`, `joinCampaignWithAuth(wallet, key, chainId, address)`
+- `WithdrawalService` - `withdrawal.service.ts`
+  - `executeWithdrawal(asset_id, destination, memo, amount, requestKey?)`
+- `MarketMakingOrderProcessor` - `market-making.processor.ts`
+  - Already has `@Process('withdraw_to_exchange')` and `@Process('join_campaign')`
+
+### Existing State Definitions (`states.ts`)
+```typescript
+type MarketMakingStates =
+  | 'payment_pending'
+  | 'payment_incomplete'
+  | 'payment_complete'
+  | 'withdrawing'
+  | 'withdrawal_confirmed'
+  | 'deposit_confirming'
+  | 'deposit_confirmed'
+  | 'joining_campaign'
+  | 'campaign_joined'
+  | 'created'
+  | 'running'
+  | 'paused'
+  | 'stopped'
+  | 'failed'
+  | 'refunded'
+  | 'deleted';
+```
+
+### Existing Payment State Structure (`payment-state.entity.ts`)
+```typescript
+// Dual-asset structure
+baseAssetId, baseAssetAmount, baseAssetSnapshotId
+quoteAssetId, quoteAssetAmount, quoteAssetSnapshotId
+// Fees
+baseFeeAssetId, baseFeeAssetAmount
+quoteFeeAssetId, quoteFeeAssetAmount
+```
+
+---
+
+## 3. Overall Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -27,32 +72,37 @@ User Payment (Mixin) → Withdraw to Exchange → Deposit Tracking → HuFi Camp
 │                                                                             │
 │  ┌──────────────┐                                                           │
 │  │ User Payment │ ← Mixin Invoice                                           │
-│  │ pending_pay  │                                                           │
+│  │ payment_     │                                                           │
+│  │ pending/     │                                                           │
+│  │ complete     │                                                           │
 │  └──────┬───────┘                                                           │
 │         ↓                                                                   │
 │  ┌──────────────┐     ┌─────────────────────────────────────┐               │
-│  │ Phase 1      │     │ 1. Get exchange deposit address     │               │
-│  │ Withdraw to  │────→│    (CCXT)                           │               │
-│  │ Exchange     │     │ 2. Mixin withdraw to exchange       │               │
-│  │ withdrawal   │     │ 3. Record tx_hash                   │               │
-│  └──────┬───────┘     └─────────────────────────────────────┘               │
-│         ↓                                                                   │
-│  ┌──────────────┐     ┌─────────────────────────────────────┐               │
-│  │ Phase 2      │     │ Triple Verification:                │               │
-│  │ Deposit      │────→│ 1. Mixin withdrawal record          │               │
-│  │ Tracking     │     │ 2. On-chain transaction record      │               │
-│  └──────┬───────┘     │ 3. Exchange Deposit History (CCXT)  │               │
+│  │ Phase 1      │     │ Supports single/dual asset:          │               │
+│  │ Withdraw to  │────→│ 1. Get exchange deposit address     │               │
+│  │ Exchange     │     │    (CCXT)                           │               │
+│  │ withdrawing  │     │ 2. Mixin withdraw to exchange       │               │
+│  └──────┬───────┘     │ 3. Record txHash per leg            │               │
 │         ↓             └─────────────────────────────────────┘               │
 │  ┌──────────────┐                                                           │
+│  │ Phase 2      │     ┌─────────────────────────────────────┐               │
+│  │ Deposit      │────→│ Triple verification (per leg):      │               │
+│  │ Tracking     │     │ 1. Mixin withdrawal record          │               │
+│  │ deposit_     │     │ 2. On-chain transaction record      │               │
+│  │ confirming   │     │ 3. Exchange Deposit History (CCXT)  │               │
+│  └──────┬───────┘     └─────────────────────────────────────┘               │
+│         ↓                                                                   │
+│  ┌──────────────┐                                                           │
 │  │ Phase 3      │     ┌─────────────────────────────────────┐               │
-│  │ HuFi Join    │────→│ 1. Find matching Campaign           │               │
-│  │ campaign     │     │ 2. Sign with local EVM private key  │               │
-│  └──────┬───────┘     │ 3. Send join request to HuFi        │               │
-│         ↓             │ 4. Record participation locally      │               │
-│  ┌──────────────┐     └─────────────────────────────────────┘               │
+│  │ HuFi Join    │────→│ 1. Match by symbol + exchangeName   │               │
+│  │ joining_     │     │ 2. Call CampaignService             │               │
+│  │ campaign     │     │    .joinCampaignWithAuth(...)       │               │
+│  └──────┬───────┘     └─────────────────────────────────────┘               │
+│         ↓                                                                   │
+│  ┌──────────────┐                                                           │
 │  │ Phase 4      │                                                           │
 │  │ Market Making│ ←── ExchangePairExecutor (implemented)                    │
-│  │ mm_running   │                                                           │
+│  │ running      │                                                           │
 │  └──────┬───────┘                                                           │
 │         ↓                                                                   │
 │  ┌──────────────┐                                                           │
@@ -65,538 +115,451 @@ User Payment (Mixin) → Withdraw to Exchange → Deposit Tracking → HuFi Camp
 
 ---
 
-## 3. Order Status Flow
+## 4. Order State Flow
 
 ```
-pending_payment          Waiting for user payment
-        ↓ (payment complete)
-withdrawal_pending       Withdrawal in progress (Phase 1)
-        ↓ (Mixin withdrawal sent)
+payment_pending          Waiting for user payment
+        ↓
+payment_incomplete       Partial payment (skipped for single asset)
+        ↓
+payment_complete         Payment complete
+        ↓
+withdrawing              Withdrawal in progress (Phase 1)
+        ↓
 withdrawal_confirmed     Withdrawal on-chain
-        ↓ (on-chain confirmed + exchange received)
-deposit_confirmed        Deposit confirmed (Phase 2)
         ↓
-campaign_joining         Joining Campaign (Phase 3, optional)
-        ↓ (join success or no match)
-mm_running               Market making running (Phase 4)
+deposit_confirming       Waiting for exchange deposit (Phase 2)
+        ↓
+deposit_confirmed        Deposit confirmed
+        ↓
+joining_campaign         Joining Campaign (Phase 3, optional)
+        ↓
+campaign_joined          Campaign joined (or skipped if no match)
+        ↓
+created                  Ready to start market making
+        ↓
+running                  Market making running (Phase 4)
         ↓ (user triggers stop)
-mm_stopping              Stopping
-        ↓
-withdrawal_to_user       Withdraw to user
-        ↓
-completed                Completed
+stopped                  Stopped
 ```
 
 **Error States**:
-- `withdrawal_failed` - Withdrawal failed
-- `deposit_timeout` - Deposit timeout
-- `mm_paused` - Market making paused (consecutive errors)
+- `failed` - Failed
+- `refunded` - Refunded
 
 ---
 
-## 4. Phase 1: Withdraw to Exchange
+## 5. Phase 1: Withdraw to Exchange
 
-### 4.1 Current State
+### 5.1 Current State
 - Code exists but disabled (validation mode)
-- Location: `market-making.processor.ts`
+- Location: `market-making.processor.ts` `processWithdrawToExchange()`
+- Method: `withdrawalService.executeWithdrawal()` (NOT createWithdrawal)
 
-### 4.2 Changes
+### 5.2 Changes
 
-Enable real withdrawal logic:
+**Support Single/Dual Asset**:
 
 ```typescript
 // market-making.processor.ts - processWithdrawToExchange()
 
 async processWithdrawToExchange(job: Job) {
   const { orderId } = job.data;
-  const order = await this.orderRepository.findOne(orderId);
+  const order = await this.userOrdersService.findMarketMakingByOrderId(orderId);
+  const paymentState = await this.paymentStateRepository.findOne({ where: { orderId } });
 
-  // Get exchange deposit address
-  const depositAddress = await this.exchangeService.getDepositAddress(
-    order.exchangeName,
-    order.asset.symbol
+  const apiKey = await this.exchangeService.findFirstAPIKeyByExchange(order.exchangeName);
+  const pairConfig = await this.getPairConfig(order.pair);
+
+  // Determine if single asset order
+  const isSingleAsset = !paymentState.quoteAssetId || paymentState.quoteAssetId === paymentState.baseAssetId;
+
+  // Get deposit address for base
+  const baseNetwork = await this.networkMappingService.getNetworkForAsset(
+    paymentState.baseAssetId,
+    pairConfig.base_symbol,
+  );
+  const baseDepositAddress = await this.exchangeService.getDepositAddress({
+    exchange: order.exchangeName,
+    apiKeyId: apiKey.key_id,
+    symbol: pairConfig.base_symbol,
+    network: baseNetwork,
+  });
+
+  // Execute base withdrawal
+  const baseWithdrawal = await this.withdrawalService.executeWithdrawal(
+    paymentState.baseAssetId,
+    baseDepositAddress.address,
+    baseDepositAddress.memo || `MM:${orderId}:base`,
+    paymentState.baseAssetAmount,
+    `${orderId}:base`,
   );
 
-  // Execute Mixin withdrawal
-  const withdrawal = await this.mixinService.createWithdrawal({
-    address: depositAddress,
-    amount: order.amount,
-    asset_id: order.asset.mixinAssetId,
-    trace_id: uuidv4() // idempotency key
-  });
+  // Handle quote for dual-asset orders
+  let quoteWithdrawal = null;
+  let quoteDepositAddress = null;
+  if (!isSingleAsset) {
+    const quoteNetwork = await this.networkMappingService.getNetworkForAsset(
+      paymentState.quoteAssetId,
+      pairConfig.quote_symbol,
+    );
+    quoteDepositAddress = await this.exchangeService.getDepositAddress({
+      exchange: order.exchangeName,
+      apiKeyId: apiKey.key_id,
+      symbol: pairConfig.quote_symbol,
+      network: quoteNetwork,
+    });
+    quoteWithdrawal = await this.withdrawalService.executeWithdrawal(
+      paymentState.quoteAssetId,
+      quoteDepositAddress.address,
+      quoteDepositAddress.memo || `MM:${orderId}:quote`,
+      paymentState.quoteAssetAmount,
+      `${orderId}:quote`,
+    );
+  }
 
-  // Update order status
-  await this.orderRepository.update(orderId, {
-    status: 'withdrawal_pending',
-    withdrawalTxHash: withdrawal.transaction_hash,
-    withdrawalTraceId: withdrawal.trace_id,
-    depositAddress: depositAddress
+  // Update order with tracking info
+  await this.marketMakingRepository.update(orderId, {
+    state: 'withdrawing',
+    baseWithdrawalTxHash: baseWithdrawal[0]?.transaction_hash,
+    baseWithdrawalTraceId: `${orderId}:base`,
+    baseDepositAddress: baseDepositAddress.address,
+    baseDepositNetwork: baseNetwork,
+    quoteWithdrawalTxHash: quoteWithdrawal?.[0]?.transaction_hash,
+    quoteWithdrawalTraceId: isSingleAsset ? null : `${orderId}:quote`,
+    quoteDepositAddress: quoteDepositAddress?.address,
+    quoteDepositNetwork: isSingleAsset ? null : quoteNetwork,
+    isSingleAssetOrder: isSingleAsset,
   });
-
-  // Trigger deposit tracking
-  await this.depositTrackingQueue.add('track_deposit', { orderId });
 }
 ```
 
-### 4.3 Key Points
-- Get exchange deposit address (CCXT `fetchDepositAddress`)
-- Mixin withdrawal (idempotent, using trace_id)
-- Store tx_hash for subsequent tracking
-- Error handling: retry 3 times, refund on failure
-
 ---
 
-## 5. Phase 2: Deposit Tracking
+## 6. Phase 2: Deposit Tracking
 
-### 5.1 Current State
-- Does not exist, needs to be created
+### 6.1 Trigger Method
+Use `@Cron` polling to query orders in `deposit_confirming` state.
 
-### 5.2 Triple Verification Mechanism
+### 6.2 Triple Verification Mechanism (Per Leg)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Triple Verification                          │
+│              Triple Verification (base and quote separately)     │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  1️⃣ Mixin Withdrawal Record                                     │
-│     API: Mixin API /withdrawals/{traceId}                       │
-│     Confirm: status === 'confirmed'                             │
+│     Confirm: status is confirmed                                │
 │     Get: transaction_hash                                       │
 │                                                                 │
 │  2️⃣ On-chain Transaction Record                                 │
-│     API: Block explorer / Chain node RPC                        │
-│     Confirm: confirmations >= required (BTC:6, ETH:12, BSC:15)  │
-│     Match: txHash === mixin.transaction_hash                    │
+│     Confirm: confirmations >= required                          │
+│     BTC: 6, ETH: 12, BSC: 15                                    │
 │                                                                 │
 │  3️⃣ Exchange Deposit History                                    │
-│     API: CCXT fetchDeposits                                     │
 │     Confirm: status === 'ok'                                    │
-│     Match: txId === txHash && amount === expectedAmount         │
+│     Match: txId + amount                                        │
 │                                                                 │
 │  ═══════════════════════════════════════════════════════════    │
-│  All three pass → Deposit confirmed                             │
+│  Both base + quote confirmed → Overall confirmed                │
+│  Single asset order: Only verify base                           │
 │                                                                 │
-└─────────────────────────────────────��───────────────────────────┘
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.3 New Services
+### 6.3 Entity Field Design
 
-**DepositTrackingService**:
+```typescript
+// user-orders.entity.ts - New fields
+
+// Withdrawal tracking
+@Column({ nullable: true })
+baseWithdrawalTxHash?: string;
+
+@Column({ nullable: true })
+baseWithdrawalTraceId?: string;
+
+@Column({ nullable: true })
+baseDepositAddress?: string;
+
+@Column({ nullable: true })
+baseDepositNetwork?: string;
+
+@Column({ nullable: true })
+quoteWithdrawalTxHash?: string;
+
+@Column({ nullable: true })
+quoteWithdrawalTraceId?: string;
+
+@Column({ nullable: true })
+quoteDepositAddress?: string;
+
+@Column({ nullable: true })
+quoteDepositNetwork?: string;
+
+@Column({ default: false })
+isSingleAssetOrder?: boolean;
+
+// Deposit tracking status
+@Column({ nullable: true })
+baseDepositConfirmedAt?: Date;
+
+@Column({ nullable: true })
+quoteDepositConfirmedAt?: Date;
+
+@Column('simple-json', { nullable: true })
+depositTrackingStatus?: {
+  base: {
+    mixinConfirmed: boolean;
+    onchainConfirmations: number;
+    exchangeReceived: boolean;
+  };
+  quote?: {
+    mixinConfirmed: boolean;
+    onchainConfirmations: number;
+    exchangeReceived: boolean;
+  };
+  allConfirmed: boolean;
+};
+```
+
+### 6.4 DepositTrackingService
 
 ```typescript
 // deposit-tracking.service.ts
 
-interface DepositTrackingResult {
-  mixinStatus: {
-    confirmed: boolean;
-    txHash: string;
-    traceId: string;
-  };
-  onchainStatus: {
-    confirmed: boolean;
-    txHash: string;
-    confirmations: number;
-    requiredConfirmations: number;
-  };
-  exchangeStatus: {
-    received: boolean;
-    txId: string;
-    amount: string;
-  };
-  fullyConfirmed: boolean;
-}
-
 @Injectable()
 export class DepositTrackingService {
-  // Check every 30 seconds
-  @Cron('*/30 * * * * *')
+  @Cron('*/30 * * * * *') // Every 30 seconds
   async checkPendingDeposits() {
     const orders = await this.orderRepository.find({
-      where: { status: In(['withdrawal_pending', 'withdrawal_confirmed']) }
+      where: { state: In(['withdrawing', 'withdrawal_confirmed', 'deposit_confirming']) },
     });
 
     for (const order of orders) {
       const result = await this.trackDeposit(order);
 
-      if (result.fullyConfirmed) {
-        await this.orderRepository.update(order.id, {
-          status: 'deposit_confirmed',
-          depositConfirmedAt: new Date()
+      // Update tracking status
+      await this.orderRepository.update(order.orderId, {
+        depositTrackingStatus: result,
+      });
+
+      // Check if all confirmed
+      if (result.allConfirmed) {
+        await this.orderRepository.update(order.orderId, {
+          state: 'deposit_confirmed',
+          baseDepositConfirmedAt: result.base.exchangeReceived ? new Date() : undefined,
+          quoteDepositConfirmedAt: result.quote?.exchangeReceived ? new Date() : undefined,
         });
-        // Trigger HuFi join
-        await this.campaignQueue.add('join_campaign', { orderId: order.id });
-      } else {
-        // Update tracking status
-        await this.orderRepository.update(order.id, {
-          depositTrackingStatus: JSON.stringify(result)
-        });
+
+        // Trigger Campaign join
+        await this.marketMakingQueue.add('join_campaign', { orderId: order.orderId });
       }
+
+      // Timeout check
+      await this.checkTimeout(order);
     }
   }
 
   async trackDeposit(order: MarketMakingOrder): Promise<DepositTrackingResult> {
-    const result = this.initEmptyResult();
+    const result: DepositTrackingResult = {
+      base: { mixinConfirmed: false, onchainConfirmations: 0, exchangeReceived: false },
+      allConfirmed: false,
+    };
 
-    // 1. Check Mixin withdrawal record
-    result.mixinStatus = await this.checkMixinWithdrawal(order.withdrawalTraceId);
-
-    if (!result.mixinStatus.confirmed) {
-      return result;
-    }
-
-    // 2. Check on-chain transaction record
-    result.onchainStatus = await this.chainTrackerService.getTransaction(
-      order.asset.chain,
-      result.mixinStatus.txHash
-    );
-
-    if (!result.onchainStatus.confirmed) {
-      return result;
-    }
-
-    // 3. Check exchange Deposit History
-    result.exchangeStatus = await this.checkExchangeDeposit(
+    // Verify base
+    result.base = await this.verifyLeg(
+      order.baseWithdrawalTraceId,
+      order.baseWithdrawalTxHash,
+      order.baseDepositAddress,
+      order.baseDepositNetwork,
+      order.baseAssetAmount,
       order.exchangeName,
-      order.asset.symbol,
-      result.mixinStatus.txHash,
-      order.amount
     );
 
-    result.fullyConfirmed =
-      result.mixinStatus.confirmed &&
-      result.onchainStatus.confirmed &&
-      result.exchangeStatus.received;
+    // Verify quote for dual-asset
+    if (!order.isSingleAssetOrder && order.quoteWithdrawalTraceId) {
+      result.quote = await this.verifyLeg(
+        order.quoteWithdrawalTraceId,
+        order.quoteWithdrawalTxHash,
+        order.quoteDepositAddress,
+        order.quoteDepositNetwork,
+        order.quoteAssetAmount,
+        order.exchangeName,
+      );
+    }
+
+    // Determine overall confirmation
+    const baseConfirmed = result.base.mixinConfirmed && result.base.exchangeReceived;
+    const quoteConfirmed = order.isSingleAssetOrder || (result.quote?.mixinConfirmed && result.quote?.exchangeReceived);
+    result.allConfirmed = baseConfirmed && quoteConfirmed;
 
     return result;
   }
 }
 ```
 
-**ChainTrackerService** (on-chain tracking):
-
-```typescript
-// chain-tracker.service.ts
-
-@Injectable()
-export class ChainTrackerService {
-  private readonly requiredConfirmations: Record<string, number> = {
-    'bitcoin': 6,
-    'ethereum': 12,
-    'bsc': 15,
-    'polygon': 20,
-    'arbitrum': 12
-  };
-
-  async getTransaction(chain: string, txHash: string): Promise<OnchainStatus> {
-    const provider = this.getProvider(chain);
-
-    const tx = await provider.getTransaction(txHash);
-    if (!tx) {
-      return {
-        confirmed: false,
-        txHash,
-        confirmations: 0,
-        requiredConfirmations: this.requiredConfirmations[chain] || 12
-      };
-    }
-
-    const required = this.requiredConfirmations[chain] || 12;
-
-    return {
-      confirmed: tx.confirmations >= required,
-      txHash,
-      confirmations: tx.confirmations,
-      requiredConfirmations: required
-    };
-  }
-
-  private getProvider(chain: string) {
-    // Return appropriate provider based on chain type
-    // Can be ethers provider, bitcoin RPC, or third-party API
-  }
-}
-```
-
-### 5.4 Timeout Handling
-
-```typescript
-// Alert if not confirmed after 1 hour
-if (order.withdrawalAt && Date.now() - order.withdrawalAt.getTime() > 3600000) {
-  await this.alertService.sendAlert({
-    type: 'deposit_timeout',
-    orderId: order.id,
-    trackingStatus: result
-  });
-
-  await this.orderRepository.update(order.id, {
-    status: 'deposit_timeout'
-  });
-}
-```
-
 ---
 
-## 6. Phase 3: HuFi Campaign Join
+## 7. Phase 3: HuFi Campaign Join
 
-### 6.1 Current State
-- `CampaignService` has HuFi API client
-- `join_campaign` flow only creates local records, does not actually join
+### 7.1 Current State
+- `CampaignService` has complete API
+- `join_campaign` flow only creates local record, doesn't actually join
 
-### 6.2 Changes
+### 7.2 Campaign Matching Logic
 
-**Separation of Local Record vs Actual Join**:
-- `CampaignParticipation` entity: Only records participation info, does not trigger operations
-- `HuFiIntegrationService`: Responsible for actually calling HuFi API to join
+**CampaignDataDto Actual Fields**:
+```typescript
+// campaign.dto.ts
+chainId: number;
+exchangeName: string;
+symbol: string;        // NOT pair!
+endBlock: number;      // NOT endTime!
+address: string;
+status: string;
+```
 
-**HuFiIntegrationService**:
+**Matching Logic**:
+```typescript
+private findMatchingCampaign(campaigns: CampaignDataDto[], order: MarketMakingOrder): CampaignDataDto | null {
+  // Extract symbol from order.pair (e.g., "BTC/USDT" → "BTC")
+  const baseSymbol = order.pair.split('/')[0];
+
+  return campaigns.find(c =>
+    c.symbol === baseSymbol &&
+    c.exchangeName === order.exchangeName &&
+    c.status !== 'Complete' &&
+    c.endBlock * 1000 >= Date.now()  // endBlock is block number, needs conversion
+  ) || null;
+}
+```
+
+### 7.3 HuFiIntegrationService
 
 ```typescript
 // hufi-integration.service.ts
-
-interface JoinCampaignResult {
-  success: boolean;
-  campaignId?: string;
-  txHash?: string;
-  reason?: string;
-  error?: string;
-}
 
 @Injectable()
 export class HuFiIntegrationService {
   constructor(
     private readonly campaignService: CampaignService,
-    private readonly systemWalletService: SystemWalletService,
-    private readonly participationRepository: Repository<CampaignParticipation>
+    private readonly configService: ConfigService,
   ) {}
 
   async joinCampaign(order: MarketMakingOrder): Promise<JoinCampaignResult> {
-    // 1. Find matching Campaign
-    const campaigns = await this.campaignService.getCampaigns();
-    const matchingCampaign = this.findMatchingCampaign(campaigns, order);
-
-    if (!matchingCampaign) {
-      this.logger.log(`No matching campaign for order ${order.id}`);
-      return { success: false, reason: 'no_matching_campaign' };
-    }
-
-    // 2. Get system EVM wallet
-    const systemWallet = await this.systemWalletService.getWallet();
-
-    // 3. Build signature data
-    const signData = {
-      campaignId: matchingCampaign.id,
-      address: systemWallet.address,
-      pair: order.pair,
-      exchange: order.exchange,
-      amount: order.amount,
-      timestamp: Date.now()
-    };
-
-    // 4. Sign with EVM private key
-    const signature = await this.systemWalletService.signMessage(
-      systemWallet.privateKey,
-      JSON.stringify(signData)
-    );
-
-    // 5. Call HuFi API to join
     try {
-      const result = await this.campaignService.joinCampaignWithAuth({
-        campaignId: matchingCampaign.id,
-        address: systemWallet.address,
-        signature,
-        ...signData
-      });
+      // 1. Get campaigns
+      const campaigns = await this.campaignService.getCampaigns();
+      const matchingCampaign = this.findMatchingCampaign(campaigns, order);
 
-      // 6. Create local record (for recording only)
-      await this.participationRepository.save({
-        orderId: order.id,
-        campaignId: matchingCampaign.id,
-        hufiParticipationId: result.participationId,
-        status: 'joined',
-        joinedAt: new Date(),
-        txHash: result.txHash
-      });
+      if (!matchingCampaign) {
+        return { success: false, reason: 'no_matching_campaign' };
+      }
+
+      // 2. Get system wallet config
+      const walletAddress = this.configService.get<string>('hufi.system_wallet_address');
+      const privateKey = this.configService.get<string>('hufi.system_wallet_private_key');
+
+      if (!walletAddress || !privateKey) {
+        return { success: false, reason: 'wallet_not_configured' };
+      }
+
+      // 3. Call existing CampaignService.joinCampaignWithAuth
+      // Signature: joinCampaignWithAuth(wallet_address, private_key, chain_id, campaign_address)
+      const result = await this.campaignService.joinCampaignWithAuth(
+        walletAddress,
+        privateKey,
+        matchingCampaign.chainId,
+        matchingCampaign.address,
+      );
 
       return {
         success: true,
-        campaignId: matchingCampaign.id,
-        txHash: result.txHash
+        campaignAddress: matchingCampaign.address,
+        chainId: matchingCampaign.chainId,
       };
     } catch (error) {
-      this.logger.error(`HuFi join failed for order ${order.id}`, error);
-
-      // Record failure, but don't block market making
-      await this.participationRepository.save({
-        orderId: order.id,
-        campaignId: matchingCampaign.id,
-        status: 'join_failed',
-        error: error.message
-      });
-
-      return {
-        success: false,
-        reason: 'join_failed',
-        error: error.message
-      };
+      // Failure does not block market making
+      this.logger.error(`HuFi join failed (non-blocking): ${error.message}`);
+      return { success: false, reason: 'join_failed', error: error.message };
     }
   }
 
-  private findMatchingCampaign(campaigns: Campaign[], order: MarketMakingOrder): Campaign | null {
+  private findMatchingCampaign(campaigns: CampaignDataDto[], order: MarketMakingOrder): CampaignDataDto | null {
+    const baseSymbol = order.pair.split('/')[0];
+
     return campaigns.find(c =>
-      c.pair === order.pair &&
-      c.exchange === order.exchange &&
-      c.status === 'active' &&
-      new Date(c.startTime) <= new Date() &&
-      new Date(c.endTime) >= new Date()
+      c.symbol === baseSymbol &&
+      c.exchangeName === order.exchangeName &&
+      c.status !== 'Complete' &&
+      c.endBlock * 1000 >= Date.now()
     ) || null;
   }
 }
 ```
 
-**Integration into Flow**:
-
-```typescript
-// market-making.processor.ts - processJoinCampaign()
-
-async processJoinCampaign(job: Job) {
-  const { orderId } = job.data;
-  const order = await this.orderRepository.findOne(orderId);
-
-  // Call HuFi join service
-  const result = await this.huFiIntegrationService.joinCampaign(order);
-
-  // Regardless of success, trigger market making
-  await this.startMmQueue.add('start_mm', { orderId });
-}
-```
-
-### 6.3 Key Points
-- Use local EVM private key for signing
-- Join failure does not block market making
-- Local record is for recording only
-
 ---
 
-## 7. Phase 4: Market Making Execution
+## 8. Phase 4: Market Making Execution
 
-### 7.1 Current State
+### 8.1 Current State
 - `ExchangePairExecutor` implemented
 - Strategy controllers implemented
 - Order placement/cancellation via CCXT
 
-### 7.2 Addition: Metrics Tracking
+### 8.2 Addition: Metrics Tracking
 
 ```typescript
-// Add statistics in ExchangePairExecutor
-
 interface OrderMetrics {
-  placedCount: number;        // Number of orders placed
-  filledCount: number;        // Number of fills
-  cancelledCount: number;     // Number of cancellations
-  failedCount: number;        // Number of failures
-  totalVolume: BigNumber;     // Total volume
-  totalProfit: BigNumber;     // Total profit
-  avgSpread: BigNumber;       // Average spread
-}
-
-// Extend StrategySession
-class StrategySession {
-  metrics: OrderMetrics = {
-    placedCount: 0,
-    filledCount: 0,
-    cancelledCount: 0,
-    failedCount: 0,
-    totalVolume: ZERO,
-    totalProfit: ZERO,
-    avgSpread: ZERO
-  };
-
-  onFill(fill: FillEvent) {
-    this.metrics.filledCount++;
-    this.metrics.totalVolume = this.metrics.totalVolume.plus(fill.amount);
-    // Calculate profit...
-  }
-}
-
-// Periodic persistence
-@Cron('*/10 * * * *')
-async persistMetrics() {
-  for (const executor of this.executorRegistry.getActiveExecutors()) {
-    for (const session of executor.getActiveSessions()) {
-      await this.orderMetricsRepository.upsert({
-        orderId: session.orderId,
-        ...session.metrics,
-        updatedAt: new Date()
-      });
-    }
-  }
+  placedCount: number;
+  filledCount: number;
+  cancelledCount: number;
+  failedCount: number;
+  totalVolume: string;
+  totalProfit: string;
 }
 ```
 
 ---
 
-## 8. Error Handling Strategy
+## 9. Error Handling Strategy
 
-| Phase | Error Type | Handling | Status Change |
-|-------|------------|----------|---------------|
-| Phase 1 | Get deposit address failed | Retry 3 times | Keep current status |
-| Phase 1 | Mixin withdrawal failed | Retry 3 times, refund on failure | `withdrawal_failed` → refund |
-| Phase 2 | Deposit timeout (>1h) | Alert + manual intervention | `deposit_timeout` |
-| Phase 3 | No matching Campaign | Skip, continue market making | Go directly to Phase 4 |
-| Phase 3 | HuFi join failed | Log, continue market making | Record failure, continue |
-| Phase 4 | Order placement failed | Retry, pause on consecutive failures | `mm_paused` |
-| Phase 4 | API rate limit | Wait and retry | Keep `mm_running` |
-
----
-
-## 9. Testing Plan
-
-| Phase | Test Item | Environment | Verification Point |
-|-------|-----------|-------------|-------------------|
-| Phase 1 | Mixin withdrawal | Mixin sandbox | tx_hash returned correctly |
-| Phase 1 | Exchange address retrieval | Exchange testnet | Address format correct |
-| Phase 2 | Mixin withdrawal query | Mixin sandbox | Status returned correctly |
-| Phase 2 | On-chain transaction query | Mainnet (small amount) | Confirmations correct |
-| Phase 2 | Exchange Deposit query | Exchange testnet | Matching logic correct |
-| Phase 3 | Campaign matching | Mock data | Matching logic correct |
-| Phase 3 | EVM signing | Unit test | Signature format correct |
-| Phase 3 | HuFi API call | HuFi testnet | Join successful |
-| Phase 4 | Order placement/cancellation | Exchange testnet | Operations correct |
-| E2E | Complete flow | Small real funds | Full flow passes |
+| Phase | Error Type | Handling | State Change |
+|-------|------------|----------|--------------|
+| Phase 1 | Get deposit address failed | Retry 3 times | Keep `withdrawing` |
+| Phase 1 | Mixin withdrawal failed | Retry 3 times, refund on failure | `failed` → refund |
+| Phase 2 | Deposit timeout (>1h) | Alert + manual intervention | `failed` |
+| Phase 3 | No matching Campaign | Skip, continue market making | Go directly to `created` |
+| Phase 3 | HuFi join failed | Log, continue market making | Continue |
+| Phase 4 | Order placement failed | Retry, pause on consecutive failures | `paused` |
 
 ---
 
 ## 10. File Change List
 
 ### New Files
+- `server/src/modules/market-making/deposit/deposit.module.ts`
 - `server/src/modules/market-making/deposit/deposit-tracking.service.ts`
+- `server/src/modules/market-making/deposit/deposit-tracking.service.spec.ts`
 - `server/src/modules/market-making/deposit/chain-tracker.service.ts`
+- `server/src/modules/market-making/deposit/chain-tracker.service.spec.ts`
+- `server/src/modules/market-making/hufi/hufi.module.ts`
 - `server/src/modules/market-making/hufi/hufi-integration.service.ts`
+- `server/src/modules/market-making/hufi/hufi-integration.service.spec.ts`
 - `server/src/modules/market-making/metrics/order-metrics.service.ts`
 
 ### Modified Files
+- `server/src/common/entities/orders/user-orders.entity.ts` - Add dual-asset tracking fields
 - `server/src/modules/market-making/user-orders/market-making.processor.ts` - Enable withdrawal, integrate deposit tracking
-- `server/src/modules/market-making/user-orders/user-orders.entity.ts` - Add tracking fields
-- `server/src/modules/market-making/execution/exchange-pair-executor.ts` - Add statistics
-- `server/src/modules/campaign/campaign.service.ts` - May need to adjust join API
+- `server/src/modules/market-making/user-orders/user-orders.module.ts` - Import new modules
 
 ---
 
-## 11. Timeline
+## 11. Key Decisions
 
-| Day | Task | Output |
-|-----|------|--------|
-| Day 1-2 | Phase 1 + Phase 2 | Withdraw to exchange + Deposit tracking |
-| Day 2-3 | Phase 3 | HuFi integration + testing |
-| Day 3-4 | Phase 4 addition | Metrics tracking |
-| Day 4-5 | Integration testing | E2E flow verification |
-| Day 5-7 | Real fund testing + fixes | Production ready |
-
----
-
-## 12. Key Decisions
-
-1. **Fund Flow**: Mixin → CEX (via Mixin withdrawal to exchange)
-2. **Exchange Support**: CCXT generic interface
-3. **HuFi Integration**: Synchronous integration, using local EVM private key signing
-4. **Verification Method**: Small amount real fund testing
+1. **Asset Support**: Support both single and dual asset orders
+2. **State Names**: Use existing `withdrawing`, `deposit_confirming`, `joining_campaign`, `running`
+3. **Trigger Method**: Cron polling for orders in `deposit_confirming` state
+4. **Campaign Matching**: Use `symbol` + `exchangeName` + `endBlock`
+5. **Method Name**: `executeWithdrawal` (NOT createWithdrawal)

@@ -18,40 +18,89 @@
 
 ---
 
-## 二、整体架构
+## 二、现有代码基础
+
+### 已有服务（不要重复创建）
+- `ExchangeApiKeyService` - `exchange-api-key.service.ts`
+  - `getDepositAddress()`, `findFirstAPIKeyByExchange()`
+- `CampaignService` - `campaign.service.ts`
+  - `getCampaigns()`, `joinCampaignWithAuth(wallet, key, chainId, address)`
+- `WithdrawalService` - `withdrawal.service.ts`
+  - `executeWithdrawal(asset_id, destination, memo, amount, requestKey?)`
+- `MarketMakingOrderProcessor` - `market-making.processor.ts`
+  - 已有 `@Process('withdraw_to_exchange')` 和 `@Process('join_campaign')`
+
+### 已有状态定义 (`states.ts`)
+```typescript
+type MarketMakingStates =
+  | 'payment_pending'
+  | 'payment_incomplete'
+  | 'payment_complete'
+  | 'withdrawing'
+  | 'withdrawal_confirmed'
+  | 'deposit_confirming'
+  | 'deposit_confirmed'
+  | 'joining_campaign'
+  | 'campaign_joined'
+  | 'created'
+  | 'running'
+  | 'paused'
+  | 'stopped'
+  | 'failed'
+  | 'refunded'
+  | 'deleted';
+```
+
+### 已有支付状态结构 (`payment-state.entity.ts`)
+```typescript
+// 双资产结构
+baseAssetId, baseAssetAmount, baseAssetSnapshotId
+quoteAssetId, quoteAssetAmount, quoteAssetSnapshotId
+// 手续费
+baseFeeAssetId, baseFeeAssetAmount
+quoteFeeAssetId, quoteFeeAssetAmount
+```
+
+---
+
+## 三、整体架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           Mr.Market 完整做市流程                              │
-├────────────────────���────────────────────────────────────────────────────────┤
+├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌──────────────┐                                                           │
 │  │ 用户支付      │ ← Mixin Invoice                                           │
-│  │ pending_pay  │                                                           │
+│  │ payment_     │                                                           │
+│  │ pending/     │                                                           │
+│  │ complete     │                                                           │
 │  └──────┬───────┘                                                           │
 │         ↓                                                                   │
 │  ┌──────────────┐     ┌─────────────────────────────────────┐               │
-│  │ Phase 1      │     │ 1. 获取交易所充值地址 (CCXT)          │               │
-│  │ 提现到交易所  │────→│ 2. Mixin 提现到交易所地址            │               │
-│  │ withdrawal   │     │ 3. 记录 tx_hash                      │               │
-│  └──────┬───────┘     └─────────────────────────────────────┘               │
-│         ↓                                                                   │
-│  ┌──────────────┐     ┌─────────────────────────────────────┐               │
-│  │ Phase 2      │     │ 三重验证：                           │               │
-│  │ 充值追踪      │────→│ 1. Mixin 提现记录                    │               │
-│  │ deposit      │     │ 2. 链上转账记录                      │               │
+│  │ Phase 1      │     │ 支持单/双资产：                       │               │
+│  │ 提现到交易所  │────→│ 1. 获取交易所充值地址 (CCXT)          │               │
+│  │ withdrawing  │     │ 2. Mixin 提现到交易所地址            │               │
+│  └──────┬───────┘     │ 3. 记录每条腿的 txHash               │               │
+│         ↓             └─────────────────────────────────────┘               │
+│  ┌──────────────┐                                                           │
+│  │ Phase 2      │     ┌─────────────────────────────────────┐               │
+│  │ 充值追踪      │────→│ 三重验证（每条腿独立）：              │               │
+│  │ deposit_     │     │ 1. Mixin 提现记录                    │               │
+│  │ confirming   │     │ 2. 链上转账记录                      │               │
 │  └──────┬───────┘     │ 3. 交易所 Deposit History (CCXT)    │               │
 │         ↓             └─────────────────────────────────────┘               │
 │  ┌──────────────┐                                                           │
 │  │ Phase 3      │     ┌─────────────────────────────────────┐               │
-│  │ HuFi 加入    │────→│ 1. 查找匹配 Campaign                 │               │
-│  │ campaign     │     │ 2. 本地 EVM 私钥签名                 │               │
-│  └──────┬───────┘     │ 3. 发送加入请求到 HuFi              │               │
-│         ↓             │ 4. 本地记录参与信息                  │               │
-│  ┌──────────────┐     └─────────────────────────────────────┘               │
+│  │ HuFi 加入    │────→│ 1. 用 symbol + exchangeName 匹配     │               │
+│  │ joining_     │     │ 2. 调用 CampaignService              │               │
+│  │ campaign     │     │    .joinCampaignWithAuth(...)       │               │
+│  └──────┬───────┘     └─────────────────────────────────────┘               │
+│         ↓                                                                   │
+│  ┌──────────────┐                                                           │
 │  │ Phase 4      │                                                           │
 │  │ 做市执行      │ ←── ExchangePairExecutor (已实现)                         │
-│  │ mm_running   │                                                           │
+│  │ running      │                                                           │
 │  └──────┬───────┘                                                           │
 │         ↓                                                                   │
 │  ┌──────────────┐                                                           │
@@ -63,533 +112,452 @@
 
 ---
 
-## 三、订单状态流转
+## 四、订单状态流转
 
 ```
-pending_payment          等待用户支付
-        ↓ (支付完��)
-withdrawal_pending       提现处理中 (Phase 1)
-        ↓ (Mixin 提现已发送)
+payment_pending          等待用户支付
+        ↓
+payment_incomplete       部分支付（单资产时跳过）
+        ↓
+payment_complete         支付完成
+        ↓
+withdrawing              提现处理中 (Phase 1)
+        ↓
 withdrawal_confirmed     提现已上链
-        ↓ (链上确认 + 交易所到账)
-deposit_confirmed        充值已确认 (Phase 2)
         ↓
-campaign_joining         正在加入 Campaign (Phase 3, 可选)
-        ↓ (加入成功或无匹配)
-mm_running               做市执行中 (Phase 4)
+deposit_confirming       等待交易所到账 (Phase 2)
+        ↓
+deposit_confirmed        充值已确认
+        ↓
+joining_campaign         正在加入 Campaign (Phase 3, 可选)
+        ↓
+campaign_joined          Campaign 加入成功（或无匹配时跳过）
+        ↓
+created                  准备开始做市
+        ↓
+running                  做市执行中 (Phase 4)
         ↓ (用户触发停止)
-mm_stopping              停止中
-        ↓
-withdrawal_to_user       提现回用户
-        ↓
-completed                完成
+stopped                  已停止
 ```
 
 **错误状态**：
-- `withdrawal_failed` - 提现失败
-- `deposit_timeout` - 充值超时
-- `mm_paused` - 做市暂停（连续错误）
+- `failed` - 失败
+- `refunded` - 已退款
 
 ---
 
-## 四、Phase 1: 提现到交易所
+## 五、Phase 1: 提现到交易所
 
-### 4.1 现状
+### 5.1 现状
 - 代码已存在，但被禁用（validation mode）
-- 位置: `market-making.processor.ts`
+- 位置：`market-making.processor.ts` 的 `processWithdrawToExchange()`
+- 方法：`withdrawalService.executeWithdrawal()`（不是 createWithdrawal）
 
-### 4.2 改动内容
+### 5.2 改动内容
 
-启用真实提现逻辑：
+**支持单/双资产**：
 
 ```typescript
 // market-making.processor.ts - processWithdrawToExchange()
 
 async processWithdrawToExchange(job: Job) {
   const { orderId } = job.data;
-  const order = await this.orderRepository.findOne(orderId);
+  const order = await this.userOrdersService.findMarketMakingByOrderId(orderId);
+  const paymentState = await this.paymentStateRepository.findOne({ where: { orderId } });
 
-  // 获取交易所充值地址
-  const depositAddress = await this.exchangeService.getDepositAddress(
-    order.exchangeName,
-    order.asset.symbol
+  const apiKey = await this.exchangeService.findFirstAPIKeyByExchange(order.exchangeName);
+  const pairConfig = await this.getPairConfig(order.pair);
+
+  // 判断是否为单资产订单
+  const isSingleAsset = !paymentState.quoteAssetId || paymentState.quoteAssetId === paymentState.baseAssetId;
+
+  // 获取充值地址
+  const baseNetwork = await this.networkMappingService.getNetworkForAsset(
+    paymentState.baseAssetId,
+    pairConfig.base_symbol,
+  );
+  const baseDepositAddress = await this.exchangeService.getDepositAddress({
+    exchange: order.exchangeName,
+    apiKeyId: apiKey.key_id,
+    symbol: pairConfig.base_symbol,
+    network: baseNetwork,
+  });
+
+  // 执行 base 提现
+  const baseWithdrawal = await this.withdrawalService.executeWithdrawal(
+    paymentState.baseAssetId,
+    baseDepositAddress.address,
+    baseDepositAddress.memo || `MM:${orderId}:base`,
+    paymentState.baseAssetAmount,
+    `${orderId}:base`,
   );
 
-  // 执行 Mixin 提现
-  const withdrawal = await this.mixinService.createWithdrawal({
-    address: depositAddress,
-    amount: order.amount,
-    asset_id: order.asset.mixinAssetId,
-    trace_id: uuidv4() // 幂等键
-  });
+  // 双资产时处理 quote
+  let quoteWithdrawal = null;
+  let quoteDepositAddress = null;
+  if (!isSingleAsset) {
+    const quoteNetwork = await this.networkMappingService.getNetworkForAsset(
+      paymentState.quoteAssetId,
+      pairConfig.quote_symbol,
+    );
+    quoteDepositAddress = await this.exchangeService.getDepositAddress({
+      exchange: order.exchangeName,
+      apiKeyId: apiKey.key_id,
+      symbol: pairConfig.quote_symbol,
+      network: quoteNetwork,
+    });
+    quoteWithdrawal = await this.withdrawalService.executeWithdrawal(
+      paymentState.quoteAssetId,
+      quoteDepositAddress.address,
+      quoteDepositAddress.memo || `MM:${orderId}:quote`,
+      paymentState.quoteAssetAmount,
+      `${orderId}:quote`,
+    );
+  }
 
-  // 更新订单状态
-  await this.orderRepository.update(orderId, {
-    status: 'withdrawal_pending',
-    withdrawalTxHash: withdrawal.transaction_hash,
-    withdrawalTraceId: withdrawal.trace_id,
-    depositAddress: depositAddress
+  // 更新订单状态和追踪信息
+  await this.marketMakingRepository.update(orderId, {
+    state: 'withdrawing',
+    // 存储到新增的追踪字段
+    baseWithdrawalTxHash: baseWithdrawal[0]?.transaction_hash,
+    baseWithdrawalTraceId: `${orderId}:base`,
+    baseDepositAddress: baseDepositAddress.address,
+    baseDepositNetwork: baseNetwork,
+    quoteWithdrawalTxHash: quoteWithdrawal?.[0]?.transaction_hash,
+    quoteWithdrawalTraceId: isSingleAsset ? null : `${orderId}:quote`,
+    quoteDepositAddress: quoteDepositAddress?.address,
+    quoteDepositNetwork: isSingleAsset ? null : quoteNetwork,
+    isSingleAssetOrder: isSingleAsset,
   });
-
-  // 触发充值追踪
-  await this.depositTrackingQueue.add('track_deposit', { orderId });
 }
 ```
 
-### 4.3 关键点
-- 获取交易所充值地址（CCXT `fetchDepositAddress`）
-- Mixin 提现（幂等，使用 trace_id）
-- 存储 tx_hash 用于后续追踪
-- 错误处理：重试 3 次，失败则退款
-
 ---
 
-## 五、Phase 2: 充值追踪
+## 六、Phase 2: 充值追踪
 
-### 5.1 现状
-- 不存在，需要新建
+### 6.1 触发方式
+使用 `@Cron` 轮询，查询 `deposit_confirming` 状态的订单。
 
-### 5.2 三重验证机制
+### 6.2 三重验证机制（每条腿独立）
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      三重验证                                    │
+│              三重验证（base 和 quote 分别验证）                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  1️⃣ Mixin 提现记录                                              │
-│     API: Mixin API /withdrawals/{traceId}                       │
-│     确认: status === 'confirmed'                                │
+│     确认: 状态为 confirmed                                       │
 │     获取: transaction_hash                                      │
 │                                                                 │
 │  2️⃣ 链上转账记录                                                 │
-│     API: 区块链浏览器 / 链节点 RPC                                │
-│     确认: confirmations >= required (BTC:6, ETH:12, BSC:15)     │
-│     匹配: txHash === mixin.transaction_hash                     │
+│     确认: confirmations >= required                             │
+│     BTC: 6, ETH: 12, BSC: 15                                    │
 │                                                                 │
 │  3️⃣ 交易所 Deposit History                                       │
-│     API: CCXT fetchDeposits                                     │
 │     确认: status === 'ok'                                       │
-│     匹配: txId === txHash && amount === expectedAmount          │
+│     匹配: txId + amount                                         │
 │                                                                 │
 │  ═══════════════════════════════════════════════════════════    │
-│  三者全部通过 → 充值确认                                          │
+│  base + quote 都确认 → 整体确认                                  │
+│  单资产订单：只验证 base                                         │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.3 新增服务
+### 6.3 实体字段设计
 
-**DepositTrackingService**:
+```typescript
+// user-orders.entity.ts - 新增字段
+
+// 提现追踪
+@Column({ nullable: true })
+baseWithdrawalTxHash?: string;
+
+@Column({ nullable: true })
+baseWithdrawalTraceId?: string;
+
+@Column({ nullable: true })
+baseDepositAddress?: string;
+
+@Column({ nullable: true })
+baseDepositNetwork?: string;
+
+@Column({ nullable: true })
+quoteWithdrawalTxHash?: string;
+
+@Column({ nullable: true })
+quoteWithdrawalTraceId?: string;
+
+@Column({ nullable: true })
+quoteDepositAddress?: string;
+
+@Column({ nullable: true })
+quoteDepositNetwork?: string;
+
+@Column({ default: false })
+isSingleAssetOrder?: boolean;
+
+// 充值追踪状态
+@Column({ nullable: true })
+baseDepositConfirmedAt?: Date;
+
+@Column({ nullable: true })
+quoteDepositConfirmedAt?: Date;
+
+@Column('simple-json', { nullable: true })
+depositTrackingStatus?: {
+  base: {
+    mixinConfirmed: boolean;
+    onchainConfirmations: number;
+    exchangeReceived: boolean;
+  };
+  quote?: {
+    mixinConfirmed: boolean;
+    onchainConfirmations: number;
+    exchangeReceived: boolean;
+  };
+  allConfirmed: boolean;
+};
+```
+
+### 6.4 DepositTrackingService
 
 ```typescript
 // deposit-tracking.service.ts
 
-interface DepositTrackingResult {
-  mixinStatus: {
-    confirmed: boolean;
-    txHash: string;
-    traceId: string;
-  };
-  onchainStatus: {
-    confirmed: boolean;
-    txHash: string;
-    confirmations: number;
-    requiredConfirmations: number;
-  };
-  exchangeStatus: {
-    received: boolean;
-    txId: string;
-    amount: string;
-  };
-  fullyConfirmed: boolean;
-}
-
 @Injectable()
 export class DepositTrackingService {
-  // 每 30 秒检查一次
-  @Cron('*/30 * * * * *')
+  @Cron('*/30 * * * * *') // 每 30 秒
   async checkPendingDeposits() {
     const orders = await this.orderRepository.find({
-      where: { status: In(['withdrawal_pending', 'withdrawal_confirmed']) }
+      where: { state: In(['withdrawing', 'withdrawal_confirmed', 'deposit_confirming']) },
     });
 
     for (const order of orders) {
       const result = await this.trackDeposit(order);
 
-      if (result.fullyConfirmed) {
-        await this.orderRepository.update(order.id, {
-          status: 'deposit_confirmed',
-          depositConfirmedAt: new Date()
+      // 更新追踪状态
+      await this.orderRepository.update(order.orderId, {
+        depositTrackingStatus: result,
+      });
+
+      // 检查是否全部确认
+      if (result.allConfirmed) {
+        await this.orderRepository.update(order.orderId, {
+          state: 'deposit_confirmed',
+          baseDepositConfirmedAt: result.base.exchangeReceived ? new Date() : undefined,
+          quoteDepositConfirmedAt: result.quote?.exchangeReceived ? new Date() : undefined,
         });
-        // 触发 HuFi 加入
-        await this.campaignQueue.add('join_campaign', { orderId: order.id });
-      } else {
-        // 更新追踪状态
-        await this.orderRepository.update(order.id, {
-          depositTrackingStatus: JSON.stringify(result)
-        });
+
+        // 触发 Campaign 加入
+        await this.marketMakingQueue.add('join_campaign', { orderId: order.orderId });
       }
+
+      // 超时检查
+      await this.checkTimeout(order);
     }
   }
 
   async trackDeposit(order: MarketMakingOrder): Promise<DepositTrackingResult> {
-    const result = this.initEmptyResult();
+    const result: DepositTrackingResult = {
+      base: { mixinConfirmed: false, onchainConfirmations: 0, exchangeReceived: false },
+      allConfirmed: false,
+    };
 
-    // 1. 查 Mixin 提现记录
-    result.mixinStatus = await this.checkMixinWithdrawal(order.withdrawalTraceId);
-
-    if (!result.mixinStatus.confirmed) {
-      return result;
-    }
-
-    // 2. 查链上转账记录
-    result.onchainStatus = await this.chainTrackerService.getTransaction(
-      order.asset.chain,
-      result.mixinStatus.txHash
-    );
-
-    if (!result.onchainStatus.confirmed) {
-      return result;
-    }
-
-    // 3. 查交易所 Deposit History
-    result.exchangeStatus = await this.checkExchangeDeposit(
+    // 验证 base
+    result.base = await this.verifyLeg(
+      order.baseWithdrawalTraceId,
+      order.baseWithdrawalTxHash,
+      order.baseDepositAddress,
+      order.baseDepositNetwork,
+      order.baseAssetAmount,
       order.exchangeName,
-      order.asset.symbol,
-      result.mixinStatus.txHash,
-      order.amount
     );
 
-    result.fullyConfirmed =
-      result.mixinStatus.confirmed &&
-      result.onchainStatus.confirmed &&
-      result.exchangeStatus.received;
+    // 双资产时验证 quote
+    if (!order.isSingleAssetOrder && order.quoteWithdrawalTraceId) {
+      result.quote = await this.verifyLeg(
+        order.quoteWithdrawalTraceId,
+        order.quoteWithdrawalTxHash,
+        order.quoteDepositAddress,
+        order.quoteDepositNetwork,
+        order.quoteAssetAmount,
+        order.exchangeName,
+      );
+    }
+
+    // 判断整体确认
+    const baseConfirmed = result.base.mixinConfirmed && result.base.exchangeReceived;
+    const quoteConfirmed = order.isSingleAssetOrder || (result.quote?.mixinConfirmed && result.quote?.exchangeReceived);
+    result.allConfirmed = baseConfirmed && quoteConfirmed;
 
     return result;
   }
 }
 ```
 
-**ChainTrackerService**（链上追踪）:
-
-```typescript
-// chain-tracker.service.ts
-
-@Injectable()
-export class ChainTrackerService {
-  private readonly requiredConfirmations = {
-    'bitcoin': 6,
-    'ethereum': 12,
-    'bsc': 15,
-    'polygon': 20,
-    'arbitrum': 12
-  };
-
-  async getTransaction(chain: string, txHash: string): Promise<OnchainStatus> {
-    const provider = this.getProvider(chain);
-
-    const tx = await provider.getTransaction(txHash);
-    if (!tx) {
-      return { confirmed: false, txHash, confirmations: 0, requiredConfirmations: this.requiredConfirmations[chain] };
-    }
-
-    const required = this.requiredConfirmations[chain] || 12;
-
-    return {
-      confirmed: tx.confirmations >= required,
-      txHash,
-      confirmations: tx.confirmations,
-      requiredConfirmations: required
-    };
-  }
-
-  private getProvider(chain: string) {
-    // 根据链类型返回对应的 provider
-    // 可以是 ethers provider, bitcoin RPC, 或第三方 API
-  }
-}
-```
-
-### 5.4 超时处理
-
-```typescript
-// 超过 1 小时未确认，触发告警
-if (order.withdrawalAt && Date.now() - order.withdrawalAt.getTime() > 3600000) {
-  await this.alertService.sendAlert({
-    type: 'deposit_timeout',
-    orderId: order.id,
-    trackingStatus: result
-  });
-
-  await this.orderRepository.update(order.id, {
-    status: 'deposit_timeout'
-  });
-}
-```
-
 ---
 
-## 六、Phase 3: HuFi Campaign 加入
+## 七、Phase 3: HuFi Campaign 加入
 
-### 6.1 现状
-- `CampaignService` 已有 HuFi API 客户端
+### 7.1 现状
+- `CampaignService` 已有完整 API
 - `join_campaign` 流程只创建本地记录，未真实加入
 
-### 6.2 改动内容
+### 7.2 Campaign 匹配逻辑
 
-**本地记录 vs 实际加入分离**:
-- `CampaignParticipation` 实体：仅记录参与信息，不触发操作
-- `HuFiIntegrationService`：负责实际调用 HuFi API 加入
+**CampaignDataDto 实际字段**：
+```typescript
+// campaign.dto.ts
+chainId: number;
+exchangeName: string;
+symbol: string;        // 不是 pair！
+endBlock: number;      // 不是 endTime！
+address: string;
+status: string;
+```
 
-**HuFiIntegrationService**:
+**匹配逻辑**：
+```typescript
+private findMatchingCampaign(campaigns: CampaignDataDto[], order: MarketMakingOrder): CampaignDataDto | null {
+  // 从 order.pair 提取 symbol (如 "BTC/USDT" → "BTC")
+  const baseSymbol = order.pair.split('/')[0];
+
+  return campaigns.find(c =>
+    c.symbol === baseSymbol &&
+    c.exchangeName === order.exchangeName &&
+    c.status !== 'Complete' &&
+    c.endBlock * 1000 >= Date.now()  // endBlock 是区块号，需转换
+  ) || null;
+}
+```
+
+### 7.3 HuFiIntegrationService
 
 ```typescript
 // hufi-integration.service.ts
-
-interface JoinCampaignResult {
-  success: boolean;
-  campaignId?: string;
-  txHash?: string;
-  reason?: string;
-  error?: string;
-}
 
 @Injectable()
 export class HuFiIntegrationService {
   constructor(
     private readonly campaignService: CampaignService,
-    private readonly systemWalletService: SystemWalletService,
-    private readonly participationRepository: Repository<CampaignParticipation>
+    private readonly configService: ConfigService,
   ) {}
 
   async joinCampaign(order: MarketMakingOrder): Promise<JoinCampaignResult> {
-    // 1. 查找匹配的 Campaign
-    const campaigns = await this.campaignService.getCampaigns();
-    const matchingCampaign = this.findMatchingCampaign(campaigns, order);
-
-    if (!matchingCampaign) {
-      this.logger.log(`No matching campaign for order ${order.id}`);
-      return { success: false, reason: 'no_matching_campaign' };
-    }
-
-    // 2. 获取系统 EVM 钱包
-    const systemWallet = await this.systemWalletService.getWallet();
-
-    // 3. 构建签名数据
-    const signData = {
-      campaignId: matchingCampaign.id,
-      address: systemWallet.address,
-      pair: order.pair,
-      exchange: order.exchange,
-      amount: order.amount,
-      timestamp: Date.now()
-    };
-
-    // 4. EVM 私钥签名
-    const signature = await this.systemWalletService.signMessage(
-      systemWallet.privateKey,
-      JSON.stringify(signData)
-    );
-
-    // 5. 调用 HuFi API 加入
     try {
-      const result = await this.campaignService.joinCampaignWithAuth({
-        campaignId: matchingCampaign.id,
-        address: systemWallet.address,
-        signature,
-        ...signData
-      });
+      // 1. 获取 campaigns
+      const campaigns = await this.campaignService.getCampaigns();
+      const matchingCampaign = this.findMatchingCampaign(campaigns, order);
 
-      // 6. 创建本地记录（仅记录用）
-      await this.participationRepository.save({
-        orderId: order.id,
-        campaignId: matchingCampaign.id,
-        hufiParticipationId: result.participationId,
-        status: 'joined',
-        joinedAt: new Date(),
-        txHash: result.txHash
-      });
+      if (!matchingCampaign) {
+        return { success: false, reason: 'no_matching_campaign' };
+      }
+
+      // 2. 获取系统钱包配置
+      const walletAddress = this.configService.get<string>('hufi.system_wallet_address');
+      const privateKey = this.configService.get<string>('hufi.system_wallet_private_key');
+
+      if (!walletAddress || !privateKey) {
+        return { success: false, reason: 'wallet_not_configured' };
+      }
+
+      // 3. 调用已有的 CampaignService.joinCampaignWithAuth
+      // 签名: joinCampaignWithAuth(wallet_address, private_key, chain_id, campaign_address)
+      const result = await this.campaignService.joinCampaignWithAuth(
+        walletAddress,
+        privateKey,
+        matchingCampaign.chainId,
+        matchingCampaign.address,
+      );
 
       return {
         success: true,
-        campaignId: matchingCampaign.id,
-        txHash: result.txHash
+        campaignAddress: matchingCampaign.address,
+        chainId: matchingCampaign.chainId,
       };
     } catch (error) {
-      this.logger.error(`HuFi join failed for order ${order.id}`, error);
-
-      // 记录失败，但不阻止做市
-      await this.participationRepository.save({
-        orderId: order.id,
-        campaignId: matchingCampaign.id,
-        status: 'join_failed',
-        error: error.message
-      });
-
-      return {
-        success: false,
-        reason: 'join_failed',
-        error: error.message
-      };
+      // 失败不阻止做市
+      this.logger.error(`HuFi join failed (non-blocking): ${error.message}`);
+      return { success: false, reason: 'join_failed', error: error.message };
     }
   }
 
-  private findMatchingCampaign(campaigns: Campaign[], order: MarketMakingOrder): Campaign | null {
+  private findMatchingCampaign(campaigns: CampaignDataDto[], order: MarketMakingOrder): CampaignDataDto | null {
+    const baseSymbol = order.pair.split('/')[0];
+
     return campaigns.find(c =>
-      c.pair === order.pair &&
-      c.exchange === order.exchange &&
-      c.status === 'active' &&
-      new Date(c.startTime) <= new Date() &&
-      new Date(c.endTime) >= new Date()
+      c.symbol === baseSymbol &&
+      c.exchangeName === order.exchangeName &&
+      c.status !== 'Complete' &&
+      c.endBlock * 1000 >= Date.now()
     ) || null;
   }
 }
 ```
 
-**集成到流程中**:
-
-```typescript
-// market-making.processor.ts - processJoinCampaign()
-
-async processJoinCampaign(job: Job) {
-  const { orderId } = job.data;
-  const order = await this.orderRepository.findOne(orderId);
-
-  // 调用 HuFi 加入服务
-  const result = await this.huFiIntegrationService.joinCampaign(order);
-
-  // 无论成功与否，都触发做市
-  await this.startMmQueue.add('start_mm', { orderId });
-}
-```
-
-### 6.3 关键点
-- 使用本地 EVM 私钥签名
-- 加入失败不阻止做市继续
-- 本地记录仅做记录用
-
 ---
 
-## 七、Phase 4: 做市执行
+## 八、Phase 4: 做市执行
 
-### 7.1 现状
+### 8.1 现状
 - `ExchangePairExecutor` 已实现
 - 策略控制器已实现
 - 订单下达/取消通过 CCXT
 
-### 7.2 补充：数据追踪
+### 8.2 补充：数据追踪
 
 ```typescript
-// 在 ExchangePairExecutor 中增加统计
-
 interface OrderMetrics {
-  placedCount: number;        // 下单次数
-  filledCount: number;        // 成交次数
-  cancelledCount: number;     // 撤单次数
-  failedCount: number;        // 失败次数
-  totalVolume: BigNumber;     // 总交易量
-  totalProfit: BigNumber;     // 总利润
-  avgSpread: BigNumber;       // 平均价差
-}
-
-// 扩展 StrategySession
-class StrategySession {
-  metrics: OrderMetrics = {
-    placedCount: 0,
-    filledCount: 0,
-    cancelledCount: 0,
-    failedCount: 0,
-    totalVolume: ZERO,
-    totalProfit: ZERO,
-    avgSpread: ZERO
-  };
-
-  onFill(fill: FillEvent) {
-    this.metrics.filledCount++;
-    this.metrics.totalVolume = this.metrics.totalVolume.plus(fill.amount);
-    // 计算利润...
-  }
-}
-
-// 定时持久化
-@Cron('*/10 * * * *')
-async persistMetrics() {
-  for (const executor of this.executorRegistry.getActiveExecutors()) {
-    for (const session of executor.getActiveSessions()) {
-      await this.orderMetricsRepository.upsert({
-        orderId: session.orderId,
-        ...session.metrics,
-        updatedAt: new Date()
-      });
-    }
-  }
+  placedCount: number;
+  filledCount: number;
+  cancelledCount: number;
+  failedCount: number;
+  totalVolume: string;
+  totalProfit: string;
 }
 ```
 
 ---
 
-## 八、错误处理策略
+## 九、错误处理策略
 
 | 阶段 | 错误类型 | 处理方式 | 状态变更 |
 |------|---------|---------|---------|
-| Phase 1 | 获取充值地址失败 | 重试 3 次 | 保持原状态 |
-| Phase 1 | Mixin 提现失败 | 重试 3 次，失败后退款 | `withdrawal_failed` → 退款 |
-| Phase 2 | 充值超时 (>1h) | 告警 + 人工介入 | `deposit_timeout` |
-| Phase 3 | 无匹配 Campaign | 跳过，继续做市 | 直接进入 Phase 4 |
-| Phase 3 | HuFi 加入失败 | 记录日志，继续做市 | 记录失败，继续 |
-| Phase 4 | 下单失败 | 重试，连续失败则暂停 | `mm_paused` |
-| Phase 4 | API 限流 | 等待后重试 | 保持 `mm_running` |
-
----
-
-## 九、测试计划
-
-| 阶段 | 测试项 | 环境 | 验证点 |
-|------|--------|------|--------|
-| Phase 1 | Mixin 提现 | Mixin sandbox | tx_hash 正确返回 |
-| Phase 1 | 交易所地址获取 | 交易所 testnet | 地址格式正确 |
-| Phase 2 | Mixin 提现查询 | Mixin sandbox | 状态正确返回 |
-| Phase 2 | 链上交易查询 | 主网（小额） | 确认数正确 |
-| Phase 2 | 交易所 Deposit 查询 | 交易所 testnet | 匹配逻辑正确 |
-| Phase 3 | Campaign 匹配 | Mock 数据 | 匹配逻辑正确 |
-| Phase 3 | EVM 签名 | 单元测试 | 签名格式正确 |
-| Phase 3 | HuFi API 调用 | HuFi testnet | 加入成功 |
-| Phase 4 | 下单/撤单 | 交易所 testnet | 操作正确 |
-| E2E | 完整流程 | 小额真实资金 | 全流程通过 |
+| Phase 1 | 获取充值地址失败 | 重试 3 次 | 保持 `withdrawing` |
+| Phase 1 | Mixin 提现失败 | 重试 3 次，失败后退款 | `failed` → 退款 |
+| Phase 2 | 充值超时 (>1h) | 告警 + 人工介入 | `failed` |
+| Phase 3 | 无匹配 Campaign | 跳过，继续做市 | 直接进入 `created` |
+| Phase 3 | HuFi 加入失败 | 记录日志，继续做市 | 继续 |
+| Phase 4 | 下单失败 | 重试，连续失败则暂停 | `paused` |
 
 ---
 
 ## 十、文件改动清单
 
 ### 新增文件
+- `server/src/modules/market-making/deposit/deposit.module.ts`
 - `server/src/modules/market-making/deposit/deposit-tracking.service.ts`
+- `server/src/modules/market-making/deposit/deposit-tracking.service.spec.ts`
 - `server/src/modules/market-making/deposit/chain-tracker.service.ts`
+- `server/src/modules/market-making/deposit/chain-tracker.service.spec.ts`
+- `server/src/modules/market-making/hufi/hufi.module.ts`
 - `server/src/modules/market-making/hufi/hufi-integration.service.ts`
+- `server/src/modules/market-making/hufi/hufi-integration.service.spec.ts`
 - `server/src/modules/market-making/metrics/order-metrics.service.ts`
 
 ### 修改文件
+- `server/src/common/entities/orders/user-orders.entity.ts` - 增加双资产追踪字段
 - `server/src/modules/market-making/user-orders/market-making.processor.ts` - 启用提现，集成充值追踪
-- `server/src/modules/market-making/user-orders/user-orders.entity.ts` - 增加追踪字段
-- `server/src/modules/market-making/execution/exchange-pair-executor.ts` - 增加统计
-- `server/src/modules/campaign/campaign.service.ts` - 可能需要调整 join API
+- `server/src/modules/market-making/user-orders/user-orders.module.ts` - 导入新模块
 
 ---
 
-## 十一、时间安排
+## 十一、关键决策
 
-| 天数 | 任务 | 产出 |
-|------|------|------|
-| Day 1-2 | Phase 1 + Phase 2 | 提现到交易所 + 充值追踪 |
-| Day 2-3 | Phase 3 | HuFi 集成 + 测试 |
-| Day 3-4 | Phase 4 补充 | 数据追踪 |
-| Day 4-5 | 集成测试 | E2E 流程验证 |
-| Day 5-7 | 真实资金测试 + 修复 | 生产就绪 |
-
----
-
-## 十二、关键决策
-
-1. **资金流转**: Mixin → CEX（通过 Mixin 提现到交易所）
-2. **交易所支持**: CCXT 通用接口
-3. **HuFi 集成**: 同步集成，使用本地 EVM 私钥签名
-4. **验证方式**: 小额真实资金测试
+1. **资产支持**: 同时支持单资产和双资产订单
+2. **状态名**: 使用现有 `withdrawing`, `deposit_confirming`, `joining_campaign`, `running`
+3. **触发方式**: Cron 轮询 `deposit_confirming` 状态的订单
+4. **Campaign 匹配**: 用 `symbol` + `exchangeName` + `endBlock`
+5. **方法名**: `executeWithdrawal`（不是 createWithdrawal）
