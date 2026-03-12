@@ -321,13 +321,38 @@ depositTrackingStatus?: {
 };
 ```
 
+**重要**：预期金额（baseAssetAmount/quoteAssetAmount）存储在 `MarketMakingPaymentState`，
+不在 `MarketMakingOrder`。DepositTrackingService 需要联查 PaymentState。
+
 ### 6.4 DepositTrackingService
 
 ```typescript
 // deposit-tracking.service.ts
 
+import { InjectQueue } from '@nestjs/bull';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Cron } from '@nestjs/schedule';
+import { Queue } from 'bull';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
+import { Repository, In } from 'typeorm';
+import { ChainTrackerService } from './chain-tracker.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
 @Injectable()
 export class DepositTrackingService {
+  private readonly logger = new CustomLogger(DepositTrackingService.name);
+
+  constructor(
+    @InjectRepository(MarketMakingOrder)
+    private readonly orderRepository: Repository<MarketMakingOrder>,
+    @InjectRepository(MarketMakingPaymentState)
+    private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
+    private readonly chainTracker: ChainTrackerService,
+    @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
+  ) {}
+
   @Cron('*/30 * * * * *') // 每 30 秒
   async checkPendingDeposits() {
     const orders = await this.orderRepository.find({
@@ -335,7 +360,17 @@ export class DepositTrackingService {
     });
 
     for (const order of orders) {
-      const result = await this.trackDeposit(order);
+      // 联查 PaymentState 获取金额
+      const paymentState = await this.paymentStateRepository.findOne({
+        where: { orderId: order.orderId },
+      });
+
+      if (!paymentState) {
+        this.logger.warn(`PaymentState not found for order ${order.orderId}`);
+        continue;
+      }
+
+      const result = await this.trackDeposit(order, paymentState);
 
       // 更新追踪状态
       await this.orderRepository.update(order.orderId, {
@@ -359,19 +394,22 @@ export class DepositTrackingService {
     }
   }
 
-  async trackDeposit(order: MarketMakingOrder): Promise<DepositTrackingResult> {
+  async trackDeposit(
+    order: MarketMakingOrder,
+    paymentState: MarketMakingPaymentState,  // 从外部传入
+  ): Promise<DepositTrackingResult> {
     const result: DepositTrackingResult = {
       base: { mixinConfirmed: false, onchainConfirmations: 0, exchangeReceived: false },
       allConfirmed: false,
     };
 
-    // 验证 base
+    // 验证 base（金额从 paymentState 获取）
     result.base = await this.verifyLeg(
       order.baseWithdrawalTraceId,
       order.baseWithdrawalTxHash,
       order.baseDepositAddress,
       order.baseDepositNetwork,
-      order.baseAssetAmount,
+      paymentState.baseAssetAmount,  // 从 PaymentState 获取
       order.exchangeName,
     );
 
@@ -382,7 +420,7 @@ export class DepositTrackingService {
         order.quoteWithdrawalTxHash,
         order.quoteDepositAddress,
         order.quoteDepositNetwork,
-        order.quoteAssetAmount,
+        paymentState.quoteAssetAmount,  // 从 PaymentState 获取
         order.exchangeName,
       );
     }
@@ -413,10 +451,15 @@ export class DepositTrackingService {
 chainId: number;
 exchangeName: string;
 symbol: string;        // 不是 pair！
-endBlock: number;      // 不是 endTime！
+endBlock: number;      // 实际是 Unix 秒时间戳（命名有误导性）
 address: string;
 status: string;
 ```
+
+**endBlock 语义说明**：
+虽然字段名叫 `endBlock`，但它实际上是 **Unix 秒时间戳**，不是区块高度。
+现有代码 `campaign-sync.service.ts:toSafeDate()` 把它乘以 1000 转为毫秒，
+所以匹配时用 `endBlock * 1000 >= Date.now()` 是正确的。
 
 **匹配逻辑**：
 ```typescript
@@ -428,7 +471,7 @@ private findMatchingCampaign(campaigns: CampaignDataDto[], order: MarketMakingOr
     c.symbol === baseSymbol &&
     c.exchangeName === order.exchangeName &&
     c.status !== 'Complete' &&
-    c.endBlock * 1000 >= Date.now()  // endBlock 是区块号，需转换
+    c.endBlock * 1000 >= Date.now()  // endBlock 是 Unix 秒时间戳
   ) || null;
 }
 ```
@@ -455,13 +498,18 @@ export class HuFiIntegrationService {
         return { success: false, reason: 'no_matching_campaign' };
       }
 
-      // 2. 获取系统钱包配置
-      const walletAddress = this.configService.get<string>('hufi.system_wallet_address');
-      const privateKey = this.configService.get<string>('hufi.system_wallet_private_key');
+      // 2. 获取系统钱包配置（使用现有配置键名）
+      // 配置来源：configuration.ts -> web3.private_key
+      const privateKey = this.configService.get<string>('web3.private_key');
 
-      if (!walletAddress || !privateKey) {
+      if (!privateKey) {
         return { success: false, reason: 'wallet_not_configured' };
       }
+
+      // 钱包地址从私钥派生
+      const { Wallet } = await import('ethers');
+      const wallet = new Wallet(privateKey);
+      const walletAddress = wallet.address;
 
       // 3. 调用已有的 CampaignService.joinCampaignWithAuth
       // 签名: joinCampaignWithAuth(wallet_address, private_key, chain_id, campaign_address)

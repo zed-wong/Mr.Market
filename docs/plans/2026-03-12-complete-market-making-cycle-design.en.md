@@ -325,11 +325,24 @@ depositTrackingStatus?: {
 
 ### 6.4 DepositTrackingService
 
+**Note**: Amounts (`baseAssetAmount`, `quoteAssetAmount`) are stored in `PaymentState` entity, NOT in `MarketMakingOrder`. Must join with PaymentState repository.
+
 ```typescript
 // deposit-tracking.service.ts
+import { InjectRepository } from '@nestjs/typeorm';
+import { PaymentState } from 'src/common/entities/orders/payment-state.entity';
 
 @Injectable()
 export class DepositTrackingService {
+  constructor(
+    @InjectRepository(MarketMakingOrder)
+    private readonly orderRepository: Repository<MarketMakingOrder>,
+    @InjectRepository(PaymentState)
+    private readonly paymentStateRepository: Repository<PaymentState>,
+    private readonly chainTracker: ChainTrackerService,
+    @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
+  ) {}
+
   @Cron('*/30 * * * * *') // Every 30 seconds
   async checkPendingDeposits() {
     const orders = await this.orderRepository.find({
@@ -337,7 +350,13 @@ export class DepositTrackingService {
     });
 
     for (const order of orders) {
-      const result = await this.trackDeposit(order);
+      // IMPORTANT: Get amounts from PaymentState, not Order
+      const paymentState = await this.paymentStateRepository.findOne({
+        where: { orderId: order.orderId }
+      });
+      if (!paymentState) continue;
+
+      const result = await this.trackDeposit(order, paymentState);
 
       // Update tracking status
       await this.orderRepository.update(order.orderId, {
@@ -361,19 +380,19 @@ export class DepositTrackingService {
     }
   }
 
-  async trackDeposit(order: MarketMakingOrder): Promise<DepositTrackingResult> {
+  async trackDeposit(order: MarketMakingOrder, paymentState: PaymentState): Promise<DepositTrackingResult> {
     const result: DepositTrackingResult = {
       base: { mixinConfirmed: false, onchainConfirmations: 0, exchangeReceived: false },
       allConfirmed: false,
     };
 
-    // Verify base
+    // Verify base - use paymentState for amounts
     result.base = await this.verifyLeg(
       order.baseWithdrawalTraceId,
       order.baseWithdrawalTxHash,
       order.baseDepositAddress,
       order.baseDepositNetwork,
-      order.baseAssetAmount,
+      paymentState.baseAssetAmount,  // From PaymentState, NOT order
       order.exchangeName,
     );
 
@@ -384,7 +403,7 @@ export class DepositTrackingService {
         order.quoteWithdrawalTxHash,
         order.quoteDepositAddress,
         order.quoteDepositNetwork,
-        order.quoteAssetAmount,
+        paymentState.quoteAssetAmount,  // From PaymentState, NOT order
         order.exchangeName,
       );
     }
@@ -415,10 +434,12 @@ export class DepositTrackingService {
 chainId: number;
 exchangeName: string;
 symbol: string;        // NOT pair!
-endBlock: number;      // NOT endTime!
+endBlock: number;      // Misleading name - actually Unix timestamp in seconds!
 address: string;
 status: string;
 ```
+
+**Note**: Despite the name `endBlock`, this field is actually a Unix timestamp in seconds (not a blockchain block height). The campaign-sync.service.ts shows it's used as `endBlock * 1000` for Date comparison.
 
 **Matching Logic**:
 ```typescript
@@ -430,18 +451,37 @@ private findMatchingCampaign(campaigns: CampaignDataDto[], order: MarketMakingOr
     c.symbol === baseSymbol &&
     c.exchangeName === order.exchangeName &&
     c.status !== 'Complete' &&
-    c.endBlock * 1000 >= Date.now()  // endBlock is block number, needs conversion
+    c.endBlock * 1000 >= Date.now()  // endBlock is Unix seconds, multiply by 1000 for ms
   ) || null;
 }
 ```
 
 ### 7.3 HuFiIntegrationService
 
+**Config Keys**: Use existing `web3.private_key` config (defined in configuration.ts) to derive wallet address. Do NOT create new config keys.
+
 ```typescript
 // hufi-integration.service.ts
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import { CampaignService } from 'src/modules/campaign/campaign.service';
+import { CampaignDataDto } from 'src/modules/campaign/campaign.dto';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Wallet } from 'ethers';
+
+interface JoinCampaignResult {
+  success: boolean;
+  campaignAddress?: string;
+  chainId?: number;
+  reason?: string;
+  error?: string;
+}
 
 @Injectable()
 export class HuFiIntegrationService {
+  private readonly logger = new CustomLogger(HuFiIntegrationService.name);
+
   constructor(
     private readonly campaignService: CampaignService,
     private readonly configService: ConfigService,
@@ -457,17 +497,19 @@ export class HuFiIntegrationService {
         return { success: false, reason: 'no_matching_campaign' };
       }
 
-      // 2. Get system wallet config
-      const walletAddress = this.configService.get<string>('hufi.system_wallet_address');
-      const privateKey = this.configService.get<string>('hufi.system_wallet_private_key');
-
-      if (!walletAddress || !privateKey) {
+      // 2. Get system wallet - use existing web3.private_key config
+      const privateKey = this.configService.get<string>('web3.private_key');
+      if (!privateKey) {
         return { success: false, reason: 'wallet_not_configured' };
       }
 
+      // Derive wallet address from private key
+      const wallet = new Wallet(privateKey);
+      const walletAddress = wallet.address;
+
       // 3. Call existing CampaignService.joinCampaignWithAuth
       // Signature: joinCampaignWithAuth(wallet_address, private_key, chain_id, campaign_address)
-      const result = await this.campaignService.joinCampaignWithAuth(
+      await this.campaignService.joinCampaignWithAuth(
         walletAddress,
         privateKey,
         matchingCampaign.chainId,
@@ -493,7 +535,7 @@ export class HuFiIntegrationService {
       c.symbol === baseSymbol &&
       c.exchangeName === order.exchangeName &&
       c.status !== 'Complete' &&
-      c.endBlock * 1000 >= Date.now()
+      c.endBlock * 1000 >= Date.now()  // endBlock is Unix seconds
     ) || null;
   }
 }

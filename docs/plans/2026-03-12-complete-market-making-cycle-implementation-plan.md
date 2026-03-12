@@ -35,8 +35,8 @@ type MarketMakingStates =
 ```
 
 ### Required Config
-- System wallet: `hufi.system_wallet_address`, `hufi.system_wallet_private_key`
-- Chain RPC URLs: `chains.ethereumRpcUrl`, `chains.bscRpcUrl`
+- System wallet: 使用现有 `web3.private_key`（从私钥派生地址）
+- Chain RPC URLs: 使用现有 `web3.network.mainnet.rpc_url`, `web3.network.bsc.rpc_url`
 
 ---
 
@@ -149,25 +149,33 @@ export interface OnchainStatus {
 
 @Injectable()
 export class ChainTrackerService {
+  // 使用现有配置键名 (configuration.ts -> web3.network.*)
   private readonly chainConfigs: Record<string, { rpcUrl: string; requiredConfirmations: number }>;
 
   constructor(private readonly configService: ConfigService) {
     this.chainConfigs = {
       ethereum: {
-        rpcUrl: this.configService.get('chains.ethereumRpcUrl') || '',
+        // 配置键名: web3.network.mainnet.rpc_url
+        rpcUrl: this.configService.get('web3.network.mainnet.rpc_url') || '',
         requiredConfirmations: 12,
       },
       bsc: {
-        rpcUrl: this.configService.get('chains.bscRpcUrl') || '',
+        // 配置键名: web3.network.bsc.rpc_url
+        rpcUrl: this.configService.get('web3.network.bsc.rpc_url') || '',
         requiredConfirmations: 15,
+      },
+      polygon: {
+        // 配置键名: web3.network.polygon.rpc_url
+        rpcUrl: this.configService.get('web3.network.polygon.rpc_url') || '',
+        requiredConfirmations: 20,
       },
     };
   }
 
   async getTransaction(chain: string, txHash: string): Promise<OnchainStatus> {
     const config = this.chainConfigs[chain];
-    if (!config) {
-      throw new Error(`Unsupported chain: ${chain}`);
+    if (!config || !config.rpcUrl) {
+      throw new Error(`Unsupported or unconfigured chain: ${chain}`);
     }
 
     const provider = new ethers.JsonRpcProvider(config.rpcUrl);
@@ -416,12 +424,17 @@ export class HuFiIntegrationService {
         return { success: false, reason: 'no_matching_campaign' };
       }
 
-      const walletAddress = this.configService.get<string>('hufi.system_wallet_address');
-      const privateKey = this.configService.get<string>('hufi.system_wallet_private_key');
+      // 使用现有配置键名 (configuration.ts -> web3.private_key)
+      const privateKey = this.configService.get<string>('web3.private_key');
 
-      if (!walletAddress || !privateKey) {
+      if (!privateKey) {
         return { success: false, reason: 'wallet_not_configured' };
       }
+
+      // 从私钥派生钱包地址
+      const { Wallet } = await import('ethers');
+      const wallet = new Wallet(privateKey);
+      const walletAddress = wallet.address;
 
       // Call existing CampaignService.joinCampaignWithAuth
       await this.campaignService.joinCampaignWithAuth(
