@@ -64,11 +64,19 @@ This file explains each backend module with three questions:
 
 ## defi domain
 
-### `defi.module.ts`
+### `defi/defi.module.ts`
 
-- What: registers DEX adapters and adapter registry.
+- What: registers DEX adapters (UniswapV3Adapter, PancakeV3Adapter) and DexAdapterRegistry.
 - Why: strategy runtime supports DEX execution categories and needs a provider abstraction.
 - Where: used by market-making dex strategy services.
+
+#### Defi module internal structure
+
+- `defi/adapter-registry.ts` - DexAdapterRegistry for adapter lookup.
+- `defi/adapters/` - DEX adapter implementations (uniswapV3.adapter.ts, pancakeV3.adapter.ts).
+- `defi/abis.ts` - Contract ABI definitions.
+- `defi/addresses.ts` - Contract addresses by chain.
+- `defi/utils/` - DEX-related utility functions.
 
 ## infrastructure domain
 
@@ -103,6 +111,15 @@ This file explains each backend module with three questions:
 - What: core strategy runtime boundary, including controller registry, intent orchestration, intent store, and intent worker/executor.
 - Why: strategy logic must be modular, durable, and execution-mode aware.
 - Where: used by admin start/stop flows, queue-driven order flows, and tick-driven runtime processing.
+
+#### Strategy module internal structure
+
+- `strategy/config/` - Type definitions and DTOs (strategy-controller.types.ts, strategy.dto.ts, executor-action.types.ts).
+- `strategy/controllers/` - Controller registry and implementations (ArbitrageStrategyController, PureMarketMakingStrategyController, VolumeStrategyController, TimeIndicatorStrategyController).
+- `strategy/data/` - StrategyMarketDataProviderService for market data access.
+- `strategy/intent/` - ExecutorOrchestratorService and QuoteExecutorManagerService for action intent handling.
+- `strategy/execution/` - StrategyIntentExecutionService, StrategyIntentStoreService, StrategyIntentWorkerService, StrategyRuntimeDispatcherService, ExecutorRegistry, ExchangePairExecutor.
+- `strategy/dex/` - AlpacaStratService, DexModule, StrategyConfigResolverService.
 
 ### `market-making/strategy/dex/dex.module.ts`
 

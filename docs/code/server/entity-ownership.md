@@ -14,6 +14,7 @@ This file maps key entities to module ownership and business usage.
 | `MarketMakingOrderIntent` | `market-making/user-orders` | `mixin/snapshots` | Payment-linked intent with configOverrides before active order run. |
 | `MarketMakingOrder` | `market-making/user-orders` | `strategy`, `admin`, `exchange-api-key` | User market-making order with pinned strategySnapshot. |
 | `ExchangeOrderMapping` | `market-making/execution` | `strategy` | Fill routing fallback when clientOrderId parsing fails. |
+| `IndicatorStrategyHistory` | `market-making/strategy` | `admin` | Time-indicator strategy execution history. |
 
 ## User order and payment entities
 

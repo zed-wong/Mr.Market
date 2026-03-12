@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-03-12
+
+- Update docs/code/server documentation to reflect current module structure (strategy module internal directories, defi adapters, IndicatorStrategyHistory entity)
+
 ## 2026-03-11
 
 - Add pooled executor architecture with ExecutorRegistry managing ExchangePairExecutor per exchange:pair

@@ -50,6 +50,12 @@ This map is based on the root wiring in `server/src/app.module.ts` and each `*.m
 - `modules/defi/defi.module.ts`
   - Depends on: none.
   - Main role: DEX adapter registry and adapter providers.
+  - Internal structure:
+    - `adapter-registry.ts` - DexAdapterRegistry for adapter lookup.
+    - `adapters/` - DEX adapter implementations (uniswapV3.adapter.ts, pancakeV3.adapter.ts).
+    - `abis.ts` - Contract ABI definitions.
+    - `addresses.ts` - Contract addresses by chain.
+    - `utils/` - DEX-related utility functions.
 
 ### infrastructure
 
@@ -71,6 +77,13 @@ This map is based on the root wiring in `server/src/app.module.ts` and each `*.m
 - `modules/market-making/strategy/strategy.module.ts`
   - Depends on: `PerformanceModule`, `LoggerModule`, `FeeModule`, `TickModule`, `DurabilityModule`, `ExecutionModule`, `TrackersModule`, `MarketdataModule`, `DexModule`, `Web3Module`, TypeORM strategy entities.
   - Main role: strategy runtime.
+  - Internal structure:
+    - `config/` - Type definitions and DTOs (strategy-controller.types.ts, strategy.dto.ts, executor-action.types.ts).
+    - `controllers/` - Controller registry and 4 strategy controllers (ArbitrageStrategyController, PureMarketMakingStrategyController, VolumeStrategyController, TimeIndicatorStrategyController).
+    - `data/` - StrategyMarketDataProviderService.
+    - `intent/` - ExecutorOrchestratorService, QuoteExecutorManagerService.
+    - `execution/` - StrategyIntentExecutionService, StrategyIntentStoreService, StrategyIntentWorkerService, StrategyRuntimeDispatcherService, ExecutorRegistry, ExchangePairExecutor.
+    - `dex/` - AlpacaStratService, DexModule, StrategyConfigResolverService.
 - `modules/market-making/strategy/dex/dex.module.ts`
   - Depends on: `Web3Module`, `DefiModule`.
   - Main role: DEX strategy execution support.
@@ -86,14 +99,10 @@ This map is based on the root wiring in `server/src/app.module.ts` and each `*.m
 - `modules/market-making/execution/execution.module.ts`
   - Depends on: `ConfigModule`.
   - Main role: exchange execution adapter.
-- `modules/market-making/execution/fill-routing.service.ts`
-  - Main role: fill event routing with clientOrderId parsing and fallback.
-- `modules/market-making/execution/exchange-order-mapping.service.ts`
-  - Main role: ExchangeOrderMapping entity management for fill recovery.
-- `modules/market-making/strategy/execution/executor-registry.ts`
-  - Main role: pooled executor lifecycle per exchange:pair.
-- `modules/market-making/strategy/execution/exchange-pair-executor.ts`
-  - Main role: shared market-data/tick boundary for orders on same exchange:pair.
+  - Internal structure:
+    - `exchange-connector-adapter.service.ts` - Exchange side effect adapter.
+    - `fill-routing.service.ts` - Fill event routing with clientOrderId parsing and fallback.
+    - `exchange-order-mapping.service.ts` - ExchangeOrderMapping entity management for fill recovery.
 - `common/helpers/client-order-id.ts`
   - Main role: build/parse clientOrderId format `{orderId}:{seq}`.
 - `modules/market-making/ledger/ledger.module.ts`

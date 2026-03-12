@@ -30,7 +30,7 @@ This file maps runtime logic to business behavior.
 ## Flow 2: Strategy runtime intent pipeline
 
 1. Strategy runtime dispatcher resolves strategy definition/version/runtime mode.
-2. Strategy controller computes actions (place/cancel/wait semantics).
+2. Strategy controller (one of: ArbitrageStrategyController, PureMarketMakingStrategyController, VolumeStrategyController, TimeIndicatorStrategyController) computes actions (place/cancel/wait semantics).
 3. Executor orchestrator writes actionable intents.
 4. Intent worker or sync path consumes intents.
 5. Execution adapter calls exchange or DEX side effects.
@@ -39,8 +39,9 @@ This file maps runtime logic to business behavior.
 ### Main modules in this flow
 
 - `market-making/strategy`
-- `market-making/strategy/execution/executor-registry` (pooled executors)
-- `market-making/execution`
+- `market-making/strategy/controllers` (controller registry and implementations)
+- `market-making/strategy/execution` (executor-registry, exchange-pair-executor, intent services)
+- `market-making/execution` (exchange connector adapter, fill routing)
 - `market-making/durability`
 - `market-making/trackers`
 - `market-making/tick`
@@ -52,10 +53,17 @@ This file maps runtime logic to business behavior.
 ## Flow 2b: Pooled executor tick loop
 
 1. Tick module triggers executor registry iteration.
-2. ExecutorRegistry dispatches tick to each ExchangePairExecutor (by exchange:pair).
-3. ExchangePairExecutor loads market data and iterates strategy sessions.
+2. ExecutorRegistry (in `strategy/execution/executor-registry.ts`) dispatches tick to each ExchangePairExecutor (by exchange:pair).
+3. ExchangePairExecutor loads market data via StrategyMarketDataProviderService and iterates strategy sessions.
 4. Each session calls controller onTick() to compute actions.
 5. Actions flow through executor orchestrator and intent pipeline.
+
+### Main modules in this flow
+
+- `market-making/strategy/execution/executor-registry.ts`
+- `market-making/strategy/execution/exchange-pair-executor.ts`
+- `market-making/strategy/data/strategy-market-data-provider.service.ts`
+- `market-making/strategy/intent/executor-orchestrator.service.ts`
 
 ### Why this flow exists
 
@@ -82,7 +90,7 @@ This file maps runtime logic to business behavior.
 ## Flow 3b: Fill routing with pooled executors
 
 1. Private stream tracker receives fill event with clientOrderId.
-2. FillRoutingService parses clientOrderId format `{orderId}:{seq}`.
+2. FillRoutingService (in `market-making/execution/fill-routing.service.ts`) parses clientOrderId format `{orderId}:{seq}`.
 3. If parse success: route to ExchangePairExecutor by order's exchange:pair.
 4. If parse fail: fallback to ExchangeOrderMapping lookup by clientOrderId.
 5. If still fail: lookup by exchangeOrderId.
@@ -92,9 +100,10 @@ This file maps runtime logic to business behavior.
 ### Main modules in this flow
 
 - `market-making/trackers/private-stream-tracker`
-- `market-making/execution/fill-routing.service`
-- `market-making/execution/exchange-order-mapping.service`
-- `market-making/strategy/execution/executor-registry`
+- `market-making/execution/fill-routing.service.ts`
+- `market-making/execution/exchange-order-mapping.service.ts`
+- `market-making/strategy/execution/executor-registry.ts`
+- `market-making/strategy/execution/exchange-pair-executor.ts`
 
 ### Why this flow exists
 
