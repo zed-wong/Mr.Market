@@ -11,10 +11,9 @@ This doc tree explains backend design in simple business terms.
 
 ## How to use this tree
 
-1. Start with `module-map.md` to see dependency direction.
-2. Read `module-purpose.md` to understand each module contract.
-3. Read `business-flows.md` to follow real runtime paths.
-4. Read `entity-ownership.md` to find data ownership and cross-module usage.
+1. Start with `module-map.md` to see dependency direction and business purpose.
+2. Read `business-flows.md` to follow real runtime paths.
+3. Read `entity-ownership.md` to find data ownership and cross-module usage.
 
 ## Design principles in current code
 
