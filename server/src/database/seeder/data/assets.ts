@@ -99,6 +99,22 @@ export const POPULAR_ASSETS = {
     icon_url:
       'https://images.mixin.one/t9MP6wRk4E3Gg5dY5K1Z7dZ2H8P3H4Z5a8D9F0g1h2I3j4K5l6M7n8O9p0Q1r2S3t4U5v6W7x8Y9z0A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0U1v2W3x4Y5z6A7b8C9d0E1f2G3h4I5j6K7l8M9n0O1p2Q3r4S5t6U7v8W9x0Y1z2A3b4C5d6E7f8G9h0I1j2K3l4M5n6O7p8Q9r0S1t2U3v4W5x6Y7z8A9b0C1d2E3f4G5h6I7j8K9l0M1n2O3p4Q5r6S7t8U9v0W1x2Y3z4A5b6C7d8E9f0G1h2I3j4K5l6M7n8O9p0Q1r2S3t4U5v6W7x8Y9z0A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0U1v2W3x4Y5z6A7b8C9d0E1f2G3h4I5j6K7l8M9n0O1p2Q3r4S5t6U7v8W9x0Y1z2A3b4C5d6E7f8G9h0I1j2K3l4M5n6O7p8Q9r0S1t2U3v4W5x6Y7z8A9b0C1d2E3f4G5h6I7j8K9l0M1n2O3p4Q5r6S7t8U9v0W1x2Y3z4A5b6C7d8E9f0G1h2I3j4K5l6M7n8O9p0Q1r2S3t4U5v6W7x8Y9z0=s128',
   },
+
+  // Project tokens
+  HMT: {
+    asset_id: '30e340a7-3284-3f04-8594-fbdd8f2da79f',
+    name: 'Human',
+    symbol: 'HMT',
+    icon_url:
+      'https://images.mixin.one/rXVPsR7G8pZsAuWB2-UUDd1q8Ok4amyZwkBaRJt9qFDHruTnYKR0tffYoDwzz4-nHwnsKRyy26wRJaVXc5_kOj6eP3JKlgJYVCGMJg=s128',
+  },
+  XIN: {
+    asset_id: 'c94ac88f-4671-3976-b60a-09064f1811e8',
+    name: 'Mixin',
+    symbol: 'XIN',
+    icon_url:
+      'https://images.mixin.one/UasWtBZO0TZyLTLCFQjvE_UYekjC7eHCuT_9_52ZpzmCC-X-NPioVegng7Hfx0XmIUavZgz5UL-HIgPCBECc-Ws=s128',
+  },
 } as const;
 
 /**
@@ -106,24 +122,19 @@ export const POPULAR_ASSETS = {
  * Format: BASE/QUOTE (e.g., BTC/USDT)
  */
 export const TRADING_PAIRS = [
-  // BTC pairs
+  // Major pairs
   'BTC/USDT',
-  // ETH pairs
   'ETH/USDT',
-  // SOL pairs
   'SOL/USDT',
-  // XRP pairs
   'XRP/USDT',
-  // DOGE pairs
   'DOGE/USDT',
-  // LTC pairs
   'LTC/USDT',
-  // AVAX pairs
   'AVAX/USDT',
-  // MATIC pairs
   'MATIC/USDT',
-  // BNB pairs (may not be available on all exchanges)
   'BNB/USDT',
+  // Project tokens (mainly on MEXC)
+  'HMT/USDT',
+  'XIN/USDT',
 ] as const;
 
 export type AssetConfig = (typeof POPULAR_ASSETS)[keyof typeof POPULAR_ASSETS];
