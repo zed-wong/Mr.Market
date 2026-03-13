@@ -51,6 +51,8 @@
     $: quoteIcon = quoteSymbol
         ? findCoinIconBySymbol(quoteSymbol) || emptyToken
         : emptyToken;
+    $: baseChainIcon = selectedPairInfo?.base_chain_icon_url || "";
+    $: quoteChainIcon = selectedPairInfo?.quote_chain_icon_url || "";
     $: selectedPairInfo =
         growInfo?.market_making?.pairs?.find(
             (pair) =>
@@ -348,6 +350,8 @@
                             {quoteIcon}
                             {baseSymbol}
                             {quoteSymbol}
+                            {baseChainIcon}
+                            {quoteChainIcon}
                             {basePrice}
                             {quotePrice}
                             showBase={true}

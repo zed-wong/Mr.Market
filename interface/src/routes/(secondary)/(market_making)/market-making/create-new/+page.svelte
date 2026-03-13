@@ -170,6 +170,8 @@
     $: quoteIcon = quoteSymbol
         ? findCoinIconBySymbol(quoteSymbol) || emptyToken
         : emptyToken;
+    $: baseChainIcon = selectedPairInfo?.base_chain_icon_url || "";
+    $: quoteChainIcon = selectedPairInfo?.quote_chain_icon_url || "";
 
     let baseAmountInput = "";
     let quoteAmountInput = "";
@@ -360,6 +362,8 @@
                 {quoteSymbol}
                 {baseIcon}
                 {quoteIcon}
+                {baseChainIcon}
+                {quoteChainIcon}
             />
             <div
                 class="px-4 gap-6 grid grid-cols-1 bg-transparent w-full max-w-md overflow-y-auto hide-scrollbar"
@@ -369,6 +373,8 @@
                     {quoteIcon}
                     {baseSymbol}
                     {quoteSymbol}
+                    {baseChainIcon}
+                    {quoteChainIcon}
                     {showBase}
                     {showQuote}
                     {basePrice}
