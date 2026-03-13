@@ -67,7 +67,7 @@ export class SnapshotsProcessor implements OnModuleInit {
       const { snapshots, newSnapshots, newestTimestamp } =
         await this.snapshotsService.fetchSnapshots();
 
-      this.logger.log(
+      this.logger.debug(
         `Found ${newSnapshots.length} new snapshots (${
           snapshots.length - newSnapshots.length
         } filtered by cursor)`,

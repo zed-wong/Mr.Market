@@ -13,7 +13,7 @@
 
   --color-base-100: #ffffff;
   --color-base-200: #f8fafc;
-  --color-base-300: #e2e8f0;
+  --color-base-300: oklch(95% 0 0);
   --color-base-content: #0f172a;
 
   --color-primary: oklch(45% 0.24 277.023);
@@ -51,7 +51,7 @@
 
   --color-base-100: #0b1220;
   --color-base-200: #111827;
-  --color-base-300: #1f2937;
+  --color-base-300: oklch(25% 0 0);
   --color-base-content: #e2e8f0;
 
   --color-primary: oklch(58% 0.233 277.117);
@@ -88,7 +88,7 @@
 
   --color-base-100: #ffffff;
   --color-base-200: #f8fafc;
-  --color-base-300: #e2e8f0;
+  --color-base-300: oklch(95% 0 0);
   --color-base-content: #0f172a;
 
   --color-primary: oklch(45% 0.24 277.023);
@@ -125,7 +125,7 @@
 
   --color-base-100: #0f172a;
   --color-base-200: #1e293b;
-  --color-base-300: #334155;
+  --color-base-300: oklch(20% 0 0);
   --color-base-content: #f8fafc;
 
   --color-primary: oklch(58% 0.233 277.117);

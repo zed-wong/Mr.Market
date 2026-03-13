@@ -22,3 +22,8 @@ This doc tree explains backend design in simple business terms.
 - Queue workers and schedulers run long-lived flows.
 - Durable intent and ledger records protect side effects.
 - Strategy runtime is split into controller, intent, execution, and worker stages.
+
+## Seeder backup data
+
+- `server/src/database/seeder/data/exchange-icon-backup.ts` stores backup-only exchange `exchange_id` + display `name` + `icon_url` mappings.
+- This dataset is intentionally not connected to active seed execution and is reserved for future fallback use.

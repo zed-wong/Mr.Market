@@ -4,6 +4,7 @@
 
 - Refine ADR-001 static strategy logic decision to define user/admin/platform boundaries, disallow runtime-uploaded strategy code, and clarify config templates vs executable logic
 - Rename admin-spot-management module to spot for consistency (AdminSpotManagementService → AdminSpotService)
+- Add backup seeder dataset for exchange `exchange_id` + `name` + `icon_url` mappings (`exchange-icon-backup.ts`) without wiring it into active seed flow
 
 ## 2026-03-12
 

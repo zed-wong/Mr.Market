@@ -23,13 +23,9 @@ import { TOP_EXCHANGES } from './data/exchanges';
 import {
   defaultCustomConfig,
   defaultStrategyDefinitions,
-} from './defaultSeedValues';
+} from './default-seed-values';
 import { fetchAllMarkets, MarketInfo } from './ccxt-fetcher';
-import {
-  fetchMixinAssets,
-  getChainIconUrl,
-  MixinAsset,
-} from './mixin-fetcher';
+import { fetchMixinAssets, getChainIconUrl, MixinAsset } from './mixin-fetcher';
 
 // Logger helpers
 const log = {
