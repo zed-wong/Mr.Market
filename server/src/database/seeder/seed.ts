@@ -18,14 +18,18 @@ import {
 import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../../common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from '../../common/entities/market-making/strategy-definition-version.entity';
-import { POPULAR_ASSETS, TRADING_PAIRS } from './data/assets';
+import { TRADING_PAIRS } from './data/assets';
 import { TOP_EXCHANGES } from './data/exchanges';
 import {
   defaultCustomConfig,
-  defaultSimplyGrowTokens,
   defaultStrategyDefinitions,
 } from './defaultSeedValues';
 import { fetchAllMarkets, MarketInfo } from './ccxt-fetcher';
+import {
+  fetchMixinAssets,
+  getChainIconUrl,
+  MixinAsset,
+} from './mixin-fetcher';
 
 // Logger helpers
 const log = {
@@ -112,17 +116,21 @@ interface PairSeedData {
   pairSymbol: string;
   baseSymbol: string;
   quoteSymbol: string;
-  baseAsset: (typeof POPULAR_ASSETS)[keyof typeof POPULAR_ASSETS];
-  quoteAsset: (typeof POPULAR_ASSETS)[keyof typeof POPULAR_ASSETS];
+  baseAsset: MixinAsset;
+  quoteAsset: MixinAsset;
+  baseChainIconUrl: string;
+  quoteChainIconUrl: string;
   marketInfo: MarketInfo;
 }
 
 /**
- * Fetch all market info efficiently
- * - Each exchange's markets are loaded only once (cached)
- * - Exchanges are processed sequentially to avoid rate limits
+ * Build seed data by combining:
+ * 1. Mixin API (asset_id, chain_id, icon_url)
+ * 2. CCXT API (precision, limits)
  */
-async function fetchAllMarketInfoEfficiently(): Promise<PairSeedData[]> {
+async function buildPairSeedData(
+  mixinAssets: Map<string, MixinAsset>,
+): Promise<PairSeedData[]> {
   const results: PairSeedData[] = [];
 
   const exchangeIds = TOP_EXCHANGES.map((e) => e.exchange_id);
@@ -132,10 +140,10 @@ async function fetchAllMarketInfoEfficiently(): Promise<PairSeedData[]> {
     `Loading markets for ${exchangeIds.length} exchanges × ${symbols.length} symbols...`,
   );
 
-  // Fetch all markets (cached per exchange, sequential loading)
+  // Fetch all markets from CCXT (cached per exchange)
   const marketsMap = await fetchAllMarkets(exchangeIds, symbols, 300);
 
-  // Build PairSeedData from results
+  // Build PairSeedData by combining Mixin + CCXT data
   for (const exchange of TOP_EXCHANGES) {
     const exchangeMarkets = marketsMap.get(exchange.exchange_id);
 
@@ -144,16 +152,22 @@ async function fetchAllMarketInfoEfficiently(): Promise<PairSeedData[]> {
     for (const pairSymbol of TRADING_PAIRS) {
       const [baseSymbol, quoteSymbol] = pairSymbol.split('/');
 
-      const baseAsset =
-        POPULAR_ASSETS[baseSymbol as keyof typeof POPULAR_ASSETS];
-      const quoteAsset =
-        POPULAR_ASSETS[quoteSymbol as keyof typeof POPULAR_ASSETS];
+      // Get asset info from Mixin API
+      const baseAsset = mixinAssets.get(baseSymbol.toUpperCase());
+      const quoteAsset = mixinAssets.get(quoteSymbol.toUpperCase());
 
-      if (!baseAsset || !quoteAsset) continue;
+      if (!baseAsset || !quoteAsset) {
+        continue;
+      }
 
+      // Get market info from CCXT
       const marketInfo = exchangeMarkets.get(pairSymbol);
 
       if (!marketInfo) continue;
+
+      // Get chain icon URLs
+      const baseChainIconUrl = await getChainIconUrl(baseAsset.chain_id);
+      const quoteChainIconUrl = await getChainIconUrl(quoteAsset.chain_id);
 
       results.push({
         exchangeId: exchange.exchange_id,
@@ -163,12 +177,14 @@ async function fetchAllMarketInfoEfficiently(): Promise<PairSeedData[]> {
         quoteSymbol,
         baseAsset,
         quoteAsset,
+        baseChainIconUrl,
+        quoteChainIconUrl,
         marketInfo,
       });
     }
   }
 
-  log.success(`Found ${results.length} valid trading pairs from CCXT`);
+  log.success(`Found ${results.length} valid trading pairs`);
 
   return results;
 }
@@ -196,11 +212,11 @@ export async function seedGrowdataMarketMakingPair(
       base_asset_id: d.baseAsset.asset_id,
       base_icon_url: d.baseAsset.icon_url,
       base_chain_id: d.baseAsset.chain_id,
-      base_chain_icon_url: d.baseAsset.chain_icon_url,
+      base_chain_icon_url: d.baseChainIconUrl,
       quote_asset_id: d.quoteAsset.asset_id,
       quote_icon_url: d.quoteAsset.icon_url,
       quote_chain_id: d.quoteAsset.chain_id,
-      quote_chain_icon_url: d.quoteAsset.chain_icon_url,
+      quote_chain_icon_url: d.quoteChainIconUrl,
       base_price: '',
       target_price: '',
       custom_fee_rate: '',
@@ -263,16 +279,42 @@ export async function seedSpotdataTradingPair(
 
 export async function seedGrowdataSimplyGrowToken(
   repository: Repository<GrowdataSimplyGrowToken>,
+  mixinAssets: Map<string, MixinAsset>,
 ) {
+  // Get existing tokens
   const existingIds = (
     await repository.find({
       select: ['asset_id'],
     })
   ).map((t) => t.asset_id);
 
-  const toInsert = defaultSimplyGrowTokens.filter(
-    (t) => !existingIds.includes(t.asset_id),
-  );
+  // Use Mixin assets for tokens that are in our trading pairs
+  const symbolsToSeed = new Set<string>();
+
+  for (const pair of TRADING_PAIRS) {
+    const [base, quote] = pair.split('/');
+    symbolsToSeed.add(base.toUpperCase());
+    symbolsToSeed.add(quote.toUpperCase());
+  }
+
+  const toInsert: GrowdataSimplyGrowToken[] = [];
+
+  for (const symbol of symbolsToSeed) {
+    const asset = mixinAssets.get(symbol);
+
+    if (!asset || existingIds.includes(asset.asset_id)) {
+      continue;
+    }
+
+    toInsert.push({
+      asset_id: asset.asset_id,
+      name: asset.name,
+      symbol: asset.symbol,
+      icon_url: asset.icon_url,
+      apy: '',
+      enable: true,
+    });
+  }
 
   if (toInsert.length > 0) {
     await repository.save(toInsert);
@@ -367,12 +409,17 @@ export async function runSeed() {
 
   const dataSource = await connectToDatabase();
 
+  // Fetch Mixin assets first (needed for all entity seeding)
+  log.step('Fetching assets from Mixin API...');
+  const mixinAssets = await fetchMixinAssets();
+
   // Seed static data
   log.step('Seeding static data...');
   await Promise.all([
     seedGrowdataExchange(dataSource.getRepository(GrowdataExchange)),
     seedGrowdataSimplyGrowToken(
       dataSource.getRepository(GrowdataSimplyGrowToken),
+      mixinAssets,
     ),
     seedCustomConfig(dataSource.getRepository(CustomConfigEntity)),
   ]);
@@ -384,9 +431,9 @@ export async function runSeed() {
     dataSource.getRepository(StrategyDefinitionVersion),
   );
 
-  // Fetch all market info from CCXT
+  // Build pair seed data (combines Mixin + CCXT data)
   log.step('Fetching market data from CCXT...');
-  const marketData = await fetchAllMarketInfoEfficiently();
+  const marketData = await buildPairSeedData(mixinAssets);
 
   // Seed dynamic data
   log.step('Seeding trading pairs...');

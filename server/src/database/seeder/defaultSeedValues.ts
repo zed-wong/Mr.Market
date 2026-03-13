@@ -7,7 +7,6 @@ import {
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 
-import { POPULAR_ASSETS } from './data/assets';
 import { TOP_EXCHANGES as EXCHANGES } from './data/exchanges';
 import arbitrageSeedDefinition from './data/strategies/arbitrage.json';
 import pureMarketMakingSeedDefinition from './data/strategies/pure-market-making.json';
@@ -27,17 +26,8 @@ export const defaultExchanges: GrowdataExchange[] = EXCHANGES.map((e) => ({
   enable: e.enable,
 }));
 
-// SimplyGrow tokens - use popular assets
-export const defaultSimplyGrowTokens: GrowdataSimplyGrowToken[] = Object.values(
-  POPULAR_ASSETS,
-).map((asset) => ({
-  asset_id: asset.asset_id,
-  name: asset.name,
-  symbol: asset.symbol,
-  icon_url: asset.icon_url,
-  apy: '',
-  enable: true,
-}));
+// SimplyGrow tokens - now dynamically fetched from Mixin API in seed.ts
+export const defaultSimplyGrowTokens: GrowdataSimplyGrowToken[] = [];
 
 // Custom config
 export const defaultCustomConfig: CustomConfigEntity = {
@@ -112,10 +102,9 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
 ];
 
 // Legacy exports - will be removed after migration
-// These are kept for backward compatibility
 export const defaultSpotdataTradingPairs: SpotdataTradingPair[] = [];
 export const defaultMarketMakingPairs: GrowdataMarketMakingPair[] = [];
 
 // Re-export for convenience
-export { POPULAR_ASSETS, TRADING_PAIRS } from './data/assets';
+export { TRADING_PAIRS } from './data/assets';
 export { TOP_EXCHANGES } from './data/exchanges';
