@@ -25,7 +25,7 @@ import {
   defaultSimplyGrowTokens,
   defaultStrategyDefinitions,
 } from './defaultSeedValues';
-import { fetchMarketInfo, MarketInfo } from './ccxt-fetcher';
+import { fetchAllMarkets, MarketInfo } from './ccxt-fetcher';
 
 export async function connectToDatabase() {
   dotenv.config();
@@ -102,13 +102,31 @@ interface PairSeedData {
   marketInfo: MarketInfo;
 }
 
-async function fetchAllMarketInfoConcurrently(): Promise<PairSeedData[]> {
+/**
+ * Fetch all market info efficiently
+ * - Each exchange's markets are loaded only once (cached)
+ * - Exchanges are processed sequentially to avoid rate limits
+ * - Delay between exchanges
+ */
+async function fetchAllMarketInfoEfficiently(): Promise<PairSeedData[]> {
   const results: PairSeedData[] = [];
 
-  // Create all fetch tasks
-  const fetchTasks: Promise<PairSeedData | null>[] = [];
+  const exchangeIds = TOP_EXCHANGES.map((e) => e.exchange_id);
+  const symbols = [...TRADING_PAIRS];
 
+  console.log(
+    `Fetching markets for ${exchangeIds.length} exchanges and ${symbols.length} symbols...`,
+  );
+
+  // Fetch all markets (cached per exchange, sequential loading)
+  const marketsMap = await fetchAllMarkets(exchangeIds, symbols, 300);
+
+  // Build PairSeedData from results
   for (const exchange of TOP_EXCHANGES) {
+    const exchangeMarkets = marketsMap.get(exchange.exchange_id);
+
+    if (!exchangeMarkets) continue;
+
     for (const pairSymbol of TRADING_PAIRS) {
       const [baseSymbol, quoteSymbol] = pairSymbol.split('/');
 
@@ -117,46 +135,23 @@ async function fetchAllMarketInfoConcurrently(): Promise<PairSeedData[]> {
       const quoteAsset =
         POPULAR_ASSETS[quoteSymbol as keyof typeof POPULAR_ASSETS];
 
-      if (!baseAsset || !quoteAsset) {
-        continue;
-      }
+      if (!baseAsset || !quoteAsset) continue;
 
-      fetchTasks.push(
-        fetchMarketInfo(exchange.exchange_id, pairSymbol).then(
-          (marketInfo): PairSeedData | null => {
-            if (!marketInfo) return null;
+      const marketInfo = exchangeMarkets.get(pairSymbol);
 
-            return {
-              exchangeId: exchange.exchange_id,
-              exchangeName: exchange.name,
-              pairSymbol,
-              baseSymbol,
-              quoteSymbol,
-              baseAsset,
-              quoteAsset,
-              marketInfo,
-            };
-          },
-        ),
-      );
+      if (!marketInfo) continue;
+
+      results.push({
+        exchangeId: exchange.exchange_id,
+        exchangeName: exchange.name,
+        pairSymbol,
+        baseSymbol,
+        quoteSymbol,
+        baseAsset,
+        quoteAsset,
+        marketInfo,
+      });
     }
-  }
-
-  console.log(
-    `Fetching market info for ${fetchTasks.length} pairs concurrently...`,
-  );
-
-  // Execute all fetches concurrently with a concurrency limit
-  const CONCURRENCY_LIMIT = 20;
-  const batches: Promise<PairSeedData | null>[][] = [];
-
-  for (let i = 0; i < fetchTasks.length; i += CONCURRENCY_LIMIT) {
-    batches.push(fetchTasks.slice(i, i + CONCURRENCY_LIMIT));
-  }
-
-  for (const batch of batches) {
-    const batchResults = await Promise.all(batch);
-    results.push(...batchResults.filter((r): r is PairSeedData => r !== null));
   }
 
   console.log(`Fetched ${results.length} valid pairs from CCXT`);
@@ -368,8 +363,8 @@ export async function runSeed() {
     dataSource.getRepository(StrategyDefinitionVersion),
   );
 
-  // Fetch all market info concurrently (this is the slow part)
-  const marketData = await fetchAllMarketInfoConcurrently();
+  // Fetch all market info efficiently (avoid rate limits)
+  const marketData = await fetchAllMarketInfoEfficiently();
 
   // Seed dynamic data in parallel
   await Promise.all([
