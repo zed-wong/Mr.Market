@@ -38,7 +38,6 @@ describe('MarketMakingOrderProcessor', () => {
       ),
       resolveForOrderSnapshot: jest.fn(
         async (_definitionId, overrides = {}) => ({
-          definitionVersion: '1.0.0',
           controllerType: 'pureMarketMaking',
           resolvedConfig: {
             bidSpread: 0.001,
@@ -416,7 +415,6 @@ describe('MarketMakingOrderProcessor', () => {
       userId: 'user-1',
       strategyDefinitionId: 'strategy-def-1',
       strategySnapshot: {
-        definitionVersion: '1.0.0',
         controllerType: 'pureMarketMaking',
         resolvedConfig: {
           userId: 'user-1',
@@ -477,7 +475,6 @@ describe('MarketMakingOrderProcessor', () => {
       userId: 'user-1',
       strategyDefinitionId: 'strategy-def-1',
       strategySnapshot: {
-        definitionVersion: '2.0.0',
         controllerType: 'pureMarketMaking',
         resolvedConfig: {
           userId: 'user-1',

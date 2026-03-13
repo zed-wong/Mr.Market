@@ -60,7 +60,6 @@ export interface MarketMakingStrategy {
   controllerType: string;
   defaultConfig: Record<string, unknown>;
   configSchema: Record<string, unknown>;
-  currentVersion: string;
 }
 
 export const getEnabledMarketMakingStrategies = async (): Promise<

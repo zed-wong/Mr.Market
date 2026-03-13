@@ -82,7 +82,6 @@ export class StrategyConfigResolverService {
     definitionId: string,
     overrides?: Record<string, unknown>,
   ): Promise<{
-    definitionVersion: string;
     controllerType: string;
     resolvedConfig: Record<string, unknown>;
   }> {
@@ -103,7 +102,6 @@ export class StrategyConfigResolverService {
     });
 
     return {
-      definitionVersion: definition.currentVersion || '1.0.0',
       controllerType,
       resolvedConfig,
     };

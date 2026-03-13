@@ -553,7 +553,6 @@ export class StrategyService
     clientId: string,
     strategyType: StrategyType,
     definitionId: string,
-    definitionVersion = '1.0.0',
     marketMakingOrderId?: string,
   ): Promise<void> {
     const strategyKey =
@@ -569,7 +568,6 @@ export class StrategyService
       { strategyKey },
       {
         definitionId,
-        definitionVersion,
         marketMakingOrderId: marketMakingOrderId || undefined,
         updatedAt: new Date(),
       },

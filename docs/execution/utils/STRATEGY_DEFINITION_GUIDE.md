@@ -32,7 +32,6 @@ This allows admins to manage strategy configurations without code changes, while
 │  │ controllerType: 'pureMarketMaking'                      │ │
 │  │ configSchema: { type: 'object', properties: {...} }     │ │
 │  │ defaultConfig: { bidSpread: 0.001, ... }                │ │
-│  │ currentVersion: '1.0.0'                                 │ │
 │  │ enabled: true                                           │ │
 │  │ visibility: 'system' | 'instance'                       │ │
 │  └─────────────────────────────────────────────────────────┘ │
@@ -63,7 +62,6 @@ This allows admins to manage strategy configurations without code changes, while
 ┌─────────────────────────────────────────────────────────────┐
 │              Order Snapshot (pinned at creation)             │
 │  MarketMakingOrder.strategySnapshot = {                     │
-│    definitionVersion: '1.0.0',                              │
 │    controllerType: 'pureMarketMaking',                      │
 │    resolvedConfig: { bidSpread: 0.002, ... }                │
 │  }                                                           │
@@ -113,9 +111,6 @@ export class StrategyDefinition {
 
   @Column({ default: "system" })
   visibility: "system" | "instance";
-
-  @Column({ default: "1.0.0" })
-  currentVersion: string;
 
   @Column({ nullable: true })
   createdBy?: string;
@@ -183,7 +178,6 @@ async resolveForOrderSnapshot(
   definitionId: string,
   overrides?: Record<string, unknown>,
 ): Promise<{
-  definitionVersion: string;
   controllerType: string;
   resolvedConfig: Record<string, unknown>;
 }> {
@@ -207,7 +201,6 @@ async resolveForOrderSnapshot(
 
   // 4. Return snapshot payload
   return {
-    definitionVersion: definition.currentVersion,
     controllerType: definition.controllerType,
     resolvedConfig,
   };
@@ -220,7 +213,6 @@ async resolveForOrderSnapshot(
 // server/src/common/entities/orders/user-orders.entity.ts
 
 type MarketMakingOrderStrategySnapshot = {
-  definitionVersion: string; // For audit/reference only
   controllerType: string; // Maps to StrategyType
   resolvedConfig: Record<string, unknown>; // Actual config used
 };
@@ -253,8 +245,7 @@ Seed logic: `server/src/database/seeder/seed.ts`
 
 ```typescript
 export async function seedStrategyDefinitions(
-  repository: Repository<StrategyDefinition>,
-  versionRepository: Repository<StrategyDefinitionVersion>
+  repository: Repository<StrategyDefinition>
 ) {
   for (const definition of defaultStrategyDefinitions) {
     // Check if already exists by key
@@ -269,15 +260,11 @@ export async function seedStrategyDefinitions(
           controllerType: definition.controllerType,
           configSchema: definition.configSchema,
           defaultConfig: definition.defaultConfig,
-          currentVersion: "1.0.0",
           enabled: true,
           visibility: "system",
         })
       );
     }
-
-    // Also create initial version snapshot
-    // ...
   }
 }
 ```
@@ -356,7 +343,6 @@ POST /user-orders/market-making/intent
 
 // Stored snapshot
 order.strategySnapshot = {
-  definitionVersion: '1.0.0',
   controllerType: 'pureMarketMaking',
   resolvedConfig: {
     bidSpread: 0.002,
@@ -439,7 +425,7 @@ Backfill process:
 
 When admin updates a definition:
 
-1. `currentVersion` can be incremented manually
+1. Definition is updated directly
 2. New orders will use updated config
 3. Existing orders keep their pinned snapshot
 
@@ -448,8 +434,7 @@ When admin updates a definition:
 ```
 server/src/
 ├── common/entities/market-making/
-│   ├── strategy-definition.entity.ts       # Definition entity
-│   └── strategy-definition-version.entity.ts  # Version snapshots
+│   └── strategy-definition.entity.ts       # Definition entity
 ├── modules/market-making/strategy/
 │   ├── config/
 │   │   └── strategy-controller.types.ts    # Types

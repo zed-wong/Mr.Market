@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
-import { StrategyDefinitionVersion } from 'src/common/entities/market-making/strategy-definition-version.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
@@ -49,7 +48,6 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
       MarketMakingOrder,
       StrategyInstance,
       StrategyDefinition,
-      StrategyDefinitionVersion,
       StrategyExecutionHistory,
       StrategyOrderIntentEntity,
       ExchangeOrderMapping,

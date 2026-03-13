@@ -12,7 +12,6 @@ import {
 } from '../src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from '../src/common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../src/common/entities/market-making/strategy-definition.entity';
-import { StrategyDefinitionVersion } from '../src/common/entities/market-making/strategy-definition-version.entity';
 import { runSeed } from '../src/database/seeder/seed';
 
 describe('Database migration and seed scripts (e2e)', () => {
@@ -116,7 +115,6 @@ describe('Database migration and seed scripts (e2e)', () => {
         GrowdataSimplyGrowToken,
         CustomConfigEntity,
         StrategyDefinition,
-        StrategyDefinitionVersion,
       ],
       synchronize: false,
     });
@@ -139,9 +137,6 @@ describe('Database migration and seed scripts (e2e)', () => {
     const strategyDefinitions = await dataSource
       .getRepository(StrategyDefinition)
       .count();
-    const strategyDefinitionVersions = await dataSource
-      .getRepository(StrategyDefinitionVersion)
-      .count();
     const pureMarketMakingDefinition = await dataSource
       .getRepository(StrategyDefinition)
       .findOneByOrFail({
@@ -154,7 +149,6 @@ describe('Database migration and seed scripts (e2e)', () => {
     expect(simplyGrowTokens).toBeGreaterThan(0);
     expect(customConfigs).toBeGreaterThan(0);
     expect(strategyDefinitions).toBeGreaterThan(0);
-    expect(strategyDefinitionVersions).toBeGreaterThan(0);
     expect(pureMarketMakingDefinition.controllerType).toBe('pureMarketMaking');
     expect(pureMarketMakingDefinition.configSchema).toEqual(
       expect.objectContaining({

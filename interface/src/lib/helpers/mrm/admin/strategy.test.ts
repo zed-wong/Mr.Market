@@ -3,9 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   backfillStrategyInstanceDefinitionLinks,
   listStrategyDefinitions,
-  listStrategyDefinitionVersions,
   listStrategyInstances,
-  publishStrategyDefinitionVersion,
   removeStrategyDefinition,
   startStrategyInstance,
   validateStrategyInstance,
@@ -101,36 +99,6 @@ describe("admin strategy helper", () => {
     const result = await listStrategyInstances("token", true);
 
     expect(result).toEqual([{ id: 1, strategyKey: "u1-c1-volume" }]);
-  });
-
-  it("publishes strategy definition version", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ id: "d1", currentVersion: "1.0.1" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    const result = await publishStrategyDefinitionVersion(
-      "d1",
-      { version: "1.0.1" },
-      "token",
-    );
-
-    expect(result).toEqual({ id: "d1", currentVersion: "1.0.1" });
-  });
-
-  it("lists strategy definition versions", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([{ id: "v1", version: "1.0.0" }]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    const result = await listStrategyDefinitionVersions("d1", "token");
-
-    expect(result).toEqual([{ id: "v1", version: "1.0.0" }]);
   });
 
   it("backfills legacy strategy instance links", async () => {

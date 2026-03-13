@@ -136,7 +136,6 @@ flowchart TD
    - Market making order is created with `strategySnapshot`:
      ```typescript
      strategySnapshot: {
-       definitionVersion: string;
        controllerType: string;
        resolvedConfig: Record<string, unknown>;
      }
@@ -317,7 +316,6 @@ interface StrategyDefinition {
   controllerType: 'pureMarketMaking' | 'signalAwareMarketMaking' | 'arbitrage' | 'volume';
   configSchema: Record<string, unknown>; // JSON schema
   defaultConfig: Record<string, unknown>;
-  version: string;
   enabled: boolean;
   visibility: 'system' | 'instance';
 }
@@ -338,7 +336,6 @@ async resolveForOrderSnapshot(definitionId: string, overrides?: Record<string, u
 
   // 4. Return snapshot payload
   return {
-    definitionVersion: definition.version,
     controllerType: definition.controllerType,
     resolvedConfig,
   };

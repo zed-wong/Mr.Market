@@ -209,7 +209,6 @@ describe('StrategyConfigResolverService', () => {
       id: 'definition-1',
       enabled: false,
       controllerType: 'pureMarketMaking',
-      currentVersion: '2.1.0',
       defaultConfig: {
         bidSpread: 0.001,
         askSpread: 0.001,
@@ -242,7 +241,6 @@ describe('StrategyConfigResolverService', () => {
       where: { id: 'definition-1' },
     });
     expect(result).toEqual({
-      definitionVersion: '2.1.0',
       controllerType: 'pureMarketMaking',
       resolvedConfig: {
         bidSpread: 0.0025,

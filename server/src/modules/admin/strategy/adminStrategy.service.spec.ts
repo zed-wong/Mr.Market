@@ -3,7 +3,6 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
-import { StrategyDefinitionVersion } from 'src/common/entities/market-making/strategy-definition-version.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
@@ -56,14 +55,6 @@ describe('AdminStrategyService', () => {
   const mockStrategyDefinitionRepository = {
     findOne: jest.fn(),
     findOneBy: jest.fn(),
-    find: jest.fn(),
-    delete: jest.fn(),
-    save: jest.fn(),
-    create: jest.fn((payload) => payload),
-  };
-
-  const mockStrategyDefinitionVersionRepository = {
-    findOne: jest.fn(),
     find: jest.fn(),
     delete: jest.fn(),
     save: jest.fn(),
@@ -174,10 +165,6 @@ describe('AdminStrategyService', () => {
         {
           provide: getRepositoryToken(StrategyDefinition),
           useValue: mockStrategyDefinitionRepository,
-        },
-        {
-          provide: getRepositoryToken(StrategyDefinitionVersion),
-          useValue: mockStrategyDefinitionVersionRepository,
         },
         {
           provide: getRepositoryToken(StrategyInstance),
@@ -441,7 +428,6 @@ describe('AdminStrategyService', () => {
         id: 'def-1',
         key: 'pure-market-making',
         enabled: true,
-        currentVersion: '1.0.3',
         executorType: 'pureMarketMaking',
         defaultConfig: {
           pair: 'BTC/USDT',
@@ -491,7 +477,6 @@ describe('AdminStrategyService', () => {
         'client123',
         'pureMarketMaking',
         'def-1',
-        '1.0.3',
         'client123',
       );
       expect(result).toEqual(
@@ -618,34 +603,6 @@ describe('AdminStrategyService', () => {
     });
   });
 
-  describe('publishStrategyDefinitionVersion', () => {
-    it('publishes next patch version by default', async () => {
-      mockStrategyDefinitionRepository.findOne.mockResolvedValue({
-        id: 'def-1',
-        key: 'arbitrage',
-        currentVersion: '1.0.0',
-        enabled: true,
-        executorType: 'arbitrage',
-        configSchema: { type: 'object' },
-        defaultConfig: {},
-      });
-      mockStrategyDefinitionVersionRepository.findOne.mockResolvedValue(null);
-      mockStrategyDefinitionRepository.save.mockImplementation(async (d) => d);
-
-      await service.publishStrategyDefinitionVersion('def-1', {
-        description: 'v1.0.1',
-      });
-
-      expect(mockStrategyDefinitionRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          currentVersion: '1.0.1',
-          description: 'v1.0.1',
-        }),
-      );
-      expect(mockStrategyDefinitionVersionRepository.save).toHaveBeenCalled();
-    });
-  });
-
   describe('removeStrategyDefinition', () => {
     it('removes a disabled, unlinked definition', async () => {
       mockStrategyDefinitionRepository.findOne.mockResolvedValue({
@@ -654,18 +611,12 @@ describe('AdminStrategyService', () => {
         enabled: false,
       });
       mockStrategyInstanceRepository.findOne.mockResolvedValue(null);
-      mockStrategyDefinitionVersionRepository.delete.mockResolvedValue({});
       mockStrategyDefinitionRepository.delete = jest.fn().mockResolvedValue({});
 
       const result = await service.removeStrategyDefinition({
         definitionId: 'def-remove-1',
       });
 
-      expect(
-        mockStrategyDefinitionVersionRepository.delete,
-      ).toHaveBeenCalledWith({
-        definitionId: 'def-remove-1',
-      });
       expect(mockStrategyDefinitionRepository.delete).toHaveBeenCalledWith({
         id: 'def-remove-1',
       });
@@ -722,7 +673,6 @@ describe('AdminStrategyService', () => {
         },
         enabled: true,
         visibility: 'system',
-        currentVersion: '1.0.0',
         createdBy: 'seed',
       });
 
@@ -746,7 +696,6 @@ describe('AdminStrategyService', () => {
         },
         enabled: true,
         visibility: 'system',
-        currentVersion: '1.0.0',
         createdBy: 'seed',
       });
     });
@@ -768,12 +717,10 @@ describe('AdminStrategyService', () => {
         {
           id: 'd-arb',
           executorType: 'arbitrage',
-          currentVersion: '1.0.0',
         },
         {
           id: 'd-mm',
           executorType: 'pureMarketMaking',
-          currentVersion: '1.0.5',
         },
       ]);
 

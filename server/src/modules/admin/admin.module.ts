@@ -6,7 +6,6 @@ import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.ent
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
-import { StrategyDefinitionVersion } from 'src/common/entities/market-making/strategy-definition-version.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
@@ -37,7 +36,6 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
       StrategyExecutionHistory,
       StrategyInstance,
       StrategyDefinition,
-      StrategyDefinitionVersion,
       MixinUser,
       Contribution,
       Performance,

@@ -45,9 +45,6 @@ export class StrategyDefinition {
   @Column({ default: 'system' })
   visibility: string;
 
-  @Column({ default: '1.0.0' })
-  currentVersion: string;
-
   @Column({ nullable: true })
   createdBy?: string;
 

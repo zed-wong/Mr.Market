@@ -7,7 +7,6 @@ This file maps key entities to module ownership and business usage.
 | Entity | Primary owner module | Also used by | Business purpose |
 | --- | --- | --- | --- |
 | `StrategyDefinition` | `market-making/strategy` | `admin/strategy`, `user-orders` | Defines strategy contract with JSON config schema and default config. |
-| `StrategyDefinitionVersion` | `market-making/strategy` | `admin/strategy` | Versioned snapshots for safe rollout (kept for admin publish flow). |
 | `StrategyInstance` | `market-making/strategy` | `admin/strategy`, `user-orders` | Runtime/session lifecycle metadata; strategy config source of truth now comes from MarketMakingOrder.strategySnapshot. |
 | `StrategyExecutionHistory` | `market-making/strategy` | `metrics`, `campaign`, `user-orders` | Historical performance and lifecycle evidence. |
 | `StrategyOrderIntentEntity` | `market-making/strategy` | `reconciliation` | Durable action intent queue with status transitions. |

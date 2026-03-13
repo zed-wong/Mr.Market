@@ -9,7 +9,6 @@ export type StrategyDefinition = {
   defaultConfig: Record<string, unknown>;
   enabled: boolean;
   visibility: string;
-  currentVersion: string;
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
@@ -25,17 +24,6 @@ export type StrategyDefinitionPayload = {
   defaultConfig: Record<string, unknown>;
   visibility?: string;
   createdBy?: string;
-};
-
-export type PublishStrategyDefinitionVersionPayload = {
-  name?: string;
-  description?: string;
-  controllerType?: string;
-  executorType?: string;
-  configSchema?: Record<string, unknown>;
-  defaultConfig?: Record<string, unknown>;
-  visibility?: string;
-  version?: string;
 };
 
 export type StartStrategyInstancePayload = {
@@ -81,18 +69,6 @@ export type StartStopStrategyInstanceResponse = {
   definitionId: string;
   controllerType: string;
   executorType?: string;
-};
-
-export type StrategyDefinitionVersion = {
-  id: string;
-  definitionId: string;
-  version: string;
-  controllerType: string;
-  executorType?: string;
-  configSchema: Record<string, unknown>;
-  defaultConfig: Record<string, unknown>;
-  description?: string;
-  createdAt: string;
 };
 
 export type RemoveStrategyDefinitionResponse = {

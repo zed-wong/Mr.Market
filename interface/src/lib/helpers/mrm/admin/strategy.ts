@@ -2,13 +2,11 @@ import { MRM_BACKEND_URL } from "$lib/helpers/constants";
 import { getHeaders, handleApiResponse } from "$lib/helpers/mrm/common";
 import type {
   BackfillDefinitionLinksResponse,
-  PublishStrategyDefinitionVersionPayload,
   RemoveStrategyDefinitionResponse,
   StartStopStrategyInstanceResponse,
   StartStrategyInstancePayload,
   StopStrategyInstancePayload,
   StrategyDefinition,
-  StrategyDefinitionVersion,
   StrategyDefinitionPayload,
   StrategyInstanceView,
   ValidateStrategyInstanceResponse,
@@ -64,38 +62,6 @@ export const updateStrategyDefinition = async (
       method: 'POST',
       headers: getHeaders(token),
       body: JSON.stringify(payload),
-    },
-  );
-
-  return handleApiResponse(response);
-};
-
-export const publishStrategyDefinitionVersion = async (
-  id: string,
-  payload: PublishStrategyDefinitionVersionPayload,
-  token: string,
-): Promise<StrategyDefinition> => {
-  const response = await fetch(
-    `${MRM_BACKEND_URL}/admin/strategy/definitions/${id}/publish`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: JSON.stringify(payload),
-    },
-  );
-
-  return handleApiResponse(response);
-};
-
-export const listStrategyDefinitionVersions = async (
-  id: string,
-  token: string,
-): Promise<StrategyDefinitionVersion[]> => {
-  const response = await fetch(
-    `${MRM_BACKEND_URL}/admin/strategy/definitions/${id}/versions`,
-    {
-      method: 'GET',
-      headers: getHeaders(token),
     },
   );
 

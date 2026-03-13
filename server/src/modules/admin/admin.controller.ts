@@ -34,7 +34,6 @@ import {
   GetDepositAddressDto,
   GetSupportedNetworksDto,
   GetTokenSymbolDto,
-  PublishStrategyDefinitionVersionDto,
   StartStrategyDto,
   StartStrategyInstanceDto,
   StopStrategyDto,
@@ -141,22 +140,6 @@ export class AdminController {
     @Body() dto: UpdateStrategyDefinitionDto,
   ) {
     return this.adminStrategyService.updateStrategyDefinition(id, dto);
-  }
-
-  @Post('strategy/definitions/:id/publish')
-  @ApiOperation({ summary: 'Publish strategy definition version' })
-  @ApiBody({ type: PublishStrategyDefinitionVersionDto })
-  async publishStrategyDefinitionVersion(
-    @Param('id') id: string,
-    @Body() dto: PublishStrategyDefinitionVersionDto,
-  ) {
-    return this.adminStrategyService.publishStrategyDefinitionVersion(id, dto);
-  }
-
-  @Get('strategy/definitions/:id/versions')
-  @ApiOperation({ summary: 'List strategy definition versions' })
-  async listStrategyDefinitionVersions(@Param('id') id: string) {
-    return this.adminStrategyService.listStrategyDefinitionVersions(id);
   }
 
   @Post('strategy/definitions/:id/enable')

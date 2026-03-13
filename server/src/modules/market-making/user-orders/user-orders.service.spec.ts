@@ -182,7 +182,6 @@ describe('UserOrdersService', () => {
           controllerType: 'pureMarketMaking',
           defaultConfig: { bidSpread: 0.1 },
           configSchema: { type: 'object' },
-          currentVersion: '1.0.0',
         } as unknown as StrategyDefinition,
       ]);
 
@@ -201,7 +200,6 @@ describe('UserOrdersService', () => {
           controllerType: 'pureMarketMaking',
           defaultConfig: { bidSpread: 0.1 },
           configSchema: { type: 'object' },
-          currentVersion: '1.0.0',
         },
       ]);
     });

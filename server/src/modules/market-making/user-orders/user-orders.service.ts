@@ -285,7 +285,6 @@ export class UserOrdersService {
       controllerType: definition.controllerType || definition.executorType,
       defaultConfig: definition.defaultConfig || {},
       configSchema: definition.configSchema || {},
-      currentVersion: definition.currentVersion,
     }));
   }
 

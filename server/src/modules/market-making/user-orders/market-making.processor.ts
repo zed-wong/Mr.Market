@@ -1040,8 +1040,7 @@ export class MarketMakingOrderProcessor {
         throw new Error(`Order ${orderId} has no strategySnapshot.`);
       }
 
-      const { controllerType, definitionVersion, resolvedConfig } =
-        order.strategySnapshot;
+      const { controllerType, resolvedConfig } = order.strategySnapshot;
       const strategyType =
         this.strategyRuntimeDispatcher.toStrategyType(controllerType);
 
@@ -1056,7 +1055,6 @@ export class MarketMakingOrderProcessor {
           orderId,
           strategyType,
           order.strategyDefinitionId,
-          definitionVersion || '1.0.0',
           strategyType === 'pureMarketMaking' ? orderId : undefined,
         );
       } else {

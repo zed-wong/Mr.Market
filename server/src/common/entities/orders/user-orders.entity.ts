@@ -11,7 +11,6 @@ import type {
 } from '../../types/orders/states';
 
 export type MarketMakingOrderStrategySnapshot = {
-  definitionVersion: string;
   controllerType: string;
   resolvedConfig: Record<string, unknown>;
 };

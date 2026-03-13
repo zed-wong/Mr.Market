@@ -18,12 +18,18 @@ export class AdminFeeService {
     private readonly mmPairRepository: Repository<GrowdataMarketMakingPair>,
   ) {}
 
-  async getGlobalFees() {
-    const config = await this.customConfigRepository.findOne({
-      where: { config_id: 1 }, // Assuming config_id 1 is the default
+  private async getPrimaryConfig() {
+    const configs = await this.customConfigRepository.find({
+      order: { config_id: 'ASC' },
+      take: 1,
     });
 
-    // If no config exists, return defaults (though one should usually exist)
+    return configs[0] ?? null;
+  }
+
+  async getGlobalFees() {
+    const config = await this.getPrimaryConfig();
+
     if (!config) {
       return {
         spot_fee: '0',
@@ -42,15 +48,10 @@ export class AdminFeeService {
   }
 
   async updateGlobalFees(updateDto: UpdateGlobalFeeDto) {
-    let config = await this.customConfigRepository.findOne({
-      where: { config_id: 1 },
-    });
+    let config = await this.getPrimaryConfig();
 
     if (!config) {
-      config = this.customConfigRepository.create({
-        config_id: 1,
-        ...updateDto,
-      });
+      config = this.customConfigRepository.create(updateDto);
     } else {
       Object.assign(config, updateDto);
     }

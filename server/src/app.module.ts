@@ -32,7 +32,6 @@ import { ExchangeOrderMapping } from './common/entities/market-making/exchange-o
 import { MarketMakingOrderIntent } from './common/entities/market-making/market-making-order-intent.entity';
 import { Performance } from './common/entities/market-making/performance.entity';
 import { StrategyDefinition } from './common/entities/market-making/strategy-definition.entity';
-import { StrategyDefinitionVersion } from './common/entities/market-making/strategy-definition-version.entity';
 import { StrategyExecutionHistory } from './common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from './common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from './common/entities/market-making/strategy-order-intent.entity';
@@ -127,7 +126,6 @@ function buildRedisConfig(configService: ConfigService) {
         StrategyExecutionHistory,
         StrategyInstance,
         StrategyDefinition,
-        StrategyDefinitionVersion,
         Performance,
         SpotOrder,
         APIKeysConfig,

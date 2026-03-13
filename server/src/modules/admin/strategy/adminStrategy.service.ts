@@ -4,7 +4,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ethers } from 'ethers';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
-import { StrategyDefinitionVersion } from 'src/common/entities/market-making/strategy-definition-version.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import {
@@ -21,7 +20,6 @@ import { StrategyService } from '../../market-making/strategy/strategy.service';
 import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,
-  PublishStrategyDefinitionVersionDto,
   RemoveStrategyDefinitionDto,
   StartStrategyDto,
   StartStrategyInstanceDto,
@@ -42,8 +40,6 @@ export class AdminStrategyService {
     private readonly web3Service: Web3Service,
     @InjectRepository(StrategyDefinition)
     private strategyDefinitionRepository: Repository<StrategyDefinition>,
-    @InjectRepository(StrategyDefinitionVersion)
-    private strategyDefinitionVersionRepository: Repository<StrategyDefinitionVersion>,
     @InjectRepository(StrategyInstance)
     private strategyInstanceRepository: Repository<StrategyInstance>,
     @InjectRepository(Contribution)
@@ -351,15 +347,10 @@ export class AdminStrategyService {
       defaultConfig: dto.defaultConfig,
       enabled: true,
       visibility: dto.visibility || 'system',
-      currentVersion: '1.0.0',
       createdBy: dto.createdBy,
     });
 
-    const saved = await this.strategyDefinitionRepository.save(definition);
-
-    await this.createDefinitionVersionSnapshot(saved, saved.currentVersion);
-
-    return saved;
+    return this.strategyDefinitionRepository.save(definition);
   }
 
   async listStrategyDefinitions(): Promise<StrategyDefinition[]> {
@@ -397,67 +388,6 @@ export class AdminStrategyService {
     return this.strategyDefinitionRepository.save(definition);
   }
 
-  async publishStrategyDefinitionVersion(
-    id: string,
-    dto: PublishStrategyDefinitionVersionDto,
-  ): Promise<StrategyDefinition> {
-    const definition = await this.getStrategyDefinition(id);
-    const nextVersion = dto.version
-      ? this.validateVersion(dto.version)
-      : this.incrementPatchVersion(definition.currentVersion || '1.0.0');
-
-    const existingVersion =
-      await this.strategyDefinitionVersionRepository.findOne({
-        where: {
-          definitionId: definition.id,
-          version: nextVersion,
-        },
-      });
-
-    if (existingVersion) {
-      throw new BadRequestException(
-        `Version ${nextVersion} already exists for definition ${definition.key}`,
-      );
-    }
-
-    if (dto.name !== undefined) {
-      definition.name = dto.name;
-    }
-    if (dto.description !== undefined) {
-      definition.description = dto.description;
-    }
-    if (dto.controllerType !== undefined || dto.executorType !== undefined) {
-      definition.controllerType = dto.controllerType || dto.executorType;
-    }
-    if (dto.configSchema !== undefined) {
-      definition.configSchema = dto.configSchema;
-    }
-    if (dto.defaultConfig !== undefined) {
-      definition.defaultConfig = dto.defaultConfig;
-    }
-    if (dto.visibility !== undefined) {
-      definition.visibility = dto.visibility;
-    }
-
-    definition.currentVersion = nextVersion;
-    const saved = await this.strategyDefinitionRepository.save(definition);
-
-    await this.createDefinitionVersionSnapshot(saved, nextVersion);
-
-    return saved;
-  }
-
-  async listStrategyDefinitionVersions(
-    definitionId: string,
-  ): Promise<StrategyDefinitionVersion[]> {
-    await this.getStrategyDefinition(definitionId);
-
-    return this.strategyDefinitionVersionRepository.find({
-      where: { definitionId },
-      order: { createdAt: 'DESC' },
-    });
-  }
-
   async setStrategyDefinitionEnabled(
     id: string,
     enabled: boolean,
@@ -492,9 +422,6 @@ export class AdminStrategyService {
       );
     }
 
-    await this.strategyDefinitionVersionRepository.delete({
-      definitionId: definition.id,
-    });
     await this.strategyDefinitionRepository.delete({ id: definition.id });
 
     return {
@@ -522,7 +449,6 @@ export class AdminStrategyService {
         defaultConfig: definition.defaultConfig || {},
         enabled: definition.enabled,
         visibility: definition.visibility,
-        currentVersion: definition.currentVersion,
         createdBy: definition.createdBy,
       },
       null,
@@ -610,7 +536,6 @@ export class AdminStrategyService {
       dto.clientId,
       strategyType,
       definition.id,
-      definition.currentVersion || '1.0.0',
       strategyType === 'pureMarketMaking'
         ? dto.marketMakingOrderId || dto.clientId
         : undefined,
@@ -713,7 +638,6 @@ export class AdminStrategyService {
         { id: instance.id },
         {
           definitionId: definition.id,
-          definitionVersion: definition.currentVersion || '1.0.0',
           updatedAt: new Date(),
         },
       );
@@ -722,41 +646,6 @@ export class AdminStrategyService {
 
     return { updated, skipped };
   }
-
-  private validateVersion(version: string): string {
-    if (!/^\d+\.\d+\.\d+$/.test(version)) {
-      throw new BadRequestException(
-        `Invalid version format ${version}. Expected semantic format x.y.z`,
-      );
-    }
-
-    return version;
-  }
-
-  private incrementPatchVersion(version: string): string {
-    const safeVersion = this.validateVersion(version);
-    const [major, minor, patch] = safeVersion.split('.').map((n) => Number(n));
-
-    return `${major}.${minor}.${patch + 1}`;
-  }
-
-  private async createDefinitionVersionSnapshot(
-    definition: StrategyDefinition,
-    version: string,
-  ): Promise<void> {
-    const snapshot = this.strategyDefinitionVersionRepository.create({
-      definitionId: definition.id,
-      version,
-      controllerType:
-        this.strategyConfigResolver.getDefinitionControllerType(definition),
-      configSchema: definition.configSchema,
-      defaultConfig: definition.defaultConfig,
-      description: definition.description,
-    });
-
-    await this.strategyDefinitionVersionRepository.save(snapshot);
-  }
-
   //   async getStrategyPerformance(strategyKey: string) {
   //     return this.performanceService.getPerformanceByStrategy(strategyKey);
   //   }

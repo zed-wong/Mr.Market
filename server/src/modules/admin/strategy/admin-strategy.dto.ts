@@ -238,36 +238,6 @@ export class RemoveStrategyDefinitionDto {
   definitionId: string;
 }
 
-export class PublishStrategyDefinitionVersionDto {
-  @ApiPropertyOptional({ description: 'Display name' })
-  name?: string;
-
-  @ApiPropertyOptional({ description: 'Optional description' })
-  description?: string;
-
-  @ApiPropertyOptional({ description: 'Controller type' })
-  controllerType?: string;
-
-  @ApiPropertyOptional({ description: 'Deprecated alias for controllerType' })
-  executorType?: string;
-
-  @ApiPropertyOptional({ description: 'JSON schema' })
-  configSchema?: Record<string, unknown>;
-
-  @ApiPropertyOptional({ description: 'Default config values' })
-  defaultConfig?: Record<string, unknown>;
-
-  @ApiPropertyOptional({ description: 'Definition visibility' })
-  visibility?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Explicit semantic version. If absent, patch version is incremented.',
-    example: '1.0.1',
-  })
-  version?: string;
-}
-
 export class StartStrategyInstanceDto {
   @ApiProperty({
     description: 'Strategy definition id',

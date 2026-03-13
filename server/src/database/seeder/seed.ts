@@ -17,7 +17,6 @@ import {
 } from '../../common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../../common/entities/market-making/strategy-definition.entity';
-import { StrategyDefinitionVersion } from '../../common/entities/market-making/strategy-definition-version.entity';
 import { TRADING_PAIRS } from './data/assets';
 import { TOP_EXCHANGES } from './data/exchanges';
 import {
@@ -60,7 +59,6 @@ export async function connectToDatabase() {
       SpotdataTradingPair,
       CustomConfigEntity,
       StrategyDefinition,
-      StrategyDefinitionVersion,
     ],
     synchronize: false,
   });
@@ -338,7 +336,6 @@ export async function seedCustomConfig(
 
 export async function seedStrategyDefinitions(
   repository: Repository<StrategyDefinition>,
-  versionRepository: Repository<StrategyDefinitionVersion>,
 ) {
   const existingKeys = (
     await repository.find({
@@ -353,7 +350,7 @@ export async function seedStrategyDefinitions(
       continue;
     }
 
-    const saved = await repository.save(
+    await repository.save(
       repository.create({
         key: String(definition.key),
         name: String(definition.name),
@@ -373,21 +370,9 @@ export async function seedStrategyDefinitions(
         >,
         enabled: definition.enabled !== false,
         visibility: String(definition.visibility || 'system'),
-        currentVersion: '1.0.0',
         createdBy: definition.createdBy
           ? String(definition.createdBy)
           : undefined,
-      }),
-    );
-
-    await versionRepository.save(
-      versionRepository.create({
-        definitionId: saved.id,
-        version: saved.currentVersion || '1.0.0',
-        controllerType: saved.controllerType,
-        configSchema: saved.configSchema,
-        defaultConfig: saved.defaultConfig,
-        description: saved.description,
       }),
     );
 
@@ -422,10 +407,7 @@ export async function runSeed() {
 
   // Seed strategy definitions
   log.step('Seeding strategy definitions...');
-  await seedStrategyDefinitions(
-    dataSource.getRepository(StrategyDefinition),
-    dataSource.getRepository(StrategyDefinitionVersion),
-  );
+  await seedStrategyDefinitions(dataSource.getRepository(StrategyDefinition));
 
   // Build pair seed data (combines Mixin + CCXT data)
   log.step('Fetching market data from CCXT...');

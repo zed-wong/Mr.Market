@@ -38,6 +38,26 @@ const campaignResponse = {
 };
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/grow/info', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        market_making: {
+          pairs: [],
+        },
+      }),
+    });
+  });
+
+  await page.route('**/fees/market-making/fee**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(null),
+    });
+  });
+
   await page.route('**/campaigns/137-test-campaign', async (route) => {
     await route.fulfill({
       status: 200,

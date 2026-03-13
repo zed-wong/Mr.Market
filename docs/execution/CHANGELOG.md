@@ -2,6 +2,7 @@
 
 ## 2026-03-13
 
+- Remove strategy definition publish/version APIs and version metadata so definitions remain config templates bound to local runtime controllers
 - Refine ADR-001 static strategy logic decision to define user/admin/platform boundaries, disallow runtime-uploaded strategy code, and clarify config templates vs executable logic
 - Rename admin-spot-management module to spot for consistency (AdminSpotManagementService → AdminSpotService)
 - Add backup seeder dataset for exchange `exchange_id` + `name` + `icon_url` mappings (`exchange-icon-backup.ts`) without wiring it into active seed flow
@@ -171,3 +172,4 @@
 - Fix withdrawal confirmation monitoring documentation with correct Mixin snapshot check
 - Add withdrawal timeout (30 minutes) to error handling
 - Add comprehensive ui/DESIGN_PATTERN.md with full design system documentation
+- Fix admin global fee API to read the seeded primary config instead of assuming `config_id = 1`, which made `/manage/settings/fees` show `0` fees

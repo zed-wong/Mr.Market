@@ -9,7 +9,7 @@ This file maps runtime logic to business behavior.
 3. Snapshot processor enqueues market-making job.
 4. Market-making processor checks payment state and business constraints.
 5. System resolves strategy config: loads definition, merges defaultConfig + configOverrides, validates against configSchema.
-6. System creates MarketMakingOrder with pinned strategySnapshot (definitionVersion, controllerType, resolvedConfig).
+6. System creates MarketMakingOrder with pinned strategySnapshot (controllerType, resolvedConfig).
 7. `start_mm` later attaches the order to ExchangePairExecutor(exchange, pair) for pooled execution.
 8. Optional campaign join/local-campaign steps are scheduled.
 

@@ -201,7 +201,7 @@ This section explains each module with three questions:
 
 - What: exposes admin management surface for strategies, grow data, spot data, fees, and exchange operations.
 - Why: operators need a single control plane to configure and run the trading system.
-- Where: used by internal/admin UI to create strategy definitions, publish versions, start/stop instances, and tune fee behavior.
+- Where: used by internal/admin UI to create strategy definitions, start/stop instances, and tune fee behavior.
 
 #### `exchanges/exchanges.module.ts`
 

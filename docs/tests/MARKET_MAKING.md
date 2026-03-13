@@ -51,7 +51,7 @@ Queue `market-making`:
    - default: refund/fail (validation mode)
    - full lifecycle: withdraw -> monitor confirmation -> join campaign -> start MM
 8. Strategy is registered and triggered by tick coordinator.
-   - dynamic admin flow can start from `strategy_definitions` and attach `definitionId/definitionVersion` to `strategy_instances`.
+   - dynamic admin flow can start from `strategy_definitions` and attach `definitionId` to `strategy_instances`.
 9. Intents are stored, dispatched by worker, and executed on exchange adapter.
 10. Ledger/performance/reward/score data confirms user profit and balances.
 

@@ -37,8 +37,6 @@ describe('AdminController', () => {
             listStrategyDefinitions: jest.fn(),
             getStrategyDefinition: jest.fn(),
             updateStrategyDefinition: jest.fn(),
-            publishStrategyDefinitionVersion: jest.fn(),
-            listStrategyDefinitionVersions: jest.fn(),
             setStrategyDefinitionEnabled: jest.fn(),
             startStrategyInstance: jest.fn(),
             stopStrategyInstance: jest.fn(),
