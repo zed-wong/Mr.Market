@@ -112,8 +112,10 @@ async function fetchAllMarketInfoConcurrently(): Promise<PairSeedData[]> {
     for (const pairSymbol of TRADING_PAIRS) {
       const [baseSymbol, quoteSymbol] = pairSymbol.split('/');
 
-      const baseAsset = POPULAR_ASSETS[baseSymbol as keyof typeof POPULAR_ASSETS];
-      const quoteAsset = POPULAR_ASSETS[quoteSymbol as keyof typeof POPULAR_ASSETS];
+      const baseAsset =
+        POPULAR_ASSETS[baseSymbol as keyof typeof POPULAR_ASSETS];
+      const quoteAsset =
+        POPULAR_ASSETS[quoteSymbol as keyof typeof POPULAR_ASSETS];
 
       if (!baseAsset || !quoteAsset) {
         continue;
@@ -154,9 +156,7 @@ async function fetchAllMarketInfoConcurrently(): Promise<PairSeedData[]> {
 
   for (const batch of batches) {
     const batchResults = await Promise.all(batch);
-    results.push(
-      ...batchResults.filter((r): r is PairSeedData => r !== null),
-    );
+    results.push(...batchResults.filter((r): r is PairSeedData => r !== null));
   }
 
   console.log(`Fetched ${results.length} valid pairs from CCXT`);
@@ -189,12 +189,12 @@ export async function seedGrowdataMarketMakingPair(
       quote_symbol: d.quoteSymbol,
       base_asset_id: d.baseAsset.asset_id,
       base_icon_url: d.baseAsset.icon_url,
-      base_chain_id: '',
-      base_chain_icon_url: '',
+      base_chain_id: d.baseAsset.chain_id,
+      base_chain_icon_url: d.baseAsset.chain_icon_url,
       quote_asset_id: d.quoteAsset.asset_id,
       quote_icon_url: d.quoteAsset.icon_url,
-      quote_chain_id: '',
-      quote_chain_icon_url: '',
+      quote_chain_id: d.quoteAsset.chain_id,
+      quote_chain_icon_url: d.quoteAsset.chain_icon_url,
       base_price: '',
       target_price: '',
       custom_fee_rate: '',
@@ -377,10 +377,12 @@ export async function runSeed() {
       dataSource.getRepository(GrowdataMarketMakingPair),
       marketData,
     ),
+    /*
     seedSpotdataTradingPair(
       dataSource.getRepository(SpotdataTradingPair),
       marketData,
     ),
+    */
   ]);
 
   await dataSource.destroy();
