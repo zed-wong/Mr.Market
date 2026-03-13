@@ -21,8 +21,8 @@ import {
 import type { Response } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { SpotdataTradingPairDto } from './admin-spot-management/admin-spot-management.dto';
-import { AdminSpotService } from './admin-spot-management/admin-spot-management.service';
+import { SpotdataTradingPairDto } from './spot/admin-spot.dto';
+import { AdminSpotService } from './spot/admin-spot.service';
 import {
   GrowdataArbitragePairDto,
   GrowdataExchangeDto,

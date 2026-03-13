@@ -2,8 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminController } from './admin.controller';
-import { SpotdataTradingPairDto } from './admin-spot-management/admin-spot-management.dto';
-import { AdminSpotService } from './admin-spot-management/admin-spot-management.service';
+import { SpotdataTradingPairDto } from './spot/admin-spot.dto';
+import { AdminSpotService } from './spot/admin-spot.service';
 import { GrowdataExchangeDto } from './growdata/adminGrow.dto';
 import { AdminGrowService } from './growdata/adminGrow.service';
 import {
