@@ -27,6 +27,7 @@ interface MixinApiResponse {
 // Cache for assets
 let assetsCache: Map<string, MixinAsset> | null = null;
 let chainsCache: Map<string, MixinAsset> | null = null;
+let chainIconCache: Map<string, string> | null = null;
 
 // Logger helper
 const log = {
@@ -54,6 +55,7 @@ export async function fetchMixinAssets(): Promise<Map<string, MixinAsset>> {
 
     const assets = new Map<string, MixinAsset>();
     const chains = new Map<string, MixinAsset>();
+    const chainIcons = new Map<string, string>();
 
     for (const item of response.data.data) {
       const asset: MixinAsset = {
@@ -74,8 +76,18 @@ export async function fetchMixinAssets(): Promise<Map<string, MixinAsset>> {
       }
     }
 
+    // Build chain icon map: for each chain, find all assets on that chain
+    // and use the native asset's icon as the chain icon
+    for (const asset of assets.values()) {
+      const chain = chains.get(asset.chain_id);
+      if (chain && !chainIcons.has(asset.chain_id)) {
+        chainIcons.set(asset.chain_id, chain.icon_url);
+      }
+    }
+
     assetsCache = assets;
     chainsCache = chains;
+    chainIconCache = chainIcons;
 
     log.loaded(assets.size);
 
@@ -110,10 +122,13 @@ export async function getChainById(
 
 /**
  * Get chain icon URL by chain_id
+ * Uses cached chain icon map built from native chain assets
  */
 export async function getChainIconUrl(chainId: string): Promise<string> {
-  const chain = await getChainById(chainId);
-  return chain?.icon_url || '';
+  if (!chainIconCache) {
+    await fetchMixinAssets();
+  }
+  return chainIconCache?.get(chainId) || '';
 }
 
 /**
@@ -122,4 +137,5 @@ export async function getChainIconUrl(chainId: string): Promise<string> {
 export function clearCache(): void {
   assetsCache = null;
   chainsCache = null;
+  chainIconCache = null;
 }
