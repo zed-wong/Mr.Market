@@ -2,6 +2,7 @@
 // This file is used to seed the database with initial data
 // Make sure to run this file after the database and the table is created (after migration:run)
 
+import { randomUUID } from 'crypto';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,14 +18,14 @@ import {
 import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../../common/entities/market-making/strategy-definition.entity';
 import { StrategyDefinitionVersion } from '../../common/entities/market-making/strategy-definition-version.entity';
+import { POPULAR_ASSETS, TRADING_PAIRS } from './data/assets';
+import { TOP_EXCHANGES } from './data/exchanges';
 import {
   defaultCustomConfig,
-  defaultExchanges,
-  defaultMarketMakingPairs,
   defaultSimplyGrowTokens,
-  defaultSpotdataTradingPairs,
   defaultStrategyDefinitions,
 } from './defaultSeedValues';
+import { fetchMarketInfo } from './ccxt-fetcher';
 
 export async function connectToDatabase() {
   dotenv.config();
@@ -61,45 +62,155 @@ export async function connectToDatabase() {
   }
 }
 
-export async function seedSpotdataTradingPair(
-  repository: Repository<SpotdataTradingPair>,
-) {
-  for (const pair of defaultSpotdataTradingPairs) {
-    const exists = await repository.findOneBy({ id: pair.id });
-
-    if (!exists) {
-      await repository.save(pair);
-    }
-  }
-  console.log('Seeding SpotdataTradingPair complete!');
-}
-
 export async function seedGrowdataExchange(
   repository: Repository<GrowdataExchange>,
 ) {
-  for (const exchange of defaultExchanges) {
+  for (const exchange of TOP_EXCHANGES) {
     const exists = await repository.findOneBy({
       exchange_id: exchange.exchange_id,
     });
 
     if (!exists) {
-      await repository.save(exchange);
+      await repository.save({
+        exchange_id: exchange.exchange_id,
+        name: exchange.name,
+        icon_url: exchange.icon_url,
+        enable: exchange.enable,
+      });
     }
   }
-  console.log('Seeding GrowdataExchange complete!');
+  console.log(`Seeding GrowdataExchange complete! (${TOP_EXCHANGES.length} exchanges)`);
 }
 
 export async function seedGrowdataMarketMakingPair(
   repository: Repository<GrowdataMarketMakingPair>,
 ) {
-  for (const pair of defaultMarketMakingPairs) {
-    const exists = await repository.findOneBy({ id: pair.id });
+  console.log('Seeding market making pairs dynamically from CCXT...');
 
-    if (!exists) {
-      await repository.save(pair);
+  let seededCount = 0;
+
+  for (const exchange of TOP_EXCHANGES) {
+    for (const pairSymbol of TRADING_PAIRS) {
+      const [baseSymbol, quoteSymbol] = pairSymbol.split('/');
+
+      // Skip if we don't have asset info
+      const baseAsset = POPULAR_ASSETS[baseSymbol as keyof typeof POPULAR_ASSETS];
+      const quoteAsset = POPULAR_ASSETS[quoteSymbol as keyof typeof POPULAR_ASSETS];
+
+      if (!baseAsset || !quoteAsset) {
+        continue;
+      }
+
+      // Check if pair already exists
+      const exists = await repository.findOneBy({
+        exchange_id: exchange.exchange_id,
+        symbol: pairSymbol,
+      });
+
+      if (exists) {
+        continue;
+      }
+
+      // Fetch market info from CCXT
+      const marketInfo = await fetchMarketInfo(exchange.exchange_id, pairSymbol);
+
+      if (!marketInfo) {
+        console.log(`  Skipping ${pairSymbol} on ${exchange.name} (not available)`);
+        continue;
+      }
+
+      // Create market making pair
+      await repository.save({
+        id: randomUUID(),
+        exchange_id: exchange.exchange_id,
+        symbol: pairSymbol,
+        base_symbol: baseSymbol,
+        quote_symbol: quoteSymbol,
+        base_asset_id: baseAsset.asset_id,
+        base_icon_url: baseAsset.icon_url,
+        base_chain_id: '',
+        base_chain_icon_url: '',
+        quote_asset_id: quoteAsset.asset_id,
+        quote_icon_url: quoteAsset.icon_url,
+        quote_chain_id: '',
+        quote_chain_icon_url: '',
+        base_price: '',
+        target_price: '',
+        custom_fee_rate: '',
+        enable: true,
+      });
+
+      seededCount++;
+      console.log(`  Added ${pairSymbol} on ${exchange.name}`);
     }
   }
-  console.log('Seeding GrowdataMarketMakingPair complete!');
+
+  console.log(`Seeding GrowdataMarketMakingPair complete! (${seededCount} pairs)`);
+}
+
+export async function seedSpotdataTradingPair(
+  repository: Repository<SpotdataTradingPair>,
+) {
+  console.log('Seeding spot trading pairs dynamically from CCXT...');
+
+  let seededCount = 0;
+
+  for (const exchange of TOP_EXCHANGES) {
+    for (const pairSymbol of TRADING_PAIRS) {
+      const [baseSymbol, quoteSymbol] = pairSymbol.split('/');
+
+      // Skip if we don't have asset info
+      const baseAsset = POPULAR_ASSETS[baseSymbol as keyof typeof POPULAR_ASSETS];
+      const quoteAsset = POPULAR_ASSETS[quoteSymbol as keyof typeof POPULAR_ASSETS];
+
+      if (!baseAsset || !quoteAsset) {
+        continue;
+      }
+
+      // Check if pair already exists
+      const exists = await repository.findOneBy({
+        exchange_id: exchange.exchange_id,
+        symbol: pairSymbol,
+      });
+
+      if (exists) {
+        continue;
+      }
+
+      // Fetch market info from CCXT
+      const marketInfo = await fetchMarketInfo(exchange.exchange_id, pairSymbol);
+
+      if (!marketInfo) {
+        continue; // Silently skip, already logged in market making pair
+      }
+
+      // Calculate precision and limits from CCXT data
+      const pricePrecision = String(marketInfo.precision.price ?? 8);
+      const amountPrecision = String(marketInfo.precision.amount ?? 8);
+
+      // Create spot trading pair
+      await repository.save({
+        id: randomUUID(),
+        ccxt_id: pairSymbol,
+        symbol: pairSymbol,
+        exchange_id: exchange.exchange_id,
+        amount_significant_figures: amountPrecision,
+        price_significant_figures: pricePrecision,
+        buy_decimal_digits: pricePrecision,
+        sell_decimal_digits: pricePrecision,
+        max_buy_amount: String(marketInfo.limits.amount.max ?? 0),
+        max_sell_amount: String(marketInfo.limits.amount.max ?? 0),
+        base_asset_id: baseAsset.asset_id,
+        quote_asset_id: quoteAsset.asset_id,
+        custom_fee_rate: '',
+        enable: true,
+      });
+
+      seededCount++;
+    }
+  }
+
+  console.log(`Seeding SpotdataTradingPair complete! (${seededCount} pairs)`);
 }
 
 export async function seedGrowdataSimplyGrowToken(
@@ -186,14 +297,12 @@ export async function seedStrategyDefinitions(
 }
 
 export async function runSeed() {
+  console.log('Starting database seed...\n');
+
   const dataSource = await connectToDatabase();
 
-  await seedSpotdataTradingPair(dataSource.getRepository(SpotdataTradingPair));
+  // Seed static data first
   await seedGrowdataExchange(dataSource.getRepository(GrowdataExchange));
-  await seedGrowdataMarketMakingPair(
-    dataSource.getRepository(GrowdataMarketMakingPair),
-  );
-
   await seedGrowdataSimplyGrowToken(
     dataSource.getRepository(GrowdataSimplyGrowToken),
   );
@@ -202,7 +311,15 @@ export async function runSeed() {
     dataSource.getRepository(StrategyDefinition),
     dataSource.getRepository(StrategyDefinitionVersion),
   );
+
+  // Seed dynamic data from CCXT
+  await seedGrowdataMarketMakingPair(
+    dataSource.getRepository(GrowdataMarketMakingPair),
+  );
+  await seedSpotdataTradingPair(dataSource.getRepository(SpotdataTradingPair));
+
   await dataSource.destroy();
+  console.log('\nDatabase seed complete!');
 }
 
 if (require.main === module) {
