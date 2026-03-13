@@ -28,10 +28,26 @@ const ccxtExchanges = ccxt as unknown as Record<string, CcxtExchangeClass>;
 // Cache for loaded exchange markets
 const exchangeCache = new Map<string, ccxt.Exchange>();
 
+// Logger helper
+const log = {
+  loading: (exchange: string, current: number, total: number) =>
+    process.stdout.write(
+      `  → Loading ${exchange} (${current}/${total})...\r`,
+    ),
+  loaded: (exchange: string, pairs: number) =>
+    console.log(`  ✓ ${exchange}: ${pairs} pairs available`.padEnd(50)),
+  failed: (exchange: string, error: string) =>
+    console.log(`  ✗ ${exchange}: ${error}`.padEnd(50)),
+};
+
 /**
  * Load exchange markets (cached per exchange)
  */
-async function getExchange(exchangeId: string): Promise<ccxt.Exchange | null> {
+async function getExchange(
+  exchangeId: string,
+  index: number,
+  total: number,
+): Promise<ccxt.Exchange | null> {
   // Return cached exchange if available
   if (exchangeCache.has(exchangeId)) {
     return exchangeCache.get(exchangeId)!;
@@ -40,22 +56,23 @@ async function getExchange(exchangeId: string): Promise<ccxt.Exchange | null> {
   const ExchangeClass = ccxtExchanges[exchangeId];
 
   if (!ExchangeClass) {
-    console.warn(`Exchange ${exchangeId} not supported by CCXT`);
+    log.failed(exchangeId, 'not supported by CCXT');
     return null;
   }
 
   try {
+    log.loading(exchangeId, index, total);
     const exchange = new ExchangeClass();
 
     await exchange.loadMarkets();
     exchangeCache.set(exchangeId, exchange);
-    console.log(`Loaded markets for ${exchangeId}`);
+    log.loaded(exchangeId, Object.keys(exchange.markets).length);
 
     return exchange;
   } catch (error) {
-    console.error(
-      `Failed to load markets for ${exchangeId}:`,
-      error instanceof Error ? error.message : error,
+    log.failed(
+      exchangeId,
+      error instanceof Error ? error.message : 'unknown error',
     );
     return null;
   }
@@ -67,7 +84,6 @@ async function getExchange(exchangeId: string): Promise<ccxt.Exchange | null> {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
 
 /**
  * Get market info from a loaded exchange
@@ -112,12 +128,14 @@ function getMarketInfoFromExchange(
 export async function fetchAllMarkets(
   exchangeIds: string[],
   symbols: string[],
-  delayBetweenExchangesMs: number = 500,
+  delayBetweenExchangesMs: number = 300,
 ): Promise<Map<string, Map<string, MarketInfo>>> {
   const results = new Map<string, Map<string, MarketInfo>>();
+  const total = exchangeIds.length;
 
-  for (const exchangeId of exchangeIds) {
-    const exchange = await getExchange(exchangeId);
+  for (let i = 0; i < exchangeIds.length; i++) {
+    const exchangeId = exchangeIds[i];
+    const exchange = await getExchange(exchangeId, i + 1, total);
 
     if (!exchange) {
       results.set(exchangeId, new Map());
@@ -136,7 +154,7 @@ export async function fetchAllMarkets(
     results.set(exchangeId, exchangeResults);
 
     // Delay between exchanges to avoid rate limits
-    if (exchangeIds.indexOf(exchangeId) < exchangeIds.length - 1) {
+    if (i < exchangeIds.length - 1) {
       await sleep(delayBetweenExchangesMs);
     }
   }
@@ -152,7 +170,7 @@ export async function fetchMarketInfo(
   symbol: string,
 ): Promise<MarketInfo | null> {
   try {
-    const exchange = await getExchange(exchangeId);
+    const exchange = await getExchange(exchangeId, 1, 1);
 
     if (!exchange) {
       return null;
@@ -175,7 +193,7 @@ export async function exchangeSupportsSymbol(
   exchangeId: string,
   symbol: string,
 ): Promise<boolean> {
-  const exchange = await getExchange(exchangeId);
+  const exchange = await getExchange(exchangeId, 1, 1);
 
   if (!exchange) {
     return false;

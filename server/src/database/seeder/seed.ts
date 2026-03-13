@@ -27,6 +27,20 @@ import {
 } from './defaultSeedValues';
 import { fetchAllMarkets, MarketInfo } from './ccxt-fetcher';
 
+// Logger helpers
+const log = {
+  step: (msg: string) => console.log(`\n▸ ${msg}`),
+  success: (msg: string) => console.log(`  ✓ ${msg}`),
+  info: (msg: string) => console.log(`  → ${msg}`),
+  error: (msg: string) => console.error(`  ✗ ${msg}`),
+  header: (msg: string) => {
+    const line = '═'.repeat(msg.length + 4);
+    console.log(`\n╔${line}╗`);
+    console.log(`║  ${msg}  ║`);
+    console.log(`╚${line}╝\n`);
+  },
+};
+
 export async function connectToDatabase() {
   dotenv.config();
   const dbPath = process.env.DATABASE_PATH || 'data/mr_market.db';
@@ -53,11 +67,12 @@ export async function connectToDatabase() {
 
   try {
     await dataSource.initialize();
-    console.log('Connected to the database successfully!');
-
+    log.success(`Connected to database: ${dbPath}`);
     return dataSource;
   } catch (error) {
-    console.error('Error connecting to the database', error);
+    log.error(
+      `Failed to connect: ${error instanceof Error ? error.message : error}`,
+    );
     throw error;
   }
 }
@@ -86,8 +101,8 @@ export async function seedGrowdataExchange(
     );
   }
 
-  console.log(
-    `Seeding GrowdataExchange complete! (${TOP_EXCHANGES.length} exchanges)`,
+  log.success(
+    `Exchanges: ${toInsert.length} inserted, ${existingIds.length} existing`,
   );
 }
 
@@ -106,7 +121,6 @@ interface PairSeedData {
  * Fetch all market info efficiently
  * - Each exchange's markets are loaded only once (cached)
  * - Exchanges are processed sequentially to avoid rate limits
- * - Delay between exchanges
  */
 async function fetchAllMarketInfoEfficiently(): Promise<PairSeedData[]> {
   const results: PairSeedData[] = [];
@@ -114,8 +128,8 @@ async function fetchAllMarketInfoEfficiently(): Promise<PairSeedData[]> {
   const exchangeIds = TOP_EXCHANGES.map((e) => e.exchange_id);
   const symbols = [...TRADING_PAIRS];
 
-  console.log(
-    `Fetching markets for ${exchangeIds.length} exchanges and ${symbols.length} symbols...`,
+  log.info(
+    `Loading markets for ${exchangeIds.length} exchanges × ${symbols.length} symbols...`,
   );
 
   // Fetch all markets (cached per exchange, sequential loading)
@@ -154,7 +168,7 @@ async function fetchAllMarketInfoEfficiently(): Promise<PairSeedData[]> {
     }
   }
 
-  console.log(`Fetched ${results.length} valid pairs from CCXT`);
+  log.success(`Found ${results.length} valid trading pairs from CCXT`);
 
   return results;
 }
@@ -163,9 +177,6 @@ export async function seedGrowdataMarketMakingPair(
   repository: Repository<GrowdataMarketMakingPair>,
   marketData: PairSeedData[],
 ) {
-  console.log('Seeding market making pairs...');
-
-  // Get existing pairs
   const existing = await repository.find({
     select: ['exchange_id', 'symbol'],
   });
@@ -200,8 +211,8 @@ export async function seedGrowdataMarketMakingPair(
     await repository.save(toInsert);
   }
 
-  console.log(
-    `Seeding GrowdataMarketMakingPair complete! (${toInsert.length} new pairs)`,
+  log.success(
+    `Market Making Pairs: ${toInsert.length} inserted, ${existing.length} existing`,
   );
 }
 
@@ -209,9 +220,6 @@ export async function seedSpotdataTradingPair(
   repository: Repository<SpotdataTradingPair>,
   marketData: PairSeedData[],
 ) {
-  console.log('Seeding spot trading pairs...');
-
-  // Get existing pairs
   const existing = await repository.find({
     select: ['exchange_id', 'symbol'],
   });
@@ -248,8 +256,8 @@ export async function seedSpotdataTradingPair(
     await repository.save(toInsert);
   }
 
-  console.log(
-    `Seeding SpotdataTradingPair complete! (${toInsert.length} new pairs)`,
+  log.success(
+    `Spot Trading Pairs: ${toInsert.length} inserted, ${existing.length} existing`,
   );
 }
 
@@ -270,7 +278,9 @@ export async function seedGrowdataSimplyGrowToken(
     await repository.save(toInsert);
   }
 
-  console.log('Seeding GrowdataSimplyGrowToken complete!');
+  log.success(
+    `SimplyGrow Tokens: ${toInsert.length} inserted, ${existingIds.length} existing`,
+  );
 }
 
 export async function seedCustomConfig(
@@ -282,8 +292,10 @@ export async function seedCustomConfig(
 
   if (!exists) {
     await repository.save(defaultCustomConfig);
+    log.success('Custom Config: inserted');
+  } else {
+    log.success('Custom Config: already exists');
   }
-  console.log('Seeding CustomConfigEntity complete!');
 }
 
 export async function seedStrategyDefinitions(
@@ -295,6 +307,8 @@ export async function seedStrategyDefinitions(
       select: ['key'],
     })
   ).map((d) => d.key);
+
+  let inserted = 0;
 
   for (const definition of defaultStrategyDefinitions) {
     if (existingKeys.includes(String(definition.key))) {
@@ -338,17 +352,23 @@ export async function seedStrategyDefinitions(
         description: saved.description,
       }),
     );
+
+    inserted++;
   }
 
-  console.log('Seeding StrategyDefinition complete!');
+  log.success(
+    `Strategy Definitions: ${inserted} inserted, ${existingKeys.length} existing`,
+  );
 }
 
 export async function runSeed() {
-  console.log('Starting database seed...\n');
+  const startTime = Date.now();
+  log.header('Database Seed');
 
   const dataSource = await connectToDatabase();
 
-  // Seed static data in parallel
+  // Seed static data
+  log.step('Seeding static data...');
   await Promise.all([
     seedGrowdataExchange(dataSource.getRepository(GrowdataExchange)),
     seedGrowdataSimplyGrowToken(
@@ -357,16 +377,19 @@ export async function runSeed() {
     seedCustomConfig(dataSource.getRepository(CustomConfigEntity)),
   ]);
 
-  // Seed strategy definitions (has dependencies)
+  // Seed strategy definitions
+  log.step('Seeding strategy definitions...');
   await seedStrategyDefinitions(
     dataSource.getRepository(StrategyDefinition),
     dataSource.getRepository(StrategyDefinitionVersion),
   );
 
-  // Fetch all market info efficiently (avoid rate limits)
+  // Fetch all market info from CCXT
+  log.step('Fetching market data from CCXT...');
   const marketData = await fetchAllMarketInfoEfficiently();
 
-  // Seed dynamic data in parallel
+  // Seed dynamic data
+  log.step('Seeding trading pairs...');
   await Promise.all([
     seedGrowdataMarketMakingPair(
       dataSource.getRepository(GrowdataMarketMakingPair),
@@ -381,12 +404,14 @@ export async function runSeed() {
   ]);
 
   await dataSource.destroy();
-  console.log('\nDatabase seed complete!');
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  log.header(`Seed Complete (${elapsed}s)`);
 }
 
 if (require.main === module) {
   runSeed().catch((error) => {
-    console.error('Seed run failed', error);
+    log.error(`Seed failed: ${error.message}`);
     process.exit(1);
   });
 }
