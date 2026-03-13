@@ -20,6 +20,12 @@ This file explains each backend module with three questions:
 - Why: exchange visibility and control is required for operations.
 - Where: used when admin pages query and manage exchange availability/config.
 
+### `spot/admin-spot.service.ts`
+
+- What: manages spot trading pair CRUD operations with cache invalidation.
+- Why: spot pair management requires admin control surface separate from market-making.
+- Where: used by admin spot management pages to add/remove/update trading pairs.
+
 ## auth domain
 
 ### `auth.module.ts`

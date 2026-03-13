@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-03-13
+
+- Rename admin-spot-management module to spot for consistency (AdminSpotManagementService → AdminSpotService)
+
 ## 2026-03-12
 
 - Update docs/code/server documentation to reflect current module structure (strategy module internal directories, defi adapters, IndicatorStrategyHistory entity)

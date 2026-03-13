@@ -17,6 +17,9 @@ This map is based on the root wiring in `server/src/app.module.ts` and each `*.m
 - `modules/admin/exchanges/exchanges.module.ts`
   - Depends on: `ExchangeModule`.
   - Main role: admin exchange endpoints.
+- `modules/admin/spot/admin-spot.service.ts`
+  - Depends on: `SpotdataModule`, `CacheModule`.
+  - Main role: admin spot trading pair management.
 
 ### auth
 
