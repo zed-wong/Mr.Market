@@ -7,6 +7,8 @@ import {
 } from "$lib/helpers/mixin/mixin-invoice";
 import {
   createMarketMakingOrderIntent,
+  getEnabledMarketMakingStrategies,
+  type MarketMakingStrategy,
   type MarketMakingFee,
 } from "$lib/helpers/mrm/grow";
 import { getMarketMakingPaymentState } from "$lib/helpers/mrm/strategy";
@@ -15,6 +17,21 @@ import {
   ORDER_STATE_FETCH_INTERVAL,
   ORDER_STATE_TIMEOUT_DURATION,
 } from "$lib/helpers/constants";
+
+// Cache for strategies to avoid repeated fetches
+let cachedStrategies: MarketMakingStrategy[] | null = null;
+
+const getDefaultStrategy = async (): Promise<MarketMakingStrategy | null> => {
+  if (cachedStrategies === null) {
+    cachedStrategies = await getEnabledMarketMakingStrategies();
+  }
+  // Use pure_market_making as default, or fall back to first available
+  return (
+    cachedStrategies.find((s) => s.key === "pure_market_making") ||
+    cachedStrategies[0] ||
+    null
+  );
+};
 
 export type MarketMakingPaymentInput = {
   selectedPairInfo: MarketMakingPair;
@@ -40,8 +57,16 @@ export const createMarketMakingPayment = async (
     return null;
   }
 
+  // Get default strategy for market making
+  const defaultStrategy = await getDefaultStrategy();
+  if (!defaultStrategy) {
+    console.error("No enabled market making strategy found");
+    return null;
+  }
+
   const intent = await createMarketMakingOrderIntent({
     marketMakingPairId: selectedPairInfo.id,
+    strategyDefinitionId: defaultStrategy.id,
     userId,
   });
 

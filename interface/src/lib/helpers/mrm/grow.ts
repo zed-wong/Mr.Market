@@ -52,6 +52,31 @@ export const getMarketMakingFee = async (
   }
 }
 
+export interface MarketMakingStrategy {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  controllerType: string;
+  defaultConfig: Record<string, unknown>;
+  configSchema: Record<string, unknown>;
+  currentVersion: string;
+}
+
+export const getEnabledMarketMakingStrategies = async (): Promise<
+  MarketMakingStrategy[]
+> => {
+  try {
+    const response = await fetch(
+      `${MRM_BACKEND_URL}/user-orders/market-making/strategies`,
+    );
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching market making strategies:', error);
+    return [];
+  }
+};
+
 export interface MarketMakingOrderIntentResponse {
   orderId: string;
   memo: string;
@@ -60,6 +85,8 @@ export interface MarketMakingOrderIntentResponse {
 
 export const createMarketMakingOrderIntent = async (params: {
   marketMakingPairId: string;
+  strategyDefinitionId: string;
+  configOverrides?: Record<string, unknown>;
   userId?: string;
 }): Promise<MarketMakingOrderIntentResponse | null> => {
   try {
