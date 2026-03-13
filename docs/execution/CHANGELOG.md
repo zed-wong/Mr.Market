@@ -2,6 +2,7 @@
 
 ## 2026-03-13
 
+- Refine ADR-001 static strategy logic decision to define user/admin/platform boundaries, disallow runtime-uploaded strategy code, and clarify config templates vs executable logic
 - Rename admin-spot-management module to spot for consistency (AdminSpotManagementService → AdminSpotService)
 
 ## 2026-03-12
