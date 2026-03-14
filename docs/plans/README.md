@@ -1,16 +1,16 @@
 # Plans Index
 
+This directory contains architecture plans and design documents for Mr.Market.
+
 ## Current Source of Truth
 
-- `2026-03-07-pooled-executor-architecture.md`
+- **`2026-03-07-pooled-executor-architecture.md`** - Pooled executor architecture for market-making runtime
 
-## Deprecated Architecture Plans
+## Design Documents
 
-- `2026-03-04-dynamic-strategy-architecture-transition-plan.md`
-- `2026-03-06-dynamic-strategy-hummingbot-compatible-design.md`
+- **`2026-03-12-complete-market-making-cycle-design.en.md`** - Complete market making cycle design (user payment → exchange deposit → HuFi campaign → execution)
 
-These are kept for historical context only. If they conflict with the current source-of-truth document, follow `2026-03-07-pooled-executor-architecture.md`.
+## Notes
 
-## Other Plan Documents
-
-The rest of the files in this folder are narrower implementation plans, completed refactors, or reference material. They are not the top-level source of truth for the pooled runtime architecture unless they explicitly say so.
+- All deprecated and completed implementation plans have been removed
+- For current architecture reference, see `docs/execution/` directory
