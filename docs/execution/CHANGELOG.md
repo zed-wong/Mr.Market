@@ -9,6 +9,10 @@
 - Remove legacy admin backfill-definition-links and strategy definition export APIs after the prototype cutover to snapshot-only strategy startup
 - Restrict market-making strategy selection/intents to `pureMarketMaking` definitions and preserve DEX volume config when controller reruns persisted strategies
 - Reject unsupported `clob_dex` strategy-definition configs during resolver validation and remove the category from seeded volume-definition schema
+- Stop admin strategy instances with `clientId` for non-pure-market-making definitions even when `marketMakingOrderId` is present
+- Preserve arbitrage `exchangeBName`, `sellPrice`, and `profit` in strategy execution history migration metadata
+- Align strategy i18n copy and market-making docs with the current order-binding and executor-routing behavior
+- Capture deferred volume, strategy admin, and seed follow-up work in `docs/TODO.md`
 
 ## 2026-03-13
 
