@@ -29,9 +29,9 @@ export const defaultExchanges: GrowdataExchange[] = EXCHANGES.map((e) => ({
 // SimplyGrow tokens - now dynamically fetched from Mixin API in seed.ts
 export const defaultSimplyGrowTokens: GrowdataSimplyGrowToken[] = [];
 
-// Custom config
+// Custom config - singleton with config_id = 1
 export const defaultCustomConfig: CustomConfigEntity = {
-  config_id: 0,
+  config_id: 1,
   spot_fee: '0.002',
   market_making_fee: '0.001',
   enable_spot_fee: true,

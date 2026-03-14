@@ -13,7 +13,7 @@ function createMockCustomConfigEntity(
   overrides?: Partial<CustomConfigEntity>,
 ): CustomConfigEntity {
   return {
-    config_id: 0,
+    config_id: 1,
     max_balance_mixin_bot: '1000',
     max_balance_single_api_key: '2000',
     funding_account: 'XYZ123',

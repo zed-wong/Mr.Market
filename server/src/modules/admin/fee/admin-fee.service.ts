@@ -19,12 +19,8 @@ export class AdminFeeService {
   ) {}
 
   private async getPrimaryConfig() {
-    const configs = await this.customConfigRepository.find({
-      order: { config_id: 'ASC' },
-      take: 1,
-    });
-
-    return configs[0] ?? null;
+    // Use config_id = 1 as the singleton primary config
+    return this.customConfigRepository.findOne({ where: { config_id: 1 } });
   }
 
   async getGlobalFees() {
