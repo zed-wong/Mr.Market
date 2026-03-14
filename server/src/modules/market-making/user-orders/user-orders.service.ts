@@ -24,6 +24,8 @@ import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.reposit
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
+import { normalizeControllerType } from '../strategy/config/strategy-controller-aliases';
+
 @Injectable()
 export class UserOrdersService {
   private readonly logger = new CustomLogger(UserOrdersService.name);
@@ -241,6 +243,11 @@ export class UserOrdersService {
     if (!definition) {
       throw new NotFoundException('Strategy definition not found or disabled');
     }
+    if (!this.isPureMarketMakingDefinition(definition)) {
+      throw new BadRequestException(
+        'strategyDefinitionId must reference a pure market making definition',
+      );
+    }
 
     const orderId = randomUUID();
     const memo = encodeMarketMakingCreateMemo({
@@ -277,15 +284,27 @@ export class UserOrdersService {
       order: { updatedAt: 'DESC' },
     });
 
-    return definitions.map((definition) => ({
-      id: definition.id,
-      key: definition.key,
-      name: definition.name,
-      description: definition.description,
-      controllerType: definition.controllerType || definition.executorType,
-      defaultConfig: definition.defaultConfig || {},
-      configSchema: definition.configSchema || {},
-    }));
+    return definitions
+      .filter((definition) => this.isPureMarketMakingDefinition(definition))
+      .map((definition) => ({
+        id: definition.id,
+        key: definition.key,
+        name: definition.name,
+        description: definition.description,
+        controllerType: definition.controllerType || definition.executorType,
+        defaultConfig: definition.defaultConfig || {},
+        configSchema: definition.configSchema || {},
+      }));
+  }
+
+  private isPureMarketMakingDefinition(
+    definition: Partial<StrategyDefinition> | null | undefined,
+  ): boolean {
+    const controllerType = normalizeControllerType(
+      definition?.controllerType || definition?.executorType,
+    );
+
+    return controllerType === 'pureMarketMaking';
   }
 
   // Methods moved from StrategyService

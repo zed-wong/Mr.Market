@@ -430,32 +430,6 @@ export class AdminStrategyService {
     };
   }
 
-  async exportStrategyDefinition(key: string): Promise<string> {
-    const definition = await this.strategyDefinitionRepository.findOne({
-      where: { key },
-    });
-
-    if (!definition) {
-      throw new BadRequestException(`Strategy definition not found: ${key}`);
-    }
-
-    return JSON.stringify(
-      {
-        key: definition.key,
-        name: definition.name,
-        description: definition.description,
-        controllerType: definition.controllerType || definition.executorType,
-        configSchema: definition.configSchema || {},
-        defaultConfig: definition.defaultConfig || {},
-        enabled: definition.enabled,
-        visibility: definition.visibility,
-        createdBy: definition.createdBy,
-      },
-      null,
-      2,
-    );
-  }
-
   async getStrategyInstances(runningOnly = false): Promise<
     Array<{
       id: number;
@@ -598,55 +572,4 @@ export class AdminStrategyService {
       executorType: controllerType,
     };
   }
-
-  async backfillLegacyStrategyInstanceDefinitions(): Promise<{
-    updated: number;
-    skipped: number;
-  }> {
-    const instances = await this.strategyInstanceRepository.find();
-    const definitions = await this.strategyDefinitionRepository.find({
-      where: { enabled: true },
-    });
-    const byController = new Map(
-      definitions.map((d) => [
-        this.strategyConfigResolver.getDefinitionControllerType(d),
-        d,
-      ]),
-    );
-
-    let updated = 0;
-    let skipped = 0;
-
-    for (const instance of instances) {
-      if (instance.definitionId) {
-        skipped += 1;
-        continue;
-      }
-
-      const controllerType =
-        this.strategyRuntimeDispatcher.mapStrategyTypeToController(
-          instance.strategyType,
-        );
-      const definition = byController.get(controllerType);
-
-      if (!definition) {
-        skipped += 1;
-        continue;
-      }
-
-      await this.strategyInstanceRepository.update(
-        { id: instance.id },
-        {
-          definitionId: definition.id,
-          updatedAt: new Date(),
-        },
-      );
-      updated += 1;
-    }
-
-    return { updated, skipped };
-  }
-  //   async getStrategyPerformance(strategyKey: string) {
-  //     return this.performanceService.getPerformanceByStrategy(strategyKey);
-  //   }
 }

@@ -14,7 +14,7 @@
       "clientId": { "type": "string" },
       "executionCategory": {
         "type": "string",
-        "enum": ["clob_cex", "clob_dex", "amm_dex"]
+        "enum": ["clob_cex", "amm_dex"]
       },
       "executionVenue": {
         "type": "string",

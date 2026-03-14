@@ -25,8 +25,9 @@ const getDefaultStrategy = async (): Promise<MarketMakingStrategy | null> => {
   if (cachedStrategies === null) {
     cachedStrategies = await getEnabledMarketMakingStrategies();
   }
-  // Use pure_market_making as default, or fall back to first available
+
   return (
+    cachedStrategies.find((s) => s.controllerType === "pureMarketMaking") ||
     cachedStrategies.find((s) => s.key === "pure_market_making") ||
     cachedStrategies[0] ||
     null

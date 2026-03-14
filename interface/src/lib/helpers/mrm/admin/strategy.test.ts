@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  backfillStrategyInstanceDefinitionLinks,
   listStrategyDefinitions,
   listStrategyInstances,
   removeStrategyDefinition,
@@ -99,19 +98,6 @@ describe("admin strategy helper", () => {
     const result = await listStrategyInstances("token", true);
 
     expect(result).toEqual([{ id: 1, strategyKey: "u1-c1-volume" }]);
-  });
-
-  it("backfills legacy strategy instance links", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ updated: 2, skipped: 1 }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    const result = await backfillStrategyInstanceDefinitionLinks("token");
-
-    expect(result).toEqual({ updated: 2, skipped: 1 });
   });
 
   it("removes strategy definition", async () => {

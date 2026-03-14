@@ -1,5 +1,11 @@
 # Execution Flow Changelog
 
+## 2026-03-14
+
+- Remove legacy admin backfill-definition-links and strategy definition export APIs after the prototype cutover to snapshot-only strategy startup
+- Restrict market-making strategy selection/intents to `pureMarketMaking` definitions and preserve DEX volume config when controller reruns persisted strategies
+- Reject unsupported `clob_dex` strategy-definition configs during resolver validation and remove the category from seeded volume-definition schema
+
 ## 2026-03-13
 
 - Remove strategy definition publish/version APIs and version metadata so definitions remain config templates bound to local runtime controllers

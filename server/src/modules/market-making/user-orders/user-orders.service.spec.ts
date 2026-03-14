@@ -172,7 +172,7 @@ describe('UserOrdersService', () => {
   });
 
   describe('listEnabledMarketMakingStrategies', () => {
-    it('returns enabled strategy definitions for user selection', async () => {
+    it('returns only enabled pure market making definitions for user selection', async () => {
       jest.spyOn(strategyDefinitionRepository, 'find').mockResolvedValueOnce([
         {
           id: 'strategy-1',
@@ -181,6 +181,15 @@ describe('UserOrdersService', () => {
           description: 'basic strategy',
           controllerType: 'pureMarketMaking',
           defaultConfig: { bidSpread: 0.1 },
+          configSchema: { type: 'object' },
+        } as unknown as StrategyDefinition,
+        {
+          id: 'strategy-2',
+          key: 'volume',
+          name: 'Volume',
+          description: 'non-mm strategy',
+          controllerType: 'volume',
+          defaultConfig: { incrementPercentage: 0.1 },
           configSchema: { type: 'object' },
         } as unknown as StrategyDefinition,
       ]);
@@ -215,6 +224,7 @@ describe('UserOrdersService', () => {
         .mockResolvedValueOnce({
           id: 'strategy-1',
           enabled: true,
+          controllerType: 'pureMarketMaking',
         } as StrategyDefinition);
       jest
         .spyOn(marketMakingOrderIntentRepository, 'create')
@@ -258,6 +268,28 @@ describe('UserOrdersService', () => {
           configOverrides: [] as any,
         }),
       ).rejects.toThrow('configOverrides must be an object');
+    });
+
+    it('rejects non-market-making strategy definitions', async () => {
+      jest
+        .spyOn(growdataRepository, 'findMarketMakingPairById')
+        .mockResolvedValueOnce({ enable: true } as any);
+      jest
+        .spyOn(strategyDefinitionRepository, 'findOne')
+        .mockResolvedValueOnce({
+          id: 'strategy-2',
+          enabled: true,
+          controllerType: 'volume',
+        } as StrategyDefinition);
+
+      await expect(
+        service.createMarketMakingOrderIntent({
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-2',
+        }),
+      ).rejects.toThrow(
+        'strategyDefinitionId must reference a pure market making definition',
+      );
     });
   });
 });

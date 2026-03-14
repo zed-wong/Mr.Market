@@ -1,7 +1,6 @@
 import { MRM_BACKEND_URL } from "$lib/helpers/constants";
 import { getHeaders, handleApiResponse } from "$lib/helpers/mrm/common";
 import type {
-  BackfillDefinitionLinksResponse,
   RemoveStrategyDefinitionResponse,
   StartStopStrategyInstanceResponse,
   StartStrategyInstancePayload,
@@ -169,20 +168,6 @@ export const listStrategyInstances = async (
     `${MRM_BACKEND_URL}/admin/strategy/instances?runningOnly=${runningOnly}`,
     {
       method: 'GET',
-      headers: getHeaders(token),
-    },
-  );
-
-  return handleApiResponse(response);
-};
-
-export const backfillStrategyInstanceDefinitionLinks = async (
-  token: string,
-): Promise<BackfillDefinitionLinksResponse> => {
-  const response = await fetch(
-    `${MRM_BACKEND_URL}/admin/strategy/instances/backfill-definition-links`,
-    {
-      method: 'POST',
       headers: getHeaders(token),
     },
   );

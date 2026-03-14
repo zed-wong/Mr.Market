@@ -190,6 +190,42 @@ describe('StrategyConfigResolverService', () => {
     expect(result.mergedConfig.executionVenue).toBe('dex');
   });
 
+  it('rejects unsupported clob_dex volume definitions during config resolution', () => {
+    expect(() =>
+      service.resolveDefinitionStartConfig(
+        asStrategyDefinition({
+          key: 'volume',
+          enabled: true,
+          controllerType: 'volume',
+          defaultConfig: {
+            exchangeName: 'dydx',
+            symbol: 'ETH/USDC',
+            incrementPercentage: 0.1,
+            intervalTime: 10,
+            tradeAmount: 1,
+            numTrades: 5,
+            executionCategory: 'clob_dex',
+          },
+          configSchema: {
+            type: 'object',
+            required: ['exchangeName', 'symbol'],
+            properties: {
+              exchangeName: { type: 'string' },
+              symbol: { type: 'string' },
+              executionCategory: { type: 'string' },
+            },
+          },
+        }),
+        {
+          userId: 'u1',
+          clientId: 'c1',
+        },
+      ),
+    ).toThrow(
+      'executionCategory clob_dex is not implemented yet. Use clob_cex or amm_dex',
+    );
+  });
+
   it('validates schema constraints', () => {
     expect(() =>
       service.validateConfigAgainstSchema(

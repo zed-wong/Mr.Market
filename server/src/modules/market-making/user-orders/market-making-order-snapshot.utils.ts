@@ -1,13 +1,8 @@
-import BigNumber from 'bignumber.js';
 import {
   MarketMakingOrder,
   type MarketMakingOrderStrategySnapshot,
 } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-
-function toConfigNumber(value?: string | number | null, fallback = 0): number {
-  return new BigNumber(value ?? fallback).toNumber();
-}
 
 function toStoredString(value: unknown, fallback: string): string {
   if (value === undefined || value === null || value === '') {

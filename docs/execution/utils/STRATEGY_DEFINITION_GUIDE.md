@@ -291,20 +291,20 @@ POST /admin/strategy/definitions
 }
 
 // Update definition
-PUT /admin/strategy/definitions/:id
+POST /admin/strategy/definitions/:id/update
 
 // Enable/disable
-PATCH /admin/strategy/definitions/:id/enable
-PATCH /admin/strategy/definitions/:id/disable
+POST /admin/strategy/definitions/:id/enable
+POST /admin/strategy/definitions/:id/disable
 
-// Export as JSON
-GET /admin/strategy/definitions/:id/export
+// Remove definition
+DELETE /admin/strategy/definitions/:id/remove
 ```
 
 ### User Endpoints
 
 ```typescript
-// List enabled strategies (for user selection)
+// List enabled pure market making strategies (for user selection)
 GET /user-orders/market-making/strategies
 
 // Get single strategy details
@@ -404,22 +404,11 @@ toStrategyType(controllerType: string): StrategyType {
 }
 ```
 
-## Migration and Backfill
+## Snapshot Requirement
 
-### For Existing Orders Without Snapshot
-
-Orders created before the snapshot mechanism need backfill:
-
-```bash
-# Run backfill test
-bun run test:e2e backfill-market-making-order-snapshots.e2e-spec.ts
-```
-
-Backfill process:
-
-1. Query orders where `strategySnapshot IS NULL`
-2. Resolve config using order's existing fields
-3. Save snapshot to order
+Orders without `strategySnapshot` are not supported in the current prototype.
+Recreate the order through the active payment flow instead of backfilling
+legacy rows.
 
 ### For Definition Updates
 

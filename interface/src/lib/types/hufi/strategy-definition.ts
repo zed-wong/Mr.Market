@@ -75,8 +75,3 @@ export type RemoveStrategyDefinitionResponse = {
   message: string;
   definitionId: string;
 };
-
-export type BackfillDefinitionLinksResponse = {
-  updated: number;
-  skipped: number;
-};

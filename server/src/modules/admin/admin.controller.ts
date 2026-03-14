@@ -7,7 +7,6 @@ import {
   Param,
   Post,
   Query,
-  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -18,11 +17,8 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Response } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { SpotdataTradingPairDto } from './spot/admin-spot.dto';
-import { AdminSpotService } from './spot/admin-spot.service';
 import {
   GrowdataArbitragePairDto,
   GrowdataExchangeDto,
@@ -30,6 +26,8 @@ import {
   GrowdataSimplyGrowTokenDto,
 } from './growdata/adminGrow.dto';
 import { AdminGrowService } from './growdata/adminGrow.service';
+import { SpotdataTradingPairDto } from './spot/admin-spot.dto';
+import { AdminSpotService } from './spot/admin-spot.service';
 import {
   GetDepositAddressDto,
   GetSupportedNetworksDto,
@@ -118,20 +116,6 @@ export class AdminController {
     return this.adminStrategyService.getStrategyDefinition(id);
   }
 
-  @Get('strategy/definitions/:id/export')
-  @ApiOperation({ summary: 'Export strategy definition as JSON' })
-  async exportStrategyDefinition(
-    @Param('id') id: string,
-    @Res() res: Response,
-  ) {
-    const json = await this.adminStrategyService.exportStrategyDefinition(id);
-
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="${id}.json"`);
-
-    return res.send(json);
-  }
-
   @Post('strategy/definitions/:id/update')
   @ApiOperation({ summary: 'Update strategy definition' })
   @ApiBody({ type: UpdateStrategyDefinitionDto })
@@ -191,14 +175,6 @@ export class AdminController {
     return this.adminStrategyService.getStrategyInstances(
       runningOnly === 'true',
     );
-  }
-
-  @Post('strategy/instances/backfill-definition-links')
-  @ApiOperation({
-    summary: 'Backfill legacy strategy instance definition links',
-  })
-  async backfillStrategyInstanceDefinitions() {
-    return this.adminStrategyService.backfillLegacyStrategyInstanceDefinitions();
   }
 
   @Post('exchange/deposit-address')

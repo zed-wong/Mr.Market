@@ -342,13 +342,11 @@ async resolveForOrderSnapshot(definitionId: string, overrides?: Record<string, u
 }
 ```
 
-### Backfill for Existing Orders
+### Snapshot Requirement
 
-Orders created before snapshot mechanism need backfill:
-
-```bash
-bun run test:e2e backfill-market-making-order-snapshots.e2e-spec.ts
-```
+The current prototype only supports orders created after the snapshot cutover.
+If an order does not have `strategySnapshot`, recreate it through the current
+payment flow instead of backfilling legacy rows.
 
 ## Operational Notes
 
@@ -358,7 +356,8 @@ bun run test:e2e backfill-market-making-order-snapshots.e2e-spec.ts
 - Strategy definitions are DB-backed and managed via admin APIs.
 - Orders require `strategySnapshot` before `start_mm` can run.
 - `withdraw_to_exchange` path is currently validation/refund mode.
-- Volume routing uses execution categories (`clob_cex`, `clob_dex`, `amm_dex`).
+- Volume routing uses execution categories (`clob_cex`, `amm_dex`); `clob_dex`
+  remains reserved and is rejected during config resolution.
 - Reconciliation and trackers should be monitored for state drift.
 
 ## File Structure

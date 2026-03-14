@@ -47,6 +47,15 @@ export class VolumeStrategyController implements StrategyController {
       strategyInstance.parameters.clientId,
       strategyInstance.parameters.pricePushRate,
       strategyInstance.parameters.postOnlySide,
+      strategyInstance.parameters.executionVenue,
+      strategyInstance.parameters.dexId,
+      strategyInstance.parameters.chainId,
+      strategyInstance.parameters.tokenIn,
+      strategyInstance.parameters.tokenOut,
+      strategyInstance.parameters.feeTier,
+      strategyInstance.parameters.slippageBps,
+      strategyInstance.parameters.recipient,
+      strategyInstance.parameters.executionCategory,
     );
   }
 }

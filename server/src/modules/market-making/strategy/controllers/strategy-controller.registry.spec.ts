@@ -50,6 +50,15 @@ describe('StrategyControllerRegistry', () => {
       numTrades: 2,
       pricePushRate: 0,
       postOnlySide: 'buy',
+      executionVenue: 'dex',
+      dexId: 'uniswapV3',
+      chainId: 1,
+      tokenIn: '0x0000000000000000000000000000000000000001',
+      tokenOut: '0x0000000000000000000000000000000000000002',
+      feeTier: 3000,
+      slippageBps: 100,
+      recipient: '0x0000000000000000000000000000000000000003',
+      executionCategory: 'amm_dex',
     },
   };
 
@@ -203,6 +212,15 @@ describe('StrategyControllerRegistry', () => {
       session.params.clientId,
       session.params.pricePushRate,
       session.params.postOnlySide,
+      session.params.executionVenue,
+      session.params.dexId,
+      session.params.chainId,
+      session.params.tokenIn,
+      session.params.tokenOut,
+      session.params.feeTier,
+      session.params.slippageBps,
+      session.params.recipient,
+      session.params.executionCategory,
     );
   });
 

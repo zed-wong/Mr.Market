@@ -135,6 +135,11 @@ export class StrategyConfigResolverService {
         this.readString(normalizedConfig.executionCategory) ||
           this.readString(normalizedConfig.executionVenue),
       );
+      if (normalizedConfig.executionCategory === 'clob_dex') {
+        throw new BadRequestException(
+          'executionCategory clob_dex is not implemented yet. Use clob_cex or amm_dex',
+        );
+      }
       normalizedConfig.executionVenue =
         normalizedConfig.executionCategory === 'amm_dex' ? 'dex' : 'cex';
     }
