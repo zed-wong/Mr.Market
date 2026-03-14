@@ -4,7 +4,7 @@ export class ExchangeWithdrawalDto {
   @ApiProperty({ description: 'The name of exchange' })
   exchange: string;
 
-  @ApiProperty({ description: 'The id of api key' })
+  @ApiProperty({ description: 'Admin-owned API key id' })
   apiKeyId: string;
 
   @ApiProperty({ description: 'The asset symbol (like BTC)' })
@@ -27,7 +27,7 @@ export class ExchangeDepositDto {
   @ApiProperty({ description: 'The name of exchange' })
   exchange: string;
 
-  @ApiProperty({ description: 'The id of api key' })
+  @ApiProperty({ description: 'Admin-owned API key id' })
   apiKeyId: string;
 
   @ApiProperty({ description: 'The asset symbol (like BTC)' })

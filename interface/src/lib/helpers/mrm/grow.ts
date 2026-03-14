@@ -10,13 +10,13 @@ const handleResponse = async (response: Response) => {
 
 export const getGrowBasicInfo = async (): Promise<GrowInfo> => {
   try {
-    const response = await fetch(`${MRM_BACKEND_URL}/grow/info`)
+    const response = await fetch(`${MRM_BACKEND_URL}/grow/info`);
     return await handleResponse(response);
   } catch (error) {
-    console.error('Error fetching grow basic info:', error);
+    console.error("Error fetching grow basic info:", error);
   }
   return {} as GrowInfo;
-}
+};
 
 export interface MarketMakingFee {
   symbol?: string;
@@ -39,7 +39,9 @@ export interface MarketMakingFee {
 export const getMarketMakingFee = async (
   exchange: string,
   pair: string,
-  direction: 'deposit_to_exchange' | 'withdraw_from_exchange' = 'deposit_to_exchange'
+  direction:
+    | "deposit_to_exchange"
+    | "withdraw_from_exchange" = "deposit_to_exchange"
 ): Promise<MarketMakingFee | null> => {
   try {
     const encodedPair = encodeURIComponent(pair);
@@ -47,10 +49,34 @@ export const getMarketMakingFee = async (
     const response = await fetch(url);
     return await handleResponse(response);
   } catch (error) {
-    console.error('Error fetching market making fee:', error);
+    console.error("Error fetching market making fee:", error);
     return null;
   }
+};
+
+export interface MarketMakingStrategy {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  controllerType: string;
+  defaultConfig: Record<string, unknown>;
+  configSchema: Record<string, unknown>;
 }
+
+export const getEnabledMarketMakingStrategies = async (): Promise<
+  MarketMakingStrategy[]
+> => {
+  try {
+    const response = await fetch(
+      `${MRM_BACKEND_URL}/user-orders/market-making/strategies`
+    );
+    return await handleResponse(response);
+  } catch (error) {
+    console.error("Error fetching market making strategies:", error);
+    return [];
+  }
+};
 
 export interface MarketMakingOrderIntentResponse {
   orderId: string;
@@ -59,23 +85,25 @@ export interface MarketMakingOrderIntentResponse {
 }
 
 export const createMarketMakingOrderIntent = async (params: {
+  userId: string;
   marketMakingPairId: string;
-  userId?: string;
+  strategyDefinitionId: string;
+  configOverrides?: Record<string, unknown>;
 }): Promise<MarketMakingOrderIntentResponse | null> => {
   try {
     const response = await fetch(
       `${MRM_BACKEND_URL}/user-orders/market-making/intent`,
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(params),
-      },
+      }
     );
     return await handleResponse(response);
   } catch (error) {
-    console.error('Error creating market making order intent:', error);
+    console.error("Error creating market making order intent:", error);
     return null;
   }
 };

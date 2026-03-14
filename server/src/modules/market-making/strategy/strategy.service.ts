@@ -5,13 +5,14 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
-import * as ccxt from 'ccxt';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { createStrategyKey } from 'src/common/helpers/strategyKey';
+import {
+  createPureMarketMakingStrategyKey,
+  createStrategyKey,
+} from 'src/common/helpers/strategyKey';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -20,33 +21,28 @@ import { Repository } from 'typeorm';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
-import { DexVolumeStrategyService } from './dex-volume.strategy.service';
-import { QuoteExecutorManagerService } from './quote-executor-manager.service';
+import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
-} from './strategy.dto';
-import { StrategyOrderIntent } from './strategy-intent.types';
-import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
-import { StrategyIntentStoreService } from './strategy-intent-store.service';
-
-type StrategyType = 'arbitrage' | 'pureMarketMaking' | 'volume';
-
-type StrategyRuntimeSession = {
-  runId: string;
-  strategyKey: string;
-  strategyType: StrategyType;
-  userId: string;
-  clientId: string;
-  cadenceMs: number;
-  nextRunAtMs: number;
-  params:
-    | ArbitrageStrategyDto
-    | PureMarketMakingStrategyDto
-    | Record<string, any>;
-};
+} from './config/strategy.dto';
+import {
+  StrategyRuntimeSession,
+  StrategyType,
+} from './config/strategy-controller.types';
+import {
+  normalizeExecutionCategory,
+  StrategyExecutionCategory,
+} from './config/strategy-execution-category';
+import { StrategyOrderIntent } from './config/strategy-intent.types';
+import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
+import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
+import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
+import { ExecutorRegistry } from './execution/executor-registry';
+import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
+import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
 
 type BaseVolumeStrategyParams = {
   exchangeName: string;
@@ -58,16 +54,18 @@ type BaseVolumeStrategyParams = {
   userId: string;
   clientId: string;
   pricePushRate: number;
-  executionVenue: VolumeExecutionVenue;
+  executionCategory: StrategyExecutionCategory;
+  executionVenue?: VolumeExecutionVenue;
   postOnlySide?: 'buy' | 'sell';
   executedTrades?: number;
 };
 
 type CexVolumeStrategyParams = BaseVolumeStrategyParams & {
-  executionVenue: 'cex';
+  executionCategory: 'clob_cex' | 'clob_dex';
 };
 
-type DexVolumeStrategyParams = BaseVolumeStrategyParams & {
+type AmmDexVolumeStrategyParams = BaseVolumeStrategyParams & {
+  executionCategory: 'amm_dex';
   executionVenue: 'dex';
   dexId: DexAdapterId;
   chainId: number;
@@ -78,7 +76,15 @@ type DexVolumeStrategyParams = BaseVolumeStrategyParams & {
   recipient?: string;
 };
 
-type VolumeStrategyParams = CexVolumeStrategyParams | DexVolumeStrategyParams;
+type VolumeStrategyParams =
+  | CexVolumeStrategyParams
+  | AmmDexVolumeStrategyParams;
+
+type PooledExecutorTarget = {
+  exchange: string;
+  pair: string;
+  orderId: string;
+};
 
 @Injectable()
 export class StrategyService
@@ -102,17 +108,17 @@ export class StrategyService
     @Optional()
     private readonly clockTickCoordinatorService?: ClockTickCoordinatorService,
     @Optional()
-    private readonly strategyIntentExecutionService?: StrategyIntentExecutionService,
-    @Optional()
-    private readonly strategyIntentStoreService?: StrategyIntentStoreService,
-    @Optional()
     private readonly quoteExecutorManagerService?: QuoteExecutorManagerService,
     @Optional()
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
     @Optional()
-    private readonly configService?: ConfigService,
+    private readonly strategyControllerRegistry?: StrategyControllerRegistry,
     @Optional()
-    private readonly dexVolumeStrategyService?: DexVolumeStrategyService,
+    private readonly executorOrchestratorService?: ExecutorOrchestratorService,
+    @Optional()
+    private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
+    @Optional()
+    private readonly executorRegistry?: ExecutorRegistry,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -128,24 +134,26 @@ export class StrategyService
     const nowMs = Date.now();
 
     for (const strategy of runningStrategies) {
-      this.sessions.set(strategy.strategyKey, {
-        runId: this.generateRunId(),
-        strategyKey: strategy.strategyKey,
-        strategyType: strategy.strategyType as StrategyType,
-        userId: strategy.userId,
-        clientId: strategy.clientId,
-        cadenceMs: this.getCadenceMs(
-          strategy.parameters,
-          strategy.strategyType,
-        ),
-        nextRunAtMs: nowMs,
-        params: strategy.parameters,
-      });
+      await this.upsertSession(
+        strategy.strategyKey,
+        strategy.strategyType as StrategyType,
+        strategy.userId,
+        strategy.clientId,
+        this.getCadenceMs(strategy.parameters, strategy.strategyType),
+        strategy.parameters,
+        strategy.marketMakingOrderId ||
+          (strategy.strategyType === 'pureMarketMaking'
+            ? strategy.clientId
+            : undefined),
+        nowMs,
+        this.generateRunId(),
+      );
     }
   }
 
   async stop(): Promise<void> {
     this.sessions.clear();
+    this.executorRegistry?.clear();
   }
 
   async health(): Promise<boolean> {
@@ -153,41 +161,49 @@ export class StrategyService
   }
 
   async onTick(ts: string): Promise<void> {
-    const nowMs = Date.now();
-    const sessions = [...this.sessions.values()].sort((a, b) =>
-      a.strategyKey.localeCompare(b.strategyKey),
-    );
+    await this.onTickForPooledExecutors(ts);
+  }
 
-    for (const session of sessions) {
-      const capturedRunId = session.runId;
+  async routeFillForExchangePair(
+    exchange: string,
+    pair: string,
+    fill: {
+      orderId?: string;
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      receivedAt?: string;
+      payload?: Record<string, unknown>;
+    },
+  ): Promise<boolean> {
+    const executor = this.executorRegistry?.getExecutor(exchange, pair);
 
-      if (session.nextRunAtMs > nowMs) {
-        continue;
-      }
-      const activeSession = this.sessions.get(session.strategyKey);
+    if (!executor) {
+      return false;
+    }
 
-      if (!activeSession || activeSession.runId !== capturedRunId) {
-        continue;
-      }
+    await executor.onFill(fill);
 
+    return true;
+  }
+
+  private async onTickForPooledExecutors(ts: string): Promise<void> {
+    const executors = this.executorRegistry?.getActiveExecutors() || [];
+
+    for (const executor of executors) {
       try {
-        await this.runSession(session, ts);
+        await executor.onTick(ts);
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         const errorTrace = error instanceof Error ? error.stack : undefined;
 
         this.logger.error(
-          `onTick runSession failed for strategyKey=${session.strategyKey} ts=${ts}: ${errorMessage}`,
+          `onTick executor failed for exchange=${executor.exchange} pair=${executor.pair} ts=${ts}: ${errorMessage}`,
           errorTrace,
         );
-      } finally {
-        const nextSession = this.sessions.get(session.strategyKey);
-
-        if (nextSession && nextSession.runId === capturedRunId) {
-          nextSession.nextRunAtMs += nextSession.cadenceMs;
-          this.sessions.set(session.strategyKey, nextSession);
-        }
       }
     }
   }
@@ -200,6 +216,16 @@ export class StrategyService
 
   async getAllStrategies(): Promise<StrategyInstance[]> {
     return await this.strategyInstanceRepository.find();
+  }
+
+  getSupportedControllerTypes(): StrategyType[] {
+    return (
+      this.strategyControllerRegistry?.listControllerTypes() || [
+        'arbitrage',
+        'pureMarketMaking',
+        'volume',
+      ]
+    );
   }
 
   async getStrategyInstanceKey(strategyKey: string): Promise<StrategyInstance> {
@@ -217,50 +243,19 @@ export class StrategyService
       throw new Error(`Strategy with key ${strategyKey} not found.`);
     }
 
-    if (strategyInstance.strategyType === 'arbitrage') {
-      await this.startArbitrageStrategyForUser(
-        strategyInstance.parameters as ArbitrageStrategyDto,
-        strategyInstance.parameters.checkIntervalSeconds,
-        strategyInstance.parameters.maxOpenOrders,
-      );
+    const controller = this.strategyControllerRegistry?.getController(
+      strategyInstance.strategyType,
+    );
+
+    if (controller) {
+      await controller.rerun(strategyInstance, this);
 
       return;
     }
 
-    if (strategyInstance.strategyType === 'pureMarketMaking') {
-      await this.executePureMarketMakingStrategy(
-        strategyInstance.parameters as PureMarketMakingStrategyDto,
-      );
-
-      return;
-    }
-
-    if (strategyInstance.strategyType === 'volume') {
-      await this.executeVolumeStrategy(
-        strategyInstance.parameters.exchangeName,
-        strategyInstance.parameters.symbol,
-        strategyInstance.parameters.baseIncrementPercentage,
-        strategyInstance.parameters.baseIntervalTime,
-        strategyInstance.parameters.baseTradeAmount,
-        strategyInstance.parameters.numTrades,
-        strategyInstance.parameters.userId,
-        strategyInstance.parameters.clientId,
-        strategyInstance.parameters.pricePushRate,
-        strategyInstance.parameters.postOnlySide,
-        strategyInstance.parameters.executionVenue,
-        strategyInstance.parameters.dexId,
-        strategyInstance.parameters.chainId,
-        strategyInstance.parameters.tokenIn,
-        strategyInstance.parameters.tokenOut,
-        strategyInstance.parameters.feeTier,
-        strategyInstance.parameters.slippageBps,
-        strategyInstance.parameters.recipient,
-      );
-
-      return;
-    }
-
-    throw new Error(`Unknown strategy type: ${strategyInstance.strategyType}`);
+    throw new Error(
+      `Strategy controller for type ${strategyInstance.strategyType} is not registered`,
+    );
   }
 
   async startArbitrageStrategyForUser(
@@ -284,62 +279,78 @@ export class StrategyService
       'arbitrage',
       { ...strategyParamsDto, checkIntervalSeconds, maxOpenOrders },
     );
-    this.upsertSession(
+    await this.upsertSession(
       strategyKey,
       'arbitrage',
       userId,
       clientId,
       cadenceMs,
-      strategyParamsDto,
+      strategyParamsDto as unknown as StrategyRuntimeSession['params'],
     );
   }
 
   async executePureMarketMakingStrategy(
     strategyParamsDto: PureMarketMakingStrategyDto,
   ) {
-    const { userId, clientId } = strategyParamsDto;
-    const strategyKey = createStrategyKey({
-      type: 'pureMarketMaking',
-      user_id: userId,
-      client_id: clientId,
-    });
+    const marketMakingOrderId =
+      strategyParamsDto.marketMakingOrderId || strategyParamsDto.clientId;
 
-    const cadenceMs = Math.max(
-      1000,
-      Number(strategyParamsDto.orderRefreshTime),
-    );
+    if (!marketMakingOrderId) {
+      throw new Error(
+        'Pure market making strategy requires marketMakingOrderId (or clientId fallback)',
+      );
+    }
+
+    const strategyKey = createPureMarketMakingStrategyKey(marketMakingOrderId);
+    const normalizedParams: PureMarketMakingStrategyDto = {
+      ...strategyParamsDto,
+      marketMakingOrderId,
+      clientId: marketMakingOrderId,
+    };
+
+    const cadenceMs = Math.max(1000, Number(normalizedParams.orderRefreshTime));
 
     await this.upsertStrategyInstance(
       strategyKey,
-      userId,
-      clientId,
+      normalizedParams.userId,
+      marketMakingOrderId,
       'pureMarketMaking',
-      strategyParamsDto,
+      normalizedParams,
+      marketMakingOrderId,
     );
-    this.upsertSession(
+    await this.upsertSession(
       strategyKey,
       'pureMarketMaking',
-      userId,
-      clientId,
+      normalizedParams.userId,
+      marketMakingOrderId,
       cadenceMs,
-      strategyParamsDto,
+      normalizedParams as unknown as StrategyRuntimeSession['params'],
+      marketMakingOrderId,
     );
   }
 
   async executeMMCycle(strategyParamsDto: PureMarketMakingStrategyDto) {
-    const strategyKey = createStrategyKey({
-      type: 'pureMarketMaking',
-      user_id: strategyParamsDto.userId,
-      client_id: strategyParamsDto.clientId,
-    });
+    const marketMakingOrderId =
+      strategyParamsDto.marketMakingOrderId || strategyParamsDto.clientId;
 
-    const intents = await this.buildPureMarketMakingIntents(
+    if (!marketMakingOrderId) {
+      throw new Error(
+        'Pure market making cycle requires marketMakingOrderId (or clientId fallback)',
+      );
+    }
+    const strategyKey = createPureMarketMakingStrategyKey(marketMakingOrderId);
+
+    const actions = await this.buildPureMarketMakingActions(
       strategyKey,
-      strategyParamsDto,
+      {
+        ...strategyParamsDto,
+        clientId: marketMakingOrderId,
+        marketMakingOrderId,
+      },
       getRFC3339Timestamp(),
     );
 
-    await this.publishIntents(strategyKey, intents);
+    await this.publishIntents(strategyKey, actions);
   }
 
   async executeVolumeStrategy(
@@ -361,6 +372,7 @@ export class StrategyService
     feeTier?: number,
     slippageBps?: number,
     recipient?: string,
+    executionCategoryInput?: string,
   ) {
     const strategyKey = createStrategyKey({
       type: 'volume',
@@ -368,9 +380,19 @@ export class StrategyService
       client_id: clientId,
     });
 
+    const executionCategory = normalizeExecutionCategory(
+      executionCategoryInput || executionVenue,
+    );
+
+    if (executionCategory === 'clob_dex') {
+      throw new Error(
+        'executionCategory clob_dex is not implemented yet. Use clob_cex or amm_dex',
+      );
+    }
+
     const params: VolumeStrategyParams =
-      executionVenue === 'dex'
-        ? this.buildDexVolumeParams({
+      executionCategory === 'amm_dex'
+        ? this.buildAmmDexVolumeParams({
             exchangeName,
             symbol,
             baseIncrementPercentage,
@@ -389,7 +411,8 @@ export class StrategyService
             slippageBps,
             recipient,
           })
-        : this.buildCexVolumeParams({
+        : this.buildClobVolumeParams({
+            executionCategory,
             exchangeName,
             symbol,
             baseIncrementPercentage,
@@ -411,7 +434,7 @@ export class StrategyService
       'volume',
       params,
     );
-    this.upsertSession(
+    await this.upsertSession(
       strategyKey,
       'volume',
       userId,
@@ -430,21 +453,27 @@ export class StrategyService
       return;
     }
 
-    const strategyKey = createStrategyKey({
-      type: strategyType as StrategyType,
-      user_id: userId,
-      client_id: clientId,
-    });
+    const resolvedStrategyType = strategyType as StrategyType;
+    const strategyKey =
+      resolvedStrategyType === 'pureMarketMaking'
+        ? createPureMarketMakingStrategyKey(clientId)
+        : createStrategyKey({
+            type: resolvedStrategyType,
+            user_id: userId,
+            client_id: clientId,
+          });
 
     await this.strategyInstanceRepository.update(
       { strategyKey },
       { status: 'stopped', updatedAt: new Date() },
     );
 
-    this.sessions.delete(strategyKey);
+    const activeSession = this.sessions.get(strategyKey);
+
+    await this.removeSession(strategyKey, activeSession);
 
     const stopIntent: StrategyOrderIntent = {
-      type: 'STOP_EXECUTOR',
+      type: 'STOP_CONTROLLER',
       intentId: `${strategyKey}:${Date.now()}:stop`,
       strategyInstanceId: strategyKey,
       strategyKey,
@@ -462,20 +491,72 @@ export class StrategyService
     await this.publishIntents(strategyKey, [stopIntent]);
   }
 
+  async stopMarketMakingStrategyForOrder(
+    marketMakingOrderId: string,
+    userId = 'system',
+  ): Promise<void> {
+    if (!marketMakingOrderId) {
+      return;
+    }
+    await this.stopStrategyForUser(
+      userId,
+      marketMakingOrderId,
+      'pureMarketMaking',
+    );
+  }
+
+  async linkDefinitionToStrategyInstance(
+    userId: string,
+    clientId: string,
+    strategyType: StrategyType,
+    definitionId: string,
+    marketMakingOrderId?: string,
+  ): Promise<void> {
+    const strategyKey =
+      strategyType === 'pureMarketMaking'
+        ? createPureMarketMakingStrategyKey(marketMakingOrderId || clientId)
+        : createStrategyKey({
+            type: strategyType,
+            user_id: userId,
+            client_id: clientId,
+          });
+
+    await this.strategyInstanceRepository.update(
+      { strategyKey },
+      {
+        definitionId,
+        marketMakingOrderId: marketMakingOrderId || undefined,
+        updatedAt: new Date(),
+      },
+    );
+  }
+
   stopVolumeStrategy(userId: string, clientId: string) {
     return this.stopStrategyForUser(userId, clientId, 'volume');
   }
 
-  async evaluateArbitrageOpportunityVWAP(
-    exchangeA: ccxt.Exchange,
-    exchangeB: ccxt.Exchange,
+  async buildArbitrageActions(
+    strategyKey: string,
     strategyParamsDto: ArbitrageStrategyDto,
-  ) {
+    ts: string,
+  ): Promise<ExecutorAction[]> {
     const { userId, clientId, pair, amountToTrade, minProfitability } =
       strategyParamsDto;
 
-    const orderBookA = await exchangeA.fetchOrderBook(pair);
-    const orderBookB = await exchangeB.fetchOrderBook(pair);
+    if (!this.strategyMarketDataProviderService) {
+      throw new Error('strategy market data provider is not available');
+    }
+
+    const orderBookA =
+      await this.strategyMarketDataProviderService.getOrderBook(
+        strategyParamsDto.exchangeAName,
+        pair,
+      );
+    const orderBookB =
+      await this.strategyMarketDataProviderService.getOrderBook(
+        strategyParamsDto.exchangeBName,
+        pair,
+      );
 
     const vwapA = this.calculateVWAPForAmount(orderBookA, amountToTrade, 'buy');
     const vwapB = this.calculateVWAPForAmount(
@@ -485,87 +566,108 @@ export class StrategyService
     );
 
     if (vwapA.isLessThanOrEqualTo(0) || vwapB.isLessThanOrEqualTo(0)) {
-      return;
+      return [];
     }
 
-    const strategyKey = createStrategyKey({
-      type: 'arbitrage',
-      user_id: userId,
-      client_id: clientId,
-    });
-
     const threshold = new BigNumber(minProfitability);
-    const intents: StrategyOrderIntent[] = [];
-    const ts = getRFC3339Timestamp();
+    const actions: ExecutorAction[] = [];
+    const executionCategory =
+      String(
+        (strategyParamsDto as any).executionCategory || '',
+      ).toLowerCase() === 'clob_dex'
+        ? 'clob_dex'
+        : 'clob_cex';
 
     if (vwapB.minus(vwapA).dividedBy(vwapA).isGreaterThanOrEqualTo(threshold)) {
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           userId,
           clientId,
-          exchangeA.id,
+          strategyParamsDto.exchangeAName,
           pair,
           'buy',
           vwapA,
           new BigNumber(amountToTrade),
           ts,
           'arb-a-buy',
+          executionCategory,
         ),
       );
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           userId,
           clientId,
-          exchangeB.id,
+          strategyParamsDto.exchangeBName,
           pair,
           'sell',
           vwapB,
           new BigNumber(amountToTrade),
           ts,
           'arb-b-sell',
+          executionCategory,
         ),
       );
     }
 
     if (vwapA.minus(vwapB).dividedBy(vwapB).isGreaterThanOrEqualTo(threshold)) {
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           userId,
           clientId,
-          exchangeB.id,
+          strategyParamsDto.exchangeBName,
           pair,
           'buy',
           vwapB,
           new BigNumber(amountToTrade),
           ts,
           'arb-b-buy',
+          executionCategory,
         ),
       );
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           userId,
           clientId,
-          exchangeA.id,
+          strategyParamsDto.exchangeAName,
           pair,
           'sell',
           vwapA,
           new BigNumber(amountToTrade),
           ts,
           'arb-a-sell',
+          executionCategory,
         ),
       );
     }
 
-    if (intents.length > 0) {
-      await this.publishIntents(strategyKey, intents);
+    return actions;
+  }
+
+  async evaluateArbitrageOpportunityVWAP(
+    strategyParamsDto: ArbitrageStrategyDto,
+  ) {
+    const strategyKey = createStrategyKey({
+      type: 'arbitrage',
+      user_id: strategyParamsDto.userId,
+      client_id: strategyParamsDto.clientId,
+    });
+
+    const actions = await this.buildArbitrageActions(
+      strategyKey,
+      strategyParamsDto,
+      getRFC3339Timestamp(),
+    );
+
+    if (actions.length > 0) {
+      await this.publishIntents(strategyKey, actions);
     }
   }
 
@@ -577,24 +679,80 @@ export class StrategyService
     return this.latestIntentsByStrategy.get(strategyKey) || [];
   }
 
-  private upsertSession(
+  private async upsertSession(
     strategyKey: string,
     strategyType: StrategyType,
     userId: string,
     clientId: string,
     cadenceMs: number,
     params: StrategyRuntimeSession['params'],
-  ): void {
-    this.sessions.set(strategyKey, {
-      runId: this.generateRunId(),
-      strategyKey,
+    marketMakingOrderId?: string,
+    nextRunAtMs = Date.now(),
+    runId = this.generateRunId(),
+  ): Promise<StrategyRuntimeSession> {
+    const existingSession = this.sessions.get(strategyKey);
+
+    if (existingSession) {
+      await this.detachSessionFromExecutor(existingSession);
+    }
+
+    const pooledTarget = this.resolvePooledExecutorTarget(
       strategyType,
-      userId,
-      clientId,
-      cadenceMs,
       params,
-      nextRunAtMs: Date.now(),
-    });
+      clientId,
+      marketMakingOrderId,
+    );
+
+    if (this.executorRegistry && pooledTarget) {
+      const executor = this.executorRegistry.getOrCreateExecutor(
+        pooledTarget.exchange,
+        pooledTarget.pair,
+        {
+          onTick: async (session, ts) => {
+            await this.runSession(session, ts);
+          },
+          onTickError: async (session, error, ts) => {
+            this.logSessionTickError(session.strategyKey, ts, error);
+          },
+          onFillError: async (session, error, fill) => {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            const errorTrace = error instanceof Error ? error.stack : undefined;
+
+            this.logger.error(
+              `onFill handler failed for strategyKey=${
+                session.strategyKey
+              } exchange=${pooledTarget.exchange} pair=${
+                pooledTarget.pair
+              } clientOrderId=${fill.clientOrderId || ''}: ${errorMessage}`,
+              errorTrace,
+            );
+          },
+        },
+      );
+      const pooledSession = await executor.addOrder(
+        pooledTarget.orderId,
+        userId,
+        {
+          strategyKey,
+          strategyType,
+          clientId,
+          cadenceMs,
+          params,
+          marketMakingOrderId,
+          nextRunAtMs,
+          runId,
+        },
+      );
+
+      this.sessions.set(strategyKey, pooledSession);
+
+      return pooledSession;
+    }
+
+    throw new Error(
+      `Cannot create session for strategyKey=${strategyKey}: executorRegistry not available or pooledTarget unresolved`,
+    );
   }
 
   private async upsertStrategyInstance(
@@ -603,6 +761,7 @@ export class StrategyService
     clientId: string,
     strategyType: StrategyType,
     parameters: Record<string, any>,
+    marketMakingOrderId?: string,
   ): Promise<void> {
     const existing = await this.strategyInstanceRepository.findOne({
       where: { strategyKey },
@@ -615,6 +774,7 @@ export class StrategyService
           status: 'running',
           strategyType,
           parameters,
+          marketMakingOrderId: marketMakingOrderId || null,
           updatedAt: new Date(),
         },
       );
@@ -628,6 +788,7 @@ export class StrategyService
       clientId,
       strategyType,
       parameters,
+      marketMakingOrderId: marketMakingOrderId || null,
       status: 'running',
       startPrice: await this.fetchStartPrice(strategyType, parameters),
     });
@@ -635,11 +796,40 @@ export class StrategyService
     await this.strategyInstanceRepository.save(instance);
   }
 
-  private async fetchStartPrice(
+  public async fetchStartPrice(
     strategyType: StrategyType,
     parameters: Record<string, any>,
   ): Promise<number> {
     if (strategyType === 'volume') {
+      const venue = String(parameters.executionVenue || '').toLowerCase();
+      const category = String(parameters.executionCategory || '').toLowerCase();
+
+      if (venue === 'dex' || category === 'amm_dex') {
+        return 0;
+      }
+
+      const referenceExchange = String(parameters.exchangeName || '').trim();
+      const referencePair = String(parameters.symbol || '').trim();
+
+      if (
+        this.strategyMarketDataProviderService &&
+        referenceExchange &&
+        referencePair
+      ) {
+        try {
+          const ref =
+            await this.strategyMarketDataProviderService.getReferencePrice(
+              referenceExchange,
+              referencePair,
+              PriceSourceType.MID_PRICE,
+            );
+
+          return Number(ref || 0);
+        } catch {
+          return 0;
+        }
+      }
+
       return 0;
     }
 
@@ -654,212 +844,183 @@ export class StrategyService
     return Number(ticker.last || 0);
   }
 
-  private getCadenceMs(
+  public getCadenceMs(
     parameters: Record<string, any>,
     strategyType: string,
   ): number {
-    if (strategyType === 'arbitrage') {
-      return Math.max(
-        1000,
-        Number(parameters?.checkIntervalSeconds || 10) * 1000,
-      );
+    const controller =
+      this.strategyControllerRegistry?.getController(strategyType);
+
+    if (controller) {
+      return controller.getCadenceMs(parameters, this);
     }
 
-    if (strategyType === 'pureMarketMaking') {
-      return Math.max(1000, Number(parameters?.orderRefreshTime || 10000));
-    }
-
-    return Math.max(1000, Number(parameters?.baseIntervalTime || 10) * 1000);
+    throw new Error(
+      `Strategy controller for type ${strategyType} is not registered`,
+    );
   }
 
   private async runSession(
     session: StrategyRuntimeSession,
     ts: string,
   ): Promise<void> {
-    if (session.strategyType === 'pureMarketMaking') {
-      const intents = await this.buildPureMarketMakingIntents(
-        session.strategyKey,
-        session.params as PureMarketMakingStrategyDto,
-        ts,
-      );
+    const controller = this.strategyControllerRegistry?.getController(
+      session.strategyType,
+    );
 
-      await this.publishIntents(session.strategyKey, intents);
+    if (controller) {
+      const actions = await controller.decideActions(session, ts, this);
 
-      return;
-    }
+      if (actions.length > 0) {
+        await this.publishIntents(session.strategyKey, actions);
 
-    if (session.strategyType === 'arbitrage') {
-      const params = session.params as ArbitrageStrategyDto;
-      const exchangeA = this.exchangeInitService.getExchange(
-        params.exchangeAName,
-      );
-      const exchangeB = this.exchangeInitService.getExchange(
-        params.exchangeBName,
-      );
-
-      await this.evaluateArbitrageOpportunityVWAP(exchangeA, exchangeB, params);
-
-      return;
-    }
-
-    if (session.strategyType === 'volume') {
-      const params = session.params as VolumeStrategyParams;
-      const executedTrades = Number(params.executedTrades || 0);
-
-      if (executedTrades >= Number(params.numTrades || 0)) {
-        const activeBeforeStop = this.sessions.get(session.strategyKey);
-
-        if (!this.isSameActiveSession(activeBeforeStop, session)) {
-          this.logger.warn(
-            `Skipping stale volume stop for ${session.strategyKey}: active session changed`,
-          );
-
-          return;
+        if (typeof controller.onActionsPublished === 'function') {
+          await controller.onActionsPublished(session, actions, this);
         }
-        await this.stopStrategyForUser(
-          session.userId,
-          session.clientId,
-          session.strategyType,
-        );
-
-        return;
       }
 
-      let intents: StrategyOrderIntent[] = [];
-      let didExecute = false;
-
-      if (params.executionVenue === 'dex') {
-        didExecute = await this.executeDexVolumeCycle(
-          session.strategyKey,
-          params,
-          executedTrades,
-        );
-      } else {
-        intents = await this.buildVolumeIntents(
-          session.strategyKey,
-          params,
-          ts,
-        );
-        didExecute = intents.length > 0;
-      }
-
-      if (!didExecute) {
-        return;
-      }
-
-      const activeBeforePublish = this.sessions.get(session.strategyKey);
-
-      if (!this.isSameActiveSession(activeBeforePublish, session)) {
-        this.logger.warn(
-          `Skipping stale volume tick before publish for ${session.strategyKey}: active session changed`,
-        );
-
-        return;
-      }
-
-      if (intents.length > 0) {
-        await this.publishIntents(session.strategyKey, intents);
-      }
-
-      const nextParams: VolumeStrategyParams = {
-        ...params,
-        executedTrades: executedTrades + 1,
-      };
-
-      const activeBeforePersist = this.sessions.get(session.strategyKey);
-
-      if (!this.isSameActiveSession(activeBeforePersist, session)) {
-        this.logger.warn(
-          `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
-        );
-
-        return;
-      }
-
-      await this.persistStrategyParams(session.strategyKey, nextParams);
-
-      const currentSession = this.sessions.get(session.strategyKey);
-
-      if (this.isSameActiveSession(currentSession, session)) {
-        this.sessions.set(session.strategyKey, {
-          ...currentSession,
-          params: nextParams,
-        });
-      } else {
-        this.logger.warn(
-          `Skipping stale volume tick write-back for ${session.strategyKey}: active session changed`,
-        );
-      }
+      return;
     }
+
+    throw new Error(
+      `Strategy controller for type ${session.strategyType} is not registered`,
+    );
   }
 
-  private isSameActiveSession(
-    active: StrategyRuntimeSession | undefined,
+  async buildVolumeSessionActions(
     session: StrategyRuntimeSession,
-  ): active is StrategyRuntimeSession {
-    return (
-      !!active &&
-      active.userId === session.userId &&
-      active.clientId === session.clientId &&
-      active.strategyType === session.strategyType &&
-      active.runId === session.runId
-    );
-  }
-
-  private async executeDexVolumeCycle(
-    strategyKey: string,
-    params: DexVolumeStrategyParams,
-    executedTrades: number,
-  ): Promise<boolean> {
-    if (!this.dexVolumeStrategyService) {
-      this.logger.error(
-        `Dex volume service is not available. Cannot execute ${strategyKey}`,
-      );
-
-      return false;
-    }
-
-    const side = this.resolveVolumeSide(params.postOnlySide, executedTrades);
-
-    const result = await this.dexVolumeStrategyService.executeCycle({
-      dexId: params.dexId,
-      chainId: params.chainId,
-      tokenIn: params.tokenIn,
-      tokenOut: params.tokenOut,
-      feeTier: params.feeTier,
-      baseTradeAmount: params.baseTradeAmount,
-      baseIncrementPercentage: params.baseIncrementPercentage,
-      pricePushRate: params.pricePushRate,
-      executedTrades,
-      side,
-      slippageBps: params.slippageBps,
-      recipient: params.recipient,
-    });
-
-    this.logger.log(
-      `DEX volume cycle executed for ${strategyKey}: txHash=${result.txHash}, side=${result.side}, amountIn=${result.amountIn}`,
-    );
-
-    return true;
-  }
-
-  private async buildVolumeIntents(
-    strategyKey: string,
-    params: CexVolumeStrategyParams,
     ts: string,
-  ): Promise<StrategyOrderIntent[]> {
-    const exchange = this.exchangeInitService.getExchange(params.exchangeName);
-    const orderBook = await exchange.fetchOrderBook(params.symbol);
-    const bestBid = this.toPositiveNumber(orderBook?.bids?.[0]?.[0]);
-    const bestAsk = this.toPositiveNumber(orderBook?.asks?.[0]?.[0]);
+  ): Promise<ExecutorAction[]> {
+    const params = session.params as VolumeStrategyParams;
+    const executedTrades = Number(params.executedTrades || 0);
 
-    if (bestBid === undefined || bestAsk === undefined) {
-      this.logger.warn(
-        `Skipping volume cycle for ${strategyKey}: missing best bid/ask on ${params.exchangeName} ${params.symbol}`,
+    if (executedTrades >= Number(params.numTrades || 0)) {
+      const activeBeforeStop = this.sessions.get(session.strategyKey);
+
+      if (!this.isSameActiveSession(activeBeforeStop, session)) {
+        this.logger.warn(
+          `Skipping stale volume stop for ${session.strategyKey}: active session changed`,
+        );
+
+        return [];
+      }
+
+      await this.stopStrategyForUser(
+        session.userId,
+        session.clientId,
+        session.strategyType,
       );
 
       return [];
     }
+
+    if (params.executionCategory === 'amm_dex') {
+      const side = this.resolveVolumeSide(params.postOnlySide, executedTrades);
+      const amountIn = this.computeAmmAmountIn(params, executedTrades);
+
+      return [
+        {
+          type: 'EXECUTE_AMM_SWAP',
+          intentId: `${session.strategyKey}:${ts}:amm-${executedTrades}`,
+          strategyInstanceId: session.strategyKey,
+          strategyKey: session.strategyKey,
+          userId: session.userId,
+          clientId: session.clientId,
+          exchange: params.exchangeName,
+          pair: params.symbol,
+          side,
+          price: '0',
+          qty: amountIn,
+          executionCategory: 'amm_dex',
+          metadata: {
+            dexId: params.dexId,
+            chainId: params.chainId,
+            tokenIn: params.tokenIn,
+            tokenOut: params.tokenOut,
+            feeTier: params.feeTier,
+            baseTradeAmount: params.baseTradeAmount,
+            baseIncrementPercentage: params.baseIncrementPercentage,
+            pricePushRate: params.pricePushRate,
+            executedTrades,
+            slippageBps: params.slippageBps,
+            recipient: params.recipient,
+          },
+          createdAt: ts,
+          status: 'NEW',
+        },
+      ];
+    }
+
+    return await this.buildVolumeActions(session.strategyKey, params, ts);
+  }
+
+  async onVolumeActionsPublished(
+    session: StrategyRuntimeSession,
+    actions: ExecutorAction[],
+  ): Promise<void> {
+    if (actions.length === 0) {
+      return;
+    }
+
+    const activeBeforePersist = this.sessions.get(session.strategyKey);
+
+    if (!this.isSameActiveSession(activeBeforePersist, session)) {
+      this.logger.warn(
+        `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
+      );
+
+      return;
+    }
+
+    const params = activeBeforePersist.params as VolumeStrategyParams;
+    const nextParams: VolumeStrategyParams = {
+      ...params,
+      executedTrades: Number(params.executedTrades || 0) + 1,
+    };
+
+    await this.persistStrategyParams(session.strategyKey, nextParams);
+
+    const currentSession = this.sessions.get(session.strategyKey);
+
+    if (this.isSameActiveSession(currentSession, session)) {
+      currentSession.params = nextParams;
+      this.sessions.set(session.strategyKey, currentSession);
+
+      return;
+    }
+
+    this.logger.warn(
+      `Skipping stale volume tick write-back for ${session.strategyKey}: active session changed`,
+    );
+  }
+
+  private isSameActiveSession(
+    active: StrategyRuntimeSession | undefined,
+    expected: StrategyRuntimeSession,
+  ): active is StrategyRuntimeSession {
+    return (
+      !!active &&
+      active.userId === expected.userId &&
+      active.clientId === expected.clientId &&
+      active.strategyType === expected.strategyType &&
+      active.runId === expected.runId
+    );
+  }
+
+  async buildVolumeActions(
+    strategyKey: string,
+    params: CexVolumeStrategyParams,
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    if (!this.strategyMarketDataProviderService) {
+      throw new Error('strategy market data provider is not available');
+    }
+
+    const { bestBid, bestAsk } =
+      await this.strategyMarketDataProviderService.getBestBidAsk(
+        params.exchangeName,
+        params.symbol,
+      );
 
     const mid = new BigNumber(bestBid).plus(bestAsk).dividedBy(2);
     const pushMultiplier = new BigNumber(1).plus(
@@ -911,27 +1072,27 @@ export class StrategyService
         strategyKey,
         params.userId,
         params.clientId,
-        exchange.id,
+        params.exchangeName,
         params.symbol,
         side,
         price,
         qty,
         ts,
         `volume-${params.executedTrades || 0}`,
+        params.executionCategory,
       ),
     ];
   }
 
-  private async buildPureMarketMakingIntents(
+  async buildPureMarketMakingActions(
     strategyKey: string,
     params: PureMarketMakingStrategyDto,
     ts: string,
-  ): Promise<StrategyOrderIntent[]> {
-    const intents: StrategyOrderIntent[] = [];
-    const exchange = this.exchangeInitService.getExchange(params.exchangeName);
+  ): Promise<ExecutorAction[]> {
+    const actions: ExecutorAction[] = [];
     const priceExchange = params.oracleExchangeName
-      ? this.exchangeInitService.getExchange(params.oracleExchangeName)
-      : exchange;
+      ? params.oracleExchangeName
+      : params.exchangeName;
     let priceSource: BigNumber;
 
     try {
@@ -947,7 +1108,7 @@ export class StrategyService
         `Skipping cycle for ${strategyKey}: cannot resolve price source for ${params.exchangeName} ${params.pair} (${error.message})`,
       );
 
-      return intents;
+      return actions;
     }
 
     if (!priceSource.isFinite() || priceSource.isLessThanOrEqualTo(0)) {
@@ -957,7 +1118,7 @@ export class StrategyService
         } ${params.pair}`,
       );
 
-      return intents;
+      return actions;
     }
 
     const openOrders =
@@ -1009,24 +1170,25 @@ export class StrategyService
         continue;
       }
 
-      intents.push(
+      actions.push(
         this.createIntent(
           strategyKey,
           strategyKey,
           params.userId,
           params.clientId,
-          exchange.id,
+          params.exchangeName,
           params.pair,
           quote.side,
           quotePrice,
           new BigNumber(quote.qty),
           ts,
           `mm-layer-${quote.layer}-${quote.side}`,
+          'clob_cex',
         ),
       );
     }
 
-    return intents;
+    return actions;
   }
 
   private buildLegacyQuotes(
@@ -1108,6 +1270,8 @@ export class StrategyService
     qty: BigNumber,
     ts: string,
     suffix: string,
+    executionCategory?: StrategyExecutionCategory,
+    metadata?: Record<string, unknown>,
   ): StrategyOrderIntent {
     return {
       type: 'CREATE_LIMIT_ORDER',
@@ -1121,6 +1285,8 @@ export class StrategyService
       side,
       price: price.toFixed(),
       qty: qty.toFixed(),
+      executionCategory,
+      metadata,
       createdAt: ts,
       status: 'NEW',
     };
@@ -1128,73 +1294,48 @@ export class StrategyService
 
   private async publishIntents(
     strategyKey: string,
-    intents: StrategyOrderIntent[],
+    intents: ExecutorAction[],
   ): Promise<void> {
     if (intents.length === 0) {
       return;
     }
 
-    this.latestIntentsByStrategy.set(strategyKey, intents);
-    for (const intent of intents) {
-      await this.strategyIntentStoreService?.upsertIntent(intent);
+    const publishedIntents =
+      await this.executorOrchestratorService?.dispatchActions(
+        strategyKey,
+        intents as ExecutorAction[],
+      );
+
+    if (publishedIntents && publishedIntents.length > 0) {
+      this.latestIntentsByStrategy.set(strategyKey, publishedIntents);
+
+      return;
     }
 
-    const intentExecutionDriver = String(
-      this.configService?.get('strategy.intent_execution_driver', 'worker') ||
-        'worker',
-    ).toLowerCase();
-
-    if (intentExecutionDriver === 'sync') {
-      await this.strategyIntentExecutionService?.consumeIntents(intents);
-    }
-
-    this.logger.log(
-      `Published ${intents.length} intents for ${strategyKey} (driver=${intentExecutionDriver})`,
-    );
+    throw new Error('executor orchestrator did not publish intents');
   }
 
   private async getPriceSource(
-    exchange: ccxt.Exchange,
+    exchangeName: string,
     pair: string,
     priceSourceType: PriceSourceType,
   ): Promise<number> {
-    const orderBook = await exchange.fetchOrderBook(pair);
-    const bestBid = this.toPositiveNumber(orderBook?.bids?.[0]?.[0]);
-    const bestAsk = this.toPositiveNumber(orderBook?.asks?.[0]?.[0]);
-
-    if (priceSourceType === PriceSourceType.MID_PRICE) {
-      if (bestBid !== undefined && bestAsk !== undefined) {
-        return new BigNumber(bestBid).plus(bestAsk).dividedBy(2).toNumber();
-      }
+    if (!this.strategyMarketDataProviderService) {
+      throw new Error('strategy market data provider is not available');
     }
 
-    if (priceSourceType === PriceSourceType.BEST_BID) {
-      if (bestBid !== undefined) {
-        return Number(bestBid);
-      }
-    }
-
-    if (priceSourceType === PriceSourceType.BEST_ASK) {
-      if (bestAsk !== undefined) {
-        return Number(bestAsk);
-      }
-    }
-
-    const ticker = await exchange.fetchTicker(pair);
-    const fallbackPrice =
-      this.toPositiveNumber(ticker?.last) ??
-      this.toPositiveNumber(ticker?.bid) ??
-      this.toPositiveNumber(ticker?.ask);
-
-    if (fallbackPrice !== undefined) {
-      return fallbackPrice;
-    }
-
-    throw new Error('no usable price in order book or ticker');
+    return await this.strategyMarketDataProviderService.getReferencePrice(
+      exchangeName,
+      pair,
+      priceSourceType,
+    );
   }
 
   private calculateVWAPForAmount(
-    orderBook: ccxt.OrderBook,
+    orderBook: {
+      bids?: Array<[number, number]>;
+      asks?: Array<[number, number]>;
+    },
     amountToTrade: number,
     direction: 'buy' | 'sell',
   ): BigNumber {
@@ -1244,7 +1385,33 @@ export class StrategyService
     return executedTrades % 2 === 0 ? 'buy' : 'sell';
   }
 
-  private buildCexVolumeParams(input: {
+  private computeAmmAmountIn(
+    params: AmmDexVolumeStrategyParams,
+    executedTrades: number,
+  ): string {
+    const baseAmount = new BigNumber(params.baseTradeAmount || 0);
+
+    if (!baseAmount.isFinite() || baseAmount.isLessThanOrEqualTo(0)) {
+      return '0';
+    }
+
+    const pushMultiplier = new BigNumber(1).plus(
+      new BigNumber(params.pricePushRate || 0)
+        .dividedBy(100)
+        .multipliedBy(executedTrades),
+    );
+    const incrementMultiplier = new BigNumber(1).plus(
+      new BigNumber(params.baseIncrementPercentage || 0).dividedBy(100),
+    );
+
+    return baseAmount
+      .multipliedBy(pushMultiplier)
+      .multipliedBy(incrementMultiplier)
+      .toFixed();
+  }
+
+  private buildClobVolumeParams(input: {
+    executionCategory: 'clob_cex' | 'clob_dex';
     exchangeName: string | undefined;
     symbol: string | undefined;
     baseIncrementPercentage: number;
@@ -1267,6 +1434,7 @@ export class StrategyService
     }
 
     return {
+      executionCategory: input.executionCategory,
       executionVenue: 'cex',
       exchangeName,
       symbol,
@@ -1282,7 +1450,7 @@ export class StrategyService
     };
   }
 
-  private buildDexVolumeParams(input: {
+  private buildAmmDexVolumeParams(input: {
     exchangeName: string | undefined;
     symbol: string | undefined;
     baseIncrementPercentage: number;
@@ -1300,7 +1468,7 @@ export class StrategyService
     feeTier?: number;
     slippageBps?: number;
     recipient?: string;
-  }): DexVolumeStrategyParams {
+  }): AmmDexVolumeStrategyParams {
     if (!input.dexId) {
       throw new Error('dexId is required for dex volume strategy');
     }
@@ -1328,6 +1496,7 @@ export class StrategyService
       String(input.symbol || '').trim() || `${tokenIn}/${tokenOut}`;
 
     return {
+      executionCategory: 'amm_dex',
       executionVenue: 'dex',
       exchangeName: String(input.exchangeName || input.dexId),
       symbol: syntheticSymbol,
@@ -1350,16 +1519,6 @@ export class StrategyService
     };
   }
 
-  private toPositiveNumber(value: unknown): number | undefined {
-    const parsed = Number(value);
-
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return undefined;
-    }
-
-    return parsed;
-  }
-
   private async persistStrategyParams(
     strategyKey: string,
     params: VolumeStrategyParams,
@@ -1371,5 +1530,567 @@ export class StrategyService
         updatedAt: new Date(),
       },
     );
+  }
+
+  // ========== Time Indicator Strategy ==========
+
+  async executeTimeIndicatorStrategy(
+    params: TimeIndicatorStrategyDto,
+  ): Promise<void> {
+    const { userId, clientId } = params;
+    const strategyKey = createStrategyKey({
+      type: 'timeIndicator',
+      user_id: userId,
+      client_id: clientId,
+    });
+
+    const cadenceMs = Math.max(1000, Number(params.tickIntervalMs || 60000));
+
+    await this.upsertStrategyInstance(
+      strategyKey,
+      userId,
+      clientId,
+      'timeIndicator',
+      params,
+    );
+
+    await this.upsertSession(
+      strategyKey,
+      'timeIndicator',
+      userId,
+      clientId,
+      cadenceMs,
+      params as unknown as StrategyRuntimeSession['params'],
+    );
+  }
+
+  async buildTimeIndicatorActions(
+    session: StrategyRuntimeSession,
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    const params = session.params as unknown as TimeIndicatorStrategyDto;
+    const { userId, clientId, exchangeName, symbol } = params;
+
+    // Time window check
+    if (!this.isWithinTimeWindow(params)) {
+      this.logger.debug(
+        `[${exchangeName}:${symbol}] Outside time window — skipping.`,
+      );
+
+      return [];
+    }
+
+    // Exchange validation
+    const ex = this.exchangeInitService.getExchange(exchangeName);
+
+    if (!ex) {
+      this.logger.error(`Exchange '${exchangeName}' is not initialized.`);
+
+      return [];
+    }
+
+    try {
+      if (!ex.markets || Object.keys(ex.markets).length === 0) {
+        await ex.loadMarkets();
+      }
+    } catch (e: unknown) {
+      const { message } = this.toErrorDetails(e);
+
+      this.logger.error(`[${exchangeName}] loadMarkets failed: ${message}`);
+
+      return [];
+    }
+
+    if (!ex.markets[symbol]) {
+      this.logger.error(`[${exchangeName}] Unknown symbol '${symbol}'.`);
+
+      return [];
+    }
+
+    if (ex.timeframes && !ex.timeframes[params.timeframe]) {
+      this.logger.error(
+        `[${exchangeName}:${symbol}] Unsupported timeframe '${params.timeframe}'.`,
+      );
+
+      return [];
+    }
+
+    // Max concurrent positions check
+    if (params.maxConcurrentPositions && params.maxConcurrentPositions > 0) {
+      try {
+        const openOrders = await ex.fetchOpenOrders(symbol);
+
+        if (openOrders.length >= params.maxConcurrentPositions) {
+          this.logger.warn(
+            `[${exchangeName}:${symbol}] Open orders (${openOrders.length}) >= maxConcurrentPositions (${params.maxConcurrentPositions}). Skipping.`,
+          );
+
+          return [];
+        }
+      } catch (e: unknown) {
+        const { message } = this.toErrorDetails(e);
+
+        this.logger.warn(
+          `[${exchangeName}:${symbol}] fetchOpenOrders failed (${message}). Proceeding anyway.`,
+        );
+      }
+    }
+
+    // Fetch candles
+    const ohlcv = await this.fetchCandles(
+      ex,
+      symbol,
+      params.timeframe,
+      params.lookback,
+    );
+    const minBarsNeeded = Math.max(params.emaSlow, params.rsiPeriod) + 2;
+
+    if (!ohlcv || ohlcv.length < minBarsNeeded) {
+      this.logger.warn(`[${exchangeName}:${symbol}] Not enough candles yet.`);
+
+      return [];
+    }
+
+    // Calculate indicators
+    const closes = ohlcv.map((c) => c[4]);
+    const emaF = this.calcEma(closes, params.emaFast);
+    const emaS = this.calcEma(closes, params.emaSlow);
+    const rsiV = this.calcRsi(closes, params.rsiPeriod);
+
+    const last = closes[closes.length - 1];
+    const lastEmaF = emaF[emaF.length - 1];
+    const lastEmaS = emaS[emaS.length - 1];
+    const prevEmaF = emaF[emaF.length - 2];
+    const prevEmaS = emaS[emaS.length - 2];
+    const lastRsi = rsiV[rsiV.length - 1];
+
+    if (
+      [lastEmaF, lastEmaS, prevEmaF, prevEmaS, lastRsi].some(
+        (x) => x === undefined || Number.isNaN(x),
+      )
+    ) {
+      this.logger.debug(
+        `[${exchangeName}:${symbol}] Indicators not ready (NaN).`,
+      );
+
+      return [];
+    }
+
+    // Determine signal
+    const signal = this.calcCross(prevEmaF!, prevEmaS!, lastEmaF!, lastEmaS!);
+    const rsiBuyOk =
+      params.rsiBuyBelow === undefined || lastRsi! <= params.rsiBuyBelow!;
+    const rsiSellOk =
+      params.rsiSellAbove === undefined || lastRsi! >= params.rsiSellAbove!;
+    const hasRsiThresholds =
+      params.rsiBuyBelow !== undefined && params.rsiSellAbove !== undefined;
+
+    let side: 'buy' | 'sell' | null = null;
+
+    if (params.indicatorMode === 'ema') {
+      if (signal === 'CROSS_UP') side = 'buy';
+      else if (signal === 'CROSS_DOWN') side = 'sell';
+    } else if (params.indicatorMode === 'rsi') {
+      if (!hasRsiThresholds) {
+        this.logger.warn(
+          `[${exchangeName}:${symbol}] RSI mode requires both rsiBuyBelow and rsiSellAbove thresholds.`,
+        );
+
+        return [];
+      }
+      if (rsiBuyOk && !rsiSellOk) side = 'buy';
+      else if (rsiSellOk && !rsiBuyOk) side = 'sell';
+    } else if (params.indicatorMode === 'both') {
+      if (signal === 'CROSS_UP' && rsiBuyOk) side = 'buy';
+      else if (signal === 'CROSS_DOWN' && rsiSellOk) side = 'sell';
+    }
+
+    if (!side) {
+      this.logger.debug(`[${exchangeName}:${symbol}] No trade signal.`);
+
+      return [];
+    }
+
+    // Balance & sizing
+    const parsedSymbol = this.parseBaseQuote(symbol);
+
+    if (!parsedSymbol) {
+      this.logger.error(
+        `[${exchangeName}] Unable to parse symbol '${symbol}' into base/quote`,
+      );
+
+      return [];
+    }
+    const { base, quote } = parsedSymbol;
+
+    let balances;
+
+    try {
+      balances = await ex.fetchBalance();
+    } catch (e: unknown) {
+      const { message } = this.toErrorDetails(e);
+
+      this.logger.error(`[${exchangeName}] fetchBalance failed: ${message}`);
+
+      return [];
+    }
+
+    const amountBaseRaw =
+      params.orderMode === 'base' ? params.orderSize : params.orderSize / last;
+
+    const freeBase = balances.free?.[base] ?? 0;
+    const freeQuote = balances.free?.[quote] ?? 0;
+
+    if (side === 'sell' && freeBase < amountBaseRaw * 1.01) {
+      this.logger.warn(
+        `[${exchangeName}:${symbol}] Insufficient ${base} to sell.`,
+      );
+
+      return [];
+    }
+    if (side === 'buy' && freeQuote < amountBaseRaw * last * 1.01) {
+      this.logger.warn(
+        `[${exchangeName}:${symbol}] Insufficient ${quote} to buy.`,
+      );
+
+      return [];
+    }
+
+    const market = ex.markets[symbol];
+    const amountPrec = (x: number) =>
+      parseFloat(ex.amountToPrecision(symbol, x));
+    const pricePrec = (x: number) => parseFloat(ex.priceToPrecision(symbol, x));
+
+    let amountBase = amountPrec(amountBaseRaw);
+
+    if (market?.limits?.amount?.min && amountBase < market.limits.amount.min) {
+      amountBase = amountPrec(market.limits.amount.min);
+    }
+    if (
+      market?.limits?.cost?.min &&
+      amountBase * last < market.limits.cost.min
+    ) {
+      const needed = market.limits.cost.min / last;
+
+      amountBase = amountPrec(Math.max(amountBase, needed));
+    }
+
+    const bps = params.slippageBps ?? 10;
+    const entryPriceRaw =
+      side === 'buy' ? last * (1 - bps / 10_000) : last * (1 + bps / 10_000);
+    const entryPrice = pricePrec(entryPriceRaw);
+
+    this.logger.log(
+      `[${exchangeName}:${symbol}] ${side.toUpperCase()} ${amountBase} @ ${entryPrice} (EMA${
+        params.emaFast
+      }/${params.emaSlow}, RSI=${lastRsi!.toFixed(2)})`,
+    );
+
+    return [
+      {
+        type: 'CREATE_LIMIT_ORDER',
+        intentId: `${session.strategyKey}:${ts}:indicator-entry`,
+        strategyInstanceId: session.strategyKey,
+        strategyKey: session.strategyKey,
+        userId,
+        clientId,
+        exchange: ex.id,
+        pair: symbol,
+        side,
+        price: String(entryPrice),
+        qty: String(amountBase),
+        executionCategory: 'clob_cex',
+        metadata: {
+          emaFast: lastEmaF,
+          emaSlow: lastEmaS,
+          rsi: lastRsi,
+          signal,
+          stopLossPct: this.safePct(params.stopLossPct),
+          takeProfitPct: this.safePct(params.takeProfitPct),
+        },
+        createdAt: ts,
+        status: 'NEW',
+      },
+    ];
+  }
+
+  private async removeSession(
+    strategyKey: string,
+    session = this.sessions.get(strategyKey),
+  ): Promise<void> {
+    if (session) {
+      await this.detachSessionFromExecutor(session);
+    }
+
+    this.sessions.delete(strategyKey);
+  }
+
+  private async detachSessionFromExecutor(
+    session: StrategyRuntimeSession,
+  ): Promise<void> {
+    if (!this.executorRegistry) {
+      return;
+    }
+
+    const pooledTarget = this.resolvePooledExecutorTarget(
+      session.strategyType,
+      session.params,
+      session.clientId,
+      session.marketMakingOrderId,
+    );
+
+    if (!pooledTarget) {
+      return;
+    }
+
+    const executor = this.executorRegistry.getExecutor(
+      pooledTarget.exchange,
+      pooledTarget.pair,
+    );
+
+    if (!executor) {
+      return;
+    }
+
+    await executor.removeOrder(pooledTarget.orderId);
+    this.executorRegistry.removeExecutorIfEmpty(
+      pooledTarget.exchange,
+      pooledTarget.pair,
+    );
+  }
+
+  private resolvePooledExecutorTarget(
+    strategyType: StrategyType,
+    params: StrategyRuntimeSession['params'],
+    clientId: string,
+    marketMakingOrderId?: string,
+  ): PooledExecutorTarget | null {
+    if (strategyType === 'pureMarketMaking') {
+      const exchange = String(
+        (params as unknown as PureMarketMakingStrategyDto).exchangeName || '',
+      ).trim();
+      const pair = String(
+        (params as unknown as PureMarketMakingStrategyDto).pair || '',
+      ).trim();
+      const orderId = String(marketMakingOrderId || clientId || '').trim();
+
+      if (exchange && pair && orderId) {
+        return { exchange, pair, orderId };
+      }
+
+      return null;
+    }
+
+    if (strategyType === 'volume') {
+      const exchange = String(
+        (params as unknown as VolumeStrategyParams).exchangeName || '',
+      ).trim();
+      const pair = String(
+        (params as unknown as VolumeStrategyParams).symbol || '',
+      ).trim();
+      const orderId = String(clientId || '').trim();
+
+      if (exchange && pair && orderId) {
+        return { exchange, pair, orderId };
+      }
+
+      return null;
+    }
+
+    if (strategyType === 'timeIndicator') {
+      const exchange = String(
+        (params as unknown as TimeIndicatorStrategyDto).exchangeName || '',
+      ).trim();
+      const pair = String(
+        (params as unknown as TimeIndicatorStrategyDto).symbol || '',
+      ).trim();
+      const orderId = String(clientId || '').trim();
+
+      if (exchange && pair && orderId) {
+        return { exchange, pair, orderId };
+      }
+    }
+
+    return null;
+  }
+
+  private logSessionTickError(
+    strategyKey: string,
+    ts: string,
+    error: unknown,
+  ): void {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorTrace = error instanceof Error ? error.stack : undefined;
+
+    this.logger.error(
+      `onTick runSession failed for strategyKey=${strategyKey} ts=${ts}: ${errorMessage}`,
+      errorTrace,
+    );
+  }
+
+  private isWithinTimeWindow(params: TimeIndicatorStrategyDto): boolean {
+    const now = new Date();
+    const wd = now.getDay();
+    const hr = now.getHours();
+
+    if (params.allowedWeekdays?.length && !params.allowedWeekdays.includes(wd))
+      return false;
+    if (params.allowedHours?.length && !params.allowedHours.includes(hr))
+      return false;
+
+    return true;
+  }
+
+  private async fetchCandles(
+    ex: any,
+    symbol: string,
+    timeframe: string,
+    lookback: number,
+  ): Promise<number[][]> {
+    try {
+      const limit = Math.max(lookback, 200);
+
+      return await ex.fetchOHLCV(symbol, timeframe, undefined, limit);
+    } catch (e: unknown) {
+      const { message } = this.toErrorDetails(e);
+
+      this.logger.error(
+        `fetchOHLCV error on ${ex.id} ${symbol} ${timeframe}: ${message}`,
+      );
+
+      return [];
+    }
+  }
+
+  private parseBaseQuote(
+    symbol: string,
+  ): { base: string; quote: string } | null {
+    if (symbol.includes('/')) {
+      const [base, quote] = symbol.split('/');
+
+      if (base && quote) {
+        return { base, quote };
+      }
+
+      return null;
+    }
+
+    const knownQuotes = [
+      'USDT',
+      'USDC',
+      'BUSD',
+      'USD',
+      'BTC',
+      'ETH',
+      'BNB',
+      'EUR',
+    ];
+    const upper = symbol.toUpperCase();
+
+    for (const q of knownQuotes) {
+      if (upper.endsWith(q) && upper.length > q.length) {
+        return {
+          base: symbol.slice(0, symbol.length - q.length),
+          quote: symbol.slice(symbol.length - q.length),
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private toErrorDetails(error: unknown): { message: string; stack?: string } {
+    if (error instanceof Error) {
+      return { message: error.message, stack: error.stack };
+    }
+
+    return { message: String(error) };
+  }
+
+  private calcEma(series: number[], period: number): number[] {
+    if (period <= 0) return series.map(() => NaN);
+    const k = 2 / (period + 1);
+    const out: number[] = [];
+    let prev: number | undefined;
+
+    for (let i = 0; i < series.length; i++) {
+      const v = series[i];
+
+      if (i === 0 || prev === undefined) {
+        prev = v;
+        out.push(v);
+      } else {
+        const e = (v - prev) * k + prev;
+
+        out.push(e);
+        prev = e;
+      }
+    }
+
+    return out;
+  }
+
+  private calcRsi(series: number[], period: number): number[] {
+    if (period <= 0 || series.length < period + 1)
+      return new Array(series.length).fill(NaN);
+
+    const gains: number[] = [];
+    const losses: number[] = [];
+
+    for (let i = 1; i < series.length; i++) {
+      const ch = series[i] - series[i - 1];
+
+      gains.push(ch > 0 ? ch : 0);
+      losses.push(ch < 0 ? -ch : 0);
+    }
+
+    let avgGain = this.avg(gains.slice(0, period));
+    let avgLoss = this.avg(losses.slice(0, period));
+    const rsiArr = new Array(series.length).fill(NaN);
+
+    for (let i = period - 1; i < gains.length; i++) {
+      if (i >= period) {
+        avgGain = (avgGain * (period - 1) + gains[i]) / period;
+        avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+      }
+      const rs = avgLoss === 0 ? Number.POSITIVE_INFINITY : avgGain / avgLoss;
+      const val = 100 - 100 / (1 + rs);
+
+      rsiArr[i + 1] = val;
+    }
+
+    return rsiArr;
+  }
+
+  private avg(arr: number[]): number {
+    if (!arr.length) return 0;
+
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }
+
+  private calcCross(
+    prevFast: number,
+    prevSlow: number,
+    fast: number,
+    slow: number,
+  ): 'CROSS_UP' | 'CROSS_DOWN' | 'NONE' {
+    const wasBelow = prevFast <= prevSlow;
+    const nowAbove = fast > slow;
+    const wasAbove = prevFast >= prevSlow;
+    const nowBelow = fast < slow;
+
+    if (wasBelow && nowAbove) return 'CROSS_UP';
+    if (wasAbove && nowBelow) return 'CROSS_DOWN';
+
+    return 'NONE';
+  }
+
+  private safePct(v?: number): number | undefined {
+    if (v === undefined || v === null) return undefined;
+    const n = Number(v);
+
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+
+    return n;
   }
 }

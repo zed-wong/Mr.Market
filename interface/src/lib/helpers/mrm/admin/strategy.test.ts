@@ -1,0 +1,121 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  listStrategyDefinitions,
+  listStrategyInstances,
+  removeStrategyDefinition,
+  startStrategyInstance,
+  validateStrategyInstance,
+} from "./strategy";
+
+vi.mock("$env/dynamic/public", () => {
+  return {
+    env: {
+      PUBLIC_MRM_BACKEND_URL: "http://localhost:3000",
+    },
+  };
+});
+
+describe("admin strategy helper", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("lists strategy definitions", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify([{ id: "d1", key: "arbitrage" }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const result = await listStrategyDefinitions("token");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:3000/admin/strategy/definitions",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(result).toEqual([{ id: "d1", key: "arbitrage" }]);
+  });
+
+  it("validates strategy instance payload", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ valid: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const result = await validateStrategyInstance(
+      {
+        definitionId: "def-1",
+        userId: "u1",
+        clientId: "c1",
+        config: { pair: "BTC/USDT" },
+      },
+      "token",
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:3000/admin/strategy/instances/validate",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("starts strategy instance", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ message: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await startStrategyInstance(
+      {
+        definitionId: "def-1",
+        userId: "u1",
+        clientId: "c1",
+      },
+      "token",
+    );
+
+    expect(result).toEqual({ message: "ok" });
+  });
+
+  it("lists strategy instances", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify([{ id: 1, strategyKey: "u1-c1-volume" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await listStrategyInstances("token", true);
+
+    expect(result).toEqual([{ id: 1, strategyKey: "u1-c1-volume" }]);
+  });
+
+  it("removes strategy definition", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message: "removed", definitionId: "d1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const result = await removeStrategyDefinition("d1", "token");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:3000/admin/strategy/definitions/d1/remove",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(result).toEqual({ message: "removed", definitionId: "d1" });
+  });
+});

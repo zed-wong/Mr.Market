@@ -43,7 +43,14 @@ describe('ExchangeConnectorAdapterService', () => {
       createConfigService(),
     );
 
-    await service.placeLimitOrder('binance', 'BTC/USDT', 'buy', '1', '100');
+    await service.placeLimitOrder(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      'order-1:0',
+    );
     await service.cancelOrder('binance', 'BTC/USDT', 'ex-order-1');
 
     expect(exchange.createOrder).toHaveBeenCalledWith(
@@ -52,6 +59,7 @@ describe('ExchangeConnectorAdapterService', () => {
       'buy',
       1,
       100,
+      { clientOrderId: 'order-1:0' },
     );
     expect(exchange.cancelOrder).toHaveBeenCalledWith('ex-order-1', 'BTC/USDT');
   });

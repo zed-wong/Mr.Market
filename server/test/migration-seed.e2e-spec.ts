@@ -1,5 +1,5 @@
-import { execSync } from 'child_process';
 import * as fs from 'fs';
+import { createRequire } from 'module';
 import * as os from 'os';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
@@ -11,23 +11,51 @@ import {
   GrowdataSimplyGrowToken,
 } from '../src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from '../src/common/entities/data/spot-data.entity';
+import { StrategyDefinition } from '../src/common/entities/market-making/strategy-definition.entity';
+import { runSeed } from '../src/database/seeder/seed';
 
 describe('Database migration and seed scripts (e2e)', () => {
   jest.setTimeout(240000);
 
   const serverRoot = path.resolve(__dirname, '..');
+  const migrationsRoot = path.join(serverRoot, 'src/database/migrations');
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mr-market-migrate-'));
   const dbPath = path.join(tempDir, 'migration-seed-test.db');
+  const requireFromTest = createRequire(__filename);
 
-  const runCommand = (command: string) => {
-    execSync(command, {
-      cwd: serverRoot,
-      env: {
-        ...process.env,
-        DATABASE_PATH: dbPath,
+  type MigrationClass = new (...args: never[]) => unknown;
+
+  const loadMigrationClasses = (): MigrationClass[] => {
+    return fs
+      .readdirSync(migrationsRoot)
+      .filter((file) => file.endsWith('.ts'))
+      .sort()
+      .flatMap((file) => {
+        const moduleExports = requireFromTest(
+          path.join(migrationsRoot, file),
+        ) as Record<string, unknown>;
+
+        return Object.values(moduleExports).filter(
+          (value): value is MigrationClass => typeof value === 'function',
+        );
+      });
+  };
+
+  const runMigrations = async () => {
+    const dataSource = new DataSource({
+      type: 'sqlite',
+      database: dbPath,
+      synchronize: false,
+      migrations: loadMigrationClasses(),
+      migrationsTableName: 'migrations_typeorm',
+      extra: {
+        flags: ['-WAL'],
       },
-      stdio: 'pipe',
     });
+
+    await dataSource.initialize();
+    await dataSource.runMigrations();
+    await dataSource.destroy();
   };
 
   afterAll(() => {
@@ -39,7 +67,7 @@ describe('Database migration and seed scripts (e2e)', () => {
   });
 
   it('runs migration:run and creates expected tables', async () => {
-    runCommand('bun run migration:run');
+    await runMigrations();
 
     const dataSource = new DataSource({
       type: 'sqlite',
@@ -63,7 +91,19 @@ describe('Database migration and seed scripts (e2e)', () => {
   });
 
   it('runs migration:seed and inserts baseline rows', async () => {
-    runCommand('bun run migration:seed');
+    const prevDbPath = process.env.DATABASE_PATH;
+
+    try {
+      process.env.DATABASE_PATH = dbPath;
+      await runMigrations();
+      await runSeed();
+    } finally {
+      if (prevDbPath === undefined) {
+        delete process.env.DATABASE_PATH;
+      } else {
+        process.env.DATABASE_PATH = prevDbPath;
+      }
+    }
 
     const dataSource = new DataSource({
       type: 'sqlite',
@@ -74,6 +114,7 @@ describe('Database migration and seed scripts (e2e)', () => {
         GrowdataMarketMakingPair,
         GrowdataSimplyGrowToken,
         CustomConfigEntity,
+        StrategyDefinition,
       ],
       synchronize: false,
     });
@@ -93,12 +134,34 @@ describe('Database migration and seed scripts (e2e)', () => {
     const customConfigs = await dataSource
       .getRepository(CustomConfigEntity)
       .count();
+    const strategyDefinitions = await dataSource
+      .getRepository(StrategyDefinition)
+      .count();
+    const pureMarketMakingDefinition = await dataSource
+      .getRepository(StrategyDefinition)
+      .findOneByOrFail({
+        key: 'pure_market_making',
+      });
 
     expect(spotPairs).toBeGreaterThan(0);
     expect(exchanges).toBeGreaterThan(0);
     expect(mmPairs).toBeGreaterThan(0);
     expect(simplyGrowTokens).toBeGreaterThan(0);
     expect(customConfigs).toBeGreaterThan(0);
+    expect(strategyDefinitions).toBeGreaterThan(0);
+    expect(pureMarketMakingDefinition.controllerType).toBe('pureMarketMaking');
+    expect(pureMarketMakingDefinition.configSchema).toEqual(
+      expect.objectContaining({
+        type: 'object',
+        additionalProperties: false,
+      }),
+    );
+    expect(pureMarketMakingDefinition.defaultConfig).toEqual(
+      expect.objectContaining({
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+      }),
+    );
 
     await dataSource.destroy();
   });

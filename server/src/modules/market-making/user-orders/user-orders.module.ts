@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -33,6 +34,7 @@ import { UserOrdersService } from './user-orders.service';
       MarketMakingOrder,
       MarketMakingPaymentState,
       MarketMakingOrderIntent,
+      StrategyDefinition,
       SimplyGrowOrder,
       StrategyExecutionHistory,
     ]),

@@ -242,21 +242,12 @@ async function openAdminPage(page: Page, path: string) {
 
   await page.goto(path);
 
-  const loginHeading = page.getByRole("heading", { name: /login/i });
   await expect
     .poll(async () => {
-      const loginVisible = await loginHeading.isVisible().catch(() => false);
       const currentUrl = page.url();
-      return loginVisible || currentUrl.includes("/manage/");
+      return currentUrl.includes("/manage/");
     }, { timeout: 10000 })
     .toBeTruthy();
-
-  if (await loginHeading.isVisible().catch(() => false)) {
-    await page.locator('input[type="password"]').fill("password");
-    await page.getByRole("button", { name: /^login$/i }).click();
-    await page.waitForURL(/\/manage\//, { timeout: 10000 });
-    await page.goto(path);
-  }
 }
 
 test.describe("admin settings actions", () => {

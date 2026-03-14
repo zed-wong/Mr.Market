@@ -10,6 +10,11 @@ import type {
   SimplyGrowStates,
 } from '../../types/orders/states';
 
+export type MarketMakingOrderStrategySnapshot = {
+  controllerType: string;
+  resolvedConfig: Record<string, unknown>;
+};
+
 @Entity()
 export class MarketMakingOrder {
   @PrimaryColumn()
@@ -23,6 +28,12 @@ export class MarketMakingOrder {
 
   @Column()
   exchangeName: string;
+
+  @Column({ nullable: true })
+  strategyDefinitionId?: string;
+
+  @Column('simple-json', { nullable: true })
+  strategySnapshot?: MarketMakingOrderStrategySnapshot;
 
   @Column()
   bidSpread: string;

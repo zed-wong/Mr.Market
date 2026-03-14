@@ -7,11 +7,14 @@
     } from "$lib/helpers/mrm/marketMakingBalance";
     import { mixinAuthWrapper } from "$lib/helpers/mixin/mixin";
     import { mixinConnectLoading } from "$lib/stores/home";
+    import AssetIcon from "$lib/components/common/assetIcon.svelte";
 
     export let baseIcon: string;
     export let baseSymbol: string | null = null;
     export let quoteIcon: string;
     export let quoteSymbol: string | null = null;
+    export let baseChainIcon: string;
+    export let quoteChainIcon: string;
     export let basePrice = 1;
     export let quotePrice = 1;
     export let baseBalance = "0";
@@ -36,11 +39,14 @@
             <div
                 class="flex items-center w-full border border-base-300 rounded-4xl px-4 py-4 bg-base-100"
             >
-                <img
-                    src={baseIcon}
-                    alt={baseSymbol}
-                    class="w-10 h-10 mr-4 rounded-full"
+                <AssetIcon
+                    chainIcon={baseChainIcon}
+                    assetIcon={baseIcon}
+                    clazz="w-10 h-10"
+                    claxx="w-4 h-4"
+                    imageClass="rounded-full"
                 />
+                <div class="mr-4" />
                 <input
                     type="text"
                     inputmode="decimal"
@@ -103,11 +109,14 @@
             <div
                 class="flex items-center w-full border border-base-300 rounded-4xl px-4 py-4 bg-base-100"
             >
-                <img
-                    src={quoteIcon}
-                    alt={quoteSymbol}
-                    class="w-10 h-10 mr-4 rounded-full"
+                <AssetIcon
+                    chainIcon={quoteChainIcon}
+                    assetIcon={quoteIcon}
+                    clazz="w-10 h-10"
+                    claxx="w-4 h-4"
+                    imageClass="rounded-full"
                 />
+                <div class="mr-4" />
                 <input
                     type="text"
                     inputmode="decimal"

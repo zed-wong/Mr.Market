@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
-import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -15,20 +15,22 @@ import {
   type SimplyGrowStates,
 } from 'src/common/types/orders/states';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
+import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { Repository } from 'typeorm';
 
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
-import { StrategyService } from '../strategy/strategy.service';
 import { UserOrdersService } from './user-orders.service';
 
 jest.mock('../../infrastructure/logger/logger.service');
-jest.mock('../strategy/strategy.service');
 
 describe('UserOrdersService', () => {
   let service: UserOrdersService;
-  let strategyService: StrategyService;
   let marketMakingRepository: Repository<MarketMakingOrder>;
   let simplyGrowRepository: Repository<SimplyGrowOrder>;
+  let marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>;
+  let strategyDefinitionRepository: Repository<StrategyDefinition>;
+  let growdataRepository: GrowdataRepository;
+  let strategyConfigResolver: StrategyConfigResolverService;
   let testingModule: TestingModule;
 
   beforeEach(async () => {
@@ -36,8 +38,6 @@ describe('UserOrdersService', () => {
       providers: [
         UserOrdersService,
         CustomLogger,
-        StrategyService,
-        ConfigService,
         {
           provide: getRepositoryToken(MarketMakingOrder),
           useClass: Repository,
@@ -55,6 +55,10 @@ describe('UserOrdersService', () => {
           useClass: Repository,
         },
         {
+          provide: getRepositoryToken(StrategyDefinition),
+          useClass: Repository,
+        },
+        {
           provide: getRepositoryToken(StrategyExecutionHistory),
           useClass: Repository,
         },
@@ -64,18 +68,39 @@ describe('UserOrdersService', () => {
         },
         {
           provide: GrowdataRepository,
-          useValue: {},
+          useValue: {
+            findMarketMakingPairById: jest.fn(),
+          },
+        },
+        {
+          provide: StrategyConfigResolverService,
+          useValue: {
+            resolveForOrderSnapshot: jest.fn().mockResolvedValue({
+              controllerType: 'pureMarketMaking',
+              resolvedConfig: {},
+            }),
+          },
         },
       ],
     }).compile();
 
     service = testingModule.get<UserOrdersService>(UserOrdersService);
-    strategyService = testingModule.get<StrategyService>(StrategyService);
     marketMakingRepository = testingModule.get<Repository<MarketMakingOrder>>(
       getRepositoryToken(MarketMakingOrder),
     );
     simplyGrowRepository = testingModule.get<Repository<SimplyGrowOrder>>(
       getRepositoryToken(SimplyGrowOrder),
+    );
+    strategyDefinitionRepository = testingModule.get<
+      Repository<StrategyDefinition>
+    >(getRepositoryToken(StrategyDefinition));
+    marketMakingOrderIntentRepository = testingModule.get<
+      Repository<MarketMakingOrderIntent>
+    >(getRepositoryToken(MarketMakingOrderIntent));
+    growdataRepository =
+      testingModule.get<GrowdataRepository>(GrowdataRepository);
+    strategyConfigResolver = testingModule.get<StrategyConfigResolverService>(
+      StrategyConfigResolverService,
     );
     jest.clearAllMocks();
   });
@@ -160,79 +185,217 @@ describe('UserOrdersService', () => {
     });
   });
 
-  it('should correctly handle both active and paused orders', async () => {
-    // Mock data for running and paused orders
-    const mockActiveMMOrders = [
-      {
-        orderId: 'mm1',
-        userId: 'user1',
-        pair: 'BTC/USDT',
-        exchangeName: 'ExchangeA',
-        bidSpread: 0.001,
-        askSpread: 0.001,
-        orderAmount: 0.5,
-        orderRefreshTime: 60, // Seconds
-        numberOfLayers: 1,
-        priceSourceType: PriceSourceType.MID_PRICE,
-        amountChangePerLayer: 0.1,
-        amountChangeType: 'percentage' as 'fixed' | 'percentage',
-        ceilingPrice: 60000,
-        floorPrice: 50000,
-        balanceA: 100,
-        balanceB: 1000,
-        state: 'created' as MarketMakingStates,
-        createdAt: new Date(),
-        rewardAddress: '0x0000000000000000000000000000000000000000',
-      },
-    ] as unknown as MarketMakingOrder[];
-    const mockPausedMMOrders = [
-      {
-        orderId: 'mm1',
-        userId: 'user1',
-        pair: 'BTC/USDT',
-        exchangeName: 'ExchangeA',
-        bidSpread: 0.001,
-        askSpread: 0.001,
-        orderAmount: 0.5,
-        orderRefreshTime: 60, // Seconds
-        numberOfLayers: 1,
-        priceSourceType: PriceSourceType.MID_PRICE,
-        amountChangePerLayer: 0.1,
-        amountChangeType: 'percentage' as 'fixed' | 'percentage',
-        ceilingPrice: 60000,
-        floorPrice: 50000,
-        balanceA: 100,
-        balanceB: 1000,
-        state: 'paused' as MarketMakingStates,
-        createdAt: new Date(),
-        rewardAddress: '0x0000000000000000000000000000000000000000',
-      },
-    ] as unknown as MarketMakingOrder[];
+  describe('listEnabledMarketMakingStrategies', () => {
+    it('returns only enabled pure market making definitions for user selection', async () => {
+      jest.spyOn(strategyDefinitionRepository, 'find').mockResolvedValueOnce([
+        {
+          id: 'strategy-1',
+          key: 'mm-basic',
+          name: 'Basic MM',
+          description: 'basic strategy',
+          controllerType: 'pureMarketMaking',
+          defaultConfig: { bidSpread: 0.1 },
+          configSchema: { type: 'object' },
+        } as unknown as StrategyDefinition,
+        {
+          id: 'strategy-2',
+          key: 'volume',
+          name: 'Volume',
+          description: 'non-mm strategy',
+          controllerType: 'volume',
+          defaultConfig: { incrementPercentage: 0.1 },
+          configSchema: { type: 'object' },
+        } as unknown as StrategyDefinition,
+      ]);
 
-    jest
-      .spyOn(marketMakingRepository, 'findBy')
-      .mockImplementation(async (criteria: any) => {
-        if (criteria.state === 'created') return mockActiveMMOrders;
-        if (criteria.state === 'paused') return mockPausedMMOrders;
+      const result = await service.listEnabledMarketMakingStrategies();
 
-        return [];
+      expect(strategyDefinitionRepository.find).toHaveBeenCalledWith({
+        where: { enabled: true },
+        order: { updatedAt: 'DESC' },
+      });
+      expect(result).toEqual([
+        {
+          id: 'strategy-1',
+          key: 'mm-basic',
+          name: 'Basic MM',
+          description: 'basic strategy',
+          controllerType: 'pureMarketMaking',
+          defaultConfig: { bidSpread: 0.1 },
+          configSchema: { type: 'object' },
+        },
+      ]);
+    });
+  });
+
+  describe('createMarketMakingOrderIntent', () => {
+    it('persists configOverrides when creating market-making intent', async () => {
+      jest
+        .spyOn(growdataRepository, 'findMarketMakingPairById')
+        .mockResolvedValueOnce({
+          enable: true,
+          symbol: 'BTC/USDT',
+          exchange_id: 'binance',
+        } as any);
+      jest
+        .spyOn(strategyDefinitionRepository, 'findOne')
+        .mockResolvedValueOnce({
+          id: 'strategy-1',
+          enabled: true,
+          controllerType: 'pureMarketMaking',
+        } as StrategyDefinition);
+      jest
+        .spyOn(marketMakingOrderIntentRepository, 'create')
+        .mockImplementation((payload) => payload as any);
+      const saveSpy = jest
+        .spyOn(marketMakingOrderIntentRepository, 'save')
+        .mockImplementation(async (payload) => payload as any);
+
+      const result = await service.createMarketMakingOrderIntent({
+        userId: '123e4567-e89b-12d3-a456-426614174000',
+        marketMakingPairId: 'pair-1',
+        strategyDefinitionId: 'strategy-1',
+        configOverrides: {
+          bidSpread: 0.002,
+          orderRefreshTime: 15000,
+        },
       });
 
-    const queueAddSpy = jest.spyOn(
-      testingModule.get('BullQueue_market-making'),
-      'add',
-    );
-
-    // Execute the method under test
-    await service.updateExecutionBasedOnOrders();
-
-    expect(queueAddSpy).toHaveBeenCalledWith('start_mm', {
-      userId: 'user1',
-      orderId: 'mm1',
+      expect(result).toEqual({
+        orderId: expect.any(String),
+        memo: expect.any(String),
+        expiresAt: expect.any(String),
+      });
+      expect(
+        strategyConfigResolver.resolveForOrderSnapshot,
+      ).toHaveBeenCalledWith(
+        'strategy-1',
+        expect.objectContaining({
+          userId: '123e4567-e89b-12d3-a456-426614174000',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+        }),
+      );
+      expect(saveSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '123e4567-e89b-12d3-a456-426614174000',
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-1',
+          configOverrides: {
+            bidSpread: 0.002,
+            orderRefreshTime: 15000,
+          },
+          state: 'pending',
+        }),
+      );
     });
-    expect(queueAddSpy).toHaveBeenCalledWith('stop_mm', {
-      userId: 'user1',
-      orderId: 'mm1',
+
+    it('rejects non-object configOverrides payloads', async () => {
+      await expect(
+        service.createMarketMakingOrderIntent({
+          userId: '123e4567-e89b-12d3-a456-426614174000',
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-1',
+          configOverrides: [] as any,
+        }),
+      ).rejects.toThrow('configOverrides must be an object');
+    });
+
+    it('rejects missing userId', async () => {
+      await expect(
+        service.createMarketMakingOrderIntent({
+          userId: '' as any,
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-1',
+        }),
+      ).rejects.toThrow('userId is required');
+    });
+
+    it('rejects invalid userId format', async () => {
+      await expect(
+        service.createMarketMakingOrderIntent({
+          userId: 'not-a-uuid',
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-1',
+        }),
+      ).rejects.toThrow('userId must be a valid UUID');
+    });
+
+    it('rejects configOverrides that try to override system-managed fields', async () => {
+      await expect(
+        service.createMarketMakingOrderIntent({
+          userId: '123e4567-e89b-12d3-a456-426614174000',
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-1',
+          configOverrides: {
+            userId: '123e4567-e89b-12d3-a456-426614174001',
+          },
+        }),
+      ).rejects.toThrow('configOverrides cannot override system field: userId');
+    });
+
+    it('rejects schema-invalid configOverrides before persisting intent', async () => {
+      const saveSpy = jest.spyOn(marketMakingOrderIntentRepository, 'save');
+
+      jest
+        .spyOn(growdataRepository, 'findMarketMakingPairById')
+        .mockResolvedValueOnce({
+          enable: true,
+          symbol: 'BTC/USDT',
+          exchange_id: 'binance',
+        } as any);
+      jest
+        .spyOn(strategyDefinitionRepository, 'findOne')
+        .mockResolvedValueOnce({
+          id: 'strategy-1',
+          enabled: true,
+          controllerType: 'pureMarketMaking',
+        } as StrategyDefinition);
+      jest
+        .spyOn(strategyConfigResolver, 'resolveForOrderSnapshot')
+        .mockRejectedValueOnce(
+          new Error('Config field orderRefreshTime must be number'),
+        );
+
+      await expect(
+        service.createMarketMakingOrderIntent({
+          userId: '123e4567-e89b-12d3-a456-426614174000',
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-1',
+          configOverrides: {
+            orderRefreshTime: '15000' as any,
+          },
+        }),
+      ).rejects.toThrow('Config field orderRefreshTime must be number');
+
+      expect(saveSpy).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-market-making strategy definitions', async () => {
+      jest
+        .spyOn(growdataRepository, 'findMarketMakingPairById')
+        .mockResolvedValueOnce({
+          enable: true,
+          symbol: 'BTC/USDT',
+          exchange_id: 'binance',
+        } as any);
+      jest
+        .spyOn(strategyDefinitionRepository, 'findOne')
+        .mockResolvedValueOnce({
+          id: 'strategy-2',
+          enabled: true,
+          controllerType: 'volume',
+        } as StrategyDefinition);
+
+      await expect(
+        service.createMarketMakingOrderIntent({
+          userId: '123e4567-e89b-12d3-a456-426614174000',
+          marketMakingPairId: 'pair-1',
+          strategyDefinitionId: 'strategy-2',
+        }),
+      ).rejects.toThrow(
+        'strategyDefinitionId must reference a pure market making definition',
+      );
     });
   });
 });

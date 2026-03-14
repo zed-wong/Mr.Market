@@ -30,53 +30,86 @@ import type { Page } from "@sveltejs/kit";
 // Input identifier from coingecko /coin/:id
 export const findExchangeIconByIdentifier = (identifier: string) => {
   if (!identifier) return emptyToken;
-  switch(identifier.toUpperCase()) {
-    case "BINANCE": return binance;
-    case "BINGX": return bingx;
-    case "BITFINEX": return bitfinex;
-    case "BITGET": return bitget;
-    case "BITHUMB": return bithumb;
-    case "BITMART": return bitmart;
-    case "BITRUE": return bitrue;
-    case "BITVENUS": return bitvenus;
+  switch (identifier.toUpperCase()) {
+    case "BINANCE":
+      return binance;
+    case "BINGX":
+      return bingx;
+    case "BITFINEX":
+      return bitfinex;
+    case "BITGET":
+      return bitget;
+    case "BITHUMB":
+      return bithumb;
+    case "BITMART":
+      return bitmart;
+    case "BITRUE":
+      return bitrue;
+    case "BITVENUS":
+      return bitvenus;
     case "BYBIT_SPOT":
-    case "BYBIT": return bybit;
+    case "BYBIT":
+      return bybit;
     case "GDAX":
-    case "COINBASE": return coinbase;
-    case "DF": return df;
-    case "GATE": return gate;
-    case "HOTCOIN": return hotcoin;
+    case "COINBASE":
+      return coinbase;
+    case "DF":
+      return df;
+    case "GATE":
+    case "GATEIO":
+    case "GATE.IO":
+      return gate;
+    case "HOTCOIN":
+      return hotcoin;
     case "HUOBI":
-    case "HTX": return htx;
-    case "KRAKEN": return kraken;
-    case "KUCOIN": return kucoin;
-    case "LBANK": return lbank;
+    case "HTX":
+      return htx;
+    case "KRAKEN":
+      return kraken;
+    case "KUCOIN":
+      return kucoin;
+    case "LBANK":
+      return lbank;
     case "MXC":
-    case "MEXC": return mexc;
+    case "MEXC":
+      return mexc;
     case "OKX":
-    case "OKEX": return okx;
+    case "OKEX":
+      return okx;
     case "P2PB2B":
-    case "P2B": return p2b;
-    case "UPBIT": return upbit;
-    case "WHITEBIT": return whitebit;
-    case "CRYPTO_COM": return cryptocom;
-    case "BIGONE": return bigone;
-    case "TAPBIT": return tapbit;
-    default: 
+    case "P2B":
+      return p2b;
+    case "UPBIT":
+      return upbit;
+    case "WHITEBIT":
+      return whitebit;
+    case "CRYPTO_COM":
+      return cryptocom;
+    case "BIGONE":
+      return bigone;
+    case "TAPBIT":
+      return tapbit;
+    default:
       // console.log(identifier);
       return emptyToken;
   }
-}
+};
 
 // Input symbol to get Mixin image link
 export const findCoinIconBySymbol = (symbol: string) => {
   if (!symbol) return emptyToken;
   // @ts-expect-error ingore import from json file
   return mixinIcons[symbol.toUpperCase()];
-}
+};
 
 export const growPathChecker = ($page: Page, type: string) => {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  const pathSegments = $page.url.pathname.split('/').filter(Boolean);
-    return pathSegments.length === 3 && pathSegments[0] === 'grow' && pathSegments[1] === type && uuidRegex.test(pathSegments[2]);
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const pathSegments = $page.url.pathname.split("/").filter(Boolean);
+  return (
+    pathSegments.length === 3 &&
+    pathSegments[0] === "grow" &&
+    pathSegments[1] === type &&
+    uuidRegex.test(pathSegments[2])
+  );
 };

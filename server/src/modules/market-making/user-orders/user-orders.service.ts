@@ -4,12 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Queue } from 'bull';
 import { randomUUID } from 'crypto';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -24,25 +23,41 @@ import type {
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
+import { validate as isUuid } from 'uuid';
+
+import { normalizeControllerType } from '../strategy/config/strategy-controller-aliases';
+import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
+
+const RESERVED_CONFIG_OVERRIDE_FIELDS = new Set([
+  'userId',
+  'clientId',
+  'marketMakingOrderId',
+  'pair',
+  'exchangeName',
+]);
+
+const UNSAFE_CONFIG_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 @Injectable()
 export class UserOrdersService {
   private readonly logger = new CustomLogger(UserOrdersService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
     @InjectRepository(MarketMakingPaymentState)
     private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
     @InjectRepository(MarketMakingOrderIntent)
     private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
+    @InjectRepository(StrategyDefinition)
+    private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
     @InjectRepository(SimplyGrowOrder)
     private readonly simplyGrowRepository: Repository<SimplyGrowOrder>,
     @InjectRepository(StrategyExecutionHistory)
     private readonly strategyExecutionHistoryRepository: Repository<StrategyExecutionHistory>,
     @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
     private readonly growdataRepository: GrowdataRepository,
+    private readonly strategyConfigResolver: StrategyConfigResolverService,
   ) {}
 
   async findAllStrategyByUser(userId: string) {
@@ -204,14 +219,39 @@ export class UserOrdersService {
   }
 
   async createMarketMakingOrderIntent(params: {
+    userId: string;
     marketMakingPairId: string;
-    userId?: string;
+    strategyDefinitionId: string;
+    configOverrides?: Record<string, unknown>;
   }) {
-    const { marketMakingPairId, userId } = params;
+    const {
+      userId,
+      marketMakingPairId,
+      strategyDefinitionId,
+      configOverrides,
+    } = params;
 
+    if (!userId) {
+      throw new BadRequestException('userId is required');
+    }
+    if (!isUuid(userId)) {
+      throw new BadRequestException('userId must be a valid UUID');
+    }
     if (!marketMakingPairId) {
       throw new BadRequestException('marketMakingPairId is required');
     }
+    if (!strategyDefinitionId) {
+      throw new BadRequestException('strategyDefinitionId is required');
+    }
+    if (
+      configOverrides !== undefined &&
+      (configOverrides === null ||
+        Array.isArray(configOverrides) ||
+        typeof configOverrides !== 'object')
+    ) {
+      throw new BadRequestException('configOverrides must be an object');
+    }
+    this.assertConfigOverridesSafe(configOverrides);
 
     const pair = await this.growdataRepository.findMarketMakingPairById(
       marketMakingPairId,
@@ -221,7 +261,31 @@ export class UserOrdersService {
       throw new NotFoundException('Market making pair not found');
     }
 
+    const definition = await this.strategyDefinitionRepository.findOne({
+      where: { id: strategyDefinitionId, enabled: true },
+    });
+
+    if (!definition) {
+      throw new NotFoundException('Strategy definition not found or disabled');
+    }
+    if (!this.isPureMarketMakingDefinition(definition)) {
+      throw new BadRequestException(
+        'strategyDefinitionId must reference a pure market making definition',
+      );
+    }
+
     const orderId = randomUUID();
+
+    await this.strategyConfigResolver.resolveForOrderSnapshot(
+      strategyDefinitionId,
+      this.buildOrderSnapshotOverrides({
+        orderId,
+        userId,
+        pair: pair.symbol,
+        exchangeName: pair.exchange_id,
+        configOverrides,
+      }),
+    );
     const memo = encodeMarketMakingCreateMemo({
       version: 1,
       tradingType: 'Market Making',
@@ -235,8 +299,10 @@ export class UserOrdersService {
 
     const intent = this.marketMakingOrderIntentRepository.create({
       orderId,
-      userId: userId || null,
+      userId,
       marketMakingPairId,
+      strategyDefinitionId,
+      configOverrides: configOverrides ?? null,
       state: 'pending',
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -246,6 +312,114 @@ export class UserOrdersService {
     await this.marketMakingOrderIntentRepository.save(intent);
 
     return { orderId, memo, expiresAt };
+  }
+
+  async listEnabledMarketMakingStrategies() {
+    const definitions = await this.strategyDefinitionRepository.find({
+      where: { enabled: true },
+      order: { updatedAt: 'DESC' },
+    });
+
+    return definitions
+      .filter((definition) => this.isPureMarketMakingDefinition(definition))
+      .map((definition) => ({
+        id: definition.id,
+        key: definition.key,
+        name: definition.name,
+        description: definition.description,
+        controllerType: definition.controllerType || definition.executorType,
+        defaultConfig: definition.defaultConfig || {},
+        configSchema: definition.configSchema || {},
+      }));
+  }
+
+  private isPureMarketMakingDefinition(
+    definition: Partial<StrategyDefinition> | null | undefined,
+  ): boolean {
+    const controllerType = normalizeControllerType(
+      definition?.controllerType || definition?.executorType,
+    );
+
+    return controllerType === 'pureMarketMaking';
+  }
+
+  private buildOrderSnapshotOverrides(params: {
+    orderId: string;
+    userId: string;
+    pair: string;
+    exchangeName: string;
+    configOverrides?: Record<string, unknown>;
+  }): Record<string, unknown> {
+    return {
+      ...(params.configOverrides || {}),
+      userId: params.userId,
+      clientId: params.orderId,
+      marketMakingOrderId: params.orderId,
+      pair: params.pair.replaceAll('-ERC20', ''),
+      exchangeName: params.exchangeName,
+    };
+  }
+
+  private assertConfigOverridesSafe(
+    configOverrides?: Record<string, unknown>,
+  ): void {
+    if (!configOverrides) {
+      return;
+    }
+
+    for (const field of RESERVED_CONFIG_OVERRIDE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(configOverrides, field)) {
+        throw new BadRequestException(
+          `configOverrides cannot override system field: ${field}`,
+        );
+      }
+    }
+
+    this.assertNoUnsafeConfigKeys(configOverrides, 'configOverrides');
+  }
+
+  private assertNoUnsafeConfigKeys(value: unknown, path: string): void {
+    if (value === null || value === undefined) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item, index) =>
+        this.assertNoUnsafeConfigKeys(item, `${path}[${index}]`),
+      );
+
+      return;
+    }
+
+    if (typeof value !== 'object') {
+      return;
+    }
+
+    if (!this.isPlainObject(value)) {
+      throw new BadRequestException(
+        `${path} must contain only plain JSON objects`,
+      );
+    }
+
+    for (const [key, nestedValue] of Object.entries(value)) {
+      if (UNSAFE_CONFIG_KEYS.has(key)) {
+        throw new BadRequestException(
+          `configOverrides contains unsafe key: ${path}.${key}`,
+        );
+      }
+
+      this.assertNoUnsafeConfigKeys(nestedValue, `${path}.${key}`);
+    }
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+
+    return prototype === Object.prototype || prototype === null;
   }
 
   // Methods moved from StrategyService
@@ -269,58 +443,6 @@ export class UserOrdersService {
       },
       order: { executedAt: 'DESC' },
     });
-  }
-
-  // Timeout worker
-  @Cron('*/60 * * * * *') // 60s
-  async clearTimeoutOrders() {
-    // Read all MarketMakingPaymentState
-    const created = await this.findMarketMakingPaymentStateByState('created');
-
-    // Check if created time over timeout 10m
-    created.forEach((item) => {
-      // check if timeout, refund if timeout, update state to timeout
-      if (item.createdAt) {
-        // Logic was empty in original file, keeping it empty or TODO
-      }
-    });
-  }
-
-  // Get all created order to run in strategy
-  @Cron('*/60 * * * * *') // 60s
-  async updateExecutionBasedOnOrders() {
-    const enabled = this.configService.get<string>('strategy.run');
-
-    if (enabled === 'false') {
-      return;
-    }
-
-    // Get orders states that are created
-    const activeMM = await this.marketMakingRepository.findBy({
-      state: 'created',
-    });
-
-    if (activeMM) {
-      activeMM.forEach(async (mm) => {
-        await this.marketMakingQueue.add('start_mm', {
-          userId: mm.userId,
-          orderId: mm.orderId,
-        });
-      });
-    }
-
-    const pausedMM = await this.marketMakingRepository.findBy({
-      state: 'paused',
-    });
-
-    if (pausedMM) {
-      pausedMM.forEach(async (mm) => {
-        await this.marketMakingQueue.add('stop_mm', {
-          userId: mm.userId,
-          orderId: mm.orderId,
-        });
-      });
-    }
   }
 
   async stopMarketMaking(userId: string, orderId: string) {

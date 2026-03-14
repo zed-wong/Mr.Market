@@ -2,6 +2,10 @@
 
 ## Backend
 
+### User orders security
+- [] 1. add authentication and ownership checks for user order list/detail/payment/history endpoints under `user-orders`
+- [] 2. keep `GET /user-orders/market-making/strategies` public for frontend strategy selection
+
 ### Validation of create market making process
 - [x] 1. user can open invoice payment page in confirm payment step
 - [x] 2. invoice payment can be handled correctly by backend
@@ -16,9 +20,28 @@
 11. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
 
 ### Market making execution system
-1. market making execution system, including order status updates, place/cancel order logs, error handling. reflect on user's market making orders details.
-2. comprehensive order tracking, including volume created, profit made, placed order count, filled order amount, success/failure/cancel count.
-3. campaign reward trading, calculate reward based on performance.
+- [] 1. market making execution system, including order status updates, place/cancel order logs, error handling. reflect on user's market making orders details.
+- [] 2. comprehensive order tracking, including volume created, profit made, placed order count, filled order amount, success/failure/cancel count.
+- [] 3. campaign reward trading, calculate reward based on performance.
+
+### Dynamic strategy management
+- [x] 1. Add DB-backed strategy definitions (`strategy_definitions`) and link runtime instances with `definitionId`/`definitionVersion`
+- [x] 2. Add strategy definition version snapshots (`strategy_definition_versions`) and publish/list flow
+- [x] 3. Add admin APIs for definition lifecycle and instance lifecycle (validate/start/stop/list/backfill)
+- [x] 4. Add seed defaults for built-in executors (pureMarketMaking/arbitrage/volume)
+- [x] 5. Add admin strategy manage UI page under settings
+
+### Deferred strategy follow-ups
+- [] 1. Remove `exchangeName`/`pair` from `StrategyInstance.parameters` - get from `MarketMakingOrder` binding at runtime instead of duplicating in params (conceptual cleanup, medium effort ~10-15 files)
+- [] 2. Fix volume strategy controller follow-ups before expanding reuse: sanitize cadence input, keep rerun backward-compatible with legacy parameter keys, and stop deriving tenant identity from `strategyInstance.parameters.userId/clientId`
+- [] 3. Move `userId`/`clientId`/`marketMakingOrderId` injection in strategy config resolution to after schema validation so strict schemas with `additionalProperties: false` can pass correctly
+- [] 4. Make legacy admin strategy start fail on ambiguous enabled definitions instead of silently picking the oldest matching `controllerType`
+- [] 5. Validate `controllerType` on strategy definition creation and reject unsupported controller values early
+- [] 6. Roll back started runtime sessions when admin strategy start succeeds in dispatcher but fails to link the definition in storage
+- [] 6. Align admin strategy definition/instance endpoints with more idiomatic REST semantics and boolean query parsing, then add controller tests for the new routes
+- [] 7. Add TTL or explicit invalidation for cached market-making strategies in `interface/src/lib/helpers/mrm/marketMakingPayment.ts`
+- [] 8. Reset CCXT seeder cache per run and add a timeout guard around `loadMarkets()` to avoid hanging the seed process
+- [] 9. Parallelize chain icon fetching during pair seed generation and wrap `runSeed()` database cleanup in `try/finally`
 
 ## Interface
 
@@ -32,8 +55,11 @@
 - [x] 1. when select trading pair, there should be an small icon that represents the chain of the asset
 
 ### Admin page
+- [] 0. Design a manage strategy page that allows admin to add/remove/create template strategies and custom strategies
 - [] 1. Add a setup guide for initialization that is step by step, allowing admin to have basic understanding of how setting works, and makes it easier to set up all the things
 - [] 2. Support sorting and filter in manage market making pairs/spot trading pairs
+- [] 3. Update Admin login page UI design to be consistent with other pages
+- [] 4. Merge manage exchange and api keys into one page, has consistent logic and don't make user confuse
 
 ### Admin exchanges management
 1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
@@ -43,7 +69,7 @@
 - [x] 2. Admin add trading pairs
 - [x] 3. Admin add exchanges
 
-# Hufi 
+# Hufi
 
 ## UI
 ### Campaigns

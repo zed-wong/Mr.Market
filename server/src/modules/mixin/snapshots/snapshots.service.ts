@@ -200,6 +200,22 @@ export class SnapshotsService {
               break;
             }
 
+            if (!intent.userId) {
+              this.logger.warn(
+                `Intent user binding missing for order ${mmDetails.orderId}, refunding snapshot ${snapshot.snapshot_id}`,
+              );
+              await this.transactionService.refund(snapshot);
+              break;
+            }
+
+            if (intent.userId !== snapshot.opponent_id) {
+              this.logger.warn(
+                `Intent user mismatch for order ${mmDetails.orderId}: expected ${intent.userId}, received ${snapshot.opponent_id}. Refunding snapshot ${snapshot.snapshot_id}`,
+              );
+              await this.transactionService.refund(snapshot);
+              break;
+            }
+
             const expiresAtMs = BigNumber(Date.parse(intent.expiresAt));
 
             if (!expiresAtMs.isFinite() || expiresAtMs.isLessThan(Date.now())) {

@@ -14,7 +14,7 @@ install: install-interface install-server
 	@echo "All dependencies installed successfully!"
 .PHONY: install
 
-# 
+#
 
 run-migrations:
 	@echo "Running migrations..."
@@ -93,4 +93,16 @@ lint: lint-interface lint-server
 	@echo "Linting completed!"
 .PHONY: lint
 
+pr-check-interface:
+	@echo "Running interface PR check"
+	@cd interface && bun run pr:check
+.PHONY: pr-check-interface
 
+pr-check-server:
+	@echo "Running server PR check"
+	@cd server && bun run pr:check
+.PHONY: pr-check-server
+
+pr-check: pr-check-interface pr-check-server
+	@echo "Running pr check"
+.PHONY: pr-check

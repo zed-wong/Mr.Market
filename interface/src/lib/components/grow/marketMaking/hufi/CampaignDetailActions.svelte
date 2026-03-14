@@ -51,6 +51,8 @@
     $: quoteIcon = quoteSymbol
         ? findCoinIconBySymbol(quoteSymbol) || emptyToken
         : emptyToken;
+    $: baseChainIcon = selectedPairInfo?.base_chain_icon_url || "";
+    $: quoteChainIcon = selectedPairInfo?.quote_chain_icon_url || "";
     $: selectedPairInfo =
         growInfo?.market_making?.pairs?.find(
             (pair) =>
@@ -172,13 +174,20 @@
 
         try {
             const currentUser = get(user);
+            const currentUserId = currentUser?.user_id;
+
+            if (!currentUserId) {
+                isPaying = false;
+                return;
+            }
+
             const paymentResult = await createMarketMakingPayment({
                 selectedPairInfo,
                 feeInfo,
                 baseAmount: baseAmountInput,
                 quoteAmount: quoteAmountInput,
                 botId: $botId,
-                userId: currentUser?.user_id,
+                userId: currentUserId,
             });
 
             if (!paymentResult?.orderId) {
@@ -348,6 +357,8 @@
                             {quoteIcon}
                             {baseSymbol}
                             {quoteSymbol}
+                            {baseChainIcon}
+                            {quoteChainIcon}
                             {basePrice}
                             {quotePrice}
                             showBase={true}

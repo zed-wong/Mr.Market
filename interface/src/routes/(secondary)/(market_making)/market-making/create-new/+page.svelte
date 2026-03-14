@@ -128,13 +128,20 @@
 
         try {
             const currentUser = get(user);
+            const currentUserId = currentUser?.user_id;
+
+            if (!currentUserId) {
+                isPaying = false;
+                return;
+            }
+
             const paymentResult = await createMarketMakingPayment({
                 selectedPairInfo,
                 feeInfo,
                 baseAmount,
                 quoteAmount,
                 botId: $botId,
-                userId: currentUser?.user_id,
+                userId: currentUserId,
             });
 
             if (!paymentResult?.orderId) {
@@ -170,6 +177,8 @@
     $: quoteIcon = quoteSymbol
         ? findCoinIconBySymbol(quoteSymbol) || emptyToken
         : emptyToken;
+    $: baseChainIcon = selectedPairInfo?.base_chain_icon_url || "";
+    $: quoteChainIcon = selectedPairInfo?.quote_chain_icon_url || "";
 
     let baseAmountInput = "";
     let quoteAmountInput = "";
@@ -360,6 +369,8 @@
                 {quoteSymbol}
                 {baseIcon}
                 {quoteIcon}
+                {baseChainIcon}
+                {quoteChainIcon}
             />
             <div
                 class="px-4 gap-6 grid grid-cols-1 bg-transparent w-full max-w-md overflow-y-auto hide-scrollbar"
@@ -369,6 +380,8 @@
                     {quoteIcon}
                     {baseSymbol}
                     {quoteSymbol}
+                    {baseChainIcon}
+                    {quoteChainIcon}
                     {showBase}
                     {showQuote}
                     {basePrice}

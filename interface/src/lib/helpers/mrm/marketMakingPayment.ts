@@ -7,6 +7,8 @@ import {
 } from "$lib/helpers/mixin/mixin-invoice";
 import {
   createMarketMakingOrderIntent,
+  getEnabledMarketMakingStrategies,
+  type MarketMakingStrategy,
   type MarketMakingFee,
 } from "$lib/helpers/mrm/grow";
 import { getMarketMakingPaymentState } from "$lib/helpers/mrm/strategy";
@@ -16,13 +18,29 @@ import {
   ORDER_STATE_TIMEOUT_DURATION,
 } from "$lib/helpers/constants";
 
+// Cache for strategies to avoid repeated fetches
+let cachedStrategies: MarketMakingStrategy[] | null = null;
+
+const getDefaultStrategy = async (): Promise<MarketMakingStrategy | null> => {
+  if (cachedStrategies === null) {
+    cachedStrategies = await getEnabledMarketMakingStrategies();
+  }
+
+  return (
+    cachedStrategies.find((s) => s.controllerType === "pureMarketMaking") ||
+    cachedStrategies.find((s) => s.key === "pure_market_making") ||
+    cachedStrategies[0] ||
+    null
+  );
+};
+
 export type MarketMakingPaymentInput = {
   selectedPairInfo: MarketMakingPair;
   feeInfo: MarketMakingFee;
   baseAmount: string;
   quoteAmount: string;
   botId: string;
-  userId?: string;
+  userId: string;
 };
 
 export type MarketMakingPaymentResult = {
@@ -31,17 +49,32 @@ export type MarketMakingPaymentResult = {
 };
 
 export const createMarketMakingPayment = async (
-  params: MarketMakingPaymentInput,
+  params: MarketMakingPaymentInput
 ): Promise<MarketMakingPaymentResult | null> => {
   const { selectedPairInfo, feeInfo, baseAmount, quoteAmount, botId, userId } =
     params;
 
-  if (!selectedPairInfo || !feeInfo || !baseAmount || !quoteAmount || !botId) {
+  if (
+    !selectedPairInfo ||
+    !feeInfo ||
+    !baseAmount ||
+    !quoteAmount ||
+    !botId ||
+    !userId
+  ) {
+    return null;
+  }
+
+  // Get default strategy for market making
+  const defaultStrategy = await getDefaultStrategy();
+  if (!defaultStrategy) {
+    console.error("No enabled market making strategy found");
     return null;
   }
 
   const intent = await createMarketMakingOrderIntent({
     marketMakingPairId: selectedPairInfo.id,
+    strategyDefinitionId: defaultStrategy.id,
     userId,
   });
 
@@ -99,7 +132,7 @@ export const createMarketMakingPayment = async (
       amount: amount.toString(),
       extra: itemMemo.get(assetId) || memo,
       traceId: getUuid(),
-    }),
+    })
   );
 
   if (items.length === 0) {
@@ -130,7 +163,7 @@ export type MarketMakingPaymentPollerOptions = {
 };
 
 export const createMarketMakingPaymentPoller = (
-  options: MarketMakingPaymentPollerOptions = {},
+  options: MarketMakingPaymentPollerOptions = {}
 ) => {
   const paymentPollers = new Map<
     string,

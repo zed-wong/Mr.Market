@@ -43,6 +43,12 @@ export class StrategyOrderIntentEntity {
   @Column({ nullable: true })
   mixinOrderId?: string;
 
+  @Column({ nullable: true })
+  executionCategory?: string;
+
+  @Column({ type: 'simple-json', nullable: true })
+  metadata?: Record<string, unknown>;
+
   @Column()
   @Index()
   status: string;

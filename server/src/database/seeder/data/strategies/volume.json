@@ -1,0 +1,57 @@
+{
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "userId",
+      "clientId",
+      "incrementPercentage",
+      "intervalTime",
+      "tradeAmount",
+      "numTrades"
+    ],
+    "properties": {
+      "userId": { "type": "string" },
+      "clientId": { "type": "string" },
+      "executionCategory": {
+        "type": "string",
+        "enum": ["clob_cex", "amm_dex"]
+      },
+      "executionVenue": {
+        "type": "string",
+        "enum": ["cex", "dex"]
+      },
+      "exchangeName": { "type": "string" },
+      "symbol": { "type": "string" },
+      "dexId": {
+        "type": "string",
+        "enum": ["uniswapV3", "pancakeV3"]
+      },
+      "chainId": { "type": "number", "minimum": 1 },
+      "tokenIn": { "type": "string" },
+      "tokenOut": { "type": "string" },
+      "feeTier": { "type": "number", "minimum": 1 },
+      "slippageBps": { "type": "number", "minimum": 0 },
+      "recipient": { "type": "string" },
+      "incrementPercentage": { "type": "number" },
+      "intervalTime": { "type": "number", "minimum": 1 },
+      "tradeAmount": { "type": "number", "minimum": 0 },
+      "numTrades": { "type": "number", "minimum": 0 },
+      "pricePushRate": { "type": "number" },
+      "postOnlySide": {
+        "type": "string",
+        "enum": ["buy", "sell"]
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "executionCategory": "clob_cex",
+    "exchangeName": "binance",
+    "symbol": "BTC/USDT",
+    "incrementPercentage": 0.5,
+    "intervalTime": 30,
+    "tradeAmount": 0.1,
+    "numTrades": 100,
+    "pricePushRate": 0
+  }
+}

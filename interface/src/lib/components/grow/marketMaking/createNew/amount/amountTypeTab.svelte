@@ -1,6 +1,7 @@
 <script lang="ts">
   import clsx from "clsx";
   import { _ } from "svelte-i18n";
+  import AssetIcon from "$lib/components/common/assetIcon.svelte";
 
   export let mode: "both_token" | "single_token" = "both_token";
   export let tokenType: "base" | "quote" = "base";
@@ -8,6 +9,8 @@
   export let quoteSymbol: string | null = null;
   export let baseIcon: string;
   export let quoteIcon: string;
+  export let baseChainIcon: string;
+  export let quoteChainIcon: string;
 </script>
 
 <div class="flex flex-col justify-center items-center w-full mt-4">
@@ -64,7 +67,13 @@
               }
             }}
           >
-            <img src={baseIcon} alt={baseSymbol} class="w-4 h-4" />
+            <AssetIcon
+              chainIcon={baseChainIcon}
+              assetIcon={baseIcon}
+              clazz="w-4 h-4"
+              claxx="w-2 h-2"
+              imageClass="rounded-full"
+            />
             {baseSymbol}
           </button>
         </li>
@@ -79,7 +88,13 @@
               }
             }}
           >
-            <img src={quoteIcon} alt={quoteSymbol} class="w-4 h-4" />
+            <AssetIcon
+              chainIcon={quoteChainIcon}
+              assetIcon={quoteIcon}
+              clazz="w-4 h-4"
+              claxx="w-2 h-2"
+              imageClass="rounded-full"
+            />
             {quoteSymbol}
           </button>
         </li>

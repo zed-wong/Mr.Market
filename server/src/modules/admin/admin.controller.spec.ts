@@ -2,10 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminController } from './admin.controller';
-import { SpotdataTradingPairDto } from './admin-spot-management/admin-spot-management.dto';
-import { AdminSpotService } from './admin-spot-management/admin-spot-management.service';
 import { GrowdataExchangeDto } from './growdata/adminGrow.dto';
 import { AdminGrowService } from './growdata/adminGrow.service';
+import { SpotdataTradingPairDto } from './spot/admin-spot.dto';
+import { AdminSpotService } from './spot/admin-spot.service';
 import {
   StartStrategyDto,
   StopStrategyDto,
@@ -33,6 +33,15 @@ describe('AdminController', () => {
             getTokenSymbolByContract: jest.fn(),
             verifyContribution: jest.fn(),
             getRunningStrategies: jest.fn(),
+            createStrategyDefinition: jest.fn(),
+            listStrategyDefinitions: jest.fn(),
+            getStrategyDefinition: jest.fn(),
+            updateStrategyDefinition: jest.fn(),
+            setStrategyDefinitionEnabled: jest.fn(),
+            startStrategyInstance: jest.fn(),
+            stopStrategyInstance: jest.fn(),
+            getStrategyInstances: jest.fn(),
+            validateStrategyInstanceConfig: jest.fn(),
           },
         },
         {

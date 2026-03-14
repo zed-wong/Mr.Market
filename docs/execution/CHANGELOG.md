@@ -1,5 +1,83 @@
 # Execution Flow Changelog
 
+## 2026-03-14
+
+- Clarify `STRATEGY_DEFINITION_GUIDE.md` to document the runtime-supported JSON Schema subset instead of claiming full spec support
+- Remove stale strategy-definition version reference from `docs/code/server/business-flows.md` runtime pipeline flow
+- Add TODO to require auth and ownership checks for private user-orders endpoints while keeping public strategy catalog access
+- Bind market-making order intents to request `userId`, reject unsafe/schema-invalid configOverrides at creation time, and enforce payer-user consistency during snapshot intake
+- Remove legacy admin backfill-definition-links and strategy definition export APIs after the prototype cutover to snapshot-only strategy startup
+- Restrict market-making strategy selection/intents to `pureMarketMaking` definitions and preserve DEX volume config when controller reruns persisted strategies
+- Reject unsupported `clob_dex` strategy-definition configs during resolver validation and remove the category from seeded volume-definition schema
+- Stop admin strategy instances with `clientId` for non-pure-market-making definitions even when `marketMakingOrderId` is present
+- Preserve arbitrage `exchangeBName`, `sellPrice`, and `profit` in strategy execution history migration metadata
+- Align strategy i18n copy and market-making docs with the current order-binding and executor-routing behavior
+- Make admin fee primary-config lookup read the earliest persisted config row instead of calling `findOne({ config_id: 1 })`, matching current repository mocks and seeded-data behavior
+- Update `StrategyService` tests to register pooled executor sessions on tick paths and assert legacy arbitrage start hydration is unsupported
+- Capture deferred volume, strategy admin, and seed follow-up work in `docs/TODO.md`
+
+## 2026-03-13
+
+- Remove strategy definition publish/version APIs and version metadata so definitions remain config templates bound to local runtime controllers
+- Refine ADR-001 static strategy logic decision to define user/admin/platform boundaries, disallow runtime-uploaded strategy code, and clarify config templates vs executable logic
+- Rename admin-spot-management module to spot for consistency (AdminSpotManagementService → AdminSpotService)
+- Add backup seeder dataset for exchange `exchange_id` + `name` + `icon_url` mappings (`exchange-icon-backup.ts`) without wiring it into active seed flow
+
+## 2026-03-12
+
+- Update docs/code/server documentation to reflect current module structure (strategy module internal directories, defi adapters, IndicatorStrategyHistory entity)
+
+## 2026-03-11
+
+- Add pooled executor architecture with ExecutorRegistry managing ExchangePairExecutor per exchange:pair
+- Add strategySnapshot to MarketMakingOrder with definitionVersion, controllerType, and resolvedConfig
+- Add configOverrides to MarketMakingOrderIntent for user-provided config at order creation
+- Add StrategyConfigResolverService.resolveForOrderSnapshot() for config resolution at order creation
+- Add clientOrderId format helpers in common/helpers/client-order-id.ts (format: {orderId}:{seq})
+- Add ExchangeOrderMapping entity and service for fill routing fallback
+- Add FillRoutingService with clientOrderId parsing and fallback chain
+- Migrate StrategyService to use ExecutorRegistry for pooled execution
+- Move runtime config source of truth to MarketMakingOrder.strategySnapshot while keeping StrategyInstance for lifecycle metadata
+- Replace YAML-based strategy seed/export artifacts with JSON definitions and JSON export payloads
+
+## 2026-03-06
+
+- Add Hummingbot-compatible YAML strategy definitions in seeders (pure-market-making, arbitrage, volume, time-indicator)
+- Add YAML loader utility for parsing strategy definition files from seeder data directory
+- Add export endpoint for strategy definitions (GET /admin/strategy/definitions/:id/export)
+- Update strategy seeder to load definitions from YAML files instead of hardcoded TypeScript objects
+- Align YAML field names with DTO structure (camelCase) and add required fields (userId, clientId, pair, exchangeName)
+
+## 2026-03-05
+
+- Remove legacy `StrategyController` `/strategy/*` API surface and keep strategy runtime control on shared admin (`/admin/strategy/*`) and queue/user-orders flows only
+- Complete strategy runtime folder reorganization under `server/src/modules/market-making/strategy` into `config`, `controllers`, `intent`, `execution`, `data`, and `dex`, and update admin imports/docs to new paths
+- Add comprehensive backend design logic doc tree under `docs/code/server` with module map, module purpose, business flows, and entity ownership matrix
+- Fix `StrategyControllerRegistry` constructor corruption so `getController` and `listControllerTypes` are available to strategy runtime and test compilation
+- Stabilize interface CI checks by running E2E tests sequentially (`test:e2e --workers=1`) and making `test` wait for E2E before unit tests
+
+## 2026-03-04
+
+- Rename dynamic strategy transition plan doc to `docs/plans/2026-03-04-dynamic-strategy-architecture-transition-plan.md` and remove AdminModule <- StrategyModule runtime coupling by moving `strategy/join` contribution creation into `StrategyController`
+- Add shared `StrategyConfigResolverService` and `StrategyRuntimeDispatcherService`, and wire admin strategy instance start/validate/stop plus `start_mm` dispatch through shared resolver/dispatcher paths
+- Add `ExecutorOrchestratorService` with `ExecutorAction` model and route strategy intent publishing through orchestrator adapter while keeping existing intent worker/execution pipeline
+- Add `decideActions` controller contract and migrate pure market making runtime to controller action emission path with orchestrator-backed intent publish flow
+- Route `stop_mm` through shared strategy resolver/dispatcher flow and add execution-category (`clob_cex`/`clob_dex`/`amm_dex`) mapping support in runtime dispatcher for volume start
+- Complete controller-decide runtime cutover, add strategy market data provider and AMM swap intent metadata persistence/execution, and add admin strategy definition remove API plus UI action
+- Remove StrategyService legacy runtime fallbacks so controller registry + orchestrator are the only strategy runtime execution path, and align start_mm queue flow to shared config resolver validation
+
+## 2026-02-28
+
+- Add dynamic strategy definition architecture (`strategy_definitions`, `strategy_definition_versions`) and instance linkage fields on `strategy_instances`
+- Add admin strategy definition lifecycle APIs (create/list/get/update/enable/disable/publish versions)
+- Add admin strategy instance APIs (validate/start/stop/list)
+- Add legacy strategy instance backfill endpoint
+- Add seeded built-in strategy definitions (pure market making, arbitrage, volume) with version snapshots
+- Add executor registry abstraction and executor modules for strategy runtime dispatch
+- Add admin strategy manage settings page
+- Add typed interface helper APIs/tests
+- Add migration and transition guides for dynamic strategy cutover under `docs/plans/*`
+
 ## 2026-02-27
 
 - Harden pause-withdraw orchestration with durable pending/completed/failed intents and idempotent ledger rollback on external withdrawal failure
@@ -110,3 +188,4 @@
 - Fix withdrawal confirmation monitoring documentation with correct Mixin snapshot check
 - Add withdrawal timeout (30 minutes) to error handling
 - Add comprehensive ui/DESIGN_PATTERN.md with full design system documentation
+- Fix admin global fee API to read the seeded primary config instead of assuming `config_id = 1`, which made `/manage/settings/fees` show `0` fees

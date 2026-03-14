@@ -14,3 +14,9 @@ export interface StrategyKey {
 export const createStrategyKey = (key: StrategyKey) => {
   return `${key.user_id}-${key.client_id}-${key.type}`;
 };
+
+export const createPureMarketMakingStrategyKey = (
+  marketMakingOrderId: string,
+) => {
+  return `${marketMakingOrderId}-pureMarketMaking`;
+};

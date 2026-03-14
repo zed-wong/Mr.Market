@@ -15,6 +15,7 @@ type TrackedOrder = {
   exchange: string;
   pair: string;
   exchangeOrderId: string;
+  clientOrderId?: string;
   side: 'buy' | 'sell';
   price: string;
   qty: string;

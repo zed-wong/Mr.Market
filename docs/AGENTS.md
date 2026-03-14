@@ -1,34 +1,42 @@
-## Docs 
-When creating docs, use English, keep it simple stupid, don't overcomplicate it, only write 1 doc for each feature, and make sure it's easy to understand. If have different docs for different topics, join them to a file.
+# Development Principles
+Follow KISS, YAGNI, and DRY. Don't add unnecessary code. Reuse existing codebase.
 
-When the code is updated, update the related docs as well.
+# Tech Stack
 
-Update docs/execution/CHANGELOG.md when the code is updated, keep the CHANGELOG.md simple, Keep each changes in one line.
+## Frontend
+- Svelte 4 syntax (not Svelte 5)
+- daisyui + tailwindcss for styling
+  - White text: `text-base-100`
+  - Black text: `text-base-content`
+  - White bg: `bg-base-100`
+  - Black bg: `bg-base-content`
+  - Gray: `bg-base-content/60` or `bg-base-300`
+  - Avoid custom colors like `text-gray-900`
+  - Use `capitalize` instead of `uppercase`
+  - Use `<span>` with tailwind classes instead of `<h1>`, `<p>`
+- svelte-i18n with `$_` for text, en.json is default
 
-## UI
-use daisyui and tailwindcss for styling, use text-base-100 class for white text and text-base-content for black text, use bg-base-100 class for white background and bg-base-content for black background. 
-use bg-base-content/60 or bg-base-300 for gray. 
-avoid text-gray-900 or other custom color because it's bad for different theme support.
-avoid using h1 h2 h3 and p for text, use span and tailwindcss classes for text size instead.
-avoid using uppercase class for text, always use capitalize class instead.
+## Backend
+- bignumber.js for numeric calculations
+- getRFC3339Timestamp() for string timestamps
 
-## i18n
-use svelte-i18n when adding text, use $_ to access the text, en.json is the default language file.
+# Conventions
 
-## ENV
-never read .env file, never read .env file, never read .env file
+## Dependencies
+Use bun (not npm/yarn/pnpm)
 
-## Calculation
-Always use bignumber.js for numberic related calculation
+## Package Dependencies
+- Keep dependencies minimal in package.json — only add when truly necessary
+- Prefer well-established, widely-used libraries over niche or unmaintained ones
+- Before adding a new dependency, evaluate if the functionality can be achieved with existing packages or minimal custom code
 
-## Time
-Always use getRFC3339Timestamp() for string timestamp
+## Commits
+No agent signatures (Claude, sisyphus, etc.) in commit messages
 
-## Calude
-never add CLAUDE.md to project directory
+## Docs
+- Keep docs updated with code changes
+- Update docs/execution/CHANGELOG.md (one line per change)
+- Keep docs/code/ as md version of code
 
-## Svelte
-use svelte 4 syntax, never use svelte 5 syntax
-
-## Commit message
-Don't add sisyphus or calude or any other agent related information to commit message
+# Security
+Never read .env files directly
