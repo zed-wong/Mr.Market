@@ -58,5 +58,5 @@ This file maps key entities to module ownership and business usage.
 
 - Strategy state entities are owned by strategy module, even when admin APIs mutate them.
 - Payment/order entities are owned by user-orders module, with snapshots as feeder and strategy as consumer.
-- Ledger and durability entities are cross-cutting but still have single owner modules (`ledger`, `durability`).
+- Ledger and durability entities are cross-cutting but still have single-owner modules (`ledger`, `durability`).
 - Campaign entities are split: external campaign sync in `campaign`, local queue participation in `local-campaign`.

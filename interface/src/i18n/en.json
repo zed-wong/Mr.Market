@@ -657,7 +657,7 @@
   "disabled": "Disabled",
   "no_data": "No data",
   "strategy_config_invalid_json": "Config JSON is invalid",
-  "strategy_required_fields": "Definition, user ID, and client ID are required",
+  "strategy_required_fields": "Definition and bound market-making order are required",
   "strategy_validation_success": "Configuration is valid",
   "strategy_validation_failed": "Configuration validation failed",
   "strategy_start_success": "Strategy instance started",

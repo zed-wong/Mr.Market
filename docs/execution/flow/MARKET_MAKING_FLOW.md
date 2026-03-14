@@ -107,7 +107,7 @@ flowchart TD
 
 ## End-to-End Flow
 
-### 0) User creates a market making intent
+### 0) User creates a market-making intent
 
 1. User fetches enabled strategies from `GET /user-orders/market-making/strategies`.
 2. User creates intent via `POST /user-orders/market-making/intent` with:
@@ -190,8 +190,8 @@ If withdrawal path is enabled and used:
 1. `PrivateStreamTracker` receives fill event with `clientOrderId`.
 2. `FillRoutingService.resolveOrderForFill()` routes the fill:
    - **Primary path**: Parse `clientOrderId` format `{orderId}:{seq}`.
-   - **Fallback 1**: Lookup `ExchangeOrderMapping` by `clientOrderId`.
-   - **Fallback 2**: Lookup `ExchangeOrderMapping` by `exchangeOrderId`.
+   - **Fallback 1**: Look up `ExchangeOrderMapping` by `clientOrderId`.
+   - **Fallback 2**: Look up `ExchangeOrderMapping` by `exchangeOrderId`.
    - **Orphan**: Log for manual review if all fail.
 3. `ExecutorRegistry.findExecutorByOrderId()` resolves executor for order.
 4. `ExchangePairExecutor.onFill(fill)` dispatches to session handler.
@@ -228,6 +228,8 @@ function parseClientOrderId(
 }
 ```
 
+The real implementation in `server/src/common/helpers/client-order-id.ts` adds stricter runtime checks: `parts[0]` must be non-empty, `parts[1]` must match `/^\d+$/`, `seq` is parsed with `parseInt`, and invalid or unsafe values return `null`.
+
 Prerequisites:
 
 - `orderId` uses UUID format (no `:` character).
@@ -242,7 +244,7 @@ Manages `ExchangePairExecutor` lifecycle:
 ```typescript
 class ExecutorRegistry {
   getOrCreateExecutor(exchange: string, pair: string): ExchangePairExecutor;
-  removeExecutorIfEmpty(exchange: string, pair: void): void;
+  removeExecutorIfEmpty(exchange: string, pair: string): void;
   getExecutor(exchange: string, pair: string): ExchangePairExecutor | undefined;
   getActiveExecutors(): ExchangePairExecutor[];
   findExecutorByOrderId(orderId: string): ExchangePairExecutor | undefined;

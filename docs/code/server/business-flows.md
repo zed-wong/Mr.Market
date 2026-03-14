@@ -92,10 +92,10 @@ This file maps runtime logic to business behavior.
 
 1. Private stream tracker receives fill event with clientOrderId.
 2. FillRoutingService (in `market-making/execution/fill-routing.service.ts`) parses clientOrderId format `{orderId}:{seq}`.
-3. If parse success: route to ExchangePairExecutor by order's exchange:pair.
-4. If parse fail: fallback to ExchangeOrderMapping lookup by clientOrderId.
-5. If still fail: lookup by exchangeOrderId.
-6. If all fail: log orphaned fill for manual review.
+3. On parse success: route to ExchangePairExecutor by order's exchange:pair.
+4. When parsing fails: fall back to ExchangeOrderMapping lookup by clientOrderId.
+5. Next, try lookup by exchangeOrderId.
+6. Finally, log orphaned fill for manual review if all lookups fail.
 7. ExchangePairExecutor.onFill() dispatches to strategy session.
 
 ### Main modules in this flow

@@ -677,6 +677,6 @@
   "create": "创建",
   "publish": "发布",
   "enable": "启用",
-  "disable": "禁用"
-  ,"strategy_definition_versions_load_failed": "加载策略定义版本失败"
+  "disable": "禁用",
+  "strategy_definition_versions_load_failed": "加载策略定义版本失败"
 }

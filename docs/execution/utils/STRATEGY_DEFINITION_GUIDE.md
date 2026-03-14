@@ -427,7 +427,7 @@ When admin updates a definition:
 
 ## File Locations
 
-```
+```text
 server/src/
 ├── common/entities/market-making/
 │   └── strategy-definition.entity.ts       # Definition entity
