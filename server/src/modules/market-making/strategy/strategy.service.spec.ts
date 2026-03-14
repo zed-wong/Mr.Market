@@ -54,6 +54,39 @@ describe('StrategyService', () => {
     update: jest.fn(),
   };
 
+  const registerPooledSession = async ({
+    strategyKey,
+    strategyType,
+    userId,
+    clientId,
+    cadenceMs,
+    params,
+    marketMakingOrderId,
+    nextRunAtMs,
+    runId,
+  }: {
+    strategyKey: string;
+    strategyType: 'pureMarketMaking' | 'volume' | 'timeIndicator';
+    userId: string;
+    clientId: string;
+    cadenceMs: number;
+    params: Record<string, any>;
+    marketMakingOrderId?: string;
+    nextRunAtMs?: number;
+    runId?: string;
+  }) =>
+    await (service as any).upsertSession(
+      strategyKey,
+      strategyType,
+      userId,
+      clientId,
+      cadenceMs,
+      params,
+      marketMakingOrderId,
+      nextRunAtMs,
+      runId,
+    );
+
   beforeEach(async () => {
     executorOrchestratorService = {
       dispatchActions: jest.fn(async (_strategyKey: string, actions: any[]) =>
@@ -257,14 +290,15 @@ describe('StrategyService', () => {
       }),
     };
 
-    (service as any).sessions.set(strategyKey, {
-      runId: 'run-1',
+    await registerPooledSession({
       strategyKey,
       strategyType: 'pureMarketMaking',
       userId: '1',
       clientId: 'client1',
       cadenceMs: 1000,
       nextRunAtMs: nowMs,
+      runId: 'run-1',
+      marketMakingOrderId: 'client1',
       params: {
         userId: '1',
         clientId: 'client1',
@@ -425,23 +459,29 @@ describe('StrategyService', () => {
       .spyOn((service as any).logger, 'error')
       .mockImplementation(() => undefined);
 
-    (service as any).sessions.set('a-strategy', {
+    await registerPooledSession({
       strategyKey: 'a-strategy',
       strategyType: 'pureMarketMaking',
       userId: 'u1',
       clientId: 'c1',
       cadenceMs: 1000,
       nextRunAtMs: nowMs,
-      params: {},
+      params: {
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+      },
     });
-    (service as any).sessions.set('b-strategy', {
+    await registerPooledSession({
       strategyKey: 'b-strategy',
       strategyType: 'pureMarketMaking',
       userId: 'u2',
       clientId: 'c2',
       cadenceMs: 2000,
       nextRunAtMs: nowMs,
-      params: {},
+      params: {
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+      },
     });
 
     await expect(service.onTick('2026-02-27T00:00:00.000Z')).resolves.toBe(
@@ -473,34 +513,54 @@ describe('StrategyService', () => {
       .spyOn(service as any, 'runSession')
       .mockImplementation(async (session: { strategyKey: string }) => {
         if (session.strategyKey === 'a-strategy') {
-          const activeB = (service as any).sessions.get('b-strategy');
-
-          (service as any).sessions.set('b-strategy', {
-            ...activeB,
+          const executor = executorRegistry.getExecutor('binance', 'BTC/USDT');
+          const nextB = await executor?.addOrder('c2', 'u2', {
+            strategyKey: 'b-strategy',
+            strategyType: 'pureMarketMaking',
+            clientId: 'c2',
+            marketMakingOrderId: 'c2',
+            cadenceMs: 2000,
+            nextRunAtMs: nowMs,
             runId: 'run-b-new',
+            params: {
+              exchangeName: 'binance',
+              pair: 'BTC/USDT',
+            },
           });
+
+          if (nextB) {
+            (service as any).sessions.set('b-strategy', nextB);
+          }
         }
       });
 
-    (service as any).sessions.set('a-strategy', {
-      runId: 'run-a',
+    await registerPooledSession({
       strategyKey: 'a-strategy',
       strategyType: 'pureMarketMaking',
       userId: 'u1',
       clientId: 'c1',
       cadenceMs: 1000,
       nextRunAtMs: nowMs,
-      params: {},
+      runId: 'run-a',
+      marketMakingOrderId: 'c1',
+      params: {
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+      },
     });
-    (service as any).sessions.set('b-strategy', {
-      runId: 'run-b-old',
+    await registerPooledSession({
       strategyKey: 'b-strategy',
       strategyType: 'pureMarketMaking',
       userId: 'u2',
       clientId: 'c2',
       cadenceMs: 2000,
       nextRunAtMs: nowMs,
-      params: {},
+      runId: 'run-b-old',
+      marketMakingOrderId: 'c2',
+      params: {
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+      },
     });
 
     await expect(service.onTick('2026-02-27T00:00:00.000Z')).resolves.toBe(
@@ -563,14 +623,14 @@ describe('StrategyService', () => {
       }),
     };
 
-    (service as any).sessions.set(strategyKey, {
-      runId: 'run-1',
+    await registerPooledSession({
       strategyKey,
       strategyType: 'volume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
       nextRunAtMs: nowMs,
+      runId: 'run-1',
       params: {
         exchangeName: 'binance',
         symbol: 'BTC/USDT',
@@ -636,14 +696,14 @@ describe('StrategyService', () => {
       .spyOn(service as any, 'publishIntents')
       .mockRejectedValue(new Error('publish failed'));
 
-    (service as any).sessions.set(strategyKey, {
-      runId: 'run-1',
+    await registerPooledSession({
       strategyKey,
       strategyType: 'volume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
       nextRunAtMs: nowMs,
+      runId: 'run-1',
       params: {
         exchangeName: 'binance',
         symbol: 'BTC/USDT',
@@ -736,14 +796,14 @@ describe('StrategyService', () => {
     const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
     const strategyKey = 'user1-client1-volume';
 
-    (service as any).sessions.set(strategyKey, {
-      runId: 'run-1',
+    await registerPooledSession({
       strategyKey,
       strategyType: 'volume',
       userId: 'user1',
       clientId: 'client1',
       cadenceMs: 1000,
       nextRunAtMs: nowMs,
+      runId: 'run-1',
       params: {
         exchangeName: 'uniswapV3',
         symbol: 'tokenIn/tokenOut',
@@ -812,7 +872,7 @@ describe('StrategyService', () => {
     dateNowSpy.mockRestore();
   });
 
-  it('starts running strategies and hydrates pooled plus legacy sessions', async () => {
+  it('starts running pooled strategies from persistence', async () => {
     const nowMs = 1_700_000_000_000;
     const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
 
@@ -831,28 +891,12 @@ describe('StrategyService', () => {
           orderRefreshTime: 1500,
         },
       },
-      {
-        strategyKey: 'user-2-client-2-arbitrage',
-        strategyType: 'arbitrage',
-        userId: 'user-2',
-        clientId: 'client-2',
-        parameters: {
-          userId: 'user-2',
-          clientId: 'client-2',
-          checkIntervalSeconds: 6,
-        },
-      },
     ]);
     (service as any).strategyControllerRegistry = {
       getController: jest.fn().mockImplementation((strategyType: string) => {
         if (strategyType === 'pureMarketMaking') {
           return {
             getCadenceMs: jest.fn(() => 1500),
-          };
-        }
-        if (strategyType === 'arbitrage') {
-          return {
-            getCadenceMs: jest.fn(() => 6000),
           };
         }
 
@@ -873,14 +917,43 @@ describe('StrategyService', () => {
         nextRunAtMs: nowMs,
       }),
     );
-    expect((service as any).sessions.get('user-2-client-2-arbitrage')).toEqual(
-      expect.objectContaining({
-        strategyType: 'arbitrage',
-        nextRunAtMs: nowMs,
-      }),
-    );
 
     dateNowSpy.mockRestore();
+  });
+
+  it('rejects legacy arbitrage sessions during start hydration', async () => {
+    mockStrategyInstanceRepository.find.mockResolvedValue([
+      {
+        strategyKey: 'user-2-client-2-arbitrage',
+        strategyType: 'arbitrage',
+        userId: 'user-2',
+        clientId: 'client-2',
+        parameters: {
+          userId: 'user-2',
+          clientId: 'client-2',
+          checkIntervalSeconds: 6,
+        },
+      },
+    ]);
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockImplementation((strategyType: string) => {
+        if (strategyType === 'arbitrage') {
+          return {
+            getCadenceMs: jest.fn(() => 6000),
+          };
+        }
+
+        return undefined;
+      }),
+      listControllerTypes: jest.fn(),
+    };
+
+    await expect(service.start()).rejects.toThrow(
+      'Cannot create session for strategyKey=user-2-client-2-arbitrage',
+    );
+    expect((service as any).sessions.has('user-2-client-2-arbitrage')).toBe(
+      false,
+    );
   });
 
   it('returns false when routing fill for an exchange pair without executor', async () => {
