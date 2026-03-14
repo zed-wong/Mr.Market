@@ -142,7 +142,10 @@ describe('MarketMakingOrderProcessor', () => {
     };
     const marketMakingOrderIntentRepository = {
       update: jest.fn(),
-      findOne: jest.fn(),
+      findOne: jest.fn().mockResolvedValue({
+        orderId: 'order-1',
+        userId: 'user-1',
+      }),
       save: jest.fn(),
     };
     const strategyDefinitionRepository = {
@@ -243,6 +246,83 @@ describe('MarketMakingOrderProcessor', () => {
       refType: 'market_making_snapshot',
       refId: 'snapshot-1',
     });
+  });
+
+  it('refunds snapshot when initial payer does not match bound intent user', async () => {
+    const {
+      processor,
+      marketMakingOrderIntentRepository,
+      transactionService,
+      balanceLedgerService,
+    } = createProcessor();
+
+    marketMakingOrderIntentRepository.findOne.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'user-expected',
+    });
+
+    const job = {
+      data: {
+        snapshotId: 'snapshot-user-mismatch',
+        orderId: 'order-1',
+        marketMakingPairId: 'pair-1',
+        memoDetails: { orderId: 'order-1', marketMakingPairId: 'pair-1' },
+        snapshot: {
+          snapshot_id: 'snapshot-user-mismatch',
+          asset_id: 'asset-base',
+          amount: '10',
+          opponent_id: 'user-actual',
+        },
+      },
+      queue: {
+        getJob: jest.fn().mockResolvedValue(null),
+        add: jest.fn().mockResolvedValue(undefined),
+      },
+    } as any;
+
+    await processor.handleProcessMMSnapshot(job);
+
+    expect(transactionService.refund).toHaveBeenCalledTimes(1);
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
+    expect(job.queue.add).not.toHaveBeenCalled();
+  });
+
+  it('refunds snapshot when subsequent payer does not match payment state user', async () => {
+    const { processor, paymentStateRepository, transactionService } =
+      createProcessor();
+
+    paymentStateRepository.findOne.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'user-expected',
+      baseAssetAmount: '0',
+      quoteAssetAmount: '0',
+      baseFeeAssetAmount: '0',
+      quoteFeeAssetAmount: '0',
+    });
+
+    const job = {
+      data: {
+        snapshotId: 'snapshot-existing-user-mismatch',
+        orderId: 'order-1',
+        marketMakingPairId: 'pair-1',
+        memoDetails: { orderId: 'order-1', marketMakingPairId: 'pair-1' },
+        snapshot: {
+          snapshot_id: 'snapshot-existing-user-mismatch',
+          asset_id: 'asset-base',
+          amount: '10',
+          opponent_id: 'user-actual',
+        },
+      },
+      queue: {
+        getJob: jest.fn().mockResolvedValue(null),
+        add: jest.fn().mockResolvedValue(undefined),
+      },
+    } as any;
+
+    await processor.handleProcessMMSnapshot(job);
+
+    expect(transactionService.refund).toHaveBeenCalledTimes(1);
+    expect(job.queue.add).not.toHaveBeenCalled();
   });
 
   it('attempts ledger debit before snapshot refund transfer', async () => {

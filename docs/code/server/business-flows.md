@@ -4,14 +4,15 @@ This file maps runtime logic to business behavior.
 
 ## Flow 1: User market-making order lifecycle
 
-1. Client creates order intent through user-orders API with strategyDefinitionId and optional configOverrides.
-2. Snapshot polling detects payment snapshots and validates memo payload.
-3. Snapshot processor enqueues market-making job.
-4. Market-making processor checks payment state and business constraints.
-5. System resolves strategy config: loads definition, merges defaultConfig + configOverrides, validates against configSchema.
-6. System creates MarketMakingOrder with pinned strategySnapshot (controllerType, resolvedConfig).
-7. `start_mm` later attaches the order to ExchangePairExecutor(exchange, pair) for pooled execution.
-8. Optional campaign join/local-campaign steps are scheduled.
+1. Client creates order intent through user-orders API with `userId`, `strategyDefinitionId`, and optional `configOverrides`.
+2. Order-intent creation validates `configOverrides` immediately against strategy schema and rejects reserved/system-managed override fields.
+3. Snapshot polling detects payment snapshots and validates memo payload plus intent-bound `userId`.
+4. Snapshot processor enqueues market-making job.
+5. Market-making processor checks payment state and business constraints, including payer consistency across follow-up payments.
+6. System resolves strategy config: loads definition, merges defaultConfig + configOverrides, validates against configSchema.
+7. System creates MarketMakingOrder with pinned strategySnapshot (controllerType, resolvedConfig).
+8. `start_mm` later attaches the order to ExchangePairExecutor(exchange, pair) for pooled execution.
+9. Optional campaign join/local-campaign steps are scheduled.
 
 ### Main modules in this flow
 

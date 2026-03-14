@@ -42,6 +42,7 @@ This allows admins to manage strategy configurations without code changes, while
 │                 User Order Creation                          │
 │  POST /user-orders/market-making/intent                     │
 │  {                                                           │
+│    userId: '...',               // Bound payer/owner         │
 │    marketMakingPairId: '...',                                │
 │    strategyDefinitionId: '...',  // Select definition        │
 │    configOverrides: { ... }      // Optional overrides       │
@@ -50,12 +51,13 @@ This allows admins to manage strategy configurations without code changes, while
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Config Resolution (at payment completion)       │
+│      Config Resolution (validated at intent creation)        │
 │  StrategyConfigResolverService.resolveForOrderSnapshot()    │
 │  1. Load StrategyDefinition                                 │
 │  2. Merge: defaultConfig + configOverrides                  │
 │  3. Validate against configSchema                           │
-│  4. Return snapshot payload                                 │
+│  4. Reject reserved/system-owned fields                     │
+│  5. Return snapshot payload                                 │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -313,6 +315,7 @@ GET /user-orders/market-making/strategies/:id
 // Create intent with strategy selection
 POST /user-orders/market-making/intent
 {
+  userId: string,
   marketMakingPairId: string,
   strategyDefinitionId: string,
   configOverrides?: Record<string, unknown>
@@ -327,6 +330,7 @@ User creates order with custom spread:
 // Request
 POST /user-orders/market-making/intent
 {
+  "userId": "user-uuid",
   "marketMakingPairId": "pair-uuid",
   "strategyDefinitionId": "pure-mm-uuid",
   "configOverrides": {
@@ -340,6 +344,7 @@ POST /user-orders/market-making/intent
 // definition.defaultConfig: { bidSpread: 0.001, askSpread: 0.001, orderAmount: 0.001, orderRefreshTime: 15000 }
 // + configOverrides: { bidSpread: 0.002, askSpread: 0.002, orderAmount: 0.01 }
 // = resolvedConfig: { bidSpread: 0.002, askSpread: 0.002, orderAmount: 0.01, orderRefreshTime: 15000 }
+// Requests that omit userId or try to override system fields such as userId/pair/exchangeName fail before intent persistence
 
 // Stored snapshot
 order.strategySnapshot = {

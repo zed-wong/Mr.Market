@@ -23,8 +23,20 @@ import type {
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
+import { validate as isUuid } from 'uuid';
 
 import { normalizeControllerType } from '../strategy/config/strategy-controller-aliases';
+import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
+
+const RESERVED_CONFIG_OVERRIDE_FIELDS = new Set([
+  'userId',
+  'clientId',
+  'marketMakingOrderId',
+  'pair',
+  'exchangeName',
+]);
+
+const UNSAFE_CONFIG_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 @Injectable()
 export class UserOrdersService {
@@ -45,6 +57,7 @@ export class UserOrdersService {
     private readonly strategyExecutionHistoryRepository: Repository<StrategyExecutionHistory>,
     @InjectQueue('market-making') private readonly marketMakingQueue: Queue,
     private readonly growdataRepository: GrowdataRepository,
+    private readonly strategyConfigResolver: StrategyConfigResolverService,
   ) {}
 
   async findAllStrategyByUser(userId: string) {
@@ -206,13 +219,24 @@ export class UserOrdersService {
   }
 
   async createMarketMakingOrderIntent(params: {
+    userId: string;
     marketMakingPairId: string;
     strategyDefinitionId: string;
     configOverrides?: Record<string, unknown>;
   }) {
-    const { marketMakingPairId, strategyDefinitionId, configOverrides } =
-      params;
+    const {
+      userId,
+      marketMakingPairId,
+      strategyDefinitionId,
+      configOverrides,
+    } = params;
 
+    if (!userId) {
+      throw new BadRequestException('userId is required');
+    }
+    if (!isUuid(userId)) {
+      throw new BadRequestException('userId must be a valid UUID');
+    }
     if (!marketMakingPairId) {
       throw new BadRequestException('marketMakingPairId is required');
     }
@@ -227,6 +251,7 @@ export class UserOrdersService {
     ) {
       throw new BadRequestException('configOverrides must be an object');
     }
+    this.assertConfigOverridesSafe(configOverrides);
 
     const pair = await this.growdataRepository.findMarketMakingPairById(
       marketMakingPairId,
@@ -250,6 +275,16 @@ export class UserOrdersService {
     }
 
     const orderId = randomUUID();
+    await this.strategyConfigResolver.resolveForOrderSnapshot(
+      strategyDefinitionId,
+      this.buildOrderSnapshotOverrides({
+        orderId,
+        userId,
+        pair: pair.symbol,
+        exchangeName: pair.exchange_id,
+        configOverrides,
+      }),
+    );
     const memo = encodeMarketMakingCreateMemo({
       version: 1,
       tradingType: 'Market Making',
@@ -263,7 +298,7 @@ export class UserOrdersService {
 
     const intent = this.marketMakingOrderIntentRepository.create({
       orderId,
-      userId: null,
+      userId,
       marketMakingPairId,
       strategyDefinitionId,
       configOverrides: configOverrides ?? null,
@@ -305,6 +340,85 @@ export class UserOrdersService {
     );
 
     return controllerType === 'pureMarketMaking';
+  }
+
+  private buildOrderSnapshotOverrides(params: {
+    orderId: string;
+    userId: string;
+    pair: string;
+    exchangeName: string;
+    configOverrides?: Record<string, unknown>;
+  }): Record<string, unknown> {
+    return {
+      ...(params.configOverrides || {}),
+      userId: params.userId,
+      clientId: params.orderId,
+      marketMakingOrderId: params.orderId,
+      pair: params.pair.replaceAll('-ERC20', ''),
+      exchangeName: params.exchangeName,
+    };
+  }
+
+  private assertConfigOverridesSafe(
+    configOverrides?: Record<string, unknown>,
+  ): void {
+    if (!configOverrides) {
+      return;
+    }
+
+    for (const field of RESERVED_CONFIG_OVERRIDE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(configOverrides, field)) {
+        throw new BadRequestException(
+          `configOverrides cannot override system field: ${field}`,
+        );
+      }
+    }
+
+    this.assertNoUnsafeConfigKeys(configOverrides, 'configOverrides');
+  }
+
+  private assertNoUnsafeConfigKeys(value: unknown, path: string): void {
+    if (value === null || value === undefined) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item, index) =>
+        this.assertNoUnsafeConfigKeys(item, `${path}[${index}]`),
+      );
+
+      return;
+    }
+
+    if (typeof value !== 'object') {
+      return;
+    }
+
+    if (!this.isPlainObject(value)) {
+      throw new BadRequestException(
+        `${path} must contain only plain JSON objects`,
+      );
+    }
+
+    for (const [key, nestedValue] of Object.entries(value)) {
+      if (UNSAFE_CONFIG_KEYS.has(key)) {
+        throw new BadRequestException(
+          `configOverrides contains unsafe key: ${path}.${key}`,
+        );
+      }
+
+      this.assertNoUnsafeConfigKeys(nestedValue, `${path}.${key}`);
+    }
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+
+    return prototype === Object.prototype || prototype === null;
   }
 
   // Methods moved from StrategyService

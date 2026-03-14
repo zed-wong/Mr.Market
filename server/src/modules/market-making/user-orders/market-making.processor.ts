@@ -343,6 +343,42 @@ export class MarketMakingOrderProcessor {
       const receivedAmount = snapshot.amount;
       const userId = snapshot.opponent_id;
 
+      let paymentState = await this.paymentStateRepository.findOne({
+        where: { orderId },
+      });
+
+      if (!paymentState) {
+        const orderIntent =
+          await this.marketMakingOrderIntentRepository.findOne({
+            where: { orderId },
+          });
+
+        if (!orderIntent?.userId) {
+          this.logger.warn(
+            `Order intent ${orderId} missing user binding during snapshot processing`,
+          );
+          await this.refundUser(snapshot, 'order intent user binding missing');
+
+          return;
+        }
+
+        if (orderIntent.userId !== userId) {
+          this.logger.warn(
+            `Snapshot user ${userId} does not match bound intent user ${orderIntent.userId} for order ${orderId}`,
+          );
+          await this.refundUser(snapshot, 'snapshot user mismatch');
+
+          return;
+        }
+      } else if (paymentState.userId !== userId) {
+        this.logger.warn(
+          `Snapshot user ${userId} does not match payment state user ${paymentState.userId} for order ${orderId}`,
+        );
+        await this.refundUser(snapshot, 'snapshot user mismatch');
+
+        return;
+      }
+
       await this.balanceLedgerService.creditDeposit({
         userId,
         assetId: receivedAssetId,
@@ -353,10 +389,6 @@ export class MarketMakingOrderProcessor {
       });
 
       // Step 1.4: Find or create payment state
-      let paymentState = await this.paymentStateRepository.findOne({
-        where: { orderId },
-      });
-
       if (!paymentState) {
         // First transfer - create payment state
         this.logger.log(`Creating payment state for order ${orderId}`);

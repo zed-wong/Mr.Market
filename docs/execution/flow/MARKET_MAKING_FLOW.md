@@ -16,6 +16,7 @@ The runtime is tick-driven, intent-driven, and uses pooled executors.
 6. Ledger is the only balance mutation entrypoint.
 
 Key architectural decisions:
+
 - **Pinned Snapshot**: Orders store `strategySnapshot` at creation time; runtime never re-resolves config.
 - **Pooled Executors**: `ExecutorRegistry` manages `ExchangePairExecutor` per `exchange:pair` for shared market data.
 - **Fill Routing**: Fills are routed via `clientOrderId` parsing with `ExchangeOrderMapping` fallback.
@@ -49,8 +50,8 @@ Key architectural decisions:
 flowchart TD
   A[Admin manages strategy definitions<br/>JSON configSchema + defaultConfig]
   B[User fetches enabled strategies<br/>GET /user-orders/market-making/strategies]
-  C[User creates MM intent<br/>POST /user-orders/market-making/intent<br/>marketMakingPairId + strategyDefinitionId + configOverrides]
-  D[Snapshot intake<br/>process_market_making_snapshots]
+  C[User creates MM intent<br/>POST /user-orders/market-making/intent<br/>userId + marketMakingPairId + strategyDefinitionId + configOverrides]
+  D[Snapshot intake<br/>process_market_making_snapshots<br/>payer must match bound userId]
   E[Ledger creditDeposit<br/>snapshot-credit:snapshotId]
   F[check_payment_complete]
   G[Refund + failed]
@@ -98,7 +99,7 @@ flowchart TD
 ### Main Elements
 
 - **Strategy catalog**: Admin-defined strategy definitions with JSON config schema and defaults.
-- **Config overrides**: User can provide `configOverrides` at intent creation time.
+- **Config overrides**: User can provide `configOverrides` at intent creation time, but server rejects system-managed fields and schema-invalid overrides immediately.
 - **Snapshot pinning**: Orders store resolved config at creation; runtime reads only from snapshot.
 - **Pooled executors**: `ExecutorRegistry` manages `ExchangePairExecutor` per `exchange:pair`.
 - **Fill routing**: `clientOrderId` format `{orderId}:{seq}` with `ExchangeOrderMapping` fallback.
@@ -110,18 +111,20 @@ flowchart TD
 
 1. User fetches enabled strategies from `GET /user-orders/market-making/strategies`.
 2. User creates intent via `POST /user-orders/market-making/intent` with:
+   - `userId` (required, becomes the bound owner/payer for the intent)
    - `marketMakingPairId`
    - `strategyDefinitionId` (required, must exist and be enabled)
-   - `configOverrides` (optional, merged with definition defaults)
-3. Intent row is persisted in `market_making_order_intent` with `strategyDefinitionId` and `configOverrides`.
+   - `configOverrides` (optional, merged with definition defaults after early validation)
+3. Intent row is persisted in `market_making_order_intent` with bound `userId`, `strategyDefinitionId`, and `configOverrides`.
 
 ### 1) Snapshot intake and payment state tracking
 
 1. Snapshot polling routes market making create snapshots to `process_market_making_snapshots`.
-2. `handleProcessMMSnapshot` validates pair and fee requirements.
-3. Payment state is created or updated.
-4. Snapshot intake is credited to ledger (`creditDeposit`) with idempotency key `snapshot-credit:{snapshotId}`.
-5. `check_payment_complete` is queued.
+2. Snapshot intake verifies the incoming payer matches the intent-bound `userId`; mismatches are refunded.
+3. `handleProcessMMSnapshot` validates pair and fee requirements.
+4. Payment state is created or updated and later payments must match the same `userId`.
+5. Snapshot intake is credited to ledger (`creditDeposit`) with idempotency key `snapshot-credit:{snapshotId}`.
+6. `check_payment_complete` is queued.
 
 ### 2) Payment completion and order creation
 
@@ -143,6 +146,7 @@ flowchart TD
    - Order state becomes `payment_complete`
 
 Current behavior:
+
 - Queueing `withdraw_to_exchange` is still disabled in this flow.
 - This path logs and stops at `payment_complete` unless other jobs/flows continue the lifecycle.
 
@@ -159,6 +163,7 @@ If withdrawal path is enabled and used:
 ### 4) Start market making (pooled executor)
 
 `start_mm`:
+
 - Sets order state to `running`.
 - Loads order's `strategySnapshot` (required, throws if missing).
 - Extracts `controllerType` and `resolvedConfig` from snapshot.
@@ -195,6 +200,7 @@ If withdrawal path is enabled and used:
 ### 7) Stop market making
 
 `stop_mm`:
+
 - Calls `executorRegistry.findExecutorByOrderId(orderId)`.
 - Calls `executor.removeOrder(orderId)`.
 - Calls `executorRegistry.removeExecutorIfEmpty(exchange, pair)`.
@@ -211,8 +217,10 @@ function buildClientOrderId(orderId: string, seq: number): string {
 }
 
 // Parse
-function parseClientOrderId(clientOrderId: string): { orderId: string; seq: number } | null {
-  const parts = clientOrderId.split(':');
+function parseClientOrderId(
+  clientOrderId: string
+): { orderId: string; seq: number } | null {
+  const parts = clientOrderId.split(":");
   if (parts.length !== 2) return null;
   const seq = parseInt(parts[1], 10);
   if (isNaN(seq)) return null;
@@ -221,6 +229,7 @@ function parseClientOrderId(clientOrderId: string): { orderId: string; seq: numb
 ```
 
 Prerequisites:
+
 - `orderId` uses UUID format (no `:` character).
 - `seq` is a non-negative integer.
 
@@ -241,6 +250,7 @@ class ExecutorRegistry {
 ```
 
 Lifecycle:
+
 - Created on-demand when first order is added.
 - Removed automatically when no orders remain.
 
@@ -253,7 +263,11 @@ class ExchangePairExecutor {
   readonly exchange: string;
   readonly pair: string;
 
-  addOrder(orderId: string, userId: string, config: OrderConfig): Promise<Session>;
+  addOrder(
+    orderId: string,
+    userId: string,
+    config: OrderConfig
+  ): Promise<Session>;
   removeOrder(orderId: string): Promise<void>;
   onTick(ts: string): Promise<void>;
   onFill(fill: Fill): Promise<void>;
@@ -262,6 +276,7 @@ class ExchangePairExecutor {
 ```
 
 Benefits:
+
 - Orders on same `exchange:pair` share market data.
 - Execution scheduling is pooled, reducing per-order overhead.
 - Future extension point for `exchange:apiKeyId:pair` multi-account support.
@@ -279,6 +294,7 @@ Queue: `market-making`
 - `stop_mm`
 
 Removed from runtime flow:
+
 - `execute_mm_cycle` (replaced by tick-driven pooled execution)
 
 ## Balance and Ledger Rules
@@ -286,12 +302,14 @@ Removed from runtime flow:
 All balance mutations must go through `BalanceLedgerService`.
 
 Common mutations in MM flow:
+
 - Snapshot intake: `creditDeposit`
 - Refund path: `debitWithdrawal` before transfer
 - Refund transfer failure: compensation `creditDeposit`
 - Pause/withdraw orchestration: `unlockFunds` then `debitWithdrawal`
 
 Concurrency protection:
+
 - Ledger serializes same `userId:assetId` mutation path in-process.
 
 ## State Progression
@@ -313,11 +331,15 @@ interface StrategyDefinition {
   id: string;
   key: string;
   name: string;
-  controllerType: 'pureMarketMaking' | 'signalAwareMarketMaking' | 'arbitrage' | 'volume';
+  controllerType:
+    | "pureMarketMaking"
+    | "signalAwareMarketMaking"
+    | "arbitrage"
+    | "volume";
   configSchema: Record<string, unknown>; // JSON schema
   defaultConfig: Record<string, unknown>;
   enabled: boolean;
-  visibility: 'system' | 'instance';
+  visibility: "system" | "instance";
 }
 ```
 

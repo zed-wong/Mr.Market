@@ -128,13 +128,20 @@
 
         try {
             const currentUser = get(user);
+            const currentUserId = currentUser?.user_id;
+
+            if (!currentUserId) {
+                isPaying = false;
+                return;
+            }
+
             const paymentResult = await createMarketMakingPayment({
                 selectedPairInfo,
                 feeInfo,
                 baseAmount,
                 quoteAmount,
                 botId: $botId,
-                userId: currentUser?.user_id,
+                userId: currentUserId,
             });
 
             if (!paymentResult?.orderId) {

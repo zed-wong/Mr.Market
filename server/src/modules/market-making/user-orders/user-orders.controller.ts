@@ -8,10 +8,46 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiOperation,
+  ApiProperty,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 
 import { UserOrdersService } from './user-orders.service';
+
+class CreateMarketMakingIntentBody {
+  @ApiProperty({
+    description: 'User ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  userId: string;
+
+  @ApiProperty({
+    description: 'Market making pair ID',
+    example: '123e4567-e89b-12d3-a456-426614174001',
+  })
+  marketMakingPairId: string;
+
+  @ApiProperty({
+    description: 'Strategy definition ID',
+    example: '123e4567-e89b-12d3-a456-426614174002',
+  })
+  strategyDefinitionId: string;
+
+  @ApiProperty({
+    description:
+      'Optional user-supplied config overrides for the selected strategy',
+    required: false,
+    type: 'object',
+    additionalProperties: true,
+  })
+  configOverrides?: Record<string, unknown>;
+}
 
 @ApiTags('Trading Engine')
 @Controller('user-orders')
@@ -114,19 +150,13 @@ export class UserOrdersController {
   @Post('/market-making/intent')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Create market making order intent' })
+  @ApiBody({ type: CreateMarketMakingIntentBody })
   @ApiResponse({
     status: 200,
     description: 'Market making order intent created.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async createMarketMakingIntent(
-    @Body()
-    body: {
-      marketMakingPairId: string;
-      strategyDefinitionId: string;
-      configOverrides?: Record<string, unknown>;
-    },
-  ) {
+  async createMarketMakingIntent(@Body() body: CreateMarketMakingIntentBody) {
     return await this.userOrdersService.createMarketMakingOrderIntent(body);
   }
 

@@ -40,7 +40,7 @@ export type MarketMakingPaymentInput = {
   baseAmount: string;
   quoteAmount: string;
   botId: string;
-  userId?: string;
+  userId: string;
 };
 
 export type MarketMakingPaymentResult = {
@@ -49,12 +49,19 @@ export type MarketMakingPaymentResult = {
 };
 
 export const createMarketMakingPayment = async (
-  params: MarketMakingPaymentInput,
+  params: MarketMakingPaymentInput
 ): Promise<MarketMakingPaymentResult | null> => {
   const { selectedPairInfo, feeInfo, baseAmount, quoteAmount, botId, userId } =
     params;
 
-  if (!selectedPairInfo || !feeInfo || !baseAmount || !quoteAmount || !botId) {
+  if (
+    !selectedPairInfo ||
+    !feeInfo ||
+    !baseAmount ||
+    !quoteAmount ||
+    !botId ||
+    !userId
+  ) {
     return null;
   }
 
@@ -125,7 +132,7 @@ export const createMarketMakingPayment = async (
       amount: amount.toString(),
       extra: itemMemo.get(assetId) || memo,
       traceId: getUuid(),
-    }),
+    })
   );
 
   if (items.length === 0) {
@@ -156,7 +163,7 @@ export type MarketMakingPaymentPollerOptions = {
 };
 
 export const createMarketMakingPaymentPoller = (
-  options: MarketMakingPaymentPollerOptions = {},
+  options: MarketMakingPaymentPollerOptions = {}
 ) => {
   const paymentPollers = new Map<
     string,
