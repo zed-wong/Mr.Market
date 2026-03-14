@@ -2,6 +2,7 @@
 
 ## 2026-03-14
 
+- Clarify `STRATEGY_DEFINITION_GUIDE.md` to document the runtime-supported JSON Schema subset instead of claiming full spec support
 - Remove stale strategy-definition version reference from `docs/code/server/business-flows.md` runtime pipeline flow
 - Add TODO to require auth and ownership checks for private user-orders endpoints while keeping public strategy catalog access
 - Bind market-making order intents to request `userId`, reject unsafe/schema-invalid configOverrides at creation time, and enforce payer-user consistency during snapshot intake

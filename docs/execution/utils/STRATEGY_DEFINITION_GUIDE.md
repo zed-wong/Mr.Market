@@ -121,40 +121,42 @@ export class StrategyDefinition {
 
 ## JSON Schema Format
 
-Config schema follows standard JSON Schema specification:
+Config schema uses a subset of JSON Schema, not the full specification. The runtime validator in `server/src/modules/market-making/strategy/dex/strategy-config-resolver.service.ts` supports these keywords:
+
+- `type` (`object` at the root; property rules may use `object`, `string`, `number`, `boolean`, or `array`)
+- `properties`
+- `required`
+- `additionalProperties`
+- `minimum` (number fields only)
+- `enum`
+
+Nested `object` properties are validated recursively. For `type: "array"`, runtime currently checks only that the value is an array; `items` and other array constraints are not enforced.
+
+Warning: do not rely on unsupported JSON Schema keywords such as `maximum`, `pattern`, `items`, `minItems`, `maxItems`, `default`, `title`, or `description` for runtime safety. They are currently ignored by validation and can allow invalid configs through until later runtime logic fails. Reference behavior: `validateConfigAgainstSchema()` in `server/src/modules/market-making/strategy/dex/strategy-config-resolver.service.ts`.
 
 ```json
 {
   "type": "object",
-  "required": ["bidSpread", "askSpread", "orderAmount"],
+  "required": ["pair", "exchangeName", "orderAmount"],
   "additionalProperties": false,
   "properties": {
-    "bidSpread": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1,
-      "default": 0.001,
-      "title": "Bid Spread",
-      "description": "Spread from mid price for bid orders"
+    "pair": {
+      "type": "string"
     },
-    "askSpread": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1,
-      "default": 0.001,
-      "title": "Ask Spread"
+    "exchangeName": {
+      "type": "string",
+      "enum": ["binance", "okx"]
     },
     "orderAmount": {
       "type": "number",
-      "minimum": 0.0001,
-      "default": 0.001,
-      "title": "Order Amount"
+      "minimum": 0.0001
     },
-    "orderRefreshTime": {
-      "type": "number",
-      "minimum": 1000,
-      "default": 15000,
-      "title": "Order Refresh Time (ms)"
+    "riskControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
     }
   }
 }
