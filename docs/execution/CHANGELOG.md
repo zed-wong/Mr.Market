@@ -12,6 +12,7 @@
 - Stop admin strategy instances with `clientId` for non-pure-market-making definitions even when `marketMakingOrderId` is present
 - Preserve arbitrage `exchangeBName`, `sellPrice`, and `profit` in strategy execution history migration metadata
 - Align strategy i18n copy and market-making docs with the current order-binding and executor-routing behavior
+- Make admin fee primary-config lookup read the earliest persisted config row instead of calling `findOne({ config_id: 1 })`, matching current repository mocks and seeded-data behavior
 - Capture deferred volume, strategy admin, and seed follow-up work in `docs/TODO.md`
 
 ## 2026-03-13
