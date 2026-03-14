@@ -32,11 +32,12 @@
 - [x] 5. Add admin strategy manage UI page under settings
 
 ### Deferred strategy follow-ups
-- [] 1. Fix volume strategy controller follow-ups before expanding reuse: sanitize cadence input, keep rerun backward-compatible with legacy parameter keys, and stop deriving tenant identity from `strategyInstance.parameters.userId/clientId`
-- [] 2. Move `userId`/`clientId`/`marketMakingOrderId` injection in strategy config resolution to after schema validation so strict schemas with `additionalProperties: false` can pass correctly
-- [] 3. Make legacy admin strategy start fail on ambiguous enabled definitions instead of silently picking the oldest matching `controllerType`
-- [] 4. Validate `controllerType` on strategy definition creation and reject unsupported controller values early
-- [] 5. Roll back started runtime sessions when admin strategy start succeeds in dispatcher but fails to link the definition in storage
+- [] 1. Remove `exchangeName`/`pair` from `StrategyInstance.parameters` - get from `MarketMakingOrder` binding at runtime instead of duplicating in params (conceptual cleanup, medium effort ~10-15 files)
+- [] 2. Fix volume strategy controller follow-ups before expanding reuse: sanitize cadence input, keep rerun backward-compatible with legacy parameter keys, and stop deriving tenant identity from `strategyInstance.parameters.userId/clientId`
+- [] 3. Move `userId`/`clientId`/`marketMakingOrderId` injection in strategy config resolution to after schema validation so strict schemas with `additionalProperties: false` can pass correctly
+- [] 4. Make legacy admin strategy start fail on ambiguous enabled definitions instead of silently picking the oldest matching `controllerType`
+- [] 5. Validate `controllerType` on strategy definition creation and reject unsupported controller values early
+- [] 6. Roll back started runtime sessions when admin strategy start succeeds in dispatcher but fails to link the definition in storage
 - [] 6. Align admin strategy definition/instance endpoints with more idiomatic REST semantics and boolean query parsing, then add controller tests for the new routes
 - [] 7. Add TTL or explicit invalidation for cached market-making strategies in `interface/src/lib/helpers/mrm/marketMakingPayment.ts`
 - [] 8. Reset CCXT seeder cache per run and add a timeout guard around `loadMarkets()` to avoid hanging the seed process

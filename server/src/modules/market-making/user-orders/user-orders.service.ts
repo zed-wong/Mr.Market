@@ -275,6 +275,7 @@ export class UserOrdersService {
     }
 
     const orderId = randomUUID();
+
     await this.strategyConfigResolver.resolveForOrderSnapshot(
       strategyDefinitionId,
       this.buildOrderSnapshotOverrides({

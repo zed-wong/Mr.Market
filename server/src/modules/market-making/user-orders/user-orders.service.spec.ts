@@ -336,6 +336,7 @@ describe('UserOrdersService', () => {
 
     it('rejects schema-invalid configOverrides before persisting intent', async () => {
       const saveSpy = jest.spyOn(marketMakingOrderIntentRepository, 'save');
+
       jest
         .spyOn(growdataRepository, 'findMarketMakingPairById')
         .mockResolvedValueOnce({

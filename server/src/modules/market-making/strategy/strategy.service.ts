@@ -92,7 +92,6 @@ export class StrategyService
 {
   private readonly logger = new CustomLogger(StrategyService.name);
   private readonly sessions = new Map<string, StrategyRuntimeSession>();
-  private readonly pooledStrategyKeys = new Set<string>();
   private readonly latestIntentsByStrategy = new Map<
     string,
     StrategyOrderIntent[]
@@ -154,7 +153,6 @@ export class StrategyService
 
   async stop(): Promise<void> {
     this.sessions.clear();
-    this.pooledStrategyKeys.clear();
     this.executorRegistry?.clear();
   }
 
@@ -164,7 +162,6 @@ export class StrategyService
 
   async onTick(ts: string): Promise<void> {
     await this.onTickForPooledExecutors(ts);
-    await this.onTickForLegacySessions(ts);
   }
 
   async routeFillForExchangePair(
@@ -207,46 +204,6 @@ export class StrategyService
           `onTick executor failed for exchange=${executor.exchange} pair=${executor.pair} ts=${ts}: ${errorMessage}`,
           errorTrace,
         );
-      }
-    }
-  }
-
-  private async onTickForLegacySessions(ts: string): Promise<void> {
-    const nowMs = Date.now();
-    const sessions = [...this.sessions.values()]
-      .filter((session) => !this.pooledStrategyKeys.has(session.strategyKey))
-      .sort((a, b) => a.strategyKey.localeCompare(b.strategyKey));
-
-    for (const session of sessions) {
-      const capturedRunId = session.runId;
-
-      if (session.nextRunAtMs > nowMs) {
-        continue;
-      }
-      const activeSession = this.sessions.get(session.strategyKey);
-
-      if (!activeSession || activeSession.runId !== capturedRunId) {
-        continue;
-      }
-
-      try {
-        await this.runSession(session, ts);
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        const errorTrace = error instanceof Error ? error.stack : undefined;
-
-        this.logger.error(
-          `onTick runSession failed for strategyKey=${session.strategyKey} ts=${ts}: ${errorMessage}`,
-          errorTrace,
-        );
-      } finally {
-        const nextSession = this.sessions.get(session.strategyKey);
-
-        if (nextSession && nextSession.runId === capturedRunId) {
-          nextSession.nextRunAtMs += nextSession.cadenceMs;
-          this.sessions.set(session.strategyKey, nextSession);
-        }
       }
     }
   }
@@ -789,27 +746,13 @@ export class StrategyService
       );
 
       this.sessions.set(strategyKey, pooledSession);
-      this.pooledStrategyKeys.add(strategyKey);
 
       return pooledSession;
     }
 
-    const session: StrategyRuntimeSession = {
-      runId,
-      strategyKey,
-      strategyType,
-      userId,
-      clientId,
-      marketMakingOrderId,
-      cadenceMs,
-      params,
-      nextRunAtMs,
-    };
-
-    this.sessions.set(strategyKey, session);
-    this.pooledStrategyKeys.delete(strategyKey);
-
-    return session;
+    throw new Error(
+      `Cannot create session for strategyKey=${strategyKey}: executorRegistry not available or pooledTarget unresolved`,
+    );
   }
 
   private async upsertStrategyInstance(
@@ -1880,15 +1823,12 @@ export class StrategyService
     }
 
     this.sessions.delete(strategyKey);
-    this.pooledStrategyKeys.delete(strategyKey);
   }
 
   private async detachSessionFromExecutor(
     session: StrategyRuntimeSession,
   ): Promise<void> {
     if (!this.executorRegistry) {
-      this.pooledStrategyKeys.delete(session.strategyKey);
-
       return;
     }
 
@@ -1900,8 +1840,6 @@ export class StrategyService
     );
 
     if (!pooledTarget) {
-      this.pooledStrategyKeys.delete(session.strategyKey);
-
       return;
     }
 
@@ -1911,8 +1849,6 @@ export class StrategyService
     );
 
     if (!executor) {
-      this.pooledStrategyKeys.delete(session.strategyKey);
-
       return;
     }
 
@@ -1921,7 +1857,6 @@ export class StrategyService
       pooledTarget.exchange,
       pooledTarget.pair,
     );
-    this.pooledStrategyKeys.delete(session.strategyKey);
   }
 
   private resolvePooledExecutorTarget(
