@@ -31,9 +31,7 @@ const exchangeCache = new Map<string, ccxt.Exchange>();
 // Logger helper
 const log = {
   loading: (exchange: string, current: number, total: number) =>
-    process.stdout.write(
-      `  → Loading ${exchange} (${current}/${total})...\r`,
-    ),
+    process.stdout.write(`  → Loading ${exchange} (${current}/${total})...\r`),
   loaded: (exchange: string, pairs: number) =>
     console.log(`  ✓ ${exchange}: ${pairs} pairs available`.padEnd(50)),
   failed: (exchange: string, error: string) =>
@@ -57,6 +55,7 @@ async function getExchange(
 
   if (!ExchangeClass) {
     log.failed(exchangeId, 'not supported by CCXT');
+
     return null;
   }
 
@@ -74,6 +73,7 @@ async function getExchange(
       exchangeId,
       error instanceof Error ? error.message : 'unknown error',
     );
+
     return null;
   }
 }
@@ -146,6 +146,7 @@ export async function fetchAllMarkets(
 
     for (const symbol of symbols) {
       const marketInfo = getMarketInfoFromExchange(exchange, symbol);
+
       if (marketInfo) {
         exchangeResults.set(symbol, marketInfo);
       }
@@ -182,6 +183,7 @@ export async function fetchMarketInfo(
       `Error fetching market info for ${symbol} on ${exchangeId}:`,
       error instanceof Error ? error.message : error,
     );
+
     return null;
   }
 }

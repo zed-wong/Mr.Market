@@ -1,14 +1,15 @@
-import { Repository } from 'typeorm';
-
 import { CustomConfigEntity } from 'src/common/entities/admin/custom-config.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
+import { Repository } from 'typeorm';
 
 import { AdminFeeService } from './admin-fee.service';
 
 describe('AdminFeeService', () => {
   let service: AdminFeeService;
-  let customConfigRepository: jest.Mocked<Partial<Repository<CustomConfigEntity>>>;
+  let customConfigRepository: jest.Mocked<
+    Partial<Repository<CustomConfigEntity>>
+  >;
   let spotPairRepository: jest.Mocked<Partial<Repository<SpotdataTradingPair>>>;
   let mmPairRepository: jest.Mocked<
     Partial<Repository<GrowdataMarketMakingPair>>

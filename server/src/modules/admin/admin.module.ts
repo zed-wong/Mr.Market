@@ -18,11 +18,11 @@ import { StrategyModule } from '../market-making/strategy/strategy.module';
 import { MixinClientModule } from '../mixin/client/mixin-client.module';
 import { Web3Module } from '../web3/web3.module';
 import { AdminController } from './admin.controller';
-import { AdminSpotService } from './spot/admin-spot.service';
 import { AdminExchangesModule } from './exchanges/exchanges.module';
 import { AdminFeeController } from './fee/admin-fee.controller';
 import { AdminFeeService } from './fee/admin-fee.service';
 import { AdminGrowService } from './growdata/adminGrow.service';
+import { AdminSpotService } from './spot/admin-spot.service';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
 
 @Module({

@@ -17,13 +17,13 @@ import {
 } from '../../common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../../common/entities/market-making/strategy-definition.entity';
+import { fetchAllMarkets, MarketInfo } from './ccxt-fetcher';
 import { TRADING_PAIRS } from './data/assets';
 import { TOP_EXCHANGES } from './data/exchanges';
 import {
   defaultCustomConfig,
   defaultStrategyDefinitions,
 } from './default-seed-values';
-import { fetchAllMarkets, MarketInfo } from './ccxt-fetcher';
 import { fetchMixinAssets, getChainIconUrl, MixinAsset } from './mixin-fetcher';
 
 // Logger helpers
@@ -34,6 +34,7 @@ const log = {
   error: (msg: string) => console.error(`  ✗ ${msg}`),
   header: (msg: string) => {
     const line = '═'.repeat(msg.length + 4);
+
     console.log(`\n╔${line}╗`);
     console.log(`║  ${msg}  ║`);
     console.log(`╚${line}╝\n`);
@@ -66,6 +67,7 @@ export async function connectToDatabase() {
   try {
     await dataSource.initialize();
     log.success(`Connected to database: ${dbPath}`);
+
     return dataSource;
   } catch (error) {
     log.error(
@@ -287,6 +289,7 @@ export async function seedGrowdataSimplyGrowToken(
 
   for (const pair of TRADING_PAIRS) {
     const [base, quote] = pair.split('/');
+
     symbolsToSeed.add(base.toUpperCase());
     symbolsToSeed.add(quote.toUpperCase());
   }
@@ -386,6 +389,7 @@ export async function seedStrategyDefinitions(
 
 export async function runSeed() {
   const startTime = Date.now();
+
   log.header('Database Seed');
 
   const dataSource = await connectToDatabase();
@@ -431,6 +435,7 @@ export async function runSeed() {
   await dataSource.destroy();
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
   log.header(`Seed Complete (${elapsed}s)`);
 }
 

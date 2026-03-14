@@ -60,7 +60,8 @@ let chainsCache: Map<string, MixinAsset> | null = null;
 
 // Logger helper
 const log = {
-  loading: () => process.stdout.write('  → Fetching assets from Mixin API...\r'),
+  loading: () =>
+    process.stdout.write('  → Fetching assets from Mixin API...\r'),
   loaded: (count: number) =>
     console.log(`  ✓ Fetched ${count} assets from Mixin API`.padEnd(50)),
   failed: (error: string) =>
@@ -100,6 +101,7 @@ export async function fetchMixinAssets(): Promise<Map<string, MixinAsset>> {
 
       // Group by symbol (uppercase)
       const symbolUpper = item.symbol.toUpperCase();
+
       if (!assetsBySymbol.has(symbolUpper)) {
         assetsBySymbol.set(symbolUpper, []);
       }
@@ -138,6 +140,7 @@ export async function fetchMixinAssets(): Promise<Map<string, MixinAsset>> {
             const priority = CHAIN_PRIORITY.indexOf(
               asset.chain_id as (typeof CHAIN_IDS)[keyof typeof CHAIN_IDS],
             );
+
             if (priority !== -1 && priority < bestPriority) {
               bestPriority = priority;
               bestAsset = asset;
@@ -167,6 +170,7 @@ export async function getAssetBySymbol(
   symbol: string,
 ): Promise<MixinAsset | undefined> {
   const assets = await fetchMixinAssets();
+
   return assets.get(symbol.toUpperCase());
 }
 
@@ -179,6 +183,7 @@ export async function getChainById(
   if (!chainsCache) {
     await fetchMixinAssets();
   }
+
   return chainsCache?.get(chainId);
 }
 
@@ -188,6 +193,7 @@ export async function getChainById(
  */
 export async function getChainIconUrl(chainId: string): Promise<string> {
   const chain = await getChainById(chainId);
+
   return chain?.icon_url || '';
 }
 
