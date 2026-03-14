@@ -43,7 +43,7 @@ export class CreateStrategyExecutionHistoryTable1771400000000
     if (arbitrageHistoryTables.length > 0) {
       await queryRunner.query(
         `INSERT INTO "strategy_execution_history" ("id", "userId", "clientId", "exchange", "pair", "side", "amount", "price", "strategyType", "orderId", "status", "metadata", "executedAt")
-         SELECT lower(hex(randomblob(16))), "userId", "clientId", COALESCE("exchangeAName", ''), "pair", 'buy', "amount", "buyPrice", 'arbitrage', NULL, "status", NULL, "executedAt"
+         SELECT lower(hex(randomblob(16))), "userId", "clientId", COALESCE("exchangeAName", ''), "pair", 'buy', "amount", "buyPrice", 'arbitrage', NULL, "status", json_object('exchangeBName', COALESCE("exchangeBName", ''), 'sellPrice', "sellPrice", 'profit', "profit"), "executedAt"
          FROM "arbitrage_history"`,
       );
     }

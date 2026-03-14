@@ -564,6 +564,30 @@ describe('AdminStrategyService', () => {
         }),
       );
     });
+
+    it('uses clientId for non-pure market-making strategies', async () => {
+      mockStrategyDefinitionRepository.findOne.mockResolvedValue({
+        id: 'def-2',
+        key: 'volume',
+        enabled: true,
+        executorType: 'volume',
+      });
+
+      const dto: StopStrategyInstanceDto = {
+        definitionId: 'def-2',
+        userId: 'user123',
+        clientId: 'client123',
+        marketMakingOrderId: 'order123',
+      };
+
+      await service.stopStrategyInstance(dto);
+
+      expect(stopByStrategyTypeSpy).toHaveBeenCalledWith(
+        'volume',
+        'user123',
+        'client123',
+      );
+    });
   });
 
   describe('getStrategyInstances', () => {

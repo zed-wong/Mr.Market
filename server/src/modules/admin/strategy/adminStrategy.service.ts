@@ -558,11 +558,15 @@ export class AdminStrategyService {
       this.strategyConfigResolver.getDefinitionControllerType(definition);
     const strategyType =
       this.strategyRuntimeDispatcher.toStrategyType(controllerType);
+    const targetId =
+      strategyType === 'pureMarketMaking'
+        ? dto.marketMakingOrderId || dto.clientId
+        : dto.clientId;
 
     await this.strategyRuntimeDispatcher.stopByStrategyType(
       strategyType,
       dto.userId,
-      dto.marketMakingOrderId || dto.clientId,
+      targetId,
     );
 
     return {
