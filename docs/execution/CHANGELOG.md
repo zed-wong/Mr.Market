@@ -2,6 +2,7 @@
 
 ## 2026-03-14
 
+- Remove stale strategy-definition version reference from `docs/code/server/business-flows.md` runtime pipeline flow
 - Add TODO to require auth and ownership checks for private user-orders endpoints while keeping public strategy catalog access
 - Bind market-making order intents to request `userId`, reject unsafe/schema-invalid configOverrides at creation time, and enforce payer-user consistency during snapshot intake
 - Remove legacy admin backfill-definition-links and strategy definition export APIs after the prototype cutover to snapshot-only strategy startup

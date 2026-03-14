@@ -30,7 +30,7 @@ This file maps runtime logic to business behavior.
 
 ## Flow 2: Strategy runtime intent pipeline
 
-1. Strategy runtime dispatcher resolves strategy definition/version/runtime mode.
+1. Strategy runtime dispatcher resolves strategy definition and runtime mode.
 2. Strategy controller (one of: ArbitrageStrategyController, PureMarketMakingStrategyController, VolumeStrategyController, TimeIndicatorStrategyController) computes actions (place/cancel/wait semantics).
 3. Executor orchestrator writes actionable intents.
 4. Intent worker or sync path consumes intents.
