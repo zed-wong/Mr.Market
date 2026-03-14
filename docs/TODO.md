@@ -2,6 +2,10 @@
 
 ## Backend
 
+### User orders security
+- [] 1. add authentication and ownership checks for user order list/detail/payment/history endpoints under `user-orders`
+- [] 2. keep `GET /user-orders/market-making/strategies` public for frontend strategy selection
+
 ### Validation of create market making process
 - [x] 1. user can open invoice payment page in confirm payment step
 - [x] 2. invoice payment can be handled correctly by backend

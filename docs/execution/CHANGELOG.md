@@ -2,6 +2,7 @@
 
 ## 2026-03-14
 
+- Add TODO to require auth and ownership checks for private user-orders endpoints while keeping public strategy catalog access
 - Remove legacy admin backfill-definition-links and strategy definition export APIs after the prototype cutover to snapshot-only strategy startup
 - Restrict market-making strategy selection/intents to `pureMarketMaking` definitions and preserve DEX volume config when controller reruns persisted strategies
 - Reject unsupported `clob_dex` strategy-definition configs during resolver validation and remove the category from seeded volume-definition schema
