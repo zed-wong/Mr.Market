@@ -24,6 +24,7 @@
             submitted.set(true);
             checked.set(true);
             correct.set(true);
+            // Temporary
             localStorage.setItem("admin-password", pass);
             localStorage.setItem("admin-access-token", accessToken);
             loginLoading.set(false);
