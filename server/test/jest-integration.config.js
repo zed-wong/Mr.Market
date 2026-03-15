@@ -1,14 +1,13 @@
 module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
-  rootDir: '.',
+  rootDir: '..',
   testEnvironment: 'node',
-  testRegex: '.*\\.spec\\.ts$',
-  testPathIgnorePatterns: ['\\.integration\\.spec\\.ts$'],
+  testRegex: '.*\\.integration\\.spec\\.ts$',
   moduleNameMapper: {
     '^src/(.*)$': '<rootDir>/src/$1',
   },
   transform: {
     '^.+\\.(t|j)s$': 'ts-jest',
   },
-  testTimeout: 60000,
+  testTimeout: 240000,
 };

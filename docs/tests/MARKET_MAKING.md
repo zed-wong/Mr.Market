@@ -1,157 +1,114 @@
-# Market Making End-to-End Test
+# Market Making Test Guide
 
-This document covers backend end-to-end testing for market making:
+This document covers the current CCXT sandbox integration scope for market making.
 
-- Mixin transfer from user
-- snapshot handling and order creation
-- withdrawal path toward exchange
-- dispatch into tick-driven market making engine
-- user profit and balance tracking validation
+The March 15 implementation is intentionally limited to the runtime behaviors that already exist:
 
-## Components Under Test
+- Phase 1: isolated sandbox harness bootstrapping
+- Phase 2: real exchange adapter REST lifecycle coverage
+- Phase 3: fill-routing resolution coverage with repository-backed mappings
 
-- Snapshot polling/queueing: `server/src/modules/mixin/snapshots/snapshots.processor.ts`
-- Snapshot decode/routing: `server/src/modules/mixin/snapshots/snapshots.service.ts`
-- MM order processor and queue chain: `server/src/modules/market-making/user-orders/market-making.processor.ts`
-- Tick runtime: `server/src/modules/market-making/tick/clock-tick-coordinator.service.ts`
-- Strategy orchestration: `server/src/modules/market-making/strategy/strategy.service.ts`
-- Intent worker: `server/src/modules/market-making/strategy/execution/strategy-intent-worker.service.ts`
-- Intent execution: `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
-- Strategy definition admin service: `server/src/modules/admin/strategy/adminStrategy.service.ts`
-- Balance ledger: `server/src/modules/market-making/ledger/balance-ledger.service.ts`
-- Performance API/service: `server/src/modules/market-making/performance/performance.service.ts`
-- HuFi score estimator: `server/src/modules/campaign/hufi-score-estimator.service.ts`
-- Reward pipeline: `server/src/modules/market-making/rewards/reward-pipeline.service.ts`
+It does not claim full end-to-end private-fill ingestion.
 
-## Queue Jobs In Scope
+## Current Integration Scope
 
-Queue `snapshots`:
+### Phase 1: Sandbox Harness
 
-- `process_snapshot`
+- `server/test/helpers/sandbox-exchange.helper.ts` constructs a dedicated sandbox exchange instance outside normal app boot
+- the helper calls `setSandboxMode(true)` before `loadMarkets()`
+- the helper tracks created sandbox orders for cleanup in `afterAll`
+- the default unit suite ignores `*.integration.spec.ts`
 
-Queue `market-making`:
+### Phase 2: Adapter Integration
 
-- `process_market_making_snapshots`
-- `check_payment_complete`
-- `withdraw_to_exchange`
-- `monitor_mixin_withdrawal`
-- `join_campaign`
-- `start_mm`
-- `stop_mm`
+Spec: `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts`
 
-## End-to-End Flow to Validate
+Coverage:
 
-1. User submits transfer with valid market making create memo.
-2. Snapshot poller detects and enqueues `process_snapshot`.
-3. Snapshot service decodes memo, validates intent/pair/expiry, then enqueues `process_market_making_snapshots`.
-4. MM processor credits ledger (`creditDeposit`) and updates payment state.
-5. `check_payment_complete` retries until base/quote/fee completeness is met.
-6. Order becomes `payment_complete` and persists in market making order table.
-7. Withdrawal stage:
-   - default: refund/fail (validation mode)
-   - full lifecycle: withdraw -> monitor confirmation -> join campaign -> start MM
-8. Strategy is registered and triggered by tick coordinator.
-   - dynamic admin flow can start from `strategy_definitions` and attach `definitionId` to `strategy_instances`.
-9. Intents are stored, dispatched by worker, and executed on exchange adapter.
-10. Ledger/performance/reward/score data confirms user profit and balances.
+- fetch sandbox order book for the configured symbol
+- place a real sandbox limit order with a known `clientOrderId`
+- fetch the order by exchange order ID
+- verify it appears in open orders
+- cancel it and verify it no longer appears as open
 
-## Test Suites
+### Phase 3: Fill Routing Integration
 
-## Suite A: Current Behavior (default code path)
+Spec: `server/src/modules/market-making/execution/fill-routing.integration.spec.ts`
 
-### A1. Valid snapshot intake and intent guard
+Coverage:
 
-Assert:
+- parseable `clientOrderId` path (`{orderId}:{seq}`)
+- persisted client-order mapping fallback
+- persisted exchange-order mapping fallback using a real sandbox order ID
 
-- invalid memo/version/intent mismatch refunds snapshot
-- valid memo enqueues `process_market_making_snapshots`
-- intent state transitions to active progress state
+Boundary:
 
-### A2. Ledger credit and payment state aggregation
+- validates order-resolution logic only
+- does not validate exchange private-stream ingestion
 
-Assert:
+## Required Environment Variables
 
-- `BalanceLedgerService.creditDeposit` called with idempotency key `snapshot-credit:{snapshotId}`
-- base/quote/fee legs update correctly in payment state
-- unknown asset snapshot is refunded
+Use `server/.env.testnet.example` as the template for integration-only sandbox config.
 
-### A3. Payment completion and order creation
+Required:
 
-Assert:
+- `CCXT_SANDBOX_EXCHANGE`
+- `CCXT_SANDBOX_API_KEY`
+- `CCXT_SANDBOX_SECRET`
 
-- complete payment updates intent to `completed`
-- payment state becomes `payment_complete`
-- `MarketMakingOrder` is created/updated with expected state
+Optional:
 
-### A4. Withdrawal validation safety
+- `CCXT_SANDBOX_PASSWORD`
+- `CCXT_SANDBOX_UID`
+- `CCXT_SANDBOX_SYMBOL` default: `BTC/USDT`
+- `CCXT_SANDBOX_MIN_REQUEST_INTERVAL_MS` default: `100`
 
-Assert:
+Production credential names are intentionally not used in these integration suites.
 
-- no real withdrawal call occurs
-- refund path executes
-- order transitions to `failed`
+## Running The Suites
 
-## Suite B: Full Lifecycle (enabled/simulated branch)
+Use only the dedicated integration entry point:
 
-### B1. Withdraw and monitor confirmation
+```bash
+bun run test:integration
+```
 
-Assert:
+The default unit suite excludes `*.integration.spec.ts`.
 
-- order state moves to `withdrawing`
-- base and quote confirmation checks require `confirmations >= 1` and `transaction_hash`
-- once both confirmed, `join_campaign` is queued
+## Skip Behavior
 
-### B2. Join campaign and start MM
+Both integration specs check `CCXT_SANDBOX_EXCHANGE`, `CCXT_SANDBOX_API_KEY`, and `CCXT_SANDBOX_SECRET`.
 
-Assert:
+If any required sandbox variable is missing:
 
-- local campaign participation record is created
-- order becomes `campaign_joined`
-- `start_mm` enqueued and executed
-- order becomes `running`
+- the suite is skipped explicitly
+- unit tests still run normally
+- missing sandbox config is treated as opt-out, not as a failure
 
-### B3. Tick -> intents -> exchange execution
+## Cleanup Behavior
 
-Assert:
+The sandbox helper tracks every order created through the integration harness.
 
-- tick triggers `StrategyService.onTick`
-- intents persisted in `strategy_order_intent`
-- worker concurrency rules enforced
-- execution service places/cancels orders and updates tracker entries
+After each integration suite:
 
-### B4. Profit and balance tracking
+- tracked orders are fetched again
+- any order that still appears open is canceled
+- exchange resources are closed
 
-Assert:
+Specs still use far-from-market limit pricing to reduce unexpected fills, but cleanup remains mandatory.
 
-- ledger entries recorded with expected types/signs
-- `balance_read_model` `available/locked/total` remain consistent
-- performance endpoint returns rows for user/strategy
-- HuFi score snapshots generated from closed fills
-- reward allocations credited idempotently
+## Full E2E Gate
 
-## Required Fixtures
+Full market-making end-to-end coverage should stay deferred until all of the following are true:
 
-- user and valid `market_making_order_intent`
-- enabled market-making pair config
-- fee config for `deposit_to_exchange`
-- snapshots for base, quote, and required fee assets
-- exchange API key + network mapping (for Suite B)
+- a real exchange private-fill ingestion path exists
+- tests can observe that path deterministically
+- the E2E boundary is documented precisely
+- any ledger assertions match runtime behavior actually implemented in `start_mm` and `stop_mm`
 
-Memo fixtures must include:
-
-- valid checksum
-- current version
-- matching `orderId` and `marketMakingPairId`
-
-## Pass Criteria
-
-- state transitions are valid and complete
-- no duplicate ledger entries for same idempotency key
-- queue dedupe works for snapshot/payment-check jobs
-- exchange execution behavior follows config flags
-- user balances and profit evidence are queryable and consistent
+Until then, sandbox integration coverage stops at adapter REST behavior and fill-routing resolution.
 
 ## Last Updated
 
-- Date: 2026-02-28
+- Date: 2026-03-15
 - Status: Active

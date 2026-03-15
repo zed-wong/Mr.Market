@@ -18,6 +18,10 @@
 
 ## 2026-03-15
 
+- Add opt-in Jest sandbox integration wiring with `test:integration`, isolated `CCXT_SANDBOX_*` envs, and default-suite exclusion for `*.integration.spec.ts`
+- Add `SandboxExchangeHelper` to bootstrap CCXT sandbox exchanges with `setSandboxMode(true)`, tracked-order cleanup, and shared polling utilities
+- Add real sandbox integration specs for `ExchangeConnectorAdapterService` order lifecycle coverage and `FillRoutingService` mapping fallback coverage
+- Rewrite `docs/tests/MARKET_MAKING.md` to document the current sandbox integration scope, required envs, skip behavior, cleanup behavior, and deferred full-E2E gate
 - Rewrite the CCXT sandbox integration testing plan docs to use isolated test helpers, explicit `setSandboxMode(true)` guidance, Bun-based commands, and executable integration scopes instead of placeholder or production-risky steps
 - Remove the duplicate March 15 market-making sandbox E2E plan and keep the CCXT sandbox integration testing plan as the only source of truth
 - Consolidate the March 15 sandbox testing docs into a phased plan: adapter sandbox integration, fill-routing integration, and deferred full-E2E upgrade prerequisites
