@@ -19,6 +19,7 @@
 ## 2026-03-15
 
 - Rewrite the CCXT sandbox integration testing plan docs to use isolated test helpers, explicit `setSandboxMode(true)` guidance, Bun-based commands, and executable integration scopes instead of placeholder or production-risky steps
+- Remove the duplicate March 15 market-making sandbox E2E plan and keep the CCXT sandbox integration testing plan as the only source of truth
 - Consolidate the March 15 sandbox testing docs into a phased plan: adapter sandbox integration, fill-routing integration, and deferred full-E2E upgrade prerequisites
 - Merge the March 15 sandbox testing docs into a single source-of-truth plan and remove the split implementation/E2E companion docs
 
