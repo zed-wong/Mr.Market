@@ -85,17 +85,34 @@ CCXT_SANDBOX_BASE_BALANCE=0.1      # 充值测试 BTC 数量
 **前置条件**：
 - 交易所 sandbox 账户有足够测试资金
 - 策略定义已配置
+- 策略快照 (`strategySnapshot`) 已保存
 
 **步骤**：
-1. 记录初始余额
+1. 记录初始余额 (ledger)
 2. 调用 `start_mm` 启动做市
-3. 等待 tick 执行
+3. 等待 tick 执行 (至少 1-2 个 tick 周期)
 4. 验证限价单已挂在市场
 5. 验证 `strategy_order_intent` 已记录
 
 **预期结果**：
-- 订单状态为 `running`
-- 限价单存在于交易所
+
+| 验证项 | 检查内容 |
+|--------|----------|
+| 订单状态 | `MarketMakingOrder.state = 'running'` |
+| 限价单存在 | 交易所返回该订单状态为 `open` |
+| 策略生效 | `ExecutorRegistry` 中存在对应的 `ExchangePairExecutor` |
+| Tick 调度 | 策略已注册到 `ClockTickCoordinator` |
+| Intent 生成 | `strategy_order_intent` 表中有新记录 |
+| 资金锁定 | `BalanceLedgerService` 显示资金已锁定 |
+| Exchange 映射 | `ExchangeOrderMapping` 已记录订单映射 |
+
+**确保策略生效的关键验证**：
+- 策略状态为 `running` 且非暂停
+- executor 接收到了 tick 事件
+- 策略 controller 产生了 action (下单/撤单)
+- action 被写入 intent 表
+- intent 被 worker 执行
+- 订单实际出现在交易所
 
 ### TC-002: Fill 路由
 
@@ -184,9 +201,13 @@ server/
 ## 验收标准
 
 - [ ] 策略可以成功启动
-- [ ] 订单可以正确挂在市场
-- [ ] 真实成交后 fill 可以正确路由
-- [ ] 策略可以正确停止
+- [ ] 订单状态为 `running`
+- [ ] 策略已注册到 tick 调度器
+- [ ] Executor 正在接收 tick 事件
+- [ ] Intent 已被生成并写入
+- [ ] 限价单存在于交易所
+- [ ] Fill 可以正确路由 (TC-002)
+- [ ] 策略可以正确停止 (TC-003)
 - [ ] 测试数据可以清理
 
 ---
