@@ -18,6 +18,7 @@
 
 ## 2026-03-15
 
+- Rewrite `docs/plans/2026-03-15-system-test-design.md` in English and narrow its claimed system-test boundaries to match current runtime capabilities
 - Rename sandbox integration spec files and suite titles to describe actual operations (`sandbox-order-lifecycle`, `sandbox-fill-resolution`) instead of internal service names
 - Force Binance sandbox integration helpers to load spot markets only so real sandbox orders do not route into deprecated futures testnet endpoints
 - Use exchange-safe sandbox `clientOrderId` values in real integration order placement while keeping `{orderId}:{seq}` parsing coverage as a local fill-routing assertion
