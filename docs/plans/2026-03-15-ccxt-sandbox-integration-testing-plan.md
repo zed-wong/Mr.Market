@@ -1,239 +1,333 @@
-# CCXT Sandbox Integration Testing and Execution Engine Validation Plan
+# CCXT Sandbox Integration Testing Plan
 
 ## Overview
 
-This plan implements integration testing capabilities for the Mr.Market market-making system's Execution Engine with CCXT exchange testnet/sandbox environments. By connecting to real exchange test networks, we can verify the correctness of core market-making flows without using real funds.
+This is the single source-of-truth plan for the March 15 sandbox testing work.
 
-## Background and Goals
+The work is intentionally staged:
 
-### Current State
+1. validate real sandbox exchange REST behavior through the adapter layer
+2. validate fill-routing resolution with real sandbox order identifiers plus local mapping persistence
+3. define the upgrade gate for full market-making E2E only after the missing runtime pieces exist
 
-- Project has 36 unit test files using Jest mocks to simulate exchanges
-- `ExchangeInitService` supports multiple exchanges (OKX, Binance, Alpaca, Gate, MEXC, etc.)
-- Lacks integration tests with real exchange APIs
+This plan does not claim that the current system can already support full exchange-to-fill E2E coverage.
 
-### Goals
+## Why This Scope
 
-1. **Phase 1**: Establish CCXT testnet/sandbox infrastructure
-2. **Phase 2**: Implement Execution Engine core integration tests
-3. **Phase 3**: Expand market-making flow validation
+The current codebase already supports a credible sandbox integration slice:
 
-## Solution Details
+- `ExchangeConnectorAdapterService` exposes real exchange REST operations
+- `StrategyIntentExecutionService` creates `{orderId}:{seq}` client order IDs
+- `ExchangeOrderMappingService` persists exchange-order mappings
+- `FillRoutingService` resolves parseable and fallback order identities
 
-### Phase 1: CCXT Sandbox Infrastructure
+The current codebase does not yet support a credible full E2E fill-ingestion claim:
 
-#### 1.1 Configuration Support
+- `PrivateStreamTrackerService` currently processes queued in-memory events
+- there is no implemented exchange private-trade subscription path in the adapter/runtime stack
+- `start_mm` and `stop_mm` do not currently perform ledger lock/unlock as part of their direct flow
 
-Add testnet mode to `ExchangeInitService`:
+Because of that, the first delivery should stop at integration coverage that matches current runtime capability.
 
-```typescript
-// New configuration interface
-interface ExchangeConfig {
-  name: string;
-  accounts: Array<{
-    label: string;
-    apiKey: string;
-    secret: string;
-  }>;
-  class: any;
-  testnet?: boolean;  // New
-}
+## Goals
+
+1. Add opt-in sandbox integration tests that run against one real CCXT sandbox exchange.
+2. Keep sandbox setup isolated from the normal runtime and unit-test path.
+3. Add one adapter integration suite for real order lifecycle coverage.
+4. Add one fill-routing integration suite for parser and mapping fallback coverage.
+5. Document the concrete prerequisites for a later full E2E upgrade.
+
+## Non-Goals
+
+- No claim of full tick -> intent worker -> private fill stream -> routed fill E2E coverage in phase 1.
+- No multi-exchange matrix in phase 1.
+- No production runtime change that globally enables sandbox behavior.
+- No placeholder tests that do not exercise real behavior.
+- No new assertions for ledger lock/unlock in `start_mm` or `stop_mm` unless runtime behavior changes first.
+
+## Current Constraints
+
+- `ExchangeInitService` is production-facing and environment-driven.
+- CCXT sandbox mode must be enabled before market loading for sandbox test instances.
+- Integration tests must remain opt-in and must not run in the default unit suite.
+- Missing sandbox credentials should cause explicit skips, not failures.
+- Real fill ingestion is not implemented yet, so the routing suite must validate resolution logic without pretending to validate private-stream subscription behavior.
+
+## Target Files
+
+```text
+server/
+├── .env.testnet.example
+├── jest.config.js
+├── package.json
+├── test/
+│   ├── helpers/
+│   │   └── sandbox-exchange.helper.ts
+│   └── jest-integration.config.js
+└── src/
+    └── modules/
+        └── market-making/
+            └── execution/
+                ├── exchange-connector-adapter.integration.spec.ts
+                └── fill-routing.integration.spec.ts
+
+docs/
+└── tests/
+    └── MARKET_MAKING.md
 ```
 
-Environment variables:
+## Implementation Rules
+
+- keep production credential names out of integration docs and helpers
+- keep sandbox exchange construction outside normal app boot
+- keep integration specs opt-in
+- use real code paths, not placeholder assertions
+- do not label routing checks as private-stream or full fill-ingestion E2E
+
+## Phase 1: Sandbox Harness
+
+### Tasks
+
+- add a dedicated sandbox exchange helper under `server/test/helpers/`
+- add integration-only env names such as `CCXT_SANDBOX_*`
+- add a dedicated Jest integration config and Bun command
+- exclude `*.integration.spec.ts` from the default test run
+
+### Required Deliverables
+
+1. `server/.env.testnet.example`
+
 ```bash
-# .env configuration
-EXCHANGE_TESTNET=true
-OKX_TESTNET_API_KEY=xxx
-OKX_TESTNET_SECRET=xxx
-BINANCE_TESTNET_API_KEY=xxx
-BINANCE_TESTNET_SECRET=xxx
+CCXT_SANDBOX_EXCHANGE=okx
+CCXT_SANDBOX_API_KEY=your_api_key
+CCXT_SANDBOX_SECRET=your_api_secret
+CCXT_SANDBOX_PASSWORD=
+CCXT_SANDBOX_UID=
+CCXT_SANDBOX_SYMBOL=BTC/USDT
+CCXT_SANDBOX_MIN_REQUEST_INTERVAL_MS=100
 ```
 
-#### 1.2 Supported Exchanges
+2. `server/test/helpers/sandbox-exchange.helper.ts`
 
-| Exchange | Parameter | Test Network |
-|----------|-----------|--------------|
-| Binance | `testnet: true` | binance-testnet |
-| OKX | `testnet: true` | okx testnet |
-| Gate | `testnet: true` | gate testnet |
-| Bybit | `testnet: true` | bybit testnet |
-| KuCoin | `testnet: true` | kucoin testnet |
-| Alpaca | `paper: true` | alpaca paper trading |
+Required behavior:
 
-#### 1.3 Test Base Class
+- resolve the selected CCXT exchange class
+- instantiate with sandbox credentials
+- call `setSandboxMode(true)` before `loadMarkets()`
+- track created orders for cleanup
+- expose helper methods for:
+  - reading test config
+  - placing safe cleanup-aware orders
+  - cancelling tracked open orders
+  - closing exchange resources
 
-Create integration test base class `test/helpers/sandbox-exchange.helper.ts`:
+3. `server/test/jest-integration.config.js`
 
-```typescript
-// Provides test exchange instances and cleanup functions
-class SandboxExchangeHelper {
-  async setupExchange(name: string): Promise<ccxt.Exchange>
-  async cleanup(): Promise<void>
-  async getTestnetBalance(): Promise<Record<string, number>>
-}
+Required behavior:
+
+- only match `*.integration.spec.ts`
+- reuse the main path mapping
+- use longer timeouts for network calls
+
+4. opt-in execution wiring
+
+Modify:
+
+- `server/package.json`
+- `server/jest.config.js`
+
+Required behavior:
+
+- add `bun run test:integration`
+- exclude `*.integration.spec.ts` from the default test run
+
+## Phase 2: Adapter Integration
+
+### Scope
+
+Test `ExchangeConnectorAdapterService` against one real sandbox exchange.
+
+### Spec
+
+Create `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts`.
+
+Build a Nest test module with:
+
+- `ExchangeConnectorAdapterService`
+- mocked `ExchangeInitService.getExchange()` returning the sandbox exchange
+- mocked `ConfigService` returning request interval config
+
+### Assertions
+
+- place a limit order with a known `clientOrderId`
+- fetch that order by exchange order ID
+- verify it appears in open orders when the exchange reports it
+- cancel the order
+- verify canceled status through refetch or absence from open orders
+- fetch the order book for the configured symbol
+
+### Notes
+
+- use prices far from market when supported
+- track created order IDs in `afterAll`
+- rate-limit coverage should be coarse, not exact
+
+## Phase 3: Fill Routing Integration
+
+### Scope
+
+Test `FillRoutingService` with real parsing helpers and repository-backed mappings.
+
+### Spec
+
+Create `server/src/modules/market-making/execution/fill-routing.integration.spec.ts`.
+
+Use:
+
+- `FillRoutingService`
+- `ExchangeOrderMappingService`
+- repository wiring for `ExchangeOrderMapping`
+- real parser helpers
+
+### Assertions
+
+1. parseable client-order path
+
+```ts
+await service.resolveOrderForFill({ clientOrderId: 'order-123:0' });
 ```
 
-### Phase 2: Execution Engine Integration Tests
+Expect:
 
-#### 2.1 ExchangeConnectorAdapter Integration Tests
+- `{ orderId: 'order-123', seq: 0, source: 'clientOrderId' }`
 
-Test file: `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts`
+2. client-order mapping fallback
 
-```typescript
-describe('ExchangeConnectorAdapterService (Integration)', () => {
-  // Order lifecycle tests
-  it('places, cancels, and fetches limit orders', async () => {
-    // 1. Place order
-    // 2. Verify order status
-    // 3. Cancel order
-    // 4. Verify cancellation success
-  });
+- persist a non-parseable `clientOrderId`
+- resolve with that `clientOrderId`
+- expect `source: 'mapping'`
 
-  // Order book fetch tests
-  it('fetches order book successfully', async () => {
-    // Fetch BTC/USDT order book
-  });
+3. exchange-order mapping fallback
 
-  // Rate limiting tests
-  it('respects rate limiting between requests', async () => {
-    // Verify request intervals
-  });
-});
-```
+- place or reuse one sandbox order to obtain a realistic exchange order ID
+- persist the mapping
+- resolve with only `exchangeOrderId`
+- expect `source: 'exchangeOrderMapping'`
 
-#### 2.2 Tick → Intent → Exchange Execution Flow
+### Boundary
 
-Test file: `server/src/modules/market-making/strategy/execution/execution-flow.integration.spec.ts`
+- this suite validates order-resolution logic
+- this suite does not validate real exchange private-stream ingestion
 
-Validate complete flow:
-1. Tick triggers strategy calculation
-2. Generate Intents (place/cancel orders)
-3. Intent Worker executes
-4. ExchangeConnectorAdapter calls real API
-5. Verify order status updates
+## Shared Test Conventions
 
-#### 2.3 Fill Routing Integration
+- every integration spec must check `CCXT_SANDBOX_EXCHANGE`
+- every integration spec must check `CCXT_SANDBOX_API_KEY`
+- every integration spec must check `CCXT_SANDBOX_SECRET`
+- missing sandbox config must produce explicit skips
+- `bun run test:integration` is the only supported entry point
 
-Test file: `server/src/modules/market-making/execution/fill-routing.integration.spec.ts`
+## Documentation Updates
 
-Validate:
-1. Use real `clientOrderId` format `{orderId}:{seq}`
-2. Fill events route to correct session
-3. ExchangeOrderMapping fallback works correctly
+Update `docs/tests/MARKET_MAKING.md` with:
 
-### Phase 3: Market-Making Core Flow Validation
+- purpose of phases 1-3
+- required env vars
+- `bun run test:integration`
+- skip behavior when sandbox config is absent
+- cleanup behavior for created sandbox orders
+- explicit note that full E2E private-fill validation is not part of this plan
 
-#### 3.1 Multi-Order Concurrency
+## Full E2E Upgrade Gate
 
-Validate scheduling and execution of multiple orders on the same `exchange:pair`.
+Full market-making E2E should only start after all of the following are true:
 
-#### 3.2 Pause/Stop/Resume
+### 1. Real Fill Ingestion Exists
 
-Test complete flow of `PauseWithdrawOrchestratorService`:
-1. `stopStrategyForUser`
-2. `cancelUntilDrained`
-3. `unlockFunds` → `debitWithdrawal`
-4. Failure rollback
+- a real exchange private-stream or equivalent fill-ingestion path is implemented
+- runtime code can receive trade/fill events from the exchange without manually queueing synthetic events
+- test code can observe and assert that path deterministically
 
-#### 3.3 Balance Tracking
+### 2. E2E Boundary Is Explicit
 
-Validate consistency between `BalanceLedgerService` and real exchange balances.
+Choose one boundary and document it precisely:
 
-## Test Layering Architecture
+- queue/job/runtime E2E
+- API -> queue -> tick -> exchange -> fill E2E
+- runtime-only exchange lifecycle E2E
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Unit Tests (Jest Mock)                                    │
-│  - Fast execution, no external dependencies              │
-│  - Validate business logic correctness                   │
-│  - Existing 36 spec files                                 │
-└─────────────────────────────────────────────────────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│  Integration Tests (CCXT Testnet)                         │
-│  - Real API calls                                         │
-│  - Validate exchange communication                        │
-│  - New 3-5 integration spec files                        │
-└─────────────────────────────────────────────────────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│  E2E Tests (Optional)                                     │
-│  - Complete market-making lifecycle                       │
-│  - Requires testnet funds                                │
-└─────────────────────────────────────────────────────────────┘
-```
+Do not mix these under one ambiguous “E2E” label.
 
-## Implementation Steps
+### 3. Ledger Assertions Match Runtime Behavior
 
-### Step 1: Infrastructure
+If the test should assert fund locking or release, the runtime path must actually perform it.
 
-- [ ] Add testnet configuration support to `ExchangeInitService`
-- [ ] Add `exchange.testnet` config to `configuration.ts`
-- [ ] Create test environment variable template `.env.testnet.example`
-- [ ] Create `SandboxExchangeHelper` test base class
+Until then, do not add assertions such as:
 
-### Step 2: Connector Integration Tests
+- funds locked on `start_mm`
+- funds released on `stop_mm`
 
-- [ ] Create `exchange-connector-adapter.integration.spec.ts`
-- [ ] Test order lifecycle (place → fetch → cancel)
-- [ ] Test rate limiting mechanism
-- [ ] Add multi-exchange switching tests
+unless those behaviors are first implemented in the real start/stop flow.
 
-### Phase 3: Execution Flow Tests
+### Future E2E Scope
 
-- [ ] Create `execution-flow.integration.spec.ts`
-- [ ] Test tick → intent → exchange complete flow
-- [ ] Test fill routing integration
+After the preconditions are met, a future E2E suite may cover:
 
-### Phase 4: Core Flow Validation
-
-- [ ] Test multi-order concurrency
-- [ ] Test pause/stop/resume
-- [ ] Test balance tracking
-- [ ] Update `docs/tests/MARKET_MAKING.md`
-
-## Files to Modify
-
-| File | Change |
-|------|--------|
-| `server/src/modules/infrastructure/exchange-init/exchange-init.service.ts` | Add testnet support |
-| `server/src/config/configuration.ts` | Add testnet config |
-| `server/.env.testnet.example` | New testnet config template |
-| `server/test/helpers/sandbox-exchange.helper.ts` | New test base class |
-| `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts` | New integration test |
-| `server/src/modules/market-making/strategy/execution/execution-flow.integration.spec.ts` | New integration test |
-| `server/src/modules/market-making/execution/fill-routing.integration.spec.ts` | New integration test |
-| `docs/tests/MARKET_MAKING.md` | Update test docs |
-
-## Risks and Mitigations
-
-| Risk | Mitigation |
-|------|------------|
-| Testnet API instability | Use multiple exchanges, fallback strategy |
-| Testnet balance exhaustion | Automated balance check + alerts |
-| Network latency causing test timeouts | Adjust Jest timeout settings |
-| Exchange API changes | Lock CCXT dependency version |
+1. account and sandbox readiness checks
+2. creating or preparing a valid market-making order with `strategySnapshot`
+3. triggering `start_mm`
+4. verifying runtime registration and intent generation
+5. verifying sandbox orders appear on the exchange
+6. executing a real opposing trade or equivalent fill trigger
+7. verifying fill ingestion and routing to the correct executor/order
+8. triggering `stop_mm`
+9. verifying cleanup, final order state, and any ledger expectations that match runtime behavior
 
 ## Acceptance Criteria
 
-### Phase 1 Complete
+### Harness
 
-- [ ] Testnet mode can be enabled via environment variable
-- [ ] At least one exchange (OKX/Binance) can connect to testnet
+- sandbox helper enables sandbox mode before market loading
+- integration tests are excluded from the default unit suite
+- sandbox env example uses integration-only variable names
 
-### Phase 2 Complete
+### Adapter Integration
 
-- [ ] `ExchangeConnectorAdapter` integration tests pass
-- [ ] Order lifecycle validated on testnet
+- the suite can place, fetch, and cancel a real sandbox order
+- the suite cleans up created open orders
+- the suite skips explicitly when sandbox credentials are absent
 
-### Phase 3 Complete
+### Fill Routing Integration
 
-- [ ] Tick → Intent → Exchange flow validated
-- [ ] Fill routing works in real environment
+- the suite verifies parser resolution
+- the suite verifies client-order mapping fallback
+- the suite verifies exchange-order mapping fallback
+- the suite does not claim to validate private-stream fill ingestion
 
----
+### Full E2E Gate
 
-**Created**: 2026-03-15
-**Status**: Planning
-**Priority**: High
+- docs clearly state which missing runtime pieces block full E2E today
+- docs define the prerequisites for promoting the plan to full E2E
+
+## Risks And Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| Exchange sandbox support changes in CCXT | Keep the first rollout single-exchange and confirm sandbox bootstrap during implementation |
+| Sandbox orders fill unexpectedly | Use far-from-market pricing where supported and always run cleanup |
+| Integration specs accidentally run in unit CI | Keep a dedicated Jest config and exclude `*.integration.spec.ts` from the default suite |
+| Test flakiness from network latency | Use generous timeouts and eventual-state assertions |
+| Documentation overclaims current system capability | Keep full E2E explicitly gated behind runtime prerequisites |
+
+## Done Criteria
+
+- phases 1-3 are implementation-ready from this document alone
+- no task in this file depends on unimplemented private-stream ingestion
+- no task in this file assumes ledger lock/unlock in `start_mm` or `stop_mm`
+- this file remains the only March 15 sandbox testing source of truth
+
+## Status
+
+- Created: 2026-03-15
+- Updated: 2026-03-15
+- Status: Planning
