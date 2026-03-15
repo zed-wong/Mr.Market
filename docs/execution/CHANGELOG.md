@@ -18,6 +18,7 @@
 
 ## 2026-03-15
 
+- Add a docs-first instruction to `docs/AGENTS.md`/`CLAUDE.md` so documentation lookups start in `docs/`
 - Merge `docs/plans/2026-03-15-system-test-design.md` into the March 15 sandbox single-source plan and remove the duplicate companion doc
 - Merge exchange-side pure market-making sandbox runtime coverage into `docs/plans/2026-03-15-ccxt-sandbox-integration-testing-plan.md` as part of the March 15 single-source test plan
 - Default market-making intent execution to enabled unless `MARKET_MAKING_EXECUTE_INTENTS=false` is set explicitly

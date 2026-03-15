@@ -37,6 +37,7 @@ No agent signatures (Claude, sisyphus, etc.) in commit messages
 - Keep docs updated with code changes
 - Update docs/execution/CHANGELOG.md (one line per change)
 - Keep docs/code/ as md version of code
+- If you need to read documentation, look in `docs/` first
 
 # Security
 Never read .env files directly
