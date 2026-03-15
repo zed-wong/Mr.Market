@@ -42,6 +42,20 @@ export type SafeTrackedLimitOrderParams = {
   priceDistanceRatio?: number | string;
 };
 
+export function buildSandboxClientOrderId(prefix = 'sandbox'): string {
+  const safePrefix = prefix
+    .replace(/[^a-zA-Z0-9-_]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 12);
+  const uniqueSuffix = `${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+  const orderId = [safePrefix || 'sandbox', uniqueSuffix].join('-');
+
+  return orderId.slice(0, 36);
+}
+
 export function getSandboxIntegrationSkipReason(): string | null {
   const missingEnvVars = REQUIRED_SANDBOX_ENV_VARS.filter(
     (key) => !process.env[key]?.trim(),
@@ -153,6 +167,7 @@ export class SandboxExchangeHelper {
       );
     }
 
+    this.applySandboxExchangeOverrides(exchange);
     exchange.setSandboxMode(true);
     await exchange.loadMarkets();
 
@@ -318,6 +333,35 @@ export class SandboxExchangeHelper {
     }
 
     return ExchangeClass;
+  }
+
+  private applySandboxExchangeOverrides(exchange: CcxtExchangeInstance): void {
+    if (this.config.exchangeId !== 'binance') {
+      return;
+    }
+
+    const exchangeOptions = (exchange as any).options || {};
+
+    (exchange as any).options = {
+      ...exchangeOptions,
+      defaultType: 'spot',
+      fetchMarkets: {
+        ...(exchangeOptions.fetchMarkets || {}),
+        types: ['spot'],
+      },
+      fetchOrder: {
+        ...(exchangeOptions.fetchOrder || {}),
+        defaultType: 'spot',
+      },
+      fetchOpenOrders: {
+        ...(exchangeOptions.fetchOpenOrders || {}),
+        defaultType: 'spot',
+      },
+      cancelOrder: {
+        ...(exchangeOptions.cancelOrder || {}),
+        defaultType: 'spot',
+      },
+    };
   }
 
   private isIgnorableCleanupError(error: unknown): boolean {

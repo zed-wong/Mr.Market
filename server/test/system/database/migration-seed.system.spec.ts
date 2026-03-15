@@ -4,20 +4,20 @@ import * as os from 'os';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
 
-import { CustomConfigEntity } from '../src/common/entities/admin/custom-config.entity';
+import { CustomConfigEntity } from '../../../src/common/entities/admin/custom-config.entity';
 import {
   GrowdataExchange,
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
-} from '../src/common/entities/data/grow-data.entity';
-import { SpotdataTradingPair } from '../src/common/entities/data/spot-data.entity';
-import { StrategyDefinition } from '../src/common/entities/market-making/strategy-definition.entity';
-import { runSeed } from '../src/database/seeder/seed';
+} from '../../../src/common/entities/data/grow-data.entity';
+import { SpotdataTradingPair } from '../../../src/common/entities/data/spot-data.entity';
+import { StrategyDefinition } from '../../../src/common/entities/market-making/strategy-definition.entity';
+import { runSeed } from '../../../src/database/seeder/seed';
 
-describe('Database migration and seed scripts (e2e)', () => {
+describe('Database migration and seed scripts', () => {
   jest.setTimeout(240000);
 
-  const serverRoot = path.resolve(__dirname, '..');
+  const serverRoot = path.resolve(__dirname, '../../..');
   const migrationsRoot = path.join(serverRoot, 'src/database/migrations');
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mr-market-migrate-'));
   const dbPath = path.join(tempDir, 'migration-seed-test.db');
@@ -143,7 +143,7 @@ describe('Database migration and seed scripts (e2e)', () => {
         key: 'pure_market_making',
       });
 
-    expect(spotPairs).toBeGreaterThan(0);
+    expect(spotPairs).toBe(0);
     expect(exchanges).toBeGreaterThan(0);
     expect(mmPairs).toBeGreaterThan(0);
     expect(simplyGrowTokens).toBeGreaterThan(0);

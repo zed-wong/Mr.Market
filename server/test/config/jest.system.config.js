@@ -1,11 +1,12 @@
 module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
-  rootDir: '..',
+  rootDir: '../..',
   testEnvironment: 'node',
-  testRegex: '.*\\.integration\\.spec\\.ts$',
+  testRegex: '.*\\.system\\.spec\\.ts$',
   moduleNameMapper: {
     '^src/(.*)$': '<rootDir>/src/$1',
   },
+  setupFiles: ['<rootDir>/test/config/setup-system-env.ts'],
   transform: {
     '^.+\\.(t|j)s$': 'ts-jest',
   },

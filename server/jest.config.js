@@ -3,7 +3,7 @@ module.exports = {
   rootDir: '.',
   testEnvironment: 'node',
   testRegex: '.*\\.spec\\.ts$',
-  testPathIgnorePatterns: ['\\.integration\\.spec\\.ts$'],
+  testPathIgnorePatterns: ['\\.system\\.spec\\.ts$'],
   moduleNameMapper: {
     '^src/(.*)$': '<rootDir>/src/$1',
   },

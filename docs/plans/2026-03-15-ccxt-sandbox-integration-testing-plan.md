@@ -63,13 +63,14 @@ server/
 ├── test/
 │   ├── helpers/
 │   │   └── sandbox-exchange.helper.ts
-│   └── jest-integration.config.js
+│   └── config/
+│       └── jest.system.config.js
 └── src/
     └── modules/
         └── market-making/
             └── execution/
-                ├── exchange-connector-adapter.integration.spec.ts
-                └── fill-routing.integration.spec.ts
+                ├── exchange-connector-adapter.system.spec.ts
+                └── fill-routing.system.spec.ts
 
 docs/
 └── tests/
@@ -91,7 +92,7 @@ docs/
 - add a dedicated sandbox exchange helper under `server/test/helpers/`
 - add integration-only env names such as `CCXT_SANDBOX_*`
 - add a dedicated Jest integration config and Bun command
-- exclude `*.integration.spec.ts` from the default test run
+- exclude `*.system.spec.ts` from the default test run
 
 ### Required Deliverables
 
@@ -121,11 +122,11 @@ Required behavior:
   - cancelling tracked open orders
   - closing exchange resources
 
-3. `server/test/jest-integration.config.js`
+3. `server/test/config/jest.system.config.js`
 
 Required behavior:
 
-- only match `*.integration.spec.ts`
+- match backend non-unit suites with `*.system.spec.ts`
 - reuse the main path mapping
 - use longer timeouts for network calls
 
@@ -138,8 +139,8 @@ Modify:
 
 Required behavior:
 
-- add `bun run test:integration`
-- exclude `*.integration.spec.ts` from the default test run
+- add `bun run test:system`
+- exclude `*.system.spec.ts` from the default test run
 
 ## Phase 2: Adapter Integration
 
@@ -149,7 +150,7 @@ Test `ExchangeConnectorAdapterService` against one real sandbox exchange.
 
 ### Spec
 
-Create `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts`.
+Create `server/src/modules/market-making/execution/exchange-connector-adapter.system.spec.ts`.
 
 Build a Nest test module with:
 
@@ -180,7 +181,7 @@ Test `FillRoutingService` with real parsing helpers and repository-backed mappin
 
 ### Spec
 
-Create `server/src/modules/market-making/execution/fill-routing.integration.spec.ts`.
+Create `server/src/modules/market-making/execution/fill-routing.system.spec.ts`.
 
 Use:
 
@@ -225,7 +226,7 @@ Expect:
 - every integration spec must check `CCXT_SANDBOX_API_KEY`
 - every integration spec must check `CCXT_SANDBOX_SECRET`
 - missing sandbox config must produce explicit skips
-- `bun run test:integration` is the only supported entry point
+- `bun run test:system` is the only supported entry point
 
 ## Documentation Updates
 
@@ -233,7 +234,7 @@ Update `docs/tests/MARKET_MAKING.md` with:
 
 - purpose of phases 1-3
 - required env vars
-- `bun run test:integration`
+- `bun run test:system`
 - skip behavior when sandbox config is absent
 - cleanup behavior for created sandbox orders
 - explicit note that full E2E private-fill validation is not part of this plan
@@ -315,7 +316,7 @@ After the preconditions are met, a future E2E suite may cover:
 |------|------------|
 | Exchange sandbox support changes in CCXT | Keep the first rollout single-exchange and confirm sandbox bootstrap during implementation |
 | Sandbox orders fill unexpectedly | Use far-from-market pricing where supported and always run cleanup |
-| Integration specs accidentally run in unit CI | Keep a dedicated Jest config and exclude `*.integration.spec.ts` from the default suite |
+| System specs accidentally run in unit CI | Keep a dedicated Jest config and exclude `*.system.spec.ts` from the default suite |
 | Test flakiness from network latency | Use generous timeouts and eventual-state assertions |
 | Documentation overclaims current system capability | Keep full E2E explicitly gated behind runtime prerequisites |
 

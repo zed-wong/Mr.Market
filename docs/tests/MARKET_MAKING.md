@@ -16,30 +16,33 @@ It does not claim full end-to-end private-fill ingestion.
 
 - `server/test/helpers/sandbox-exchange.helper.ts` constructs a dedicated sandbox exchange instance outside normal app boot
 - the helper calls `setSandboxMode(true)` before `loadMarkets()`
+- the helper applies exchange-specific sandbox overrides when required, including Binance spot-only market loading
 - the helper tracks created sandbox orders for cleanup in `afterAll`
-- the default unit suite ignores `*.integration.spec.ts`
+- the default unit suite ignores `*.system.spec.ts`
 
 ### Phase 2: Adapter Integration
 
-Spec: `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts`
+Spec: `server/src/modules/market-making/execution/sandbox-order-lifecycle.system.spec.ts`
 
 Coverage:
 
 - fetch sandbox order book for the configured symbol
-- place a real sandbox limit order with a known `clientOrderId`
+- place a real sandbox limit order with a known exchange-safe `clientOrderId`
 - fetch the order by exchange order ID
 - verify it appears in open orders
 - cancel it and verify it no longer appears as open
 
 ### Phase 3: Fill Routing Integration
 
-Spec: `server/src/modules/market-making/execution/fill-routing.integration.spec.ts`
+Spec: `server/src/modules/market-making/execution/sandbox-fill-resolution.system.spec.ts`
 
 Coverage:
 
 - parseable `clientOrderId` path (`{orderId}:{seq}`)
 - persisted client-order mapping fallback
 - persisted exchange-order mapping fallback using a real sandbox order ID
+
+The parseable `clientOrderId` assertion stays local to routing resolution. Real sandbox order placement uses exchange-safe IDs because some exchanges reject `:` in submitted client order IDs.
 
 Boundary:
 
@@ -48,7 +51,9 @@ Boundary:
 
 ## Required Environment Variables
 
-Use `server/.env.testnet.example` as the template for integration-only sandbox config.
+Use `server/.env.testnet.example` as the template for sandbox system-test config.
+
+`bun run test:system` automatically loads `server/.env.testnet` when that file exists.
 
 Required:
 
@@ -63,17 +68,18 @@ Optional:
 - `CCXT_SANDBOX_SYMBOL` default: `BTC/USDT`
 - `CCXT_SANDBOX_MIN_REQUEST_INTERVAL_MS` default: `100`
 
-Production credential names are intentionally not used in these integration suites.
+Production credential names are intentionally not used in these system suites.
 
 ## Running The Suites
 
-Use only the dedicated integration entry point:
+Use the dedicated non-unit backend entry point:
 
 ```bash
-bun run test:integration
+bun run test:system
 ```
 
-The default unit suite excludes `*.integration.spec.ts`.
+The default unit suite excludes `*.system.spec.ts`.
+No manual `export` is required if `server/.env.testnet` already contains the sandbox values.
 
 ## Skip Behavior
 
@@ -83,13 +89,13 @@ If any required sandbox variable is missing:
 
 - the suite is skipped explicitly
 - unit tests still run normally
-- missing sandbox config is treated as opt-out, not as a failure
+- missing sandbox config in `server/.env.testnet` is treated as opt-out, not as a failure
 
 ## Cleanup Behavior
 
 The sandbox helper tracks every order created through the integration harness.
 
-After each integration suite:
+After each system suite:
 
 - tracked orders are fetched again
 - any order that still appears open is canceled

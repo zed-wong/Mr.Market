@@ -1,9 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 
-import { AppController } from '../src/app.controller';
+import { AppController } from '../../../src/app.controller';
 
-describe('AppController (integration)', () => {
+describe('AppController system info contract', () => {
   let controller: AppController;
 
   beforeEach(async () => {

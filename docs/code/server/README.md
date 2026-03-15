@@ -22,6 +22,13 @@ This doc tree explains backend design in simple business terms.
 - Durable intent and ledger records protect side effects.
 - Strategy runtime is split into controller, intent, execution, and worker stages.
 
+## Test structure
+
+- `server/src/**/*.spec.ts` holds unit and module-level tests close to the code they verify.
+- `server/test/system/**` holds system-level checks that exercise app contracts, migrations, seeds, and infrastructure flows.
+- `server/test/helpers/**` holds shared helpers for non-unit backend suites.
+- `server/test/config/**` holds dedicated Jest entry points and shared test environment setup.
+
 ## Seeder backup data
 
 - `server/src/database/seeder/data/exchange-icon-backup.ts` stores backup-only exchange `exchange_id` + display `name` + `icon_url` mappings.

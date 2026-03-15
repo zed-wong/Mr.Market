@@ -18,7 +18,14 @@
 
 ## 2026-03-15
 
-- Add opt-in Jest sandbox integration wiring with `test:integration`, isolated `CCXT_SANDBOX_*` envs, and default-suite exclusion for `*.integration.spec.ts`
+- Rename sandbox integration spec files and suite titles to describe actual operations (`sandbox-order-lifecycle`, `sandbox-fill-resolution`) instead of internal service names
+- Force Binance sandbox integration helpers to load spot markets only so real sandbox orders do not route into deprecated futures testnet endpoints
+- Use exchange-safe sandbox `clientOrderId` values in real integration order placement while keeping `{orderId}:{seq}` parsing coverage as a local fill-routing assertion
+- Group `server/.env.testnet.example` into required versus optional sandbox variables so the template matches actual integration-test behavior
+- Clarify `server/.env.testnet.example` as the template to copy into `server/.env.testnet` for auto-loaded sandbox integration config
+- Auto-load `server/.env.testnet` from the backend non-unit Jest config so `bun run test:system` picks up `CCXT_SANDBOX_*` without manual exports
+- Route backend sandbox checks through `test:system`, add `test:all` for unit+system coverage, and keep the default unit suite isolated from `*.system.spec.ts`
+- Reorganize `server/test` into `config/`, `helpers/`, and `system/`, and rename misclassified backend `e2e` specs to `*.system.spec.ts`
 - Add `SandboxExchangeHelper` to bootstrap CCXT sandbox exchanges with `setSandboxMode(true)`, tracked-order cleanup, and shared polling utilities
 - Add real sandbox integration specs for `ExchangeConnectorAdapterService` order lifecycle coverage and `FillRoutingService` mapping fallback coverage
 - Rewrite `docs/tests/MARKET_MAKING.md` to document the current sandbox integration scope, required envs, skip behavior, cleanup behavior, and deferred full-E2E gate

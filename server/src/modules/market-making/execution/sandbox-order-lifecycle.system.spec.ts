@@ -13,13 +13,13 @@ import { ExchangeConnectorAdapterService } from './exchange-connector-adapter.se
 
 const skipReason = getSandboxIntegrationSkipReason();
 
-const LOG_PREFIX = '│';
+const LOG_PREFIX = '|';
 // eslint-disable-next-line no-console
 const log = (msg: string) => console.log(`  ${LOG_PREFIX} ${msg}`);
 
 const describeSandbox = skipReason ? describe.skip : describe;
 
-describeSandbox('Sandbox order REST lifecycle (integration)', () => {
+describeSandbox('Sandbox order REST lifecycle (system)', () => {
   jest.setTimeout(240000);
 
   let helper: SandboxExchangeHelper;
@@ -27,11 +27,11 @@ describeSandbox('Sandbox order REST lifecycle (integration)', () => {
   let service: ExchangeConnectorAdapterService;
 
   beforeAll(async () => {
-    log('🔌 Init exchange...');
+    log('Init exchange...');
     helper = new SandboxExchangeHelper();
     const exchange = await helper.init();
     const config = helper.getConfig();
-    log(`✓ ${config.exchangeId} | ${config.symbol}`);
+    log(`${config.exchangeId} | ${config.symbol}`);
 
     moduleRef = await Test.createTestingModule({
       providers: [
@@ -57,19 +57,19 @@ describeSandbox('Sandbox order REST lifecycle (integration)', () => {
     }).compile();
 
     service = moduleRef.get(ExchangeConnectorAdapterService);
-    log('✓ Ready');
+    log('Ready');
   });
 
   afterAll(async () => {
     await helper?.close();
     await moduleRef?.close();
-    log('✓ Done\n');
+    log('Done\n');
   });
 
   it('places, fetches, lists, and cancels a real sandbox limit order through the adapter', async () => {
     const config = helper.getConfig();
 
-    log('📖 Fetch order book...');
+    log('Fetch order book...');
     const orderBook = await service.fetchOrderBook(
       config.exchangeId,
       config.symbol,
@@ -81,7 +81,7 @@ describeSandbox('Sandbox order REST lifecycle (integration)', () => {
     expect(Array.isArray(orderBook.asks)).toBe(true);
 
     const clientOrderId = buildSandboxClientOrderId('adapter');
-    log('📝 Create buy order...');
+    log('Create buy order...');
     const createdOrder = await helper.placeSafeCleanupAwareLimitOrder({
       side: 'buy',
       symbol: config.symbol,
@@ -91,7 +91,7 @@ describeSandbox('Sandbox order REST lifecycle (integration)', () => {
 
     expect(createdOrder.id).toBeDefined();
 
-    log('🔍 Fetch order...');
+    log('Fetch order...');
     const fetchedOrder = await pollUntil(
       async () =>
         await service.fetchOrder(
@@ -104,11 +104,11 @@ describeSandbox('Sandbox order REST lifecycle (integration)', () => {
         description: `sandbox order ${createdOrder.id} to be fetchable`,
       },
     );
-    log(`   ✓ id=${fetchedOrder.id} status=${fetchedOrder.status}`);
+    log(`   id=${fetchedOrder.id} status=${fetchedOrder.status}`);
 
     expect(String(fetchedOrder.id)).toBe(String(createdOrder.id));
 
-    log('📋 Fetch open orders...');
+    log('Fetch open orders...');
     const openOrders = await pollUntil(
       async () =>
         await service.fetchOpenOrders(config.exchangeId, config.symbol),
@@ -118,20 +118,20 @@ describeSandbox('Sandbox order REST lifecycle (integration)', () => {
         description: `sandbox order ${createdOrder.id} to appear in open orders`,
       },
     );
-    log(`   ✓ ${openOrders.length} orders, ours in list`);
+    log(`   ${openOrders.length} orders, ours in list`);
 
     expect(
       openOrders.some((order) => String(order?.id) === String(createdOrder.id)),
     ).toBe(true);
 
-    log('❌ Cancel order...');
+    log('Cancel order...');
     await service.cancelOrder(
       config.exchangeId,
       config.symbol,
       String(createdOrder.id),
     );
 
-    log('🔄 Verify cancellation...');
+    log('Verify cancellation...');
     const canceledState = await pollUntil(
       async () => {
         const orderResult = await Promise.allSettled([
@@ -169,7 +169,7 @@ describeSandbox('Sandbox order REST lifecycle (integration)', () => {
     const finalStatus = String(
       canceledState.fetchedOrder?.status || 'unknown',
     ).toLowerCase();
-    log(`   ✓ status=${finalStatus}, removed from list`);
+    log(`   status=${finalStatus}, removed from list`);
 
     expect(
       canceledState.openOrders.some(
@@ -177,6 +177,6 @@ describeSandbox('Sandbox order REST lifecycle (integration)', () => {
       ),
     ).toBe(false);
 
-    log('✅ Passed');
+    log('Passed');
   });
 });
