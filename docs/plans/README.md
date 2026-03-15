@@ -10,6 +10,10 @@ This directory contains architecture plans and design documents for Mr.Market.
 
 - **`2026-03-12-complete-market-making-cycle-design.en.md`** - Complete market making cycle design (user payment → exchange deposit → HuFi campaign → execution)
 
+## Sandbox Testing Plan
+
+- **`2026-03-15-ccxt-sandbox-integration-testing-plan.md`** - Single source of truth for sandbox adapter, fill-routing, exchange-side pure market-making runtime testing, and deferred broader system-test boundaries
+
 ## Notes
 
 - All deprecated and completed implementation plans have been removed
