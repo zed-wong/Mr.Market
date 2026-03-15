@@ -1,52 +1,52 @@
-# CCXT Sandbox 集成测试实施计划
+# CCXT Sandbox Integration Testing Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 实现 Mr.Market 与 CCXT 交易所 testnet/sandbox 的集成测试能力，验证 Execution Engine 的核心功能
+**Goal:** Implement integration testing capability between Mr.Market and CCXT exchange testnet/sandbox environments to validate the Execution Engine's core functionality
 
-**Architecture:** 采用渐进式实现方式，先建立基础设施，再逐步添加集成测试。先从单个交易所（OKX）开始，验证核心流程后再扩展到多个交易所。
+**Architecture:** Progressive implementation approach - first establish infrastructure, then gradually add integration tests. Start with a single exchange (OKX), validate core flows, then expand to multiple exchanges.
 
 **Tech Stack:** CCXT, Jest, TypeScript, NestJS
 
 ---
 
-## 文件结构
+## File Structure
 
 ```
 server/
 ├── src/
 │   ├── config/
-│   │   └── configuration.ts                    # 添加 testnet 配置项
+│   │   └── configuration.ts                    # Add testnet config
 │   └── modules/
 │       └── infrastructure/
 │           └── exchange-init/
-│               └── exchange-init.service.ts     # 添加 testnet 支持
+│               └── exchange-init.service.ts     # Add testnet support
 ├── test/
 │   └── helpers/
-│       └── sandbox-exchange.helper.ts           # 新增测试基类
-│   └── jest-integration.config.js               # 新增集成测试配置
-└── .env.testnet.example                         # 新增测试网配置模板
+│       └── sandbox-exchange.helper.ts           # New test base class
+│   └── jest-integration.config.js               # New integration test config
+└── .env.testnet.example                         # New testnet config template
 ```
 
 ---
 
-## Chunk 1: 基础设施配置
+## Chunk 1: Infrastructure Configuration
 
-### Task 1: 添加 testnet 配置项
+### Task 1: Add testnet config option
 
 **Files:**
 - Modify: `server/src/config/configuration.ts`
-- Test: N/A (配置变更)
+- Test: N/A (config change)
 
-- [ ] **Step 1: 读取现有 configuration.ts**
+- [ ] **Step 1: Read existing configuration.ts**
 
 ```bash
 Read: server/src/config/configuration.ts
 ```
 
-- [ ] **Step 2: 添加 exchange.testnet 配置**
+- [ ] **Step 2: Add exchange.testnet config**
 
-在 configuration.ts 中找到 `strategy` 配置块附近，添加：
+Find the `strategy` config block in configuration.ts and add:
 
 ```typescript
 exchange: {
@@ -61,19 +61,19 @@ git add server/src/config/configuration.ts
 git commit -m "feat: add exchange testnet configuration"
 ```
 
-### Task 2: 修改 ExchangeInitService 支持 testnet
+### Task 2: Modify ExchangeInitService to support testnet
 
 **Files:**
-- Modify: `server/src/modules/infrastructure/exchange-init/exchange-init.service.ts:43-298` (getEnvExchangeConfigs 方法)
+- Modify: `server/src/modules/infrastructure/exchange-init/exchange-init.service.ts:43-298` (getEnvExchangeConfigs method)
 - Test: N/A
 
-- [ ] **Step 1: 读取现有 exchange-init.service.ts**
+- [ ] **Step 1: Read existing exchange-init.service.ts**
 
-定位 `getEnvExchangeConfigs` 方法，查看现有交易所配置结构。
+Locate the `getEnvExchangeConfigs` method to see the current exchange config structure.
 
-- [ ] **Step 2: 修改 getEnvExchangeConfigs 方法添加 testnet 支持**
+- [ ] **Step 2: Modify getEnvExchangeConfigs method to add testnet support**
 
-在每个交易所配置中添加 `testnet` 属性：
+Add `testnet` property to each exchange config:
 
 ```typescript
 {
@@ -85,29 +85,29 @@ git commit -m "feat: add exchange testnet configuration"
       apiKey: process.env.OKX_TESTNET_API_KEY || process.env.OKX_API_KEY,
       secret: process.env.OKX_TESTNET_SECRET || process.env.OKX_SECRET,
     },
-    // ... 其他账号
+    // ... other accounts
   ],
   class: ccxt.pro.okx,
 },
 ```
 
-对以下交易所应用相同修改：
+Apply the same modification to:
 - binance
 - gate
 - bybit
 - kucoin
-- alpaca (使用 `paper: true`)
+- alpaca (use `paper: true`)
 
-- [ ] **Step 3: 修改 initializeExchangeConfigs 方法**
+- [ ] **Step 3: Modify initializeExchangeConfigs method**
 
-找到创建 exchange 实例的代码，添加 testnet 参数：
+Find the code that creates exchange instances and add testnet parameter:
 
 ```typescript
 const exchange = new config.class({
   apiKey: account.apiKey,
   secret: account.secret,
-  testnet: config.testnet,  // 新增
-  // 对于 alpaca 使用 paper: true
+  testnet: config.testnet,  // New
+  // For alpaca use paper: true
   paper: config.name === 'alpaca' ? config.testnet : undefined,
 });
 ```
@@ -119,13 +119,13 @@ git add server/src/modules/infrastructure/exchange-init/exchange-init.service.ts
 git commit -m "feat: add testnet support in ExchangeInitService"
 ```
 
-### Task 3: 创建测试环境变量模板
+### Task 3: Create test environment variable template
 
 **Files:**
 - Create: `server/.env.testnet.example`
 - Test: N/A
 
-- [ ] **Step 1: 创建 .env.testnet.example**
+- [ ] **Step 1: Create .env.testnet.example**
 
 ```bash
 Write: server/.env.testnet.example
@@ -163,21 +163,21 @@ git commit -m "docs: add testnet environment template"
 
 ---
 
-## Chunk 2: 测试基类与配置
+## Chunk 2: Test Base Class and Configuration
 
-### Task 4: 创建 SandboxExchangeHelper 测试基类
+### Task 4: Create SandboxExchangeHelper test base class
 
 **Files:**
 - Create: `server/test/helpers/sandbox-exchange.helper.ts`
 - Test: N/A
 
-- [ ] **Step 1: 创建 test/helpers 目录**
+- [ ] **Step 1: Create test/helpers directory**
 
 ```bash
 Bash: mkdir -p server/test/helpers
 ```
 
-- [ ] **Step 2: 编写 SandboxExchangeHelper 基类**
+- [ ] **Step 2: Write SandboxExchangeHelper base class**
 
 ```typescript
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -201,7 +201,7 @@ export class SandboxExchangeHelper {
       testnet: true,
     });
 
-    // 加载市场数据
+    // Load markets
     await exchange.loadMarkets();
 
     this.exchanges.set(config.name, exchange);
@@ -227,7 +227,7 @@ export class SandboxExchangeHelper {
   async cleanup(): Promise<void> {
     for (const [name, exchange] of this.exchanges) {
       try {
-        // 取消所有测试订单
+        // Cancel all test orders
         const openOrders = await exchange.fetchOpenOrders();
         for (const order of openOrders) {
           await exchange.cancelOrder(order.id, order.symbol);
@@ -261,14 +261,14 @@ git add server/test/helpers/sandbox-exchange.helper.ts
 git commit -m "test: add SandboxExchangeHelper for integration testing"
 ```
 
-### Task 5: 创建集成测试 Jest 配置
+### Task 5: Create integration test Jest config
 
 **Files:**
 - Create: `server/test/jest-integration.config.js`
-- Modify: `server/jest.config.js` (添加 projects 配置)
+- Modify: `server/jest.config.js` (add projects config)
 - Test: N/A
 
-- [ ] **Step 1: 创建 jest-integration.config.js**
+- [ ] **Step 1: Create jest-integration.config.js**
 
 ```javascript
 module.exports = {
@@ -284,7 +284,7 @@ module.exports = {
     '!src/**/index.ts',
   ],
   coverageDirectory: 'coverage-integration',
-  testTimeout: 30000, // 30秒超时，因为涉及网络请求
+  testTimeout: 30000, // 30 second timeout for network requests
   verbose: true,
   forceExit: true,
   clearMocks: true,
@@ -293,9 +293,9 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 2: 修改 jest.config.js 添加集成测试项目**
+- [ ] **Step 2: Modify jest.config.js to add integration test project**
 
-找到 `projects` 配置，添加：
+Find the `projects` config and add:
 
 ```javascript
 projects: [
@@ -319,10 +319,10 @@ projects: [
 ],
 ```
 
-或者保持现有配置不变，通过命令行运行集成测试：
+Or keep existing config and run integration tests via command line:
 
 ```bash
-# 运行集成测试
+# Run integration tests
 jest --config=test/jest-integration.config.js
 ```
 
@@ -335,19 +335,19 @@ git commit -m "test: add jest integration test configuration"
 
 ---
 
-## Chunk 3: ExchangeConnectorAdapter 集成测试
+## Chunk 3: ExchangeConnectorAdapter Integration Tests
 
-### Task 6: 创建 ExchangeConnectorAdapter 集成测试
+### Task 6: Create ExchangeConnectorAdapter integration tests
 
 **Files:**
 - Create: `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts`
 - Test: N/A
 
-**前置条件:** 需要环境变量 `EXCHANGE_TESTNET=true` 和有效的 testnet API keys
+**Prerequisites:** Requires `EXCHANGE_TESTNET=true` env var and valid testnet API keys
 
-- [ ] **Step 1: 检查测试是否应该跳过（无 testnet 配置时）**
+- [ ] **Step 1: Check if tests should be skipped (when no testnet config)**
 
-在测试文件顶部添加：
+Add at top of test file:
 
 ```typescript
 const shouldSkipIntegrationTests = () => {
@@ -359,7 +359,7 @@ describeSkipIf = (condition: boolean) =>
   condition ? describe.skip : describe;
 ```
 
-- [ ] **Step 2: 编写集成测试 - 订单生命周期**
+- [ ] **Step 2: Write integration test - order lifecycle**
 
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
@@ -379,14 +379,14 @@ describe('ExchangeConnectorAdapterService (Integration)', () => {
 
     sandboxHelper = new SandboxExchangeHelper();
 
-    // 使用 OKX testnet
+    // Use OKX testnet
     await sandboxHelper.setupExchange({
       name: 'okx',
       apiKey: process.env.OKX_TESTNET_API_KEY!,
       secret: process.env.OKX_TESTNET_SECRET!,
     });
 
-    // 模拟 ExchangeInitService
+    // Mock ExchangeInitService
     const mockExchangeInitService = {
       getExchange: (name: string) => sandboxHelper.getExchange(name),
     };
@@ -430,10 +430,10 @@ describe('ExchangeConnectorAdapterService (Integration)', () => {
 
     const pair = 'BTC/USDT';
     const side = 'buy';
-    const qty = '0.001'; // 小额测试
-    const price = '20000'; // 低价确保不会成交
+    const qty = '0.001'; // Small amount for testing
+    const price = '20000'; // Low price to ensure no fill
 
-    // 1. 下单
+    // 1. Place order
     const order = await adapterService.placeLimitOrder(
       'okx',
       pair,
@@ -447,7 +447,7 @@ describe('ExchangeConnectorAdapterService (Integration)', () => {
     expect(order.id).toBeDefined();
     expect(order.clientOrderId).toBe('test-order-001:0');
 
-    // 2. 查询订单状态
+    // 2. Fetch order status
     const fetchedOrder = await adapterService.fetchOrder(
       'okx',
       pair,
@@ -457,7 +457,7 @@ describe('ExchangeConnectorAdapterService (Integration)', () => {
     expect(fetchedOrder).toBeDefined();
     expect(fetchedOrder.status).toBe('open');
 
-    // 3. 取消订单
+    // 3. Cancel order
     const canceled = await adapterService.cancelOrder(
       'okx',
       pair,
@@ -466,7 +466,7 @@ describe('ExchangeConnectorAdapterService (Integration)', () => {
 
     expect(canceled).toBeDefined();
 
-    // 4. 验证订单已取消
+    // 4. Verify order is cancelled
     const openOrders = await adapterService.fetchOpenOrders('okx', pair);
     const testOrderStillOpen = openOrders.find(
       (o) => o.id === order.id,
@@ -500,32 +500,32 @@ git add server/src/modules/market-making/execution/exchange-connector-adapter.in
 git commit -m "test: add ExchangeConnectorAdapter integration tests"
 ```
 
-- [ ] **Step 4: 运行测试验证**
+- [ ] **Step 4: Run test to verify**
 
 ```bash
-# 先设置环境变量
+# First set environment variables
 export EXCHANGE_TESTNET=true
 export OKX_TESTNET_API_KEY=your_test_key
 export OKX_TESTNET_SECRET=your_test_secret
 
-# 运行集成测试
+# Run integration tests
 cd server
 npm run test -- --testPathPattern=exchange-connector-adapter.integration
 
-# 预期: 测试通过或跳过（如果没有配置）
+# Expected: Test passes or skips (if not configured)
 ```
 
 ---
 
-## Chunk 4: Execution Flow 集成测试
+## Chunk 4: Execution Flow Integration Tests
 
-### Task 7: 创建 Execution Flow 集成测试
+### Task 7: Create Execution Flow integration tests
 
 **Files:**
 - Create: `server/src/modules/market-making/strategy/execution/execution-flow.integration.spec.ts`
 - Test: N/A
 
-- [ ] **Step 1: 编写 tick → intent → exchange 流程测试**
+- [ ] **Step 1: Write tick → intent → exchange flow test**
 
 ```typescript
 import { Test, TestingModule } from '@nestjs/testing';
@@ -533,11 +533,11 @@ import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 
 describe('Execution Flow Integration', () => {
-  // 测试完整流程:
-  // 1. 模拟 tick 触发
-  // 2. 生成 intent
-  // 3. 执行 intent (调用真实交易所 API)
-  // 4. 验证订单状态
+  // Test complete flow:
+  // 1. Simulate tick trigger
+  // 2. Generate intent
+  // 3. Execute intent (call real exchange API)
+  // 4. Verify order status
 
   const testOrderId = uuidv4();
   const testUserId = 'test-user-001';
@@ -545,14 +545,14 @@ describe('Execution Flow Integration', () => {
   const pair = 'BTC/USDT';
 
   it('should complete full execution flow: tick → intent → exchange', async () => {
-    // 此测试需要完整的做市引擎初始化
-    // 作为占位符，验证流程可以运行
+    // This test requires full market-making engine initialization
+    // As placeholder, verify the flow can run
 
-    // 1. 验证 exchange connector 可用
-    // 2. 验证可以创建 intent
-    // 3. 验证可以执行 intent
+    // 1. Verify exchange connector is available
+    // 2. Verify can create intent
+    // 3. Verify can execute intent
 
-    expect(true).toBe(true); // 占位测试
+    expect(true).toBe(true); // Placeholder test
   }, 30000);
 });
 ```
@@ -566,27 +566,27 @@ git commit -m "test: add execution flow integration test"
 
 ---
 
-## Chunk 5: Fill Routing 集成测试
+## Chunk 5: Fill Routing Integration Tests
 
-### Task 8: 创建 Fill Routing 集成测试
+### Task 8: Create Fill Routing integration tests
 
 **Files:**
 - Create: `server/src/modules/market-making/execution/fill-routing.integration.spec.ts`
 - Test: N/A
 
-- [ ] **Step 1: 编写 fill routing 测试**
+- [ ] **Step 1: Write fill routing tests**
 
 ```typescript
 describe('Fill Routing Integration', () => {
-  // 测试:
-  // 1. clientOrderId 解析
-  // 2. fill 事件路由
+  // Test:
+  // 1. clientOrderId parsing
+  // 2. fill event routing
   // 3. ExchangeOrderMapping fallback
 
   const testClientOrderId = 'test-order-id:0';
 
   it('should parse clientOrderId correctly', () => {
-    // 验证 clientOrderId 解析逻辑
+    // Verify clientOrderId parsing logic
     const parts = testClientOrderId.split(':');
     expect(parts.length).toBe(2);
     expect(parts[0]).toBe('test-order-id');
@@ -594,7 +594,7 @@ describe('Fill Routing Integration', () => {
   });
 
   it('should route fill to correct session', async () => {
-    // 占位测试 - 需要完整的做市引擎
+    // Placeholder test - requires full market-making engine
     expect(true).toBe(true);
   });
 });
@@ -609,23 +609,23 @@ git commit -m "test: add fill routing integration test"
 
 ---
 
-## Chunk 6: 文档更新
+## Chunk 6: Documentation Update
 
-### Task 9: 更新测试文档
+### Task 9: Update test documentation
 
 **Files:**
 - Modify: `docs/tests/MARKET_MAKING.md`
 - Test: N/A
 
-- [ ] **Step 1: 读取现有测试文档**
+- [ ] **Step 1: Read existing test documentation**
 
 ```bash
 Read: docs/tests/MARKET_MAKING.md
 ```
 
-- [ ] **Step 2: 添加集成测试说明**
+- [ ] **Step 2: Add integration testing documentation**
 
-在文档末尾添加：
+Add at end of document:
 
 ```markdown
 ## Integration Tests (CCXT Testnet)
@@ -633,13 +633,13 @@ Read: docs/tests/MARKET_MAKING.md
 ### Running Integration Tests
 
 ```bash
-# 1. 复制测试环境变量模板
+# 1. Copy test environment variable template
 cp server/.env.testnet.example server/.env
 
-# 2. 填写有效的 testnet API keys
-# 需要在交易所官网申请 testnet 账号
+# 2. Fill in valid testnet API keys
+# Need to apply for testnet account on exchange website
 
-# 3. 运行集成测试
+# 3. Run integration tests
 cd server
 EXCHANGE_TESTNET=true npm run test -- --testPathPattern=integration
 ```
@@ -653,9 +653,9 @@ EXCHANGE_TESTNET=true npm run test -- --testPathPattern=integration
 
 ### Integration Test Files
 
-- `exchange-connector-adapter.integration.spec.ts` - Connector 测试
-- `execution-flow.integration.spec.ts` - 执行流程测试
-- `fill-routing.integration.spec.ts` - Fill 路由测试
+- `exchange-connector-adapter.integration.spec.ts` - Connector tests
+- `execution-flow.integration.spec.ts` - Execution flow tests
+- `fill-routing.integration.spec.ts` - Fill routing tests
 ```
 
 - [ ] **Step 3: Commit**
@@ -667,33 +667,33 @@ git commit -m "docs: add integration testing guide"
 
 ---
 
-## 验收检查清单
+## Acceptance Checklist
 
-- [ ] Phase 1: 基础设施
-  - [ ] `configuration.ts` 包含 `exchange.testnet` 配置
-  - [ ] `ExchangeInitService` 支持 testnet 参数
-  - [ ] `.env.testnet.example` 创建完成
+- [ ] Phase 1: Infrastructure
+  - [ ] `configuration.ts` contains `exchange.testnet` config
+  - [ ] `ExchangeInitService` supports testnet parameter
+  - [ ] `.env.testnet.example` created
 
-- [ ] Phase 2: Connector 集成测试
-  - [ ] `SandboxExchangeHelper` 测试基类完成
-  - [ ] `exchange-connector-adapter.integration.spec.ts` 创建并通过
+- [ ] Phase 2: Connector integration tests
+  - [ ] `SandboxExchangeHelper` test base class complete
+  - [ ] `exchange-connector-adapter.integration.spec.ts` created and passing
 
-- [ ] Phase 3: Execution Flow 测试
-  - [ ] `execution-flow.integration.spec.ts` 创建
+- [ ] Phase 3: Execution Flow tests
+  - [ ] `execution-flow.integration.spec.ts` created
 
-- [ ] Phase 4: 文档
-  - [ ] 测试文档更新完成
-
----
-
-## 已知问题与后续优化
-
-1. **Testnet 稳定性**: 部分交易所的 testnet 可能不稳定，考虑添加重试机制
-2. **多交易所支持**: 当前优先支持 OKX，后续可扩展到 Binance、Gate 等
-3. **测试数据清理**: 需要确保测试订单被正确清理
-4. **E2E 测试**: 可选的后续阶段，实现完整的做市生命周期测试
+- [ ] Phase 4: Documentation
+  - [ ] Test documentation updated
 
 ---
 
-**创建日期**: 2026-03-15
-**状态**: 规划完成，等待执行
+## Known Issues and Future Improvements
+
+1. **Testnet Stability**: Some exchanges' testnets may be unstable, consider adding retry mechanism
+2. **Multi-Exchange Support**: Currently prioritizing OKX, can expand to Binance, Gate, etc.
+3. **Test Data Cleanup**: Need to ensure test orders are properly cleaned up
+4. **E2E Tests**: Optional future phase to implement complete market-making lifecycle tests
+
+---
+
+**Created**: 2026-03-15
+**Status**: Planning complete, awaiting execution

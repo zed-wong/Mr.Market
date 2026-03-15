@@ -1,33 +1,33 @@
-# CCXT Sandbox 集成测试与 Execution Engine 验证计划
+# CCXT Sandbox Integration Testing and Execution Engine Validation Plan
 
-## 概述
+## Overview
 
-本计划实现 Mr.Market 做市系统的 Execution Engine 与 CCXT 交易所 testnet/sandbox 环境的集成测试能力。通过连接真实交易所的测试网络，无需真实资金即可验证做市核心流程的正确性。
+This plan implements integration testing capabilities for the Mr.Market market-making system's Execution Engine with CCXT exchange testnet/sandbox environments. By connecting to real exchange test networks, we can verify the correctness of core market-making flows without using real funds.
 
-## 背景与目标
+## Background and Goals
 
-### 当前状态
+### Current State
 
-- 项目已实现 36 个单元测试文件，使用 Jest mock 模拟交易所
-- `ExchangeInitService` 支持多个交易所（OKX, Binance, Alpaca, Gate, MEXC 等）
-- 缺乏与真实交易所 API 的集成测试
+- Project has 36 unit test files using Jest mocks to simulate exchanges
+- `ExchangeInitService` supports multiple exchanges (OKX, Binance, Alpaca, Gate, MEXC, etc.)
+- Lacks integration tests with real exchange APIs
 
-### 目标
+### Goals
 
-1. **Phase 1**: 建立 CCXT testnet/sandbox 基础设施
-2. **Phase 2**: 实现 Execution Engine 核心集成测试
-3. **Phase 3**: 扩展做市流程验证
+1. **Phase 1**: Establish CCXT testnet/sandbox infrastructure
+2. **Phase 2**: Implement Execution Engine core integration tests
+3. **Phase 3**: Expand market-making flow validation
 
-## 方案详情
+## Solution Details
 
-### Phase 1: CCXT Sandbox 基础设施
+### Phase 1: CCXT Sandbox Infrastructure
 
-#### 1.1 配置支持
+#### 1.1 Configuration Support
 
-在 `ExchangeInitService` 中添加 testnet 模式：
+Add testnet mode to `ExchangeInitService`:
 
 ```typescript
-// 新增配置项
+// New configuration interface
 interface ExchangeConfig {
   name: string;
   accounts: Array<{
@@ -36,13 +36,13 @@ interface ExchangeConfig {
     secret: string;
   }>;
   class: any;
-  testnet?: boolean;  // 新增
+  testnet?: boolean;  // New
 }
 ```
 
-环境变量：
+Environment variables:
 ```bash
-# .env 配置
+# .env configuration
 EXCHANGE_TESTNET=true
 OKX_TESTNET_API_KEY=xxx
 OKX_TESTNET_SECRET=xxx
@@ -50,10 +50,10 @@ BINANCE_TESTNET_API_KEY=xxx
 BINANCE_TESTNET_SECRET=xxx
 ```
 
-#### 1.2 支持的交易所
+#### 1.2 Supported Exchanges
 
-| 交易所 | 参数 | 测试网络 |
-|--------|------|----------|
+| Exchange | Parameter | Test Network |
+|----------|-----------|--------------|
 | Binance | `testnet: true` | binance-testnet |
 | OKX | `testnet: true` | okx testnet |
 | Gate | `testnet: true` | gate testnet |
@@ -61,12 +61,12 @@ BINANCE_TESTNET_SECRET=xxx
 | KuCoin | `testnet: true` | kucoin testnet |
 | Alpaca | `paper: true` | alpaca paper trading |
 
-#### 1.3 测试基类
+#### 1.3 Test Base Class
 
-创建集成测试基类 `test/helpers/sandbox-exchange.helper.ts`：
+Create integration test base class `test/helpers/sandbox-exchange.helper.ts`:
 
 ```typescript
-// 提供测试用的交易所实例和清理函数
+// Provides test exchange instances and cleanup functions
 class SandboxExchangeHelper {
   async setupExchange(name: string): Promise<ccxt.Exchange>
   async cleanup(): Promise<void>
@@ -74,166 +74,166 @@ class SandboxExchangeHelper {
 }
 ```
 
-### Phase 2: Execution Engine 集成测试
+### Phase 2: Execution Engine Integration Tests
 
-#### 2.1 ExchangeConnectorAdapter 集成测试
+#### 2.1 ExchangeConnectorAdapter Integration Tests
 
-测试文件：`server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts`
+Test file: `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts`
 
 ```typescript
 describe('ExchangeConnectorAdapterService (Integration)', () => {
-  // 订单生命周期测试
+  // Order lifecycle tests
   it('places, cancels, and fetches limit orders', async () => {
-    // 1. 下单
-    // 2. 验证订单状态
-    // 3. 取消订单
-    // 4. 验证取消成功
+    // 1. Place order
+    // 2. Verify order status
+    // 3. Cancel order
+    // 4. Verify cancellation success
   });
 
-  // 订单簿获取测试
+  // Order book fetch tests
   it('fetches order book successfully', async () => {
-    // 获取 BTC/USDT 订单簿
+    // Fetch BTC/USDT order book
   });
 
-  // 限流验证
+  // Rate limiting tests
   it('respects rate limiting between requests', async () => {
-    // 验证请求间隔
+    // Verify request intervals
   });
 });
 ```
 
-#### 2.2 Tick → Intent → Exchange 执行流
+#### 2.2 Tick → Intent → Exchange Execution Flow
 
-测试文件：`server/src/modules/market-making/strategy/execution/execution-flow.integration.spec.ts`
+Test file: `server/src/modules/market-making/strategy/execution/execution-flow.integration.spec.ts`
 
-验证完整流程：
-1. Tick 触发策略计算
-2. 生成 Intents（下单/撤单）
-3. Intent Worker 执行
-4. ExchangeConnectorAdapter 调用真实 API
-5. 验证订单状态更新
+Validate complete flow:
+1. Tick triggers strategy calculation
+2. Generate Intents (place/cancel orders)
+3. Intent Worker executes
+4. ExchangeConnectorAdapter calls real API
+5. Verify order status updates
 
-#### 2.3 Fill Routing 集成
+#### 2.3 Fill Routing Integration
 
-测试文件：`server/src/modules/market-making/execution/fill-routing.integration.spec.ts`
+Test file: `server/src/modules/market-making/execution/fill-routing.integration.spec.ts`
 
-验证：
-1. 使用真实 `clientOrderId` 格式 `{orderId}:{seq}`
-2. Fill 事件路由到正确的 session
-3. ExchangeOrderMapping fallback 工作正常
+Validate:
+1. Use real `clientOrderId` format `{orderId}:{seq}`
+2. Fill events route to correct session
+3. ExchangeOrderMapping fallback works correctly
 
-### Phase 3: 做市核心流程验证
+### Phase 3: Market-Making Core Flow Validation
 
-#### 3.1 多订单并发
+#### 3.1 Multi-Order Concurrency
 
-验证同一 `exchange:pair` 上多个订单的调度和执行。
+Validate scheduling and execution of multiple orders on the same `exchange:pair`.
 
-#### 3.2 暂停/中止/恢复
+#### 3.2 Pause/Stop/Resume
 
-测试 `PauseWithdrawOrchestratorService` 的完整流程：
+Test complete flow of `PauseWithdrawOrchestratorService`:
 1. `stopStrategyForUser`
 2. `cancelUntilDrained`
 3. `unlockFunds` → `debitWithdrawal`
-4. 失败 rollback
+4. Failure rollback
 
-#### 3.3 资金余额追踪
+#### 3.3 Balance Tracking
 
-验证 `BalanceLedgerService` 与真实交易所余额的一致性。
+Validate consistency between `BalanceLedgerService` and real exchange balances.
 
-## 测试分层架构
+## Test Layering Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  单元测试 (Jest Mock)                                       │
-│  - 快速执行、无外部依赖                                       │
-│  - 验证业务逻辑正确性                                         │
-│  - 现有 36 个 spec 文件                                      │
+│  Unit Tests (Jest Mock)                                    │
+│  - Fast execution, no external dependencies              │
+│  - Validate business logic correctness                   │
+│  - Existing 36 spec files                                 │
 └─────────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  集成测试 (CCXT Testnet)                                    │
-│  - 真实 API 调用                                            │
-│  - 验证与交易所通信                                          │
-│  - 新增 3-5 个 integration spec 文件                        │
+│  Integration Tests (CCXT Testnet)                         │
+│  - Real API calls                                         │
+│  - Validate exchange communication                        │
+│  - New 3-5 integration spec files                        │
 └─────────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  E2E 测试 (可选)                                            │
-│  - 完整做市生命周期                                          │
-│  - 需要 testnet 资金                                         │
+│  E2E Tests (Optional)                                     │
+│  - Complete market-making lifecycle                       │
+│  - Requires testnet funds                                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 实施步骤
+## Implementation Steps
 
-### Step 1: 基础设施
+### Step 1: Infrastructure
 
-- [ ] 在 `ExchangeInitService` 添加 testnet 配置支持
-- [ ] 在 `configuration.ts` 添加 `exchange.testnet` 配置项
-- [ ] 创建测试环境变量模板 `.env.testnet.example`
-- [ ] 创建 `SandboxExchangeHelper` 测试基类
+- [ ] Add testnet configuration support to `ExchangeInitService`
+- [ ] Add `exchange.testnet` config to `configuration.ts`
+- [ ] Create test environment variable template `.env.testnet.example`
+- [ ] Create `SandboxExchangeHelper` test base class
 
-### Step 2: Connector 集成测试
+### Step 2: Connector Integration Tests
 
-- [ ] 创建 `exchange-connector-adapter.integration.spec.ts`
-- [ ] 测试订单生命周期（place → fetch → cancel）
-- [ ] 测试限流机制
-- [ ] 添加多交易所切换测试
+- [ ] Create `exchange-connector-adapter.integration.spec.ts`
+- [ ] Test order lifecycle (place → fetch → cancel)
+- [ ] Test rate limiting mechanism
+- [ ] Add multi-exchange switching tests
 
-### Phase 3: Execution Flow 测试
+### Phase 3: Execution Flow Tests
 
-- [ ] 创建 `execution-flow.integration.spec.ts`
-- [ ] 测试 tick → intent → exchange 完整流程
-- [ ] 测试 fill routing 集成
+- [ ] Create `execution-flow.integration.spec.ts`
+- [ ] Test tick → intent → exchange complete flow
+- [ ] Test fill routing integration
 
-### Phase 4: 核心流程验证
+### Phase 4: Core Flow Validation
 
-- [ ] 测试多订单并发
-- [ ] 测试暂停/中止/恢复
-- [ ] 测试资金余额追踪
-- [ ] 更新 `docs/tests/MARKET_MAKING.md`
+- [ ] Test multi-order concurrency
+- [ ] Test pause/stop/resume
+- [ ] Test balance tracking
+- [ ] Update `docs/tests/MARKET_MAKING.md`
 
-## 修改的文件
+## Files to Modify
 
-| 文件 | 变更 |
-|------|------|
-| `server/src/modules/infrastructure/exchange-init/exchange-init.service.ts` | 添加 testnet 支持 |
-| `server/src/config/configuration.ts` | 添加 testnet 配置项 |
-| `server/.env.testnet.example` | 新增测试网配置模板 |
-| `server/test/helpers/sandbox-exchange.helper.ts` | 新增测试基类 |
-| `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts` | 新增集成测试 |
-| `server/src/modules/market-making/strategy/execution/execution-flow.integration.spec.ts` | 新增集成测试 |
-| `server/src/modules/market-making/execution/fill-routing.integration.spec.ts` | 新增集成测试 |
-| `docs/tests/MARKET_MAKING.md` | 更新测试文档 |
+| File | Change |
+|------|--------|
+| `server/src/modules/infrastructure/exchange-init/exchange-init.service.ts` | Add testnet support |
+| `server/src/config/configuration.ts` | Add testnet config |
+| `server/.env.testnet.example` | New testnet config template |
+| `server/test/helpers/sandbox-exchange.helper.ts` | New test base class |
+| `server/src/modules/market-making/execution/exchange-connector-adapter.integration.spec.ts` | New integration test |
+| `server/src/modules/market-making/strategy/execution/execution-flow.integration.spec.ts` | New integration test |
+| `server/src/modules/market-making/execution/fill-routing.integration.spec.ts` | New integration test |
+| `docs/tests/MARKET_MAKING.md` | Update test docs |
 
-## 风险与缓解
+## Risks and Mitigations
 
-| 风险 | 缓解措施 |
-|------|----------|
-| Testnet API 不稳定 | 使用多个交易所，降级策略 |
-| 测试网余额耗尽 | 自动化余额检查 + 提醒 |
-| 网络延迟导致测试超时 | 调整 Jest 超时��置 |
-| 交易所 API 变更 | 依赖 CCXT 版本锁定 |
+| Risk | Mitigation |
+|------|------------|
+| Testnet API instability | Use multiple exchanges, fallback strategy |
+| Testnet balance exhaustion | Automated balance check + alerts |
+| Network latency causing test timeouts | Adjust Jest timeout settings |
+| Exchange API changes | Lock CCXT dependency version |
 
-## 验收标准
+## Acceptance Criteria
 
-### Phase 1 完成
+### Phase 1 Complete
 
-- [ ] 可以通过环境变量启用 testnet 模式
-- [ ] 至少一个交易所（OKX/Binance）可以连接 testnet
+- [ ] Testnet mode can be enabled via environment variable
+- [ ] At least one exchange (OKX/Binance) can connect to testnet
 
-### Phase 2 完成
+### Phase 2 Complete
 
-- [ ] `ExchangeConnectorAdapter` 集成测试通过
-- [ ] 订单生命周期在 testnet 上验证通过
+- [ ] `ExchangeConnectorAdapter` integration tests pass
+- [ ] Order lifecycle validated on testnet
 
-### Phase 3 完成
+### Phase 3 Complete
 
-- [ ] Tick → Intent → Exchange 流程验证通过
-- [ ] Fill routing 在真实环境中工作正常
+- [ ] Tick → Intent → Exchange flow validated
+- [ ] Fill routing works in real environment
 
 ---
 
-**创建日期**: 2026-03-15
-**状态**: 规划中
-**优先级**: 高
+**Created**: 2026-03-15
+**Status**: Planning
+**Priority**: High
