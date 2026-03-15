@@ -45,8 +45,8 @@ export class StrategyIntentExecutionService {
     private readonly dexVolumeStrategyService?: DexVolumeStrategyService,
   ) {
     this.executeIntents = this.toBoolean(
-      this.configService.get('strategy.execute_intents', false),
-      false,
+      this.configService.get('strategy.execute_intents', true),
+      true,
     );
     const parsedMaxRetries = Number(
       this.configService.get('strategy.intent_max_retries', 2),

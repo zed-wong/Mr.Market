@@ -374,7 +374,7 @@ payment flow instead of backfilling legacy rows.
 
 ## Operational Notes
 
-- `strategy.execute_intents=false` means intents are created and marked processed but no live exchange actions are sent.
+- `strategy.execute_intents=false` explicitly disables live execution, so intents are created and marked processed but no exchange actions are sent.
 - `strategy.intent_execution_driver=worker` decouples tick from exchange execution and keeps tick latency stable under load.
 - `strategy.intent_execution_driver=sync` keeps legacy inline execution behavior.
 - Strategy definitions are DB-backed and managed via admin APIs.

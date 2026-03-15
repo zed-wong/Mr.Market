@@ -18,6 +18,7 @@
 
 ## 2026-03-15
 
+- Default market-making intent execution to enabled unless `MARKET_MAKING_EXECUTE_INTENTS=false` is set explicitly
 - Rewrite `docs/plans/2026-03-15-system-test-design.md` in English and narrow its claimed system-test boundaries to match current runtime capabilities
 - Rename sandbox integration spec files and suite titles to describe actual operations (`sandbox-order-lifecycle`, `sandbox-fill-resolution`) instead of internal service names
 - Force Binance sandbox integration helpers to load spot markets only so real sandbox orders do not route into deprecated futures testnet endpoints
