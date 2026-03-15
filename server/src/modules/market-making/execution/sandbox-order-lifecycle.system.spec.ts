@@ -31,6 +31,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
     helper = new SandboxExchangeHelper();
     const exchange = await helper.init();
     const config = helper.getConfig();
+
     log(`${config.exchangeId} | ${config.symbol}`);
 
     moduleRef = await Test.createTestingModule({
@@ -49,6 +50,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
               if (key === 'strategy.exchange_min_request_interval_ms') {
                 return config.minRequestIntervalMs;
               }
+
               return defaultValue;
             }),
           },
@@ -74,6 +76,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
       config.exchangeId,
       config.symbol,
     );
+
     log(`   ${orderBook.bids.length} bids / ${orderBook.asks.length} asks`);
     log(`   best: ${orderBook.bids[0]?.[0]} / ${orderBook.asks[0]?.[0]}`);
 
@@ -81,13 +84,17 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
     expect(Array.isArray(orderBook.asks)).toBe(true);
 
     const clientOrderId = buildSandboxClientOrderId('adapter');
+
     log('Create buy order...');
     const createdOrder = await helper.placeSafeCleanupAwareLimitOrder({
       side: 'buy',
       symbol: config.symbol,
       clientOrderId,
     });
-    log(`   id=${createdOrder.id} | ${createdOrder.amount}@${createdOrder.price}`);
+
+    log(
+      `   id=${createdOrder.id} | ${createdOrder.amount}@${createdOrder.price}`,
+    );
 
     expect(createdOrder.id).toBeDefined();
 
@@ -104,6 +111,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
         description: `sandbox order ${createdOrder.id} to be fetchable`,
       },
     );
+
     log(`   id=${fetchedOrder.id} status=${fetchedOrder.status}`);
 
     expect(String(fetchedOrder.id)).toBe(String(createdOrder.id));
@@ -118,6 +126,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
         description: `sandbox order ${createdOrder.id} to appear in open orders`,
       },
     );
+
     log(`   ${openOrders.length} orders, ours in list`);
 
     expect(
@@ -169,6 +178,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
     const finalStatus = String(
       canceledState.fetchedOrder?.status || 'unknown',
     ).toLowerCase();
+
     log(`   status=${finalStatus}, removed from list`);
 
     expect(

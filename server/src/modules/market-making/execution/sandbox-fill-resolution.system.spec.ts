@@ -14,7 +14,9 @@ const skipReason = getSandboxIntegrationSkipReason();
 
 if (skipReason) {
   // eslint-disable-next-line no-console
-  console.warn(`[system] Skipping sandbox fill resolution suite: ${skipReason}`);
+  console.warn(
+    `[system] Skipping sandbox fill resolution suite: ${skipReason}`,
+  );
 }
 
 const describeSandbox = skipReason ? describe.skip : describe;
@@ -36,6 +38,7 @@ describeSandbox('Sandbox fill resolution (system)', () => {
     helper = new SandboxExchangeHelper();
     await helper.init();
     const config = helper.getConfig();
+
     log(`${config.exchangeId} ready, symbol=${config.symbol}`);
 
     log('Setting up in-memory SQLite...');
@@ -73,7 +76,9 @@ describeSandbox('Sandbox fill resolution (system)', () => {
       clientOrderId,
     });
 
-    log(`   "${clientOrderId}" -> orderId="${result.orderId}", source=${result.source}`);
+    log(
+      `   "${clientOrderId}" -> orderId="${result.orderId}", source=${result.source}`,
+    );
     expect(result).toEqual({
       orderId: 'order-123',
       seq: 0,
@@ -107,20 +112,25 @@ describeSandbox('Sandbox fill resolution (system)', () => {
     log('Test 3: Exchange order ID mapping (real sandbox order)');
 
     const clientOrderId = buildSandboxClientOrderId('fill-routing');
+
     log(`   Placing sell order: clientOrderId="${clientOrderId}"...`);
     const createdOrder = await helper.placeSafeCleanupAwareLimitOrder({
       side: 'sell',
       clientOrderId,
     });
+
     log(`   Order created: id=${createdOrder.id}, price=${createdOrder.price}`);
 
     const mappingClientOrderId = `exchange-fallback-${Date.now()}`;
+
     await exchangeOrderMappingService.createMapping({
       orderId: 'mapped-by-exchange-order',
       exchangeOrderId: String(createdOrder.id),
       clientOrderId: mappingClientOrderId,
     });
-    log(`   Created mapping: exchangeId="${createdOrder.id}" -> "mapped-by-exchange-order"`);
+    log(
+      `   Created mapping: exchangeId="${createdOrder.id}" -> "mapped-by-exchange-order"`,
+    );
 
     const result = await fillRoutingService.resolveOrderForFill({
       exchangeOrderId: String(createdOrder.id),
