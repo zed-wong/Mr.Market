@@ -125,7 +125,7 @@ The following are allowed within this decision:
 - JSON-schema-based config validation
 - Default config templates
 - Admin-managed strategy catalogs
-- Versioned configuration snapshots
+- Pinned configuration snapshots
 - Additional built-in strategy executors added through code review and deployment
 
 ## Not Allowed

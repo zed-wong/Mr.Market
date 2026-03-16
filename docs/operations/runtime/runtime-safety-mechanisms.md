@@ -150,7 +150,7 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 ## 15) Order snapshot requirement
 
 - `start_mm` requires order to have `strategySnapshot` with `resolvedConfig`.
-- Throws error if snapshot is missing, forcing backfill first.
+- Throws error if snapshot is missing. Current prototype guidance is to recreate the order through the active payment flow instead of backfilling legacy rows.
 - This ensures all orders have pinned config before runtime execution.
 - File: `server/src/modules/market-making/user-orders/market-making.processor.ts`
 

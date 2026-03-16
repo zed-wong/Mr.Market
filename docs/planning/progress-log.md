@@ -77,6 +77,12 @@
 - Implement env-driven `CCXT_SANDBOX_*` boot in `ExchangeInitService`, route `sandbox-order-lifecycle.system.spec.ts` through the real exchange-init path, and unref exchange-init background timers so Jest exits cleanly
 - Update sandbox env/docs references to include optional `CCXT_SANDBOX_ENABLED` and `CCXT_SANDBOX_ACCOUNT_LABEL` and describe the real ExchangeInitService-backed lifecycle suite
 
+## 2026-03-16
+
+- Refresh `docs/execution` index, ADR wording, and UI token notes to match the current `main` branch structure and theme values
+- Rewrite execution-layer memo and network-mapping docs to match the current backend-supported scope, authoritative encode/decode flow, and native-network resolution behavior
+- Align market-making and strategy-definition docs with current routes, snapshot guidance, controller/runtime hooks, and source file locations
+
 ## 2026-03-14
 
 - Clarify `STRATEGY_DEFINITION_GUIDE.md` to document the runtime-supported JSON Schema subset instead of claiming full spec support

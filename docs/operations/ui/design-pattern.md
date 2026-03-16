@@ -63,13 +63,13 @@ Defined in `interface/src/lib/stores/theme.ts`:
 ### Main Theme Intent
 
 - Main themes keep existing app identity (orange/blue accent family)
-- Main light base tokens are `base-100: #ffffff`, `base-200: #f8fafc`, `base-300: #e2e8f0`, `base-content: #0f172a`
+- Main light base tokens are `base-100: #ffffff`, `base-200: #f8fafc`, `base-300: oklch(95% 0 0)`, `base-content: #0f172a`
 
 ### Admin Theme Intent
 
 - Admin themes are neutral and professional
-- Admin light base tokens are `base-100: #ffffff`, `base-200: #f8fafc`, `base-300: #e2e8f0`, `base-content: #0f172a`
-- Admin dark base tokens are `base-100: #0f172a`, `base-200: #1e293b`, `base-300: #334155`, `base-content: #f8fafc`
+- Admin light base tokens are `base-100: #ffffff`, `base-200: #f8fafc`, `base-300: oklch(95% 0 0)`, `base-content: #0f172a`
+- Admin dark base tokens are `base-100: #0f172a`, `base-200: #1e293b`, `base-300: oklch(20% 0 0)`, `base-content: #f8fafc`
 
 ### Usage Rules Followed In Codebase
 

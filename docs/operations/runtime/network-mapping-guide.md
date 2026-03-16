@@ -2,7 +2,7 @@
 
 ## Overview
 
-`NetworkMappingService` is an intelligent service that maps Mixin Network Asset IDs to network identifiers required by the CCXT exchange library. This solves the identification problem for multi-chain assets (like USDT) across different blockchain networks.
+`NetworkMappingService` maps Mixin asset IDs to the network identifiers expected by CCXT exchange adapters. The service is intentionally simple: fetch asset metadata once, cache it, then resolve the network from chain-level mappings plus a symbol fallback.
 
 ## Background
 
@@ -16,10 +16,10 @@ Each asset in Mixin Network has:
 
 ### CCXT Network Parameters
 
-CCXT requires specifying a network when calling `fetchDepositAddress(symbol, { network })`:
+CCXT often requires a network when calling `fetchDepositAddress(symbol, { network })`:
 
 - For USDT: Could be `'ERC20'`, `'TRC20'`, `'BSC'`, `'MATIC'`, etc.
-- For native coins: BTC uses `'BTC'`, ETH uses `'ETH'`
+- For native-chain assets, the current implementation returns the mapped chain `default` value. Examples on `main`: BTC -> `BTC`, ETH -> `ERC20`, BNB -> `BSC`
 
 ### Challenge
 
@@ -34,16 +34,19 @@ The symbol alone cannot determine the correct network; it must be combined with 
 
 ## Implementation Logic
 
-### 1. Three-Layer Mapping Strategy
+### 1. Resolution Order
 
 ```typescript
-// Layer 1: Chain ID → Network mapping (most accurate)
+// 1. If asset is the native chain asset, return CHAIN_TO_NETWORK_MAP[chainId].default
+chainId === assetId → default network
+
+// 2. Otherwise try chain-specific symbol mapping
 CHAIN_TO_NETWORK_MAP[chainId][symbol] → network
 
-// Layer 2: Symbol fallback mapping (common assets)
+// 3. Fallback to a symbol default
 SYMBOL_NETWORK_FALLBACK[symbol] → network
 
-// Layer 3: Use symbol itself as network (last resort)
+// 4. Final fallback: use the symbol itself
 symbol → network
 ```
 
@@ -57,13 +60,12 @@ graph TD
     D --> E[Cache asset info]
     E --> C
     C --> F{chain_id == asset_id?}
-    F -->|Yes| G[Native chain asset]
-    F -->|No| H[Token asset]
-    G --> I[Lookup CHAIN_TO_NETWORK_MAP]
-    H --> I
-    I --> J{Mapping found?}
-    J -->|Yes| K[Return mapped network]
-    J -->|No| L[Use SYMBOL_NETWORK_FALLBACK]
+    F -->|Yes| G[Return chain default network]
+    F -->|No| H[Lookup chain mapping by symbol]
+    G --> O
+    H --> I{Mapping found?}
+    I -->|Yes| J[Return mapped network]
+    I -->|No| L[Use SYMBOL_NETWORK_FALLBACK]
     L --> M{Fallback found?}
     M -->|Yes| N[Return fallback network]
     M -->|No| O[Return symbol as network]
@@ -77,19 +79,24 @@ async getNetworkForAsset(assetId: string, symbol: string): Promise<string> {
   const assetInfo = await this.fetchAssetWithCache(assetId);
   const chainId = assetInfo.chain_id;
 
-  // 2. Lookup chain mapping
+  // 2. Native chain asset uses chain default network
+  if (chainId === assetId) {
+    return this.CHAIN_TO_NETWORK_MAP[chainId]?.default || symbol;
+  }
+
+  // 3. Lookup chain mapping
   const chainMapping = this.CHAIN_TO_NETWORK_MAP[chainId];
   if (chainMapping) {
     return chainMapping[symbol] || chainMapping.default;
   }
 
-  // 3. Fallback to symbol mapping
+  // 4. Fallback to symbol mapping
   const fallback = this.SYMBOL_NETWORK_FALLBACK[symbol];
   if (fallback) {
     return fallback;
   }
 
-  // 4. Finally use symbol itself
+  // 5. Finally use symbol itself
   return symbol;
 }
 ```
@@ -111,6 +118,12 @@ async getNetworkForAsset(assetId: string, symbol: string): Promise<string> {
 ### Example Mappings
 
 ```typescript
+// ETH (native)
+assetId: '43d61dcd-e413-450d-80b8-101d5e903357'
+chainId: '43d61dcd-e413-450d-80b8-101d5e903357' (same as asset_id)
+symbol: 'ETH'
+→ network: 'ERC20'
+
 // USDT on Ethereum
 assetId: '4d8c508b-91c5-375b-92b0-ee702ed2dac5'
 chainId: '43d61dcd-e413-450d-80b8-101d5e903357' (Ethereum)
@@ -128,6 +141,12 @@ assetId: 'c6d0c728-2624-429b-8e0d-d9d19b6592fa'
 chainId: 'c6d0c728-2624-429b-8e0d-d9d19b6592fa' (same as asset_id)
 symbol: 'BTC'
 → network: 'BTC'
+
+// BNB (native)
+assetId: '1949e683-6a08-49e2-b087-d6b72398588f'
+chainId: '1949e683-6a08-49e2-b087-d6b72398588f' (same as asset_id)
+symbol: 'BNB'
+→ network: 'BSC'
 ```
 
 ## Performance Optimization
@@ -223,12 +242,9 @@ SYMBOL_NETWORK_FALLBACK: {
 ### API Call Failure
 
 ```typescript
-try {
-  const network = await getNetworkForAsset(assetId, symbol);
-} catch (error) {
-  // Automatically fallback to SYMBOL_NETWORK_FALLBACK
-  // If not found, use symbol itself
-}
+const network = await getNetworkForAsset(assetId, symbol);
+// The service catches fetchAsset errors internally,
+// logs them, and returns SYMBOL_NETWORK_FALLBACK[symbol] || symbol.
 ```
 
 ### Unknown Asset
@@ -311,14 +327,14 @@ Watch for these logs:
 | Asset            | Mixin Chain ID                         | CCXT Network | Description      |
 | ---------------- | -------------------------------------- | ------------ | ---------------- |
 | **BTC**          | `c6d0c728-2624-429b-8e0d-d9d19b6592fa` | `BTC`        | Bitcoin native   |
-| **ETH**          | `43d61dcd-e413-450d-80b8-101d5e903357` | `ETH`        | Ethereum native  |
+| **ETH**          | `43d61dcd-e413-450d-80b8-101d5e903357` | `ERC20`      | Ethereum native  |
 | **USDT-ERC20**   | `43d61dcd-e413-450d-80b8-101d5e903357` | `ERC20`      | Ethereum network |
 | **USDT-TRC20**   | `25dabac5-056a-48ff-b9f9-f67395dc407c` | `TRC20`      | TRON network     |
 | **USDT-BSC**     | `1949e683-6a08-49e2-b087-d6b72398588f` | `BEP20`      | BSC network      |
 | **USDT-Polygon** | `b7938396-3f94-4e0a-9179-d3440718156f` | `MATIC`      | Polygon network  |
 | **USDT-Solana**  | `64692c23-8971-4cf4-84a7-4dd1271dd887` | `SOL`        | Solana network   |
 | **TRX**          | `25dabac5-056a-48ff-b9f9-f67395dc407c` | `TRC20`      | TRON native      |
-| **BNB**          | `1949e683-6a08-49e2-b087-d6b72398588f` | `BEP20`      | BSC native       |
+| **BNB**          | `1949e683-6a08-49e2-b087-d6b72398588f` | `BSC`        | BSC native       |
 | **MATIC**        | `b7938396-3f94-4e0a-9179-d3440718156f` | `MATIC`      | Polygon native   |
 
 ### How to Find Asset ID

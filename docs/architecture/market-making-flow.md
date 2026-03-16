@@ -64,12 +64,12 @@ flowchart TD
   N[start_mm]
   O[Load strategySnapshot<br/>controllerType + resolvedConfig]
   P[Attach to ExchangePairExecutor<br/>exchange:pair pooled execution]
-  Q[Tick loop<br/>ClockTickCoordinator -> ExecutorRegistry.onTick]
-  R[Strategy sessions compute actions<br/>controller.onTick]
+  Q[Tick loop<br/>ClockTickCoordinator -> StrategyService.onTick]
+  R[ExecutorRegistry active executors run<br/>executor.onTick -> controller.decideActions]
   S[Intents executed by worker/executor]
   T[Fill arrives<br/>PrivateStreamTracker]
   U[FillRoutingService parses clientOrderId<br/>fallback to ExchangeOrderMapping]
-  V[Route fill to executor session<br/>controller.onFill]
+  V[Route fill to executor session<br/>update trackers and executor hooks]
   W[stop_mm -> removeOrder from executor<br/>state=stopped]
 
   A --> B
@@ -92,7 +92,7 @@ flowchart TD
   R --> S
   T --> U
   U --> V
-  V --> R
+  V --> Q
   P --> W
 ```
 
@@ -180,7 +180,7 @@ If withdrawal path is enabled and used:
 3. For each `ExchangePairExecutor`:
    - Checks `session.nextRunAtMs` against current time.
    - Calls `executor.onTick(ts)` which triggers `handlers.onTick(session, ts)`.
-4. Handler invokes controller `decideActions(session, marketData)`.
+4. Handler invokes controller `decideActions(session, ts, service)` and controllers read market data through the shared runtime services.
 5. Controller emits actions (place/cancel/stop).
 6. Orchestrator writes intents to `StrategyOrderIntentEntity`.
 7. Intent worker/executor processes pending intents asynchronously.
@@ -196,8 +196,8 @@ If withdrawal path is enabled and used:
 3. `ExecutorRegistry.findExecutorByOrderId()` resolves executor for order.
 4. `PrivateStreamTracker` only dispatches fills with the owning `orderId`; when an exchange stream sends cumulative `filled`, it first converts that snapshot to a positive delta against `ExchangeOrderTracker` state.
 5. `StrategyService` builds ledger idempotency from stable fill identity (`fillId` or order+price+side+cumulative state), not local receipt time, so duplicate private-stream replays do not drift balances.
-6. `ExchangePairExecutor.onFill(fill)` dispatches to the target session handler.
-7. Controller `onFill(session, fill)` processes and may emit new actions.
+6. `PrivateStreamTracker` updates order-tracker state and forwards the normalized fill to `ExchangePairExecutor.onFill(fill)`.
+7. `ExchangePairExecutor` dispatches to the target session handler. In the current pooled runtime, fills update tracker state and runtime bookkeeping for future ticks; controller-specific fill callbacks remain limited.
 
 ### 7) Stop market making
 
@@ -334,6 +334,8 @@ Failure paths can move to:
 
 `failed`
 
+When `withdraw_to_exchange` remains disabled, the default path stops at `payment_complete`.
+
 ## Strategy Definition and Snapshot
 
 ### Definition Structure
@@ -345,9 +347,9 @@ interface StrategyDefinition {
   name: string;
   controllerType:
     | "pureMarketMaking"
-    | "signalAwareMarketMaking"
     | "arbitrage"
-    | "volume";
+    | "volume"
+    | "timeIndicator";
   configSchema: Record<string, unknown>; // JSON schema
   defaultConfig: Record<string, unknown>;
   enabled: boolean;
@@ -361,16 +363,17 @@ interface StrategyDefinition {
 async resolveForOrderSnapshot(definitionId: string, overrides?: Record<string, unknown>) {
   // 1. Load definition
   const definition = await this.findOne({ where: { id: definitionId } });
+  const controllerType = this.getDefinitionControllerType(definition);
 
-  // 2. Merge defaults + overrides
-  const resolvedConfig = deepMerge(definition.defaultConfig, overrides || {});
+  // 2. Merge defaults + overrides, then normalize runtime-only fields
+  const resolvedConfig = this.normalizeAndValidateConfig(definition, {
+    ...this.toConfig(definition.defaultConfig),
+    ...(overrides || {}),
+  });
 
-  // 3. Validate against schema
-  this.validateConfigAgainstSchema(resolvedConfig, definition.configSchema);
-
-  // 4. Return snapshot payload
+  // 3. Return snapshot payload
   return {
-    controllerType: definition.controllerType,
+    controllerType,
     resolvedConfig,
   };
 }
@@ -384,7 +387,12 @@ payment flow instead of backfilling legacy rows.
 
 ## Operational Notes
 
+<<<<<<< HEAD:docs/architecture/market-making-flow.md
 - `strategy.execute_intents=false` explicitly disables live execution, so intents are created and marked processed but no exchange actions are sent.
+=======
+- `strategy.execute_intents=false` means intents are created and marked processed but no live exchange actions are sent.
+- On `main`, `strategy.execute_intents` defaults to `false` unless `MARKET_MAKING_EXECUTE_INTENTS=true` is set.
+>>>>>>> d993aa5 (Refresh execution docs for current main runtime):docs/execution/flow/MARKET_MAKING_FLOW.md
 - `strategy.intent_execution_driver=worker` decouples tick from exchange execution and keeps tick latency stable under load.
 - `strategy.intent_execution_driver=sync` keeps legacy inline execution behavior.
 - Strategy definitions are DB-backed and managed via admin APIs.
@@ -402,13 +410,14 @@ server/src/modules/market-making/
 │   ├── strategy.service.ts
 │   ├── strategy.module.ts
 │   ├── config/
-│   │   ├── strategy-controller.registry.ts
 │   │   ├── strategy-controller.types.ts
 │   │   └── strategy-controller-aliases.ts
 │   ├── controllers/
+│   │   ├── strategy-controller.registry.ts
 │   │   ├── pure-market-making-strategy.controller.ts
 │   │   ├── arbitrage-strategy.controller.ts
-│   │   └── volume-strategy.controller.ts
+│   │   ├── volume-strategy.controller.ts
+│   │   └── time-indicator-strategy.controller.ts
 │   ├── execution/
 │   │   ├── executor-registry.ts
 │   │   ├── exchange-pair-executor.ts

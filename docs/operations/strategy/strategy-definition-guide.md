@@ -99,7 +99,7 @@ export class StrategyDefinition {
   @Column({ nullable: true })
   description?: string;
 
-  @Column()
+  @Column({ name: "executorType" })
   controllerType: string; // Maps to built-in controller
 
   @Column("simple-json")
@@ -194,18 +194,17 @@ async resolveForOrderSnapshot(
     throw new BadRequestException(`Strategy definition ${definitionId} not found`);
   }
 
-  // 2. Merge defaults + overrides
-  const resolvedConfig = this.mergeConfig(
-    definition.defaultConfig,
-    overrides || {},
-  );
+  const controllerType = this.getDefinitionControllerType(definition);
 
-  // 3. Validate against schema
-  this.validateConfigAgainstSchema(resolvedConfig, definition.configSchema);
+  // 2. Merge defaults + overrides and normalize runtime-only fields
+  const resolvedConfig = this.normalizeAndValidateConfig(definition, {
+    ...this.toConfig(definition.defaultConfig),
+    ...(overrides || {}),
+  });
 
-  // 4. Return snapshot payload
+  // 3. Return snapshot payload
   return {
-    controllerType: definition.controllerType,
+    controllerType,
     resolvedConfig,
   };
 }
@@ -311,9 +310,6 @@ DELETE /admin/strategy/definitions/:id/remove
 // List enabled pure market making strategies (for user selection)
 GET /user-orders/market-making/strategies
 
-// Get single strategy details
-GET /user-orders/market-making/strategies/:id
-
 // Create intent with strategy selection
 POST /user-orders/market-making/intent
 {
@@ -322,6 +318,9 @@ POST /user-orders/market-making/intent
   strategyDefinitionId: string,
   configOverrides?: Record<string, unknown>
 }
+
+// Order details use the market-making order route, not the strategy catalog route
+GET /user-orders/market-making/:id
 ```
 
 ## Config Override Example
@@ -442,15 +441,16 @@ server/src/
 │   │   └── time-indicator-strategy.controller.ts
 │   └── dex/
 │       └── strategy-config-resolver.service.ts  # Config resolution
-├── modules/admin/strategy/
+├── modules/admin/
 │   ├── admin.controller.ts                 # Admin API
-│   └── adminStrategy.service.ts            # Admin service
+│   └── strategy/
+│       └── adminStrategy.service.ts        # Admin service
 ├── modules/market-making/user-orders/
 │   ├── user-orders.controller.ts           # User API
 │   └── market-making.processor.ts          # Queue processor
 └── database/seeder/
     ├── seed.ts                             # Seed script
-    ├── defaultSeedValues.ts                # Default values
+    ├── default-seed-values.ts              # Default values
     └── data/strategies/                    # JSON definitions
         ├── pure-market-making.json
         ├── arbitrage.json

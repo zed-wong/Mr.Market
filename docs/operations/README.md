@@ -7,6 +7,13 @@ This directory contains execution, testing, integration, and implementation guid
 ```text
 docs/operations/
 ├── README.md
+├── integrations/
+│   └── mixin-memo-encoding.md
+├── runtime/
+│   ├── network-mapping-guide.md
+│   └── runtime-safety-mechanisms.md
+├── strategy/
+│   └── strategy-definition-guide.md
 ├── testing/
 │   └── market-making.md
 ├── ui/
@@ -16,8 +23,8 @@ docs/operations/
 │   └── runtime-safety-mechanisms.md
 ├── strategy/
 │   └── strategy-definition-guide.md
-└── integrations/
-    └── mixin-memo-encoding.md
+└── ../architecture/decisions/
+    └── 001-static-strategy-logic.md
 ```
 
 ## Quick Links
@@ -39,6 +46,10 @@ docs/operations/
 ### UI
 
 - [Design Pattern](./ui/design-pattern.md) - Frontend stack and design tokens
+
+### Decisions
+
+- [ADR-001](../architecture/decisions/001-static-strategy-logic.md) - Static strategy logic and pinned config snapshots
 
 ## Architecture Overview
 
