@@ -2,6 +2,10 @@
 
 This document covers the current CCXT sandbox integration scope for market making.
 
+It documents the sandbox suites that are currently implemented today.
+
+The broader production-parity target is tracked separately in `docs/plans/2026-03-15-ccxt-sandbox-integration-testing-plan.md`. That target requires the same `ExchangeInitService`, `start_mm`, `stop_mm`, tick, and execution runtime path as mainnet. The current implemented scope is narrower.
+
 The March 15 implementation is intentionally limited to the runtime behaviors that already exist:
 
 - Phase 1: isolated sandbox harness bootstrapping
@@ -112,7 +116,7 @@ Full market-making end-to-end coverage should stay deferred until all of the fol
 - the E2E boundary is documented precisely
 - any ledger assertions match runtime behavior actually implemented in `start_mm` and `stop_mm`
 
-Until then, sandbox integration coverage stops at adapter REST behavior and fill-routing resolution.
+Until then, the currently implemented sandbox coverage stops at adapter REST behavior and fill-routing resolution. It is useful, but it is not yet the same as production-parity execution-engine coverage.
 
 ## Last Updated
 

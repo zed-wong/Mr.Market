@@ -1,5 +1,11 @@
 # Execution Flow Changelog
 
+## 2026-03-17
+
+- Reframe the CCXT sandbox testing plan as a production-parity execution-engine plan that requires the same exchange init and `start_mm` / `stop_mm` runtime paths as mainnet and explicitly gates remaining parity gaps
+- Clarify `docs/tests/MARKET_MAKING.md` as documenting the currently implemented sandbox suites only, not the broader production-parity target
+- Update `docs/plans/README.md` to describe the March 15 sandbox plan as the production-parity execution-testing source of truth
+
 ## 2026-03-14
 
 - Clarify `STRATEGY_DEFINITION_GUIDE.md` to document the runtime-supported JSON Schema subset instead of claiming full spec support

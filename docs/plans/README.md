@@ -12,7 +12,7 @@ This directory contains architecture plans and design documents for Mr.Market.
 
 ## Sandbox Testing Plan
 
-- **`2026-03-15-ccxt-sandbox-integration-testing-plan.md`** - Single source of truth for sandbox adapter, fill-routing, exchange-side pure market-making runtime testing, and deferred broader system-test boundaries
+- **`2026-03-15-ccxt-sandbox-integration-testing-plan.md`** - Single source of truth for production-parity sandbox execution testing across exchange init, runtime entrypoints, exchange-side market making, and gated fill-ingestion upgrades
 
 ## Notes
 
