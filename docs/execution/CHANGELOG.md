@@ -2,6 +2,7 @@
 
 ## 2026-03-18
 
+- Translate the March 18 market-making testing completion checklist into English and tighten its task ordering and execution wording
 - Complete Track B1 business-flow parity with a new payment-intake system helper/spec that covers real order-intent creation, snapshot intake, `payment_complete`, strategy snapshot persistence, and ledger credits
 - Complete A7 private-fill parity on the reference exchange by using a second sandbox account as the live counterparty and passing the real `watchOrders()` fill-routing system assertion
 - Add optional `CCXT_SANDBOX_ACCOUNT2_*` sandbox config and a conditional dual-account A7 live-fill system-test path so true private-stream fill verification can run when a counterparty testnet account is available
