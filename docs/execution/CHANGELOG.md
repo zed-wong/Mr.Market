@@ -2,6 +2,7 @@
 
 ## 2026-03-18
 
+- Mark the March 18 testnet closed-loop funding E2E task as blocked until the runtime re-enables `withdraw_to_exchange`, stops refund-only validation mode, and wires the broader withdrawal/deposit confirmation path end to end
 - Add in-memory worker-error system coverage for pure market-making intent execution and update the March 18 testing checklist to mark the completed onFill, ledger, lifecycle, and error-handling tracks
 - Add a sandbox-backed private partial-fill ingestion system spec that verifies deterministic `partially_filled` events update the tracked order state and reach the pooled executor callback
 - Add in-memory system coverage for pure market-making intent lifecycle, retry, failure, and idempotency handling, asserting persisted `NEW -> SENT -> DONE` / `FAILED` state changes plus mapping/history side effects

@@ -93,7 +93,7 @@ const executor = this.executorRegistry.getOrCreateExecutor(
 | #3 | Add error-handling and retry system tests | Cover network timeouts, API errors, partial fills, and duplicate intents | Medium | Completed |
 | #4 | Integrate `BalanceLedgerService` | Call `BalanceLedgerService` from `onFill` to update user balances | High | Completed |
 | #5 | Add DEX integration system tests | Cover DEX quote sourcing and execution | Low | Pending |
-| #6 | Add a closed-loop funding e2e test (testnet) | Validate deposit -> market making -> fill -> balance verification on testnet | Low | Pending |
+| #6 | Add a closed-loop funding e2e test (testnet) | Validate deposit -> market making -> fill -> balance verification on testnet | Low | Blocked |
 
 ---
 
@@ -179,7 +179,14 @@ const executor = this.executorRegistry.getOrCreateExecutor(
 5. Calculate PnL
 6. Withdraw funds
 
-**Note:** This should be the final task because it only becomes meaningful after the earlier tasks are complete.
+**Current blocker:** The full payment-complete -> withdraw_to_exchange -> withdrawal_confirmed -> deposit_confirming/deposit_confirmed -> join_campaign -> created/running path is not executable yet in the current runtime.
+
+**Blocking gaps confirmed in code:**
+1. `check_payment_complete` explicitly skips queueing `withdraw_to_exchange`
+2. `handleWithdrawToExchange` is still in validation mode and refunds instead of sending funds to the exchange
+3. the broader exchange-deposit confirmation path is not wired into a production-ready testable closed loop yet
+
+**Note:** This remains the final task because it only becomes meaningful after the earlier tasks are complete and the withdrawal/deposit runtime path is enabled end to end.
 
 ---
 
