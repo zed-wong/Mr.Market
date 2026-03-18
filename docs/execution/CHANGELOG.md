@@ -2,6 +2,9 @@
 
 ## 2026-03-18
 
+- Complete Track B1 business-flow parity with a new payment-intake system helper/spec that covers real order-intent creation, snapshot intake, `payment_complete`, strategy snapshot persistence, and ledger credits
+- Complete A7 private-fill parity on the reference exchange by using a second sandbox account as the live counterparty and passing the real `watchOrders()` fill-routing system assertion
+- Add optional `CCXT_SANDBOX_ACCOUNT2_*` sandbox config and a conditional dual-account A7 live-fill system-test path so true private-stream fill verification can run when a counterparty testnet account is available
 - Wire pure market-making runtime session attach/detach to `PrivateStreamIngestionService`, add watcher refcount/backoff coverage, and carry `accountLabel` on pooled executor sessions for account-safe private-stream routing
 - Implement `PrivateStreamTrackerService` exchange-order fallback and account-boundary handling, add passing private-stream unit suites, and add a new A7 `private-fill-ingestion.system.spec.ts` runtime integration spec
 - Add a new market-making testing roadmap plan that stages execution-engine parity before the broader business lifecycle, uses checkbox phase gates, and tracks exchange validation with a lightweight capability matrix
@@ -221,6 +224,7 @@
 
 - Remove Postgres leftovers and align configs/docs with SQLite
 - Restore snapshot memo handling and defer market making order creation until payment completion
+- Add structured progress logging across system-test suites for clearer execution tracing
 
 ## 2026-01-13
 

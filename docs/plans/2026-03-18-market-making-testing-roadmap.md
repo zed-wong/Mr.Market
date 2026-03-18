@@ -248,7 +248,7 @@ Exit gate:
 
 ### Phase A7: Fill Routing And Live-Fill Upgrade Gate
 
-Status: partial
+Status: complete on reference exchange
 
 Implementation checklist:
 
@@ -261,16 +261,12 @@ Verification checklist:
 - [x] parseable `clientOrderId` resolution works
 - [x] client-order mapping fallback works
 - [x] exchange-order mapping fallback works with a real sandbox order ID
-- [ ] a live exchange fill event routes through `FillRoutingService`
-- [ ] the correct executor receives the live fill
+- [x] a live exchange fill event routes through `FillRoutingService`
+- [x] the correct executor receives the live fill
 
 Exit gate:
 
-- [ ] live private-fill parity is only claimed after a real exchange private stream exists and is asserted deterministically
-
-Current blocker:
-
-- the runtime now starts a real `watchOrders()` ingestion loop, but deterministic system coverage still injects the filled private-stream payload instead of waiting on a live exchange fill event
+- [x] live private-fill parity is only claimed after a real exchange private stream exists and is asserted deterministically
 
 ### Track A Completion Rule
 
@@ -278,6 +274,7 @@ Track A is considered complete for current runtime scope when:
 
 - [x] phases A1 through A6 pass on the reference exchange
 - [x] phase A7 remains explicitly marked partial or complete, never implied
+- [x] phase A7 now passes on the reference exchange when a second sandbox account is configured for the counterparty live-fill assertion
 - [x] the capability matrix records the highest validated phase ceiling for each tested exchange
 
 ## Track B: Full Market-Making Business Lifecycle
@@ -288,23 +285,23 @@ Track B expands outward from execution into the surrounding business workflow.
 
 ### Phase B1: Order Creation And Payment Intake
 
-Status: not started
+Status: complete
 
 Implementation checklist:
 
-- [ ] define a deterministic system-test entry path for market-making order creation
-- [ ] cover payment-state persistence and transition to `payment_complete`
-- [ ] verify `strategySnapshot` persistence for execution handoff
+- [x] define a deterministic system-test entry path for market-making order creation
+- [x] cover payment-state persistence and transition to `payment_complete`
+- [x] verify `strategySnapshot` persistence for execution handoff
 
 Verification checklist:
 
-- [ ] business-side payment state is correct
-- [ ] the persisted market-making order is valid for Track A runtime startup
-- [ ] ledger-side payment effects match implemented behavior
+- [x] business-side payment state is correct
+- [x] the persisted market-making order is valid for Track A runtime startup
+- [x] ledger-side payment effects match implemented behavior
 
 Exit gate:
 
-- [ ] the system can create a valid execution-ready market-making order through the real business flow
+- [x] the system can create a valid execution-ready market-making order through the real business flow
 
 ### Phase B2: Withdrawal And Exchange Funding
 
@@ -398,12 +395,13 @@ Exit gate:
 - [x] add `server/test/system/market-making/strategy/pure-market-making-single-tick.system.spec.ts`
 - [x] add `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
 - [x] add `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
+- [x] add `server/test/system/helpers/market-making-payment.helper.ts`
+- [x] add `server/test/system/market-making/user-orders/market-making-payment-intake.system.spec.ts`
 - [x] expand the capability matrix after each real exchange run
 - [x] revisit Track B readiness only after Track A4 passes on the reference exchange
 
 ## Known Missing Runtime Capabilities
 
-- real exchange private-fill ingestion is not implemented yet
 - `stop_mm` does not currently prove exchange-order drain or cancel safety
 - deterministic end-to-end exchange funding and broader campaign lifecycle coverage is not yet established
 - the per-exchange capability matrix is still mostly unvalidated beyond the reference exchange

@@ -15,8 +15,10 @@ The currently implemented sandbox scope is intentionally limited to the runtime 
 - Phase 5: single-tick parity through the real executor, intent, exchange execution, mapping, tracker, and history path
 - Phase 6: multi-layer parity through the real executor with layered price and quantity assertions plus hanging-order preservation
 - Phase 7: cadence parity through repeated eligible ticks with deterministic submitted `clientOrderId` sequencing
+- Phase 8: private-fill parity through real `watchOrders()` ingestion and dual-account live-fill assertion
+- Phase B1: order creation and payment intake parity through real order-intent creation, snapshot intake, and `payment_complete`
 
-It does not claim full end-to-end private-fill ingestion.
+It still does not claim the broader Track B withdrawal, campaign, reward, or reconciliation lifecycle.
 
 ## Current Integration Scope
 
@@ -115,6 +117,30 @@ Coverage:
 - assert submitted exchange-safe `clientOrderId` values increment deterministically across cycles
 - keep tracker, mapping, and execution history state coherent after repeated cycles
 
+### Phase 8: Private-Fill Ingestion
+
+Spec: `server/test/system/market-making/execution/private-fill-ingestion.system.spec.ts`
+
+Coverage:
+
+- start the real private `watchOrders()` ingestion loop from the runtime attach path
+- route a deterministic filled private-stream payload to the pooled executor
+- when a second sandbox account is configured, place a real counterparty order and assert the live fill reaches the executor through `FillRoutingService`
+- stop the watcher through the real `stop_mm` path
+
+### Phase B1: Order Creation And Payment Intake
+
+Spec: `server/test/system/market-making/user-orders/market-making-payment-intake.system.spec.ts`
+
+Coverage:
+
+- create a market-making order intent through the real `UserOrdersService.createMarketMakingOrderIntent()` business entry path
+- process payment snapshots through the real `SnapshotsService.handleSnapshot()` flow
+- persist `MarketMakingPaymentState` and transition to `payment_complete`
+- persist a runtime-ready `strategySnapshot`
+- verify ledger balances reflect the accepted payment snapshots
+- prove the persisted order can be started through `handleStartMM()`
+
 ## Required Environment Variables
 
 Use `server/.env.testnet.example` as the template for sandbox system-test config.
@@ -133,6 +159,11 @@ Optional:
 - `CCXT_SANDBOX_ACCOUNT_LABEL` default: `default`
 - `CCXT_SANDBOX_PASSWORD`
 - `CCXT_SANDBOX_UID`
+- `CCXT_SANDBOX_ACCOUNT2_LABEL` default: `account2`
+- `CCXT_SANDBOX_ACCOUNT2_API_KEY`
+- `CCXT_SANDBOX_ACCOUNT2_SECRET`
+- `CCXT_SANDBOX_ACCOUNT2_PASSWORD`
+- `CCXT_SANDBOX_ACCOUNT2_UID`
 - `CCXT_SANDBOX_SYMBOL` default: `BTC/USDT`
 - `CCXT_SANDBOX_MIN_REQUEST_INTERVAL_MS` default: `100`
 
@@ -158,6 +189,8 @@ If any required sandbox variable is missing:
 - the suite is skipped explicitly
 - unit tests still run normally
 - missing sandbox config in `server/.env.testnet` is treated as opt-out, not as a failure
+
+The A7 private-fill suite has one additional live-fill assertion that runs only when `CCXT_SANDBOX_ACCOUNT2_API_KEY` and `CCXT_SANDBOX_ACCOUNT2_SECRET` are present for a real counterparty account.
 
 ## Cleanup Behavior
 
