@@ -498,6 +498,13 @@ export class MarketMakingSingleTickHelper {
     return this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
   }
 
+  getTrackedOrder(exchange: string, exchangeOrderId: string) {
+    return this.exchangeOrderTrackerService.getByExchangeOrderId(
+      exchange,
+      exchangeOrderId,
+    );
+  }
+
   async fetchExchangeOrder(
     exchangeOrderId: string,
     pair: string,
