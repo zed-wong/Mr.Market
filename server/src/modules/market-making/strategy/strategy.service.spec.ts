@@ -6,6 +6,7 @@ import { StrategyInstance } from 'src/common/entities/market-making/strategy-ins
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
+import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { PerformanceService } from '../performance/performance.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
 import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
@@ -39,6 +40,9 @@ describe('StrategyService', () => {
   let exchangeInitService: ExchangeInitServiceMock;
   let executorOrchestratorService: {
     dispatchActions: jest.Mock;
+  };
+  let balanceLedgerService: {
+    adjust: jest.Mock;
   };
   let strategyMarketDataProviderService: {
     getReferencePrice: jest.Mock;
@@ -96,6 +100,9 @@ describe('StrategyService', () => {
         })),
       ),
     };
+    balanceLedgerService = {
+      adjust: jest.fn().mockResolvedValue({ applied: true }),
+    };
     strategyMarketDataProviderService = {
       getReferencePrice: jest.fn().mockResolvedValue(100.5),
       getBestBidAsk: jest
@@ -115,6 +122,10 @@ describe('StrategyService', () => {
         {
           provide: ExecutorOrchestratorService,
           useValue: executorOrchestratorService,
+        },
+        {
+          provide: BalanceLedgerService,
+          useValue: balanceLedgerService,
         },
         {
           provide: StrategyControllerRegistry,
@@ -241,6 +252,93 @@ describe('StrategyService', () => {
         clientOrderId: 'client1:0',
       }),
     );
+  });
+
+  it('updates ledger balances when a pure market making fill is routed', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.1,
+      askSpread: 0.1,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 2,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0.1,
+      amountChangeType: 'percentage',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await service.executePureMarketMakingStrategy(strategyParamsDto);
+
+    await expect(
+      service.routeFillForExchangePair('bitfinex', 'BTC/USDT', {
+        orderId: 'client1',
+        clientOrderId: 'client1:0',
+        exchangeOrderId: 'ex-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        receivedAt: '2026-03-18T00:00:00.000Z',
+      }),
+    ).resolves.toBe(true);
+
+    expect(balanceLedgerService.adjust).toHaveBeenCalledTimes(2);
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(1, {
+      userId: '1',
+      assetId: 'BTC',
+      amount: '0.5',
+      idempotencyKey:
+        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:2026-03-18T00:00:00.000Z:base',
+      refType: 'market_making_fill',
+      refId: 'ex-1',
+    });
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(2, {
+      userId: '1',
+      assetId: 'USDT',
+      amount: '-50',
+      idempotencyKey:
+        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:2026-03-18T00:00:00.000Z:quote',
+      refType: 'market_making_fill',
+      refId: 'ex-1',
+    });
+  });
+
+  it('makes the filled session immediately eligible for the next tick', async () => {
+    const nowMs = 1_700_000_000_000;
+    jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+
+    await registerPooledSession({
+      strategyKey: 'client1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: '1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: nowMs + 60_000,
+      params: {
+        userId: '1',
+        clientId: 'client1',
+        pair: 'BTC/USDT',
+        exchangeName: 'bitfinex',
+      },
+    });
+
+    await service.routeFillForExchangePair('bitfinex', 'BTC/USDT', {
+      orderId: 'client1',
+      clientOrderId: 'client1:0',
+      exchangeOrderId: 'ex-1',
+      side: 'sell',
+      price: '100',
+      qty: '1',
+      receivedAt: '2026-03-18T00:00:00.000Z',
+    });
+
+    const executor = executorRegistry.getExecutor('bitfinex', 'BTC/USDT');
+
+    expect(executor?.getSession('client1')?.nextRunAtMs).toBe(nowMs);
   });
 
   it('publishes intents for a pure market making cycle', async () => {

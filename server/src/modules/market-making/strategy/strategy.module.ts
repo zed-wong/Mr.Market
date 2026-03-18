@@ -16,6 +16,7 @@ import { Web3Module } from '../../web3/web3.module';
 import { DurabilityModule } from '../durability/durability.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { FeeModule } from '../fee/fee.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { PerformanceModule } from '../performance/performance.module';
 import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
@@ -53,6 +54,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
       ExchangeOrderMapping,
     ]),
     FeeModule,
+    LedgerModule,
     TickModule,
     DurabilityModule,
     ExecutionModule,

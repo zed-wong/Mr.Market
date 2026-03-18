@@ -96,7 +96,9 @@ This file maps runtime logic to business behavior.
 4. When parsing fails, including exchange-safe submitted IDs: fall back to ExchangeOrderMapping lookup by clientOrderId.
 5. Next, try lookup by exchangeOrderId.
 6. Finally, log orphaned fill for manual review if all lookups fail.
-7. ExchangePairExecutor.onFill() dispatches to strategy session.
+7. ExchangePairExecutor.onFill() dispatches to the strategy session.
+8. Pure market-making fill handling applies base/quote balance adjustments through `BalanceLedgerService`.
+9. The filled session becomes immediately eligible for the next pooled tick so quotes can refresh.
 
 ### Main modules in this flow
 

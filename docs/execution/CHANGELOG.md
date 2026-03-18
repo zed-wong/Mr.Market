@@ -2,6 +2,7 @@
 
 ## 2026-03-18
 
+- Add pure market-making `onFill` runtime handling that records fill-driven base/quote ledger adjustments, makes filled sessions immediately eligible for the next tick, and aligns strategy runtime specs with exchange-safe submitted client IDs
 - Translate the March 18 market-making testing completion checklist into English and tighten its task ordering and execution wording
 - Complete Track B1 business-flow parity with a new payment-intake system helper/spec that covers real order-intent creation, snapshot intake, `payment_complete`, strategy snapshot persistence, and ledger credits
 - Complete A7 private-fill parity on the reference exchange by using a second sandbox account as the live counterparty and passing the real `watchOrders()` fill-routing system assertion
