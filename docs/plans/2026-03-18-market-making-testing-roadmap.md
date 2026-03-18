@@ -24,6 +24,14 @@ This roadmap is the planning layer. It does not replace the lower-level implemen
 - validate one reference exchange first, then promote other exchanges through a lightweight capability matrix
 - never overclaim support that the runtime does not actually implement yet
 - keep system tests opt-in and cleanup deterministic
+- keep all system-test specs and their related support files under `server/test/system`
+
+## Test File Placement
+
+- all system-test specs must live under `server/test/system`
+- all helpers, fixtures, and setup files used only by system tests must also live under `server/test/system`
+- do not add new `*.system.spec.ts` files under `server/src`
+- do not add new system-test-only helpers under `server/test/helpers`
 
 ## Evidence Model
 
@@ -64,7 +72,7 @@ The matrix records the highest validated phase ceiling per exchange. An exchange
 
 | Exchange | Sandbox Boot | Spot Override | `fetchOrder` | `fetchOpenOrders` | `clientOrderId` | Private Fills | Highest Validated Phase | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| binance | complete | complete | complete | complete | partial | blocked | A2 | spot-only override required; exchange-safe IDs required for live placement |
+| binance | complete | complete | complete | complete | complete | blocked | A4 | spot-only override required |
 | okx | unknown | unknown | unknown | unknown | unknown | blocked | none | listed in sandbox env template; not yet validated in this roadmap |
 | gate | unknown | unknown | unknown | unknown | unknown | blocked | none | not yet validated |
 | mexc | unknown | unknown | unknown | unknown | unknown | blocked | none | not yet validated |
@@ -142,24 +150,24 @@ Exit gate:
 
 ### Phase A3: Runtime Control Parity
 
-Status: not started
+Status: partial
 
 Implementation checklist:
 
-- [ ] add `server/test/helpers/market-making-runtime.helper.ts`
-- [ ] add persisted market-making order fixtures with valid `strategySnapshot.resolvedConfig`
-- [ ] add `server/src/modules/market-making/user-orders/market-making.processor.system.spec.ts`
-- [ ] invoke `handleStartMM()` through the real processor
-- [ ] invoke `handleStopMM()` through the real processor
-- [ ] assert executor attachment and detachment through `ExecutorRegistry`
+- [x] add `server/test/system/helpers/market-making-runtime.helper.ts`
+- [x] add persisted market-making order fixtures with valid `strategySnapshot.resolvedConfig`
+- [x] add `server/test/system/market-making/user-orders/market-making.processor.system.spec.ts`
+- [x] invoke `handleStartMM()` through the real processor
+- [x] invoke `handleStopMM()` through the real processor
+- [x] assert executor attachment and detachment through `ExecutorRegistry`
 
 Verification checklist:
 
-- [ ] `start_mm` moves the order to `running`
-- [ ] the expected pooled executor contains the runtime session
-- [ ] `stop_mm` removes the runtime session
-- [ ] `stop_mm` moves the order to `stopped`
-- [ ] the suite cleans up any exchange orders created during the phase
+- [x] `start_mm` moves the order to `running`
+- [x] the expected pooled executor contains the runtime session
+- [x] `stop_mm` removes the runtime session
+- [x] `stop_mm` moves the order to `stopped`
+- [x] the suite cleans up any exchange orders created during the phase
 
 Exit gate:
 
@@ -172,28 +180,28 @@ Non-claim:
 
 ### Phase A4: Single-Tick Intent Execution Parity
 
-Status: not started
+Status: complete on reference exchange
 
 Implementation checklist:
 
-- [ ] extend the runtime helper with deterministic manual tick control
-- [ ] add `pure-market-making-single-tick.system.spec.ts`
-- [ ] trigger one manual tick through the real executor path
-- [ ] assert one buy and one sell intent for a simple pure market-making order
-- [ ] assert intent execution uses the live sandbox exchange
+- [x] add `server/test/system/helpers/market-making-single-tick.helper.ts`
+- [x] add `server/test/system/market-making/strategy/pure-market-making-single-tick.system.spec.ts`
+- [x] trigger one manual tick through the real executor path
+- [x] assert one buy and one sell intent for a simple pure market-making order
+- [x] assert intent execution uses the live sandbox exchange
 
 Verification checklist:
 
-- [ ] one tick publishes the expected intents
-- [ ] intent status reaches `DONE`
-- [ ] real sandbox buy and sell orders are placed
-- [ ] exchange-order mappings are persisted
-- [ ] tracker state contains the expected open orders
-- [ ] execution history records the placed orders
+- [x] one tick publishes the expected intents
+- [x] intent status reaches `DONE`
+- [x] real sandbox buy and sell orders are placed
+- [x] exchange-order mappings are persisted
+- [x] tracker state contains the expected open orders
+- [x] execution history records the placed orders
 
 Exit gate:
 
-- [ ] the reference exchange proves one full tick -> intent -> execution -> persistence loop
+- [x] the reference exchange proves one full tick -> intent -> execution -> persistence loop
 
 ### Phase A5: Multi-Layer Placement Parity
 
@@ -201,7 +209,7 @@ Status: not started
 
 Implementation checklist:
 
-- [ ] add `pure-market-making-multi-layer.system.spec.ts`
+- [ ] add `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
 - [ ] configure `numberOfLayers >= 3`
 - [ ] assert ladder generation rules and hanging-order behavior
 
@@ -223,7 +231,7 @@ Status: not started
 
 Implementation checklist:
 
-- [ ] add `pure-market-making-cadence.system.spec.ts`
+- [ ] add `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
 - [ ] run repeated manual ticks through the same executor session
 - [ ] capture deterministic `clientOrderId` sequencing across cycles
 
@@ -244,9 +252,9 @@ Status: partial
 
 Implementation checklist:
 
-- [x] keep routing-resolution coverage in `sandbox-fill-resolution.system.spec.ts`
+- [x] keep routing-resolution coverage in `server/test/system/market-making/execution/sandbox-fill-resolution.system.spec.ts`
 - [ ] implement a real exchange private-fill ingestion path
-- [ ] add `private-fill-ingestion.system.spec.ts`
+- [ ] add `server/test/system/market-making/execution/private-fill-ingestion.system.spec.ts`
 
 Verification checklist:
 
@@ -384,13 +392,14 @@ Exit gate:
 
 ## Immediate Next Implementation Order
 
-- [ ] build `market-making-runtime.helper.ts`
-- [ ] add `market-making.processor.system.spec.ts`
-- [ ] add `pure-market-making-single-tick.system.spec.ts`
-- [ ] add `pure-market-making-multi-layer.system.spec.ts`
-- [ ] add `pure-market-making-cadence.system.spec.ts`
+- [x] build `server/test/system/helpers/market-making-runtime.helper.ts`
+- [x] add `server/test/system/market-making/user-orders/market-making.processor.system.spec.ts`
+- [x] add `server/test/system/helpers/market-making-single-tick.helper.ts`
+- [x] add `server/test/system/market-making/strategy/pure-market-making-single-tick.system.spec.ts`
+- [ ] add `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
+- [ ] add `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
 - [ ] expand the capability matrix after each real exchange run
-- [ ] revisit Track B readiness only after Track A4 passes on the reference exchange
+- [x] revisit Track B readiness only after Track A4 passes on the reference exchange
 
 ## Known Missing Runtime Capabilities
 

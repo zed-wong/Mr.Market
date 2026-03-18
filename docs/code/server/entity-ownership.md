@@ -12,7 +12,7 @@ This file maps key entities to module ownership and business usage.
 | `StrategyOrderIntentEntity` | `market-making/strategy` | `reconciliation` | Durable action intent queue with status transitions. |
 | `MarketMakingOrderIntent` | `market-making/user-orders` | `mixin/snapshots` | Payment-linked intent bound to `userId`, carrying prevalidated configOverrides before active order run. |
 | `MarketMakingOrder` | `market-making/user-orders` | `strategy`, `admin`, `exchange-api-key` | User market-making order with pinned strategySnapshot. |
-| `ExchangeOrderMapping` | `market-making/execution` | `strategy` | Fill routing fallback when clientOrderId parsing fails. |
+| `ExchangeOrderMapping` | `market-making/execution` | `strategy` | Fill routing fallback when submitted exchange-safe clientOrderId values are non-parseable or only exchangeOrderId is available. |
 | `IndicatorStrategyHistory` | `market-making/strategy` | `admin` | Time-indicator strategy execution history. |
 
 ## User order and payment entities

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
@@ -125,7 +126,14 @@ describe('StrategyIntentExecutionService', () => {
     ).toHaveBeenCalledTimes(1);
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
-    ).toHaveBeenCalledWith('binance', 'BTC/USDT', 'buy', '1', '100', 'c1:0');
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('c1', 0),
+    );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       baseIntent.intentId,
       'SENT',
@@ -145,12 +153,12 @@ describe('StrategyIntentExecutionService', () => {
     expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
       orderId: 'c1',
       exchangeOrderId: 'order-1',
-      clientOrderId: 'c1:0',
+      clientOrderId: buildSubmittedClientOrderId('c1', 0),
     });
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         exchangeOrderId: 'order-1',
-        clientOrderId: 'c1:0',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
       }),
     );
   });
@@ -389,7 +397,7 @@ describe('StrategyIntentExecutionService', () => {
       'buy',
       '1',
       '100',
-      'mm-order-1:0',
+      buildSubmittedClientOrderId('mm-order-1', 0),
     );
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
@@ -400,7 +408,7 @@ describe('StrategyIntentExecutionService', () => {
       'buy',
       '1',
       '100',
-      'mm-order-1:1',
+      buildSubmittedClientOrderId('mm-order-1', 1),
     );
   });
 });

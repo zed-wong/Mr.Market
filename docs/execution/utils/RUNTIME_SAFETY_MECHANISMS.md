@@ -108,11 +108,11 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 
 - Fill arrives with `clientOrderId` from exchange private stream.
 - `FillRoutingService` attempts resolution in order:
-  1. Parse `clientOrderId` format `{orderId}:{seq}` → route to order
+  1. Parse local `clientOrderId` format `{orderId}:{seq}` when the incoming value is parseable → route to order
   2. Lookup `ExchangeOrderMapping` by `clientOrderId` → route to order
   3. Lookup `ExchangeOrderMapping` by `exchangeOrderId` → route to order
   4. Log as orphaned fill with exchange/pair/side/time for manual review
-- This ensures fills are routed even when clientOrderId parsing fails.
+- This ensures fills are routed even when the submitted exchange-safe `clientOrderId` is intentionally non-parseable.
 - Files:
   - `server/src/modules/market-making/execution/fill-routing.service.ts`
   - `server/src/modules/market-making/execution/exchange-order-mapping.service.ts`
@@ -135,11 +135,16 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 - `buildClientOrderId()` validates:
   - `orderId` is non-empty and contains no `:` character
   - `seq` is a non-negative integer
+- `buildSubmittedClientOrderId()` validates:
+  - `orderId` is non-empty
+  - `seq` is a non-negative integer
+  - submitted IDs use exchange-safe characters only
 - `parseClientOrderId()` validates:
   - Exactly two parts separated by `:`
   - Second part is numeric string
   - Result is a safe integer
-- This prevents parsing errors and injection through clientOrderId.
+- Live runtime order placement uses `buildSubmittedClientOrderId()` so exchanges that reject `:` still accept submitted values.
+- This prevents parsing errors and exchange-side clientOrderId rejections while preserving local routing assertions.
 - File: `server/src/common/helpers/client-order-id.ts`
 
 ## 15) Order snapshot requirement

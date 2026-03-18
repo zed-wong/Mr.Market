@@ -6,11 +6,13 @@ It documents the sandbox suites that are currently implemented today.
 
 The broader production-parity target is tracked separately in `docs/plans/2026-03-15-ccxt-sandbox-integration-testing-plan.md`. That target requires the same `ExchangeInitService`, `start_mm`, `stop_mm`, tick, and execution runtime path as mainnet. The current implemented scope is narrower.
 
-The March 15 implementation is intentionally limited to the runtime behaviors that already exist:
+The currently implemented sandbox scope is intentionally limited to the runtime behaviors that already exist:
 
 - Phase 1: environment-driven sandbox bootstrap through the real exchange init path for core lifecycle coverage
 - Phase 2: real exchange adapter REST lifecycle coverage
 - Phase 3: fill-routing resolution coverage with repository-backed mappings
+- Phase 4: runtime control parity through real `start_mm` and `stop_mm`
+- Phase 5: single-tick parity through the real executor, intent, exchange execution, mapping, tracker, and history path
 
 It does not claim full end-to-end private-fill ingestion.
 
@@ -21,7 +23,8 @@ It does not claim full end-to-end private-fill ingestion.
 - `ExchangeInitService` can boot one sandbox exchange from `CCXT_SANDBOX_*` env through the normal runtime service path
 - sandbox mode is enabled before `loadMarkets()` when sandbox env is present
 - exchange-specific sandbox overrides still apply when required, including Binance spot-only market loading
-- `server/test/helpers/sandbox-exchange.helper.ts` remains available for narrower helper-backed suites that do not yet use the full runtime path
+- legacy helper-backed suites still use `server/test/helpers/sandbox-exchange.helper.ts`
+- new system-test specs and support files live under `server/test/system`
 - the default unit suite ignores `*.system.spec.ts`
 
 ### Phase 2: Adapter Integration
@@ -48,6 +51,37 @@ Coverage:
 - persisted exchange-order mapping fallback using a real sandbox order ID
 
 The parseable `clientOrderId` assertion stays local to routing resolution. Real sandbox order placement uses exchange-safe IDs because some exchanges reject `:` in submitted client order IDs.
+
+### Phase 4: Runtime Control Parity
+
+Spec: `server/test/system/market-making/user-orders/market-making.processor.system.spec.ts`
+
+Coverage:
+
+- persist a market-making order fixture with valid `strategySnapshot.resolvedConfig`
+- invoke real `handleStartMM()` through `MarketMakingOrderProcessor`
+- assert executor session attachment through `ExecutorRegistry`
+- invoke real `handleStopMM()` through `MarketMakingOrderProcessor`
+- assert executor session detachment and order state transition to `stopped`
+
+### Phase 5: Single-Tick Intent Execution
+
+Spec: `server/test/system/market-making/strategy/pure-market-making-single-tick.system.spec.ts`
+
+Coverage:
+
+- invoke one real executor tick for a pure market-making session
+- publish one buy and one sell intent
+- place real sandbox orders through live intent execution
+- persist `ExchangeOrderMapping` rows
+- update `ExchangeOrderTrackerService`
+- persist `StrategyExecutionHistory`
+
+Current `clientOrderId` rule:
+
+- local parseable format remains `{orderId}:{seq}` for routing-only assertions
+- live exchange submission now uses exchange-safe generated IDs
+- live fill routing still works because `FillRoutingService` falls back to persisted `ExchangeOrderMapping`
 
 Boundary:
 
@@ -120,9 +154,9 @@ Full market-making end-to-end coverage should stay deferred until all of the fol
 - the E2E boundary is documented precisely
 - any ledger assertions match runtime behavior actually implemented in `start_mm` and `stop_mm`
 
-Until then, the currently implemented sandbox coverage stops at adapter REST behavior and fill-routing resolution. It is useful, but it is not yet the same as production-parity execution-engine coverage.
+Until then, the currently implemented sandbox coverage stops at execution-engine parity through single-tick runtime execution. It is useful, but it is not yet the same as full private-fill end-to-end coverage.
 
 ## Last Updated
 
-- Date: 2026-03-17
+- Date: 2026-03-18
 - Status: Active

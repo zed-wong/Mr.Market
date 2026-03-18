@@ -2,7 +2,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
-import { buildClientOrderId } from 'src/common/helpers/client-order-id';
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
@@ -384,7 +384,7 @@ export class StrategyIntentExecutionService {
 
     this.nextClientOrderSeqByOrderId.set(orderId, nextSeq + 1);
 
-    return buildClientOrderId(orderId, nextSeq);
+    return buildSubmittedClientOrderId(orderId, nextSeq);
   }
 
   private async runWithRetries<T>(work: () => Promise<T>): Promise<T> {

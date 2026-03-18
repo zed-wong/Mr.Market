@@ -4,6 +4,11 @@
 
 - Add a new market-making testing roadmap plan that stages execution-engine parity before the broader business lifecycle, uses checkbox phase gates, and tracks exchange validation with a lightweight capability matrix
 - Update `docs/plans/README.md` to index the new March 18 testing roadmap and clarify the March 15 sandbox plan as the detailed Track A execution-engine document
+- Clarify in the March 18 testing roadmap that all system-test specs and system-test-only support files should live under `server/test/system`, not under `server/src` or `server/test/helpers`
+- Add Track A3 runtime-control system-test coverage under `server/test/system` with a real processor/runtime helper and a passing `market-making.processor.system.spec.ts` start/stop parity suite
+- Add split `server/test/system` sandbox helpers for shared config and single-tick runtime setup, plus a capability-aware A4 single-tick system spec that stays skipped on the current binance `clientOrderId` live-placement gap
+- Switch live strategy intent execution to exchange-safe submitted `clientOrderId` values while keeping parseable `{orderId}:{seq}` helpers for local routing tests, and pass the A4 single-tick sandbox parity suite on the reference exchange
+- Update active market-making docs and `docs/code/server` mirrors to distinguish parseable local `clientOrderId` values from exchange-safe submitted IDs and reflect the completed A4 single-tick sandbox path
 
 ## 2026-03-17
 

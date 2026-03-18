@@ -19,7 +19,7 @@ Key architectural decisions:
 
 - **Pinned Snapshot**: Orders store `strategySnapshot` at creation time; runtime never re-resolves config.
 - **Pooled Executors**: `ExecutorRegistry` manages `ExchangePairExecutor` per `exchange:pair` for shared market data.
-- **Fill Routing**: Fills are routed via `clientOrderId` parsing with `ExchangeOrderMapping` fallback.
+- **Fill Routing**: Fills are routed via parseable local `clientOrderId` values when available, with `ExchangeOrderMapping` fallback for exchange-safe submitted IDs.
 
 ## Core Modules
 
@@ -36,7 +36,7 @@ Key architectural decisions:
 
 - `server/src/modules/market-making/execution/fill-routing.service.ts` - Fill routing with fallback chain
 - `server/src/modules/market-making/execution/exchange-order-mapping.service.ts` - Mapping persistence
-- `server/src/common/helpers/client-order-id.ts` - clientOrderId format helpers
+- `server/src/common/helpers/client-order-id.ts` - local parseable and live submitted clientOrderId helpers
 
 ### Infrastructure
 
@@ -102,7 +102,7 @@ flowchart TD
 - **Config overrides**: User can provide `configOverrides` at intent creation time, but server rejects system-managed fields and schema-invalid overrides immediately.
 - **Snapshot pinning**: Orders store resolved config at creation; runtime reads only from snapshot.
 - **Pooled executors**: `ExecutorRegistry` manages `ExchangePairExecutor` per `exchange:pair`.
-- **Fill routing**: `clientOrderId` format `{orderId}:{seq}` with `ExchangeOrderMapping` fallback.
+- **Fill routing**: parse local `{orderId}:{seq}` values when available, otherwise fall back to `ExchangeOrderMapping`.
 - **Ledger safety**: All balance mutations go through `BalanceLedgerService`.
 
 ## End-to-End Flow
@@ -189,7 +189,7 @@ If withdrawal path is enabled and used:
 
 1. `PrivateStreamTracker` receives fill event with `clientOrderId`.
 2. `FillRoutingService.resolveOrderForFill()` routes the fill:
-   - **Primary path**: Parse `clientOrderId` format `{orderId}:{seq}`.
+   - **Primary path**: Parse local `clientOrderId` format `{orderId}:{seq}` when the incoming value is parseable.
    - **Fallback 1**: Look up `ExchangeOrderMapping` by `clientOrderId`.
    - **Fallback 2**: Look up `ExchangeOrderMapping` by `exchangeOrderId`.
    - **Orphan**: Log for manual review if all fail.
@@ -206,17 +206,25 @@ If withdrawal path is enabled and used:
 - Calls `executorRegistry.removeExecutorIfEmpty(exchange, pair)`.
 - Sets order state to `stopped`.
 
-## clientOrderId Format
+## clientOrderId Formats
 
-Format: `{orderId}:{seq}`
+The runtime now uses two related formats:
+
+- local parseable format: `{orderId}:{seq}`
+- live submitted exchange-safe format: `mm-{sha1(orderId)[0..11]}-{seqBase36}`
 
 ```typescript
-// Build
+// Local parseable form for routing-only assertions
 function buildClientOrderId(orderId: string, seq: number): string {
   return `${orderId}:${seq}`;
 }
 
-// Parse
+// Live submitted form for exchange placement
+function buildSubmittedClientOrderId(orderId: string, seq: number): string {
+  return `mm-${hash(orderId).slice(0, 12)}-${seq.toString(36)}`;
+}
+
+// Parse local form
 function parseClientOrderId(
   clientOrderId: string
 ): { orderId: string; seq: number } | null {
@@ -228,12 +236,12 @@ function parseClientOrderId(
 }
 ```
 
-The real implementation in `server/src/common/helpers/client-order-id.ts` adds stricter runtime checks: `parts[0]` must be non-empty, `parts[1]` must match `/^\d+$/`, `seq` is parsed with `parseInt`, and invalid or unsafe values return `null`.
+The real implementation in `server/src/common/helpers/client-order-id.ts` keeps the parseable local format for routing-only assertions and uses the submitted exchange-safe format for live order placement.
 
 Prerequisites:
 
-- `orderId` uses UUID format (no `:` character).
-- `seq` is a non-negative integer.
+- local parseable format requires `orderId` with no `:` and `seq` as a non-negative integer
+- submitted format requires a non-empty `orderId` and `seq` as a non-negative integer
 
 ## Pooled Executor Architecture
 

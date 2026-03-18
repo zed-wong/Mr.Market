@@ -101,7 +101,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 - `modules/market-making/trackers/trackers.module.ts`
   - Depends on: `TickModule`, `ExecutionModule`.
   - Main role: order book/private stream/order trackers.
-- `modules/market-making/execution/execution.module.ts`
+  - `modules/market-making/execution/execution.module.ts`
   - Depends on: `ConfigModule`.
   - Main role: exchange execution adapter.
   - Internal structure:
@@ -109,7 +109,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
     - `fill-routing.service.ts` - Fill event routing with clientOrderId parsing and fallback.
     - `exchange-order-mapping.service.ts` - ExchangeOrderMapping entity management for fill recovery.
 - `common/helpers/client-order-id.ts`
-  - Main role: build/parse clientOrderId format `{orderId}:{seq}`.
+  - Main role: build parseable local clientOrderId values and exchange-safe submitted clientOrderId values.
 - `modules/market-making/ledger/ledger.module.ts`
   - Depends on: TypeORM ledger entities, `DurabilityModule`.
   - Main role: internal balance ledger.

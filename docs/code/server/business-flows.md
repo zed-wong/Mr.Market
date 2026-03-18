@@ -91,9 +91,9 @@ This file maps runtime logic to business behavior.
 ## Flow 3b: Fill routing with pooled executors
 
 1. Private stream tracker receives fill event with clientOrderId.
-2. FillRoutingService (in `market-making/execution/fill-routing.service.ts`) parses clientOrderId format `{orderId}:{seq}`.
+2. FillRoutingService (in `market-making/execution/fill-routing.service.ts`) tries to parse the local routing format `{orderId}:{seq}`.
 3. On parse success: route to ExchangePairExecutor by order's exchange:pair.
-4. When parsing fails: fall back to ExchangeOrderMapping lookup by clientOrderId.
+4. When parsing fails, including exchange-safe submitted IDs: fall back to ExchangeOrderMapping lookup by clientOrderId.
 5. Next, try lookup by exchangeOrderId.
 6. Finally, log orphaned fill for manual review if all lookups fail.
 7. ExchangePairExecutor.onFill() dispatches to strategy session.
