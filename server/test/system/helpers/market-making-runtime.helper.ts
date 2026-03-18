@@ -169,6 +169,7 @@ export class MarketMakingRuntimeHelper {
         ExecutorOrchestratorService,
         ExecutorRegistry,
         MarketMakingOrderProcessor,
+        StrategyConfigResolverService,
         StrategyIntentStoreService,
         StrategyRuntimeDispatcherService,
         StrategyService,
@@ -208,13 +209,6 @@ export class MarketMakingRuntimeHelper {
         {
           provide: NetworkMappingService,
           useValue: {},
-        },
-        {
-          provide: StrategyConfigResolverService,
-          useValue: {
-            getDefinitionControllerType: (definition: StrategyDefinition) =>
-              definition.controllerType || definition.executorType,
-          },
         },
         {
           provide: TransactionService,
@@ -349,7 +343,13 @@ export class MarketMakingRuntimeHelper {
     return await this.marketMakingOrderRepository.findOneBy({ orderId });
   }
 
-  async findStrategyInstance(orderId: string): Promise<StrategyInstance | null> {
+  async fetchExchangeTicker(pair = this.config.symbol): Promise<any> {
+    return await this.exchange.fetchTicker(pair);
+  }
+
+  async findStrategyInstance(
+    orderId: string,
+  ): Promise<StrategyInstance | null> {
     return await this.strategyInstanceRepository.findOneBy({
       strategyKey: createPureMarketMakingStrategyKey(orderId),
     });

@@ -61,6 +61,7 @@ Spec: `server/test/system/market-making/user-orders/market-making.processor.syst
 Coverage:
 
 - persist a market-making order fixture with valid `strategySnapshot.resolvedConfig`
+- confirm the sandbox exchange can return live public market data during the phase
 - invoke real `handleStartMM()` through `MarketMakingOrderProcessor`
 - assert executor session attachment through `ExecutorRegistry`
 - invoke real `handleStopMM()` through `MarketMakingOrderProcessor`

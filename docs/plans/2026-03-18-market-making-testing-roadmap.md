@@ -150,7 +150,7 @@ Exit gate:
 
 ### Phase A3: Runtime Control Parity
 
-Status: partial
+Status: complete on reference exchange
 
 Implementation checklist:
 
@@ -171,8 +171,8 @@ Verification checklist:
 
 Exit gate:
 
-- [ ] no mocked core runtime service remains in the phase boundary
-- [ ] both exchange-side and runtime-side evidence are captured
+- [x] no mocked core runtime service remains in the phase boundary
+- [x] both exchange-side and runtime-side evidence are captured
 
 Non-claim:
 
@@ -276,9 +276,9 @@ Current blocker:
 
 Track A is considered complete for current runtime scope when:
 
-- [ ] phases A1 through A6 pass on the reference exchange
-- [ ] phase A7 remains explicitly marked partial or complete, never implied
-- [ ] the capability matrix records the highest validated phase ceiling for each tested exchange
+- [x] phases A1 through A6 pass on the reference exchange
+- [x] phase A7 remains explicitly marked partial or complete, never implied
+- [x] the capability matrix records the highest validated phase ceiling for each tested exchange
 
 ## Track B: Full Market-Making Business Lifecycle
 
