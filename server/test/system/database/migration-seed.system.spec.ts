@@ -13,6 +13,9 @@ import {
 import { SpotdataTradingPair } from '../../../src/common/entities/data/spot-data.entity';
 import { StrategyDefinition } from '../../../src/common/entities/market-making/strategy-definition.entity';
 import { runSeed } from '../../../src/database/seeder/seed';
+import { createSystemTestLogger } from '../helpers/system-test-log.helper';
+
+const log = createSystemTestLogger('database-migration-seed');
 
 describe('Database migration and seed scripts', () => {
   jest.setTimeout(240000);
@@ -42,6 +45,9 @@ describe('Database migration and seed scripts', () => {
   };
 
   const runMigrations = async () => {
+    log.step('running typeorm migrations', {
+      databasePath: dbPath,
+    });
     const dataSource = new DataSource({
       type: 'sqlite',
       database: dbPath,
@@ -61,6 +67,9 @@ describe('Database migration and seed scripts', () => {
   afterAll(() => {
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
+      log.suite('temporary database removed', {
+        tempDir,
+      });
     } catch {
       // best effort cleanup
     }
@@ -68,6 +77,7 @@ describe('Database migration and seed scripts', () => {
 
   it('runs migration:run and creates expected tables', async () => {
     await runMigrations();
+    log.check('migrations completed');
 
     const dataSource = new DataSource({
       type: 'sqlite',
@@ -83,6 +93,10 @@ describe('Database migration and seed scripts', () => {
     const paymentStateTable = (await dataSource.query(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='market_making_payment_state'",
     )) as Array<{ name: string }>;
+    log.result('migration tables inspected', {
+      migrationsTableCount: migrationsTable.length,
+      paymentStateTableCount: paymentStateTable.length,
+    });
 
     expect(migrationsTable).toHaveLength(1);
     expect(paymentStateTable).toHaveLength(1);
@@ -96,6 +110,9 @@ describe('Database migration and seed scripts', () => {
     try {
       process.env.DATABASE_PATH = dbPath;
       await runMigrations();
+      log.step('running seed data load', {
+        databasePath: dbPath,
+      });
       await runSeed();
     } finally {
       if (prevDbPath === undefined) {
@@ -142,6 +159,14 @@ describe('Database migration and seed scripts', () => {
       .findOneByOrFail({
         key: 'pure_market_making',
       });
+    log.result('seed counts collected', {
+      exchanges,
+      mmPairs,
+      simplyGrowTokens,
+      customConfigs,
+      strategyDefinitions,
+      controllerType: pureMarketMakingDefinition.controllerType,
+    });
 
     expect(spotPairs).toBe(0);
     expect(exchanges).toBeGreaterThan(0);

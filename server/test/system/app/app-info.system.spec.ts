@@ -2,11 +2,15 @@ import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { AppController } from '../../../src/app.controller';
+import { createSystemTestLogger } from '../helpers/system-test-log.helper';
+
+const log = createSystemTestLogger('app-info');
 
 describe('AppController system info contract', () => {
   let controller: AppController;
 
   beforeEach(async () => {
+    log.suite('building testing module');
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
       providers: [
@@ -32,10 +36,18 @@ describe('AppController system info contract', () => {
     }).compile();
 
     controller = moduleFixture.get(AppController);
+    log.suite('controller ready');
   });
 
   it('returns server information payload', () => {
+    log.step('calling getAppInfo');
     const result = controller.getAppInfo();
+    log.result('received app info payload', {
+      mixin_app_id: result.mixin_app_id,
+      recording_oracle_url: result.recording_oracle_url,
+      campaign_launcher_url: result.campaign_launcher_url,
+      hasAppHash: typeof result.app_hash === 'string',
+    });
 
     expect(result).toEqual(
       expect.objectContaining({
