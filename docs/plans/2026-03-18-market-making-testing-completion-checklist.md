@@ -12,7 +12,7 @@ This document summarizes the current test coverage and the remaining gaps based 
 
 ```text
 server/test/system/
-├── helpers/                          # Test helpers (6 files)
+├── helpers/                          # Test helpers (7 files)
 ├── app/
 │   └── app-info.system.spec.ts       # App info test
 ├── database/
@@ -22,12 +22,18 @@ server/test/system/
     │   ├── market-making-payment-intake.system.spec.ts
     │   └── market-making.processor.system.spec.ts
     │
-    ├── strategy/                     # 3 tests
+    ├── strategy/                     # 9 tests
     │   ├── pure-market-making-single-tick.system.spec.ts
     │   ├── pure-market-making-multi-layer.system.spec.ts
     │   └── pure-market-making-cadence.system.spec.ts
+    │   ├── pure-market-making-intent-lifecycle.system.spec.ts
+    │   ├── pure-market-making-intent-retry.system.spec.ts
+    │   ├── pure-market-making-intent-failure.system.spec.ts
+    │   ├── pure-market-making-intent-idempotency.system.spec.ts
+    │   └── pure-market-making-intent-worker-error.system.spec.ts
     │
-    └── execution/                    # 3 tests
+    └── execution/                    # 4 tests
+        ├── private-partial-fill-ingestion.system.spec.ts
         ├── private-fill-ingestion.system.spec.ts
         ├── sandbox-fill-resolution.system.spec.ts
         └── sandbox-order-lifecycle.system.spec.ts
@@ -40,8 +46,8 @@ server/test/system/
 | App | 1 | Application info |
 | Database | 1 | Database migrations and seeds |
 | Market Making - User Orders | 2 | User-order handling and payment intake |
-| Market Making - Strategy | 3 | Market-making strategy behavior (single-layer, multi-layer, cadence) |
-| Market Making - Execution | 3 | Fill ingestion, fill resolution, and order lifecycle |
+| Market Making - Strategy | 9 | Strategy behavior plus intent lifecycle, retry, failure, idempotency, and worker error handling |
+| Market Making - Execution | 4 | Fill ingestion, partial-fill ingestion, fill resolution, and order lifecycle |
 
 ---
 
@@ -82,10 +88,10 @@ const executor = this.executorRegistry.getOrCreateExecutor(
 
 | # | Task | Description | Priority | Status |
 |---|------|------|--------|------|
-| #1 | Implement PureMarketMaking `onFill` handler | Register `onFill` to process fills after ingestion, including balance updates and optional requoting | High | Pending |
-| #2 | Add a full intent-lifecycle system test | Validate the full end-to-end flow: build -> publish -> consume -> fill | Medium | Pending |
-| #3 | Add error-handling and retry system tests | Cover network timeouts, API errors, partial fills, and duplicate intents | Medium | Pending |
-| #4 | Integrate `BalanceLedgerService` | Call `BalanceLedgerService` from `onFill` to update user balances | High | Pending |
+| #1 | Implement PureMarketMaking `onFill` handler | Register `onFill` to process fills after ingestion, including balance updates and optional requoting | High | Completed |
+| #2 | Add a full intent-lifecycle system test | Validate the full end-to-end flow: build -> publish -> consume -> fill | Medium | Completed |
+| #3 | Add error-handling and retry system tests | Cover network timeouts, API errors, partial fills, and duplicate intents | Medium | Completed |
+| #4 | Integrate `BalanceLedgerService` | Call `BalanceLedgerService` from `onFill` to update user balances | High | Completed |
 | #5 | Add DEX integration system tests | Cover DEX quote sourcing and execution | Low | Pending |
 | #6 | Add a closed-loop funding e2e test (testnet) | Validate deposit -> market making -> fill -> balance verification on testnet | Low | Pending |
 
@@ -126,10 +132,10 @@ const executor = this.executorRegistry.getOrCreateExecutor(
 **Goal:** Simulate failure scenarios and validate runtime robustness.
 
 **Test scenarios:**
-1. Network timeouts: verify retry behavior (`maxRetries`, `retryBaseDelayMs`)
-2. Exchange API errors: verify error handling and logging
-3. Partial fills: verify state updates
-4. Duplicate intents: verify idempotency
+1. Network timeouts: verify retry behavior (`maxRetries`, `retryBaseDelayMs`) - Completed via in-memory intent retry coverage
+2. Exchange API errors: verify error handling and logging - Completed for worker error logging and FAILED status propagation
+3. Partial fills: verify state updates - Completed for deterministic private-stream `partially_filled` ingestion
+4. Duplicate intents: verify idempotency - Completed via repeated real execution-service consume coverage
 
 **Code location:** `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
 

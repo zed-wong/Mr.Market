@@ -262,6 +262,10 @@ export class MarketMakingIntentLifecycleHelper {
     await this.strategyIntentWorkerService.onModuleInit();
   }
 
+  getIntentWorkerService(): StrategyIntentWorkerService {
+    return this.strategyIntentWorkerService;
+  }
+
   async stopWorker(): Promise<void> {
     if (this.strategyIntentWorkerService) {
       await this.strategyIntentWorkerService.onModuleDestroy();
