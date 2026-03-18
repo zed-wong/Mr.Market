@@ -8,7 +8,7 @@ The broader production-parity target is tracked separately in `docs/plans/2026-0
 
 The March 15 implementation is intentionally limited to the runtime behaviors that already exist:
 
-- Phase 1: isolated sandbox harness bootstrapping
+- Phase 1: environment-driven sandbox bootstrap through the real exchange init path for core lifecycle coverage
 - Phase 2: real exchange adapter REST lifecycle coverage
 - Phase 3: fill-routing resolution coverage with repository-backed mappings
 
@@ -18,10 +18,10 @@ It does not claim full end-to-end private-fill ingestion.
 
 ### Phase 1: Sandbox Harness
 
-- `server/test/helpers/sandbox-exchange.helper.ts` constructs a dedicated sandbox exchange instance outside normal app boot
-- the helper calls `setSandboxMode(true)` before `loadMarkets()`
-- the helper applies exchange-specific sandbox overrides when required, including Binance spot-only market loading
-- the helper tracks created sandbox orders for cleanup in `afterAll`
+- `ExchangeInitService` can boot one sandbox exchange from `CCXT_SANDBOX_*` env through the normal runtime service path
+- sandbox mode is enabled before `loadMarkets()` when sandbox env is present
+- exchange-specific sandbox overrides still apply when required, including Binance spot-only market loading
+- `server/test/helpers/sandbox-exchange.helper.ts` remains available for narrower helper-backed suites that do not yet use the full runtime path
 - the default unit suite ignores `*.system.spec.ts`
 
 ### Phase 2: Adapter Integration
@@ -30,11 +30,12 @@ Spec: `server/src/modules/market-making/execution/sandbox-order-lifecycle.system
 
 Coverage:
 
+- build the exchange through the real `ExchangeInitService` path
 - fetch sandbox order book for the configured symbol
 - place a real sandbox limit order with a known exchange-safe `clientOrderId`
-- fetch the order by exchange order ID
-- verify it appears in open orders
-- cancel it and verify it no longer appears as open
+- fetch the order by exchange order ID when the exchange supports `fetchOrder()`
+- verify it appears in open orders when the exchange supports `fetchOpenOrders()`
+- cancel it and verify the final exchange-visible state with supported capabilities
 
 ### Phase 3: Fill Routing Integration
 
@@ -67,6 +68,8 @@ Required:
 
 Optional:
 
+- `CCXT_SANDBOX_ENABLED` default: sandbox activation also occurs when required sandbox creds are present
+- `CCXT_SANDBOX_ACCOUNT_LABEL` default: `default`
 - `CCXT_SANDBOX_PASSWORD`
 - `CCXT_SANDBOX_UID`
 - `CCXT_SANDBOX_SYMBOL` default: `BTC/USDT`
@@ -97,7 +100,8 @@ If any required sandbox variable is missing:
 
 ## Cleanup Behavior
 
-The sandbox helper tracks every order created through the integration harness.
+The order lifecycle suite tracks every order it creates through the real `ExchangeInitService` exchange instance.
+Helper-backed suites still use `SandboxExchangeHelper` cleanup.
 
 After each system suite:
 
@@ -120,5 +124,5 @@ Until then, the currently implemented sandbox coverage stops at adapter REST beh
 
 ## Last Updated
 
-- Date: 2026-03-15
+- Date: 2026-03-17
 - Status: Active

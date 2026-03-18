@@ -451,9 +451,22 @@ Until then:
 - keep fill-routing resolution coverage
 - do not claim full fill-ingestion parity
 
+## Environment-Only Sandbox Activation
+
+System tests must not require codebase modifications. Sandbox behavior is activated purely through environment configuration:
+
+1. **No code changes for sandbox**: The same production codebase runs in sandbox mode when `CCXT_SANDBOX_ENABLED=true` is set
+2. **Environment-driven**: All sandbox configuration comes from `CCXT_SANDBOX_*` environment variables
+3. **Test file responsibility**: System test files set up their environment before importing any runtime code
+
+This means:
+- `ExchangeInitService` reads sandbox config from environment at boot time
+- Tests set `process.env.CCXT_SANDBOX_*` before initializing the Nest test module
+- No special sandbox-only code paths exist outside of config-driven branching
+
 ## Exchange-Side Configuration Model
 
-Start with one exchange, then generalize only after the first exchange is stable.
+Support multiple CCXT-compatible exchanges from the start. CCXT provides uniform sandbox mode across exchanges.
 
 ```ts
 type ExchangeSandboxTestConfig = {
@@ -477,12 +490,13 @@ Design notes:
 
 - prefer `safePriceDistanceBps` over hardcoded precision in phase 1
 - derive precision and limits from CCXT market metadata when possible
-- add exchange overrides only after the first exchange is stable
+- CCXT provides uniform sandbox interface, so any supported exchange works with the same test structure
 - track whether the exchange can support future private-fill parity before claiming it
+- keep execution-system specs serialized by default when they share one sandbox account; only promote parallel execution after per-suite account isolation is proven
 
 ## Recommended Implementation Order
 
-1. add first-class sandbox boot support to `ExchangeInitService`
+1. add environment-driven sandbox boot support to `ExchangeInitService` (reads `CCXT_SANDBOX_*` at init time)
 2. stabilize `sandbox-order-lifecycle.system.spec.ts` against the real `ExchangeInitService` path
 3. build `market-making-runtime.helper.ts` around the production execution graph
 4. add `market-making.processor.system.spec.ts` for `start_mm` and `stop_mm`
@@ -491,7 +505,6 @@ Design notes:
 7. add `pure-market-making-cadence.system.spec.ts`
 8. keep `sandbox-fill-resolution.system.spec.ts` as required resolution coverage
 9. add private-fill ingestion coverage only after the runtime path exists
-10. add a second exchange only after the first exchange is stable
 
 ## Documentation Updates
 
@@ -619,7 +632,7 @@ Until that point, routing resolution coverage is useful but not equivalent to fu
 
 | Risk | Mitigation |
 |------|------------|
-| Exchange sandbox support changes in CCXT | Keep the first rollout single-exchange and confirm sandbox bootstrap through the real exchange-init path |
+| Exchange sandbox support changes in CCXT | CCXT provides uniform sandbox interface; test structure works across exchanges |
 | Sandbox helpers diverge from production runtime | Keep helpers thin and require core suites to use `ExchangeInitService`, `start_mm`, `stop_mm`, and the real intent-execution path |
 | Sandbox orders fill unexpectedly | Use far-from-market pricing where supported and always run cleanup |
 | `stop_mm` leaves exchange orders open because runtime does not drain them | Keep cleanup in the harness and block stronger stop-safety claims until runtime implements drain or cancel behavior |
@@ -634,9 +647,111 @@ Until that point, routing resolution coverage is useful but not equivalent to fu
 - the plan makes the same-code-path requirement explicit for sandbox versus mainnet execution
 - remaining blockers such as real fill ingestion or stronger stop-safety behavior are documented as gates, not hidden assumptions
 - this file remains the only source of truth for sandbox execution-testing scope
+- sandbox activation is environment-only, no codebase modifications required to run tests
+
+## Verification Readiness And TODO Checklist
+
+These phases are not just design placeholders. They are intended to be verifiable against one real CCXT sandbox exchange with exchange-side evidence and local runtime evidence.
+
+Verification evidence should come from both sides:
+
+- exchange-side evidence: returned exchange order ID, successful `fetchOrder()`, optional `fetchOpenOrders()` visibility when supported, and successful `cancelOrder()` or equivalent closed-state confirmation
+- runtime-side evidence: persisted mapping rows, persisted execution-history rows where applicable, executor attachment or detachment, latest intent status, and in-memory tracker state
+
+### Phase 1: Production-Parity Sandbox Bootstrap
+
+Verifiable: yes
+
+TODO:
+
+- make `ExchangeInitService` read `CCXT_SANDBOX_*` config directly
+- instantiate the selected CCXT exchange through the same production init path
+- call `setSandboxMode(true)` before `loadMarkets()`
+- expose the sandbox exchange through normal `getExchange(exchangeName, label)` resolution
+- add a runtime test helper that builds the real execution-service graph needed by later phases
+
+Verification:
+
+- `ExchangeInitService.getExchange()` returns the sandbox exchange configured by `CCXT_SANDBOX_*`
+- the returned exchange can fetch markets and order books without using the isolated sandbox helper path
+- production exchange boot remains unchanged when sandbox env is absent
+
+### Phase 2: Exchange Init And Order Lifecycle
+
+Verifiable: yes
+
+TODO:
+
+- replace the current mocked `ExchangeInitService` path in `sandbox-order-lifecycle.system.spec.ts` with the real service
+- keep cleanup of created sandbox orders mandatory
+- make `fetchOpenOrders()` assertions conditional for exchanges that do not support that capability cleanly
+
+Verification:
+
+- the suite obtains the exchange from `ExchangeInitService.getExchange()`
+- the suite places a real sandbox order and receives a real exchange order ID
+- the same order ID can be refetched from the exchange
+- the order can be canceled and its final state can be confirmed from the exchange response
+
+### Phase 3: Production Entry Point Coverage
+
+Verifiable: yes
+
+TODO:
+
+- add `market-making.processor.system.spec.ts`
+- create or load a persisted market-making order fixture with valid `strategySnapshot.resolvedConfig`
+- invoke `handleStartMM()` and `handleStopMM()` through the real processor
+- assert executor attachment and detachment through `ExecutorRegistry`
+
+Verification:
+
+- `start_mm` changes order state to `running`
+- the expected pooled executor contains the runtime session for the order
+- `stop_mm` removes that session and changes order state to `stopped`
+- this phase does not claim exchange-order drain unless runtime code actually implements it
+
+### Phase 4: Exchange-Side Runtime Behavior
+
+Verifiable: yes
+
+TODO:
+
+- add `pure-market-making-single-tick.system.spec.ts`
+- add `pure-market-making-multi-layer.system.spec.ts`
+- add `pure-market-making-cadence.system.spec.ts`
+- drive manual ticks through the real executor path for deterministic assertions
+
+Verification:
+
+- a manual tick publishes the expected intents for the runtime session
+- intent execution places real sandbox orders through `ExchangeConnectorAdapterService`
+- `StrategyIntentExecutionService` persists exchange order mappings and execution history
+- `ExchangeOrderTrackerService` reflects the open orders created by the runtime
+- repeated ticks advance deterministic client-order sequencing without destabilizing the executor
+
+### Phase 5: Fill Routing And Fill Ingestion Gate
+
+Verifiable now: partially
+
+TODO:
+
+- keep `sandbox-fill-resolution.system.spec.ts` as required coverage for routing resolution
+- defer `private-fill-ingestion.system.spec.ts` until a real exchange private-stream fill path exists
+- do not describe queued synthetic events as full fill-ingestion parity
+
+Verification:
+
+- fill-routing resolution is verifiable now through parseable `clientOrderId`, client-order mapping fallback, and exchange-order mapping fallback using a real sandbox order ID
+- private-fill ingestion is not yet verifiable as production parity because `PrivateStreamTrackerService` currently consumes queued in-memory events instead of a live exchange private stream
+
+Bottom-line rule:
+
+- phases 1 through 4 can and should be implemented as verifiable sandbox execution tests that place real orders on exchange testnet
+- phase 5 should stay split between verifiable routing coverage now and gated private-fill ingestion later
 
 ## Status
 
 - Created: 2026-03-15
 - Updated: 2026-03-17
-- Status: Planning
+- Status: Ready for Implementation

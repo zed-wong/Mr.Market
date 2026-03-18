@@ -275,9 +275,9 @@ This section explains each module with three questions:
 
 #### `infrastructure/exchange-init/exchange-init.module.ts`
 
-- What: exchange client/bootstrap initialization service.
-- Why: all exchange operations need consistent startup, caching, and client lifecycle.
-- Where: used across fee checks, health checks, and strategy execution dependencies.
+- What: exchange client/bootstrap initialization service, including env-driven sandbox boot for system-test parity.
+- Why: all exchange operations need consistent startup, caching, sandbox toggles, and client lifecycle.
+- Where: used across fee checks, health checks, strategy execution dependencies, and sandbox execution-system tests.
 
 #### `infrastructure/health/health.module.ts`
 

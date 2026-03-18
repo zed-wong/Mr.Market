@@ -1,10 +1,18 @@
 # Execution Flow Changelog
 
+## 2026-03-18
+
+- Add a new market-making testing roadmap plan that stages execution-engine parity before the broader business lifecycle, uses checkbox phase gates, and tracks exchange validation with a lightweight capability matrix
+- Update `docs/plans/README.md` to index the new March 18 testing roadmap and clarify the March 15 sandbox plan as the detailed Track A execution-engine document
+
 ## 2026-03-17
 
 - Reframe the CCXT sandbox testing plan as a production-parity execution-engine plan that requires the same exchange init and `start_mm` / `stop_mm` runtime paths as mainnet and explicitly gates remaining parity gaps
 - Clarify `docs/tests/MARKET_MAKING.md` as documenting the currently implemented sandbox suites only, not the broader production-parity target
 - Update `docs/plans/README.md` to describe the March 15 sandbox plan as the production-parity execution-testing source of truth
+- Add a bottom-of-plan verification checklist to the March 15 sandbox plan that marks phases 1-4 as verifiable against real testnet orders and keeps private-fill ingestion explicitly gated
+- Implement env-driven `CCXT_SANDBOX_*` boot in `ExchangeInitService`, route `sandbox-order-lifecycle.system.spec.ts` through the real exchange-init path, and unref exchange-init background timers so Jest exits cleanly
+- Update sandbox env/docs references to include optional `CCXT_SANDBOX_ENABLED` and `CCXT_SANDBOX_ACCOUNT_LABEL` and describe the real ExchangeInitService-backed lifecycle suite
 
 ## 2026-03-14
 
