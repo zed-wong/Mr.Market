@@ -22,6 +22,7 @@ type PrivateStreamEvent = {
 
 type RoutedFillCandidate = {
   exchange: string;
+  accountLabel: string;
   pair?: string;
   orderId?: string;
   exchangeOrderId?: string;
@@ -35,7 +36,10 @@ type RoutedFillCandidate = {
 };
 
 type OrphanedFillEvent = RoutedFillCandidate & {
-  reason: 'unresolved_order' | 'missing_executor';
+  reason:
+    | 'unresolved_order'
+    | 'missing_executor'
+    | 'account_boundary_violation';
 };
 
 @Injectable()
@@ -132,16 +136,20 @@ export class PrivateStreamTrackerService
           fill.exchangeOrderId,
         )
       : undefined;
+    const resolvedExecutor = resolution?.orderId
+      ? this.executorRegistry?.findExecutorByOrderId(resolution.orderId)
+      : undefined;
     const executor =
+      resolvedExecutor ||
       (fill.pair
         ? this.executorRegistry?.getExecutor(fill.exchange, fill.pair)
         : undefined) ||
       (trackedOrder
         ? this.executorRegistry?.getExecutor(fill.exchange, trackedOrder.pair)
-        : undefined) ||
-      (resolution?.orderId
-        ? this.executorRegistry?.findExecutorByOrderId(resolution.orderId)
         : undefined);
+    const resolvedSession = resolution?.orderId
+      ? resolvedExecutor?.getSession(resolution.orderId)
+      : undefined;
 
     if (trackedOrder && fill.status) {
       this.exchangeOrderTrackerService?.upsertOrder({
@@ -152,8 +160,37 @@ export class PrivateStreamTrackerService
       });
     }
 
+    if (!resolution && trackedOrder && executor) {
+      await executor.onFill({
+        exchangeOrderId: fill.exchangeOrderId,
+        clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
+        side: fill.side || trackedOrder.side,
+        price: fill.price || trackedOrder.price,
+        qty: fill.qty || trackedOrder.qty,
+        receivedAt: fill.receivedAt,
+        payload: fill.payload,
+      });
+
+      return;
+    }
+
     if (!resolution) {
       this.recordOrphanedFill(fill, 'unresolved_order');
+
+      return;
+    }
+
+    if (
+      resolvedSession?.accountLabel &&
+      resolvedSession.accountLabel !== fill.accountLabel
+    ) {
+      this.recordOrphanedFill(
+        {
+          ...fill,
+          orderId: resolution.orderId,
+        },
+        'account_boundary_violation',
+      );
 
       return;
     }
@@ -233,6 +270,7 @@ export class PrivateStreamTrackerService
 
     return {
       exchange: event.exchange,
+      accountLabel: event.accountLabel,
       pair,
       exchangeOrderId,
       clientOrderId,

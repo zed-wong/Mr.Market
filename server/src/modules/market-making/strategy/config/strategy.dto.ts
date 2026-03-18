@@ -91,6 +91,12 @@ export class PureMarketMakingStrategyDto {
   exchangeName: string;
 
   @ApiPropertyOptional({
+    description: 'Exchange account label used for private-stream routing',
+    example: 'default',
+  })
+  accountLabel?: string;
+
+  @ApiPropertyOptional({
     description:
       'If provided, this exchange is used as an oracle for price data instead of `exchangeName`',
     example: 'mexc',

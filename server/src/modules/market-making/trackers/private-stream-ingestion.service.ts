@@ -21,10 +21,14 @@ type OrderWatcherParams = {
   params?: Record<string, unknown>;
 };
 
+type OrderWatcherState = {
+  refCount: number;
+};
+
 @Injectable()
 export class PrivateStreamIngestionService implements OnModuleDestroy {
   private readonly logger = new CustomLogger(PrivateStreamIngestionService.name);
-  private readonly activeWatchers = new Map<string, boolean>();
+  private readonly activeWatchers = new Map<string, OrderWatcherState>();
 
   constructor(
     private readonly exchangeInitService: ExchangeInitService,
@@ -37,17 +41,32 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
 
   startOrderWatcher(params: OrderWatcherParams): void {
     const key = this.toWatcherKey(params);
+    const state = this.activeWatchers.get(key);
 
-    if (this.activeWatchers.get(key)) {
+    if (state) {
+      state.refCount += 1;
       return;
     }
 
-    this.activeWatchers.set(key, true);
+    this.activeWatchers.set(key, { refCount: 1 });
     void this.runOrderWatcher(key, params);
   }
 
   stopOrderWatcher(params: OrderWatcherParams): void {
-    this.activeWatchers.delete(this.toWatcherKey(params));
+    const key = this.toWatcherKey(params);
+    const state = this.activeWatchers.get(key);
+
+    if (!state) {
+      return;
+    }
+
+    if (state.refCount <= 1) {
+      this.activeWatchers.delete(key);
+
+      return;
+    }
+
+    state.refCount -= 1;
   }
 
   stopAllWatchers(): void {
@@ -58,11 +77,21 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
     return this.activeWatchers.has(this.toWatcherKey(params));
   }
 
+  getActiveWatcherCount(): number {
+    return this.activeWatchers.size;
+  }
+
+  getWatcherRefCount(params: OrderWatcherParams): number {
+    return this.activeWatchers.get(this.toWatcherKey(params))?.refCount || 0;
+  }
+
   private async runOrderWatcher(
     key: string,
     params: OrderWatcherParams,
   ): Promise<void> {
-    while (this.activeWatchers.get(key)) {
+    let consecutiveFailures = 0;
+
+    while (this.activeWatchers.has(key)) {
       try {
         const exchange = this.exchangeInitService.getExchange(
           params.exchange,
@@ -96,8 +125,9 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
             receivedAt: getRFC3339Timestamp(),
           });
         }
+        consecutiveFailures = 0;
       } catch (error) {
-        if (!this.activeWatchers.get(key)) {
+        if (!this.activeWatchers.has(key)) {
           return;
         }
 
@@ -111,7 +141,12 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
           trace,
         );
 
-        await this.sleep(1000);
+        consecutiveFailures += 1;
+        const delayMs = this.getBackoffDelayMs(consecutiveFailures);
+
+        if (delayMs > 0) {
+          await this.sleep(delayMs);
+        }
       }
     }
   }
@@ -137,6 +172,14 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
       params.accountLabel || 'default',
       params.symbol || '*',
     ].join(':');
+  }
+
+  private getBackoffDelayMs(consecutiveFailures: number): number {
+    if (consecutiveFailures <= 1) {
+      return 0;
+    }
+
+    return Math.min(1000 * 2 ** (consecutiveFailures - 2), 30000);
   }
 
   private async sleep(ms: number): Promise<void> {

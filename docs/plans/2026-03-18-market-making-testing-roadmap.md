@@ -253,8 +253,8 @@ Status: partial
 Implementation checklist:
 
 - [x] keep routing-resolution coverage in `server/test/system/market-making/execution/sandbox-fill-resolution.system.spec.ts`
-- [ ] implement a real exchange private-fill ingestion path
-- [ ] add `server/test/system/market-making/execution/private-fill-ingestion.system.spec.ts`
+- [x] implement a real exchange private-fill ingestion path
+- [x] add `server/test/system/market-making/execution/private-fill-ingestion.system.spec.ts`
 
 Verification checklist:
 
@@ -270,7 +270,7 @@ Exit gate:
 
 Current blocker:
 
-- `PrivateStreamTrackerService` still consumes queued in-memory events rather than a live exchange private stream
+- the runtime now starts a real `watchOrders()` ingestion loop, but deterministic system coverage still injects the filled private-stream payload instead of waiting on a live exchange fill event
 
 ### Track A Completion Rule
 

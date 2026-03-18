@@ -29,6 +29,7 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { ExchangeConnectorAdapterService } from 'src/modules/market-making/execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
+import { FillRoutingService } from 'src/modules/market-making/execution/fill-routing.service';
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
@@ -46,6 +47,8 @@ import { QuoteExecutorManagerService } from 'src/modules/market-making/strategy/
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
+import { PrivateStreamIngestionService } from 'src/modules/market-making/trackers/private-stream-ingestion.service';
+import { PrivateStreamTrackerService } from 'src/modules/market-making/trackers/private-stream-tracker.service';
 import { MarketMakingOrderProcessor } from 'src/modules/market-making/user-orders/market-making.processor';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
@@ -102,6 +105,8 @@ export class MarketMakingSingleTickHelper {
   private marketMakingOrderProcessor!: MarketMakingOrderProcessor;
   private marketMakingOrderRepository!: Repository<MarketMakingOrder>;
   private moduleRef!: TestingModule;
+  private privateStreamIngestionService!: PrivateStreamIngestionService;
+  private privateStreamTrackerService!: PrivateStreamTrackerService;
   private readonly runtimeOrderIds = new Set<string>();
   private strategyDefinitionRepository!: Repository<StrategyDefinition>;
   private strategyExecutionHistoryRepository!: Repository<StrategyExecutionHistory>;
@@ -115,10 +120,26 @@ export class MarketMakingSingleTickHelper {
     return this.config;
   }
 
+  getExchange(): any {
+    return this.exchange;
+  }
+
   getExecutorSession(exchange: string, pair: string, orderId: string) {
     return this.executorRegistry
       .getExecutor(exchange, pair)
       ?.getSession(orderId);
+  }
+
+  getExecutor(exchange: string, pair: string) {
+    return this.executorRegistry.getExecutor(exchange, pair);
+  }
+
+  getPrivateStreamIngestionService(): PrivateStreamIngestionService {
+    return this.privateStreamIngestionService;
+  }
+
+  getPrivateStreamTrackerService(): PrivateStreamTrackerService {
+    return this.privateStreamTrackerService;
   }
 
   async init(): Promise<void> {
@@ -169,8 +190,11 @@ export class MarketMakingSingleTickHelper {
         ExchangeOrderTrackerService,
         ExecutorOrchestratorService,
         ExecutorRegistry,
+        FillRoutingService,
         MarketMakingOrderProcessor,
         OrderBookTrackerService,
+        PrivateStreamIngestionService,
+        PrivateStreamTrackerService,
         PureMarketMakingStrategyController,
         QuoteExecutorManagerService,
         StrategyIntentExecutionService,
@@ -279,6 +303,12 @@ export class MarketMakingSingleTickHelper {
     );
     this.strategyOrderIntentRepository = this.moduleRef.get(
       getRepositoryToken(StrategyOrderIntentEntity),
+    );
+    this.privateStreamIngestionService = this.moduleRef.get(
+      PrivateStreamIngestionService,
+    );
+    this.privateStreamTrackerService = this.moduleRef.get(
+      PrivateStreamTrackerService,
     );
 
     this.exchange = await pollUntil(
@@ -403,6 +433,16 @@ export class MarketMakingSingleTickHelper {
     await executor.onTick(getRFC3339Timestamp());
   }
 
+  async stopOrder(orderId: string, userId: string): Promise<void> {
+    await this.marketMakingOrderProcessor.handleStopMM({
+      data: { userId, orderId },
+    } as any);
+  }
+
+  async flushPrivateStreamEvents(): Promise<void> {
+    await this.privateStreamTrackerService.onTick(getRFC3339Timestamp());
+  }
+
   async forceSessionReadyForNextTick(orderId: string): Promise<void> {
     const order = await this.marketMakingOrderRepository.findOneByOrFail({
       orderId,
@@ -516,6 +556,7 @@ export class MarketMakingSingleTickHelper {
         marketMakingOrderId: orderId,
         pair: overrides.pair,
         exchangeName: this.config.exchangeId,
+        accountLabel: this.config.accountLabel,
         bidSpread: overrides.bidSpread,
         askSpread: overrides.askSpread,
         orderAmount: overrides.orderAmount,

@@ -21,6 +21,7 @@ import { Repository } from 'typeorm';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
+import { PrivateStreamIngestionService } from '../trackers/private-stream-ingestion.service';
 import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
@@ -119,6 +120,8 @@ export class StrategyService
     private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
     @Optional()
     private readonly executorRegistry?: ExecutorRegistry,
+    @Optional()
+    private readonly privateStreamIngestionService?: PrivateStreamIngestionService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -152,6 +155,10 @@ export class StrategyService
   }
 
   async stop(): Promise<void> {
+    for (const session of [...this.sessions.values()]) {
+      await this.detachSessionFromExecutor(session);
+    }
+
     this.sessions.clear();
     this.executorRegistry?.clear();
   }
@@ -704,6 +711,7 @@ export class StrategyService
     );
 
     if (this.executorRegistry && pooledTarget) {
+      const accountLabel = this.resolveAccountLabel(strategyType, params);
       const executor = this.executorRegistry.getOrCreateExecutor(
         pooledTarget.exchange,
         pooledTarget.pair,
@@ -738,11 +746,19 @@ export class StrategyService
           strategyType,
           clientId,
           cadenceMs,
+          accountLabel,
           params,
           marketMakingOrderId,
           nextRunAtMs,
           runId,
         },
+      );
+
+      this.startPrivateOrderWatcher(
+        strategyType,
+        pooledTarget.exchange,
+        pooledTarget.pair,
+        accountLabel,
       );
 
       this.sessions.set(strategyKey, pooledSession);
@@ -1857,6 +1873,13 @@ export class StrategyService
       pooledTarget.exchange,
       pooledTarget.pair,
     );
+
+    this.stopPrivateOrderWatcher(
+      session.strategyType,
+      pooledTarget.exchange,
+      pooledTarget.pair,
+      this.resolveAccountLabel(session.strategyType, session.params),
+    );
   }
 
   private resolvePooledExecutorTarget(
@@ -1912,6 +1935,56 @@ export class StrategyService
     }
 
     return null;
+  }
+
+  private resolveAccountLabel(
+    strategyType: StrategyType,
+    params: StrategyRuntimeSession['params'],
+  ): string | undefined {
+    if (strategyType !== 'pureMarketMaking') {
+      return undefined;
+    }
+
+    const accountLabel = String(
+      (params as unknown as PureMarketMakingStrategyDto).accountLabel ||
+        'default',
+    ).trim();
+
+    return accountLabel || 'default';
+  }
+
+  private startPrivateOrderWatcher(
+    strategyType: StrategyType,
+    exchange: string,
+    pair: string,
+    accountLabel?: string,
+  ): void {
+    if (strategyType !== 'pureMarketMaking') {
+      return;
+    }
+
+    this.privateStreamIngestionService?.startOrderWatcher({
+      exchange,
+      accountLabel: accountLabel || 'default',
+      symbol: pair,
+    });
+  }
+
+  private stopPrivateOrderWatcher(
+    strategyType: StrategyType,
+    exchange: string,
+    pair: string,
+    accountLabel?: string,
+  ): void {
+    if (strategyType !== 'pureMarketMaking') {
+      return;
+    }
+
+    this.privateStreamIngestionService?.stopOrderWatcher({
+      exchange,
+      accountLabel: accountLabel || 'default',
+      symbol: pair,
+    });
   }
 
   private logSessionTickError(

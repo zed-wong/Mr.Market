@@ -2,6 +2,8 @@
 
 ## 2026-03-18
 
+- Wire pure market-making runtime session attach/detach to `PrivateStreamIngestionService`, add watcher refcount/backoff coverage, and carry `accountLabel` on pooled executor sessions for account-safe private-stream routing
+- Implement `PrivateStreamTrackerService` exchange-order fallback and account-boundary handling, add passing private-stream unit suites, and add a new A7 `private-fill-ingestion.system.spec.ts` runtime integration spec
 - Add a new market-making testing roadmap plan that stages execution-engine parity before the broader business lifecycle, uses checkbox phase gates, and tracks exchange validation with a lightweight capability matrix
 - Update `docs/plans/README.md` to index the new March 18 testing roadmap and clarify the March 15 sandbox plan as the detailed Track A execution-engine document
 - Clarify in the March 18 testing roadmap that all system-test specs and system-test-only support files should live under `server/test/system`, not under `server/src` or `server/test/helpers`
