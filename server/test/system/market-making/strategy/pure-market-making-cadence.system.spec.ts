@@ -5,16 +5,18 @@ import {
   readSystemSandboxConfig,
 } from '../../helpers/sandbox-system.helper';
 import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
+import {
+  createSystemTestLogger,
+  logSystemSkip,
+} from '../../helpers/system-test-log.helper';
 
 const envSkipReason = getSystemSandboxSkipReason();
 const config = envSkipReason ? null : readSystemSandboxConfig();
 const skipReason = envSkipReason;
+const log = createSystemTestLogger('pure-mm-cadence');
 
 if (skipReason) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    `[system] Skipping pure market-making cadence suite: ${skipReason}`,
-  );
+  logSystemSkip('pure market-making cadence suite', skipReason);
 }
 
 const describeSandbox = skipReason ? describe.skip : describe;
@@ -25,22 +27,32 @@ describeSandbox('Pure market making cadence parity (system)', () => {
   let helper: MarketMakingSingleTickHelper;
 
   beforeAll(async () => {
+    log.suite('initializing helper');
     helper = new MarketMakingSingleTickHelper(config!);
     await helper.init();
+    log.suite('helper ready');
   });
 
   afterAll(async () => {
     await helper?.close();
+    log.suite('helper closed');
   });
 
   it('reuses one executor session across repeated eligible ticks and increments submitted clientOrderId values deterministically', async () => {
+    log.step('creating cadence fixture');
     const fixture = await helper.createPersistedPureMarketMakingOrder({
       hangingOrdersEnabled: false,
       numberOfLayers: 1,
       orderRefreshTime: 60000,
     });
     const { order, strategyKey } = fixture;
+    log.result('fixture created', {
+      orderId: order.orderId,
+      pair: order.pair,
+      cadenceMs: 60000,
+    });
 
+    log.step('starting order');
     await helper.startOrder(order.orderId, order.userId);
 
     const initialSession = helper.getExecutorSession(
@@ -54,7 +66,12 @@ describeSandbox('Pure market making cadence parity (system)', () => {
 
     const initialRunId = initialSession?.runId;
     const initialNextRunAtMs = initialSession?.nextRunAtMs || 0;
+    log.check('initial executor session', {
+      runId: initialRunId,
+      nextRunAtMs: initialNextRunAtMs,
+    });
 
+    log.step('running first eligible tick');
     await helper.runSingleTick(order.orderId);
 
     const afterFirstTickSession = helper.getExecutorSession(
@@ -68,10 +85,17 @@ describeSandbox('Pure market making cadence parity (system)', () => {
       true,
     );
     expect(await helper.listStrategyIntents(order.orderId)).toHaveLength(2);
+    log.result('first tick complete', {
+      runId: afterFirstTickSession?.runId,
+      nextRunAtMs: afterFirstTickSession?.nextRunAtMs,
+      intentCount: 2,
+    });
 
+    log.step('running ineligible tick to confirm cadence guard');
     await helper.runSingleTick(order.orderId);
     expect(await helper.listStrategyIntents(order.orderId)).toHaveLength(2);
 
+    log.step('forcing next eligible tick');
     await helper.forceSessionReadyForNextTick(order.orderId);
     await helper.runSingleTick(order.orderId);
 
@@ -84,6 +108,13 @@ describeSandbox('Pure market making cadence parity (system)', () => {
       order.pair,
       order.orderId,
     );
+    log.result('second eligible tick complete', {
+      runId: afterSecondEligibleTickSession?.runId,
+      intentCount: intents.length,
+      mappingCount: mappings.length,
+      historyCount: history.length,
+      trackedOrderCount: trackedOrders.length,
+    });
 
     expect(afterSecondEligibleTickSession?.runId).toBe(initialRunId);
     expect(intents).toHaveLength(4);
@@ -94,6 +125,10 @@ describeSandbox('Pure market making cadence parity (system)', () => {
     const submittedClientOrderIds = history
       .map((entry) => String(entry.metadata?.clientOrderId || ''))
       .sort();
+    log.check('submitted client order ids', {
+      orderId: order.orderId,
+      submittedClientOrderIds,
+    });
 
     expect(submittedClientOrderIds).toEqual(
       [

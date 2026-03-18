@@ -11,14 +11,19 @@ import {
   pollUntil,
   readSandboxExchangeTestConfig,
 } from '../../helpers/sandbox-exchange.helper';
+import {
+  createSystemTestLogger,
+  logSystemSkip,
+} from '../../helpers/system-test-log.helper';
 import { ExchangeInitService } from '../../../../src/modules/infrastructure/exchange-init/exchange-init.service';
 import { ExchangeConnectorAdapterService } from '../../../../src/modules/market-making/execution/exchange-connector-adapter.service';
 
 const skipReason = getSandboxIntegrationSkipReason();
+const log = createSystemTestLogger('sandbox-order-lifecycle');
 
-const LOG_PREFIX = '|';
-// eslint-disable-next-line no-console
-const log = (msg: string) => console.log(`  ${LOG_PREFIX} ${msg}`);
+if (skipReason) {
+  logSystemSkip('sandbox order REST lifecycle suite', skipReason);
+}
 
 const describeSandbox = skipReason ? describe.skip : describe;
 
@@ -87,7 +92,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
 
   beforeAll(async () => {
     config = readSandboxExchangeTestConfig();
-    log('Init exchange through ExchangeInitService...');
+    log.suite('initializing exchange through ExchangeInitService');
 
     moduleRef = await Test.createTestingModule({
       providers: [
@@ -138,10 +143,11 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
 
     expect(exchangeInitService.getExchange(config.exchangeId)).toBe(exchange);
 
-    log(
-      `${config.exchangeId} | ${config.symbol} | label=${config.accountLabel}`,
-    );
-    log('Ready');
+    log.result('exchange ready', {
+      exchangeId: config.exchangeId,
+      symbol: config.symbol,
+      accountLabel: config.accountLabel,
+    });
   });
 
   afterAll(async () => {
@@ -150,18 +156,22 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
       await exchange.close();
     }
     await moduleRef?.close();
-    log('Done\n');
+    log.suite('cleanup complete');
   });
 
   it('places, fetches, lists, and cancels a real sandbox limit order through the adapter', async () => {
-    log('Fetch order book...');
+    log.step('fetching order book');
     const orderBook = await service.fetchOrderBook(
       config.exchangeId,
       config.symbol,
     );
 
-    log(`   ${orderBook.bids.length} bids / ${orderBook.asks.length} asks`);
-    log(`   best: ${orderBook.bids[0]?.[0]} / ${orderBook.asks[0]?.[0]}`);
+    log.result('order book fetched', {
+      bidLevels: orderBook.bids.length,
+      askLevels: orderBook.asks.length,
+      bestBid: orderBook.bids[0]?.[0],
+      bestAsk: orderBook.asks[0]?.[0],
+    });
 
     expect(Array.isArray(orderBook.bids)).toBe(true);
     expect(Array.isArray(orderBook.asks)).toBe(true);
@@ -174,7 +184,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
       symbol: config.symbol,
     });
 
-    log('Create buy order...');
+    log.step('creating buy order');
     const createdOrder = await service.placeLimitOrder(
       config.exchangeId,
       config.symbol,
@@ -186,14 +196,17 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
 
     createdOrderIds.push(String(createdOrder.id));
 
-    log(
-      `   id=${createdOrder.id} | ${createdOrder.amount}@${createdOrder.price}`,
-    );
+    log.result('order created', {
+      exchangeOrderId: createdOrder.id,
+      amount: createdOrder.amount,
+      price: createdOrder.price,
+      clientOrderId,
+    });
 
     expect(createdOrder.id).toBeDefined();
 
     if (supportsFetchOrder) {
-      log('Fetch order...');
+      log.step('fetching created order');
       const fetchedOrder = await pollUntil(
         async () =>
           await service.fetchOrder(
@@ -207,15 +220,20 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
         },
       );
 
-      log(`   id=${fetchedOrder.id} status=${fetchedOrder.status}`);
+      log.result('fetchOrder returned created order', {
+        exchangeOrderId: fetchedOrder.id,
+        status: fetchedOrder.status,
+      });
 
       expect(String(fetchedOrder.id)).toBe(String(createdOrder.id));
     } else {
-      log('Fetch order skipped: exchange does not support fetchOrder()');
+      log.check('fetchOrder skipped', {
+        reason: 'exchange does not support fetchOrder()',
+      });
     }
 
     if (supportsFetchOpenOrders) {
-      log('Fetch open orders...');
+      log.step('fetching open orders');
       const openOrders = await pollUntil(
         async () =>
           await service.fetchOpenOrders(config.exchangeId, config.symbol),
@@ -226,7 +244,10 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
         },
       );
 
-      log(`   ${openOrders.length} orders, ours in list`);
+      log.result('open orders fetched', {
+        openOrderCount: openOrders.length,
+        containsCreatedOrder: true,
+      });
 
       expect(
         openOrders.some(
@@ -234,20 +255,24 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
         ),
       ).toBe(true);
     } else {
-      log(
-        'Fetch open orders skipped: exchange does not support fetchOpenOrders()',
-      );
+      log.check('fetchOpenOrders skipped', {
+        reason: 'exchange does not support fetchOpenOrders()',
+      });
     }
 
-    log('Cancel order...');
+    log.step('cancelling order');
     const cancelResult = await service.cancelOrder(
       config.exchangeId,
       config.symbol,
       String(createdOrder.id),
     );
+    log.result('cancel request returned', {
+      exchangeOrderId: createdOrder.id,
+      status: cancelResult?.status,
+    });
 
     if (supportsFetchOrder || supportsFetchOpenOrders) {
-      log('Verify cancellation...');
+      log.step('verifying cancellation');
       const canceledState = await pollUntil(
         async () => {
           const orderResult = await Promise.allSettled([
@@ -291,11 +316,12 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
         },
       );
 
-      log(
-        `   status=${
-          canceledState.fetchedOrder?.status || cancelResult?.status || 'n/a'
-        }`,
-      );
+      log.result('cancellation verified', {
+        exchangeOrderId: createdOrder.id,
+        status:
+          canceledState.fetchedOrder?.status || cancelResult?.status || 'n/a',
+        openOrderCount: canceledState.openOrders.length,
+      });
       expect(
         canceledState.openOrders.some(
           (order) => String(order?.id) === String(createdOrder.id),

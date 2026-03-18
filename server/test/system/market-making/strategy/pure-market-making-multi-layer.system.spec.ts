@@ -5,16 +5,18 @@ import {
   readSystemSandboxConfig,
 } from '../../helpers/sandbox-system.helper';
 import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
+import {
+  createSystemTestLogger,
+  logSystemSkip,
+} from '../../helpers/system-test-log.helper';
 
 const envSkipReason = getSystemSandboxSkipReason();
 const config = envSkipReason ? null : readSystemSandboxConfig();
 const skipReason = envSkipReason;
+const log = createSystemTestLogger('pure-mm-multi-layer');
 
 if (skipReason) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    `[system] Skipping pure market-making multi-layer suite: ${skipReason}`,
-  );
+  logSystemSkip('pure market-making multi-layer suite', skipReason);
 }
 
 const describeSandbox = skipReason ? describe.skip : describe;
@@ -25,15 +27,19 @@ describeSandbox('Pure market making multi-layer parity (system)', () => {
   let helper: MarketMakingSingleTickHelper;
 
   beforeAll(async () => {
+    log.suite('initializing helper');
     helper = new MarketMakingSingleTickHelper(config!);
     await helper.init();
+    log.suite('helper ready');
   });
 
   afterAll(async () => {
     await helper?.close();
+    log.suite('helper closed');
   });
 
   it('places a layered ladder once and preserves hanging orders on the next tick', async () => {
+    log.step('creating layered fixture');
     const fixture = await helper.createPersistedPureMarketMakingOrder({
       amountChangePerLayer: 0.0001,
       bidSpread: 0.001,
@@ -43,7 +49,13 @@ describeSandbox('Pure market making multi-layer parity (system)', () => {
       orderAmount: 0.0002,
     });
     const { order, strategyKey } = fixture;
+    log.result('fixture created', {
+      orderId: order.orderId,
+      pair: order.pair,
+      layers: 3,
+    });
 
+    log.step('starting order and running first tick');
     await helper.startOrder(order.orderId, order.userId);
     await helper.runSingleTick(order.orderId);
 
@@ -51,6 +63,12 @@ describeSandbox('Pure market making multi-layer parity (system)', () => {
     const mappings = await helper.listOrderMappings(order.orderId);
     const history = await helper.listExecutionHistory(order.orderId);
     const trackedOrders = helper.getOpenTrackedOrders(strategyKey);
+    log.result('first tick artifacts collected', {
+      intentCount: intents.length,
+      mappingCount: mappings.length,
+      historyCount: history.length,
+      trackedOrderCount: trackedOrders.length,
+    });
 
     expect(intents).toHaveLength(6);
     expect(mappings).toHaveLength(6);
@@ -89,8 +107,12 @@ describeSandbox('Pure market making multi-layer parity (system)', () => {
       trackedOrders.every((trackedOrder) => trackedOrder.status === 'open'),
     ).toBe(true);
 
+    log.step('forcing session ready and running next tick');
     await helper.forceSessionReadyForNextTick(order.orderId);
     await helper.runSingleTick(order.orderId);
+    log.check('hanging orders preserved after next tick', {
+      orderId: order.orderId,
+    });
 
     expect(await helper.listStrategyIntents(order.orderId)).toHaveLength(6);
     expect(await helper.listOrderMappings(order.orderId)).toHaveLength(6);

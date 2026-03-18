@@ -6,24 +6,22 @@ import {
   getSandboxIntegrationSkipReason,
   SandboxExchangeHelper,
 } from '../../helpers/sandbox-exchange.helper';
+import {
+  createSystemTestLogger,
+  logSystemSkip,
+} from '../../helpers/system-test-log.helper';
 import { ExchangeOrderMapping } from '../../../../src/common/entities/market-making/exchange-order-mapping.entity';
 import { ExchangeOrderMappingService } from '../../../../src/modules/market-making/execution/exchange-order-mapping.service';
 import { FillRoutingService } from '../../../../src/modules/market-making/execution/fill-routing.service';
 
 const skipReason = getSandboxIntegrationSkipReason();
+const log = createSystemTestLogger('sandbox-fill-resolution');
 
 if (skipReason) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    `[system] Skipping sandbox fill resolution suite: ${skipReason}`,
-  );
+  logSystemSkip('sandbox fill resolution suite', skipReason);
 }
 
 const describeSandbox = skipReason ? describe.skip : describe;
-
-const LOG_PREFIX = '|';
-// eslint-disable-next-line no-console
-const log = (msg: string) => console.log(`  ${LOG_PREFIX} ${msg}`);
 
 describeSandbox('Sandbox fill resolution (system)', () => {
   jest.setTimeout(240000);
@@ -34,14 +32,17 @@ describeSandbox('Sandbox fill resolution (system)', () => {
   let exchangeOrderMappingService: ExchangeOrderMappingService;
 
   beforeAll(async () => {
-    log('Initializing sandbox exchange...');
+    log.suite('initializing sandbox exchange');
     helper = new SandboxExchangeHelper();
     await helper.init();
     const config = helper.getConfig();
 
-    log(`${config.exchangeId} ready, symbol=${config.symbol}`);
+    log.result('sandbox exchange ready', {
+      exchangeId: config.exchangeId,
+      symbol: config.symbol,
+    });
 
-    log('Setting up in-memory SQLite...');
+    log.suite('setting up in-memory sqlite');
     moduleRef = await Test.createTestingModule({
       imports: [
         TypeOrmModule.forRoot({
@@ -58,27 +59,29 @@ describeSandbox('Sandbox fill resolution (system)', () => {
 
     fillRoutingService = moduleRef.get(FillRoutingService);
     exchangeOrderMappingService = moduleRef.get(ExchangeOrderMappingService);
-    log('FillRoutingService ready');
+    log.suite('fill routing service ready');
   });
 
   afterAll(async () => {
-    log('Cleaning up...');
+    log.suite('cleaning up');
     await helper?.close();
     await moduleRef?.close();
-    log('Done\n');
+    log.suite('done');
   });
 
   it('resolves a parseable local client order id directly', async () => {
-    log('Test 1: Direct clientOrderId parsing (no DB)');
+    log.step('resolving parseable clientOrderId directly');
     const clientOrderId = 'order-123:0';
 
     const result = await fillRoutingService.resolveOrderForFill({
       clientOrderId,
     });
 
-    log(
-      `   "${clientOrderId}" -> orderId="${result.orderId}", source=${result.source}`,
-    );
+    log.result('direct resolution result', {
+      clientOrderId,
+      orderId: result.orderId,
+      source: result.source,
+    });
     expect(result).toEqual({
       orderId: 'order-123',
       seq: 0,
@@ -87,7 +90,7 @@ describeSandbox('Sandbox fill resolution (system)', () => {
   });
 
   it('falls back to repository-backed client order mappings', async () => {
-    log('Test 2: DB-backed mapping fallback');
+    log.step('creating repository-backed client order mapping');
     const legacyClientOrderId = `legacy-client-${Date.now()}`;
 
     await exchangeOrderMappingService.createMapping({
@@ -95,13 +98,20 @@ describeSandbox('Sandbox fill resolution (system)', () => {
       exchangeOrderId: `legacy-exchange-${Date.now()}`,
       clientOrderId: legacyClientOrderId,
     });
-    log(`   Created mapping: "${legacyClientOrderId}" -> "legacy-order"`);
+    log.check('mapping stored', {
+      clientOrderId: legacyClientOrderId,
+      orderId: 'legacy-order',
+    });
 
     const result = await fillRoutingService.resolveOrderForFill({
       clientOrderId: legacyClientOrderId,
     });
 
-    log(`   Resolved -> orderId="${result.orderId}", source=${result.source}`);
+    log.result('mapping fallback result', {
+      clientOrderId: legacyClientOrderId,
+      orderId: result.orderId,
+      source: result.source,
+    });
     expect(result).toEqual({
       orderId: 'legacy-order',
       source: 'mapping',
@@ -109,17 +119,20 @@ describeSandbox('Sandbox fill resolution (system)', () => {
   });
 
   it('falls back to exchange order mappings backed by a real sandbox exchange order id', async () => {
-    log('Test 3: Exchange order ID mapping (real sandbox order)');
+    log.step('placing real sandbox order for exchange-order fallback');
 
     const clientOrderId = buildSandboxClientOrderId('fill-routing');
 
-    log(`   Placing sell order: clientOrderId="${clientOrderId}"...`);
     const createdOrder = await helper.placeSafeCleanupAwareLimitOrder({
       side: 'sell',
       clientOrderId,
     });
 
-    log(`   Order created: id=${createdOrder.id}, price=${createdOrder.price}`);
+    log.result('sandbox order created', {
+      clientOrderId,
+      exchangeOrderId: createdOrder.id,
+      price: createdOrder.price,
+    });
 
     const mappingClientOrderId = `exchange-fallback-${Date.now()}`;
 
@@ -128,15 +141,20 @@ describeSandbox('Sandbox fill resolution (system)', () => {
       exchangeOrderId: String(createdOrder.id),
       clientOrderId: mappingClientOrderId,
     });
-    log(
-      `   Created mapping: exchangeId="${createdOrder.id}" -> "mapped-by-exchange-order"`,
-    );
+    log.check('exchange-order mapping stored', {
+      exchangeOrderId: createdOrder.id,
+      orderId: 'mapped-by-exchange-order',
+    });
 
     const result = await fillRoutingService.resolveOrderForFill({
       exchangeOrderId: String(createdOrder.id),
     });
 
-    log(`   Resolved -> orderId="${result.orderId}", source=${result.source}`);
+    log.result('exchange-order fallback result', {
+      exchangeOrderId: createdOrder.id,
+      orderId: result.orderId,
+      source: result.source,
+    });
     expect(result).toEqual({
       orderId: 'mapped-by-exchange-order',
       source: 'exchangeOrderMapping',
