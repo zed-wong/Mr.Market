@@ -30,6 +30,7 @@ export type SandboxExchangeTestConfig = {
   secret: string;
   password?: string;
   uid?: string;
+  accountLabel: string;
   symbol: string;
   minRequestIntervalMs: number;
 };
@@ -85,11 +86,62 @@ export function readSandboxExchangeTestConfig(): SandboxExchangeTestConfig {
     secret: process.env.CCXT_SANDBOX_SECRET!.trim(),
     password: process.env.CCXT_SANDBOX_PASSWORD?.trim() || undefined,
     uid: process.env.CCXT_SANDBOX_UID?.trim() || undefined,
+    accountLabel: process.env.CCXT_SANDBOX_ACCOUNT_LABEL?.trim() || 'default',
     symbol: process.env.CCXT_SANDBOX_SYMBOL?.trim() || 'BTC/USDT',
     minRequestIntervalMs:
       Number.isFinite(minRequestIntervalMs) && minRequestIntervalMs >= 0
         ? minRequestIntervalMs
         : 100,
+  };
+}
+
+export async function buildSafeSandboxLimitOrderRequest(
+  exchange: CcxtExchangeInstance,
+  params: {
+    side: 'buy' | 'sell';
+    symbol: string;
+    amountMultiplier?: number | string;
+    priceDistanceRatio?: number | string;
+  },
+): Promise<{ amount: string; price: string }> {
+  const market = getMarketFromExchange(exchange, params.symbol);
+  const orderBook = await exchange.fetchOrderBook(params.symbol);
+  const referencePrice =
+    params.side === 'buy'
+      ? orderBook.bids?.[0]?.[0] || orderBook.asks?.[0]?.[0]
+      : orderBook.asks?.[0]?.[0] || orderBook.bids?.[0]?.[0];
+
+  if (!referencePrice) {
+    throw new Error(`No reference price available for ${params.symbol}`);
+  }
+
+  const priceDistanceRatio = new BigNumber(
+    params.priceDistanceRatio || (params.side === 'buy' ? '0.8' : '1.2'),
+  );
+  const rawPrice = new BigNumber(referencePrice).times(priceDistanceRatio);
+
+  if (!rawPrice.isFinite() || rawPrice.lte(0)) {
+    throw new Error(`Invalid sandbox order price for ${params.symbol}`);
+  }
+
+  const minAmount = new BigNumber(market?.limits?.amount?.min || '0.0001');
+  const minCost = new BigNumber(market?.limits?.cost?.min || '0');
+  const amountMultiplier = new BigNumber(params.amountMultiplier || '1.2');
+  const baseAmount =
+    minCost.gt(0) && rawPrice.gt(0)
+      ? BigNumber.maximum(minAmount, minCost.div(rawPrice))
+      : minAmount;
+  const rawAmount = baseAmount.times(amountMultiplier);
+
+  return {
+    amount:
+      typeof exchange.amountToPrecision === 'function'
+        ? exchange.amountToPrecision(params.symbol, rawAmount.toNumber())
+        : rawAmount.toFixed(8),
+    price:
+      typeof exchange.priceToPrecision === 'function'
+        ? exchange.priceToPrecision(params.symbol, rawPrice.toNumber())
+        : rawPrice.toFixed(8),
   };
 }
 
@@ -195,42 +247,12 @@ export class SandboxExchangeHelper {
   ): Promise<ccxt.Order> {
     const exchange = await this.init();
     const symbol = params.symbol || this.config.symbol;
-    const market = this.getMarket(symbol);
-    const orderBook = await exchange.fetchOrderBook(symbol);
-    const referencePrice =
-      params.side === 'buy'
-        ? orderBook.bids?.[0]?.[0] || orderBook.asks?.[0]?.[0]
-        : orderBook.asks?.[0]?.[0] || orderBook.bids?.[0]?.[0];
-
-    if (!referencePrice) {
-      throw new Error(`No reference price available for ${symbol}`);
-    }
-
-    const priceDistanceRatio = new BigNumber(
-      params.priceDistanceRatio || (params.side === 'buy' ? '0.8' : '1.2'),
-    );
-    const rawPrice = new BigNumber(referencePrice).times(priceDistanceRatio);
-
-    if (!rawPrice.isFinite() || rawPrice.lte(0)) {
-      throw new Error(`Invalid sandbox order price for ${symbol}`);
-    }
-
-    const minAmount = new BigNumber(market?.limits?.amount?.min || '0.0001');
-    const minCost = new BigNumber(market?.limits?.cost?.min || '0');
-    const amountMultiplier = new BigNumber(params.amountMultiplier || '1.2');
-    const baseAmount =
-      minCost.gt(0) && rawPrice.gt(0)
-        ? BigNumber.maximum(minAmount, minCost.div(rawPrice))
-        : minAmount;
-    const rawAmount = baseAmount.times(amountMultiplier);
-    const amount =
-      typeof exchange.amountToPrecision === 'function'
-        ? exchange.amountToPrecision(symbol, rawAmount.toNumber())
-        : rawAmount.toFixed(8);
-    const price =
-      typeof exchange.priceToPrecision === 'function'
-        ? exchange.priceToPrecision(symbol, rawPrice.toNumber())
-        : rawPrice.toFixed(8);
+    const { amount, price } = await buildSafeSandboxLimitOrderRequest(exchange, {
+      side: params.side,
+      symbol,
+      amountMultiplier: params.amountMultiplier,
+      priceDistanceRatio: params.priceDistanceRatio,
+    });
     const order = await exchange.createOrder(
       symbol,
       'limit',
@@ -304,25 +326,6 @@ export class SandboxExchangeHelper {
     }
   }
 
-  private getMarket(symbol: string): any {
-    const exchange = this.getExchange();
-
-    if (typeof exchange.market === 'function') {
-      return exchange.market(symbol);
-    }
-
-    const markets = (exchange as any).markets || {};
-    const market = markets[symbol];
-
-    if (!market) {
-      throw new Error(
-        `Market ${symbol} is not available on ${this.config.exchangeId}`,
-      );
-    }
-
-    return market;
-  }
-
   private resolveExchangeClass(exchangeId: string): CcxtExchangeClass {
     const ccxtPro = (ccxt as any).pro || {};
     const ExchangeClass =
@@ -372,6 +375,21 @@ export class SandboxExchangeHelper {
       message,
     );
   }
+}
+
+function getMarketFromExchange(exchange: CcxtExchangeInstance, symbol: string): any {
+  if (typeof exchange.market === 'function') {
+    return exchange.market(symbol);
+  }
+
+  const markets = (exchange as any).markets || {};
+  const market = markets[symbol];
+
+  if (!market) {
+    throw new Error(`Market ${symbol} is not available on the sandbox exchange`);
+  }
+
+  return market;
 }
 
 async function sleep(ms: number): Promise<void> {

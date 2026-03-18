@@ -13,6 +13,21 @@ import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
+type ExchangeAccountConfig = {
+  label: string;
+  apiKey?: string;
+  secret?: string;
+  password?: string;
+  uid?: string;
+  sandboxMode?: boolean;
+};
+
+type ExchangeConfig = {
+  name: string;
+  accounts: ExchangeAccountConfig[];
+  class: any;
+};
+
 @Injectable({ scope: Scope.DEFAULT })
 export class ExchangeInitService {
   private readonly logger = new CustomLogger(ExchangeInitService.name);
@@ -30,7 +45,9 @@ export class ExchangeInitService {
       .then(() => {
         this.logger.log('Exchanges initialized successfully');
         this.startKeepAlive();
-        this.startRefresh();
+        if (!this.shouldUseSandboxExchangeConfig()) {
+          this.startRefresh();
+        }
       })
       .catch((error) =>
         this.logger.error(
@@ -40,7 +57,7 @@ export class ExchangeInitService {
       );
   }
 
-  private getEnvExchangeConfigs() {
+  private getEnvExchangeConfigs(): ExchangeConfig[] {
     return [
       {
         name: 'okx',
@@ -297,7 +314,110 @@ export class ExchangeInitService {
     ];
   }
 
-  private buildExchangeConfigsFromDb(apiKeys: APIKeysConfig[]) {
+  private shouldUseSandboxExchangeConfig(): boolean {
+    const enabled = process.env.CCXT_SANDBOX_ENABLED?.trim();
+    const hasRequiredConfig =
+      Boolean(process.env.CCXT_SANDBOX_EXCHANGE?.trim()) &&
+      Boolean(process.env.CCXT_SANDBOX_API_KEY?.trim()) &&
+      Boolean(process.env.CCXT_SANDBOX_SECRET?.trim());
+
+    if (!enabled) {
+      return hasRequiredConfig;
+    }
+
+    return this.isTruthyEnvValue(enabled) && hasRequiredConfig;
+  }
+
+  private buildSandboxExchangeConfig(): ExchangeConfig | null {
+    if (!this.shouldUseSandboxExchangeConfig()) {
+      return null;
+    }
+
+    const exchangeName = process.env.CCXT_SANDBOX_EXCHANGE!.trim().toLowerCase();
+    const ExchangeClass = this.resolveExchangeClass(exchangeName);
+
+    if (!ExchangeClass) {
+      this.logger.warn(
+        `Sandbox exchange ${exchangeName} is not supported by CCXT. Falling back to standard exchange initialization.`,
+      );
+
+      return null;
+    }
+
+    return {
+      name: exchangeName,
+      accounts: [
+        {
+          label: process.env.CCXT_SANDBOX_ACCOUNT_LABEL?.trim() || 'default',
+          apiKey: process.env.CCXT_SANDBOX_API_KEY?.trim(),
+          secret: process.env.CCXT_SANDBOX_SECRET?.trim(),
+          password: process.env.CCXT_SANDBOX_PASSWORD?.trim() || undefined,
+          uid: process.env.CCXT_SANDBOX_UID?.trim() || undefined,
+          sandboxMode: true,
+        },
+      ],
+      class: ExchangeClass,
+    };
+  }
+
+  private resolveExchangeClass(exchangeName: string): any {
+    const normalizedExchangeName = exchangeName.trim().toLowerCase();
+    const ccxtPro = (ccxt as any).pro || {};
+
+    return ccxtPro[normalizedExchangeName] || (ccxt as any)[normalizedExchangeName];
+  }
+
+  private applySandboxExchangeOverrides(
+    exchangeName: string,
+    exchange: ccxt.Exchange,
+  ): void {
+    if (exchangeName !== 'binance') {
+      return;
+    }
+
+    const exchangeOptions = (exchange as any).options || {};
+
+    (exchange as any).options = {
+      ...exchangeOptions,
+      defaultType: 'spot',
+      fetchMarkets: {
+        ...(exchangeOptions.fetchMarkets || {}),
+        types: ['spot'],
+      },
+      fetchOrder: {
+        ...(exchangeOptions.fetchOrder || {}),
+        defaultType: 'spot',
+      },
+      fetchOpenOrders: {
+        ...(exchangeOptions.fetchOpenOrders || {}),
+        defaultType: 'spot',
+      },
+      cancelOrder: {
+        ...(exchangeOptions.cancelOrder || {}),
+        defaultType: 'spot',
+      },
+    };
+  }
+
+  private computeSandboxConfigSignature(config: ExchangeConfig): string {
+    const account = config.accounts[0];
+
+    return [
+      'sandbox',
+      config.name,
+      account?.label || 'default',
+      account?.apiKey || '',
+      account?.secret || '',
+      account?.password || '',
+      account?.uid || '',
+    ].join('::');
+  }
+
+  private isTruthyEnvValue(value: string): boolean {
+    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+  }
+
+  private buildExchangeConfigsFromDb(apiKeys: APIKeysConfig[]): ExchangeConfig[] {
     const grouped = new Map<string, APIKeysConfig[]>();
 
     for (const key of apiKeys) {
@@ -307,15 +427,10 @@ export class ExchangeInitService {
       grouped.get(key.exchange)?.push(key);
     }
 
-    const exchangeConfigs: Array<{
-      name: string;
-      accounts: Array<{ label: string; apiKey: string; secret: string }>;
-      class: any;
-    }> = [];
+    const exchangeConfigs: ExchangeConfig[] = [];
 
     for (const [exchange, keys] of grouped) {
-      const ccxtPro = (ccxt as any).pro || {};
-      const exchangeClass = ccxtPro[exchange] || (ccxt as any)[exchange];
+      const exchangeClass = this.resolveExchangeClass(exchange);
 
       if (!exchangeClass) {
         this.logger.warn(`Exchange ${exchange} is not supported by CCXT.`);
@@ -355,11 +470,7 @@ export class ExchangeInitService {
   }
 
   private async initializeExchangeConfigs(
-    exchangeConfigs: Array<{
-      name: string;
-      accounts: Array<{ label: string; apiKey: string; secret: string }>;
-      class: any;
-    }>,
+    exchangeConfigs: ExchangeConfig[],
   ) {
     this.exchanges.clear();
     this.defaultAccounts.clear();
@@ -389,9 +500,22 @@ export class ExchangeInitService {
               const exchange = new config.class({
                 apiKey: account.apiKey,
                 secret: account.secret,
+                password: account.password,
+                uid: account.uid,
               });
 
-              // Load markets
+              if (account.sandboxMode) {
+                this.applySandboxExchangeOverrides(config.name, exchange);
+
+                if (typeof (exchange as any).setSandboxMode !== 'function') {
+                  throw new Error(
+                    `Exchange ${config.name} does not expose setSandboxMode(true)`,
+                  );
+                }
+
+                (exchange as any).setSandboxMode(true);
+              }
+
               await exchange.loadMarkets();
 
               // Call signIn only for ProBit accounts
@@ -412,7 +536,10 @@ export class ExchangeInitService {
               exchangeMap.set(account.label, exchange);
 
               // Save the default account reference
-              if (account.label === 'default') {
+              if (
+                account.label === 'default' ||
+                !this.defaultAccounts.has(config.name)
+              ) {
                 this.defaultAccounts.set(config.name, exchange);
               }
             } catch (error) {
@@ -431,6 +558,15 @@ export class ExchangeInitService {
   }
 
   private async initializeExchanges() {
+    const sandboxConfig = this.buildSandboxExchangeConfig();
+
+    if (sandboxConfig) {
+      this.apiKeysSignature = this.computeSandboxConfigSignature(sandboxConfig);
+      await this.initializeExchangeConfigs([sandboxConfig]);
+
+      return;
+    }
+
     let apiKeys = await this.exchangeService.readDecryptedAPIKeys();
 
     if (!apiKeys.length) {
@@ -455,7 +591,7 @@ export class ExchangeInitService {
   }
 
   private startRefresh() {
-    setInterval(async () => {
+    const refreshTimer = setInterval(async () => {
       try {
         const apiKeys = await this.exchangeService.readDecryptedAPIKeys();
         const signature = apiKeys.length
@@ -479,12 +615,14 @@ export class ExchangeInitService {
         );
       }
     }, this.refreshIntervalMs);
+
+    refreshTimer.unref?.();
   }
 
   private startKeepAlive() {
     const intervalMs = 5 * 60 * 1000; // 5 minutes
 
-    setInterval(async () => {
+    const keepAliveTimer = setInterval(async () => {
       this.logger.log('Running keep-alive checks for all exchanges...');
       for (const [exchangeName, accounts] of this.exchanges) {
         // Only do special logic for ProBit
@@ -522,6 +660,8 @@ export class ExchangeInitService {
         // other exchange keep-alive logic if needed...
       }
     }, intervalMs);
+
+    keepAliveTimer.unref?.();
   }
 
   getExchange(exchangeName: string, label: string = 'default'): ccxt.Exchange {
@@ -531,7 +671,9 @@ export class ExchangeInitService {
       this.logger.warn(`Exchange ${exchangeName} is not configured.`);
       throw new InternalServerErrorException('Exchange configuration error.');
     }
-    const exchange = exchangeMap.get(label);
+    const exchange =
+      exchangeMap.get(label) ||
+      (label === 'default' ? this.defaultAccounts.get(exchangeName) : undefined);
 
     if (!exchange) {
       this.logger.warn(
@@ -544,6 +686,12 @@ export class ExchangeInitService {
   }
 
   async getSupportedExchanges(): Promise<string[]> {
+    const sandboxConfig = this.buildSandboxExchangeConfig();
+
+    if (sandboxConfig) {
+      return [sandboxConfig.name];
+    }
+
     const dbExchanges = await this.exchangeService.readSupportedExchanges();
 
     if (dbExchanges.length > 0) {

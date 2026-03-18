@@ -1,12 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
 import {
+  buildSafeSandboxLimitOrderRequest,
   buildSandboxClientOrderId,
   getSandboxIntegrationSkipReason,
   pollUntil,
-  SandboxExchangeHelper,
+  readSandboxExchangeTestConfig,
 } from '../../../../test/helpers/sandbox-exchange.helper';
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { ExchangeConnectorAdapterService } from './exchange-connector-adapter.service';
@@ -22,26 +25,78 @@ const describeSandbox = skipReason ? describe.skip : describe;
 describeSandbox('Sandbox order REST lifecycle (system)', () => {
   jest.setTimeout(240000);
 
-  let helper: SandboxExchangeHelper;
+  const exchangeApiKeyServiceMock = {
+    readDecryptedAPIKeys: jest.fn().mockResolvedValue([]),
+    readSupportedExchanges: jest.fn().mockResolvedValue([]),
+    seedApiKeysFromEnv: jest.fn().mockResolvedValue(0),
+  };
+
+  const cacheManagerMock = {
+    get: jest.fn(),
+    set: jest.fn(),
+  };
+
+  let config: ReturnType<typeof readSandboxExchangeTestConfig>;
   let moduleRef: TestingModule;
+  let exchangeInitService: ExchangeInitService;
   let service: ExchangeConnectorAdapterService;
+  let exchange: any;
+  const createdOrderIds: string[] = [];
+
+  function supportsCapability(capability: string): boolean {
+    if (typeof exchange?.[capability] !== 'function') {
+      return false;
+    }
+
+    return exchange?.has?.[capability] !== false;
+  }
+
+  async function cancelCreatedOrders(): Promise<void> {
+    if (!exchange) {
+      return;
+    }
+
+    for (const exchangeOrderId of [...createdOrderIds].reverse()) {
+      try {
+        if (supportsCapability('fetchOrder')) {
+          const order = await exchange.fetchOrder(exchangeOrderId, config.symbol);
+          const status = String(order?.status || '').toLowerCase();
+
+          if (
+            status === 'canceled' ||
+            status === 'cancelled' ||
+            status === 'closed'
+          ) {
+            continue;
+          }
+        }
+
+        await exchange.cancelOrder(exchangeOrderId, config.symbol);
+      } catch (error) {
+        if (isIgnorableCleanupError(error)) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+  }
 
   beforeAll(async () => {
-    log('Init exchange...');
-    helper = new SandboxExchangeHelper();
-    const exchange = await helper.init();
-    const config = helper.getConfig();
-
-    log(`${config.exchangeId} | ${config.symbol}`);
+    config = readSandboxExchangeTestConfig();
+    log('Init exchange through ExchangeInitService...');
 
     moduleRef = await Test.createTestingModule({
       providers: [
+        ExchangeInitService,
         ExchangeConnectorAdapterService,
         {
-          provide: ExchangeInitService,
-          useValue: {
-            getExchange: jest.fn().mockReturnValue(exchange),
-          },
+          provide: CACHE_MANAGER,
+          useValue: cacheManagerMock,
+        },
+        {
+          provide: ExchangeApiKeyService,
+          useValue: exchangeApiKeyServiceMock,
         },
         {
           provide: ConfigService,
@@ -58,19 +113,42 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
       ],
     }).compile();
 
+    exchangeInitService = moduleRef.get(ExchangeInitService);
     service = moduleRef.get(ExchangeConnectorAdapterService);
+
+    exchange = await pollUntil(
+      async () => {
+        try {
+          return exchangeInitService.getExchange(
+            config.exchangeId,
+            config.accountLabel,
+          );
+        } catch {
+          return null;
+        }
+      },
+      async (resolvedExchange) => Boolean(resolvedExchange),
+      {
+        description: `sandbox exchange ${config.exchangeId} to initialize`,
+      },
+    );
+
+    expect(exchangeInitService.getExchange(config.exchangeId)).toBe(exchange);
+
+    log(`${config.exchangeId} | ${config.symbol} | label=${config.accountLabel}`);
     log('Ready');
   });
 
   afterAll(async () => {
-    await helper?.close();
+    await cancelCreatedOrders();
+    if (exchange && typeof exchange.close === 'function') {
+      await exchange.close();
+    }
     await moduleRef?.close();
     log('Done\n');
   });
 
   it('places, fetches, lists, and cancels a real sandbox limit order through the adapter', async () => {
-    const config = helper.getConfig();
-
     log('Fetch order book...');
     const orderBook = await service.fetchOrderBook(
       config.exchangeId,
@@ -84,13 +162,24 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
     expect(Array.isArray(orderBook.asks)).toBe(true);
 
     const clientOrderId = buildSandboxClientOrderId('adapter');
-
-    log('Create buy order...');
-    const createdOrder = await helper.placeSafeCleanupAwareLimitOrder({
+    const supportsFetchOrder = supportsCapability('fetchOrder');
+    const supportsFetchOpenOrders = supportsCapability('fetchOpenOrders');
+    const orderRequest = await buildSafeSandboxLimitOrderRequest(exchange, {
       side: 'buy',
       symbol: config.symbol,
-      clientOrderId,
     });
+
+    log('Create buy order...');
+    const createdOrder = await service.placeLimitOrder(
+      config.exchangeId,
+      config.symbol,
+      'buy',
+      orderRequest.amount,
+      orderRequest.price,
+      clientOrderId,
+    );
+
+    createdOrderIds.push(String(createdOrder.id));
 
     log(
       `   id=${createdOrder.id} | ${createdOrder.amount}@${createdOrder.price}`,
@@ -98,95 +187,131 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
 
     expect(createdOrder.id).toBeDefined();
 
-    log('Fetch order...');
-    const fetchedOrder = await pollUntil(
-      async () =>
-        await service.fetchOrder(
-          config.exchangeId,
-          config.symbol,
-          String(createdOrder.id),
+    if (supportsFetchOrder) {
+      log('Fetch order...');
+      const fetchedOrder = await pollUntil(
+        async () =>
+          await service.fetchOrder(
+            config.exchangeId,
+            config.symbol,
+            String(createdOrder.id),
+          ),
+        async (order) => String(order?.id || '') === String(createdOrder.id),
+        {
+          description: `sandbox order ${createdOrder.id} to be fetchable`,
+        },
+      );
+
+      log(`   id=${fetchedOrder.id} status=${fetchedOrder.status}`);
+
+      expect(String(fetchedOrder.id)).toBe(String(createdOrder.id));
+    } else {
+      log('Fetch order skipped: exchange does not support fetchOrder()');
+    }
+
+    if (supportsFetchOpenOrders) {
+      log('Fetch open orders...');
+      const openOrders = await pollUntil(
+        async () =>
+          await service.fetchOpenOrders(config.exchangeId, config.symbol),
+        async (orders) =>
+          orders.some((order) => String(order?.id) === String(createdOrder.id)),
+        {
+          description: `sandbox order ${createdOrder.id} to appear in open orders`,
+        },
+      );
+
+      log(`   ${openOrders.length} orders, ours in list`);
+
+      expect(
+        openOrders.some(
+          (order) => String(order?.id) === String(createdOrder.id),
         ),
-      async (order) => String(order?.id || '') === String(createdOrder.id),
-      {
-        description: `sandbox order ${createdOrder.id} to be fetchable`,
-      },
-    );
-
-    log(`   id=${fetchedOrder.id} status=${fetchedOrder.status}`);
-
-    expect(String(fetchedOrder.id)).toBe(String(createdOrder.id));
-
-    log('Fetch open orders...');
-    const openOrders = await pollUntil(
-      async () =>
-        await service.fetchOpenOrders(config.exchangeId, config.symbol),
-      async (orders) =>
-        orders.some((order) => String(order?.id) === String(createdOrder.id)),
-      {
-        description: `sandbox order ${createdOrder.id} to appear in open orders`,
-      },
-    );
-
-    log(`   ${openOrders.length} orders, ours in list`);
-
-    expect(
-      openOrders.some((order) => String(order?.id) === String(createdOrder.id)),
-    ).toBe(true);
+      ).toBe(true);
+    } else {
+      log('Fetch open orders skipped: exchange does not support fetchOpenOrders()');
+    }
 
     log('Cancel order...');
-    await service.cancelOrder(
+    const cancelResult = await service.cancelOrder(
       config.exchangeId,
       config.symbol,
       String(createdOrder.id),
     );
 
-    log('Verify cancellation...');
-    const canceledState = await pollUntil(
-      async () => {
-        const orderResult = await Promise.allSettled([
-          service.fetchOrder(
-            config.exchangeId,
-            config.symbol,
-            String(createdOrder.id),
+    if (supportsFetchOrder || supportsFetchOpenOrders) {
+      log('Verify cancellation...');
+      const canceledState = await pollUntil(
+        async () => {
+          const orderResult = await Promise.allSettled([
+            supportsFetchOrder
+              ? service.fetchOrder(
+                  config.exchangeId,
+                  config.symbol,
+                  String(createdOrder.id),
+                )
+              : Promise.resolve(null),
+            supportsFetchOpenOrders
+              ? service.fetchOpenOrders(config.exchangeId, config.symbol)
+              : Promise.resolve([]),
+          ]);
+
+          return {
+            fetchedOrder:
+              orderResult[0].status === 'fulfilled'
+                ? orderResult[0].value
+                : null,
+            openOrders:
+              orderResult[1].status === 'fulfilled' ? orderResult[1].value : [],
+          };
+        },
+        async ({ fetchedOrder, openOrders }) => {
+          const status = String(fetchedOrder?.status || '').toLowerCase();
+          const stillOpen = openOrders.some(
+            (order) => String(order?.id) === String(createdOrder.id),
+          );
+
+          return (
+            (!supportsFetchOrder ||
+              status === 'canceled' ||
+              status === 'cancelled' ||
+              status === 'closed') &&
+            (!supportsFetchOpenOrders || !stillOpen)
+          );
+        },
+        {
+          description: `sandbox order ${createdOrder.id} to cancel`,
+        },
+      );
+      const finalStatus = String(
+        canceledState.fetchedOrder?.status || cancelResult?.status || 'unknown',
+      ).toLowerCase();
+
+      log(`   status=${finalStatus}, removed from list`);
+
+      if (supportsFetchOpenOrders) {
+        expect(
+          canceledState.openOrders.some(
+            (order) => String(order?.id) === String(createdOrder.id),
           ),
-          service.fetchOpenOrders(config.exchangeId, config.symbol),
-        ]);
+        ).toBe(false);
+      }
+    } else {
+      const finalStatus = String(cancelResult?.status || 'unknown').toLowerCase();
 
-        return {
-          fetchedOrder:
-            orderResult[0].status === 'fulfilled' ? orderResult[0].value : null,
-          openOrders:
-            orderResult[1].status === 'fulfilled' ? orderResult[1].value : [],
-        };
-      },
-      async ({ fetchedOrder, openOrders }) => {
-        const status = String(fetchedOrder?.status || '').toLowerCase();
-        const stillOpen = openOrders.some(
-          (order) => String(order?.id) === String(createdOrder.id),
-        );
-
-        return (
-          status === 'canceled' ||
-          status === 'cancelled' ||
-          (!stillOpen && status !== 'open')
-        );
-      },
-      {
-        description: `sandbox order ${createdOrder.id} to cancel`,
-      },
-    );
-    const finalStatus = String(
-      canceledState.fetchedOrder?.status || 'unknown',
-    ).toLowerCase();
-
-    log(`   status=${finalStatus}, removed from list`);
-
-    expect(
-      canceledState.openOrders.some(
-        (order) => String(order?.id) === String(createdOrder.id),
-      ),
-    ).toBe(false);
+      log(`   cancel response status=${finalStatus}`);
+      expect(cancelResult).toBeDefined();
+    }
 
     log('Passed');
   });
 });
+
+function isIgnorableCleanupError(error: unknown): boolean {
+  const message =
+    error instanceof Error ? error.message : String(error || 'unknown error');
+
+  return /already canceled|already closed|does not exist|not found|unknown order/i.test(
+    message,
+  );
+}
