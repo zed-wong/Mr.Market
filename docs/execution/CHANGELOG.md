@@ -14,6 +14,7 @@
 - Add A6 cadence sandbox parity coverage with repeated eligible ticks, stable executor-session reuse, and deterministic submitted `clientOrderId` sequencing
 - Move the sandbox order-lifecycle and fill-resolution specs plus their helper under `server/test/system` so system-only files match the March 18 test-placement rule
 - Replace the A3 runtime-control helper's mocked strategy config resolver with the real service and record explicit exchange-side evidence in the runtime-control system spec
+- Add a new March 18 plan for fully implementing `PrivateStreamTrackerService` with Hummingbot-style private-stream ownership adapted for Mr.Market's multi-account runtime
 
 ## 2026-03-17
 
