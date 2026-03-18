@@ -274,7 +274,7 @@ Validate that the same exchange initialization and adapter path used by producti
 
 ### Spec
 
-Use `server/src/modules/market-making/execution/sandbox-order-lifecycle.system.spec.ts`.
+Use `server/test/system/market-making/execution/sandbox-order-lifecycle.system.spec.ts`.
 
 Build a Nest test module with:
 
@@ -354,12 +354,12 @@ This phase is intentionally limited to the exchange-side execution engine:
 
 ### Layered Runtime Suites
 
-| Layer | File | Purpose | Expected Time |
-| --- | --- | --- | --- |
-| L1 | `market-making.processor.system.spec.ts` | `start_mm` and `stop_mm` production entrypoints | 30s |
-| L2 | `pure-market-making-single-tick.system.spec.ts` | one tick creates real buy and sell sandbox orders through the full runtime path | 30-45s |
-| L3 | `pure-market-making-multi-layer.system.spec.ts` | 3+ layer quote generation and real exchange placement | 60s |
-| L4 | `pure-market-making-cadence.system.spec.ts` | repeated ticks generate follow-up intents and deterministic client-order sequences | 45-60s |
+| Layer | File                                            | Purpose                                                                            | Expected Time |
+| ----- | ----------------------------------------------- | ---------------------------------------------------------------------------------- | ------------- |
+| L1    | `market-making.processor.system.spec.ts`        | `start_mm` and `stop_mm` production entrypoints                                    | 30s           |
+| L2    | `pure-market-making-single-tick.system.spec.ts` | one tick creates real buy and sell sandbox orders through the full runtime path    | 30-45s        |
+| L3    | `pure-market-making-multi-layer.system.spec.ts` | 3+ layer quote generation and real exchange placement                              | 60s           |
+| L4    | `pure-market-making-cadence.system.spec.ts`     | repeated ticks generate follow-up intents and deterministic client-order sequences | 45-60s        |
 
 ### L2: Pure Market Making Single Tick
 
@@ -411,14 +411,14 @@ Note:
 
 ### Required Scope In Phase 1
 
-Keep `server/src/modules/market-making/execution/sandbox-fill-resolution.system.spec.ts` as required coverage for order-resolution logic.
+Keep `server/test/system/market-making/execution/sandbox-fill-resolution.system.spec.ts` as required coverage for order-resolution logic.
 
 Assertions:
 
 1. parseable client-order path
 
 ```ts
-await service.resolveOrderForFill({ clientOrderId: 'order-123:0' });
+await service.resolveOrderForFill({ clientOrderId: "order-123:0" });
 ```
 
 Expect:
@@ -460,6 +460,7 @@ System tests must not require codebase modifications. Sandbox behavior is activa
 3. **Test file responsibility**: System test files set up their environment before importing any runtime code
 
 This means:
+
 - `ExchangeInitService` reads sandbox config from environment at boot time
 - Tests set `process.env.CCXT_SANDBOX_*` before initializing the Nest test module
 - No special sandbox-only code paths exist outside of config-driven branching
@@ -630,15 +631,15 @@ Until that point, routing resolution coverage is useful but not equivalent to fu
 
 ## Risks And Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Exchange sandbox support changes in CCXT | CCXT provides uniform sandbox interface; test structure works across exchanges |
-| Sandbox helpers diverge from production runtime | Keep helpers thin and require core suites to use `ExchangeInitService`, `start_mm`, `stop_mm`, and the real intent-execution path |
-| Sandbox orders fill unexpectedly | Use far-from-market pricing where supported and always run cleanup |
-| `stop_mm` leaves exchange orders open because runtime does not drain them | Keep cleanup in the harness and block stronger stop-safety claims until runtime implements drain or cancel behavior |
-| System specs accidentally run in unit CI | Keep a dedicated Jest config and exclude `*.system.spec.ts` from the default suite |
-| Test flakiness from network latency | Use generous timeouts and eventual-state assertions |
-| Documentation overclaims current system capability | Keep private-fill and stronger stop-safety claims explicitly gated behind runtime prerequisites |
+| Risk                                                                      | Mitigation                                                                                                                        |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Exchange sandbox support changes in CCXT                                  | CCXT provides uniform sandbox interface; test structure works across exchanges                                                    |
+| Sandbox helpers diverge from production runtime                           | Keep helpers thin and require core suites to use `ExchangeInitService`, `start_mm`, `stop_mm`, and the real intent-execution path |
+| Sandbox orders fill unexpectedly                                          | Use far-from-market pricing where supported and always run cleanup                                                                |
+| `stop_mm` leaves exchange orders open because runtime does not drain them | Keep cleanup in the harness and block stronger stop-safety claims until runtime implements drain or cancel behavior               |
+| System specs accidentally run in unit CI                                  | Keep a dedicated Jest config and exclude `*.system.spec.ts` from the default suite                                                |
+| Test flakiness from network latency                                       | Use generous timeouts and eventual-state assertions                                                                               |
+| Documentation overclaims current system capability                        | Keep private-fill and stronger stop-safety claims explicitly gated behind runtime prerequisites                                   |
 
 ## Done Criteria
 

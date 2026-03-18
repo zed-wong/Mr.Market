@@ -247,12 +247,15 @@ export class SandboxExchangeHelper {
   ): Promise<ccxt.Order> {
     const exchange = await this.init();
     const symbol = params.symbol || this.config.symbol;
-    const { amount, price } = await buildSafeSandboxLimitOrderRequest(exchange, {
-      side: params.side,
-      symbol,
-      amountMultiplier: params.amountMultiplier,
-      priceDistanceRatio: params.priceDistanceRatio,
-    });
+    const { amount, price } = await buildSafeSandboxLimitOrderRequest(
+      exchange,
+      {
+        side: params.side,
+        symbol,
+        amountMultiplier: params.amountMultiplier,
+        priceDistanceRatio: params.priceDistanceRatio,
+      },
+    );
     const order = await exchange.createOrder(
       symbol,
       'limit',
@@ -318,7 +321,6 @@ export class SandboxExchangeHelper {
       const exchange = this.exchange;
 
       this.exchange = null;
-      this.trackedOrders.length = 0;
 
       if (exchange && typeof exchange.close === 'function') {
         await exchange.close();
@@ -327,15 +329,13 @@ export class SandboxExchangeHelper {
   }
 
   private resolveExchangeClass(exchangeId: string): CcxtExchangeClass {
-    const ccxtPro = (ccxt as any).pro || {};
-    const ExchangeClass =
-      ccxtPro[exchangeId] || ((ccxt as any)[exchangeId] as CcxtExchangeClass);
+    const ExchangeClass = (ccxt as Record<string, unknown>)[exchangeId];
 
-    if (!ExchangeClass) {
-      throw new Error(`Unsupported CCXT exchange ${exchangeId}`);
+    if (typeof ExchangeClass !== 'function') {
+      throw new Error(`Unknown CCXT exchange class "${exchangeId}"`);
     }
 
-    return ExchangeClass;
+    return ExchangeClass as CcxtExchangeClass;
   }
 
   private applySandboxExchangeOverrides(exchange: CcxtExchangeInstance): void {
@@ -343,55 +343,44 @@ export class SandboxExchangeHelper {
       return;
     }
 
-    const exchangeOptions = (exchange as any).options || {};
+    const existingOptions =
+      exchange.options && typeof exchange.options === 'object'
+        ? exchange.options
+        : {};
 
-    (exchange as any).options = {
-      ...exchangeOptions,
+    exchange.options = {
+      ...existingOptions,
       defaultType: 'spot',
-      fetchMarkets: {
-        ...(exchangeOptions.fetchMarkets || {}),
-        types: ['spot'],
-      },
-      fetchOrder: {
-        ...(exchangeOptions.fetchOrder || {}),
-        defaultType: 'spot',
-      },
-      fetchOpenOrders: {
-        ...(exchangeOptions.fetchOpenOrders || {}),
-        defaultType: 'spot',
-      },
-      cancelOrder: {
-        ...(exchangeOptions.cancelOrder || {}),
-        defaultType: 'spot',
-      },
     };
   }
 
   private isIgnorableCleanupError(error: unknown): boolean {
     const message =
-      error instanceof Error ? error.message : String(error || 'unknown error');
+      error instanceof Error ? error.message : String(error || '');
 
-    return /already canceled|already closed|does not exist|not found|unknown order/i.test(
-      message,
+    return (
+      /order.*not found/i.test(message) ||
+      /unknown order/i.test(message) ||
+      /already closed/i.test(message) ||
+      /already cancelled/i.test(message) ||
+      /already canceled/i.test(message)
     );
   }
 }
 
-function getMarketFromExchange(exchange: CcxtExchangeInstance, symbol: string): any {
+function getMarketFromExchange(
+  exchange: CcxtExchangeInstance,
+  symbol: string,
+): any {
   if (typeof exchange.market === 'function') {
     return exchange.market(symbol);
   }
 
-  const markets = (exchange as any).markets || {};
-  const market = markets[symbol];
+  const markets = exchange.markets as Record<string, any> | undefined;
 
-  if (!market) {
-    throw new Error(`Market ${symbol} is not available on the sandbox exchange`);
-  }
-
-  return market;
+  return markets?.[symbol];
 }
 
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

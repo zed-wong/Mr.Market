@@ -78,6 +78,20 @@ type RuntimeFixture = {
   strategyKey: string;
 };
 
+type PureMarketMakingRuntimeOverrides = {
+  askSpread?: number;
+  amountChangePerLayer?: number;
+  amountChangeType?: 'fixed' | 'percentage';
+  bidSpread?: number;
+  hangingOrdersEnabled?: boolean;
+  numberOfLayers?: number;
+  orderAmount?: number;
+  orderId?: string;
+  orderRefreshTime?: number;
+  pair?: string;
+  userId?: string;
+};
+
 export class MarketMakingSingleTickHelper {
   private readonly config: SandboxExchangeTestConfig;
   private exchange: any;
@@ -99,6 +113,12 @@ export class MarketMakingSingleTickHelper {
 
   getConfig(): SandboxExchangeTestConfig {
     return this.config;
+  }
+
+  getExecutorSession(exchange: string, pair: string, orderId: string) {
+    return this.executorRegistry
+      .getExecutor(exchange, pair)
+      ?.getSession(orderId);
   }
 
   async init(): Promise<void> {
@@ -291,9 +311,19 @@ export class MarketMakingSingleTickHelper {
     }
   }
 
-  async createPersistedPureMarketMakingOrder(): Promise<RuntimeFixture> {
-    const orderId = `mmtick${Date.now().toString(36)}`;
-    const userId = 'runtime-user';
+  async createPersistedPureMarketMakingOrder(
+    overrides: PureMarketMakingRuntimeOverrides = {},
+  ): Promise<RuntimeFixture> {
+    const orderId = overrides.orderId || `mmtick${Date.now().toString(36)}`;
+    const userId = overrides.userId || 'runtime-user';
+    const pair = overrides.pair || this.config.symbol;
+    const bidSpread = overrides.bidSpread ?? 0.001;
+    const askSpread = overrides.askSpread ?? 0.001;
+    const orderAmount = overrides.orderAmount ?? 0.0002;
+    const orderRefreshTime = overrides.orderRefreshTime ?? 60000;
+    const numberOfLayers = overrides.numberOfLayers ?? 1;
+    const amountChangePerLayer = overrides.amountChangePerLayer ?? 0;
+    const amountChangeType = overrides.amountChangeType || 'fixed';
     const strategyDefinition = await this.strategyDefinitionRepository.save(
       this.strategyDefinitionRepository.create({
         key: `pure-market-making-${orderId}`,
@@ -309,21 +339,29 @@ export class MarketMakingSingleTickHelper {
       this.marketMakingOrderRepository.create({
         orderId,
         userId,
-        pair: this.config.symbol,
+        pair,
         exchangeName: this.config.exchangeId,
         strategyDefinitionId: strategyDefinition.id,
-        strategySnapshot: this.buildPureMarketMakingStrategySnapshot(
-          orderId,
+        strategySnapshot: this.buildPureMarketMakingStrategySnapshot(orderId, {
+          amountChangePerLayer,
+          amountChangeType,
+          askSpread,
+          bidSpread,
+          hangingOrdersEnabled: overrides.hangingOrdersEnabled,
+          orderAmount,
+          orderRefreshTime,
+          numberOfLayers,
+          pair,
           userId,
-        ),
-        bidSpread: '0.001',
-        askSpread: '0.001',
-        orderAmount: '0.0002',
-        orderRefreshTime: '60000',
-        numberOfLayers: '1',
+        }),
+        bidSpread: String(bidSpread),
+        askSpread: String(askSpread),
+        orderAmount: String(orderAmount),
+        orderRefreshTime: String(orderRefreshTime),
+        numberOfLayers: String(numberOfLayers),
         priceSourceType: PriceSourceType.MID_PRICE,
-        amountChangePerLayer: '0',
-        amountChangeType: 'fixed',
+        amountChangePerLayer: String(amountChangePerLayer),
+        amountChangeType,
         ceilingPrice: '0',
         floorPrice: '0',
         state: 'created',
@@ -357,13 +395,36 @@ export class MarketMakingSingleTickHelper {
     );
 
     if (!executor) {
-      throw new Error(`Executor not found for ${order.exchangeName} ${order.pair}`);
+      throw new Error(
+        `Executor not found for ${order.exchangeName} ${order.pair}`,
+      );
     }
 
     await executor.onTick(getRFC3339Timestamp());
   }
 
-  async listStrategyIntents(orderId: string): Promise<StrategyOrderIntentEntity[]> {
+  async forceSessionReadyForNextTick(orderId: string): Promise<void> {
+    const order = await this.marketMakingOrderRepository.findOneByOrFail({
+      orderId,
+    });
+    const session = this.getExecutorSession(
+      order.exchangeName,
+      order.pair,
+      order.orderId,
+    );
+
+    if (!session) {
+      throw new Error(
+        `Executor session not found for ${order.exchangeName} ${order.pair}`,
+      );
+    }
+
+    session.nextRunAtMs = Date.now();
+  }
+
+  async listStrategyIntents(
+    orderId: string,
+  ): Promise<StrategyOrderIntentEntity[]> {
     return await this.strategyOrderIntentRepository.find({
       where: { clientId: orderId },
       order: { createdAt: 'ASC', intentId: 'ASC' },
@@ -377,7 +438,9 @@ export class MarketMakingSingleTickHelper {
     });
   }
 
-  async listExecutionHistory(orderId: string): Promise<StrategyExecutionHistory[]> {
+  async listExecutionHistory(
+    orderId: string,
+  ): Promise<StrategyExecutionHistory[]> {
     return await this.strategyExecutionHistoryRepository.find({
       where: { clientId: orderId },
       order: { executedAt: 'ASC' },
@@ -388,7 +451,10 @@ export class MarketMakingSingleTickHelper {
     return this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
   }
 
-  async fetchExchangeOrder(exchangeOrderId: string, pair: string): Promise<any> {
+  async fetchExchangeOrder(
+    exchangeOrderId: string,
+    pair: string,
+  ): Promise<any> {
     return await this.exchange.fetchOrder(exchangeOrderId, pair);
   }
 
@@ -429,24 +495,36 @@ export class MarketMakingSingleTickHelper {
 
   private buildPureMarketMakingStrategySnapshot(
     orderId: string,
-    userId: string,
+    overrides: {
+      askSpread: number;
+      amountChangePerLayer: number;
+      amountChangeType: 'fixed' | 'percentage';
+      bidSpread: number;
+      hangingOrdersEnabled?: boolean;
+      numberOfLayers: number;
+      orderAmount: number;
+      orderRefreshTime: number;
+      pair: string;
+      userId: string;
+    },
   ): MarketMakingOrderStrategySnapshot {
     return {
       controllerType: 'pureMarketMaking',
       resolvedConfig: {
-        userId,
+        userId: overrides.userId,
         clientId: orderId,
         marketMakingOrderId: orderId,
-        pair: this.config.symbol,
+        pair: overrides.pair,
         exchangeName: this.config.exchangeId,
-        bidSpread: 0.001,
-        askSpread: 0.001,
-        orderAmount: 0.0002,
-        orderRefreshTime: 60000,
-        numberOfLayers: 1,
+        bidSpread: overrides.bidSpread,
+        askSpread: overrides.askSpread,
+        orderAmount: overrides.orderAmount,
+        orderRefreshTime: overrides.orderRefreshTime,
+        numberOfLayers: overrides.numberOfLayers,
         priceSourceType: PriceSourceType.MID_PRICE,
-        amountChangePerLayer: 0,
-        amountChangeType: 'fixed',
+        amountChangePerLayer: overrides.amountChangePerLayer,
+        amountChangeType: overrides.amountChangeType,
+        hangingOrdersEnabled: Boolean(overrides.hangingOrdersEnabled),
       },
     };
   }

@@ -70,12 +70,12 @@ Status values:
 
 The matrix records the highest validated phase ceiling per exchange. An exchange is only promoted after a real run.
 
-| Exchange | Sandbox Boot | Spot Override | `fetchOrder` | `fetchOpenOrders` | `clientOrderId` | Private Fills | Highest Validated Phase | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| binance | complete | complete | complete | complete | complete | blocked | A4 | spot-only override required |
-| okx | unknown | unknown | unknown | unknown | unknown | blocked | none | listed in sandbox env template; not yet validated in this roadmap |
-| gate | unknown | unknown | unknown | unknown | unknown | blocked | none | not yet validated |
-| mexc | unknown | unknown | unknown | unknown | unknown | blocked | none | not yet validated |
+| Exchange | Sandbox Boot | Spot Override | `fetchOrder` | `fetchOpenOrders` | `clientOrderId` | Private Fills | Highest Validated Phase | Notes                                                             |
+| -------- | ------------ | ------------- | ------------ | ----------------- | --------------- | ------------- | ----------------------- | ----------------------------------------------------------------- |
+| binance  | complete     | complete      | complete     | complete          | complete        | blocked       | A6                      | spot-only override required                                       |
+| okx      | unknown      | unknown       | unknown      | unknown           | unknown         | blocked       | none                    | listed in sandbox env template; not yet validated in this roadmap |
+| gate     | unknown      | unknown       | unknown      | unknown           | unknown         | blocked       | none                    | not yet validated                                                 |
+| mexc     | unknown      | unknown       | unknown      | unknown           | unknown         | blocked       | none                    | not yet validated                                                 |
 
 ## Track A: Execution-Engine Parity
 
@@ -205,46 +205,46 @@ Exit gate:
 
 ### Phase A5: Multi-Layer Placement Parity
 
-Status: not started
+Status: complete on reference exchange
 
 Implementation checklist:
 
-- [ ] add `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
-- [ ] configure `numberOfLayers >= 3`
-- [ ] assert ladder generation rules and hanging-order behavior
+- [x] add `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
+- [x] configure `numberOfLayers >= 3`
+- [x] assert ladder generation rules and hanging-order behavior
 
 Verification checklist:
 
-- [ ] the expected number of intents is generated
-- [ ] buy and sell prices expand outward by layer
-- [ ] quantities follow configured progression
-- [ ] real sandbox orders are placed for every eligible layer
-- [ ] tracker and mapping state stay consistent across layered placement
+- [x] the expected number of intents is generated
+- [x] buy and sell prices expand outward by layer
+- [x] quantities follow configured progression
+- [x] real sandbox orders are placed for every eligible layer
+- [x] tracker and mapping state stay consistent across layered placement
 
 Exit gate:
 
-- [ ] layered runtime behavior is proven on the reference exchange without bypassing the normal executor path
+- [x] layered runtime behavior is proven on the reference exchange without bypassing the normal executor path
 
 ### Phase A6: Cadence Stability Parity
 
-Status: not started
+Status: complete on reference exchange
 
 Implementation checklist:
 
-- [ ] add `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
-- [ ] run repeated manual ticks through the same executor session
-- [ ] capture deterministic `clientOrderId` sequencing across cycles
+- [x] add `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
+- [x] run repeated manual ticks through the same executor session
+- [x] capture deterministic `clientOrderId` sequencing across cycles
 
 Verification checklist:
 
-- [ ] follow-up intents are produced on later ticks
-- [ ] the executor remains stable across repeated cycles
-- [ ] `clientOrderId` sequencing increments deterministically
-- [ ] tracker and mapping state remain coherent after multiple cycles
+- [x] follow-up intents are produced on later ticks
+- [x] the executor remains stable across repeated cycles
+- [x] `clientOrderId` sequencing increments deterministically
+- [x] tracker and mapping state remain coherent after multiple cycles
 
 Exit gate:
 
-- [ ] repeated tick-driven execution is stable on the reference exchange
+- [x] repeated tick-driven execution is stable on the reference exchange
 
 ### Phase A7: Fill Routing And Live-Fill Upgrade Gate
 
@@ -396,9 +396,9 @@ Exit gate:
 - [x] add `server/test/system/market-making/user-orders/market-making.processor.system.spec.ts`
 - [x] add `server/test/system/helpers/market-making-single-tick.helper.ts`
 - [x] add `server/test/system/market-making/strategy/pure-market-making-single-tick.system.spec.ts`
-- [ ] add `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
-- [ ] add `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
-- [ ] expand the capability matrix after each real exchange run
+- [x] add `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
+- [x] add `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
+- [x] expand the capability matrix after each real exchange run
 - [x] revisit Track B readiness only after Track A4 passes on the reference exchange
 
 ## Known Missing Runtime Capabilities

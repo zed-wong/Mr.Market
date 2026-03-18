@@ -9,6 +9,10 @@
 - Add split `server/test/system` sandbox helpers for shared config and single-tick runtime setup, plus a capability-aware A4 single-tick system spec that stays skipped on the current binance `clientOrderId` live-placement gap
 - Switch live strategy intent execution to exchange-safe submitted `clientOrderId` values while keeping parseable `{orderId}:{seq}` helpers for local routing tests, and pass the A4 single-tick sandbox parity suite on the reference exchange
 - Update active market-making docs and `docs/code/server` mirrors to distinguish parseable local `clientOrderId` values from exchange-safe submitted IDs and reflect the completed A4 single-tick sandbox path
+- Extend the shared single-tick system helper to build configurable pure market-making fixtures and expose executor-session controls for later Track A parity phases
+- Add A5 multi-layer sandbox parity coverage with layered price and quantity assertions plus hanging-order preservation on the next eligible tick
+- Add A6 cadence sandbox parity coverage with repeated eligible ticks, stable executor-session reuse, and deterministic submitted `clientOrderId` sequencing
+- Move the sandbox order-lifecycle and fill-resolution specs plus their helper under `server/test/system` so system-only files match the March 18 test-placement rule
 
 ## 2026-03-17
 

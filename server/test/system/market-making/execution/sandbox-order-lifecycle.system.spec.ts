@@ -10,9 +10,9 @@ import {
   getSandboxIntegrationSkipReason,
   pollUntil,
   readSandboxExchangeTestConfig,
-} from '../../../../test/helpers/sandbox-exchange.helper';
-import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
-import { ExchangeConnectorAdapterService } from './exchange-connector-adapter.service';
+} from '../../helpers/sandbox-exchange.helper';
+import { ExchangeInitService } from '../../../../src/modules/infrastructure/exchange-init/exchange-init.service';
+import { ExchangeConnectorAdapterService } from '../../../../src/modules/market-making/execution/exchange-connector-adapter.service';
 
 const skipReason = getSandboxIntegrationSkipReason();
 
@@ -59,7 +59,10 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
     for (const exchangeOrderId of [...createdOrderIds].reverse()) {
       try {
         if (supportsCapability('fetchOrder')) {
-          const order = await exchange.fetchOrder(exchangeOrderId, config.symbol);
+          const order = await exchange.fetchOrder(
+            exchangeOrderId,
+            config.symbol,
+          );
           const status = String(order?.status || '').toLowerCase();
 
           if (
@@ -135,7 +138,9 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
 
     expect(exchangeInitService.getExchange(config.exchangeId)).toBe(exchange);
 
-    log(`${config.exchangeId} | ${config.symbol} | label=${config.accountLabel}`);
+    log(
+      `${config.exchangeId} | ${config.symbol} | label=${config.accountLabel}`,
+    );
     log('Ready');
   });
 
@@ -229,7 +234,9 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
         ),
       ).toBe(true);
     } else {
-      log('Fetch open orders skipped: exchange does not support fetchOpenOrders()');
+      log(
+        'Fetch open orders skipped: exchange does not support fetchOpenOrders()',
+      );
     }
 
     log('Cancel order...');
@@ -280,38 +287,34 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
           );
         },
         {
-          description: `sandbox order ${createdOrder.id} to cancel`,
+          description: `sandbox order ${createdOrder.id} to cancel cleanly`,
         },
       );
-      const finalStatus = String(
-        canceledState.fetchedOrder?.status || cancelResult?.status || 'unknown',
-      ).toLowerCase();
 
-      log(`   status=${finalStatus}, removed from list`);
-
-      if (supportsFetchOpenOrders) {
-        expect(
-          canceledState.openOrders.some(
-            (order) => String(order?.id) === String(createdOrder.id),
-          ),
-        ).toBe(false);
-      }
-    } else {
-      const finalStatus = String(cancelResult?.status || 'unknown').toLowerCase();
-
-      log(`   cancel response status=${finalStatus}`);
-      expect(cancelResult).toBeDefined();
+      log(
+        `   status=${
+          canceledState.fetchedOrder?.status || cancelResult?.status || 'n/a'
+        }`,
+      );
+      expect(
+        canceledState.openOrders.some(
+          (order) => String(order?.id) === String(createdOrder.id),
+        ),
+      ).toBe(false);
     }
 
-    log('Passed');
+    expect(cancelResult).toBeDefined();
   });
 });
 
 function isIgnorableCleanupError(error: unknown): boolean {
-  const message =
-    error instanceof Error ? error.message : String(error || 'unknown error');
+  const message = error instanceof Error ? error.message : String(error || '');
 
-  return /already canceled|already closed|does not exist|not found|unknown order/i.test(
-    message,
+  return (
+    /order.*not found/i.test(message) ||
+    /unknown order/i.test(message) ||
+    /already closed/i.test(message) ||
+    /already cancelled/i.test(message) ||
+    /already canceled/i.test(message)
   );
 }

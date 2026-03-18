@@ -13,6 +13,8 @@ The currently implemented sandbox scope is intentionally limited to the runtime 
 - Phase 3: fill-routing resolution coverage with repository-backed mappings
 - Phase 4: runtime control parity through real `start_mm` and `stop_mm`
 - Phase 5: single-tick parity through the real executor, intent, exchange execution, mapping, tracker, and history path
+- Phase 6: multi-layer parity through the real executor with layered price and quantity assertions plus hanging-order preservation
+- Phase 7: cadence parity through repeated eligible ticks with deterministic submitted `clientOrderId` sequencing
 
 It does not claim full end-to-end private-fill ingestion.
 
@@ -23,13 +25,13 @@ It does not claim full end-to-end private-fill ingestion.
 - `ExchangeInitService` can boot one sandbox exchange from `CCXT_SANDBOX_*` env through the normal runtime service path
 - sandbox mode is enabled before `loadMarkets()` when sandbox env is present
 - exchange-specific sandbox overrides still apply when required, including Binance spot-only market loading
-- legacy helper-backed suites still use `server/test/helpers/sandbox-exchange.helper.ts`
+- legacy sandbox helper usage now lives under `server/test/system/helpers/sandbox-exchange.helper.ts`
 - new system-test specs and support files live under `server/test/system`
 - the default unit suite ignores `*.system.spec.ts`
 
 ### Phase 2: Adapter Integration
 
-Spec: `server/src/modules/market-making/execution/sandbox-order-lifecycle.system.spec.ts`
+Spec: `server/test/system/market-making/execution/sandbox-order-lifecycle.system.spec.ts`
 
 Coverage:
 
@@ -42,7 +44,7 @@ Coverage:
 
 ### Phase 3: Fill Routing Integration
 
-Spec: `server/src/modules/market-making/execution/sandbox-fill-resolution.system.spec.ts`
+Spec: `server/test/system/market-making/execution/sandbox-fill-resolution.system.spec.ts`
 
 Coverage:
 
@@ -87,6 +89,30 @@ Boundary:
 
 - validates order-resolution logic only
 - does not validate exchange private-stream ingestion
+
+### Phase 6: Multi-Layer Placement
+
+Spec: `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
+
+Coverage:
+
+- invoke one real executor tick for a pure market-making session with `numberOfLayers >= 3`
+- assert layered buy prices expand downward and layered sell prices expand upward
+- assert quantity progression across layers
+- place real sandbox orders for each eligible layer
+- preserve existing open orders on the next eligible tick when hanging orders are enabled
+
+### Phase 7: Cadence Stability
+
+Spec: `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
+
+Coverage:
+
+- reuse the same executor session across repeated eligible ticks
+- verify no follow-up placement occurs before the next eligible cadence window
+- force the next cadence window deterministically in the test harness
+- assert submitted exchange-safe `clientOrderId` values increment deterministically across cycles
+- keep tracker, mapping, and execution history state coherent after repeated cycles
 
 ## Required Environment Variables
 
