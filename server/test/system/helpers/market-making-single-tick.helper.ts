@@ -124,6 +124,13 @@ export class MarketMakingSingleTickHelper {
     return this.exchange;
   }
 
+  getExchangeForAccount(accountLabel?: string): any {
+    return this.exchangeInitService.getExchange(
+      this.config.exchangeId,
+      accountLabel || this.config.accountLabel,
+    );
+  }
+
   getExecutorSession(exchange: string, pair: string, orderId: string) {
     return this.executorRegistry
       .getExecutor(exchange, pair)

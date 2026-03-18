@@ -344,18 +344,36 @@ export class ExchangeInitService {
       return null;
     }
 
+    const sandboxAccounts: ExchangeAccountConfig[] = [
+      {
+        label: process.env.CCXT_SANDBOX_ACCOUNT_LABEL?.trim() || 'default',
+        apiKey: process.env.CCXT_SANDBOX_API_KEY?.trim(),
+        secret: process.env.CCXT_SANDBOX_SECRET?.trim(),
+        password: process.env.CCXT_SANDBOX_PASSWORD?.trim() || undefined,
+        uid: process.env.CCXT_SANDBOX_UID?.trim() || undefined,
+        sandboxMode: true,
+      },
+    ];
+    const secondAccountApiKey =
+      process.env.CCXT_SANDBOX_ACCOUNT2_API_KEY?.trim() || undefined;
+    const secondAccountSecret =
+      process.env.CCXT_SANDBOX_ACCOUNT2_SECRET?.trim() || undefined;
+
+    if (secondAccountApiKey && secondAccountSecret) {
+      sandboxAccounts.push({
+        label: process.env.CCXT_SANDBOX_ACCOUNT2_LABEL?.trim() || 'account2',
+        apiKey: secondAccountApiKey,
+        secret: secondAccountSecret,
+        password:
+          process.env.CCXT_SANDBOX_ACCOUNT2_PASSWORD?.trim() || undefined,
+        uid: process.env.CCXT_SANDBOX_ACCOUNT2_UID?.trim() || undefined,
+        sandboxMode: true,
+      });
+    }
+
     return {
       name: exchangeName,
-      accounts: [
-        {
-          label: process.env.CCXT_SANDBOX_ACCOUNT_LABEL?.trim() || 'default',
-          apiKey: process.env.CCXT_SANDBOX_API_KEY?.trim(),
-          secret: process.env.CCXT_SANDBOX_SECRET?.trim(),
-          password: process.env.CCXT_SANDBOX_PASSWORD?.trim() || undefined,
-          uid: process.env.CCXT_SANDBOX_UID?.trim() || undefined,
-          sandboxMode: true,
-        },
-      ],
+      accounts: sandboxAccounts,
       class: ExchangeClass,
     };
   }
