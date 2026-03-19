@@ -14,8 +14,8 @@ The goal is to prove the runtime safely in the same order it is actually built:
 
 This roadmap is the planning layer. It does not replace the lower-level implementation documents:
 
-- `docs/planning/ccxt-sandbox-integration-testing-plan.md` remains the detailed execution-engine sandbox plan for Track A
-- `docs/planning/complete-market-making-cycle-design.md` remains the broader business-lifecycle design reference for Track B
+- `docs/planning/2026-03-15-ccxt-sandbox-integration-testing-plan.md` remains the detailed execution-engine sandbox plan for Track A
+- `docs/planning/2026-03-12-complete-market-making-cycle-design.md` remains the broader business-lifecycle design reference for Track B
 
 ## Principles
 

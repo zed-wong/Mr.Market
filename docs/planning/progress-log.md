@@ -2,6 +2,9 @@
 
 ## 2026-03-19
 
+- Move `docs/planning/2026-03-18-private-stream-tracker-test-plan.md` to `docs/archive/plans/` after reclassifying it as historical implementation planning rather than an active plan
+- Restore date-prefixed filenames for active planning docs under `docs/planning/` and update doc indexes and cross-references to the dated paths
+- Rewrite `docs/product/liquidity-layer-technical-implementation.md` into a system-design-constraints doc that separates product thesis from current architecture and clarifies the remaining gaps to a real liquidity layer
 - Reorganize `docs/` into product, architecture, operations, roadmap, and archive directories; add a new docs index and retarget doc guidance to the new structure
 - Reduce duplication by making `architecture/market-making-flow.md` the detailed market-making source of truth, shortening `architecture/server/business-flows.md` to a server-wide overview, and trimming completed items out of `planning/todo.md`
 - Reshape `planning/market-making-testing-checklist.md` into a compact current-status snapshot that points detailed execution work back to the planning docs and sandbox plan

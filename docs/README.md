@@ -15,7 +15,7 @@ This directory is organized by document responsibility, not by author or date.
 - `architecture/market-making-flow.md` - primary market-making runtime flow
 - `architecture/server/module-map.md` - backend module map
 - `operations/testing/market-making.md` - current system-test scope
-- `planning/market-making-testing-roadmap.md` - active market-making testing roadmap
+- `planning/2026-03-18-market-making-testing-roadmap.md` - active market-making testing roadmap
 - `planning/todo.md` - current open work
 
 ## Notes

@@ -34,15 +34,13 @@ Use dated files, but keep the document role clear.
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**
   Role: rolling chronological implementation log
-- **`complete-market-making-cycle-design.md`**
+- **`2026-03-12-complete-market-making-cycle-design.md`**
   Role: broader business-lifecycle design reference
-- **`market-making-testing-roadmap.md`**
+- **`2026-03-18-market-making-testing-roadmap.md`**
   Role: market-making testing roadmap for stage order, boundaries, and phase gates
-- **`ccxt-sandbox-integration-testing-plan.md`**
+- **`2026-03-15-ccxt-sandbox-integration-testing-plan.md`**
   Role: detailed Track A sandbox execution plan
-- **`private-stream-tracker-test-plan.md`**
-  Role: detailed private-stream tracker implementation and validation plan
-- **`market-making-testing-checklist.md`**
+- **`2026-03-18-market-making-testing-checklist.md`**
   Role: compact market-making testing status snapshot
 
 ## When To Update Vs Create
