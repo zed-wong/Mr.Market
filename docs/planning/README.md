@@ -42,6 +42,8 @@ Use dated files, but keep the document role clear.
   Role: detailed Track A sandbox execution plan
 - **`2026-03-18-market-making-testing-checklist.md`**
   Role: compact market-making testing status snapshot
+- **`2026-03-19-token-metadata-service-plan.md`**
+  Role: phased token metadata migration plan that moves token list flows off CoinGecko first and gates detail/chart replacement behind explicit parity checks
 
 ## When To Update Vs Create
 

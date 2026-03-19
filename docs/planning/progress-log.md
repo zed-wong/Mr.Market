@@ -2,6 +2,7 @@
 
 ## 2026-03-19
 
+- Rewrite the token metadata service plan into a dated phased-migration doc, rename it to `docs/planning/2026-03-19-token-metadata-service-plan.md`, and scope CoinGecko removal behind explicit list/detail parity gates
 - Move `docs/planning/2026-03-18-private-stream-tracker-test-plan.md` to `docs/archive/plans/` after reclassifying it as historical implementation planning rather than an active plan
 - Restore date-prefixed filenames for active planning docs under `docs/planning/` and update doc indexes and cross-references to the dated paths
 - Rewrite `docs/product/liquidity-layer-technical-implementation.md` into a system-design-constraints doc that separates product thesis from current architecture and clarifies the remaining gaps to a real liquidity layer
