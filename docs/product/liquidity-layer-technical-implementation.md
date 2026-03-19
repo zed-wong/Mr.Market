@@ -1,301 +1,252 @@
-1. Problem: Liquidity is still a permissioned resource
+# Liquidity Layer System Design Constraints
 
-In modern financial systems:
+This document defines the system constraints required for Mr.Market to evolve from a market-making runtime into a liquidity infrastructure layer.
 
-- corporate legitimacy comes from the state,
-- capital mobility comes from regulatory approval,
-- market depth comes from centralized market makers.
+It is not the product thesis document. That role belongs to `docs/product/liquidity-layer-of-financial-markets.md`.
 
-Blockchain changed how assets are issued, but it did not truly change liquidity structure.
+It is also not the detailed backend flow document. That role belongs to `docs/architecture/market-making-flow.md` and the server architecture tree under `docs/architecture/server/`.
 
-Today:
+The purpose of this file is narrower:
 
-- token issuance is permissionless,
-- liquidity is not.
+- define what must be true for the "liquidity layer" claim to be structurally credible,
+- map those requirements onto the current system shape,
+- state what is still missing.
 
-If a new on-chain organization wants depth, it still must:
+## 1. Problem framing
 
-- rely on market-maker networks,
-- exchange interests,
-- accept centralized structures,
-- bear manipulation risk.
+The product thesis argues that liquidity should become a protocol-level capability rather than a privileged resource.
 
-This creates a structural barrier.
+That thesis is only meaningful if the system does more than automate a centralized operator workflow.
 
----
+A system does not become a liquidity layer just because it:
 
-2. Core proposition
+- runs strategies automatically,
+- places orders through APIs,
+- distributes rewards,
+- removes some manual operations.
 
-> Liquidity should be a protocol-level capability, not a privileged resource.
+It becomes a liquidity layer only if liquidity access is governed by open mechanism constraints rather than by discretionary operator control.
 
-Just like:
+## 2. Scope boundary
 
-- consensus is a protocol capability,
-- storage is a protocol capability,
-- transfer is a protocol capability.
+This document evaluates the system against one question:
 
-Liquidity should also be a protocol capability.
+What would have to be true for Mr.Market to qualify as infrastructure for permissionless liquidity formation?
 
----
+It does not claim that the current implementation already meets that standard.
 
-3. Our structural innovation
+## 3. Layer model
 
-We propose a new infrastructure layer:
+The intended system can be described in three layers.
 
-Liquidity Abstraction Layer.
+### Layer A. Rule Layer
 
-This layer has the following properties:
+This layer defines:
 
-- decentralized market-making network,
-- no identifiable control point,
-- rules locked by smart contracts,
-- open and transparent incentives,
-- no administrator intervention.
+- how campaigns are created,
+- how funds are escrowed,
+- how rewards are computed,
+- what parameters are mutable,
+- which actions are allowed.
 
-It does not replace the market. It does not fight regulation. It does not promise returns.
+Target property:
 
-It only does one thing:
+- rules are explicit, bounded, and difficult to override ad hoc.
 
-detach the "liquidity formation mechanism" from privileged structures.
+Current Mr.Market status:
 
----
+- partially represented in backend services and persisted order snapshots,
+- not yet reduced to a trust-minimized, protocol-like rule layer.
 
-4. Design principles
+### Layer B. Execution Layer
 
-Principle 1 - Protocol, not Promoter
+This layer performs:
 
-The protocol operates; humans do not maintain it manually.
+- quote generation,
+- order placement and cancellation,
+- fill handling,
+- risk checks,
+- reward-eligible activity production.
 
-Principle 2 - Mechanism, not Manipulation
+Target property:
 
-Price forms through algorithm-and-market interaction, not central control.
+- execution should not depend on a single privileged operator path.
 
-Principle 3 - Distributed Execution
+Current Mr.Market status:
 
-Execution is distributed across network nodes, not concentrated in one service provider.
+- this is the strongest existing part of the system,
+- the runtime already has a concrete execution architecture with tick coordination, pooled executors, intent execution, and ledger boundaries,
+- see `docs/architecture/market-making-flow.md` for the current source of truth.
 
-Principle 4 - No Single Liquidity Gatekeeper
+### Layer C. Access Layer
 
-Any asset can access the system without application or approval.
+This layer determines:
 
----
+- who can launch liquidity programs,
+- who can run execution nodes,
+- who can participate in incentives,
+- whether access requires approval.
 
-5. Legal structure positioning
+Target property:
 
-We do not claim:
+- access should be rule-gated, not relationship-gated.
 
-- automatic equals legal,
-- decentralization equals non-security.
+Current Mr.Market status:
 
-We acknowledge:
+- not yet permissionless in a strong infrastructure sense,
+- still primarily an application runtime with platform-controlled boundaries.
 
-- legal assessment depends on specific facts,
-- investor expectation is judged by market behavior.
+## 4. Non-negotiable design constraints
 
-But structural-layer innovation can:
+If these constraints are not satisfied, the system may still be useful software, but it should not be described as a liquidity layer.
 
-- reduce attributable central points,
-- reduce evidence of manual price control,
-- provide mechanism transparency.
+### Constraint 1. No discretionary liquidity gatekeeper
 
-This is "structural resilience," not "legal evasion."
+A token or campaign should not require off-chain approval from a central operator in order to access the mechanism.
 
----
+Acceptable:
 
-6. Final objective
+- eligibility rules,
+- objective parameter checks,
+- bounded deny conditions.
 
-If this matures:
+Not acceptable:
 
-- on-chain organizations can gain liquidity mechanisms at deployment,
-- without market-maker cooperation,
-- without relationship networks,
-- without manual price maintenance.
+- manual relationship-based admission,
+- hidden exceptions,
+- private approval pipelines.
 
-Liquidity becomes a default launch capability,
-just as open source became the default collaboration model.
+### Constraint 2. Rules must dominate operator behavior
 
----
+The core lifecycle must be driven by explicit rules rather than by informal intervention.
 
-Part II - Technical implementation focus
+This means the system must make clear:
 
----
+- which parameters are fixed,
+- which parameters can change,
+- who can change them,
+- what audit trail exists for each change.
 
-1. System layering
+If operators can quietly alter liquidity behavior at will, then the mechanism is not structurally independent.
 
-Layer 1 - Protocol Layer (on-chain rules layer)
+### Constraint 3. Reward logic must be resistant to extraction
 
-Responsible for:
+Any incentive system will be attacked by:
 
-- campaign contracts,
-- reward logic,
-- capital allocation,
-- rule locking,
-- immutable parameters or limited governance.
+- wash trading,
+- fake depth,
+- toxic flow farming,
+- quote spam,
+- self-reward loops.
 
-This is the only trust-minimized layer.
+A valid liquidity layer cannot treat rewards as a simple subsidy schedule.
 
----
+Reward logic must be designed around verifiable contribution quality, not just notional activity volume.
 
-Layer 2 - Execution Layer (decentralized market-making execution)
+### Constraint 4. Capital ownership and trading risk must be separated clearly
 
-Composed of:
+The system must make unambiguous distinctions between:
 
-- Mr.Market node network,
-- TEE-protected execution environments,
-- independently operated nodes.
+- campaign treasury funds,
+- operator or node capital,
+- user-owned funds,
+- realized trading PnL,
+- reward distribution balances.
 
-Responsible for:
+If ownership and loss attribution are blurry, then the system will fail under both operational stress and external scrutiny.
 
-- strategy computation,
-- quote updates,
-- reward claiming.
+### Constraint 5. Execution failure must not collapse the whole system
 
-Execution layer requirements:
+If one node, service, or operator disappears, the mechanism should degrade gracefully instead of halting globally.
 
-- no centralized scheduler,
-- no unified control server,
-- nodes can freely join and exit,
-- incentives are open.
+This does not require perfect decentralization on day one.
 
----
+It does require that the architecture move away from irreplaceable control points.
 
-Layer 3 - Participation Layer
+### Constraint 6. Claims must match actual system shape
 
-- anyone can create campaigns,
-- any token can integrate,
-- anyone can run a Mr.Market instance.
+The documentation and product language must not claim:
 
----
+- trust minimization where trusted operators still dominate,
+- decentralization where execution is still platform-bound,
+- protocol-level behavior where the mechanism is still application-level.
 
-2. Core technical design points
+This is partly a legal discipline issue, but it is mainly an engineering discipline issue.
 
----
+Overstating system properties destroys architectural clarity.
 
-1) Campaign smart contract structure
+## 5. Qualifying and non-qualifying architectures
 
-Key characteristics:
+### Qualifies as progress toward a liquidity layer
 
-- no admin privileges,
-- escrowed funds cannot be misappropriated,
-- incentive calculation is transparent,
-- only predefined rules can execute,
-- contracts can be created via a factory.
+- a runtime where admission and reward rules are explicit and consistently enforced,
+- execution that can be operated by multiple independent actors,
+- bounded governance with visible parameter control,
+- fund flows separated by ledgered ownership and durable state transitions,
+- mechanism outputs that remain inspectable after the fact.
 
-Recommended pattern:
+### Does not qualify
 
-Factory -> Immutable Campaign Contracts
+- a managed market-making desk with better automation,
+- a campaign system whose real rules live in operator discretion,
+- a rewards engine dominated by volume mining or fake-depth games,
+- a node network that is nominally open but operationally dependent on one scheduler or one privileged deployer,
+- a product narrative that markets decentralization without removing concrete control points.
 
----
+## 6. Mapping to the current Mr.Market architecture
 
-2) Market-making reward calculation model
+The current backend already contains useful primitives for this direction:
 
-Must avoid:
+- strategy snapshots reduce runtime ambiguity,
+- pooled executors reduce duplicated exchange-pair control paths,
+- intent execution creates bounded side-effect stages,
+- ledger boundaries create a single balance mutation entrypoint,
+- durable workers and reconciliation flows improve auditability.
 
-- fixed subsidy models,
-- pure APY-promise logic,
-- static depth rewards.
+These are important because they move the system away from ad hoc bot operation and toward explicit runtime structure.
 
-Recommended model based on:
+But they do not yet make Mr.Market a permissionless liquidity layer.
 
-- effective traded volume,
-- quote uptime,
-- depth contribution,
-- price-volatility quality,
-- hedging efficiency.
+The main gaps are still structural:
 
-Reward calculation should be executed by on-chain verifiable formulas.
+- campaign and reward rules are not yet framed as an open mechanism layer,
+- execution is not yet a credibly multi-operator network,
+- reward-abuse resistance is not yet specified tightly enough,
+- governance boundaries are not yet described as enforceable system constraints,
+- access is not yet rule-open in the strong sense implied by the product thesis.
 
----
+## 7. What this means for product language
 
-3) TEE node network design
+The most defensible present-tense description is:
 
-The goal is not a
-"centralized market-making engine,"
+Mr.Market is a market-making runtime and mechanism foundation that may evolve toward a liquidity infrastructure layer.
 
-but a
-"decentralized market-making execution network."
+The least defensible present-tense description is:
 
-Needs to address:
+Mr.Market is already a decentralized liquidity layer.
 
-- node registration mechanism,
-- reward-claim verification,
-- anti-Sybil mechanisms,
-- node reputation system,
-- data transparency.
+The first description matches the current architecture trajectory.
+The second collapses the distinction between aspiration and implementation.
 
-Critical questions:
+## 8. Next documentation split
 
-- Who generates quotes?
-- Who is responsible for order cancellation?
-- What happens if nodes behave maliciously?
+To keep the docs tree clean, each document should keep a single job:
 
----
+- `docs/product/liquidity-layer-of-financial-markets.md`
+  product thesis and why the problem matters
+- `docs/product/liquidity-layer-technical-implementation.md`
+  system design constraints for making the thesis structurally credible
+- `docs/architecture/market-making-flow.md`
+  current backend market-making runtime flow
+- `docs/architecture/server/*.md`
+  current backend ownership, module, and runtime details
 
-4) Price-impact control
+## 9. Bottom line
 
-Need to design defenses for:
+The real distinction is simple:
 
-- wash trading prevention,
-- fake-volume prevention,
-- reward arbitrage prevention,
-- fake-depth prevention.
+- market-making software helps operate liquidity,
+- a liquidity layer changes who can access liquidity formation and under what rules.
 
-Otherwise the system degrades into a
-"reward-mining game."
-
----
-
-5) Capital risk isolation
-
-Must clearly define:
-
-- campaign fund ownership,
-- who bears market-making risk,
-- how strategy losses are handled,
-- whether to introduce a margin model.
-
-This is the hardest part in practice.
-
----
-
-3. Security and governance principles
-
-- no global administrator,
-- limited parameter governance (optional),
-- clear upgrade path,
-- critical logic cannot be hot-modified.
-
----
-
-4. Key challenges
-
-The real difficulty is not narrative, but:
-
-1. how to coordinate market making without centralized control,
-2. how to prevent reward abuse,
-3. how to maintain long-term depth without subsidies,
-4. how to avoid legal narratives being reversed into "structural evasion."
-
----
-
-Final summary
-
-What you truly have now is not
-"a market-making plan,"
-
-but potentially
-"a liquidity infrastructure layer."
-
-If the direction is correct, it can become:
-
-- a launch layer for meme coins,
-- a default liquidity layer for DAOs,
-- a new asset issuance layer,
-- a permissionless liquidity network.
-
-But to become decade-scale infrastructure, it must have:
-
-- restrained legal language,
-- clear structural layering,
-- truly decentralized execution,
-- extremely rigorous incentive mechanisms.
+Mr.Market currently has meaningful runtime architecture.
+What it still needs is stronger mechanism-level constraint design before the "liquidity layer" claim becomes unique and defensible.
