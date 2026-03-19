@@ -35,7 +35,7 @@ No agent signatures (Claude, sisyphus, etc.) in commit messages
 
 ## Docs
 - Keep docs updated with code changes
-- Update docs/roadmap/progress-log.md (one line per change)
+- Update docs/planning/progress-log.md (one line per change)
 - Keep docs/architecture/server/ as the md mirror of active server architecture
 - If you need to read documentation, look in `docs/` first
 

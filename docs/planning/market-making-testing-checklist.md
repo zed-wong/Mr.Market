@@ -12,8 +12,8 @@ Use it to answer:
 
 For phase-by-phase execution details, use:
 
-- `docs/roadmap/market-making-testing-roadmap.md`
-- `docs/roadmap/ccxt-sandbox-integration-testing-plan.md`
+- `docs/planning/market-making-testing-roadmap.md`
+- `docs/planning/ccxt-sandbox-integration-testing-plan.md`
 
 **Generated on:** 2026-03-18
 
@@ -243,6 +243,6 @@ Phase 4: End-to-end validation
 
 ## Related Documents
 
-- `docs/roadmap/market-making-testing-roadmap.md` - Testing roadmap
-- `docs/roadmap/ccxt-sandbox-integration-testing-plan.md` - Sandbox integration testing plan
-- `docs/roadmap/complete-market-making-cycle-design.md` - Complete market-making cycle design
+- `docs/planning/market-making-testing-roadmap.md` - Testing roadmap
+- `docs/planning/ccxt-sandbox-integration-testing-plan.md` - Sandbox integration testing plan
+- `docs/planning/complete-market-making-cycle-design.md` - Complete market-making cycle design

@@ -79,4 +79,4 @@ docs/operations/
 ## Related Docs
 
 - [Architecture Docs](../architecture/README.md) - Module map, business flows, entity ownership
-- [Roadmap Docs](../roadmap/README.md) - Active plans and implementation todo
+- [Planning Docs](../planning/README.md) - Active plans and implementation todo

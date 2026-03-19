@@ -1,14 +1,14 @@
-# Roadmap Docs
+# Planning Docs
 
 This directory contains active dated plans, current implementation todo items, and progress tracking.
 
 ## Why These Docs Keep Dates
 
-Roadmap docs intentionally keep dates in their filenames.
+Planning docs intentionally keep dates in their filenames.
 
 - The date preserves the planning context for that iteration.
 - A dated doc is not automatically obsolete just because it is older.
-- If a dated doc is still guiding current work, it should remain in `roadmap/`.
+- If a dated doc is still guiding current work, it should remain in `planning/`.
 - If it is no longer guiding current work, it can move to `../archive/`.
 
 ## Doc Types

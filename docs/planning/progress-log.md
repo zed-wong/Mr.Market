@@ -3,8 +3,9 @@
 ## 2026-03-19
 
 - Reorganize `docs/` into product, architecture, operations, roadmap, and archive directories; add a new docs index and retarget doc guidance to the new structure
-- Reduce duplication by making `architecture/market-making-flow.md` the detailed market-making source of truth, shortening `architecture/server/business-flows.md` to a server-wide overview, and trimming completed items out of `roadmap/todo.md`
-- Reshape `roadmap/market-making-testing-checklist.md` into a compact current-status snapshot that points detailed execution work back to the roadmap and sandbox plan
+- Reduce duplication by making `architecture/market-making-flow.md` the detailed market-making source of truth, shortening `architecture/server/business-flows.md` to a server-wide overview, and trimming completed items out of `planning/todo.md`
+- Reshape `planning/market-making-testing-checklist.md` into a compact current-status snapshot that points detailed execution work back to the planning docs and sandbox plan
+- Rename `docs/roadmap/` to `docs/planning/` so the directory name matches its actual role as the active dated planning area
 
 ## 2026-03-18
 

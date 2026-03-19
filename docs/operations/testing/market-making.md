@@ -4,7 +4,7 @@ This document covers the current CCXT sandbox integration scope for market makin
 
 It documents the sandbox suites that are currently implemented today.
 
-The broader production-parity target is tracked separately in `docs/roadmap/ccxt-sandbox-integration-testing-plan.md`. That target requires the same `ExchangeInitService`, `start_mm`, `stop_mm`, tick, and execution runtime path as mainnet. The current implemented scope is narrower.
+The broader production-parity target is tracked separately in `docs/planning/ccxt-sandbox-integration-testing-plan.md`. That target requires the same `ExchangeInitService`, `start_mm`, `stop_mm`, tick, and execution runtime path as mainnet. The current implemented scope is narrower.
 
 The currently implemented sandbox scope is intentionally limited to the runtime behaviors that already exist:
 
