@@ -222,6 +222,6 @@ Phase 4: End-to-end validation
 
 ## Related Documents
 
-- `docs/plans/2026-03-18-market-making-testing-roadmap.md` - Testing roadmap
-- `docs/plans/2026-03-15-ccxt-sandbox-integration-testing-plan.md` - Sandbox integration testing plan
-- `docs/plans/2026-03-12-complete-market-making-cycle-design.en.md` - Complete market-making cycle design
+- `docs/roadmap/market-making-testing-roadmap.md` - Testing roadmap
+- `docs/roadmap/ccxt-sandbox-integration-testing-plan.md` - Sandbox integration testing plan
+- `docs/roadmap/complete-market-making-cycle-design.md` - Complete market-making cycle design

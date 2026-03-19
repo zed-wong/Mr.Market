@@ -1,37 +1,78 @@
 # Mr.Market
 
+## Current Todo
+
+This file keeps the detailed unchecked checklist and also adds short summary sections so the current work is easier to scan.
+
+Completed work should stay in `progress-log.md`, not here.
+
 ## Backend
 
-### User orders security
+### Security
+
+#### Summary
+
+- Add authentication and ownership checks for private `user-orders` list, detail, payment, and history endpoints.
+- Keep `GET /user-orders/market-making/strategies` public for frontend strategy selection.
+
+#### Detailed Checklist
+
+User orders security
 - [] 1. add authentication and ownership checks for user order list/detail/payment/history endpoints under `user-orders`
 - [] 2. keep `GET /user-orders/market-making/strategies` public for frontend strategy selection
 
-### Validation of create market making process
-- [x] 1. user can open invoice payment page in confirm payment step
-- [x] 2. invoice payment can be handled correctly by backend
-3. backend can withdraw to exchange (should link exchange api key only from db)
-4. after withdrawal to exchange, the deposit status can be tracked by backend, update in real time
-5. after arrival of deposit to exchange, then join campaign should be triggered automatically
-6. after join campaign, or no campain to join, the market making handler can start mm right away
-7. implement actual HuFi join campaign execution in market making `join_campaign` flow (not only local participation)
-8. implement actual HuFi join campaign execution in `CampaignService.joinCampaigns` cron flow
-9. add backend tests for market making `join_campaign` flow: successful HuFi join, no campaign match, and failure fallback behavior
-10. add backend tests for cron auto-join flow: already joined skip, new campaign join, and API error handling
-11. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
+### Market-making Funding Lifecycle
 
-### Market making execution system
+#### Summary
+
+- Re-enable real `withdraw_to_exchange` execution instead of refund-only validation mode.
+- Track exchange deposit confirmation end to end and update runtime state in real time.
+- Automatically continue from confirmed deposit into campaign join and `start_mm`.
+- Implement actual HuFi join execution in market-making `join_campaign` flow and in `CampaignService.joinCampaigns`.
+- Add backend tests for join-campaign success, fallback, and cron auto-join error handling.
+- Ensure user-triggered stop or withdrawal initiation is handled in a timely and safe way.
+
+#### Detailed Checklist
+
+Validation of create market making process
+- [] 3. backend can withdraw to exchange (should link exchange api key only from db)
+- [] 4. after withdrawal to exchange, the deposit status can be tracked by backend, update in real time
+- [] 5. after arrival of deposit to exchange, then join campaign should be triggered automatically
+- [] 6. after join campaign, or no campain to join, the market making handler can start mm right away
+- [] 7. implement actual HuFi join campaign execution in market making `join_campaign` flow (not only local participation)
+- [] 8. implement actual HuFi join campaign execution in `CampaignService.joinCampaigns` cron flow
+- [] 9. add backend tests for market making `join_campaign` flow: successful HuFi join, no campaign match, and failure fallback behavior
+- [] 10. add backend tests for cron auto-join flow: already joined skip, new campaign join, and API error handling
+- [] 11. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
+
+### Execution and Reporting
+
+#### Summary
+
+- Reflect execution status, place/cancel logs, and runtime errors in user-visible market-making order details.
+- Add comprehensive order tracking for volume, profit, placed count, fill amount, and success/failure/cancel counts.
+- Calculate campaign reward trading outcomes from performance data.
+
+#### Detailed Checklist
+
+Market making execution system
 - [] 1. market making execution system, including order status updates, place/cancel order logs, error handling. reflect on user's market making orders details.
 - [] 2. comprehensive order tracking, including volume created, profit made, placed order count, filled order amount, success/failure/cancel count.
 - [] 3. campaign reward trading, calculate reward based on performance.
 
-### Dynamic strategy management
-- [x] 1. Add DB-backed strategy definitions (`strategy_definitions`) and link runtime instances with `definitionId`/`definitionVersion`
-- [x] 2. Add strategy definition version snapshots (`strategy_definition_versions`) and publish/list flow
-- [x] 3. Add admin APIs for definition lifecycle and instance lifecycle (validate/start/stop/list/backfill)
-- [x] 4. Add seed defaults for built-in executors (pureMarketMaking/arbitrage/volume)
-- [x] 5. Add admin strategy manage UI page under settings
+### Deferred Strategy Follow-ups
 
-### Deferred strategy follow-ups
+#### Summary
+
+- Remove `exchangeName` and `pair` from `StrategyInstance.parameters`; derive them from the bound `MarketMakingOrder` at runtime.
+- Fix volume strategy follow-ups before expanding reuse further.
+- Move `userId` / `clientId` / `marketMakingOrderId` injection to after schema validation so strict schemas can pass.
+- Tighten admin strategy start and definition validation behavior.
+- Clean up admin strategy endpoints, cache invalidation, and CCXT seeding reliability.
+
+#### Detailed Checklist
+
+Deferred strategy follow-ups
 - [] 1. Remove `exchangeName`/`pair` from `StrategyInstance.parameters` - get from `MarketMakingOrder` binding at runtime instead of duplicating in params (conceptual cleanup, medium effort ~10-15 files)
 - [] 2. Fix volume strategy controller follow-ups before expanding reuse: sanitize cadence input, keep rerun backward-compatible with legacy parameter keys, and stop deriving tenant identity from `strategyInstance.parameters.userId/clientId`
 - [] 3. Move `userId`/`clientId`/`marketMakingOrderId` injection in strategy config resolution to after schema validation so strict schemas with `additionalProperties: false` can pass correctly
@@ -45,34 +86,43 @@
 
 ## Interface
 
-### Connect payment state to confirm payment page
-- [x] 1. after user clicked pay button in create-new market making page, should start loading and fetch payment status from backend
-- [x] 2. after payment status fetched, should show payment successful, and redirect to order details page
-- [x] 3. order details page should fetch order details from backend, and show order details (connect ui to backend)
-- [x] 4. make sure order details page is connected to backend correctly
+### Admin UX
 
-### Create market making UI
-- [x] 1. when select trading pair, there should be an small icon that represents the chain of the asset
+#### Summary
 
-### Admin page
+- Add a setup guide for initialization so admin setup is easier to follow.
+- Support sorting and filtering in manage market-making pairs and spot trading pairs.
+- Update the admin login page UI to match the rest of the interface.
+- Merge exchange and API key management into one clearer workflow.
+
+#### Detailed Checklist
+
+Admin page
 - [] 0. Design a manage strategy page that allows admin to add/remove/create template strategies and custom strategies
 - [] 1. Add a setup guide for initialization that is step by step, allowing admin to have basic understanding of how setting works, and makes it easier to set up all the things
 - [] 2. Support sorting and filter in manage market making pairs/spot trading pairs
 - [] 3. Update Admin login page UI design to be consistent with other pages
 - [] 4. Merge manage exchange and api keys into one page, has consistent logic and don't make user confuse
 
-### Admin exchanges management
-1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
-
-### E2e Test
-- [x] 1. Create market making UI
-- [x] 2. Admin add trading pairs
-- [x] 3. Admin add exchanges
+Admin exchanges management
+- [] 1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
 
 # Hufi
 
 ## UI
+
 ### Campaigns
+
+#### Summary
+
+- Expand campaign pages beyond the current list/detail baseline.
+- Show campaign-created trading volume.
+- Let users create, join, and review campaigns with Mixin wallets.
+- Let users create, join, and review campaigns with EVM wallets, including Mixin EVM.
+- Add a HuFi learn-more page, campaign filters, and campaign-type-specific detail actions.
+
+#### Detailed Checklist
+
 - [-] 0. Mr.Market users can see all campaigns, and specific campaign details under /market-making/hufi
 - [] 1. Mr.Market users should see volume created by Hufi campaigns
 - [] 2. Mr.Market users can create campaigns with mixin wallet under /market-making/hufi

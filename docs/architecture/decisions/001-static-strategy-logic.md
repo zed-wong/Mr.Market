@@ -184,9 +184,9 @@ This decision should be reflected in implementation by ensuring:
 
 ## Related Documents
 
-- [Becoming the Liquidity Layer](../../soul/becoming-the-liquidity-layer-of-financial-markets.md)
-- [Liquidity Layer Technical Implementation](../../soul/liquidity-layer-technical-implementation-document.md)
-- [Self-Market-Making Stablecoin](../../soul/self-market-making-stablecoin-document.md)
+- [Becoming the Liquidity Layer](../../product/liquidity-layer-of-financial-markets.md)
+- [Liquidity Layer Technical Implementation](../../product/liquidity-layer-technical-implementation.md)
+- [Self-Market-Making Stablecoin](../../product/self-market-making-stablecoin.md)
 
 ## History
 

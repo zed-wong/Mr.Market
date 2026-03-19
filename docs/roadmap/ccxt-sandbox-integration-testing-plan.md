@@ -509,7 +509,7 @@ Design notes:
 
 ## Documentation Updates
 
-Update `docs/tests/MARKET_MAKING.md` with:
+Update `docs/operations/testing/market-making.md` with:
 
 - the difference between current implemented sandbox coverage and the broader production-parity target
 - required env vars
@@ -519,7 +519,7 @@ Update `docs/tests/MARKET_MAKING.md` with:
 - explicit note that production-parity means the same execution runtime path, not a special sandbox-only path
 - explicit note that full fill-ingestion parity remains gated until real private-stream ingestion exists
 
-Update `docs/plans/README.md` so the plan index describes this file as the production-parity sandbox execution plan rather than only adapter-level coverage.
+Update `docs/roadmap/README.md` so the roadmap index describes this file as the production-parity sandbox execution plan rather than only adapter-level coverage.
 
 ## Deferred Boundaries
 

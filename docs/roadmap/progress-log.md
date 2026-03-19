@@ -1,5 +1,10 @@
 # Execution Flow Changelog
 
+## 2026-03-19
+
+- Reorganize `docs/` into product, architecture, operations, roadmap, and archive directories; add a new docs index and retarget doc guidance to the new structure
+- Reduce duplication by making `architecture/market-making-flow.md` the detailed market-making source of truth, shortening `architecture/server/business-flows.md` to a server-wide overview, and trimming completed items out of `roadmap/todo.md`
+
 ## 2026-03-18
 
 - Mark the March 18 testnet closed-loop funding E2E task as blocked until the runtime re-enables `withdraw_to_exchange`, stops refund-only validation mode, and wires the broader withdrawal/deposit confirmation path end to end

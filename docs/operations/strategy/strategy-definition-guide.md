@@ -460,9 +460,9 @@ server/src/
 
 ## Related Documentation
 
-- [MARKET_MAKING_FLOW.md](../flow/MARKET_MAKING_FLOW.md) - Overall execution flow
-- [RUNTIME_SAFETY_MECHANISMS.md](./RUNTIME_SAFETY_MECHANISMS.md) - Safety mechanisms
-- [../plans/2026-03-07-pooled-executor-architecture.md](../../plans/2026-03-07-pooled-executor-architecture.md) - Architecture decisions
+- [market-making-flow.md](../../architecture/market-making-flow.md) - Overall execution flow
+- [runtime-safety-mechanisms.md](../runtime/runtime-safety-mechanisms.md) - Safety mechanisms
+- [2026-03-07-pooled-executor-architecture.md](../../archive/plans/2026-03-07-pooled-executor-architecture.md) - Historical architecture plan
 
 ---
 
