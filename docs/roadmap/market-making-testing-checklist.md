@@ -2,7 +2,18 @@
 
 ## Overview
 
-This document summarizes the current test coverage and the remaining gaps based on a review of the tests under `server/test/system`.
+This document is the compact status snapshot for market-making testing.
+
+Use it to answer:
+
+- what is covered today
+- what still remains
+- what is blocked
+
+For phase-by-phase execution details, use:
+
+- `docs/roadmap/market-making-testing-roadmap.md`
+- `docs/roadmap/ccxt-sandbox-integration-testing-plan.md`
 
 **Generated on:** 2026-03-18
 
@@ -51,7 +62,10 @@ server/test/system/
 
 ---
 
-## Key Findings
+## Historical Findings
+
+These findings were the main gaps at the time of the March 18 review.
+They are kept here as context for why the remaining work is ordered the way it is.
 
 ### 1. Missing `onFill` Handler
 
@@ -82,7 +96,7 @@ const executor = this.executorRegistry.getOrCreateExecutor(
 
 ---
 
-## Remaining Work
+## Current Remaining Work
 
 ### Task List
 
@@ -97,7 +111,50 @@ const executor = this.executorRegistry.getOrCreateExecutor(
 
 ---
 
-## Detailed Task Notes
+## Active Gaps
+
+### DEX Integration System Coverage
+
+Status: pending
+
+Still needed:
+
+1. DEX quote retrieval coverage for `EXECUTE_AMM_SWAP`
+2. DEX AMM swap execution coverage
+3. DEX failure fallback coverage
+
+Dependency:
+
+- a real DEX test environment
+
+### Closed-Loop Funding E2E
+
+Status: blocked
+
+Goal:
+
+1. deposit funds into the system
+2. create a market-making order
+3. wait for fills
+4. verify balance changes
+5. calculate PnL
+6. withdraw funds
+
+Current blocker:
+
+- the full `payment_complete -> withdraw_to_exchange -> withdrawal_confirmed -> deposit_confirming/deposit_confirmed -> join_campaign -> created/running` path is not executable yet in the current runtime
+
+Confirmed blocking gaps:
+
+1. `check_payment_complete` explicitly skips queueing `withdraw_to_exchange`
+2. `handleWithdrawToExchange` is still in validation mode and refunds instead of sending funds to the exchange
+3. the broader exchange-deposit confirmation path is not wired into a production-ready closed loop yet
+
+---
+
+## Archived Task Notes
+
+The items below are kept as historical implementation notes for completed work from the March 18 review.
 
 ### #1: Implement PureMarketMaking `onFill` Handler
 
@@ -151,42 +208,6 @@ const executor = this.executorRegistry.getOrCreateExecutor(
 3. Support querying the current position
 
 **Dependency:** Task #1
-
----
-
-### #5: Add DEX Integration System Tests
-
-**Goal:** Test DEX-related functionality.
-
-**Test scenarios:**
-1. DEX quote retrieval (`EXECUTE_AMM_SWAP` intent type)
-2. DEX AMM swap execution
-3. DEX failure fallback behavior
-
-**Dependency:** Requires a real DEX test environment
-
----
-
-### #6: Add a Closed-Loop Funding E2E Test (Testnet)
-
-**Goal:** Validate the complete flow using testnet funds.
-
-**Test flow:**
-1. Deposit funds into the system
-2. Create a market-making order
-3. Wait for fills
-4. Verify balance changes
-5. Calculate PnL
-6. Withdraw funds
-
-**Current blocker:** The full payment-complete -> withdraw_to_exchange -> withdrawal_confirmed -> deposit_confirming/deposit_confirmed -> join_campaign -> created/running path is not executable yet in the current runtime.
-
-**Blocking gaps confirmed in code:**
-1. `check_payment_complete` explicitly skips queueing `withdraw_to_exchange`
-2. `handleWithdrawToExchange` is still in validation mode and refunds instead of sending funds to the exchange
-3. the broader exchange-deposit confirmation path is not wired into a production-ready testable closed loop yet
-
-**Note:** This remains the final task because it only becomes meaningful after the earlier tasks are complete and the withdrawal/deposit runtime path is enabled end to end.
 
 ---
 
