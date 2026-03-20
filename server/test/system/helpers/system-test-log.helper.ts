@@ -10,9 +10,20 @@ function formatPayload(payload: unknown): string {
   }
 
   try {
-    return JSON.stringify(payload);
+    return JSON.stringify(payload, null, 2);
   } catch {
     return String(payload);
+  }
+}
+
+function readCurrentTestName(): string {
+  try {
+    const state = (global as any)?.expect?.getState?.();
+    const currentTestName = state?.currentTestName;
+
+    return typeof currentTestName === 'string' ? currentTestName : '';
+  } catch {
+    return '';
   }
 }
 
@@ -23,16 +34,28 @@ export function logSystemSkip(suiteName: string, reason: string): void {
 
 export function createSystemTestLogger(suiteName: string) {
   const prefix = `[system] ${suiteName}`;
+  let stepIndex = 0;
 
-  const emit = (scope: string, message: string, payload?: unknown) => {
+  const emit = (
+    scope: string,
+    message: string,
+    payload?: unknown,
+    options?: { countAsStep?: boolean },
+  ) => {
+    if (options?.countAsStep) {
+      stepIndex += 1;
+    }
+
     const suffix = formatPayload(payload);
+    const currentTestName = readCurrentTestName();
+    const testLabel = currentTestName
+      ? ` | test=${currentTestName}`
+      : ' | test=(suite)';
+    const stepLabel = options?.countAsStep ? ` | step=${stepIndex}` : '';
+    const header = `${prefix}${testLabel}${stepLabel} | ${scope} | ${message}`;
 
     // eslint-disable-next-line no-console
-    console.log(
-      suffix
-        ? `${prefix} | ${scope} | ${message} | ${suffix}`
-        : `${prefix} | ${scope} | ${message}`,
-    );
+    console.log(suffix ? `${header} | ${suffix}` : header);
   };
 
   return {
@@ -40,7 +63,7 @@ export function createSystemTestLogger(suiteName: string) {
       emit('suite', message, payload);
     },
     step(message: string, payload?: JsonLike): void {
-      emit('step', message, payload);
+      emit('step', message, payload, { countAsStep: true });
     },
     check(message: string, payload?: JsonLike): void {
       emit('check', message, payload);

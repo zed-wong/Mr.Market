@@ -109,6 +109,7 @@ export class MarketMakingSingleTickHelper {
   private privateStreamTrackerService!: PrivateStreamTrackerService;
   private readonly runtimeOrderIds = new Set<string>();
   private strategyDefinitionRepository!: Repository<StrategyDefinition>;
+  private strategyIntentExecutionService!: StrategyIntentExecutionService;
   private strategyExecutionHistoryRepository!: Repository<StrategyExecutionHistory>;
   private strategyOrderIntentRepository!: Repository<StrategyOrderIntentEntity>;
 
@@ -305,6 +306,9 @@ export class MarketMakingSingleTickHelper {
     this.strategyDefinitionRepository = this.moduleRef.get(
       getRepositoryToken(StrategyDefinition),
     );
+    this.strategyIntentExecutionService = this.moduleRef.get(
+      StrategyIntentExecutionService,
+    );
     this.strategyExecutionHistoryRepository = this.moduleRef.get(
       getRepositoryToken(StrategyExecutionHistory),
     );
@@ -496,6 +500,53 @@ export class MarketMakingSingleTickHelper {
 
   getOpenTrackedOrders(strategyKey: string) {
     return this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
+  }
+
+  async consumeStoredIntents(intentIds: string[]): Promise<void> {
+    const intents: StrategyOrderIntentEntity[] = [];
+
+    for (const intentId of intentIds) {
+      const intent = await this.strategyOrderIntentRepository.findOneBy({
+        intentId,
+      });
+
+      if (!intent) {
+        throw new Error(`Intent not found: ${intentId}`);
+      }
+
+      intents.push(intent);
+    }
+
+    await this.strategyIntentExecutionService.consumeIntents(
+      intents.map((intent) => ({
+        type: intent.type as
+          | 'CREATE_LIMIT_ORDER'
+          | 'CANCEL_ORDER'
+          | 'REPLACE_ORDER'
+          | 'EXECUTE_AMM_SWAP'
+          | 'STOP_CONTROLLER'
+          | 'STOP_EXECUTOR',
+        intentId: intent.intentId,
+        strategyInstanceId: intent.strategyInstanceId,
+        strategyKey: intent.strategyKey,
+        userId: intent.userId,
+        clientId: intent.clientId,
+        exchange: intent.exchange,
+        pair: intent.pair,
+        side: intent.side as 'buy' | 'sell',
+        price: intent.price,
+        qty: intent.qty,
+        mixinOrderId: intent.mixinOrderId,
+        executionCategory: intent.executionCategory as
+          | 'clob_cex'
+          | 'clob_dex'
+          | 'amm_dex'
+          | undefined,
+        metadata: intent.metadata || undefined,
+        createdAt: intent.createdAt,
+        status: intent.status as 'NEW' | 'SENT' | 'ACKED' | 'FAILED' | 'DONE',
+      })),
+    );
   }
 
   getTrackedOrder(exchange: string, exchangeOrderId: string) {

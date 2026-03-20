@@ -1,5 +1,11 @@
 # Execution Flow Changelog
 
+## 2026-03-20
+
+- Rename market-making system spec files to explicit `.mock.system.spec.ts` and `.sandbox.system.spec.ts` suffixes so both classes still run under the unchanged `test:system` Jest matcher (`*.system.spec.ts`)
+- Add sandbox intent parity specs for lifecycle and idempotency, and extend the shared single-tick helper with duplicate stored-intent consumption so real sandbox runs can assert no duplicate persistence side effects
+- Improve shared system-test logging so each log line shows the active Jest test name, step index, and pretty-printed payloads to make scope and progress easier to read during long runs
+
 ## 2026-03-19
 
 - Rewrite the token metadata service plan into a dated phased-migration doc, rename it to `docs/planning/2026-03-19-token-metadata-service-plan.md`, and scope CoinGecko removal behind explicit list/detail parity gates

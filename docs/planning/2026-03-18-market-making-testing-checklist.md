@@ -30,24 +30,26 @@ server/test/system/
 │   └── migration-seed.system.spec.ts # Database migration/seed test
 └── market-making/
     ├── user-orders/                  # 2 tests
-    │   ├── market-making-payment-intake.system.spec.ts
-    │   └── market-making.processor.system.spec.ts
+    │   ├── market-making-payment-intake.mock.system.spec.ts
+    │   └── market-making.processor.sandbox.system.spec.ts
     │
-    ├── strategy/                     # 9 tests
-    │   ├── pure-market-making-single-tick.system.spec.ts
-    │   ├── pure-market-making-multi-layer.system.spec.ts
-    │   └── pure-market-making-cadence.system.spec.ts
-    │   ├── pure-market-making-intent-lifecycle.system.spec.ts
-    │   ├── pure-market-making-intent-retry.system.spec.ts
-    │   ├── pure-market-making-intent-failure.system.spec.ts
-    │   ├── pure-market-making-intent-idempotency.system.spec.ts
-    │   └── pure-market-making-intent-worker-error.system.spec.ts
+    ├── strategy/                     # 11 tests
+    │   ├── pure-market-making-single-tick.sandbox.system.spec.ts
+    │   ├── pure-market-making-multi-layer.sandbox.system.spec.ts
+    │   └── pure-market-making-cadence.sandbox.system.spec.ts
+    │   ├── pure-market-making-intent-lifecycle.mock.system.spec.ts
+    │   ├── pure-market-making-intent-lifecycle.sandbox.system.spec.ts
+    │   ├── pure-market-making-intent-retry.mock.system.spec.ts
+    │   ├── pure-market-making-intent-failure.mock.system.spec.ts
+    │   ├── pure-market-making-intent-idempotency.mock.system.spec.ts
+    │   ├── pure-market-making-intent-idempotency.sandbox.system.spec.ts
+    │   └── pure-market-making-intent-worker-error.mock.system.spec.ts
     │
     └── execution/                    # 4 tests
-        ├── private-partial-fill-ingestion.system.spec.ts
-        ├── private-fill-ingestion.system.spec.ts
-        ├── sandbox-fill-resolution.system.spec.ts
-        └── sandbox-order-lifecycle.system.spec.ts
+        ├── private-partial-fill-ingestion.sandbox.system.spec.ts
+        ├── private-fill-ingestion.sandbox.system.spec.ts
+        ├── sandbox-fill-resolution.sandbox.system.spec.ts
+        └── sandbox-order-lifecycle.sandbox.system.spec.ts
 ```
 
 ### Test Categories

@@ -33,7 +33,7 @@ It still does not claim the broader Track B withdrawal, campaign, reward, or rec
 
 ### Phase 2: Adapter Integration
 
-Spec: `server/test/system/market-making/execution/sandbox-order-lifecycle.system.spec.ts`
+Spec: `server/test/system/market-making/execution/sandbox-order-lifecycle.sandbox.system.spec.ts`
 
 Coverage:
 
@@ -46,7 +46,7 @@ Coverage:
 
 ### Phase 3: Fill Routing Integration
 
-Spec: `server/test/system/market-making/execution/sandbox-fill-resolution.system.spec.ts`
+Spec: `server/test/system/market-making/execution/sandbox-fill-resolution.sandbox.system.spec.ts`
 
 Coverage:
 
@@ -58,7 +58,7 @@ The parseable `clientOrderId` assertion stays local to routing resolution. Real 
 
 ### Phase 4: Runtime Control Parity
 
-Spec: `server/test/system/market-making/user-orders/market-making.processor.system.spec.ts`
+Spec: `server/test/system/market-making/user-orders/market-making.processor.sandbox.system.spec.ts`
 
 Coverage:
 
@@ -71,7 +71,7 @@ Coverage:
 
 ### Phase 5: Single-Tick Intent Execution
 
-Spec: `server/test/system/market-making/strategy/pure-market-making-single-tick.system.spec.ts`
+Spec: `server/test/system/market-making/strategy/pure-market-making-single-tick.sandbox.system.spec.ts`
 
 Coverage:
 
@@ -95,7 +95,7 @@ Boundary:
 
 ### Phase 6: Multi-Layer Placement
 
-Spec: `server/test/system/market-making/strategy/pure-market-making-multi-layer.system.spec.ts`
+Spec: `server/test/system/market-making/strategy/pure-market-making-multi-layer.sandbox.system.spec.ts`
 
 Coverage:
 
@@ -107,7 +107,7 @@ Coverage:
 
 ### Phase 7: Cadence Stability
 
-Spec: `server/test/system/market-making/strategy/pure-market-making-cadence.system.spec.ts`
+Spec: `server/test/system/market-making/strategy/pure-market-making-cadence.sandbox.system.spec.ts`
 
 Coverage:
 
@@ -117,9 +117,21 @@ Coverage:
 - assert submitted exchange-safe `clientOrderId` values increment deterministically across cycles
 - keep tracker, mapping, and execution history state coherent after repeated cycles
 
+### Phase 7A: Intent Sandbox Overlays
+
+Specs:
+
+- `server/test/system/market-making/strategy/pure-market-making-intent-lifecycle.sandbox.system.spec.ts`
+- `server/test/system/market-making/strategy/pure-market-making-intent-idempotency.sandbox.system.spec.ts`
+
+Coverage:
+
+- assert real sandbox execution reaches persisted `DONE` intents plus mapping/history side effects
+- assert duplicate consumption of the same persisted intent does not create duplicate mapping/history side effects
+
 ### Phase 8: Private-Fill Ingestion
 
-Spec: `server/test/system/market-making/execution/private-fill-ingestion.system.spec.ts`
+Spec: `server/test/system/market-making/execution/private-fill-ingestion.sandbox.system.spec.ts`
 
 Coverage:
 
@@ -130,7 +142,7 @@ Coverage:
 
 ### Phase B1: Order Creation And Payment Intake
 
-Spec: `server/test/system/market-making/user-orders/market-making-payment-intake.system.spec.ts`
+Spec: `server/test/system/market-making/user-orders/market-making-payment-intake.mock.system.spec.ts`
 
 Coverage:
 
