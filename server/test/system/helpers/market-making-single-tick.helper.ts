@@ -39,6 +39,7 @@ import { StrategyConfigResolverService } from 'src/modules/market-making/strateg
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import { StrategyIntentExecutionService } from 'src/modules/market-making/strategy/execution/strategy-intent-execution.service';
 import { StrategyIntentStoreService } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
+import { StrategyIntentWorkerService } from 'src/modules/market-making/strategy/execution/strategy-intent-worker.service';
 import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { ExecutorOrchestratorService } from 'src/modules/market-making/strategy/intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from 'src/modules/market-making/strategy/intent/quote-executor-manager.service';
@@ -95,11 +96,19 @@ type PureMarketMakingRuntimeOverrides = {
   userId?: string;
 };
 
+type SingleTickHelperOptions = {
+  intentExecutionDriver?: 'sync' | 'worker';
+  intentWorkerMaxInFlight?: number;
+  intentWorkerMaxInFlightPerExchange?: number;
+  intentWorkerPollIntervalMs?: number;
+};
+
 export class MarketMakingSingleTickHelper {
   private readonly config: SandboxExchangeTestConfig;
   private readonly databaseConfig = createSystemTestDatabaseConfig(
     'market-making-single-tick',
   );
+  private readonly options: SingleTickHelperOptions;
   private exchange: any;
   private exchangeOrderMappingRepository!: Repository<ExchangeOrderMapping>;
   private exchangeOrderTrackerService!: ExchangeOrderTrackerService;
@@ -113,11 +122,16 @@ export class MarketMakingSingleTickHelper {
   private readonly runtimeOrderIds = new Set<string>();
   private strategyDefinitionRepository!: Repository<StrategyDefinition>;
   private strategyIntentExecutionService!: StrategyIntentExecutionService;
+  private strategyIntentWorkerService!: StrategyIntentWorkerService;
   private strategyExecutionHistoryRepository!: Repository<StrategyExecutionHistory>;
   private strategyOrderIntentRepository!: Repository<StrategyOrderIntentEntity>;
 
-  constructor(config: SandboxExchangeTestConfig = readSystemSandboxConfig()) {
+  constructor(
+    config: SandboxExchangeTestConfig = readSystemSandboxConfig(),
+    options: SingleTickHelperOptions = {},
+  ) {
     this.config = config;
+    this.options = options;
   }
 
   getConfig(): SandboxExchangeTestConfig {
@@ -153,6 +167,16 @@ export class MarketMakingSingleTickHelper {
     return this.privateStreamTrackerService;
   }
 
+  async startWorker(): Promise<void> {
+    await this.strategyIntentWorkerService.onModuleInit();
+  }
+
+  async stopWorker(): Promise<void> {
+    if (this.strategyIntentWorkerService) {
+      await this.strategyIntentWorkerService.onModuleDestroy();
+    }
+  }
+
   async init(): Promise<void> {
     if (this.moduleRef) {
       return;
@@ -171,7 +195,16 @@ export class MarketMakingSingleTickHelper {
           return true;
         }
         if (key === 'strategy.intent_execution_driver') {
-          return 'sync';
+          return this.options.intentExecutionDriver || 'sync';
+        }
+        if (key === 'strategy.intent_worker_poll_interval_ms') {
+          return this.options.intentWorkerPollIntervalMs ?? 10;
+        }
+        if (key === 'strategy.intent_worker_max_in_flight') {
+          return this.options.intentWorkerMaxInFlight ?? 4;
+        }
+        if (key === 'strategy.intent_worker_max_in_flight_per_exchange') {
+          return this.options.intentWorkerMaxInFlightPerExchange ?? 1;
         }
 
         return defaultValue;
@@ -209,6 +242,7 @@ export class MarketMakingSingleTickHelper {
         QuoteExecutorManagerService,
         StrategyIntentExecutionService,
         StrategyIntentStoreService,
+        StrategyIntentWorkerService,
         StrategyMarketDataProviderService,
         StrategyRuntimeDispatcherService,
         StrategyService,
@@ -311,6 +345,9 @@ export class MarketMakingSingleTickHelper {
     this.strategyIntentExecutionService = this.moduleRef.get(
       StrategyIntentExecutionService,
     );
+    this.strategyIntentWorkerService = this.moduleRef.get(
+      StrategyIntentWorkerService,
+    );
     this.strategyExecutionHistoryRepository = this.moduleRef.get(
       getRepositoryToken(StrategyExecutionHistory),
     );
@@ -333,6 +370,7 @@ export class MarketMakingSingleTickHelper {
 
   async close(): Promise<void> {
     try {
+      await this.stopWorker();
       await this.cleanupAllRuntimeOrders();
 
       if (this.exchange && typeof this.exchange.close === 'function') {
@@ -491,6 +529,30 @@ export class MarketMakingSingleTickHelper {
       where: { clientId: orderId },
       order: { executedAt: 'ASC' },
     });
+  }
+
+  async waitForIntentStatuses(
+    orderId: string,
+    expectedStatuses: string[],
+    timeoutMs = 30000,
+  ): Promise<StrategyOrderIntentEntity[]> {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt <= timeoutMs) {
+      const intents = await this.listStrategyIntents(orderId);
+      const statuses = intents.map((intent) => intent.status);
+
+      if (
+        statuses.length === expectedStatuses.length &&
+        statuses.every((status, index) => status === expectedStatuses[index])
+      ) {
+        return intents;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    return await this.listStrategyIntents(orderId);
   }
 
   getOpenTrackedOrders(strategyKey: string) {
