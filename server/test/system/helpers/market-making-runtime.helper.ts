@@ -1,27 +1,25 @@
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getQueueToken } from '@nestjs/bull';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
-
+import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
+import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
-import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
-import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
   MarketMakingOrder,
   type MarketMakingOrderStrategySnapshot,
   SimplyGrowOrder,
 } from 'src/common/entities/orders/user-orders.entity';
-import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
+import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
@@ -31,11 +29,11 @@ import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-l
 import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
-import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import {
   type ExchangePairExecutor,
   type ExchangePairExecutorSession,
 } from 'src/modules/market-making/strategy/execution/exchange-pair-executor';
+import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import { StrategyIntentStoreService } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
 import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { ExecutorOrchestratorService } from 'src/modules/market-making/strategy/intent/executor-orchestrator.service';
@@ -45,10 +43,12 @@ import { UserOrdersService } from 'src/modules/market-making/user-orders/user-or
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
+import type { Repository } from 'typeorm';
+
 import {
-  pollUntil,
   readSystemSandboxConfig,
   type SandboxExchangeTestConfig,
+  waitForInitializedExchange,
 } from './sandbox-system.helper';
 
 const RUNTIME_TEST_ENTITIES = [
@@ -253,21 +253,10 @@ export class MarketMakingRuntimeHelper {
       getRepositoryToken(StrategyOrderIntentEntity),
     );
 
-    this.exchange = await pollUntil(
-      async () => {
-        try {
-          return this.exchangeInitService.getExchange(
-            this.config.exchangeId,
-            this.config.accountLabel,
-          );
-        } catch {
-          return null;
-        }
-      },
-      async (exchange) => Boolean(exchange),
-      {
-        description: `sandbox exchange ${this.config.exchangeId} to initialize`,
-      },
+    this.exchange = await waitForInitializedExchange(
+      this.exchangeInitService,
+      this.config.exchangeId,
+      this.config.accountLabel,
     );
   }
 

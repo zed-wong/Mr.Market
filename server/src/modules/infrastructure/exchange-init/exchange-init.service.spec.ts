@@ -81,7 +81,10 @@ describe('ExchangeinitService', () => {
     restoreEnvVar('CCXT_SANDBOX_EXCHANGE', originalSandboxEnv.exchange);
     restoreEnvVar('CCXT_SANDBOX_API_KEY', originalSandboxEnv.apiKey);
     restoreEnvVar('CCXT_SANDBOX_SECRET', originalSandboxEnv.secret);
-    restoreEnvVar('CCXT_SANDBOX_ACCOUNT_LABEL', originalSandboxEnv.accountLabel);
+    restoreEnvVar(
+      'CCXT_SANDBOX_ACCOUNT_LABEL',
+      originalSandboxEnv.accountLabel,
+    );
     restoreEnvVar(
       'CCXT_SANDBOX_ACCOUNT2_API_KEY',
       originalSandboxEnv.account2ApiKey,
@@ -243,12 +246,29 @@ describe('ExchangeinitService', () => {
     await module.close();
     startRefreshSpy.mockRestore();
   });
+
+  it('reports pending exchange initialization separately from configuration errors', () => {
+    (service as any).exchangeInitializationStates.set('binance', 'pending');
+
+    expect(() => service.getExchange('binance')).toThrow(
+      'Exchange binance is still initializing.',
+    );
+  });
+
+  it('surfaces exchange initialization failure details', () => {
+    (service as any).exchangeInitializationStates.set('binance', 'failed');
+    (service as any).exchangeInitializationErrors.set(
+      'binance:default',
+      new Error('binance testnet exchangeInfo timed out'),
+    );
+
+    expect(() => service.getExchange('binance')).toThrow(
+      'Exchange binance failed to initialize: binance testnet exchangeInfo timed out',
+    );
+  });
 });
 
-function restoreEnvVar(
-  key: string,
-  value: string | undefined,
-): void {
+function restoreEnvVar(key: string, value: string | undefined): void {
   if (value === undefined) {
     delete process.env[key];
 

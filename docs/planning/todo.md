@@ -8,6 +8,33 @@ Completed work should stay in `progress-log.md`, not here.
 
 ## Backend
 
+### System Test Improvements
+
+#### Summary
+
+- Close infrastructure and operational fidelity gaps identified in the 2026-03-20 gap analysis.
+- Three phases: P0 (database + tick coordinator + durability), P1 (reconciliation + queue + reconnect), P2 (multi-pair + cadence + config).
+- See `docs/planning/2026-03-20-system-test-gap-analysis-and-improvement-plan.md` for full rationale.
+
+#### P0 — High impact, low cost (~5 h)
+
+- [] 1. Switch `MarketMakingSingleTickHelper` to file-based SQLite with WAL mode (add `createSystemTestDatabaseConfig` to `sandbox-system.helper.ts`, temp dir cleanup in afterAll)
+- [] 2. Add `ClockTickCoordinator` integration system spec — register real tick components, call `tickOnce()`, assert intents generated through full production path and per-component error isolation
+- [] 3. Add `DurabilityService` system spec — append outbox event, mark processed once (true), mark processed again with same key (false/idempotent)
+
+#### P1 — Medium impact, medium cost (~5 h)
+
+- [] 4. Add `ReconciliationService` system spec — one valid + one violation case per reconciliation type (ledger invariant, reward consistency, stale SENT intent)
+- [] 5. Add queue dispatch shape test — spy on `FakeQueue.add` during `startOrder`/`stopOrder`, assert job name, data shape, and jobId convention
+- [] 6. Add back-off logic unit test for `PrivateStreamIngestionService.getBackoffDelayMs` — verify 0 ms on first failure, exponential growth, and 30 s cap
+- [] 7. Add WebSocket reconnection smoke test — mock `watchOrders` to throw on first call, succeed on second, assert `queueAccountEvent` called after recovery
+
+#### P2 — Lower priority (~4 h)
+
+- [] 8. Add multi-pair executor isolation test — create two orders with different pairs, assert separate executor instances, ticking one pair produces zero intents for the other
+- [] 9. Add explicit far-future cadence guard assertion — set `nextRunAtMs` to `Date.now() + 999_999_999`, call `onTick`, confirm zero new intents
+- [] 10. Add config validation — implement `validateConfig` against `StrategyDefinition.configSchema`, add unit tests for negative bidSpread, missing required fields, etc.
+
 ### Security
 
 #### Summary

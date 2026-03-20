@@ -1,5 +1,5 @@
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { PrivateStreamIngestionService } from './private-stream-ingestion.service';
 import { PrivateStreamTrackerService } from './private-stream-tracker.service';
@@ -11,7 +11,6 @@ describe('PrivateStreamIngestionService', () => {
 
   it('queues one account event per order when watchOrders returns an array', async () => {
     const queueAccountEvent = jest.fn();
-    let service!: PrivateStreamIngestionService;
     const watchOrders = jest.fn().mockImplementation(async () => {
       service.stopAllWatchers();
 
@@ -25,10 +24,9 @@ describe('PrivateStreamIngestionService', () => {
       getExchange: jest.fn().mockReturnValue({ watchOrders }),
     } as unknown as ExchangeInitService;
 
-    service = new PrivateStreamIngestionService(
-      exchangeInitService,
-      { queueAccountEvent } as unknown as PrivateStreamTrackerService,
-    );
+    const service = new PrivateStreamIngestionService(exchangeInitService, {
+      queueAccountEvent,
+    } as unknown as PrivateStreamTrackerService);
 
     service.startOrderWatcher({
       exchange: 'binance',
@@ -38,14 +36,13 @@ describe('PrivateStreamIngestionService', () => {
 
     await waitFor(() => queueAccountEvent.mock.calls.length === 3);
 
-    expect(queueAccountEvent.mock.calls.map(([event]) => event.payload.id)).toEqual(
-      ['ex-1', 'ex-2', 'ex-3'],
-    );
+    expect(
+      queueAccountEvent.mock.calls.map(([event]) => event.payload.id),
+    ).toEqual(['ex-1', 'ex-2', 'ex-3']);
   });
 
   it('queues a single account event when watchOrders returns one order object', async () => {
     const queueAccountEvent = jest.fn();
-    let service!: PrivateStreamIngestionService;
     const watchOrders = jest.fn().mockImplementation(async () => {
       service.stopAllWatchers();
 
@@ -56,7 +53,7 @@ describe('PrivateStreamIngestionService', () => {
       };
     });
 
-    service = new PrivateStreamIngestionService(
+    const service = new PrivateStreamIngestionService(
       {
         getExchange: jest.fn().mockReturnValue({ watchOrders }),
       } as unknown as ExchangeInitService,
@@ -84,13 +81,13 @@ describe('PrivateStreamIngestionService', () => {
     'skips queueing when watchOrders returns %p',
     async (value) => {
       const queueAccountEvent = jest.fn();
-      let service!: PrivateStreamIngestionService;
       const watchOrders = jest.fn().mockImplementation(async () => {
         service.stopAllWatchers();
+
         return value;
       });
 
-      service = new PrivateStreamIngestionService(
+      const service = new PrivateStreamIngestionService(
         {
           getExchange: jest.fn().mockReturnValue({ watchOrders }),
         } as unknown as ExchangeInitService,
@@ -112,7 +109,9 @@ describe('PrivateStreamIngestionService', () => {
       {
         getExchange: jest.fn().mockReturnValue({}),
       } as unknown as ExchangeInitService,
-      { queueAccountEvent: jest.fn() } as unknown as PrivateStreamTrackerService,
+      {
+        queueAccountEvent: jest.fn(),
+      } as unknown as PrivateStreamTrackerService,
     );
     const logger = Reflect.get(service, 'logger') as CustomLogger;
     const warnSpy = jest
@@ -137,22 +136,19 @@ describe('PrivateStreamIngestionService', () => {
 
   it('retries immediately after the first watchOrders failure', async () => {
     const queueAccountEvent = jest.fn();
-    let service!: PrivateStreamIngestionService;
     const sleepSpy = jest
-      .spyOn(
-        PrivateStreamIngestionService.prototype as any,
-        'sleep',
-      )
+      .spyOn(PrivateStreamIngestionService.prototype as any, 'sleep')
       .mockResolvedValue(undefined);
     const watchOrders = jest
       .fn()
       .mockRejectedValueOnce(new Error('boom'))
       .mockImplementationOnce(async () => {
         service.stopAllWatchers();
+
         return [{ id: 'ex-1', status: 'filled' }];
       });
 
-    service = new PrivateStreamIngestionService(
+    const service = new PrivateStreamIngestionService(
       {
         getExchange: jest.fn().mockReturnValue({ watchOrders }),
       } as unknown as ExchangeInitService,
@@ -168,12 +164,8 @@ describe('PrivateStreamIngestionService', () => {
   });
 
   it('applies exponential backoff after consecutive failures', async () => {
-    let service!: PrivateStreamIngestionService;
     const sleepSpy = jest
-      .spyOn(
-        PrivateStreamIngestionService.prototype as any,
-        'sleep',
-      )
+      .spyOn(PrivateStreamIngestionService.prototype as any, 'sleep')
       .mockResolvedValue(undefined);
     const watchOrders = jest
       .fn()
@@ -183,14 +175,17 @@ describe('PrivateStreamIngestionService', () => {
       .mockRejectedValueOnce(new Error('e4'))
       .mockImplementationOnce(async () => {
         service.stopAllWatchers();
+
         return [];
       });
 
-    service = new PrivateStreamIngestionService(
+    const service = new PrivateStreamIngestionService(
       {
         getExchange: jest.fn().mockReturnValue({ watchOrders }),
       } as unknown as ExchangeInitService,
-      { queueAccountEvent: jest.fn() } as unknown as PrivateStreamTrackerService,
+      {
+        queueAccountEvent: jest.fn(),
+      } as unknown as PrivateStreamTrackerService,
     );
 
     service.startOrderWatcher({ exchange: 'binance', accountLabel: 'default' });
@@ -201,12 +196,8 @@ describe('PrivateStreamIngestionService', () => {
   });
 
   it('resets backoff to immediate after a successful watchOrders call', async () => {
-    let service!: PrivateStreamIngestionService;
     const sleepSpy = jest
-      .spyOn(
-        PrivateStreamIngestionService.prototype as any,
-        'sleep',
-      )
+      .spyOn(PrivateStreamIngestionService.prototype as any, 'sleep')
       .mockResolvedValue(undefined);
     const watchOrders = jest
       .fn()
@@ -217,14 +208,17 @@ describe('PrivateStreamIngestionService', () => {
       .mockRejectedValueOnce(new Error('e4'))
       .mockImplementationOnce(async () => {
         service.stopAllWatchers();
+
         return [];
       });
 
-    service = new PrivateStreamIngestionService(
+    const service = new PrivateStreamIngestionService(
       {
         getExchange: jest.fn().mockReturnValue({ watchOrders }),
       } as unknown as ExchangeInitService,
-      { queueAccountEvent: jest.fn() } as unknown as PrivateStreamTrackerService,
+      {
+        queueAccountEvent: jest.fn(),
+      } as unknown as PrivateStreamTrackerService,
     );
 
     service.startOrderWatcher({ exchange: 'binance', accountLabel: 'default' });
@@ -235,12 +229,8 @@ describe('PrivateStreamIngestionService', () => {
   });
 
   it('caps backoff at 30 seconds', async () => {
-    let service!: PrivateStreamIngestionService;
     const sleepSpy = jest
-      .spyOn(
-        PrivateStreamIngestionService.prototype as any,
-        'sleep',
-      )
+      .spyOn(PrivateStreamIngestionService.prototype as any, 'sleep')
       .mockResolvedValue(undefined);
     const watchOrders = jest.fn();
 
@@ -250,14 +240,17 @@ describe('PrivateStreamIngestionService', () => {
 
     watchOrders.mockImplementationOnce(async () => {
       service.stopAllWatchers();
+
       return [];
     });
 
-    service = new PrivateStreamIngestionService(
+    const service = new PrivateStreamIngestionService(
       {
         getExchange: jest.fn().mockReturnValue({ watchOrders }),
       } as unknown as ExchangeInitService,
-      { queueAccountEvent: jest.fn() } as unknown as PrivateStreamTrackerService,
+      {
+        queueAccountEvent: jest.fn(),
+      } as unknown as PrivateStreamTrackerService,
     );
 
     service.startOrderWatcher({ exchange: 'binance', accountLabel: 'default' });
@@ -265,15 +258,7 @@ describe('PrivateStreamIngestionService', () => {
     await waitFor(() => watchOrders.mock.calls.length === 11);
 
     expect(sleepSpy.mock.calls.map(([ms]) => ms)).toEqual([
-      1000,
-      2000,
-      4000,
-      8000,
-      16000,
-      30000,
-      30000,
-      30000,
-      30000,
+      1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000, 30000,
     ]);
   });
 
@@ -284,7 +269,9 @@ describe('PrivateStreamIngestionService', () => {
       {
         getExchange: jest.fn().mockReturnValue({ watchOrders }),
       } as unknown as ExchangeInitService,
-      { queueAccountEvent: jest.fn() } as unknown as PrivateStreamTrackerService,
+      {
+        queueAccountEvent: jest.fn(),
+      } as unknown as PrivateStreamTrackerService,
     );
     const params = {
       exchange: 'binance',
@@ -312,7 +299,9 @@ describe('PrivateStreamIngestionService', () => {
       {
         getExchange: jest.fn().mockReturnValue({ watchOrders }),
       } as unknown as ExchangeInitService,
-      { queueAccountEvent: jest.fn() } as unknown as PrivateStreamTrackerService,
+      {
+        queueAccountEvent: jest.fn(),
+      } as unknown as PrivateStreamTrackerService,
     );
     const params = {
       exchange: 'binance',
@@ -348,7 +337,9 @@ describe('PrivateStreamIngestionService', () => {
             : { watchOrders: watchOrdersDefault },
         ),
       } as unknown as ExchangeInitService,
-      { queueAccountEvent: jest.fn() } as unknown as PrivateStreamTrackerService,
+      {
+        queueAccountEvent: jest.fn(),
+      } as unknown as PrivateStreamTrackerService,
     );
 
     service.startOrderWatcher({

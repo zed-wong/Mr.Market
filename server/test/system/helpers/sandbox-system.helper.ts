@@ -1,8 +1,30 @@
+import { ServiceUnavailableException } from '@nestjs/common';
+import type * as ccxt from 'ccxt';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+type ExchangeReader = {
+  getExchange(exchangeName: string, label?: string): ccxt.Exchange;
+};
+
 const REQUIRED_SANDBOX_ENV_VARS = [
   'CCXT_SANDBOX_EXCHANGE',
   'CCXT_SANDBOX_API_KEY',
   'CCXT_SANDBOX_SECRET',
 ] as const;
+
+export type SystemTestDatabaseConfig = {
+  databasePath: string;
+  options: {
+    type: 'sqlite';
+    database: string;
+    extra: {
+      flags: string[];
+    };
+  };
+  cleanup: () => void;
+};
 
 export type SandboxExchangeTestConfig = {
   exchangeId: string;
@@ -19,6 +41,35 @@ export type SandboxExchangeTestConfig = {
   symbol: string;
   minRequestIntervalMs: number;
 };
+
+export function createSystemTestDatabaseConfig(
+  label: string,
+): SystemTestDatabaseConfig {
+  const normalizedLabel =
+    label.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'system-test';
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), `mr-market-${normalizedLabel}-`),
+  );
+  const databasePath = path.join(tempDir, `${normalizedLabel}.db`);
+
+  return {
+    databasePath,
+    options: {
+      type: 'sqlite',
+      database: databasePath,
+      extra: {
+        flags: ['-WAL'],
+      },
+    },
+    cleanup: () => {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        return;
+      }
+    },
+  };
+}
 
 export function getSystemSandboxSkipReason(): string | null {
   const missingEnvVars = REQUIRED_SANDBOX_ENV_VARS.filter(
@@ -78,6 +129,9 @@ export async function pollUntil<T>(
   options?: {
     description?: string;
     intervalMs?: number;
+    shouldRetryOnError?:
+      | ((error: unknown) => boolean | Promise<boolean>)
+      | undefined;
     timeoutMs?: number;
   },
 ): Promise<T> {
@@ -97,6 +151,14 @@ export async function pollUntil<T>(
       lastError = null;
     } catch (error) {
       lastError = error;
+
+      if (options?.shouldRetryOnError) {
+        const shouldRetry = await options.shouldRetryOnError(error);
+
+        if (!shouldRetry) {
+          throw error;
+        }
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
@@ -108,5 +170,24 @@ export async function pollUntil<T>(
 
   throw new Error(
     `Timed out waiting for ${options?.description || 'system-test condition'}`,
+  );
+}
+
+export async function waitForInitializedExchange(
+  exchangeReader: ExchangeReader,
+  exchangeName: string,
+  label: string = 'default',
+): Promise<ccxt.Exchange> {
+  return await pollUntil(
+    async () => {
+      return exchangeReader.getExchange(exchangeName, label);
+    },
+    async (exchange) => Boolean(exchange),
+    {
+      description: `sandbox exchange ${exchangeName} to initialize`,
+      shouldRetryOnError: async (error) => {
+        return error instanceof ServiceUnavailableException;
+      },
+    },
   );
 }

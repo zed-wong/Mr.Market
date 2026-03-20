@@ -2,6 +2,7 @@
 
 ## 2026-03-20
 
+- Add a dated system-test gap analysis plan, switch sandbox-heavy system helpers to temp-file SQLite WAL storage, add durability outbox/consumer-receipt system coverage, and surface pending/failed exchange initialization so sandbox tests can wait on real exchange boot deterministically
 - Rename market-making system spec files to explicit `.mock.system.spec.ts` and `.sandbox.system.spec.ts` suffixes so both classes still run under the unchanged `test:system` Jest matcher (`*.system.spec.ts`)
 - Add sandbox intent parity specs for lifecycle and idempotency, and extend the shared single-tick helper with duplicate stored-intent consumption so real sandbox runs can assert no duplicate persistence side effects
 - Improve shared system-test logging so each log line shows the active Jest test name, step index, and pretty-printed payloads to make scope and progress easier to read during long runs

@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
+import { ExchangeInitService } from '../../../../src/modules/infrastructure/exchange-init/exchange-init.service';
+import { ExchangeConnectorAdapterService } from '../../../../src/modules/market-making/execution/exchange-connector-adapter.service';
 import {
   buildSafeSandboxLimitOrderRequest,
   buildSandboxClientOrderId,
@@ -11,12 +13,11 @@ import {
   pollUntil,
   readSandboxExchangeTestConfig,
 } from '../../helpers/sandbox-exchange.helper';
+import { waitForInitializedExchange } from '../../helpers/sandbox-system.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
 } from '../../helpers/system-test-log.helper';
-import { ExchangeInitService } from '../../../../src/modules/infrastructure/exchange-init/exchange-init.service';
-import { ExchangeConnectorAdapterService } from '../../../../src/modules/market-making/execution/exchange-connector-adapter.service';
 
 const skipReason = getSandboxIntegrationSkipReason();
 const log = createSystemTestLogger('sandbox-order-lifecycle');
@@ -124,21 +125,10 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
     exchangeInitService = moduleRef.get(ExchangeInitService);
     service = moduleRef.get(ExchangeConnectorAdapterService);
 
-    exchange = await pollUntil(
-      async () => {
-        try {
-          return exchangeInitService.getExchange(
-            config.exchangeId,
-            config.accountLabel,
-          );
-        } catch {
-          return null;
-        }
-      },
-      async (resolvedExchange) => Boolean(resolvedExchange),
-      {
-        description: `sandbox exchange ${config.exchangeId} to initialize`,
-      },
+    exchange = await waitForInitializedExchange(
+      exchangeInitService,
+      config.exchangeId,
+      config.accountLabel,
     );
 
     expect(exchangeInitService.getExchange(config.exchangeId)).toBe(exchange);
@@ -266,6 +256,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
       config.symbol,
       String(createdOrder.id),
     );
+
     log.result('cancel request returned', {
       exchangeOrderId: createdOrder.id,
       status: cancelResult?.status,

@@ -6,6 +6,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Scope,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import * as ccxt from 'ccxt';
@@ -28,11 +29,18 @@ type ExchangeConfig = {
   class: any;
 };
 
+type ExchangeInitializationState = 'pending' | 'ready' | 'failed';
+
 @Injectable({ scope: Scope.DEFAULT })
 export class ExchangeInitService {
   private readonly logger = new CustomLogger(ExchangeInitService.name);
   private exchanges = new Map<string, Map<string, ccxt.Exchange>>();
   private defaultAccounts = new Map<string, ccxt.Exchange>();
+  private readonly exchangeInitializationErrors = new Map<string, Error>();
+  private readonly exchangeInitializationStates = new Map<
+    string,
+    ExchangeInitializationState
+  >();
   private readonly marketsCacheTtlSeconds = 60 * 60;
   private readonly refreshIntervalMs = 10 * 1000;
   private apiKeysSignature: string | null = null;
@@ -43,7 +51,16 @@ export class ExchangeInitService {
   ) {
     this.initializeExchanges()
       .then(() => {
-        this.logger.log('Exchanges initialized successfully');
+        const failedExchangeCount = this.countFailedExchangeInitializations();
+
+        if (failedExchangeCount > 0) {
+          this.logger.warn(
+            `Exchange initialization completed with ${failedExchangeCount} failed exchange configuration(s).`,
+          );
+        } else {
+          this.logger.log('Exchanges initialized successfully');
+        }
+
         this.startKeepAlive();
         if (!this.shouldUseSandboxExchangeConfig()) {
           this.startRefresh();
@@ -333,7 +350,9 @@ export class ExchangeInitService {
       return null;
     }
 
-    const exchangeName = process.env.CCXT_SANDBOX_EXCHANGE!.trim().toLowerCase();
+    const exchangeName = process.env
+      .CCXT_SANDBOX_EXCHANGE!.trim()
+      .toLowerCase();
     const ExchangeClass = this.resolveExchangeClass(exchangeName);
 
     if (!ExchangeClass) {
@@ -382,7 +401,9 @@ export class ExchangeInitService {
     const normalizedExchangeName = exchangeName.trim().toLowerCase();
     const ccxtPro = (ccxt as any).pro || {};
 
-    return ccxtPro[normalizedExchangeName] || (ccxt as any)[normalizedExchangeName];
+    return (
+      ccxtPro[normalizedExchangeName] || (ccxt as any)[normalizedExchangeName]
+    );
   }
 
   private applySandboxExchangeOverrides(
@@ -435,7 +456,9 @@ export class ExchangeInitService {
     return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
   }
 
-  private buildExchangeConfigsFromDb(apiKeys: APIKeysConfig[]): ExchangeConfig[] {
+  private buildExchangeConfigsFromDb(
+    apiKeys: APIKeysConfig[],
+  ): ExchangeConfig[] {
     const grouped = new Map<string, APIKeysConfig[]>();
 
     for (const key of apiKeys) {
@@ -487,11 +510,29 @@ export class ExchangeInitService {
     return entries.join('|');
   }
 
-  private async initializeExchangeConfigs(
-    exchangeConfigs: ExchangeConfig[],
-  ) {
+  private countFailedExchangeInitializations(): number {
+    return [...this.exchangeInitializationStates.values()].filter(
+      (state) => state === 'failed',
+    ).length;
+  }
+
+  private getExchangeAccountKey(exchangeName: string, label: string): string {
+    return `${exchangeName}:${label}`;
+  }
+
+  private normalizeInitializationError(error: unknown): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+
+    return new Error(String(error));
+  }
+
+  private async initializeExchangeConfigs(exchangeConfigs: ExchangeConfig[]) {
     this.exchanges.clear();
     this.defaultAccounts.clear();
+    this.exchangeInitializationErrors.clear();
+    this.exchangeInitializationStates.clear();
 
     await Promise.all(
       exchangeConfigs.map(async (config) => {
@@ -504,17 +545,19 @@ export class ExchangeInitService {
         }
 
         const exchangeMap = new Map<string, ccxt.Exchange>();
+        const configuredAccounts = config.accounts.filter(
+          (account) => account.apiKey && account.secret,
+        );
+
+        if (configuredAccounts.length === 0) {
+          return;
+        }
+
+        this.exchangeInitializationStates.set(config.name, 'pending');
 
         await Promise.all(
-          config.accounts.map(async (account) => {
+          configuredAccounts.map(async (account) => {
             try {
-              if (!account.apiKey || !account.secret) {
-                // this.logger.warn(
-                //   `API key or secret for ${config.name} ${account.label} is missing. Skipping initialization.`,
-                // );
-                return;
-              }
-
               const exchange = new config.class({
                 apiKey: account.apiKey,
                 secret: account.secret,
@@ -544,14 +587,20 @@ export class ExchangeInitService {
                     `${config.name} ${account.label} signed in successfully.`,
                   );
                 } catch (error) {
+                  const normalizedError =
+                    this.normalizeInitializationError(error);
+
                   this.logger.error(
-                    `ProBit ${account.label} sign-in failed: ${error.message}`,
+                    `ProBit ${account.label} sign-in failed: ${normalizedError.message}`,
                   );
                 }
               }
 
               // Save the initialized exchange
               exchangeMap.set(account.label, exchange);
+              this.exchangeInitializationErrors.delete(
+                this.getExchangeAccountKey(config.name, account.label),
+              );
 
               // Save the default account reference
               if (
@@ -561,8 +610,14 @@ export class ExchangeInitService {
                 this.defaultAccounts.set(config.name, exchange);
               }
             } catch (error) {
+              const normalizedError = this.normalizeInitializationError(error);
+
+              this.exchangeInitializationErrors.set(
+                this.getExchangeAccountKey(config.name, account.label),
+                normalizedError,
+              );
               this.logger.error(
-                `Failed to initialize ${config.name} ${account.label}: ${error.message}`,
+                `Failed to initialize ${config.name} ${account.label}: ${normalizedError.message}`,
               );
             }
           }),
@@ -570,6 +625,26 @@ export class ExchangeInitService {
 
         if (exchangeMap.size > 0) {
           this.exchanges.set(config.name, exchangeMap);
+          this.exchangeInitializationStates.set(config.name, 'ready');
+
+          return;
+        }
+
+        const firstInitializationError = configuredAccounts
+          .map((account) =>
+            this.exchangeInitializationErrors.get(
+              this.getExchangeAccountKey(config.name, account.label),
+            ),
+          )
+          .find((error): error is Error => Boolean(error));
+
+        this.exchangeInitializationStates.set(config.name, 'failed');
+
+        if (firstInitializationError) {
+          this.exchangeInitializationErrors.set(
+            config.name,
+            firstInitializationError,
+          );
         }
       }),
     );
@@ -684,16 +759,53 @@ export class ExchangeInitService {
 
   getExchange(exchangeName: string, label: string = 'default'): ccxt.Exchange {
     const exchangeMap = this.exchanges.get(exchangeName);
+    const initializationState =
+      this.exchangeInitializationStates.get(exchangeName);
+    const exchangeInitializationError =
+      this.exchangeInitializationErrors.get(exchangeName);
+    const accountInitializationError = this.exchangeInitializationErrors.get(
+      this.getExchangeAccountKey(exchangeName, label),
+    );
 
     if (!exchangeMap) {
+      if (initializationState === 'pending') {
+        throw new ServiceUnavailableException(
+          `Exchange ${exchangeName} is still initializing.`,
+        );
+      }
+
+      if (accountInitializationError || exchangeInitializationError) {
+        const message = (
+          accountInitializationError || exchangeInitializationError
+        )?.message;
+
+        throw new InternalServerErrorException(
+          `Exchange ${exchangeName} failed to initialize: ${message}`,
+        );
+      }
+
       this.logger.warn(`Exchange ${exchangeName} is not configured.`);
       throw new InternalServerErrorException('Exchange configuration error.');
     }
     const exchange =
       exchangeMap.get(label) ||
-      (label === 'default' ? this.defaultAccounts.get(exchangeName) : undefined);
+      (label === 'default'
+        ? this.defaultAccounts.get(exchangeName)
+        : undefined);
 
     if (!exchange) {
+      if (initializationState === 'pending') {
+        throw new ServiceUnavailableException(
+          `Exchange ${exchangeName} account ${label} is still initializing.`,
+        );
+      }
+
+      if (accountInitializationError) {
+        throw new InternalServerErrorException(
+          `Exchange ${exchangeName} account ${label} failed to initialize: ${accountInitializationError.message}`,
+        );
+      }
+
       this.logger.warn(
         `Exchange ${exchangeName} with label ${label} is not configured.`,
       );

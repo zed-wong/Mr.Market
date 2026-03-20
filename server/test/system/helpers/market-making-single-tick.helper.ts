@@ -1,10 +1,8 @@
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getQueueToken } from '@nestjs/bull';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
-
+import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -13,15 +11,15 @@ import { StrategyExecutionHistory } from 'src/common/entities/market-making/stra
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
-import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
   MarketMakingOrder,
   type MarketMakingOrderStrategySnapshot,
   SimplyGrowOrder,
 } from 'src/common/entities/orders/user-orders.entity';
+import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { MarketdataService } from 'src/modules/data/market-data/market-data.service';
@@ -54,11 +52,13 @@ import { UserOrdersService } from 'src/modules/market-making/user-orders/user-or
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
+import type { Repository } from 'typeorm';
 
 import {
-  pollUntil,
+  createSystemTestDatabaseConfig,
   readSystemSandboxConfig,
   type SandboxExchangeTestConfig,
+  waitForInitializedExchange,
 } from './sandbox-system.helper';
 
 const SINGLE_TICK_TEST_ENTITIES = [
@@ -97,6 +97,9 @@ type PureMarketMakingRuntimeOverrides = {
 
 export class MarketMakingSingleTickHelper {
   private readonly config: SandboxExchangeTestConfig;
+  private readonly databaseConfig = createSystemTestDatabaseConfig(
+    'market-making-single-tick',
+  );
   private exchange: any;
   private exchangeOrderMappingRepository!: Repository<ExchangeOrderMapping>;
   private exchangeOrderTrackerService!: ExchangeOrderTrackerService;
@@ -183,8 +186,7 @@ export class MarketMakingSingleTickHelper {
     this.moduleRef = await Test.createTestingModule({
       imports: [
         TypeOrmModule.forRoot({
-          type: 'sqlite',
-          database: ':memory:',
+          ...this.databaseConfig.options,
           dropSchema: true,
           entities: SINGLE_TICK_TEST_ENTITIES,
           synchronize: true,
@@ -322,33 +324,26 @@ export class MarketMakingSingleTickHelper {
       PrivateStreamTrackerService,
     );
 
-    this.exchange = await pollUntil(
-      async () => {
-        try {
-          return this.exchangeInitService.getExchange(
-            this.config.exchangeId,
-            this.config.accountLabel,
-          );
-        } catch {
-          return null;
-        }
-      },
-      async (exchange) => Boolean(exchange),
-      {
-        description: `sandbox exchange ${this.config.exchangeId} to initialize`,
-      },
+    this.exchange = await waitForInitializedExchange(
+      this.exchangeInitService,
+      this.config.exchangeId,
+      this.config.accountLabel,
     );
   }
 
   async close(): Promise<void> {
-    await this.cleanupAllRuntimeOrders();
+    try {
+      await this.cleanupAllRuntimeOrders();
 
-    if (this.exchange && typeof this.exchange.close === 'function') {
-      await this.exchange.close();
-    }
+      if (this.exchange && typeof this.exchange.close === 'function') {
+        await this.exchange.close();
+      }
+    } finally {
+      if (this.moduleRef) {
+        await this.moduleRef.close();
+      }
 
-    if (this.moduleRef) {
-      await this.moduleRef.close();
+      this.databaseConfig.cleanup();
     }
   }
 
@@ -568,6 +563,7 @@ export class MarketMakingSingleTickHelper {
 
     if (!order) {
       this.runtimeOrderIds.delete(orderId);
+
       return;
     }
 
