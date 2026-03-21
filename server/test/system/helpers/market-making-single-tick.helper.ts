@@ -44,6 +44,8 @@ import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/stra
 import { ExecutorOrchestratorService } from 'src/modules/market-making/strategy/intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from 'src/modules/market-making/strategy/intent/quote-executor-manager.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
+import { ClockTickCoordinatorService } from 'src/modules/market-making/tick/clock-tick-coordinator.service';
+import type { TickComponent } from 'src/modules/market-making/tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
 import { PrivateStreamIngestionService } from 'src/modules/market-making/trackers/private-stream-ingestion.service';
@@ -110,6 +112,7 @@ export class MarketMakingSingleTickHelper {
   );
   private readonly options: SingleTickHelperOptions;
   private exchange: any;
+  private clockTickCoordinatorService!: ClockTickCoordinatorService;
   private exchangeOrderMappingRepository!: Repository<ExchangeOrderMapping>;
   private exchangeOrderTrackerService!: ExchangeOrderTrackerService;
   private exchangeInitService!: ExchangeInitService;
@@ -117,6 +120,7 @@ export class MarketMakingSingleTickHelper {
   private marketMakingOrderProcessor!: MarketMakingOrderProcessor;
   private marketMakingOrderRepository!: Repository<MarketMakingOrder>;
   private moduleRef!: TestingModule;
+  private orderBookTrackerService!: OrderBookTrackerService;
   private privateStreamIngestionService!: PrivateStreamIngestionService;
   private privateStreamTrackerService!: PrivateStreamTrackerService;
   private readonly runtimeOrderIds = new Set<string>();
@@ -159,12 +163,24 @@ export class MarketMakingSingleTickHelper {
     return this.executorRegistry.getExecutor(exchange, pair);
   }
 
+  getClockTickCoordinatorService(): ClockTickCoordinatorService {
+    return this.clockTickCoordinatorService;
+  }
+
+  getOrderBookTrackerService(): OrderBookTrackerService {
+    return this.orderBookTrackerService;
+  }
+
   getPrivateStreamIngestionService(): PrivateStreamIngestionService {
     return this.privateStreamIngestionService;
   }
 
   getPrivateStreamTrackerService(): PrivateStreamTrackerService {
     return this.privateStreamTrackerService;
+  }
+
+  getModuleRef(): TestingModule {
+    return this.moduleRef;
   }
 
   async startWorker(): Promise<void> {
@@ -235,6 +251,7 @@ export class MarketMakingSingleTickHelper {
         ExecutorRegistry,
         FillRoutingService,
         MarketMakingOrderProcessor,
+        ClockTickCoordinatorService,
         OrderBookTrackerService,
         PrivateStreamIngestionService,
         PrivateStreamTrackerService,
@@ -328,6 +345,9 @@ export class MarketMakingSingleTickHelper {
     this.exchangeOrderMappingRepository = this.moduleRef.get(
       getRepositoryToken(ExchangeOrderMapping),
     );
+    this.clockTickCoordinatorService = this.moduleRef.get(
+      ClockTickCoordinatorService,
+    );
     this.exchangeOrderTrackerService = this.moduleRef.get(
       ExchangeOrderTrackerService,
     );
@@ -339,6 +359,7 @@ export class MarketMakingSingleTickHelper {
     this.marketMakingOrderRepository = this.moduleRef.get(
       getRepositoryToken(MarketMakingOrder),
     );
+    this.orderBookTrackerService = this.moduleRef.get(OrderBookTrackerService);
     this.strategyDefinitionRepository = this.moduleRef.get(
       getRepositoryToken(StrategyDefinition),
     );
@@ -366,6 +387,21 @@ export class MarketMakingSingleTickHelper {
       this.config.exchangeId,
       this.config.accountLabel,
     );
+
+    for (const component of [
+      this.orderBookTrackerService,
+      this.exchangeOrderTrackerService,
+      this.privateStreamTrackerService,
+      this.moduleRef.get(StrategyService),
+    ]) {
+      const lifecycleComponent = component as TickComponent & {
+        onModuleInit?: () => Promise<void>;
+      };
+
+      if (typeof lifecycleComponent.onModuleInit === 'function') {
+        await lifecycleComponent.onModuleInit();
+      }
+    }
   }
 
   async close(): Promise<void> {
@@ -475,6 +511,10 @@ export class MarketMakingSingleTickHelper {
     }
 
     await executor.onTick(getRFC3339Timestamp());
+  }
+
+  async runCoordinatorTick(): Promise<void> {
+    await this.clockTickCoordinatorService.tickOnce();
   }
 
   async stopOrder(orderId: string, userId: string): Promise<void> {

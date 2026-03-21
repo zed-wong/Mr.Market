@@ -1,26 +1,24 @@
 import { getQueueToken } from '@nestjs/bull';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
-
+import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
+import 'reflect-metadata';
+import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
+import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
-import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
-import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
-import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { encodeMarketMakingCreateMemo } from 'src/common/helpers/mixin/memo';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
   MarketMakingOrder,
   SimplyGrowOrder,
 } from 'src/common/entities/orders/user-orders.entity';
+import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
-import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
+import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
@@ -33,6 +31,7 @@ import { MixinClientService } from 'src/modules/mixin/client/mixin-client.servic
 import { SnapshotsService } from 'src/modules/mixin/snapshots/snapshots.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
+import type { Repository } from 'typeorm';
 
 type QueueJob = {
   id: string;
@@ -45,7 +44,10 @@ type QueueJob = {
 
 class FakeQueue {
   private readonly jobs = new Map<string, QueueJob>();
-  private readonly handlers = new Map<string, (job: QueueJob) => Promise<void>>();
+  private readonly handlers = new Map<
+    string,
+    (job: QueueJob) => Promise<void>
+  >();
   private readonly immediateJobs = new Set<string>();
 
   registerHandler(
@@ -214,10 +216,11 @@ export class MarketMakingPaymentHelper {
         {
           provide: GrowdataRepository,
           useValue: {
-            findMarketMakingPairById: jest.fn().mockImplementation(
-              async (pairId: string) =>
+            findMarketMakingPairById: jest
+              .fn()
+              .mockImplementation(async (pairId: string) =>
                 pairId === pairConfig.id ? pairConfig : null,
-            ),
+              ),
           },
         },
         {
@@ -378,6 +381,10 @@ export class MarketMakingPaymentHelper {
 
   async getBalance(userId: string, assetId: string) {
     return await this.balanceLedgerService.getBalance(userId, assetId);
+  }
+
+  async getQueuedMarketMakingJob(jobId: string) {
+    return await this.marketMakingQueue.getJob(jobId);
   }
 
   async startOrder(orderId: string, userId: string): Promise<void> {
