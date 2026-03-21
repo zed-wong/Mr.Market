@@ -42,6 +42,7 @@ describe('AppController system info contract', () => {
   it('returns server information payload', () => {
     log.step('calling getAppInfo');
     const result = controller.getAppInfo();
+
     log.result('received app info payload', {
       mixin_app_id: result.mixin_app_id,
       recording_oracle_url: result.recording_oracle_url,

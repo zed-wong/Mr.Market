@@ -1,7 +1,7 @@
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
-import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 import { MarketMakingIntentLifecycleHelper } from '../../helpers/market-making-intent-lifecycle.helper';
+import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 
 const log = createSystemTestLogger('pure-mm-intent-worker-error');
 
@@ -36,6 +36,7 @@ describe('Pure market making intent worker error logging (system)', () => {
     const strategyKey = await helper.publishPureMarketMakingCycle({
       clientId: 'system-order-worker-error-1',
     });
+
     await helper.waitForIntentStatuses(strategyKey, ['NEW', 'NEW']);
 
     log.step('starting worker');
@@ -50,6 +51,7 @@ describe('Pure market making intent worker error logging (system)', () => {
       'FAILED',
       'NEW',
     ]);
+
     log.result('worker failure observed', {
       statuses: failedState.map((intent) => intent.status),
       errorReason: failedState[0]?.errorReason,

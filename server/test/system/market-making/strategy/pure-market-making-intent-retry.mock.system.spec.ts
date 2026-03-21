@@ -1,7 +1,5 @@
-import {
-  createSystemTestLogger,
-} from '../../helpers/system-test-log.helper';
 import { MarketMakingIntentLifecycleHelper } from '../../helpers/market-making-intent-lifecycle.helper';
+import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 
 const log = createSystemTestLogger('pure-mm-intent-retry');
 
@@ -30,6 +28,7 @@ describe('Pure market making intent retry handling (system)', () => {
     const strategyKey = await helper.publishPureMarketMakingCycle({
       clientId: 'system-order-retry-1',
     });
+
     await helper.waitForIntentStatuses(strategyKey, ['NEW', 'NEW']);
 
     log.step('starting worker');
@@ -40,6 +39,7 @@ describe('Pure market making intent retry handling (system)', () => {
       'NEW',
     ]);
     const firstPendingPlacements = await helper.waitForPendingPlacements(1);
+
     log.result('first attempt dispatched', {
       statuses: firstSent.map((intent) => intent.status),
       pendingPlacements: firstPendingPlacements,
@@ -51,6 +51,7 @@ describe('Pure market making intent retry handling (system)', () => {
     helper.rejectNextPlacement('simulated timeout');
 
     const retriedPending = await helper.waitForPendingPlacements(1);
+
     log.result('retry attempt queued', {
       pendingPlacements: retriedPending,
     });
@@ -72,6 +73,7 @@ describe('Pure market making intent retry handling (system)', () => {
     ]);
     const history = await helper.listExecutionHistory();
     const mappings = await helper.listOrderMappings();
+
     log.result('retry lifecycle complete', {
       statuses: doneIntents.map((intent) => intent.status),
       historyCount: history.length,

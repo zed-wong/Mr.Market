@@ -1,5 +1,5 @@
-import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 import { MarketMakingIntentLifecycleHelper } from '../../helpers/market-making-intent-lifecycle.helper';
+import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 
 const log = createSystemTestLogger('pure-mm-intent-failure');
 
@@ -28,6 +28,7 @@ describe('Pure market making intent failure handling (system)', () => {
     const strategyKey = await helper.publishPureMarketMakingCycle({
       clientId: 'system-order-failure-1',
     });
+
     await helper.waitForIntentStatuses(strategyKey, ['NEW', 'NEW']);
 
     log.step('starting worker');
@@ -38,6 +39,7 @@ describe('Pure market making intent failure handling (system)', () => {
       'NEW',
     ]);
     const firstPendingPlacements = await helper.waitForPendingPlacements(1);
+
     log.result('head intent dispatched', {
       statuses: firstSent.map((intent) => intent.status),
       pendingPlacements: firstPendingPlacements,
@@ -54,6 +56,7 @@ describe('Pure market making intent failure handling (system)', () => {
     ]);
     const history = await helper.listExecutionHistory();
     const mappings = await helper.listOrderMappings();
+
     log.result('failure state captured', {
       statuses: failedState.map((intent) => intent.status),
       errors: failedState.map((intent) => intent.errorReason || ''),

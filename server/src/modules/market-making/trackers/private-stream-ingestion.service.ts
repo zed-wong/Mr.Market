@@ -27,7 +27,9 @@ type OrderWatcherState = {
 
 @Injectable()
 export class PrivateStreamIngestionService implements OnModuleDestroy {
-  private readonly logger = new CustomLogger(PrivateStreamIngestionService.name);
+  private readonly logger = new CustomLogger(
+    PrivateStreamIngestionService.name,
+  );
   private readonly activeWatchers = new Map<string, OrderWatcherState>();
 
   constructor(
@@ -45,6 +47,7 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
 
     if (state) {
       state.refCount += 1;
+
       return;
     }
 
@@ -100,7 +103,9 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
 
         if (typeof exchange.watchOrders !== 'function') {
           this.logger.warn(
-            `Exchange ${params.exchange} does not support watchOrders() for account ${
+            `Exchange ${
+              params.exchange
+            } does not support watchOrders() for account ${
               params.accountLabel || 'default'
             }`,
           );

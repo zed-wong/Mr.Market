@@ -309,6 +309,7 @@ describe('StrategyService', () => {
 
   it('makes the filled session immediately eligible for the next tick', async () => {
     const nowMs = 1_700_000_000_000;
+
     jest.spyOn(Date, 'now').mockReturnValue(nowMs);
 
     await registerPooledSession({

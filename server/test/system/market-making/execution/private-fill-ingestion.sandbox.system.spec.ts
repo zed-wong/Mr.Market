@@ -1,12 +1,12 @@
 import BigNumber from 'bignumber.js';
 
+import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import { pollUntil } from '../../helpers/sandbox-system.helper';
 import {
   getSystemSandboxSkipReason,
   hasSecondarySystemSandboxAccount,
   readSystemSandboxConfig,
 } from '../../helpers/sandbox-system.helper';
-import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
@@ -52,6 +52,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
     });
     const { order, strategyKey } = fixture;
     const onFill = jest.fn();
+
     log.result('fixture created', {
       orderId: order.orderId,
       pair: order.pair,
@@ -63,11 +64,12 @@ describeSandbox('Private fill ingestion parity (system)', () => {
 
     log.step('waiting for watchOrders subscription');
     await pollUntil(
-      async () => helper.getPrivateStreamIngestionService().isWatching({
-        exchange: order.exchangeName,
-        accountLabel: config!.accountLabel,
-        symbol: order.pair,
-      }),
+      async () =>
+        helper.getPrivateStreamIngestionService().isWatching({
+          exchange: order.exchangeName,
+          accountLabel: config!.accountLabel,
+          symbol: order.pair,
+        }),
       async (isWatching) => isWatching === true,
       {
         description: 'private order watcher to start',
@@ -128,6 +130,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
     await pollUntil(
       async () => {
         await helper.flushPrivateStreamEvents();
+
         return onFill.mock.calls.length;
       },
       async (callCount) => callCount > 0,
@@ -152,11 +155,12 @@ describeSandbox('Private fill ingestion parity (system)', () => {
     await helper.stopOrder(order.orderId, order.userId);
 
     await pollUntil(
-      async () => helper.getPrivateStreamIngestionService().isWatching({
-        exchange: order.exchangeName,
-        accountLabel: config!.accountLabel,
-        symbol: order.pair,
-      }),
+      async () =>
+        helper.getPrivateStreamIngestionService().isWatching({
+          exchange: order.exchangeName,
+          accountLabel: config!.accountLabel,
+          symbol: order.pair,
+        }),
       async (isWatching) => isWatching === false,
       {
         description: 'private order watcher to stop',
@@ -170,7 +174,8 @@ describeSandbox('Private fill ingestion parity (system)', () => {
     });
   });
 
-  const itLiveFill = config && hasSecondarySystemSandboxAccount(config) ? it : it.skip;
+  const itLiveFill =
+    config && hasSecondarySystemSandboxAccount(config) ? it : it.skip;
 
   itLiveFill(
     'routes a real live fill event through watchOrders when a second sandbox account is configured',
@@ -184,6 +189,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
       });
       const { order, strategyKey } = fixture;
       const onFill = jest.fn();
+
       log.result('live-fill fixture created', {
         orderId: order.orderId,
         pair: order.pair,
@@ -196,6 +202,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
       await helper.startOrder(order.orderId, order.userId);
 
       const executor = helper.getExecutor(order.exchangeName, order.pair);
+
       expect(executor).toBeDefined();
 
       executor?.configure({
@@ -207,20 +214,27 @@ describeSandbox('Private fill ingestion parity (system)', () => {
       log.step('running single tick to place live sandbox orders');
       await helper.runSingleTick(order.orderId);
 
-      const counterExchange = helper.getExchangeForAccount(config!.account2Label);
+      const counterExchange = helper.getExchangeForAccount(
+        config!.account2Label,
+      );
       const counterBalance = await counterExchange.fetchBalance();
-      const primaryOrderBook = await helper.getExchange().fetchOrderBook(order.pair);
+      const primaryOrderBook = await helper
+        .getExchange()
+        .fetchOrderBook(order.pair);
       const [baseAsset, quoteAsset] = order.pair.split('/');
       const trackedOrders = helper.getOpenTrackedOrders(strategyKey);
-      const buyOrder = trackedOrders.find((candidate) => candidate.side === 'buy');
+      const buyOrder = trackedOrders.find(
+        (candidate) => candidate.side === 'buy',
+      );
       const sellOrder = trackedOrders.find(
         (candidate) => candidate.side === 'sell',
       );
       const baseFree = new BigNumber(counterBalance?.free?.[baseAsset] || '0');
-      const quoteFree = new BigNumber(counterBalance?.free?.[quoteAsset] || '0');
+      const quoteFree = new BigNumber(
+        counterBalance?.free?.[quoteAsset] || '0',
+      );
       const canSellBase =
-        buyOrder &&
-        baseFree.gte(new BigNumber(buyOrder.qty).times('1.01'));
+        buyOrder && baseFree.gte(new BigNumber(buyOrder.qty).times('1.01'));
       const canBuyQuote =
         sellOrder &&
         quoteFree.gte(
@@ -235,15 +249,14 @@ describeSandbox('Private fill ingestion parity (system)', () => {
         ? new BigNumber(sellOrder.price).minus(bestAsk).abs()
         : new BigNumber('1e18');
       const chooseBuyOrder =
-        Boolean(canSellBase) &&
-        (!canBuyQuote || buyDistance.lte(sellDistance));
+        Boolean(canSellBase) && (!canBuyQuote || buyDistance.lte(sellDistance));
       const trackedOrder = chooseBuyOrder
         ? buyOrder
         : canBuyQuote
-          ? sellOrder
-          : canSellBase
-            ? buyOrder
-            : undefined;
+        ? sellOrder
+        : canSellBase
+        ? buyOrder
+        : undefined;
 
       expect(trackedOrder).toBeDefined();
       log.result('counterparty decision made', {
@@ -271,6 +284,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
           counterQty,
           undefined,
         );
+
         counterOrderId = String(counterOrder?.id || '');
         log.step('submitted market counter order', {
           counterOrderId,
@@ -296,6 +310,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
           counterQty,
           counterPrice,
         );
+
         counterOrderId = String(counterOrder?.id || '');
         log.step('submitted crossed limit counter order', {
           counterOrderId,
@@ -317,10 +332,12 @@ describeSandbox('Private fill ingestion parity (system)', () => {
             ),
           async (exchangeOrder) => {
             const status = String(exchangeOrder?.status || '').toLowerCase();
+
             return status === 'closed' || status === 'filled';
           },
           {
-            description: 'tracked sandbox order to fill from the second account',
+            description:
+              'tracked sandbox order to fill from the second account',
             intervalMs: 1000,
             timeoutMs: 60000,
           },
@@ -342,18 +359,25 @@ describeSandbox('Private fill ingestion parity (system)', () => {
         throw new Error(
           `Live fill did not happen. targetStatus=${String(
             targetOrder?.status || '',
-          )} targetFilled=${String(targetOrder?.filled || '')} counterStatus=${String(
+          )} targetFilled=${String(
+            targetOrder?.filled || '',
+          )} counterStatus=${String(
             counterOrder?.status || '',
-          )} counterFilled=${String(counterOrder?.filled || '')} trackedSide=${String(
+          )} counterFilled=${String(
+            counterOrder?.filled || '',
+          )} trackedSide=${String(
             trackedOrder?.side || '',
           )} counterSide=${String(counterSide || '')}`,
         );
       }
 
-      log.step('flushing private-stream events until live fill callback arrives');
+      log.step(
+        'flushing private-stream events until live fill callback arrives',
+      );
       await pollUntil(
         async () => {
           await helper.flushPrivateStreamEvents();
+
           return onFill.mock.calls.length;
         },
         async (callCount) => callCount > 0,

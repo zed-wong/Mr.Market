@@ -1,8 +1,8 @@
+import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import {
   getSystemSandboxSkipReason,
   readSystemSandboxConfig,
 } from '../../helpers/sandbox-system.helper';
-import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
@@ -40,6 +40,7 @@ describeSandbox('Pure market making single tick parity (system)', () => {
     log.step('creating persisted order fixture');
     const fixture = await helper.createPersistedPureMarketMakingOrder();
     const { order, strategyKey } = fixture;
+
     log.result('fixture created', {
       orderId: order.orderId,
       pair: order.pair,
@@ -55,6 +56,7 @@ describeSandbox('Pure market making single tick parity (system)', () => {
     const mappings = await helper.listOrderMappings(order.orderId);
     const history = await helper.listExecutionHistory(order.orderId);
     const trackedOrders = helper.getOpenTrackedOrders(strategyKey);
+
     log.result('tick artifacts collected', {
       intentCount: intents.length,
       mappingCount: mappings.length,
@@ -70,20 +72,20 @@ describeSandbox('Pure market making single tick parity (system)', () => {
     expect(intents.every((intent) => intent.status === 'DONE')).toBe(true);
 
     expect(mappings).toHaveLength(2);
-    expect(
-      mappings.every((mapping) => mapping.orderId === order.orderId),
-    ).toBe(true);
+    expect(mappings.every((mapping) => mapping.orderId === order.orderId)).toBe(
+      true,
+    );
 
     expect(history).toHaveLength(2);
     expect(history.map((entry) => entry.side).sort()).toEqual(['buy', 'sell']);
 
     expect(trackedOrders).toHaveLength(2);
-    expect(trackedOrders.map((trackedOrder) => trackedOrder.side).sort()).toEqual(
-      ['buy', 'sell'],
-    );
-    expect(trackedOrders.every((trackedOrder) => trackedOrder.status === 'open')).toBe(
-      true,
-    );
+    expect(
+      trackedOrders.map((trackedOrder) => trackedOrder.side).sort(),
+    ).toEqual(['buy', 'sell']);
+    expect(
+      trackedOrders.every((trackedOrder) => trackedOrder.status === 'open'),
+    ).toBe(true);
 
     for (const mapping of mappings) {
       log.check('fetching persisted exchange order', {

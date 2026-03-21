@@ -1,7 +1,5 @@
-import {
-  createSystemTestLogger,
-} from '../../helpers/system-test-log.helper';
 import { MarketMakingIntentLifecycleHelper } from '../../helpers/market-making-intent-lifecycle.helper';
+import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 
 const log = createSystemTestLogger('pure-mm-intent-lifecycle');
 
@@ -32,6 +30,7 @@ describe('Pure market making intent lifecycle (system)', () => {
       'NEW',
       'NEW',
     ]);
+
     log.result('new intents persisted', {
       strategyKey,
       statuses: newIntents.map((intent) => intent.status),
@@ -49,6 +48,7 @@ describe('Pure market making intent lifecycle (system)', () => {
       'NEW',
     ]);
     const firstPendingPlacement = helper.getPendingPlacements()[0];
+
     log.result('first head intent dispatched', {
       statuses: sentAndQueued.map((intent) => intent.status),
       firstPendingPlacement,
@@ -66,6 +66,7 @@ describe('Pure market making intent lifecycle (system)', () => {
       'SENT',
     ]);
     const secondPendingPlacement = helper.getPendingPlacements()[0];
+
     log.result('second head intent dispatched', {
       statuses: secondSent.map((intent) => intent.status),
       secondPendingPlacement,
@@ -84,6 +85,7 @@ describe('Pure market making intent lifecycle (system)', () => {
     ]);
     const history = await helper.listExecutionHistory();
     const mappings = await helper.listOrderMappings();
+
     log.result('lifecycle complete', {
       statuses: doneIntents.map((intent) => intent.status),
       historyCount: history.length,
@@ -100,7 +102,9 @@ describe('Pure market making intent lifecycle (system)', () => {
     ]);
     expect(mappings).toHaveLength(2);
     expect(
-      mappings.every((mapping) => mapping.clientOrderId && mapping.exchangeOrderId),
+      mappings.every(
+        (mapping) => mapping.clientOrderId && mapping.exchangeOrderId,
+      ),
     ).toBe(true);
   });
 });

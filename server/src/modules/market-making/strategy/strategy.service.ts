@@ -18,6 +18,7 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
+import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
@@ -44,7 +45,6 @@ import { StrategyMarketDataProviderService } from './data/strategy-market-data-p
 import { ExecutorRegistry } from './execution/executor-registry';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
-import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 
 type BaseVolumeStrategyParams = {
   exchangeName: string;
@@ -2068,7 +2068,11 @@ export class StrategyService
       qty.isLessThanOrEqualTo(0)
     ) {
       this.logger.warn(
-        `Skipping fill ledger update for strategyKey=${session.strategyKey}: invalid fill price/qty price=${fill.price || ''} qty=${fill.qty || ''}`,
+        `Skipping fill ledger update for strategyKey=${
+          session.strategyKey
+        }: invalid fill price/qty price=${fill.price || ''} qty=${
+          fill.qty || ''
+        }`,
       );
 
       return;
@@ -2081,7 +2085,8 @@ export class StrategyService
       fill.side === 'buy'
         ? quoteAmount.negated().toFixed()
         : quoteAmount.toFixed();
-    const baseDelta = fill.side === 'buy' ? baseAmount : qty.negated().toFixed();
+    const baseDelta =
+      fill.side === 'buy' ? baseAmount : qty.negated().toFixed();
 
     await this.balanceLedgerService.adjust({
       userId: session.userId,

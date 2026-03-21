@@ -1,10 +1,10 @@
 import BigNumber from 'bignumber.js';
 
+import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import {
   getSystemSandboxSkipReason,
   readSystemSandboxConfig,
 } from '../../helpers/sandbox-system.helper';
-import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
@@ -49,6 +49,7 @@ describeSandbox('Pure market making multi-layer parity (system)', () => {
       orderAmount: 0.0002,
     });
     const { order, strategyKey } = fixture;
+
     log.result('fixture created', {
       orderId: order.orderId,
       pair: order.pair,
@@ -63,6 +64,7 @@ describeSandbox('Pure market making multi-layer parity (system)', () => {
     const mappings = await helper.listOrderMappings(order.orderId);
     const history = await helper.listExecutionHistory(order.orderId);
     const trackedOrders = helper.getOpenTrackedOrders(strategyKey);
+
     log.result('first tick artifacts collected', {
       intentCount: intents.length,
       mappingCount: mappings.length,

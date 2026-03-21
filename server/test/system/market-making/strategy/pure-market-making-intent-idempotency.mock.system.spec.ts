@@ -1,5 +1,5 @@
-import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 import { MarketMakingIntentLifecycleHelper } from '../../helpers/market-making-intent-lifecycle.helper';
+import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 
 const log = createSystemTestLogger('pure-mm-intent-idempotency');
 
@@ -33,12 +33,15 @@ describe('Pure market making intent idempotency (system)', () => {
 
     expect(targetIntentId).toBeDefined();
 
-    log.step('consuming the same stored intent twice through the real execution service');
+    log.step(
+      'consuming the same stored intent twice through the real execution service',
+    );
     const consumePromise = helper.consumeStoredIntents([
       targetIntentId!,
       targetIntentId!,
     ]);
     const pendingPlacements = await helper.waitForPendingPlacements(1);
+
     log.result('single execution attempt observed', {
       targetIntentId,
       pendingPlacements,
@@ -52,6 +55,7 @@ describe('Pure market making intent idempotency (system)', () => {
     const intents = await helper.listStrategyIntents(strategyKey);
     const history = await helper.listExecutionHistory();
     const mappings = await helper.listOrderMappings();
+
     log.result('duplicate consume settled', {
       statuses: intents.map((intent) => ({
         intentId: intent.intentId,

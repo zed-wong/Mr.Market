@@ -1,11 +1,11 @@
 import BigNumber from 'bignumber.js';
 
+import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import { pollUntil } from '../../helpers/sandbox-system.helper';
 import {
   getSystemSandboxSkipReason,
   readSystemSandboxConfig,
 } from '../../helpers/sandbox-system.helper';
-import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
@@ -50,6 +50,7 @@ describeSandbox('Private partial-fill ingestion parity (system)', () => {
     });
     const { order, strategyKey } = fixture;
     const onFill = jest.fn();
+
     log.result('fixture created', {
       orderId: order.orderId,
       pair: order.pair,
@@ -61,11 +62,12 @@ describeSandbox('Private partial-fill ingestion parity (system)', () => {
 
     log.step('waiting for watchOrders subscription');
     await pollUntil(
-      async () => helper.getPrivateStreamIngestionService().isWatching({
-        exchange: order.exchangeName,
-        accountLabel: config!.accountLabel,
-        symbol: order.pair,
-      }),
+      async () =>
+        helper.getPrivateStreamIngestionService().isWatching({
+          exchange: order.exchangeName,
+          accountLabel: config!.accountLabel,
+          symbol: order.pair,
+        }),
       async (isWatching) => isWatching === true,
       {
         description: 'private order watcher to start for partial-fill test',
@@ -93,6 +95,7 @@ describeSandbox('Private partial-fill ingestion parity (system)', () => {
     expect(trackedOrder).toBeDefined();
 
     const partialQty = new BigNumber(trackedOrder!.qty).dividedBy(2).toFixed();
+
     log.result('tracked order selected', {
       exchangeOrderId: trackedOrder?.exchangeOrderId,
       clientOrderId: trackedOrder?.clientOrderId,
@@ -119,15 +122,19 @@ describeSandbox('Private partial-fill ingestion parity (system)', () => {
       receivedAt: new Date().toISOString(),
     });
 
-    log.step('flushing private-stream events until executor receives partial fill');
+    log.step(
+      'flushing private-stream events until executor receives partial fill',
+    );
     await pollUntil(
       async () => {
         await helper.flushPrivateStreamEvents();
+
         return onFill.mock.calls.length;
       },
       async (callCount) => callCount > 0,
       {
-        description: 'deterministic partial-fill event to route to the executor',
+        description:
+          'deterministic partial-fill event to route to the executor',
         intervalMs: 250,
         timeoutMs: 30000,
       },
@@ -135,7 +142,10 @@ describeSandbox('Private partial-fill ingestion parity (system)', () => {
 
     const updatedTrackedOrder = await pollUntil(
       async () =>
-        helper.getTrackedOrder(order.exchangeName, trackedOrder!.exchangeOrderId),
+        helper.getTrackedOrder(
+          order.exchangeName,
+          trackedOrder!.exchangeOrderId,
+        ),
       async (candidate) => candidate?.status === 'partially_filled',
       {
         description: 'tracked order to reflect partially_filled status',
@@ -143,6 +153,7 @@ describeSandbox('Private partial-fill ingestion parity (system)', () => {
         timeoutMs: 30000,
       },
     );
+
     log.result('partial fill routed', {
       callbackCount: onFill.mock.calls.length,
       trackedStatus: updatedTrackedOrder?.status,

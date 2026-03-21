@@ -38,6 +38,7 @@ describeSandbox(
       const fixture = await helper.createPersistedPureMarketMakingOrder();
       const { order, strategyDefinition, strategyKey } = fixture;
       const processor = helper.getProcessor();
+
       log.result('fixture created', {
         orderId: order.orderId,
         userId: order.userId,
@@ -47,6 +48,7 @@ describeSandbox(
 
       log.step('fetching exchange ticker');
       const ticker = await helper.fetchExchangeTicker(order.pair);
+
       log.check('ticker fetched', {
         pair: order.pair,
         last: ticker?.last,
@@ -71,6 +73,7 @@ describeSandbox(
       const runningStrategyInstance = await helper.findStrategyInstance(
         order.orderId,
       );
+
       log.result('runtime started', {
         orderState: runningOrder?.state,
         hasSession: Boolean(runningSession),
@@ -109,9 +112,12 @@ describeSandbox(
         order.orderId,
       );
       const intents = await helper.listStrategyIntents();
+
       log.result('runtime stopped', {
         orderState: stoppedOrder?.state,
-        hasExecutor: Boolean(helper.getExecutor(order.exchangeName, order.pair)),
+        hasExecutor: Boolean(
+          helper.getExecutor(order.exchangeName, order.pair),
+        ),
         strategyInstanceStatus: stoppedStrategyInstance?.status,
         intentCount: intents.length,
       });

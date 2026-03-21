@@ -28,6 +28,7 @@ describe('Market making payment intake parity (system)', () => {
         orderRefreshTime: 20000,
       },
     });
+
     log.result('intent created', {
       orderId: fixture.orderId,
       userId: fixture.userId,
@@ -44,6 +45,7 @@ describe('Market making payment intake parity (system)', () => {
     });
 
     const pendingPayment = await helper.findPaymentState(fixture.orderId);
+
     log.check('payment state after base snapshot', {
       orderId: fixture.orderId,
       state: pendingPayment?.state,
@@ -75,6 +77,7 @@ describe('Market making payment intake parity (system)', () => {
     const intent = await helper.findIntent(fixture.orderId);
     const baseBalance = await helper.getBalance(fixture.userId, 'asset-base');
     const quoteBalance = await helper.getBalance(fixture.userId, 'asset-quote');
+
     log.result('payment completion artifacts collected', {
       orderState: order?.state,
       paymentState: completedPayment?.state,

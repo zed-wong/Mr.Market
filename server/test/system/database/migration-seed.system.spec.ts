@@ -93,6 +93,7 @@ describe('Database migration and seed scripts', () => {
     const paymentStateTable = (await dataSource.query(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='market_making_payment_state'",
     )) as Array<{ name: string }>;
+
     log.result('migration tables inspected', {
       migrationsTableCount: migrationsTable.length,
       paymentStateTableCount: paymentStateTable.length,
@@ -159,6 +160,7 @@ describe('Database migration and seed scripts', () => {
       .findOneByOrFail({
         key: 'pure_market_making',
       });
+
     log.result('seed counts collected', {
       exchanges,
       mmPairs,

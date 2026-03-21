@@ -1,8 +1,8 @@
+import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import {
   getSystemSandboxSkipReason,
   readSystemSandboxConfig,
 } from '../../helpers/sandbox-system.helper';
-import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
@@ -14,7 +14,10 @@ const skipReason = envSkipReason;
 const log = createSystemTestLogger('pure-mm-intent-idempotency-sandbox');
 
 if (skipReason) {
-  logSystemSkip('pure market-making intent idempotency sandbox suite', skipReason);
+  logSystemSkip(
+    'pure market-making intent idempotency sandbox suite',
+    skipReason,
+  );
 }
 
 const describeSandbox = skipReason ? describe.skip : describe;
@@ -52,6 +55,7 @@ describeSandbox(
 
       const initialIntents = await helper.listStrategyIntents(order.orderId);
       const targetIntentId = initialIntents[0]?.intentId;
+
       expect(targetIntentId).toBeDefined();
 
       const baselineHistory = await helper.listExecutionHistory(order.orderId);
@@ -69,6 +73,7 @@ describeSandbox(
       const mappingsAfterDuplicateConsume = await helper.listOrderMappings(
         order.orderId,
       );
+
       log.result('idempotency results', {
         orderId: order.orderId,
         targetIntentId,
@@ -84,10 +89,14 @@ describeSandbox(
 
       expect(intentsAfterDuplicateConsume).toHaveLength(2);
       expect(
-        intentsAfterDuplicateConsume.every((intent) => intent.status === 'DONE'),
+        intentsAfterDuplicateConsume.every(
+          (intent) => intent.status === 'DONE',
+        ),
       ).toBe(true);
       expect(historyAfterDuplicateConsume).toHaveLength(baselineHistory.length);
-      expect(mappingsAfterDuplicateConsume).toHaveLength(baselineMappings.length);
+      expect(mappingsAfterDuplicateConsume).toHaveLength(
+        baselineMappings.length,
+      );
     });
   },
 );

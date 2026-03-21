@@ -412,12 +412,14 @@ describe('PrivateStreamTrackerService', () => {
         upsertOrder: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
-        findExecutorByOrderId: jest.fn().mockImplementation((orderId: string) => ({
-          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
-          onFill: jest.fn(async () => {
-            processed.push(orderId);
-          }),
-        })),
+        findExecutorByOrderId: jest
+          .fn()
+          .mockImplementation((orderId: string) => ({
+            getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
+            onFill: jest.fn(async () => {
+              processed.push(orderId);
+            }),
+          })),
       } as unknown as ExecutorRegistry,
     );
 
