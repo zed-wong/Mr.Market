@@ -1,8 +1,9 @@
+import 'reflect-metadata';
+
 import { getQueueToken } from '@nestjs/bull';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
-import 'reflect-metadata';
 import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';

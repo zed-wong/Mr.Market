@@ -47,11 +47,13 @@ describeSandbox('Clock tick coordinator parity (system)', () => {
     await helper.startOrder(order.orderId, order.userId);
 
     log.step('queueing tracked order book snapshot for coordinator path');
-    helper.getOrderBookTrackerService().queueSnapshot(order.exchangeName, order.pair, {
-      bids: [[100, 1]],
-      asks: [[101, 1]],
-      sequence: 1,
-    });
+    helper
+      .getOrderBookTrackerService()
+      .queueSnapshot(order.exchangeName, order.pair, {
+        bids: [[100, 1]],
+        asks: [[101, 1]],
+        sequence: 1,
+      });
 
     log.step('running coordinator tick');
     await helper.runCoordinatorTick();

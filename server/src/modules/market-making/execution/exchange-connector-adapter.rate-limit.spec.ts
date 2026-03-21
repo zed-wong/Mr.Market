@@ -34,9 +34,9 @@ describe('ExchangeConnectorAdapterService rate-limit behavior', () => {
       createConfigService(0),
     );
 
-    await expect(
-      service.fetchOrderBook('binance', 'BTC/USDT'),
-    ).rejects.toThrow('429 Too Many Requests');
+    await expect(service.fetchOrderBook('binance', 'BTC/USDT')).rejects.toThrow(
+      '429 Too Many Requests',
+    );
 
     await expect(
       service.fetchOrderBook('binance', 'BTC/USDT'),

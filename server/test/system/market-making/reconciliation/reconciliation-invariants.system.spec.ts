@@ -1,6 +1,7 @@
+import 'reflect-metadata';
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
-import 'reflect-metadata';
 import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
 import { RewardAllocation } from 'src/common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
