@@ -1,5 +1,12 @@
 # Execution Flow Changelog
 
+## 2026-03-21
+
+- Add real coordinator-path system coverage, a private-stream reconnect smoke spec, and multi-pair executor-isolation sandbox coverage, and align the planning todo checklist with the now-completed gap items
+- Add reconciliation system coverage, queue-contract coverage for queued payment checks, a rate-limit regression spec for adapter request-chain release after failures, a far-future cadence assertion, and updated planning todo state for the remaining system-test gap plan items
+- Refresh the March 20 system-test gap analysis plan so it marks WAL storage, durability coverage, websocket backoff tests, and existing config-schema validation correctly, and retarget the remaining open gaps to coordinator, reconciliation, queue-contract, rate-limit, runtime reconnect, isolation, cadence, and misconfiguration coverage
+- Add a dated implementation plan for a persistent sandbox market-making validation runner that starts through the real runtime path, streams live orderbook/open-order/fill observations, persists run metadata, and stages future API/UI monitoring as later phases
+
 ## 2026-03-20
 
 - Add a dated system-test gap analysis plan, switch sandbox-heavy system helpers to temp-file SQLite WAL storage, add durability outbox/consumer-receipt system coverage, and surface pending/failed exchange initialization so sandbox tests can wait on real exchange boot deterministically
