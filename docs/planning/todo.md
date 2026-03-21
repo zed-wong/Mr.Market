@@ -166,3 +166,9 @@ Admin exchanges management
 - [] 10. HuFi Learn more page should introduce each types of campaigns
 - [] 11. HuFi campaigns page should have a filter button put on top of the page, allowing user open dialog to filter campaigns (by campaign type, create/end date, DESC or ASC, reward amount)
 - [] 12. For different types of campaigns, should have different types of actions in details page
+
+### Current UI follow-ups
+
+- [] 13. Test join campaign process manually
+- [] 14. Show user created order in `/market-making/+page.svelte`
+- [] 15. Show created order details in detail page
