@@ -62,11 +62,11 @@ For mainnet readiness, that visibility gap is now more important than adding ano
    - best bid / best ask
    - current strategy quote intent summary
    - tracked open orders
-   - newly observed fills
+   - newly observed fill signals when available
    - place / cancel activity
    - runtime warnings and errors
-4. Persist enough run metadata that the operator can resume inspection after process restart.
-5. Provide a kill switch that stops the session and cleans up known sandbox open orders.
+4. Persist enough run metadata that the operator can recover inspection, status, and cleanup after process restart.
+5. Provide explicit stop and cleanup actions that can stop the runtime session and then attempt to clean up known sandbox open orders.
 
 ### Phase 1 Non-Goals
 
@@ -102,6 +102,12 @@ The validation runner must use the real services that matter:
 
 The runner must refuse to start unless sandbox mode is enabled and the target exchange/account are marked as test-only configuration.
 
+### 4. Stop and cleanup must be treated as separate truths
+
+`handleStopMM()` is the real runtime stop path, but it must not be described as if it guarantees exchange-order drain by itself.
+
+Implication: Phase 1 must model runtime stop and exchange cleanup as separate steps, and it must report leftover open orders explicitly.
+
 ## Recommended Phase 1 Architecture
 
 ## High-Level Shape
@@ -128,7 +134,7 @@ Main responsibilities:
 - start an observation loop
 - aggregate exchange/runtime state into log frames
 - call the real `stop_mm` path on shutdown
-- perform best-effort sandbox cleanup for tracked open orders
+- perform best-effort sandbox cleanup as a separate post-stop step for tracked or exchange-visible open orders
 
 ### 2. `SandboxValidationRun` persistence
 
@@ -137,7 +143,7 @@ Add a small persistence layer for run state.
 Minimum fields:
 
 - `runId`
-- `status` (`starting`, `running`, `stopping`, `stopped`, `failed`)
+- `status` (`starting`, `running`, `degraded`, `stopping`, `stopped_clean`, `stopped_with_leftovers`, `failed`, `needs_manual_cleanup`)
 - `exchange`
 - `pair`
 - `marketMakingOrderId`
@@ -146,8 +152,10 @@ Minimum fields:
 - `stoppedAt`
 - `lastHeartbeatAt`
 - `lastError`
+- `lastKnownRuntimeState`
+- `leftoverOrderCount`
 
-This is not for full event sourcing. It is just enough to make the persistent runner observable and resumable.
+This is not for full event sourcing. It is just enough to make the persistent runner observable and recoverable after interruption.
 
 ### 3. Observation loop
 
@@ -217,28 +225,38 @@ Implement **Option A first**, then add Option B only if operator friction become
 
 ## Runtime Data Sources
 
-The observation loop should prefer existing runtime state before adding new trackers.
+The observation loop should use sources that match the current runtime truth, and it must avoid implying stronger live-state guarantees than the codebase actually provides today.
 
 ### Order book
 
-Use this fallback chain:
+Use this primary path in Phase 1:
 
-1. `OrderBookTrackerService.getOrderBook(exchange, pair)`
-2. `ExchangeConnectorAdapterService.fetchOrderBook(exchange, pair)`
+1. `ExchangeConnectorAdapterService.fetchOrderBook(exchange, pair)`
+
+Optional later optimization:
+
+2. `OrderBookTrackerService.getOrderBook(exchange, pair)` only after there is a proven real ingestion path feeding it for this runner
+
+Reasoning:
+
+- `fetchOrderBook()` is the clearest currently implemented truth source for the validation runner
+- `OrderBookTrackerService` should not be treated as the primary live source unless this runner explicitly owns or verifies its ingestion path
 
 ### Open orders and status transitions
 
 Use:
 
 - `ExchangeOrderTrackerService`
-- exchange-side refetch for spot checks when necessary
+- exchange-side refetch as a regular reconciliation step, not just a rare fallback, so the runner can surface mismatches between local tracked state and exchange-visible state
 
 ### Fills
 
 Use:
 
-- `PrivateStreamTrackerService` / `PrivateStreamIngestionService` flow for new fill signals
-- execution history persistence as the durable audit surface
+- `PrivateStreamTrackerService` / `PrivateStreamIngestionService` for best-effort live fill signals when the exchange/runtime path emits them
+- `StrategyExecutionHistory` persistence as the durable audit surface
+
+Phase 1 must not promise complete real-time fill accounting beyond what the current private-stream path can actually observe.
 
 ### Strategy-side activity
 
@@ -252,7 +270,8 @@ Use:
 ### Hard guards
 
 - refuse to run without sandbox-enabled exchange boot
-- refuse to run on an unapproved exchange name/account label combination
+- require explicit `--account-label`
+- refuse to run on an unapproved exchange name/account label combination from a dedicated validation allowlist
 - require explicit pair input
 - require explicit stop timeout and cleanup mode
 
@@ -262,15 +281,17 @@ On SIGINT, SIGTERM, or command stop:
 
 1. mark run status as `stopping`
 2. call the real `stop_mm` path
-3. fetch tracked open orders
+3. fetch tracked open orders and exchange-visible open orders for reconciliation
 4. attempt best-effort cancel/cleanup
-5. mark run `stopped` or `failed`
+5. mark run `stopped_clean`, `stopped_with_leftovers`, `needs_manual_cleanup`, or `failed`
 
 ### Failure handling
 
 If observation fails temporarily, keep the run alive and log degraded status.
 
 If runtime start fails or cleanup fails, persist the error and keep the run record diagnosable.
+
+If the process restarts, the first recovery goal is to restore observability, inspect current state, and perform cleanup or reconciliation if needed. It is not to promise transparent resumption of an already-running strategy loop.
 
 ## Suggested Target Files
 
@@ -327,7 +348,9 @@ Deliverables:
 - 1 to 2 second observation loop
 - structured console output
 - NDJSON log file output
-- top-of-book + open-order + fill summaries
+- top-of-book polling via exchange adapter
+- open-order summary plus reconciliation against exchange-visible state
+- fill-signal summary plus execution-history delta
 
 Exit gate:
 
@@ -340,7 +363,7 @@ Deliverables:
 - signal handling
 - best-effort open-order cleanup
 - degraded-state logging for transient exchange/API errors
-- restart/resume support from persisted run record
+- recovery support from persisted run record for status inspection, reconciliation, and cleanup
 
 Exit gate:
 
@@ -379,8 +402,9 @@ Phase 1 implementation should be accepted only after these checks pass:
 - at least one real sandbox order is observed placed
 - repeated quote maintenance is visible over time
 - live order book snapshots continue updating
-- fill events appear when the sandbox environment produces them
-- stop command ends the session and cleanup attempts are logged
+- place/cancel or equivalent quote-refresh activity is observed during the run
+- live fill signals are surfaced when the sandbox environment produces them, and execution-history deltas remain visible as the durable audit trail
+- stop command ends the runtime session and cleanup attempts are logged as a separate step
 
 ### Operational validation
 
@@ -388,10 +412,12 @@ Phase 1 implementation should be accepted only after these checks pass:
 - status command can inspect a previously started run
 - NDJSON log can be replayed for debugging
 - transient observation failures do not crash the process immediately
+- a restarted process can recover the run record and determine whether cleanup or reconciliation is still required
 
 ### Safety validation
 
 - runner refuses non-sandbox configuration
+- runner refuses non-allowlisted account labels
 - cleanup is best-effort but explicit
 - any leftover open orders are listed clearly if cleanup is incomplete
 
