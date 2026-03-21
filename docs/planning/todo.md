@@ -19,7 +19,7 @@ Completed work should stay in `progress-log.md`, not here.
 #### P0 — High impact, low cost (~5 h)
 
 - [x] 1. Switch `MarketMakingSingleTickHelper` to file-based SQLite with WAL mode (add `createSystemTestDatabaseConfig` to `sandbox-system.helper.ts`, temp dir cleanup in afterAll)
-- [] 2. Add `ClockTickCoordinator` integration system spec — register real tick components, call `tickOnce()`, and assert the real coordinator path; current code aborts on first thrown component error, so do not assume per-component isolation unless runtime behavior changes first
+- [x] 2. Add `ClockTickCoordinator` integration system spec — register real tick components, call `tickOnce()`, and assert the real coordinator path; current code aborts on first thrown component error, so the coverage now documents stop-on-first-error behavior instead of assuming per-component isolation
 - [x] 3. Add `DurabilityService` system spec — append outbox event, mark processed once (true), mark processed again with same key (false/idempotent)
 
 #### P1 — Medium impact, medium cost (~5 h)
@@ -27,12 +27,12 @@ Completed work should stay in `progress-log.md`, not here.
 - [x] 4. Add `ReconciliationService` system spec — one valid + one violation case per reconciliation type (ledger invariant, reward consistency, stale SENT intent)
 - [x] 5. Add queue dispatch shape test — lock down queued payment job name, data shape, retry/backoff options, and deterministic jobId convention
 - [x] 6. Add back-off logic unit test for `PrivateStreamIngestionService.getBackoffDelayMs` — verify 0 ms on first failure, exponential growth, and 30 s cap
-- [] 7. Add WebSocket reconnection smoke test — mock `watchOrders` to throw on first call, succeed on second, assert `queueAccountEvent` called after recovery
+- [x] 7. Add WebSocket reconnection smoke test — verify one `watchOrders` failure is retried and the recovered event still routes through the runtime surface
 - [x] 8. Add adapter-level rate-limit regression coverage so a failed request still releases the per-exchange limiter chain and later requests continue
 
 #### P2 — Lower priority (~4 h)
 
-- [] 9. Add multi-pair executor isolation test — create two orders with different pairs, assert separate executor instances, ticking one pair produces zero intents for the other
+- [x] 9. Add multi-pair executor isolation test — create two orders with different pairs, assert separate executor instances, ticking one pair produces zero intents for the other
 - [x] 10. Add explicit far-future cadence guard assertion — set `nextRunAtMs` to `Date.now() + 999_999_999`, call `onTick`, confirm zero new intents
 - [x] 11. Add runtime config-safety coverage — keep existing schema validation, and add system coverage for config override safety/runtime helper-path validation
 
