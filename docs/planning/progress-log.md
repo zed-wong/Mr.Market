@@ -2,6 +2,7 @@
 
 ## 2026-03-21
 
+- Move the completed market-making cycle design, testing checklist, and token metadata migration plan from `docs/planning/` to `docs/archive/plans/`, and refresh the planning README so only active dated plans stay listed there
 - Add real coordinator-path system coverage, a private-stream reconnect smoke spec, and multi-pair executor-isolation sandbox coverage, and align the planning todo checklist with the now-completed gap items
 - Add reconciliation system coverage, queue-contract coverage for queued payment checks, a rate-limit regression spec for adapter request-chain release after failures, a far-future cadence assertion, and updated planning todo state for the remaining system-test gap plan items
 - Refresh the March 20 system-test gap analysis plan so it marks WAL storage, durability coverage, websocket backoff tests, and existing config-schema validation correctly, and retarget the remaining open gaps to coordinator, reconciliation, queue-contract, rate-limit, runtime reconnect, isolation, cadence, and misconfiguration coverage
