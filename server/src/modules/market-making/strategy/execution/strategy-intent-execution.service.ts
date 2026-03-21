@@ -180,6 +180,7 @@ export class StrategyIntentExecutionService {
             }),
           );
           this.exchangeOrderTrackerService?.upsertOrder({
+            orderId,
             strategyKey: intent.strategyKey,
             exchange: intent.exchange,
             pair: intent.pair,
@@ -207,7 +208,9 @@ export class StrategyIntentExecutionService {
           ),
         );
 
+        const orderId = this.resolveOrderIdForClientOrderId(intent);
         this.exchangeOrderTrackerService?.upsertOrder({
+          orderId,
           strategyKey: intent.strategyKey,
           exchange: intent.exchange,
           pair: intent.pair,

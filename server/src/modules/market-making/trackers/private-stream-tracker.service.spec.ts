@@ -116,6 +116,7 @@ describe('PrivateStreamTrackerService', () => {
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue({
+          orderId: 'legacy-order',
           strategyKey: 'strategy-1',
           exchange: 'binance',
           pair: 'BTC/USDT',
@@ -131,6 +132,7 @@ describe('PrivateStreamTrackerService', () => {
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
           onFill,
         }),
       } as unknown as ExecutorRegistry,
@@ -352,6 +354,7 @@ describe('PrivateStreamTrackerService', () => {
       } as unknown as FillRoutingService,
       {
         getByExchangeOrderId: jest.fn().mockReturnValue({
+          orderId: 'legacy-order',
           strategyKey: 'strategy-1',
           exchange: 'binance',
           pair: 'BTC/USDT',
@@ -367,6 +370,7 @@ describe('PrivateStreamTrackerService', () => {
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
           onFill: jest.fn().mockResolvedValue(undefined),
         }),
         findExecutorByOrderId: jest.fn().mockReturnValue(undefined),

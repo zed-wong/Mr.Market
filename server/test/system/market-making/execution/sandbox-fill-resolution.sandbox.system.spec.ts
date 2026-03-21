@@ -6,15 +6,15 @@ import { ExchangeOrderMappingService } from '../../../../src/modules/market-maki
 import { FillRoutingService } from '../../../../src/modules/market-making/execution/fill-routing.service';
 import {
   buildSandboxClientOrderId,
-  getSandboxIntegrationSkipReason,
   SandboxExchangeHelper,
 } from '../../helpers/sandbox-exchange.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
 } from '../../helpers/system-test-log.helper';
+import { getSystemSandboxSkipReason } from '../../helpers/sandbox-system.helper';
 
-const skipReason = getSandboxIntegrationSkipReason();
+const skipReason = getSystemSandboxSkipReason();
 const log = createSystemTestLogger('sandbox-fill-resolution');
 
 if (skipReason) {

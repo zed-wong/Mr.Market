@@ -9,17 +9,19 @@ import { ExchangeConnectorAdapterService } from '../../../../src/modules/market-
 import {
   buildSafeSandboxLimitOrderRequest,
   buildSandboxClientOrderId,
-  getSandboxIntegrationSkipReason,
-  pollUntil,
-  readSandboxExchangeTestConfig,
 } from '../../helpers/sandbox-exchange.helper';
-import { waitForInitializedExchange } from '../../helpers/sandbox-system.helper';
+import {
+  getSystemSandboxSkipReason,
+  pollUntil,
+  readSystemSandboxConfig,
+  waitForInitializedExchange,
+} from '../../helpers/sandbox-system.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
 } from '../../helpers/system-test-log.helper';
 
-const skipReason = getSandboxIntegrationSkipReason();
+const skipReason = getSystemSandboxSkipReason();
 const log = createSystemTestLogger('sandbox-order-lifecycle');
 
 if (skipReason) {
@@ -42,7 +44,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
     set: jest.fn(),
   };
 
-  let config: ReturnType<typeof readSandboxExchangeTestConfig>;
+  let config: ReturnType<typeof readSystemSandboxConfig>;
   let moduleRef: TestingModule;
   let exchangeInitService: ExchangeInitService;
   let service: ExchangeConnectorAdapterService;
@@ -92,7 +94,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
   }
 
   beforeAll(async () => {
-    config = readSandboxExchangeTestConfig();
+    config = readSystemSandboxConfig();
     log.suite('initializing exchange through ExchangeInitService');
 
     moduleRef = await Test.createTestingModule({

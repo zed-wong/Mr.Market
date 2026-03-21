@@ -147,9 +147,31 @@ export class PrivateStreamTrackerService
       (trackedOrder
         ? this.executorRegistry?.getExecutor(fill.exchange, trackedOrder.pair)
         : undefined);
+    // Derive session from the actual executor that will handle the fill:
+    // - Primary path: try resolvedExecutor first, fall back to executor (same executor when resolution exists)
+    // - Early fill path (!resolution): use executor with trackedOrder.orderId
     const resolvedSession = resolution?.orderId
-      ? resolvedExecutor?.getSession(resolution.orderId)
-      : undefined;
+      ? (resolvedExecutor?.getSession(resolution.orderId) ||
+          executor?.getSession(resolution.orderId))
+      : (trackedOrder?.orderId && executor
+          ? executor.getSession(trackedOrder.orderId)
+          : undefined);
+
+    // Guard: prevent state mutation when account labels don't match
+    if (
+      resolvedSession?.accountLabel &&
+      resolvedSession.accountLabel !== fill.accountLabel
+    ) {
+      this.recordOrphanedFill(
+        {
+          ...fill,
+          orderId: resolution?.orderId,
+        },
+        'account_boundary_violation',
+      );
+
+      return;
+    }
 
     if (trackedOrder && fill.status) {
       this.exchangeOrderTrackerService?.upsertOrder({
@@ -176,21 +198,6 @@ export class PrivateStreamTrackerService
 
     if (!resolution) {
       this.recordOrphanedFill(fill, 'unresolved_order');
-
-      return;
-    }
-
-    if (
-      resolvedSession?.accountLabel &&
-      resolvedSession.accountLabel !== fill.accountLabel
-    ) {
-      this.recordOrphanedFill(
-        {
-          ...fill,
-          orderId: resolution.orderId,
-        },
-        'account_boundary_violation',
-      );
 
       return;
     }

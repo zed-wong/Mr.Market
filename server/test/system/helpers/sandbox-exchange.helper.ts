@@ -2,11 +2,15 @@
 import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
 
-const REQUIRED_SANDBOX_ENV_VARS = [
-  'CCXT_SANDBOX_EXCHANGE',
-  'CCXT_SANDBOX_API_KEY',
-  'CCXT_SANDBOX_SECRET',
-] as const;
+import {
+  pollUntil,
+  readSystemSandboxConfig,
+  SandboxExchangeTestConfig,
+} from './sandbox-system.helper';
+
+// Re-export for backward compatibility
+export { pollUntil, readSystemSandboxConfig };
+export type { SandboxExchangeTestConfig };
 
 type CcxtExchangeClass = new (
   params?: Record<string, unknown>,
@@ -22,17 +26,6 @@ type CcxtExchangeInstance = ccxt.Exchange & {
 type TrackedSandboxOrder = {
   exchangeOrderId: string;
   symbol: string;
-};
-
-export type SandboxExchangeTestConfig = {
-  exchangeId: string;
-  apiKey: string;
-  secret: string;
-  password?: string;
-  uid?: string;
-  accountLabel: string;
-  symbol: string;
-  minRequestIntervalMs: number;
 };
 
 export type SafeTrackedLimitOrderParams = {
@@ -55,44 +48,6 @@ export function buildSandboxClientOrderId(prefix = 'sandbox'): string {
   const orderId = [safePrefix || 'sandbox', uniqueSuffix].join('-');
 
   return orderId.slice(0, 36);
-}
-
-export function getSandboxIntegrationSkipReason(): string | null {
-  const missingEnvVars = REQUIRED_SANDBOX_ENV_VARS.filter(
-    (key) => !process.env[key]?.trim(),
-  );
-
-  if (missingEnvVars.length === 0) {
-    return null;
-  }
-
-  return `missing sandbox env vars: ${missingEnvVars.join(', ')}`;
-}
-
-export function readSandboxExchangeTestConfig(): SandboxExchangeTestConfig {
-  const skipReason = getSandboxIntegrationSkipReason();
-
-  if (skipReason) {
-    throw new Error(skipReason);
-  }
-
-  const minRequestIntervalMs = Number(
-    process.env.CCXT_SANDBOX_MIN_REQUEST_INTERVAL_MS || 100,
-  );
-
-  return {
-    exchangeId: process.env.CCXT_SANDBOX_EXCHANGE!.trim(),
-    apiKey: process.env.CCXT_SANDBOX_API_KEY!.trim(),
-    secret: process.env.CCXT_SANDBOX_SECRET!.trim(),
-    password: process.env.CCXT_SANDBOX_PASSWORD?.trim() || undefined,
-    uid: process.env.CCXT_SANDBOX_UID?.trim() || undefined,
-    accountLabel: process.env.CCXT_SANDBOX_ACCOUNT_LABEL?.trim() || 'default',
-    symbol: process.env.CCXT_SANDBOX_SYMBOL?.trim() || 'BTC/USDT',
-    minRequestIntervalMs:
-      Number.isFinite(minRequestIntervalMs) && minRequestIntervalMs >= 0
-        ? minRequestIntervalMs
-        : 100,
-  };
 }
 
 export async function buildSafeSandboxLimitOrderRequest(
@@ -145,52 +100,13 @@ export async function buildSafeSandboxLimitOrderRequest(
   };
 }
 
-export async function pollUntil<T>(
-  work: () => Promise<T>,
-  predicate: (value: T) => boolean | Promise<boolean>,
-  options?: {
-    timeoutMs?: number;
-    intervalMs?: number;
-    description?: string;
-  },
-): Promise<T> {
-  const timeoutMs = options?.timeoutMs ?? 45000;
-  const intervalMs = options?.intervalMs ?? 1000;
-  const deadlineAtMs = Date.now() + timeoutMs;
-  let lastError: unknown;
-
-  while (Date.now() < deadlineAtMs) {
-    try {
-      const value = await work();
-
-      if (await predicate(value)) {
-        return value;
-      }
-
-      lastError = null;
-    } catch (error) {
-      lastError = error;
-    }
-
-    await sleep(intervalMs);
-  }
-
-  if (lastError instanceof Error) {
-    throw lastError;
-  }
-
-  throw new Error(
-    `Timed out waiting for ${options?.description || 'sandbox condition'}`,
-  );
-}
-
 export class SandboxExchangeHelper {
   private readonly trackedOrders: TrackedSandboxOrder[] = [];
   private readonly config: SandboxExchangeTestConfig;
   private exchange: CcxtExchangeInstance | null = null;
 
   constructor(
-    config: SandboxExchangeTestConfig = readSandboxExchangeTestConfig(),
+    config: SandboxExchangeTestConfig = readSystemSandboxConfig(),
   ) {
     this.config = config;
   }
@@ -379,8 +295,4 @@ function getMarketFromExchange(
   const markets = exchange.markets as Record<string, any> | undefined;
 
   return markets?.[symbol];
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

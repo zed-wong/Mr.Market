@@ -11,6 +11,7 @@ import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.serv
 import { TickComponent } from '../tick/tick-component.interface';
 
 type TrackedOrder = {
+  orderId: string;
   strategyKey: string;
   exchange: string;
   pair: string;
