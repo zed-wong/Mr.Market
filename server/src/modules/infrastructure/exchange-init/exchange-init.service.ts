@@ -338,7 +338,8 @@ export class ExchangeInitService {
       return null;
     }
 
-    const exchangeName = process.env.CCXT_SANDBOX_EXCHANGE?.trim().toLowerCase();
+    const exchangeName =
+      process.env.CCXT_SANDBOX_EXCHANGE?.trim().toLowerCase();
     const apiKey = process.env.CCXT_SANDBOX_API_KEY?.trim();
     const secret = process.env.CCXT_SANDBOX_SECRET?.trim();
 
