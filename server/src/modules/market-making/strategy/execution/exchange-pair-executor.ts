@@ -19,6 +19,7 @@ export type ExchangePairExecutorOrderConfig = {
   strategyType: StrategyType;
   clientId: string;
   cadenceMs: number;
+  accountLabel?: string;
   params: StrategyRuntimeSession['params'];
   marketMakingOrderId?: string;
   nextRunAtMs?: number;
@@ -29,6 +30,7 @@ export type ExchangePairExecutorSession = StrategyRuntimeSession & {
   orderId: string;
   exchange: string;
   pair: string;
+  accountLabel?: string;
 };
 
 export type ExchangePairExecutorHandlers = {
@@ -87,6 +89,11 @@ export class ExchangePairExecutor {
       strategyKey: config.strategyKey || orderId,
       strategyType: config.strategyType,
       userId,
+      accountLabel:
+        config.accountLabel ||
+        (typeof config.params?.accountLabel === 'string'
+          ? config.params.accountLabel
+          : undefined),
       clientId: config.clientId,
       marketMakingOrderId: config.marketMakingOrderId ?? orderId,
       cadenceMs: Math.max(0, Number(config.cadenceMs || 0)),

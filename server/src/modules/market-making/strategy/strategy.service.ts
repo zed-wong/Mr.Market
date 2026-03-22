@@ -18,9 +18,11 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
+import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
+import { PrivateStreamIngestionService } from '../trackers/private-stream-ingestion.service';
 import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
@@ -119,6 +121,10 @@ export class StrategyService
     private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
     @Optional()
     private readonly executorRegistry?: ExecutorRegistry,
+    @Optional()
+    private readonly privateStreamIngestionService?: PrivateStreamIngestionService,
+    @Optional()
+    private readonly balanceLedgerService?: BalanceLedgerService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -152,6 +158,10 @@ export class StrategyService
   }
 
   async stop(): Promise<void> {
+    for (const session of [...this.sessions.values()]) {
+      await this.detachSessionFromExecutor(session);
+    }
+
     this.sessions.clear();
     this.executorRegistry?.clear();
   }
@@ -704,12 +714,16 @@ export class StrategyService
     );
 
     if (this.executorRegistry && pooledTarget) {
+      const accountLabel = this.resolveAccountLabel(strategyType, params);
       const executor = this.executorRegistry.getOrCreateExecutor(
         pooledTarget.exchange,
         pooledTarget.pair,
         {
           onTick: async (session, ts) => {
             await this.runSession(session, ts);
+          },
+          onFill: async (session, fill) => {
+            await this.handleSessionFill(session, fill);
           },
           onTickError: async (session, error, ts) => {
             this.logSessionTickError(session.strategyKey, ts, error);
@@ -738,11 +752,19 @@ export class StrategyService
           strategyType,
           clientId,
           cadenceMs,
+          accountLabel,
           params,
           marketMakingOrderId,
           nextRunAtMs,
           runId,
         },
+      );
+
+      this.startPrivateOrderWatcher(
+        strategyType,
+        pooledTarget.exchange,
+        pooledTarget.pair,
+        accountLabel,
       );
 
       this.sessions.set(strategyKey, pooledSession);
@@ -1857,6 +1879,13 @@ export class StrategyService
       pooledTarget.exchange,
       pooledTarget.pair,
     );
+
+    this.stopPrivateOrderWatcher(
+      session.strategyType,
+      pooledTarget.exchange,
+      pooledTarget.pair,
+      this.resolveAccountLabel(session.strategyType, session.params),
+    );
   }
 
   private resolvePooledExecutorTarget(
@@ -1914,6 +1943,56 @@ export class StrategyService
     return null;
   }
 
+  private resolveAccountLabel(
+    strategyType: StrategyType,
+    params: StrategyRuntimeSession['params'],
+  ): string | undefined {
+    if (strategyType !== 'pureMarketMaking') {
+      return undefined;
+    }
+
+    const accountLabel = String(
+      (params as unknown as PureMarketMakingStrategyDto).accountLabel ||
+        'default',
+    ).trim();
+
+    return accountLabel || 'default';
+  }
+
+  private startPrivateOrderWatcher(
+    strategyType: StrategyType,
+    exchange: string,
+    pair: string,
+    accountLabel?: string,
+  ): void {
+    if (strategyType !== 'pureMarketMaking') {
+      return;
+    }
+
+    this.privateStreamIngestionService?.startOrderWatcher({
+      exchange,
+      accountLabel: accountLabel || 'default',
+      symbol: pair,
+    });
+  }
+
+  private stopPrivateOrderWatcher(
+    strategyType: StrategyType,
+    exchange: string,
+    pair: string,
+    accountLabel?: string,
+  ): void {
+    if (strategyType !== 'pureMarketMaking') {
+      return;
+    }
+
+    this.privateStreamIngestionService?.stopOrderWatcher({
+      exchange,
+      accountLabel: accountLabel || 'default',
+      symbol: pair,
+    });
+  }
+
   private logSessionTickError(
     strategyKey: string,
     ts: string,
@@ -1926,6 +2005,129 @@ export class StrategyService
       `onTick runSession failed for strategyKey=${strategyKey} ts=${ts}: ${errorMessage}`,
       errorTrace,
     );
+  }
+
+  private async handleSessionFill(
+    session: StrategyRuntimeSession,
+    fill: {
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      receivedAt?: string;
+    },
+  ): Promise<void> {
+    if (session.strategyType !== 'pureMarketMaking') {
+      return;
+    }
+
+    await this.applyFillToBalanceLedger(session, fill);
+
+    // A fill invalidates the current quote shape, so make the session eligible
+    // for the next pooled tick immediately.
+    session.nextRunAtMs = Math.min(session.nextRunAtMs, Date.now());
+  }
+
+  private async applyFillToBalanceLedger(
+    session: StrategyRuntimeSession,
+    fill: {
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      receivedAt?: string;
+    },
+  ): Promise<void> {
+    if (!this.balanceLedgerService || !fill.side || !fill.price || !fill.qty) {
+      return;
+    }
+
+    const pair = this.readString(
+      session.params?.pair,
+      this.readString(session.params?.symbol, ''),
+    );
+    const assets = pair ? this.parseBaseQuote(pair) : null;
+
+    if (!assets) {
+      this.logger.warn(
+        `Skipping fill ledger update for strategyKey=${session.strategyKey}: pair is missing or unparseable`,
+      );
+
+      return;
+    }
+
+    const price = new BigNumber(fill.price);
+    const qty = new BigNumber(fill.qty);
+
+    if (
+      !price.isFinite() ||
+      !qty.isFinite() ||
+      price.isLessThanOrEqualTo(0) ||
+      qty.isLessThanOrEqualTo(0)
+    ) {
+      this.logger.warn(
+        `Skipping fill ledger update for strategyKey=${
+          session.strategyKey
+        }: invalid fill price/qty price=${fill.price || ''} qty=${
+          fill.qty || ''
+        }`,
+      );
+
+      return;
+    }
+
+    const quoteAmount = price.multipliedBy(qty);
+    const eventKey = this.buildFillLedgerEventKey(session, fill);
+    const baseAmount = qty.toFixed();
+    const quoteDelta =
+      fill.side === 'buy'
+        ? quoteAmount.negated().toFixed()
+        : quoteAmount.toFixed();
+    const baseDelta =
+      fill.side === 'buy' ? baseAmount : qty.negated().toFixed();
+
+    await this.balanceLedgerService.adjust({
+      userId: session.userId,
+      assetId: assets.base,
+      amount: baseDelta,
+      idempotencyKey: `${eventKey}:base`,
+      refType: 'market_making_fill',
+      refId: fill.exchangeOrderId || fill.clientOrderId || session.strategyKey,
+    });
+
+    await this.balanceLedgerService.adjust({
+      userId: session.userId,
+      assetId: assets.quote,
+      amount: quoteDelta,
+      idempotencyKey: `${eventKey}:quote`,
+      refType: 'market_making_fill',
+      refId: fill.exchangeOrderId || fill.clientOrderId || session.strategyKey,
+    });
+  }
+
+  private buildFillLedgerEventKey(
+    session: StrategyRuntimeSession,
+    fill: {
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      receivedAt?: string;
+    },
+  ): string {
+    return [
+      'mm-fill',
+      session.strategyKey,
+      fill.exchangeOrderId || '',
+      fill.clientOrderId || '',
+      fill.side || '',
+      fill.price || '',
+      fill.qty || '',
+      fill.receivedAt || '',
+    ].join(':');
   }
 
   private isWithinTimeWindow(params: TimeIndicatorStrategyDto): boolean {
@@ -1997,6 +2199,18 @@ export class StrategyService
     }
 
     return null;
+  }
+
+  private readString(value: unknown, fallback = ''): string {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    return fallback;
   }
 
   private toErrorDetails(error: unknown): { message: string; stack?: string } {

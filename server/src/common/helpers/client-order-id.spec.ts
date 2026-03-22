@@ -1,4 +1,8 @@
-import { buildClientOrderId, parseClientOrderId } from './client-order-id';
+import {
+  buildClientOrderId,
+  buildSubmittedClientOrderId,
+  parseClientOrderId,
+} from './client-order-id';
 
 describe('client-order-id helpers', () => {
   it('builds clientOrderId in {orderId}:{seq} format', () => {
@@ -14,6 +18,15 @@ describe('client-order-id helpers', () => {
     });
   });
 
+  it('builds exchange-safe submitted clientOrderId values deterministically', () => {
+    expect(buildSubmittedClientOrderId('order-1', 42)).toBe(
+      'mm-ea37b42b1c3b-16',
+    );
+    expect(buildSubmittedClientOrderId('order-1', 42)).toMatch(
+      /^mm-[a-f0-9]{12}-[a-z0-9]+$/,
+    );
+  });
+
   it('rejects invalid clientOrderId values', () => {
     expect(parseClientOrderId('order-1')).toBeNull();
     expect(parseClientOrderId('order-1:abc')).toBeNull();
@@ -27,6 +40,12 @@ describe('client-order-id helpers', () => {
       'orderId must be non-empty and must not contain ":"',
     );
     expect(() => buildClientOrderId('order-1', -1)).toThrow(
+      'seq must be a non-negative integer',
+    );
+    expect(() => buildSubmittedClientOrderId('', 0)).toThrow(
+      'orderId must be non-empty',
+    );
+    expect(() => buildSubmittedClientOrderId('order-1', -1)).toThrow(
       'seq must be a non-negative integer',
     );
   });

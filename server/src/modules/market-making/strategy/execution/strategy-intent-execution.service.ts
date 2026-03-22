@@ -2,7 +2,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
-import { buildClientOrderId } from 'src/common/helpers/client-order-id';
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
@@ -45,8 +45,8 @@ export class StrategyIntentExecutionService {
     private readonly dexVolumeStrategyService?: DexVolumeStrategyService,
   ) {
     this.executeIntents = this.toBoolean(
-      this.configService.get('strategy.execute_intents', false),
-      false,
+      this.configService.get('strategy.execute_intents', true),
+      true,
     );
     const parsedMaxRetries = Number(
       this.configService.get('strategy.intent_max_retries', 2),
@@ -180,6 +180,7 @@ export class StrategyIntentExecutionService {
             }),
           );
           this.exchangeOrderTrackerService?.upsertOrder({
+            orderId,
             strategyKey: intent.strategyKey,
             exchange: intent.exchange,
             pair: intent.pair,
@@ -207,7 +208,9 @@ export class StrategyIntentExecutionService {
           ),
         );
 
+        const orderId = this.resolveOrderIdForClientOrderId(intent);
         this.exchangeOrderTrackerService?.upsertOrder({
+          orderId,
           strategyKey: intent.strategyKey,
           exchange: intent.exchange,
           pair: intent.pair,
@@ -384,7 +387,7 @@ export class StrategyIntentExecutionService {
 
     this.nextClientOrderSeqByOrderId.set(orderId, nextSeq + 1);
 
-    return buildClientOrderId(orderId, nextSeq);
+    return buildSubmittedClientOrderId(orderId, nextSeq);
   }
 
   private async runWithRetries<T>(work: () => Promise<T>): Promise<T> {
