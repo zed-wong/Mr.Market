@@ -158,6 +158,7 @@ Coverage:
 Use `server/.env.testnet.example` as the template for sandbox system-test config.
 
 `bun run test:system` automatically loads `server/.env.testnet` when that file exists.
+That entry point also enables the internal sandbox-exchange bootstrap flag used by `ExchangeInitService`.
 
 Required:
 
@@ -167,7 +168,6 @@ Required:
 
 Optional:
 
-- `CCXT_SANDBOX_ENABLED` default: sandbox activation also occurs when required sandbox creds are present
 - `CCXT_SANDBOX_ACCOUNT_LABEL` default: `default`
 - `CCXT_SANDBOX_PASSWORD`
 - `CCXT_SANDBOX_UID`
@@ -180,6 +180,7 @@ Optional:
 - `CCXT_SANDBOX_MIN_REQUEST_INTERVAL_MS` default: `100`
 
 Production credential names are intentionally not used in these system suites.
+Outside `bun run test:system`, `ExchangeInitService` does not read `CCXT_SANDBOX_*`.
 
 ## Running The Suites
 

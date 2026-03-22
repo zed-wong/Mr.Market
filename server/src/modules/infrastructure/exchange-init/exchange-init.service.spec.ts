@@ -8,7 +8,6 @@ import { ExchangeInitService } from './exchange-init.service';
 describe('ExchangeinitService', () => {
   let service: ExchangeInitService;
   const originalSandboxEnv = {
-    enabled: process.env.CCXT_SANDBOX_ENABLED,
     exchange: process.env.CCXT_SANDBOX_EXCHANGE,
     apiKey: process.env.CCXT_SANDBOX_API_KEY,
     secret: process.env.CCXT_SANDBOX_SECRET,
@@ -16,6 +15,7 @@ describe('ExchangeinitService', () => {
     account2ApiKey: process.env.CCXT_SANDBOX_ACCOUNT2_API_KEY,
     account2Secret: process.env.CCXT_SANDBOX_ACCOUNT2_SECRET,
     account2Label: process.env.CCXT_SANDBOX_ACCOUNT2_LABEL,
+    systemTestSandboxFlag: process.env.MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE,
   };
   let exchangeService: {
     readSupportedExchanges: jest.Mock;
@@ -26,7 +26,6 @@ describe('ExchangeinitService', () => {
 
   beforeEach(async () => {
     jest.useFakeTimers();
-    delete process.env.CCXT_SANDBOX_ENABLED;
     delete process.env.CCXT_SANDBOX_EXCHANGE;
     delete process.env.CCXT_SANDBOX_API_KEY;
     delete process.env.CCXT_SANDBOX_SECRET;
@@ -34,6 +33,7 @@ describe('ExchangeinitService', () => {
     delete process.env.CCXT_SANDBOX_ACCOUNT2_API_KEY;
     delete process.env.CCXT_SANDBOX_ACCOUNT2_SECRET;
     delete process.env.CCXT_SANDBOX_ACCOUNT2_LABEL;
+    delete process.env.MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE;
     exchangeService = {
       readSupportedExchanges: jest.fn().mockResolvedValue(['binance']),
       readDecryptedAPIKeys: jest
@@ -77,7 +77,6 @@ describe('ExchangeinitService', () => {
     jest.clearAllTimers();
     jest.useRealTimers();
     initializeExchangeConfigsSpy.mockRestore();
-    restoreEnvVar('CCXT_SANDBOX_ENABLED', originalSandboxEnv.enabled);
     restoreEnvVar('CCXT_SANDBOX_EXCHANGE', originalSandboxEnv.exchange);
     restoreEnvVar('CCXT_SANDBOX_API_KEY', originalSandboxEnv.apiKey);
     restoreEnvVar('CCXT_SANDBOX_SECRET', originalSandboxEnv.secret);
@@ -96,6 +95,10 @@ describe('ExchangeinitService', () => {
     restoreEnvVar(
       'CCXT_SANDBOX_ACCOUNT2_LABEL',
       originalSandboxEnv.account2Label,
+    );
+    restoreEnvVar(
+      'MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE',
+      originalSandboxEnv.systemTestSandboxFlag,
     );
   });
 
@@ -121,6 +124,7 @@ describe('ExchangeinitService', () => {
   });
 
   it('uses env-driven sandbox config when sandbox credentials are present', async () => {
+    process.env.MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE = 'true';
     process.env.CCXT_SANDBOX_EXCHANGE = 'binance';
     process.env.CCXT_SANDBOX_API_KEY = 'sandbox-key';
     process.env.CCXT_SANDBOX_SECRET = 'sandbox-secret';
@@ -165,7 +169,59 @@ describe('ExchangeinitService', () => {
     await module.close();
   });
 
+  it('ignores sandbox credentials outside the system-test sandbox runtime', async () => {
+    process.env.CCXT_SANDBOX_EXCHANGE = 'binance';
+    process.env.CCXT_SANDBOX_API_KEY = 'sandbox-key';
+    process.env.CCXT_SANDBOX_SECRET = 'sandbox-secret';
+    initializeExchangeConfigsSpy.mockClear();
+    exchangeService.readDecryptedAPIKeys.mockReset();
+    exchangeService.readDecryptedAPIKeys
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          key_id: '1',
+          exchange: 'binance',
+          exchange_index: 'default',
+          name: 'default',
+          api_key: 'key',
+          api_secret: 'secret',
+        },
+      ]);
+    exchangeService.seedApiKeysFromEnv.mockClear();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExchangeInitService,
+        {
+          provide: CACHE_MANAGER,
+          useValue: {},
+        },
+        {
+          provide: ExchangeApiKeyService,
+          useValue: exchangeService,
+        },
+      ],
+    }).compile();
+
+    await Promise.resolve();
+
+    expect(initializeExchangeConfigsSpy).not.toHaveBeenCalledWith([
+      expect.objectContaining({
+        name: 'binance',
+        accounts: expect.arrayContaining([
+          expect.objectContaining({
+            sandboxMode: true,
+          }),
+        ]),
+      }),
+    ]);
+    expect(exchangeService.seedApiKeysFromEnv).toHaveBeenCalledTimes(1);
+
+    await module.close();
+  });
+
   it('includes an optional second sandbox account when account2 credentials are present', async () => {
+    process.env.MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE = 'true';
     process.env.CCXT_SANDBOX_EXCHANGE = 'binance';
     process.env.CCXT_SANDBOX_API_KEY = 'sandbox-key';
     process.env.CCXT_SANDBOX_SECRET = 'sandbox-secret';
@@ -215,6 +271,7 @@ describe('ExchangeinitService', () => {
   });
 
   it('does not start DB refresh polling when sandbox config is active', async () => {
+    process.env.MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE = 'true';
     process.env.CCXT_SANDBOX_EXCHANGE = 'binance';
     process.env.CCXT_SANDBOX_API_KEY = 'sandbox-key';
     process.env.CCXT_SANDBOX_SECRET = 'sandbox-secret';

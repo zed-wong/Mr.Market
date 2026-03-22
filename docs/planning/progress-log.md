@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-03-22
+
+- Gate `ExchangeInitService` sandbox bootstrap behind the `test:system` setup path, remove `CCXT_SANDBOX_ENABLED`, and document that only the system-test entry point reads `CCXT_SANDBOX_*`
+
 ## 2026-03-21
 
 - Move the completed market-making cycle design, testing checklist, and token metadata migration plan from `docs/planning/` to `docs/archive/plans/`, and refresh the planning README so only active dated plans stay listed there

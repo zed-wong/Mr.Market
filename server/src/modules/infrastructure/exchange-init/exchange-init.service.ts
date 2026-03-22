@@ -30,6 +30,8 @@ type ExchangeConfig = {
 };
 
 type ExchangeInitializationState = 'pending' | 'ready' | 'failed';
+const SYSTEM_TEST_SANDBOX_EXCHANGE_FLAG =
+  'MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE';
 
 @Injectable({ scope: Scope.DEFAULT })
 export class ExchangeInitService {
@@ -62,7 +64,7 @@ export class ExchangeInitService {
         }
 
         this.startKeepAlive();
-        if (!this.shouldUseSandboxExchangeConfig()) {
+        if (!this.buildSandboxExchangeConfig()) {
           this.startRefresh();
         }
       })
@@ -331,28 +333,19 @@ export class ExchangeInitService {
     ];
   }
 
-  private shouldUseSandboxExchangeConfig(): boolean {
-    const enabled = process.env.CCXT_SANDBOX_ENABLED?.trim();
-    const hasRequiredConfig =
-      Boolean(process.env.CCXT_SANDBOX_EXCHANGE?.trim()) &&
-      Boolean(process.env.CCXT_SANDBOX_API_KEY?.trim()) &&
-      Boolean(process.env.CCXT_SANDBOX_SECRET?.trim());
-
-    if (!enabled) {
-      return hasRequiredConfig;
-    }
-
-    return this.isTruthyEnvValue(enabled) && hasRequiredConfig;
-  }
-
   private buildSandboxExchangeConfig(): ExchangeConfig | null {
-    if (!this.shouldUseSandboxExchangeConfig()) {
+    if (!this.isSystemTestSandboxExchangeEnabled()) {
       return null;
     }
 
-    const exchangeName = process.env
-      .CCXT_SANDBOX_EXCHANGE!.trim()
-      .toLowerCase();
+    const exchangeName = process.env.CCXT_SANDBOX_EXCHANGE?.trim().toLowerCase();
+    const apiKey = process.env.CCXT_SANDBOX_API_KEY?.trim();
+    const secret = process.env.CCXT_SANDBOX_SECRET?.trim();
+
+    if (!exchangeName || !apiKey || !secret) {
+      return null;
+    }
+
     const ExchangeClass = this.resolveExchangeClass(exchangeName);
 
     if (!ExchangeClass) {
@@ -366,8 +359,8 @@ export class ExchangeInitService {
     const sandboxAccounts: ExchangeAccountConfig[] = [
       {
         label: process.env.CCXT_SANDBOX_ACCOUNT_LABEL?.trim() || 'default',
-        apiKey: process.env.CCXT_SANDBOX_API_KEY?.trim(),
-        secret: process.env.CCXT_SANDBOX_SECRET?.trim(),
+        apiKey,
+        secret,
         password: process.env.CCXT_SANDBOX_PASSWORD?.trim() || undefined,
         uid: process.env.CCXT_SANDBOX_UID?.trim() || undefined,
         sandboxMode: true,
@@ -454,6 +447,12 @@ export class ExchangeInitService {
 
   private isTruthyEnvValue(value: string): boolean {
     return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+  }
+
+  private isSystemTestSandboxExchangeEnabled(): boolean {
+    return this.isTruthyEnvValue(
+      process.env[SYSTEM_TEST_SANDBOX_EXCHANGE_FLAG] || '',
+    );
   }
 
   private buildExchangeConfigsFromDb(
