@@ -151,11 +151,11 @@ export class PrivateStreamTrackerService
     // - Primary path: try resolvedExecutor first, fall back to executor (same executor when resolution exists)
     // - Early fill path (!resolution): use executor with trackedOrder.orderId
     const resolvedSession = resolution?.orderId
-      ? (resolvedExecutor?.getSession(resolution.orderId) ||
-          executor?.getSession(resolution.orderId))
-      : (trackedOrder?.orderId && executor
-          ? executor.getSession(trackedOrder.orderId)
-          : undefined);
+      ? resolvedExecutor?.getSession(resolution.orderId) ||
+        executor?.getSession(resolution.orderId)
+      : trackedOrder?.orderId && executor
+      ? executor.getSession(trackedOrder.orderId)
+      : undefined;
 
     // Guard: prevent state mutation when account labels don't match
     if (

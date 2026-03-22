@@ -105,9 +105,7 @@ export class SandboxExchangeHelper {
   private readonly config: SandboxExchangeTestConfig;
   private exchange: CcxtExchangeInstance | null = null;
 
-  constructor(
-    config: SandboxExchangeTestConfig = readSystemSandboxConfig(),
-  ) {
+  constructor(config: SandboxExchangeTestConfig = readSystemSandboxConfig()) {
     this.config = config;
   }
 

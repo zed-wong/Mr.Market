@@ -8,11 +8,11 @@ import {
   buildSandboxClientOrderId,
   SandboxExchangeHelper,
 } from '../../helpers/sandbox-exchange.helper';
+import { getSystemSandboxSkipReason } from '../../helpers/sandbox-system.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
 } from '../../helpers/system-test-log.helper';
-import { getSystemSandboxSkipReason } from '../../helpers/sandbox-system.helper';
 
 const skipReason = getSystemSandboxSkipReason();
 const log = createSystemTestLogger('sandbox-fill-resolution');

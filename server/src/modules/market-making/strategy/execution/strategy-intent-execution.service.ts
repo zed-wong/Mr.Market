@@ -209,6 +209,7 @@ export class StrategyIntentExecutionService {
         );
 
         const orderId = this.resolveOrderIdForClientOrderId(intent);
+
         this.exchangeOrderTrackerService?.upsertOrder({
           orderId,
           strategyKey: intent.strategyKey,
