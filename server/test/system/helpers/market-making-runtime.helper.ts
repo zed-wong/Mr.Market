@@ -3,6 +3,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
+import type * as ccxt from 'ccxt';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -81,7 +82,7 @@ type RuntimeFixture = {
 
 export class MarketMakingRuntimeHelper {
   private readonly config: SandboxExchangeTestConfig;
-  private exchange: any;
+  private exchange!: ccxt.Exchange;
   private exchangeInitService!: ExchangeInitService;
   private executorRegistry!: ExecutorRegistry;
   private marketMakingOrderProcessor!: MarketMakingOrderProcessor;
@@ -100,7 +101,7 @@ export class MarketMakingRuntimeHelper {
     return this.config;
   }
 
-  getExchange(): any {
+  getExchange(): ccxt.Exchange {
     return this.exchange;
   }
 
@@ -332,7 +333,7 @@ export class MarketMakingRuntimeHelper {
     return await this.marketMakingOrderRepository.findOneBy({ orderId });
   }
 
-  async fetchExchangeTicker(pair = this.config.symbol): Promise<any> {
+  async fetchExchangeTicker(pair = this.config.symbol): Promise<ccxt.Ticker> {
     return await this.exchange.fetchTicker(pair);
   }
 

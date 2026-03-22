@@ -4,6 +4,10 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { PrivateStreamIngestionService } from './private-stream-ingestion.service';
 import { PrivateStreamTrackerService } from './private-stream-tracker.service';
 
+type SleepSpyTarget = {
+  sleep(ms: number): Promise<void>;
+};
+
 describe('PrivateStreamIngestionService', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -137,7 +141,10 @@ describe('PrivateStreamIngestionService', () => {
   it('retries immediately after the first watchOrders failure', async () => {
     const queueAccountEvent = jest.fn();
     const sleepSpy = jest
-      .spyOn(PrivateStreamIngestionService.prototype as any, 'sleep')
+      .spyOn(
+        PrivateStreamIngestionService.prototype as unknown as SleepSpyTarget,
+        'sleep',
+      )
       .mockResolvedValue(undefined);
     const watchOrders = jest
       .fn()
@@ -165,7 +172,10 @@ describe('PrivateStreamIngestionService', () => {
 
   it('applies exponential backoff after consecutive failures', async () => {
     const sleepSpy = jest
-      .spyOn(PrivateStreamIngestionService.prototype as any, 'sleep')
+      .spyOn(
+        PrivateStreamIngestionService.prototype as unknown as SleepSpyTarget,
+        'sleep',
+      )
       .mockResolvedValue(undefined);
     const watchOrders = jest
       .fn()
@@ -197,7 +207,10 @@ describe('PrivateStreamIngestionService', () => {
 
   it('resets backoff to immediate after a successful watchOrders call', async () => {
     const sleepSpy = jest
-      .spyOn(PrivateStreamIngestionService.prototype as any, 'sleep')
+      .spyOn(
+        PrivateStreamIngestionService.prototype as unknown as SleepSpyTarget,
+        'sleep',
+      )
       .mockResolvedValue(undefined);
     const watchOrders = jest
       .fn()
@@ -230,7 +243,10 @@ describe('PrivateStreamIngestionService', () => {
 
   it('caps backoff at 30 seconds', async () => {
     const sleepSpy = jest
-      .spyOn(PrivateStreamIngestionService.prototype as any, 'sleep')
+      .spyOn(
+        PrivateStreamIngestionService.prototype as unknown as SleepSpyTarget,
+        'sleep',
+      )
       .mockResolvedValue(undefined);
     const watchOrders = jest.fn();
 

@@ -3,6 +3,8 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
+import type { Job } from 'bull';
+import type * as ccxt from 'ccxt';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -111,7 +113,7 @@ export class MarketMakingSingleTickHelper {
     'market-making-single-tick',
   );
   private readonly options: SingleTickHelperOptions;
-  private exchange: any;
+  private exchange!: ccxt.Exchange;
   private clockTickCoordinatorService!: ClockTickCoordinatorService;
   private exchangeOrderMappingRepository!: Repository<ExchangeOrderMapping>;
   private exchangeOrderTrackerService!: ExchangeOrderTrackerService;
@@ -142,11 +144,11 @@ export class MarketMakingSingleTickHelper {
     return this.config;
   }
 
-  getExchange(): any {
+  getExchange(): ccxt.Exchange {
     return this.exchange;
   }
 
-  getExchangeForAccount(accountLabel?: string): any {
+  getExchangeForAccount(accountLabel?: string): ccxt.Exchange {
     return this.exchangeInitService.getExchange(
       this.config.exchangeId,
       accountLabel || this.config.accountLabel,
@@ -492,7 +494,7 @@ export class MarketMakingSingleTickHelper {
   async startOrder(orderId: string, userId: string): Promise<void> {
     await this.marketMakingOrderProcessor.handleStartMM({
       data: { userId, orderId },
-    } as any);
+    } as unknown as Job<{ userId: string; orderId: string }>);
   }
 
   async runSingleTick(orderId: string): Promise<void> {
@@ -520,7 +522,7 @@ export class MarketMakingSingleTickHelper {
   async stopOrder(orderId: string, userId: string): Promise<void> {
     await this.marketMakingOrderProcessor.handleStopMM({
       data: { userId, orderId },
-    } as any);
+    } as unknown as Job<{ userId: string; orderId: string }>);
   }
 
   async flushPrivateStreamEvents(): Promise<void> {
@@ -656,7 +658,7 @@ export class MarketMakingSingleTickHelper {
   async fetchExchangeOrder(
     exchangeOrderId: string,
     pair: string,
-  ): Promise<any> {
+  ): Promise<ccxt.Order> {
     return await this.exchange.fetchOrder(exchangeOrderId, pair);
   }
 

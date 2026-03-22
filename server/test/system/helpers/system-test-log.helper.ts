@@ -1,4 +1,11 @@
 type JsonLike = Record<string, unknown>;
+type JestStateReader = {
+  expect?: {
+    getState?: () => {
+      currentTestName?: string;
+    };
+  };
+};
 
 function formatPayload(payload: unknown): string {
   if (payload === undefined) {
@@ -18,7 +25,7 @@ function formatPayload(payload: unknown): string {
 
 function readCurrentTestName(): string {
   try {
-    const state = (global as any)?.expect?.getState?.();
+    const state = (global as JestStateReader).expect?.getState?.();
     const currentTestName = state?.currentTestName;
 
     return typeof currentTestName === 'string' ? currentTestName : '';

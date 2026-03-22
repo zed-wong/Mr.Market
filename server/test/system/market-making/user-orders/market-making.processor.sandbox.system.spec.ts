@@ -1,3 +1,5 @@
+import type { Job } from 'bull';
+
 import { MarketMakingRuntimeHelper } from '../../helpers/market-making-runtime.helper';
 import { getSystemSandboxSkipReason } from '../../helpers/sandbox-system.helper';
 import {
@@ -62,7 +64,7 @@ describeSandbox(
           userId: order.userId,
           orderId: order.orderId,
         },
-      } as any);
+      } as unknown as Job<{ userId: string; orderId: string }>);
 
       const runningOrder = await helper.findOrder(order.orderId);
       const runningSession = helper.getExecutorSession(
@@ -105,7 +107,7 @@ describeSandbox(
           userId: order.userId,
           orderId: order.orderId,
         },
-      } as any);
+      } as unknown as Job<{ userId: string; orderId: string }>);
 
       const stoppedOrder = await helper.findOrder(order.orderId);
       const stoppedStrategyInstance = await helper.findStrategyInstance(

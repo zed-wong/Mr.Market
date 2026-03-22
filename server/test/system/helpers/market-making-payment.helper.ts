@@ -1,9 +1,11 @@
 import 'reflect-metadata';
 
+import type { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
 import { getQueueToken } from '@nestjs/bull';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
+import type { Job } from 'bull';
 import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -34,11 +36,13 @@ import { TransactionService } from 'src/modules/mixin/transaction/transaction.se
 import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.service';
 import type { Repository } from 'typeorm';
 
+type QueueJobData = unknown;
+
 type QueueJob = {
   id: string;
   name: string;
-  data: any;
-  opts: Record<string, any>;
+  data: QueueJobData;
+  opts: Record<string, unknown>;
   attemptsMade: number;
   queue: FakeQueue;
 };
@@ -64,8 +68,8 @@ class FakeQueue {
 
   async add(
     name: string,
-    data: any,
-    opts: Record<string, any> = {},
+    data: QueueJobData,
+    opts: Record<string, unknown> = {},
   ): Promise<QueueJob> {
     const jobId = opts.jobId || `${name}_${this.jobs.size + 1}`;
     const job: QueueJob = {
@@ -286,14 +290,14 @@ export class MarketMakingPaymentHelper {
     this.marketMakingQueue.registerHandler(
       'process_market_making_snapshots',
       async (job) => {
-        await processor.handleProcessMMSnapshot(job as any);
+        await processor.handleProcessMMSnapshot(job as unknown as Job);
       },
       { immediate: true },
     );
     this.marketMakingQueue.registerHandler(
       'check_payment_complete',
       async (job) => {
-        await processor.handleCheckPaymentComplete(job as any);
+        await processor.handleCheckPaymentComplete(job as unknown as Job);
       },
     );
   }
@@ -361,7 +365,7 @@ export class MarketMakingPaymentHelper {
       amount: params.amount,
       opponent_id: params.userId,
       memo: Buffer.from(params.memo, 'utf-8').toString('hex'),
-    } as any);
+    } as unknown as SafeSnapshot);
   }
 
   async runQueuedPaymentCheck(orderId: string): Promise<void> {
@@ -394,7 +398,7 @@ export class MarketMakingPaymentHelper {
     await processor.handleStartMM({
       data: { orderId, userId },
       queue: this.marketMakingQueue,
-    } as any);
+    } as unknown as Job<{ orderId: string; userId: string }>);
   }
 
   getStrategyServiceStub() {

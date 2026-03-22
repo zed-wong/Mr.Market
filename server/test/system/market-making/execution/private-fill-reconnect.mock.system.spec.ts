@@ -10,6 +10,10 @@ import {
   logSystemSkip,
 } from '../../helpers/system-test-log.helper';
 
+type WatchOrdersCapableExchange = {
+  watchOrders?: (...args: unknown[]) => Promise<unknown>;
+};
+
 const envSkipReason = getSystemSandboxSkipReason();
 const config = envSkipReason ? null : readSystemSandboxConfig();
 const skipReason = envSkipReason;
@@ -67,9 +71,7 @@ describeSandbox('Private stream reconnect parity (system)', () => {
     const exchange = exchangeInitService.getExchange(
       order.exchangeName,
       config!.accountLabel,
-    ) as unknown as {
-      watchOrders?: jest.Mock;
-    };
+    ) as unknown as WatchOrdersCapableExchange;
 
     const originalWatchOrders = exchange.watchOrders?.bind(exchange);
     const recoveredEvent = {
@@ -124,7 +126,7 @@ describeSandbox('Private stream reconnect parity (system)', () => {
       );
     } finally {
       if (originalWatchOrders) {
-        exchange.watchOrders = originalWatchOrders as any;
+        exchange.watchOrders = originalWatchOrders;
       }
       helper.getPrivateStreamIngestionService().stopAllWatchers();
     }

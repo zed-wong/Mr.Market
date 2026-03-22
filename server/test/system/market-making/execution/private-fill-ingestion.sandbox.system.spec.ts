@@ -1,4 +1,5 @@
 import BigNumber from 'bignumber.js';
+import type * as ccxt from 'ccxt';
 
 import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
 import { pollUntil } from '../../helpers/sandbox-system.helper';
@@ -320,7 +321,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
         });
       }
 
-      let filledTargetOrder: any;
+      let filledTargetOrder: ccxt.Order | undefined;
 
       try {
         log.step('waiting for tracked order to become filled on exchange');
