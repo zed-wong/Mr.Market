@@ -270,7 +270,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
       });
 
       const counterSide = trackedOrder?.side === 'buy' ? 'sell' : 'buy';
-      const counterQty = trackedOrder?.qty;
+      const counterQty = parseFloat(trackedOrder?.qty || '0');
 
       let counterOrderId: string | undefined;
 
@@ -298,11 +298,13 @@ describeSandbox('Private fill ingestion parity (system)', () => {
         );
         const counterPrice =
           typeof counterExchange.priceToPrecision === 'function'
-            ? counterExchange.priceToPrecision(
-                order.pair,
-                crossedPrice.toNumber(),
+            ? parseFloat(
+                counterExchange.priceToPrecision(
+                  order.pair,
+                  crossedPrice.toNumber(),
+                ),
               )
-            : crossedPrice.toFixed(8);
+            : crossedPrice.toNumber();
 
         const counterOrder = await counterExchange.createOrder(
           order.pair,
