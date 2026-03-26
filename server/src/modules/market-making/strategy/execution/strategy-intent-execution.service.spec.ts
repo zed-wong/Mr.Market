@@ -202,7 +202,7 @@ describe('StrategyIntentExecutionService', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('defaults to executing intents when config is missing', async () => {
+  it('skips execution when strategy.execute_intents config is missing', async () => {
     const configService = {
       get: jest.fn((key: string, defaultValue?: unknown) => {
         if (key === 'strategy.execute_intents') {
@@ -218,15 +218,15 @@ describe('StrategyIntentExecutionService', () => {
         return defaultValue;
       }),
     } as unknown as ConfigService;
-    const service = createService(true, configService);
+    const service = createService(false, configService);
 
     await service.consumeIntents([
-      { ...baseIntent, intentId: 'intent-default-true' },
+      { ...baseIntent, intentId: 'intent-default-false' },
     ]);
 
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
-    ).toHaveBeenCalledTimes(1);
+    ).not.toHaveBeenCalled();
   });
 
   it('executes CANCEL_ORDER through exchange adapter', async () => {
