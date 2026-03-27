@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-03-27
+
+- Add soak stability system test (`pure-market-making-soak.sandbox.system.spec.ts`) — runs N tick cycles with cancel-replace, multi-type error injection (createOrder/cancelOrder/fetchOrderBook), simulated fill ingestion, heap memory tracking, and asserts 12 bounded-resource invariants for long-running stability
+
 ## 2026-03-22
 
 - Gate `ExchangeInitService` sandbox bootstrap behind the `test:system` setup path, remove `CCXT_SANDBOX_ENABLED`, and document that only the system-test entry point reads `CCXT_SANDBOX_*`

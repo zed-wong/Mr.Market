@@ -19,6 +19,7 @@
     "test:cov": "jest --coverage --config jest.config.js",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:system": "jest --config ./test/config/jest.system.config.js --runInBand",
+    "test:soak": "jest --config ./test/config/jest.system.config.js --runInBand --testPathPattern=soak",
     "pr:check": "bun run test && bun run lint",
     "migration:create": "typeorm-ts-node-commonjs migration:create",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -p -d typeorm.config.ts",
