@@ -1,9 +1,9 @@
 import { MarketMakingIntentLifecycleHelper } from '../../helpers/market-making-intent-lifecycle.helper';
 import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 
-const log = createSystemTestLogger('pure-mm-intent-idempotency');
+const log = createSystemTestLogger('intent-idempotency');
 
-describe('Pure market making intent idempotency (system)', () => {
+describe('Intent idempotency (mock system)', () => {
   jest.setTimeout(30000);
 
   let helper: MarketMakingIntentLifecycleHelper;
@@ -33,9 +33,7 @@ describe('Pure market making intent idempotency (system)', () => {
 
     expect(targetIntentId).toBeDefined();
 
-    log.step(
-      'consuming the same stored intent twice through the real execution service',
-    );
+    log.step('consuming the same stored intent twice through the real execution service');
     const consumePromise = helper.consumeStoredIntents([
       targetIntentId!,
       targetIntentId!,

@@ -23,7 +23,7 @@ import {
 } from '../../helpers/sandbox-system.helper';
 import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 
-const log = createSystemTestLogger('strategy-intent-worker-durability-restart');
+const log = createSystemTestLogger('intent-durability-restart');
 
 const TEST_ENTITIES = [
   StrategyOrderIntentEntity,
@@ -34,7 +34,7 @@ const TEST_ENTITIES = [
 ];
 
 const databaseConfig = createSystemTestDatabaseConfig(
-  'strategy-intent-worker-durability-restart',
+  'intent-durability-restart',
 );
 
 type BuiltModule = {
@@ -151,7 +151,7 @@ async function createModule(
   };
 }
 
-describe('Strategy intent worker durability restart parity (system)', () => {
+describe('Intent durability restart parity (mock system)', () => {
   jest.setTimeout(30000);
 
   afterAll(() => {
@@ -184,20 +184,13 @@ describe('Strategy intent worker durability restart parity (system)', () => {
         },
       );
 
-      log.result('first worker pass completed', {
-        status: firstPassIntent.status,
-        mixinOrderId: firstPassIntent.mixinOrderId,
-      });
-
       expect(firstModule.placeLimitOrder).toHaveBeenCalledTimes(1);
       expect(await firstModule.mappingRepository.count()).toBe(1);
       expect(await firstModule.historyRepository.count()).toBe(1);
       expect(await firstModule.receiptRepository.count()).toBe(1);
       expect(await firstModule.outboxRepository.count()).toBe(1);
 
-      log.step(
-        'rewinding intent status to NEW while keeping durability receipt',
-      );
+      log.step('rewinding intent status to NEW while keeping durability receipt');
       await firstModule.intentRepository.save({
         ...firstPassIntent,
         status: 'NEW',
@@ -238,7 +231,7 @@ describe('Strategy intent worker durability restart parity (system)', () => {
         },
       );
 
-      log.result('second worker pass completed', {
+      log.result('restart pass completed', {
         status: secondPassIntent.status,
         mixinOrderId: secondPassIntent.mixinOrderId,
       });
