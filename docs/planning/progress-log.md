@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-03-28
+
+- Reorganize market-making system specs into `intent-engine/` and `strategy/pure-market-making/`, merge overlapping lifecycle/retry/failure/error and single-tick/multi-layer/cadence suites, drop redundant sandbox intent overlays, and refresh the market-making test operations doc to match the new bounded-context layout
+
 ## 2026-03-27
 
 - Add soak stability system test (`pure-market-making-soak.sandbox.system.spec.ts`) — runs N tick cycles with cancel-replace, multi-type error injection (createOrder/cancelOrder/fetchOrderBook), simulated fill ingestion, heap memory tracking, and asserts 12 bounded-resource invariants for long-running stability
@@ -265,6 +269,7 @@
 - Remove Postgres leftovers and align configs/docs with SQLite
 - Restore snapshot memo handling and defer market making order creation until payment completion
 - Add structured progress logging across system-test suites for clearer execution tracing
+- Increase pure market making soak test timeout to 2 hours
 
 ## 2026-01-13
 

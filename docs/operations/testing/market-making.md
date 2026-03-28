@@ -69,18 +69,23 @@ Coverage:
 - invoke real `handleStopMM()` through `MarketMakingOrderProcessor`
 - assert executor session detachment and order state transition to `stopped`
 
-### Phase 5: Single-Tick Intent Execution
+### Phase 5-7: Pure Strategy Behavior
 
-Spec: `server/test/system/market-making/strategy/pure-market-making-single-tick.sandbox.system.spec.ts`
+Spec: `server/test/system/market-making/strategy/pure-market-making/pure-market-making-behavior.sandbox.system.spec.ts`
 
 Coverage:
 
 - invoke one real executor tick for a pure market-making session
-- publish one buy and one sell intent
-- place real sandbox orders through live intent execution
-- persist `ExchangeOrderMapping` rows
-- update `ExchangeOrderTrackerService`
-- persist `StrategyExecutionHistory`
+- publish one buy and one sell intent and place real sandbox orders through live intent execution
+- persist `ExchangeOrderMapping` rows, tracked open orders, and `StrategyExecutionHistory`
+- assert layered buy and sell ladder construction for `numberOfLayers >= 3`
+- assert quantity progression across layers
+- preserve existing open orders on the next eligible tick when hanging orders are enabled
+- reuse the same executor session across repeated eligible ticks
+- verify no follow-up placement occurs before the next eligible cadence window
+- force the next cadence window deterministically in the test harness
+- assert submitted exchange-safe `clientOrderId` values increment deterministically across cycles
+- assert a far-future cadence window blocks new intent emission
 
 Current `clientOrderId` rule:
 
@@ -90,44 +95,24 @@ Current `clientOrderId` rule:
 
 Boundary:
 
-- validates order-resolution logic only
+- validates pure market-making runtime behavior through the real sandbox path
 - does not validate exchange private-stream ingestion
 
-### Phase 6: Multi-Layer Placement
-
-Spec: `server/test/system/market-making/strategy/pure-market-making-multi-layer.sandbox.system.spec.ts`
-
-Coverage:
-
-- invoke one real executor tick for a pure market-making session with `numberOfLayers >= 3`
-- assert layered buy prices expand downward and layered sell prices expand upward
-- assert quantity progression across layers
-- place real sandbox orders for each eligible layer
-- preserve existing open orders on the next eligible tick when hanging orders are enabled
-
-### Phase 7: Cadence Stability
-
-Spec: `server/test/system/market-making/strategy/pure-market-making-cadence.sandbox.system.spec.ts`
-
-Coverage:
-
-- reuse the same executor session across repeated eligible ticks
-- verify no follow-up placement occurs before the next eligible cadence window
-- force the next cadence window deterministically in the test harness
-- assert submitted exchange-safe `clientOrderId` values increment deterministically across cycles
-- keep tracker, mapping, and execution history state coherent after repeated cycles
-
-### Phase 7A: Intent Sandbox Overlays
+### Phase 7A: Intent Engine Mock Coverage
 
 Specs:
 
-- `server/test/system/market-making/strategy/pure-market-making-intent-lifecycle.sandbox.system.spec.ts`
-- `server/test/system/market-making/strategy/pure-market-making-intent-idempotency.sandbox.system.spec.ts`
+- `server/test/system/market-making/intent-engine/intent-execution-flow.mock.system.spec.ts`
+- `server/test/system/market-making/intent-engine/intent-idempotency.mock.system.spec.ts`
+- `server/test/system/market-making/intent-engine/intent-durability-restart.mock.system.spec.ts`
 
 Coverage:
 
-- assert real sandbox execution reaches persisted `DONE` intents plus mapping/history side effects
-- assert duplicate consumption of the same persisted intent does not create duplicate mapping/history side effects
+- assert `NEW -> SENT -> DONE` intent progression plus persisted mapping/history side effects
+- assert retry recovery and exhausted-retry failure handling within the same execution-flow suite
+- assert worker error logging on placement failure
+- assert duplicate consumption of the same persisted intent does not create duplicate side effects
+- assert persisted durability receipts survive worker restart and suppress re-delivered execution
 
 ### Phase 8: Private-Fill Ingestion
 
