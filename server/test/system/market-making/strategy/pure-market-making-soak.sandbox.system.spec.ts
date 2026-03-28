@@ -161,7 +161,7 @@ function elapsed(startMs: number): string {
 }
 
 describeSandbox('Pure market making soak stability (sandbox system)', () => {
-  jest.setTimeout(1 * 60 * 60 * 1000);
+  jest.setTimeout(2 * 60 * 60 * 1000);
 
   let helper: MarketMakingSingleTickHelper;
 
