@@ -23,6 +23,7 @@ type OrderWatcherParams = {
 
 type OrderWatcherState = {
   refCount: number;
+  generation: number;
 };
 
 @Injectable()
@@ -31,6 +32,7 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
     PrivateStreamIngestionService.name,
   );
   private readonly activeWatchers = new Map<string, OrderWatcherState>();
+  private generationCounter = 0;
 
   constructor(
     private readonly exchangeInitService: ExchangeInitService,
@@ -51,8 +53,10 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
       return;
     }
 
-    this.activeWatchers.set(key, { refCount: 1 });
-    void this.runOrderWatcher(key, params);
+    const generation = ++this.generationCounter;
+
+    this.activeWatchers.set(key, { refCount: 1, generation });
+    void this.runOrderWatcher(key, generation, params);
   }
 
   stopOrderWatcher(params: OrderWatcherParams): void {
@@ -88,13 +92,20 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
     return this.activeWatchers.get(this.toWatcherKey(params))?.refCount || 0;
   }
 
+  private isCurrentGeneration(key: string, generation: number): boolean {
+    const state = this.activeWatchers.get(key);
+
+    return Boolean(state && state.generation === generation);
+  }
+
   private async runOrderWatcher(
     key: string,
+    generation: number,
     params: OrderWatcherParams,
   ): Promise<void> {
     let consecutiveFailures = 0;
 
-    while (this.activeWatchers.has(key)) {
+    while (this.isCurrentGeneration(key, generation)) {
       try {
         const exchange = this.exchangeInitService.getExchange(
           params.exchange,
@@ -132,7 +143,7 @@ export class PrivateStreamIngestionService implements OnModuleDestroy {
         }
         consecutiveFailures = 0;
       } catch (error) {
-        if (!this.activeWatchers.has(key)) {
+        if (!this.isCurrentGeneration(key, generation)) {
           return;
         }
 

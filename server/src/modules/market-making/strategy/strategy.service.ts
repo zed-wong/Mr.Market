@@ -2136,12 +2136,7 @@ export class StrategyService
         fill.cumulativeQty || fill.qty || '',
       ].join(':');
 
-    return [
-      'mm-fill',
-      session.strategyKey,
-      stableIdentity,
-      fill.qty || '',
-    ].join(':');
+    return ['mm-fill', session.strategyKey, stableIdentity].join(':');
   }
 
   private isWithinTimeWindow(params: TimeIndicatorStrategyDto): boolean {

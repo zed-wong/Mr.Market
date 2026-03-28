@@ -292,7 +292,7 @@ describe('StrategyService', () => {
       assetId: 'BTC',
       amount: '0.5',
       idempotencyKey:
-        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:0.5:base',
+        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:base',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -301,7 +301,7 @@ describe('StrategyService', () => {
       assetId: 'USDT',
       amount: '-50',
       idempotencyKey:
-        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:0.5:quote',
+        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:quote',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -353,14 +353,14 @@ describe('StrategyService', () => {
       1,
       expect.objectContaining({
         idempotencyKey:
-          'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:1.5:0.5:base',
+          'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:1.5:base',
       }),
     );
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
         idempotencyKey:
-          'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:1.5:0.5:base',
+          'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:1.5:base',
       }),
     );
   });
@@ -412,13 +412,13 @@ describe('StrategyService', () => {
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:client1-pureMarketMaking:fill-123:0.5:base',
+        idempotencyKey: 'mm-fill:client1-pureMarketMaking:fill-123:base',
       }),
     );
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:client1-pureMarketMaking:fill-123:0.5:base',
+        idempotencyKey: 'mm-fill:client1-pureMarketMaking:fill-123:base',
       }),
     );
   });
