@@ -194,8 +194,10 @@ If withdrawal path is enabled and used:
    - **Fallback 2**: Look up `ExchangeOrderMapping` by `exchangeOrderId`.
    - **Orphan**: Log for manual review if all fail.
 3. `ExecutorRegistry.findExecutorByOrderId()` resolves executor for order.
-4. `ExchangePairExecutor.onFill(fill)` dispatches to session handler.
-5. Controller `onFill(session, fill)` processes and may emit new actions.
+4. `PrivateStreamTracker` only dispatches fills with the owning `orderId`; when an exchange stream sends cumulative `filled`, it first converts that snapshot to a positive delta against `ExchangeOrderTracker` state.
+5. `StrategyService` builds ledger idempotency from stable fill identity (`fillId` or order+price+side+cumulative state), not local receipt time, so duplicate private-stream replays do not drift balances.
+6. `ExchangePairExecutor.onFill(fill)` dispatches to the target session handler.
+7. Controller `onFill(session, fill)` processes and may emit new actions.
 
 ### 7) Stop market making
 

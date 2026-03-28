@@ -56,7 +56,7 @@ Main modules:
 Why this flow exists:
 
 - It separates decision logic from side effects.
-- It shares exchange:pair market data across sessions and keeps fill routing deterministic.
+- It shares exchange:pair market data across sessions and keeps fill routing deterministic per owning order/session, even when private streams replay cumulative order updates.
 
 Detailed reference:
 

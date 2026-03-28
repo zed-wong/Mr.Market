@@ -2,6 +2,7 @@
 
 ## 2026-03-28
 
+- Fix private-stream fill routing so tracked-order fallback targets the owning session, convert cumulative `filled` snapshots into positive deltas before ledger mutation, and switch fill-ledger idempotency keys away from unstable `receivedAt`
 - Reorganize market-making system specs into `intent-engine/` and `strategy/pure-market-making/`, merge overlapping lifecycle/retry/failure/error and single-tick/multi-layer/cadence suites, drop redundant sandbox intent overlays, and refresh the market-making test operations doc to match the new bounded-context layout
 
 ## 2026-03-27

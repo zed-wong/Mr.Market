@@ -332,7 +332,7 @@ This section explains each module with three questions:
 #### `market-making/execution/fill-routing.service.ts`
 
 - What: resolves fill events to orders using clientOrderId parsing and ExchangeOrderMapping fallback.
-- Why: pooled executors need deterministic fill routing by exchange:pair.
+- Why: pooled executors need deterministic fill routing to the owning session, while private-stream duplicates and cumulative `filled` snapshots must remain ledger-safe.
 - Where: used by private stream tracker when processing fill events.
 
 #### `market-making/execution/exchange-order-mapping.service.ts`
