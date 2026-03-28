@@ -1,10 +1,10 @@
-import { MarketMakingPaymentHelper } from '../../helpers/market-making-payment.helper';
-import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
+import { MarketMakingPaymentHelper } from '../../../helpers/market-making-payment.helper';
+import { createSystemTestLogger } from '../../../helpers/system-test-log.helper';
 
 let helper: MarketMakingPaymentHelper;
-const log = createSystemTestLogger('pure-mm-config-validation');
+const log = createSystemTestLogger('pure-mm-config');
 
-describe('Pure market making config validation parity (system)', () => {
+describe('Pure market making config validation parity (mock system)', () => {
   jest.setTimeout(240000);
 
   beforeAll(async () => {
