@@ -562,4 +562,141 @@ describe('PrivateStreamTrackerService', () => {
 
     expect(onFill).not.toHaveBeenCalled();
   });
+
+  it('routes only positive deltas across a cumulative fill progression', async () => {
+    const onFill = jest.fn();
+    let cumulativeFilledQty = '0';
+    const service = new PrivateStreamTrackerService(
+      undefined,
+      {
+        resolveOrderForFill: jest.fn().mockResolvedValue(null),
+      } as unknown as FillRoutingService,
+      {
+        getByExchangeOrderId: jest.fn().mockImplementation(() => ({
+          orderId: 'legacy-order',
+          strategyKey: 'strategy-1',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'ex-123',
+          clientOrderId: 'legacy-client-oid',
+          side: 'buy',
+          price: '100',
+          qty: '5',
+          cumulativeFilledQty,
+          status: 'partially_filled',
+          updatedAt: '2026-03-11T00:00:00.000Z',
+        })),
+        upsertOrder: jest.fn().mockImplementation((order) => {
+          cumulativeFilledQty = order.cumulativeFilledQty || cumulativeFilledQty;
+        }),
+      } as unknown as ExchangeOrderTrackerService,
+      {
+        getExecutor: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
+          onFill,
+        }),
+      } as unknown as ExecutorRegistry,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'execution',
+      payload: {
+        exchangeOrderId: 'ex-123',
+        status: 'partially_filled',
+        filled: '1',
+      },
+      receivedAt: '2026-03-11T00:00:01.000Z',
+    });
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'execution',
+      payload: {
+        exchangeOrderId: 'ex-123',
+        status: 'partially_filled',
+        filled: '2',
+      },
+      receivedAt: '2026-03-11T00:00:02.000Z',
+    });
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'execution',
+      payload: {
+        exchangeOrderId: 'ex-123',
+        status: 'partially_filled',
+        filled: '2',
+      },
+      receivedAt: '2026-03-11T00:00:03.000Z',
+    });
+
+    await service.onTick('2026-03-11T00:00:04.000Z');
+
+    expect(onFill).toHaveBeenCalledTimes(2);
+    expect(onFill).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        qty: '1',
+        cumulativeQty: '1',
+      }),
+    );
+    expect(onFill).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        qty: '1',
+        cumulativeQty: '2',
+      }),
+    );
+  });
+
+  it('ignores cumulative filled updates that move backwards', async () => {
+    const onFill = jest.fn();
+    const service = new PrivateStreamTrackerService(
+      undefined,
+      {
+        resolveOrderForFill: jest.fn().mockResolvedValue(null),
+      } as unknown as FillRoutingService,
+      {
+        getByExchangeOrderId: jest.fn().mockReturnValue({
+          orderId: 'legacy-order',
+          strategyKey: 'strategy-1',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'ex-123',
+          clientOrderId: 'legacy-client-oid',
+          side: 'buy',
+          price: '100',
+          qty: '5',
+          cumulativeFilledQty: '2',
+          status: 'partially_filled',
+          updatedAt: '2026-03-11T00:00:00.000Z',
+        }),
+        upsertOrder: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      {
+        getExecutor: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
+          onFill,
+        }),
+      } as unknown as ExecutorRegistry,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'execution',
+      payload: {
+        exchangeOrderId: 'ex-123',
+        status: 'partially_filled',
+        filled: '1.5',
+      },
+      receivedAt: '2026-03-11T00:00:03.000Z',
+    });
+
+    await service.onTick('2026-03-11T00:00:04.000Z');
+
+    expect(onFill).not.toHaveBeenCalled();
+  });
 });
