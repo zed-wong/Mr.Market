@@ -7,9 +7,11 @@ export type ExchangePairFill = {
   orderId?: string;
   exchangeOrderId?: string | null;
   clientOrderId?: string | null;
+  fillId?: string | null;
   side?: 'buy' | 'sell';
   price?: string;
   qty?: string;
+  cumulativeQty?: string;
   receivedAt?: string;
   payload?: Record<string, unknown>;
 };

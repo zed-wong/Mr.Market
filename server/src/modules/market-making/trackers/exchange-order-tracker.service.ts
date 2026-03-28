@@ -20,6 +20,7 @@ type TrackedOrder = {
   side: 'buy' | 'sell';
   price: string;
   qty: string;
+  cumulativeFilledQty?: string;
   status: 'open' | 'partially_filled' | 'filled' | 'cancelled' | 'failed';
   updatedAt: string;
 };
@@ -98,6 +99,8 @@ export class ExchangeOrderTrackerService
 
       this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), {
         ...order,
+        cumulativeFilledQty:
+          this.normalizeFilledValue(latest?.filled) || order.cumulativeFilledQty,
         status: normalizedStatus,
         updatedAt: getRFC3339Timestamp(),
       });
@@ -125,5 +128,17 @@ export class ExchangeOrderTrackerService
 
   private toKey(exchange: string, exchangeOrderId: string): string {
     return `${exchange}:${exchangeOrderId}`;
+  }
+
+  private normalizeFilledValue(value: unknown): string | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+
+    return undefined;
   }
 }

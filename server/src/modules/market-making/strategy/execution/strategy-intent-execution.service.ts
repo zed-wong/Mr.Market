@@ -201,6 +201,7 @@ export class StrategyIntentExecutionService {
             side: intent.side,
             price: intent.price,
             qty: intent.qty,
+            cumulativeFilledQty: '0',
             status: 'open',
             updatedAt: getRFC3339Timestamp(),
           });

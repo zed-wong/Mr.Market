@@ -292,7 +292,7 @@ describe('StrategyService', () => {
       assetId: 'BTC',
       amount: '0.5',
       idempotencyKey:
-        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:2026-03-18T00:00:00.000Z:base',
+        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:0.5:base',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -301,10 +301,68 @@ describe('StrategyService', () => {
       assetId: 'USDT',
       amount: '-50',
       idempotencyKey:
-        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:2026-03-18T00:00:00.000Z:quote',
+        'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:0.5:0.5:quote',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
+  });
+
+  it('uses cumulative fill state instead of receivedAt in ledger idempotency keys', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.1,
+      askSpread: 0.1,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 2,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0.1,
+      amountChangeType: 'percentage',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await service.executePureMarketMakingStrategy(strategyParamsDto);
+
+    await service.routeFillForExchangePair('bitfinex', 'BTC/USDT', {
+      orderId: 'client1',
+      clientOrderId: 'client1:0',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '0.5',
+      cumulativeQty: '1.5',
+      receivedAt: '2026-03-18T00:00:00.000Z',
+    });
+
+    await service.routeFillForExchangePair('bitfinex', 'BTC/USDT', {
+      orderId: 'client1',
+      clientOrderId: 'client1:0',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '0.5',
+      cumulativeQty: '1.5',
+      receivedAt: '2026-03-18T00:01:00.000Z',
+    });
+
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        idempotencyKey:
+          'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:1.5:0.5:base',
+      }),
+    );
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        idempotencyKey:
+          'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:1.5:0.5:base',
+      }),
+    );
   });
 
   it('makes the filled session immediately eligible for the next tick', async () => {

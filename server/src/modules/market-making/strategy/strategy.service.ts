@@ -181,9 +181,11 @@ export class StrategyService
       orderId?: string;
       exchangeOrderId?: string | null;
       clientOrderId?: string | null;
+      fillId?: string | null;
       side?: 'buy' | 'sell';
       price?: string;
       qty?: string;
+      cumulativeQty?: string;
       receivedAt?: string;
       payload?: Record<string, unknown>;
     },
@@ -2012,9 +2014,11 @@ export class StrategyService
     fill: {
       exchangeOrderId?: string | null;
       clientOrderId?: string | null;
+      fillId?: string | null;
       side?: 'buy' | 'sell';
       price?: string;
       qty?: string;
+      cumulativeQty?: string;
       receivedAt?: string;
     },
   ): Promise<void> {
@@ -2034,9 +2038,11 @@ export class StrategyService
     fill: {
       exchangeOrderId?: string | null;
       clientOrderId?: string | null;
+      fillId?: string | null;
       side?: 'buy' | 'sell';
       price?: string;
       qty?: string;
+      cumulativeQty?: string;
       receivedAt?: string;
     },
   ): Promise<void> {
@@ -2112,21 +2118,29 @@ export class StrategyService
     fill: {
       exchangeOrderId?: string | null;
       clientOrderId?: string | null;
+      fillId?: string | null;
       side?: 'buy' | 'sell';
       price?: string;
       qty?: string;
+      cumulativeQty?: string;
       receivedAt?: string;
     },
   ): string {
+    const stableIdentity =
+      fill.fillId ||
+      [
+        fill.exchangeOrderId || '',
+        fill.clientOrderId || '',
+        fill.side || '',
+        fill.price || '',
+        fill.cumulativeQty || fill.qty || '',
+      ].join(':');
+
     return [
       'mm-fill',
       session.strategyKey,
-      fill.exchangeOrderId || '',
-      fill.clientOrderId || '',
-      fill.side || '',
-      fill.price || '',
+      stableIdentity,
       fill.qty || '',
-      fill.receivedAt || '',
     ].join(':');
   }
 

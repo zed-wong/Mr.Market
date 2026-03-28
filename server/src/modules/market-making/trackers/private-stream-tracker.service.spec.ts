@@ -153,6 +153,7 @@ describe('PrivateStreamTrackerService', () => {
 
     expect(onFill).toHaveBeenCalledWith(
       expect.objectContaining({
+        orderId: 'legacy-order',
         exchangeOrderId: 'ex-123',
         clientOrderId: 'legacy-client-oid',
       }),
@@ -456,5 +457,109 @@ describe('PrivateStreamTrackerService', () => {
         clientOrderId: 'order-4:0',
       }),
     );
+  });
+
+  it('converts cumulative filled updates into incremental fill qty before routing', async () => {
+    const onFill = jest.fn();
+    const service = new PrivateStreamTrackerService(
+      undefined,
+      {
+        resolveOrderForFill: jest.fn().mockResolvedValue(null),
+      } as unknown as FillRoutingService,
+      {
+        getByExchangeOrderId: jest.fn().mockReturnValue({
+          orderId: 'legacy-order',
+          strategyKey: 'strategy-1',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'ex-123',
+          clientOrderId: 'legacy-client-oid',
+          side: 'buy',
+          price: '100',
+          qty: '5',
+          cumulativeFilledQty: '1',
+          status: 'partially_filled',
+          updatedAt: '2026-03-11T00:00:00.000Z',
+        }),
+        upsertOrder: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      {
+        getExecutor: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
+          onFill,
+        }),
+      } as unknown as ExecutorRegistry,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'execution',
+      payload: {
+        exchangeOrderId: 'ex-123',
+        status: 'partially_filled',
+        filled: '2',
+      },
+      receivedAt: '2026-03-11T00:00:03.000Z',
+    });
+
+    await service.onTick('2026-03-11T00:00:04.000Z');
+
+    expect(onFill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'legacy-order',
+        qty: '1',
+        cumulativeQty: '2',
+      }),
+    );
+  });
+
+  it('drops duplicate cumulative filled updates that do not advance filled qty', async () => {
+    const onFill = jest.fn();
+    const service = new PrivateStreamTrackerService(
+      undefined,
+      {
+        resolveOrderForFill: jest.fn().mockResolvedValue(null),
+      } as unknown as FillRoutingService,
+      {
+        getByExchangeOrderId: jest.fn().mockReturnValue({
+          orderId: 'legacy-order',
+          strategyKey: 'strategy-1',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'ex-123',
+          clientOrderId: 'legacy-client-oid',
+          side: 'buy',
+          price: '100',
+          qty: '5',
+          cumulativeFilledQty: '2',
+          status: 'partially_filled',
+          updatedAt: '2026-03-11T00:00:00.000Z',
+        }),
+        upsertOrder: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      {
+        getExecutor: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
+          onFill,
+        }),
+      } as unknown as ExecutorRegistry,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'execution',
+      payload: {
+        exchangeOrderId: 'ex-123',
+        status: 'partially_filled',
+        filled: '2',
+      },
+      receivedAt: '2026-03-11T00:00:03.000Z',
+    });
+
+    await service.onTick('2026-03-11T00:00:04.000Z');
+
+    expect(onFill).not.toHaveBeenCalled();
   });
 });

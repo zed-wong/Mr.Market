@@ -4,6 +4,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import BigNumber from 'bignumber.js';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { FillRoutingService } from '../execution/fill-routing.service';
@@ -27,9 +28,12 @@ type RoutedFillCandidate = {
   orderId?: string;
   exchangeOrderId?: string;
   clientOrderId?: string;
+  fillId?: string;
   side?: 'buy' | 'sell';
   price?: string;
   qty?: string;
+  cumulativeQty?: string;
+  qtyKind?: 'delta' | 'cumulative';
   status?: 'open' | 'partially_filled' | 'filled' | 'cancelled' | 'failed';
   receivedAt: string;
   payload: Record<string, unknown>;
@@ -177,20 +181,24 @@ export class PrivateStreamTrackerService
       this.exchangeOrderTrackerService?.upsertOrder({
         ...trackedOrder,
         clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
+        cumulativeFilledQty: fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
         status: fill.status,
         updatedAt: fill.receivedAt,
       });
     }
 
+    const routedFill = this.normalizeFillForDispatch(fill, trackedOrder);
+
+    if (!routedFill) {
+      return;
+    }
+
     if (!resolution && trackedOrder && executor) {
       await executor.onFill({
+        orderId: trackedOrder.orderId,
         exchangeOrderId: fill.exchangeOrderId,
         clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
-        side: fill.side || trackedOrder.side,
-        price: fill.price || trackedOrder.price,
-        qty: fill.qty || trackedOrder.qty,
-        receivedAt: fill.receivedAt,
-        payload: fill.payload,
+        ...routedFill,
       });
 
       return;
@@ -218,11 +226,7 @@ export class PrivateStreamTrackerService
       orderId: resolution.orderId,
       exchangeOrderId: fill.exchangeOrderId,
       clientOrderId: fill.clientOrderId,
-      side: fill.side,
-      price: fill.price,
-      qty: fill.qty,
-      receivedAt: fill.receivedAt,
-      payload: fill.payload,
+      ...routedFill,
     });
   }
 
@@ -275,12 +279,27 @@ export class PrivateStreamTrackerService
       return null;
     }
 
+    const qty = this.pickNumberField(payload, [
+      'filled',
+      'fillQty',
+      'amount',
+      'qty',
+      'trade.amount',
+    ]);
+
     return {
       exchange: event.exchange,
       accountLabel: event.accountLabel,
       pair,
       exchangeOrderId,
       clientOrderId,
+      fillId: this.pickString(payload, [
+        'fillId',
+        'tradeId',
+        'executionId',
+        'execId',
+        'trade.id',
+      ]),
       side: this.normalizeSide(
         this.pickString(payload, ['side', 'order.side', 'trade.side']),
       ),
@@ -290,13 +309,9 @@ export class PrivateStreamTrackerService
         'average',
         'trade.price',
       ]),
-      qty: this.pickNumberString(payload, [
-        'filled',
-        'fillQty',
-        'amount',
-        'qty',
-        'trade.amount',
-      ]),
+      qty: qty?.value,
+      cumulativeQty: qty?.kind === 'cumulative' ? qty.value : undefined,
+      qtyKind: qty?.kind,
       status,
       receivedAt: event.receivedAt,
       payload,
@@ -358,19 +373,98 @@ export class PrivateStreamTrackerService
     payload: Record<string, unknown>,
     keys: string[],
   ): string | undefined {
+    return this.pickNumberField(payload, keys)?.value;
+  }
+
+  private pickNumberField(
+    payload: Record<string, unknown>,
+    keys: string[],
+  ): { value: string; kind: 'delta' | 'cumulative' } | undefined {
     for (const key of keys) {
       const value = this.getValue(payload, key);
+      const normalizedKey = key.toLowerCase();
+      const kind = normalizedKey === 'filled' ? 'cumulative' : 'delta';
 
       if (typeof value === 'string' && value.trim().length > 0) {
-        return value.trim();
+        return {
+          value: value.trim(),
+          kind,
+        };
       }
 
       if (typeof value === 'number' && Number.isFinite(value)) {
-        return String(value);
+        return {
+          value: String(value),
+          kind,
+        };
       }
     }
 
     return undefined;
+  }
+
+  private normalizeFillForDispatch(
+    fill: RoutedFillCandidate,
+    trackedOrder?: {
+      clientOrderId?: string;
+      side: 'buy' | 'sell';
+      price: string;
+      qty: string;
+      cumulativeFilledQty?: string;
+    },
+  ):
+    | {
+        fillId?: string;
+        side?: 'buy' | 'sell';
+        price?: string;
+        qty?: string;
+        cumulativeQty?: string;
+        receivedAt: string;
+        payload: Record<string, unknown>;
+      }
+    | null {
+    const side = fill.side || trackedOrder?.side;
+    const price = fill.price || trackedOrder?.price;
+    let qty = fill.qty;
+    const cumulativeQty = fill.cumulativeQty;
+
+    if (
+      trackedOrder &&
+      fill.qtyKind === 'cumulative' &&
+      cumulativeQty &&
+      this.isPositiveDelta(cumulativeQty, trackedOrder.cumulativeFilledQty)
+    ) {
+      qty = new BigNumber(cumulativeQty)
+        .minus(trackedOrder.cumulativeFilledQty || '0')
+        .toFixed();
+    } else if (fill.qtyKind === 'cumulative') {
+      return null;
+    }
+
+    if (!qty) {
+      return null;
+    }
+
+    return {
+      fillId: fill.fillId,
+      side,
+      price,
+      qty,
+      cumulativeQty,
+      receivedAt: fill.receivedAt,
+      payload: fill.payload,
+    };
+  }
+
+  private isPositiveDelta(current: string, previous?: string): boolean {
+    const currentValue = new BigNumber(current);
+    const previousValue = new BigNumber(previous || '0');
+
+    return (
+      currentValue.isFinite() &&
+      previousValue.isFinite() &&
+      currentValue.isGreaterThan(previousValue)
+    );
   }
 
   private getValue(payload: Record<string, unknown>, path: string): unknown {
