@@ -78,8 +78,20 @@ export class StrategyIntentExecutionService {
   }
 
   async consumeIntents(intents: StrategyOrderIntent[]): Promise<void> {
+    let firstError: unknown;
+
     for (const intent of intents) {
-      await this.consumeIntent(intent);
+      try {
+        await this.consumeIntent(intent);
+      } catch (error) {
+        if (!firstError) {
+          firstError = error;
+        }
+      }
+    }
+
+    if (firstError) {
+      throw firstError;
     }
   }
 

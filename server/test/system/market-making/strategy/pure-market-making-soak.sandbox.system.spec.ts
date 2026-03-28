@@ -37,18 +37,78 @@ type ErrorInjectionSchedule = {
   type: ErrorInjectionType;
 };
 
-// Error injection schedule: at specific ticks, one of these methods will throw once.
-// Each tick in this list simulates a different failure mode the system must handle.
-const ERROR_SCHEDULE: ErrorInjectionSchedule[] = [
-  { tick: 3, type: 'fetchOrderBook' }, // price source unavailable → strategy should SKIP this tick
-  { tick: 5, type: 'placeLimitOrder' }, // order placement fails → intent should reach FAILED state
-  { tick: 9, type: 'cancelOrder' }, // cancellation fails → order stays in tracker, retry next tick
-  { tick: 12, type: 'placeLimitOrder' }, // another placement failure → verify recovery
+const SOAK_SEED = Number(process.env.SOAK_SEED || 42);
+
+// Seeded PRNG (mulberry32) for reproducible random schedules.
+function createSeededRng(seed: number): () => number {
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Fisher-Yates shuffle with seeded RNG.
+function shuffle<T>(arr: T[], rng: () => number): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
+const ERROR_TYPES: Exclude<ErrorInjectionType, 'fill'>[] = [
+  'fetchOrderBook',
+  'placeLimitOrder',
+  'cancelOrder',
 ];
 
-// At these ticks, a simulated fill event is injected via the private stream.
-// Verifies: the exchange event pipeline routes fill events to the executor callback.
-const FILL_INJECT_TICKS = new Set([7, 14]);
+// ~20% of ticks get error injections, ~5% get fill injections.
+// First 2 ticks are warm-up (no injections). Deterministic via SOAK_SEED.
+function generateInjectionSchedule(
+  tickCount: number,
+  seed: number,
+): { errorSchedule: ErrorInjectionSchedule[]; fillTicks: Set<number> } {
+  const rng = createSeededRng(seed);
+  const warmUpTicks = 2;
+  const eligibleTicks = Array.from(
+    { length: Math.max(0, tickCount - warmUpTicks) },
+    (_, i) => i + warmUpTicks + 1,
+  );
+
+  const errorCount = Math.max(4, Math.round(tickCount * 0.2));
+  const fillCount = Math.max(2, Math.round(tickCount * 0.05));
+  const totalAbnormal = Math.min(
+    errorCount + fillCount,
+    eligibleTicks.length,
+  );
+
+  const shuffled = shuffle(eligibleTicks, rng);
+  const abnormalTicks = shuffled.slice(0, totalAbnormal).sort((a, b) => a - b);
+
+  const errorTicks = abnormalTicks.slice(
+    0,
+    Math.min(errorCount, abnormalTicks.length),
+  );
+  const fillTicks = new Set(
+    abnormalTicks.slice(errorCount, errorCount + fillCount),
+  );
+
+  const errorSchedule: ErrorInjectionSchedule[] = errorTicks.map(
+    (tick, i) => ({
+      tick,
+      type: ERROR_TYPES[i % ERROR_TYPES.length]!,
+    }),
+  );
+
+  return { errorSchedule, fillTicks };
+}
+
+const { errorSchedule: ERROR_SCHEDULE, fillTicks: FILL_INJECT_TICKS } =
+  generateInjectionSchedule(SOAK_TICK_COUNT, SOAK_SEED);
 
 type TickSnapshot = {
   tick: number;
@@ -112,10 +172,10 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       {
         tickCount: SOAK_TICK_COUNT,
         orderRefreshTimeMs: SOAK_ORDER_REFRESH_TIME_MS,
-        errorSchedule: ERROR_SCHEDULE.map(
-          (e) => `tick ${e.tick}: ${e.type}`,
-        ),
-        fillInjectTicks: Array.from(FILL_INJECT_TICKS),
+        seed: SOAK_SEED,
+        errorInjections: ERROR_SCHEDULE.length,
+        fillInjections: FILL_INJECT_TICKS.size,
+        errorTypes: ERROR_TYPES,
         exchange: config!.exchangeId,
         symbol: config!.symbol,
       },
@@ -191,13 +251,9 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     const baselineHeapMb = process.memoryUsage().heapUsed / (1024 * 1024);
 
     log.step(
-      `Starting soak loop: ${SOAK_TICK_COUNT} ticks. Sampling every tick.\n` +
-        '  Error injections scheduled at: ' +
-        ERROR_SCHEDULE.map((e) => `tick ${e.tick} (${e.type})`).join(', ') +
-        '.\n' +
-        '  Fill injections scheduled at: ' +
-        Array.from(FILL_INJECT_TICKS).sort().join(', ') +
-        '.\n' +
+      `Starting soak loop: ${SOAK_TICK_COUNT} ticks (seed=${SOAK_SEED}).\n` +
+        `  ${ERROR_SCHEDULE.length} error injections, ${FILL_INJECT_TICKS.size} fill injections.\n` +
+        '  Error types: fetchOrderBook, placeLimitOrder, cancelOrder.\n' +
         '  What each error type means for production:\n' +
         '    - fetchOrderBook: exchange API unavailable → strategy must SKIP the tick, not place orders at stale prices.\n' +
         '    - placeLimitOrder: order rejected → intent must reach FAILED state, not stay in NEW/SENT.\n' +
@@ -345,8 +401,8 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
 
       snapshots.push(snapshot);
 
-      // Log every 5 ticks, plus first and last
-      if (tick % 5 === 0 || tick === 1 || tick === SOAK_TICK_COUNT) {
+      const logInterval = Math.max(5, Math.floor(SOAK_TICK_COUNT / 40));
+      if (tick % logInterval === 0 || tick === 1 || tick === SOAK_TICK_COUNT) {
         const phase = tick === 1 ? 'warm-up' : tick === SOAK_TICK_COUNT ? 'final' : 'sample';
         const errorNote = scheduledError ? ` [INJECTED: ${scheduledError.type}]` : '';
         const fillNote = injectedFill ? ' [FILL INJECTED]' : '';
