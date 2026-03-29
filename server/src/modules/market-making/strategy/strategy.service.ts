@@ -30,7 +30,7 @@ import {
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
 } from './config/strategy.dto';
-import {
+import type {
   StrategyRuntimeSession,
   StrategyType,
 } from './config/strategy-controller.types';

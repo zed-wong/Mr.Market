@@ -1,4 +1,4 @@
-import {
+import type {
   StrategyRuntimeSession,
   StrategyType,
 } from '../config/strategy-controller.types';

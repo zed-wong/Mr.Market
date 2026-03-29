@@ -5,7 +5,7 @@ import {
   DexAdapterId,
   PureMarketMakingStrategyDto,
 } from '../config/strategy.dto';
-import { StrategyType } from '../config/strategy-controller.types';
+import type { StrategyType } from '../config/strategy-controller.types';
 import { normalizeControllerType } from '../config/strategy-controller-aliases';
 import {
   normalizeExecutionCategory,

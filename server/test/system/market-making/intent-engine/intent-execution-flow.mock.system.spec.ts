@@ -1,6 +1,7 @@
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { MarketMakingIntentLifecycleHelper } from '../../helpers/market-making-intent-lifecycle.helper';
+import { pollUntil } from '../../helpers/sandbox-system.helper';
 import { createSystemTestLogger } from '../../helpers/system-test-log.helper';
 
 const log = createSystemTestLogger('intent-execution-flow');
@@ -57,7 +58,9 @@ describe('Intent execution flow (mock system)', () => {
       'SENT',
       'NEW',
     ]);
-    const firstPendingPlacement = helper.getPendingPlacements()[0];
+    const firstPendingPlacement = (
+      await helper.waitForPendingPlacements(1)
+    )[0];
 
     expect(firstPendingPlacement).toBeDefined();
     expect(sentAndQueued[0]?.status).toBe('SENT');
@@ -70,7 +73,9 @@ describe('Intent execution flow (mock system)', () => {
       'DONE',
       'SENT',
     ]);
-    const secondPendingPlacement = helper.getPendingPlacements()[0];
+    const secondPendingPlacement = (
+      await helper.waitForPendingPlacements(1)
+    )[0];
 
     expect(secondPendingPlacement).toBeDefined();
     expect(secondSent[0]?.status).toBe('DONE');
@@ -265,10 +270,17 @@ describe('Intent execution flow (mock system)', () => {
     expect(failedState[0]?.status).toBe('FAILED');
     expect(failedState[0]?.errorReason).toContain('exchange api unavailable');
 
-    // The DB status is set in StrategyIntentExecutionService's catch block,
-    // but the worker's logger.error call happens one async tick later when
-    // the re-thrown error reaches the async IIFE's catch.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The DB status is set before the worker's async logger path runs, so wait
+    // for the logger side effect instead of sleeping on scheduler timing.
+    await pollUntil(
+      async () => errorSpy.mock.calls.length,
+      async (callCount) => callCount > 0,
+      {
+        description: 'worker error logger to record the failed placement',
+        intervalMs: 10,
+        timeoutMs: 1000,
+      },
+    );
 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Intent execution failed for'),

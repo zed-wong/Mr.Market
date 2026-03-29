@@ -20,7 +20,7 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { PerformanceModule } from '../performance/performance.module';
 import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
-import { StrategyController as StrategyRuntimeController } from './config/strategy-controller.types';
+import type { StrategyController as StrategyRuntimeController } from './config/strategy-controller.types';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
