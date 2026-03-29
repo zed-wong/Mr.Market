@@ -42,7 +42,7 @@ Use dated files, but keep the document role clear.
   Role: gap-analysis reference for current system-test coverage and remaining infrastructure/runtime fidelity work
 - **`2026-03-21-persistent-sandbox-market-making-validation-plan.md`**
   Role: current operator-facing persistent sandbox validation proposal
-- **`2026-03-23-dual-mode-self-hosted-cli-idea.md`** (in `../plans/`)
+- **`2026-03-23-dual-mode-self-hosted-cli-idea.md`**
   Role: IDEA — dual-mode architecture (SaaS + self-hosted CLI) for future consideration
 
 ## When To Update Vs Create
