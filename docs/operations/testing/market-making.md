@@ -16,6 +16,7 @@ The currently implemented sandbox scope is intentionally limited to the runtime 
 - Phase 6: multi-layer parity through the real executor with layered price and quantity assertions plus hanging-order preservation
 - Phase 7: cadence parity through repeated eligible ticks with deterministic submitted `clientOrderId` sequencing
 - Phase 8: private-fill parity through real `watchOrders()` ingestion and dual-account live-fill assertion
+- Phase Soak: multi-tick stability through repeated tick cycles with error injection, simulated fills, and 12 system invariants
 - Phase B1: order creation and payment intake parity through real order-intent creation, snapshot intake, and `payment_complete`
 
 It still does not claim the broader Track B withdrawal, campaign, reward, or reconciliation lifecycle.
@@ -125,6 +126,52 @@ Coverage:
 - when a second sandbox account is configured, place a real counterparty order and assert the live fill reaches the executor through `FillRoutingService`
 - stop the watcher through the real `stop_mm` path
 
+### Phase Soak: Multi-Tick Stability
+
+Spec: `server/test/system/market-making/strategy/pure-market-making-soak.sandbox.system.spec.ts`
+Helper: `server/test/system/market-making/strategy/soak/soak-error-injector.ts`
+
+Runs N consecutive executor tick cycles against a live sandbox exchange, injecting errors and simulated fills along the way, then verifies 12 system invariants across all collected tick snapshots.
+
+**Tunable parameters (env overrides):**
+
+- `SOAK_TICK_COUNT` default: `20` — number of tick cycles to simulate
+- `SOAK_ORDER_REFRESH_TIME_MS` default: `1000` — order refresh interval in ms
+- `SOAK_SEED` default: `42` — PRNG seed for reproducible error/fill injection schedules
+
+Timeout: 2 hours (`jest.setTimeout(2 * 60 * 60 * 1000)`).
+
+**Error injection (~20% of ticks):**
+
+Deterministically scheduled via seeded PRNG. First 2 ticks are warm-up (no injection).
+
+- `fetchOrderBook` — simulates exchange API unavailability; strategy must skip the tick, not place orders at stale prices
+- `placeLimitOrder` — simulates order rejection; intent must reach FAILED, not stay NEW/SENT
+- `cancelOrder` — simulates cancel rejection; order stays in tracker, cancel retried next tick
+
+**Fill injection (~5% of ticks):**
+
+Injects a synthetic `watch_orders` closed event for an open buy order through the private-stream tracker. Verifies the executor `onFill` callback receives the routed fill.
+
+**12 invariants verified after the soak loop:**
+
+| # | Invariant | What it catches |
+|---|-----------|----------------|
+| 1 | Session count ≤ 1 at every tick, exactly 1 at end | Leaked sessions |
+| 2 | Executor count ≤ 1 at every tick, exactly 1 at end | Leaked executors |
+| 3 | No intents stuck in NEW or SENT at end | Stalled intent lifecycle |
+| 4 | Total DONE + FAILED equals expected intents (ticks × 2) | Lost or phantom intents |
+| 5 | Order mapping count equals DONE intent count | Missing exchange order mappings |
+| 6 | Execution history count equals DONE intent count | Missing execution history records |
+| 7 | At least one cancel-replace cycle occurred (≥ 3 ticks) | Bot not refreshing orders |
+| 8 | System resumes producing intents after every error injection | Unrecovered error state |
+| 9 | Each successful tick produces exactly 2 intents (1 buy + 1 sell) | Wrong intent count per tick |
+| 10 | Mapping and history counts match DONE intents at every tick | Mid-tick state inconsistency |
+| 11 | All injected fills reached the executor callback | Silent fill drops |
+| 12 | Heap growth < 50 MB (early avg vs late avg) | Memory leak |
+
+**Production implication:** passing all invariants means the order lifecycle is stable for continuous multi-day operation with active market making — cancel-replace is healthy, error resilience holds, fill routing is correct, memory is bounded, and DB state stays consistent.
+
 ### Phase B1: Order Creation And Payment Intake
 
 Spec: `server/test/system/market-making/user-orders/market-making-payment-intake.mock.system.spec.ts`
@@ -216,5 +263,5 @@ Until then, the currently implemented sandbox coverage stops at execution-engine
 
 ## Last Updated
 
-- Date: 2026-03-18
+- Date: 2026-03-29
 - Status: Active

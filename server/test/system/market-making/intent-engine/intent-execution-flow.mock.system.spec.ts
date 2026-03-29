@@ -20,6 +20,14 @@ describe('Intent execution flow (mock system)', () => {
     log.suite('helper ready');
   });
 
+  afterEach(async () => {
+    // Drain any leftover pending placements so they don't leak into the next test
+    while (helper?.getPendingPlacements().length) {
+      helper.rejectNextPlacement('test cleanup');
+    }
+    await helper?.stopWorker();
+  });
+
   afterAll(async () => {
     await helper?.close();
     log.suite('helper closed');
@@ -256,6 +264,12 @@ describe('Intent execution flow (mock system)', () => {
 
     expect(failedState[0]?.status).toBe('FAILED');
     expect(failedState[0]?.errorReason).toContain('exchange api unavailable');
+
+    // The DB status is set in StrategyIntentExecutionService's catch block,
+    // but the worker's logger.error call happens one async tick later when
+    // the re-thrown error reaches the async IIFE's catch.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Intent execution failed for'),
     );
