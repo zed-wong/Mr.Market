@@ -5,8 +5,10 @@ node_modules
 dist
 .env
 .env.*
+!server/.env.testnet.example
 .sisyphus
 *.log
+.obsidian
 server/data/*.db
 server/data/*.db-shm
 server/data/*.db-wal

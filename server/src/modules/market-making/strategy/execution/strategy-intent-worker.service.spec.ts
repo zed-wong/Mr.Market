@@ -187,6 +187,132 @@ describe('StrategyIntentWorkerService', () => {
     await service.onModuleDestroy();
   });
 
+  it('serializes head intents for the same strategy key while one is already in flight', async () => {
+    const processed = new Set<string>();
+    const intentsByStrategy = {
+      shared: [
+        createHeadIntent('shared', 'shared-intent-1'),
+        createHeadIntent('shared', 'shared-intent-2'),
+      ],
+    };
+    let activeForStrategy = 0;
+    let maxActiveForStrategy = 0;
+    const completedIntentIds: string[] = [];
+
+    const strategyIntentStoreService = {
+      listStrategyKeysWithNewIntents: jest.fn(async () => {
+        return Object.entries(intentsByStrategy)
+          .filter(([, intents]) =>
+            intents.some((intent) => intent.status === 'NEW'),
+          )
+          .map(([strategyKey]) => strategyKey);
+      }),
+      getHeadIntent: jest.fn(async (strategyKey: string) => {
+        return (
+          intentsByStrategy[
+            strategyKey as keyof typeof intentsByStrategy
+          ]?.find((intent) => intent.status !== 'DONE') || null
+        );
+      }),
+    };
+
+    const strategyIntentExecutionService = {
+      hasProcessedIntent: jest.fn((intentId: string) =>
+        processed.has(intentId),
+      ),
+      consumeIntents: jest.fn(async (intents) => {
+        const intentId = intents[0].intentId;
+
+        activeForStrategy += 1;
+        maxActiveForStrategy = Math.max(
+          maxActiveForStrategy,
+          activeForStrategy,
+        );
+        await wait(25);
+
+        const matchingIntent = intentsByStrategy.shared.find(
+          (candidate) => candidate.intentId === intentId,
+        );
+
+        if (matchingIntent) {
+          matchingIntent.status = 'DONE';
+        }
+
+        processed.add(intentId);
+        completedIntentIds.push(intentId);
+        activeForStrategy -= 1;
+      }),
+    };
+
+    const service = new StrategyIntentWorkerService(
+      createConfigService({
+        'strategy.intent_worker_max_in_flight': 2,
+        'strategy.intent_worker_max_in_flight_per_exchange': 2,
+      }),
+      strategyIntentStoreService as any,
+      strategyIntentExecutionService as any,
+    );
+
+    await service.onModuleInit();
+    await waitFor(() => completedIntentIds.length === 2);
+    await service.onModuleDestroy();
+
+    expect(maxActiveForStrategy).toBe(1);
+    expect(completedIntentIds).toEqual(['shared-intent-1', 'shared-intent-2']);
+  });
+
+  it('does not dispatch the same in-flight intent twice even if it appears under multiple strategy keys', async () => {
+    const processed = new Set<string>();
+    const duplicateIntentId = 'shared-intent';
+    let active = 0;
+    let maxActive = 0;
+
+    const strategyIntentStoreService = {
+      listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1', 's2']),
+      getHeadIntent: jest.fn(async (strategyKey: string) => ({
+        ...createHeadIntent(strategyKey, duplicateIntentId),
+        strategyInstanceId: strategyKey,
+        userId: `${strategyKey}-user`,
+        clientId: `${strategyKey}-client`,
+      })),
+    };
+
+    const strategyIntentExecutionService = {
+      hasProcessedIntent: jest.fn((intentId: string) =>
+        processed.has(intentId),
+      ),
+      consumeIntents: jest.fn(async (intents) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await wait(25);
+        processed.add(intents[0].intentId);
+        active -= 1;
+      }),
+    };
+
+    const service = new StrategyIntentWorkerService(
+      createConfigService({
+        'strategy.intent_worker_max_in_flight': 2,
+        'strategy.intent_worker_max_in_flight_per_exchange': 2,
+      }),
+      strategyIntentStoreService as any,
+      strategyIntentExecutionService as any,
+    );
+
+    await service.onModuleInit();
+    await waitFor(
+      () =>
+        strategyIntentExecutionService.consumeIntents.mock.calls.length === 1,
+    );
+    await wait(40);
+    await service.onModuleDestroy();
+
+    expect(maxActive).toBe(1);
+    expect(strategyIntentExecutionService.consumeIntents).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
   it('maps execution category and metadata from stored intent entity', async () => {
     const strategyIntentStoreService = {
       listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),

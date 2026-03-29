@@ -6,6 +6,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Scope,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import * as ccxt from 'ccxt';
@@ -13,11 +14,35 @@ import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
+type ExchangeAccountConfig = {
+  label: string;
+  apiKey?: string;
+  secret?: string;
+  password?: string;
+  uid?: string;
+  sandboxMode?: boolean;
+};
+
+type ExchangeConfig = {
+  name: string;
+  accounts: ExchangeAccountConfig[];
+  class: any;
+};
+
+type ExchangeInitializationState = 'pending' | 'ready' | 'failed';
+const SYSTEM_TEST_SANDBOX_EXCHANGE_FLAG =
+  'MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE';
+
 @Injectable({ scope: Scope.DEFAULT })
 export class ExchangeInitService {
   private readonly logger = new CustomLogger(ExchangeInitService.name);
   private exchanges = new Map<string, Map<string, ccxt.Exchange>>();
   private defaultAccounts = new Map<string, ccxt.Exchange>();
+  private readonly exchangeInitializationErrors = new Map<string, Error>();
+  private readonly exchangeInitializationStates = new Map<
+    string,
+    ExchangeInitializationState
+  >();
   private readonly marketsCacheTtlSeconds = 60 * 60;
   private readonly refreshIntervalMs = 10 * 1000;
   private apiKeysSignature: string | null = null;
@@ -28,9 +53,20 @@ export class ExchangeInitService {
   ) {
     this.initializeExchanges()
       .then(() => {
-        this.logger.log('Exchanges initialized successfully');
+        const failedExchangeCount = this.countFailedExchangeInitializations();
+
+        if (failedExchangeCount > 0) {
+          this.logger.warn(
+            `Exchange initialization completed with ${failedExchangeCount} failed exchange configuration(s).`,
+          );
+        } else {
+          this.logger.log('Exchanges initialized successfully');
+        }
+
         this.startKeepAlive();
-        this.startRefresh();
+        if (!this.buildSandboxExchangeConfig()) {
+          this.startRefresh();
+        }
       })
       .catch((error) =>
         this.logger.error(
@@ -40,7 +76,7 @@ export class ExchangeInitService {
       );
   }
 
-  private getEnvExchangeConfigs() {
+  private getEnvExchangeConfigs(): ExchangeConfig[] {
     return [
       {
         name: 'okx',
@@ -297,7 +333,132 @@ export class ExchangeInitService {
     ];
   }
 
-  private buildExchangeConfigsFromDb(apiKeys: APIKeysConfig[]) {
+  private buildSandboxExchangeConfig(): ExchangeConfig | null {
+    if (!this.isSystemTestSandboxExchangeEnabled()) {
+      return null;
+    }
+
+    const exchangeName =
+      process.env.CCXT_SANDBOX_EXCHANGE?.trim().toLowerCase();
+    const apiKey = process.env.CCXT_SANDBOX_API_KEY?.trim();
+    const secret = process.env.CCXT_SANDBOX_SECRET?.trim();
+
+    if (!exchangeName || !apiKey || !secret) {
+      return null;
+    }
+
+    const ExchangeClass = this.resolveExchangeClass(exchangeName);
+
+    if (!ExchangeClass) {
+      this.logger.warn(
+        `Sandbox exchange ${exchangeName} is not supported by CCXT. Falling back to standard exchange initialization.`,
+      );
+
+      return null;
+    }
+
+    const sandboxAccounts: ExchangeAccountConfig[] = [
+      {
+        label: process.env.CCXT_SANDBOX_ACCOUNT_LABEL?.trim() || 'default',
+        apiKey,
+        secret,
+        password: process.env.CCXT_SANDBOX_PASSWORD?.trim() || undefined,
+        uid: process.env.CCXT_SANDBOX_UID?.trim() || undefined,
+        sandboxMode: true,
+      },
+    ];
+    const secondAccountApiKey =
+      process.env.CCXT_SANDBOX_ACCOUNT2_API_KEY?.trim() || undefined;
+    const secondAccountSecret =
+      process.env.CCXT_SANDBOX_ACCOUNT2_SECRET?.trim() || undefined;
+
+    if (secondAccountApiKey && secondAccountSecret) {
+      sandboxAccounts.push({
+        label: process.env.CCXT_SANDBOX_ACCOUNT2_LABEL?.trim() || 'account2',
+        apiKey: secondAccountApiKey,
+        secret: secondAccountSecret,
+        password:
+          process.env.CCXT_SANDBOX_ACCOUNT2_PASSWORD?.trim() || undefined,
+        uid: process.env.CCXT_SANDBOX_ACCOUNT2_UID?.trim() || undefined,
+        sandboxMode: true,
+      });
+    }
+
+    return {
+      name: exchangeName,
+      accounts: sandboxAccounts,
+      class: ExchangeClass,
+    };
+  }
+
+  private resolveExchangeClass(exchangeName: string): any {
+    const normalizedExchangeName = exchangeName.trim().toLowerCase();
+    const ccxtPro = (ccxt as any).pro || {};
+
+    return (
+      ccxtPro[normalizedExchangeName] || (ccxt as any)[normalizedExchangeName]
+    );
+  }
+
+  private applySandboxExchangeOverrides(
+    exchangeName: string,
+    exchange: ccxt.Exchange,
+  ): void {
+    if (exchangeName !== 'binance') {
+      return;
+    }
+
+    const exchangeOptions = (exchange as any).options || {};
+
+    (exchange as any).options = {
+      ...exchangeOptions,
+      defaultType: 'spot',
+      fetchMarkets: {
+        ...(exchangeOptions.fetchMarkets || {}),
+        types: ['spot'],
+      },
+      fetchOrder: {
+        ...(exchangeOptions.fetchOrder || {}),
+        defaultType: 'spot',
+      },
+      fetchOpenOrders: {
+        ...(exchangeOptions.fetchOpenOrders || {}),
+        defaultType: 'spot',
+      },
+      cancelOrder: {
+        ...(exchangeOptions.cancelOrder || {}),
+        defaultType: 'spot',
+      },
+    };
+  }
+
+  private computeSandboxConfigSignature(config: ExchangeConfig): string {
+    const account = config.accounts[0];
+
+    return [
+      'sandbox',
+      config.name,
+      account?.label || 'default',
+      account?.apiKey || '',
+      account?.secret || '',
+      account?.password || '',
+      account?.uid || '',
+    ].join('::');
+  }
+
+  private isTruthyEnvValue(value: string): boolean {
+    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+  }
+
+  private isSystemTestSandboxExchangeEnabled(): boolean {
+    return this.isTruthyEnvValue(
+      process.env[SYSTEM_TEST_SANDBOX_EXCHANGE_FLAG] || '',
+    );
+  }
+
+  private buildExchangeConfigsFromDb(
+    apiKeys: APIKeysConfig[],
+  ): ExchangeConfig[] {
     const grouped = new Map<string, APIKeysConfig[]>();
 
     for (const key of apiKeys) {
@@ -307,15 +468,10 @@ export class ExchangeInitService {
       grouped.get(key.exchange)?.push(key);
     }
 
-    const exchangeConfigs: Array<{
-      name: string;
-      accounts: Array<{ label: string; apiKey: string; secret: string }>;
-      class: any;
-    }> = [];
+    const exchangeConfigs: ExchangeConfig[] = [];
 
     for (const [exchange, keys] of grouped) {
-      const ccxtPro = (ccxt as any).pro || {};
-      const exchangeClass = ccxtPro[exchange] || (ccxt as any)[exchange];
+      const exchangeClass = this.resolveExchangeClass(exchange);
 
       if (!exchangeClass) {
         this.logger.warn(`Exchange ${exchange} is not supported by CCXT.`);
@@ -354,15 +510,29 @@ export class ExchangeInitService {
     return entries.join('|');
   }
 
-  private async initializeExchangeConfigs(
-    exchangeConfigs: Array<{
-      name: string;
-      accounts: Array<{ label: string; apiKey: string; secret: string }>;
-      class: any;
-    }>,
-  ) {
+  private countFailedExchangeInitializations(): number {
+    return [...this.exchangeInitializationStates.values()].filter(
+      (state) => state === 'failed',
+    ).length;
+  }
+
+  private getExchangeAccountKey(exchangeName: string, label: string): string {
+    return `${exchangeName}:${label}`;
+  }
+
+  private normalizeInitializationError(error: unknown): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+
+    return new Error(String(error));
+  }
+
+  private async initializeExchangeConfigs(exchangeConfigs: ExchangeConfig[]) {
     this.exchanges.clear();
     this.defaultAccounts.clear();
+    this.exchangeInitializationErrors.clear();
+    this.exchangeInitializationStates.clear();
 
     await Promise.all(
       exchangeConfigs.map(async (config) => {
@@ -375,23 +545,38 @@ export class ExchangeInitService {
         }
 
         const exchangeMap = new Map<string, ccxt.Exchange>();
+        const configuredAccounts = config.accounts.filter(
+          (account) => account.apiKey && account.secret,
+        );
+
+        if (configuredAccounts.length === 0) {
+          return;
+        }
+
+        this.exchangeInitializationStates.set(config.name, 'pending');
 
         await Promise.all(
-          config.accounts.map(async (account) => {
+          configuredAccounts.map(async (account) => {
             try {
-              if (!account.apiKey || !account.secret) {
-                // this.logger.warn(
-                //   `API key or secret for ${config.name} ${account.label} is missing. Skipping initialization.`,
-                // );
-                return;
-              }
-
               const exchange = new config.class({
                 apiKey: account.apiKey,
                 secret: account.secret,
+                password: account.password,
+                uid: account.uid,
               });
 
-              // Load markets
+              if (account.sandboxMode) {
+                this.applySandboxExchangeOverrides(config.name, exchange);
+
+                if (typeof (exchange as any).setSandboxMode !== 'function') {
+                  throw new Error(
+                    `Exchange ${config.name} does not expose setSandboxMode(true)`,
+                  );
+                }
+
+                (exchange as any).setSandboxMode(true);
+              }
+
               await exchange.loadMarkets();
 
               // Call signIn only for ProBit accounts
@@ -402,22 +587,37 @@ export class ExchangeInitService {
                     `${config.name} ${account.label} signed in successfully.`,
                   );
                 } catch (error) {
+                  const normalizedError =
+                    this.normalizeInitializationError(error);
+
                   this.logger.error(
-                    `ProBit ${account.label} sign-in failed: ${error.message}`,
+                    `ProBit ${account.label} sign-in failed: ${normalizedError.message}`,
                   );
                 }
               }
 
               // Save the initialized exchange
               exchangeMap.set(account.label, exchange);
+              this.exchangeInitializationErrors.delete(
+                this.getExchangeAccountKey(config.name, account.label),
+              );
 
               // Save the default account reference
-              if (account.label === 'default') {
+              if (
+                account.label === 'default' ||
+                !this.defaultAccounts.has(config.name)
+              ) {
                 this.defaultAccounts.set(config.name, exchange);
               }
             } catch (error) {
+              const normalizedError = this.normalizeInitializationError(error);
+
+              this.exchangeInitializationErrors.set(
+                this.getExchangeAccountKey(config.name, account.label),
+                normalizedError,
+              );
               this.logger.error(
-                `Failed to initialize ${config.name} ${account.label}: ${error.message}`,
+                `Failed to initialize ${config.name} ${account.label}: ${normalizedError.message}`,
               );
             }
           }),
@@ -425,12 +625,41 @@ export class ExchangeInitService {
 
         if (exchangeMap.size > 0) {
           this.exchanges.set(config.name, exchangeMap);
+          this.exchangeInitializationStates.set(config.name, 'ready');
+
+          return;
+        }
+
+        const firstInitializationError = configuredAccounts
+          .map((account) =>
+            this.exchangeInitializationErrors.get(
+              this.getExchangeAccountKey(config.name, account.label),
+            ),
+          )
+          .find((error): error is Error => Boolean(error));
+
+        this.exchangeInitializationStates.set(config.name, 'failed');
+
+        if (firstInitializationError) {
+          this.exchangeInitializationErrors.set(
+            config.name,
+            firstInitializationError,
+          );
         }
       }),
     );
   }
 
   private async initializeExchanges() {
+    const sandboxConfig = this.buildSandboxExchangeConfig();
+
+    if (sandboxConfig) {
+      this.apiKeysSignature = this.computeSandboxConfigSignature(sandboxConfig);
+      await this.initializeExchangeConfigs([sandboxConfig]);
+
+      return;
+    }
+
     let apiKeys = await this.exchangeService.readDecryptedAPIKeys();
 
     if (!apiKeys.length) {
@@ -455,7 +684,7 @@ export class ExchangeInitService {
   }
 
   private startRefresh() {
-    setInterval(async () => {
+    const refreshTimer = setInterval(async () => {
       try {
         const apiKeys = await this.exchangeService.readDecryptedAPIKeys();
         const signature = apiKeys.length
@@ -479,12 +708,14 @@ export class ExchangeInitService {
         );
       }
     }, this.refreshIntervalMs);
+
+    refreshTimer.unref?.();
   }
 
   private startKeepAlive() {
     const intervalMs = 5 * 60 * 1000; // 5 minutes
 
-    setInterval(async () => {
+    const keepAliveTimer = setInterval(async () => {
       this.logger.log('Running keep-alive checks for all exchanges...');
       for (const [exchangeName, accounts] of this.exchanges) {
         // Only do special logic for ProBit
@@ -522,18 +753,59 @@ export class ExchangeInitService {
         // other exchange keep-alive logic if needed...
       }
     }, intervalMs);
+
+    keepAliveTimer.unref?.();
   }
 
   getExchange(exchangeName: string, label: string = 'default'): ccxt.Exchange {
     const exchangeMap = this.exchanges.get(exchangeName);
+    const initializationState =
+      this.exchangeInitializationStates.get(exchangeName);
+    const exchangeInitializationError =
+      this.exchangeInitializationErrors.get(exchangeName);
+    const accountInitializationError = this.exchangeInitializationErrors.get(
+      this.getExchangeAccountKey(exchangeName, label),
+    );
 
     if (!exchangeMap) {
+      if (initializationState === 'pending') {
+        throw new ServiceUnavailableException(
+          `Exchange ${exchangeName} is still initializing.`,
+        );
+      }
+
+      if (accountInitializationError || exchangeInitializationError) {
+        const message = (
+          accountInitializationError || exchangeInitializationError
+        )?.message;
+
+        throw new InternalServerErrorException(
+          `Exchange ${exchangeName} failed to initialize: ${message}`,
+        );
+      }
+
       this.logger.warn(`Exchange ${exchangeName} is not configured.`);
       throw new InternalServerErrorException('Exchange configuration error.');
     }
-    const exchange = exchangeMap.get(label);
+    const exchange =
+      exchangeMap.get(label) ||
+      (label === 'default'
+        ? this.defaultAccounts.get(exchangeName)
+        : undefined);
 
     if (!exchange) {
+      if (initializationState === 'pending') {
+        throw new ServiceUnavailableException(
+          `Exchange ${exchangeName} account ${label} is still initializing.`,
+        );
+      }
+
+      if (accountInitializationError) {
+        throw new InternalServerErrorException(
+          `Exchange ${exchangeName} account ${label} failed to initialize: ${accountInitializationError.message}`,
+        );
+      }
+
       this.logger.warn(
         `Exchange ${exchangeName} with label ${label} is not configured.`,
       );
@@ -544,6 +816,12 @@ export class ExchangeInitService {
   }
 
   async getSupportedExchanges(): Promise<string[]> {
+    const sandboxConfig = this.buildSandboxExchangeConfig();
+
+    if (sandboxConfig) {
+      return [sandboxConfig.name];
+    }
+
     const dbExchanges = await this.exchangeService.readSupportedExchanges();
 
     if (dbExchanges.length > 0) {

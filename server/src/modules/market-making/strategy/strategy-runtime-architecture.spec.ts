@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
@@ -364,6 +365,8 @@ describe('Strategy runtime architecture', () => {
 
   it('runs the pooled pure market making flow through worker execution and fill routing', async () => {
     const fixture = createFixture();
+    const submittedClientOrderId0 = buildSubmittedClientOrderId('order-1', 0);
+    const submittedClientOrderId1 = buildSubmittedClientOrderId('order-1', 1);
 
     await fixture.strategyService.executePureMarketMakingStrategy(
       createPureParams('order-1'),
@@ -387,13 +390,13 @@ describe('Strategy runtime architecture', () => {
       expect.arrayContaining([
         expect.objectContaining({
           orderId: 'order-1',
-          clientOrderId: 'order-1:0',
-          exchangeOrderId: 'ex-order-1-0',
+          clientOrderId: submittedClientOrderId0,
+          exchangeOrderId: `ex-${submittedClientOrderId0}`,
         }),
         expect.objectContaining({
           orderId: 'order-1',
-          clientOrderId: 'order-1:1',
-          exchangeOrderId: 'ex-order-1-1',
+          clientOrderId: submittedClientOrderId1,
+          exchangeOrderId: `ex-${submittedClientOrderId1}`,
         }),
       ]),
     );
@@ -403,7 +406,7 @@ describe('Strategy runtime architecture', () => {
           strategyInstanceId: 'order-1-pureMarketMaking',
           status: 'open',
           metadata: expect.objectContaining({
-            clientOrderId: 'order-1:0',
+            clientOrderId: submittedClientOrderId0,
           }),
         }),
       ]),
@@ -426,7 +429,8 @@ describe('Strategy runtime architecture', () => {
       accountLabel: 'default',
       eventType: 'execution',
       payload: {
-        exchangeOrderId: 'ex-order-1-0',
+        exchangeOrderId: `ex-${submittedClientOrderId0}`,
+        amount: '1',
         status: 'closed',
       },
       receivedAt: '2026-03-11T00:00:01.000Z',
@@ -444,13 +448,13 @@ describe('Strategy runtime architecture', () => {
       }),
       expect.objectContaining({
         orderId: 'order-1',
-        exchangeOrderId: 'ex-order-1-0',
+        exchangeOrderId: `ex-${submittedClientOrderId0}`,
       }),
     );
     expect(
       fixture.exchangeOrderTrackerService.getByExchangeOrderId(
         'binance',
-        'ex-order-1-0',
+        `ex-${submittedClientOrderId0}`,
       ),
     ).toEqual(
       expect.objectContaining({
@@ -494,6 +498,7 @@ describe('Strategy runtime architecture', () => {
       eventType: 'trade',
       payload: {
         clientOrderId: 'order-2:99',
+        amount: '1',
         status: 'filled',
       },
       receivedAt: '2026-03-11T00:00:01.000Z',

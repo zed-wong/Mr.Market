@@ -27,7 +27,7 @@ export class MarketMakingOrderIntent {
   @Column('simple-json', { nullable: true })
   configOverrides?: Record<string, unknown> | null;
 
-  @Column({ default: 'pending' })
+  @Column({ type: 'varchar', default: 'pending' })
   state: MarketMakingOrderIntentState;
 
   @Column()

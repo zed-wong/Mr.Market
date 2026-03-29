@@ -6,6 +6,7 @@ describe('ExchangeOrderTrackerService', () => {
     const service = new ExchangeOrderTrackerService();
 
     service.upsertOrder({
+      orderId: 'u1-c1',
       strategyKey: 'u1-c1-pureMarketMaking',
       exchange: 'binance',
       pair: 'BTC/USDT',
@@ -18,6 +19,7 @@ describe('ExchangeOrderTrackerService', () => {
     });
 
     service.upsertOrder({
+      orderId: 'u1-c1',
       strategyKey: 'u1-c1-pureMarketMaking',
       exchange: 'binance',
       pair: 'BTC/USDT',
@@ -45,6 +47,7 @@ describe('ExchangeOrderTrackerService', () => {
     );
 
     service.upsertOrder({
+      orderId: 'u1-c1',
       strategyKey: 'u1-c1-pureMarketMaking',
       exchange: 'binance',
       pair: 'BTC/USDT',
@@ -67,6 +70,7 @@ describe('ExchangeOrderTrackerService', () => {
     const service = new ExchangeOrderTrackerService();
 
     service.upsertOrder({
+      orderId: 'client-1',
       strategyKey: 'strategy-1',
       exchange: 'binance',
       pair: 'BTC/USDT',
@@ -78,6 +82,7 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
     service.upsertOrder({
+      orderId: 'client-2',
       strategyKey: 'strategy-1',
       exchange: 'mexc',
       pair: 'BTC/USDT',

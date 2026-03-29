@@ -3,7 +3,7 @@ import { StrategyInstance } from 'src/common/entities/market-making/strategy-ins
 
 import { ExecutorAction } from '../config/executor-action.types';
 import { PureMarketMakingStrategyDto } from '../config/strategy.dto';
-import {
+import type {
   StrategyController,
   StrategyRuntimeSession,
 } from '../config/strategy-controller.types';

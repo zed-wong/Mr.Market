@@ -693,7 +693,6 @@ describe('MarketMakingOrderProcessor', () => {
       'payment_complete',
     );
   });
-
   it('does nothing when start_mm order is missing', async () => {
     const { processor, strategyRuntimeDispatcher, userOrdersService } =
       createProcessor();

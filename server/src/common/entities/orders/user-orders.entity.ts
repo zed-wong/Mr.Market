@@ -50,13 +50,13 @@ export class MarketMakingOrder {
   @Column()
   numberOfLayers: string;
 
-  @Column()
+  @Column({ type: 'varchar' })
   priceSourceType: PriceSourceType;
 
   @Column()
   amountChangePerLayer: string; // This can be a fixed amount or a percentage
 
-  @Column()
+  @Column({ type: 'varchar' })
   amountChangeType: 'fixed' | 'percentage';
 
   @Column()
@@ -71,7 +71,7 @@ export class MarketMakingOrder {
   @Column({ nullable: true })
   balanceB?: string;
 
-  @Column()
+  @Column({ type: 'varchar' })
   state: MarketMakingStates;
 
   @Column()
@@ -95,7 +95,7 @@ export class SimplyGrowOrder {
   @Column()
   amount: string;
 
-  @Column()
+  @Column({ type: 'varchar' })
   state: SimplyGrowStates;
 
   @Column()

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
@@ -125,7 +126,14 @@ describe('StrategyIntentExecutionService', () => {
     ).toHaveBeenCalledTimes(1);
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
-    ).toHaveBeenCalledWith('binance', 'BTC/USDT', 'buy', '1', '100', 'c1:0');
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('c1', 0),
+    );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       baseIntent.intentId,
       'SENT',
@@ -145,12 +153,12 @@ describe('StrategyIntentExecutionService', () => {
     expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
       orderId: 'c1',
       exchangeOrderId: 'order-1',
-      clientOrderId: 'c1:0',
+      clientOrderId: buildSubmittedClientOrderId('c1', 0),
     });
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         exchangeOrderId: 'order-1',
-        clientOrderId: 'c1:0',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
       }),
     );
   });
@@ -194,6 +202,33 @@ describe('StrategyIntentExecutionService', () => {
     ).not.toHaveBeenCalled();
   });
 
+  it('skips execution when strategy.execute_intents config is missing', async () => {
+    const configService = {
+      get: jest.fn((key: string, defaultValue?: unknown) => {
+        if (key === 'strategy.execute_intents') {
+          return defaultValue;
+        }
+        if (key === 'strategy.intent_max_retries') {
+          return 2;
+        }
+        if (key === 'strategy.intent_retry_base_delay_ms') {
+          return 1;
+        }
+
+        return defaultValue;
+      }),
+    } as unknown as ConfigService;
+    const service = createService(false, configService);
+
+    await service.consumeIntents([
+      { ...baseIntent, intentId: 'intent-default-false' },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+  });
+
   it('executes CANCEL_ORDER through exchange adapter', async () => {
     const service = createService(true);
     const cancelIntent: StrategyOrderIntent = {
@@ -209,6 +244,48 @@ describe('StrategyIntentExecutionService', () => {
       'binance',
       'BTC/USDT',
       'exchange-order-1',
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'exchange-order-1',
+        status: 'cancelled',
+      }),
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-cancel',
+      'DONE',
+    );
+    expect(durabilityService.appendOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'strategy.intent.executed',
+        aggregateId: 'intent-cancel',
+      }),
+    );
+    expect(durabilityService.markProcessed).toHaveBeenCalledWith(
+      'strategy-intent-execution',
+      'intent-cancel',
+    );
+  });
+
+  it('rejects CANCEL_ORDER intents without mixinOrderId', async () => {
+    const service = createService(true);
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'intent-cancel-missing-order',
+          type: 'CANCEL_ORDER',
+          mixinOrderId: undefined,
+        },
+      ]),
+    ).rejects.toThrow('CANCEL_ORDER intent missing mixinOrderId');
+
+    expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-cancel-missing-order',
+      'FAILED',
+      'CANCEL_ORDER intent missing mixinOrderId',
     );
   });
 
@@ -362,7 +439,7 @@ describe('StrategyIntentExecutionService', () => {
       'buy',
       '1',
       '100',
-      'mm-order-1:0',
+      buildSubmittedClientOrderId('mm-order-1', 0),
     );
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
@@ -373,7 +450,82 @@ describe('StrategyIntentExecutionService', () => {
       'buy',
       '1',
       '100',
-      'mm-order-1:1',
+      buildSubmittedClientOrderId('mm-order-1', 1),
+    );
+  });
+
+  it('skips exchange side effects when durability marks an intent as already processed', async () => {
+    durabilityService.isProcessed.mockResolvedValueOnce(true);
+    const service = createService(true);
+
+    await service.consumeIntents([
+      { ...baseIntent, intentId: 'already-processed-intent' },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'already-processed-intent',
+      'DONE',
+    );
+    expect(durabilityService.markProcessed).not.toHaveBeenCalled();
+  });
+
+  it('resumes clientOrderId sequencing from persisted mapping count after service restart', async () => {
+    const metadata = { orderId: 'mm-order-restart' };
+    const firstService = createService(true);
+
+    exchangeOrderMappingService.countMappingsForOrder.mockResolvedValueOnce(2);
+    await firstService.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-before-restart',
+        metadata,
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenLastCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('mm-order-restart', 2),
+    );
+
+    jest.clearAllMocks();
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
+      id: 'order-after-restart',
+      status: 'open',
+    });
+    exchangeConnectorAdapterService.cancelOrder.mockResolvedValue({
+      id: 'exchange-order-1',
+      status: 'canceled',
+    });
+    exchangeOrderMappingService.countMappingsForOrder.mockResolvedValueOnce(3);
+
+    const restartedService = createService(true);
+
+    await restartedService.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-after-restart',
+        metadata,
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('mm-order-restart', 3),
     );
   });
 });

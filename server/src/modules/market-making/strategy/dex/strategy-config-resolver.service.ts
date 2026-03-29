@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { Repository } from 'typeorm';
 
-import { StrategyType } from '../config/strategy-controller.types';
+import type { StrategyType } from '../config/strategy-controller.types';
 import { normalizeControllerType } from '../config/strategy-controller-aliases';
 import { normalizeExecutionCategory } from '../config/strategy-execution-category';
 import { StrategyRuntimeDispatcherService } from '../execution/strategy-runtime-dispatcher.service';
