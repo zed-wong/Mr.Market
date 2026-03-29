@@ -430,6 +430,7 @@ describe('Strategy runtime architecture', () => {
       eventType: 'execution',
       payload: {
         exchangeOrderId: `ex-${submittedClientOrderId0}`,
+        amount: '1',
         status: 'closed',
       },
       receivedAt: '2026-03-11T00:00:01.000Z',
@@ -497,6 +498,7 @@ describe('Strategy runtime architecture', () => {
       eventType: 'trade',
       payload: {
         clientOrderId: 'order-2:99',
+        amount: '1',
         status: 'filled',
       },
       receivedAt: '2026-03-11T00:00:01.000Z',

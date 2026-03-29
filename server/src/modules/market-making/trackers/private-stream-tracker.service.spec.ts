@@ -91,6 +91,7 @@ describe('PrivateStreamTrackerService', () => {
       eventType: 'trade',
       payload: {
         clientOrderId: 'order-1:0',
+        amount: '1',
         status: 'filled',
       },
       receivedAt: '2026-03-11T00:00:00.000Z',
@@ -144,6 +145,7 @@ describe('PrivateStreamTrackerService', () => {
       eventType: 'execution',
       payload: {
         exchangeOrderId: 'ex-123',
+        amount: '1',
         status: 'filled',
       },
       receivedAt: '2026-03-11T00:00:02.000Z',
@@ -189,6 +191,7 @@ describe('PrivateStreamTrackerService', () => {
         clientOrderId: 'legacy-client-oid',
         exchangeOrderId: 'ex-missing',
         symbol: 'BTC/USDT',
+        amount: '1',
         status: 'filled',
       },
       receivedAt: '2026-03-11T00:00:04.000Z',
@@ -234,6 +237,7 @@ describe('PrivateStreamTrackerService', () => {
       eventType: 'fill',
       payload: {
         clientOrderId: 'order-1:0',
+        amount: '1',
         status: 'filled',
       },
       receivedAt: '2026-03-11T00:00:06.000Z',
@@ -273,6 +277,7 @@ describe('PrivateStreamTrackerService', () => {
           clientOrderId: `legacy-${index}`,
           exchangeOrderId: `ex-${index}`,
           symbol: 'BTC/USDT',
+          amount: '1',
           status: 'filled',
         },
         receivedAt: `2026-03-11T00:00:${String(index).padStart(2, '0')}.000Z`,
@@ -437,6 +442,7 @@ describe('PrivateStreamTrackerService', () => {
           clientOrderId: `order-${index}:0`,
           exchangeOrderId: `ex-${index}`,
           symbol: 'BTC/USDT',
+          amount: '1',
           status: 'filled',
         },
         receivedAt: `2026-03-11T00:00:${String(index).padStart(2, '0')}.000Z`,
