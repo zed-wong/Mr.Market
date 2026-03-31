@@ -1,5 +1,10 @@
 # Execution Flow Changelog
 
+## 2026-04-01
+
+- Add an English planning note that frames the backend as a `Funding Layer` plus `Execution Layer`, with mixin, manual funding, and EVM wallets treated as funding sources that converge on a shared `ready_to_start` state
+- Mark the April 1 funding-layer/execution-layer planning note as a future TODO rather than current implementation scope
+
 ## 2026-03-28
 
 - Replace the intent-engine worker-error spec's fixed sleeps with condition-based waits, fix Bun runtime type-only imports in strategy controller modules, and make SQLite system-test entities declare explicit varchar-backed enum/union columns so the in-memory intent lifecycle suite boots and passes again
