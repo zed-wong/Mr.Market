@@ -29,6 +29,7 @@ import { StrategyConfigResolverService } from 'src/modules/market-making/strateg
 import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { MarketMakingOrderProcessor } from 'src/modules/market-making/user-orders/market-making.processor';
+import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { SnapshotsService } from 'src/modules/mixin/snapshots/snapshots.service';
@@ -187,6 +188,7 @@ export class MarketMakingPaymentHelper {
       ],
       providers: [
         BalanceLedgerService,
+        MarketMakingRuntimeService,
         MarketMakingOrderProcessor,
         SnapshotsService,
         StrategyConfigResolverService,

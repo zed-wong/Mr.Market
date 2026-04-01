@@ -34,6 +34,29 @@ Detailed reference:
 
 - `../market-making-flow.md`
 
+## Flow 1A: Admin direct market-making
+
+Summary:
+
+1. Admin creates a direct market-making order without the payment flow.
+2. Service resolves a pinned strategy snapshot, writes `source=admin_direct`, and stores `apiKeyId` for account linkage.
+3. Direct start reuses the same shared runtime start path as queue-driven `start_mm`.
+4. Runtime health reads executor registry state, tracker data, and exchange balances for the admin status endpoint.
+5. Optional HuFi campaign joins run asynchronously and may link or detach from the direct order lifecycle.
+
+Main modules:
+
+- `admin/market-making`
+- `market-making/user-orders`
+- `market-making/strategy`
+- `market-making/trackers`
+- `campaign`
+
+Why this flow exists:
+
+- Operations needs a fast path to start or stop market making for an exchange account without simulating funding.
+- Admin-only orders must stay isolated from user-facing queries while still sharing the production runtime.
+
 ## Flow 2: Strategy runtime and pooled execution
 
 Summary:
@@ -133,16 +156,19 @@ Summary:
 1. Scheduler syncs campaign data from external sources.
 2. Join operations are scheduled for active participation.
 3. Score estimator writes HUFI score snapshots from trading history.
+4. Admin direct campaign joins may pre-bind exchange credentials, then transition through `pending`, `joined`, `linked`, or `detached` as runtime state changes.
 
 Main modules:
 
 - `campaign`
 - `market-making/local-campaign`
 - `market-making/strategy`
+- `admin/market-making`
 
 Why this flow exists:
 
 - It connects trading activity to campaign participation and score tracking.
+- Admin operations can prepare campaign linkage ahead of runtime start without exposing those records to user order views.
 
 ## Trigger Map
 

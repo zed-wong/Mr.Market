@@ -35,6 +35,12 @@ export class MarketMakingOrder {
   @Column('simple-json', { nullable: true })
   strategySnapshot?: MarketMakingOrderStrategySnapshot;
 
+  @Column({ type: 'varchar', default: 'payment_flow' })
+  source: 'payment_flow' | 'admin_direct';
+
+  @Column({ nullable: true })
+  apiKeyId?: string;
+
   @Column()
   bidSpread: string;
 
@@ -54,7 +60,7 @@ export class MarketMakingOrder {
   priceSourceType: PriceSourceType;
 
   @Column()
-  amountChangePerLayer: string; // This can be a fixed amount or a percentage
+  amountChangePerLayer: string;
 
   @Column({ type: 'varchar' })
   amountChangeType: 'fixed' | 'percentage';

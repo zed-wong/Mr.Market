@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { MarketMakingOrderProcessor } from './market-making.processor';
+import { MarketMakingRuntimeService } from './market-making-runtime.service';
 
 describe('MarketMakingOrderProcessor', () => {
   const createProcessor = () => {
@@ -156,10 +157,15 @@ describe('MarketMakingOrderProcessor', () => {
         defaultConfig: {},
       }),
     };
+    const marketMakingRuntimeService = new MarketMakingRuntimeService(
+      strategyRuntimeDispatcher as any,
+      strategyService as any,
+      strategyDefinitionRepository as any,
+    );
 
     const processor = new MarketMakingOrderProcessor(
       userOrdersService as any,
-      strategyService as any,
+      marketMakingRuntimeService as any,
       {
         calculateMoveFundsFee: jest.fn().mockResolvedValue({
           base_fee_id: 'asset-fee-base',
@@ -189,11 +195,9 @@ describe('MarketMakingOrderProcessor', () => {
       { getNetworkForAsset: jest.fn() } as any,
       {} as any,
       strategyConfigResolver as any,
-      strategyRuntimeDispatcher as any,
       paymentStateRepository as any,
       marketMakingOrderIntentRepository as any,
       marketMakingRepository as any,
-      strategyDefinitionRepository as any,
       balanceLedgerService as any,
     );
 

@@ -100,7 +100,8 @@ export class ExchangeOrderTrackerService
       this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), {
         ...order,
         cumulativeFilledQty:
-          this.normalizeFilledValue(latest?.filled) || order.cumulativeFilledQty,
+          this.normalizeFilledValue(latest?.filled) ||
+          order.cumulativeFilledQty,
         status: normalizedStatus,
         updatedAt: getRFC3339Timestamp(),
       });

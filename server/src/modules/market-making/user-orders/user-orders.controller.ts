@@ -144,7 +144,7 @@ export class UserOrdersController {
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
   async getMarketMakingDetailsById(@Param('id') id: string) {
-    return await this.userOrdersService.findMarketMakingByOrderId(id);
+    return await this.userOrdersService.findPublicMarketMakingByOrderId(id);
   }
 
   @Post('/market-making/intent')

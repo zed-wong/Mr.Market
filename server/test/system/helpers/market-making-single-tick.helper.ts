@@ -53,6 +53,7 @@ import { OrderBookTrackerService } from 'src/modules/market-making/trackers/orde
 import { PrivateStreamIngestionService } from 'src/modules/market-making/trackers/private-stream-ingestion.service';
 import { PrivateStreamTrackerService } from 'src/modules/market-making/trackers/private-stream-tracker.service';
 import { MarketMakingOrderProcessor } from 'src/modules/market-making/user-orders/market-making.processor';
+import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
@@ -252,6 +253,7 @@ export class MarketMakingSingleTickHelper {
         ExecutorOrchestratorService,
         ExecutorRegistry,
         FillRoutingService,
+        MarketMakingRuntimeService,
         MarketMakingOrderProcessor,
         ClockTickCoordinatorService,
         OrderBookTrackerService,

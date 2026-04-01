@@ -40,6 +40,7 @@ import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/stra
 import { ExecutorOrchestratorService } from 'src/modules/market-making/strategy/intent/executor-orchestrator.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { MarketMakingOrderProcessor } from 'src/modules/market-making/user-orders/market-making.processor';
+import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
@@ -169,6 +170,7 @@ export class MarketMakingRuntimeHelper {
         ExchangeInitService,
         ExecutorOrchestratorService,
         ExecutorRegistry,
+        MarketMakingRuntimeService,
         MarketMakingOrderProcessor,
         StrategyConfigResolverService,
         StrategyIntentStoreService,

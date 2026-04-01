@@ -1,5 +1,5 @@
-import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 import BigNumber from 'bignumber.js';
+import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 
 import { MarketMakingSingleTickHelper } from '../../../helpers/market-making-single-tick.helper';
 import {

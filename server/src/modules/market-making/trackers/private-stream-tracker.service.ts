@@ -181,7 +181,8 @@ export class PrivateStreamTrackerService
       this.exchangeOrderTrackerService?.upsertOrder({
         ...trackedOrder,
         clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
-        cumulativeFilledQty: fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
+        cumulativeFilledQty:
+          fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
         status: fill.status,
         updatedAt: fill.receivedAt,
       });
@@ -412,17 +413,15 @@ export class PrivateStreamTrackerService
       qty: string;
       cumulativeFilledQty?: string;
     },
-  ):
-    | {
-        fillId?: string;
-        side?: 'buy' | 'sell';
-        price?: string;
-        qty?: string;
-        cumulativeQty?: string;
-        receivedAt: string;
-        payload: Record<string, unknown>;
-      }
-    | null {
+  ): {
+    fillId?: string;
+    side?: 'buy' | 'sell';
+    price?: string;
+    qty?: string;
+    cumulativeQty?: string;
+    receivedAt: string;
+    payload: Record<string, unknown>;
+  } | null {
     const side = fill.side || trackedOrder?.side;
     const price = fill.price || trackedOrder?.price;
     let qty = fill.qty;

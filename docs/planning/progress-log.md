@@ -302,3 +302,4 @@
 - Add withdrawal timeout (30 minutes) to error handling
 - Add comprehensive ui/DESIGN_PATTERN.md with full design system documentation
 - Fix admin global fee API to read the seeded primary config instead of assuming `config_id = 1`, which made `/manage/settings/fees` show `0` fees
+- Add admin direct market-making flow with shared runtime start/stop, campaign joins, source filtering, and admin monitoring UI

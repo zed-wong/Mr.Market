@@ -33,7 +33,9 @@ describe('Intent idempotency (mock system)', () => {
 
     expect(targetIntentId).toBeDefined();
 
-    log.step('consuming the same stored intent twice through the real execution service');
+    log.step(
+      'consuming the same stored intent twice through the real execution service',
+    );
     const consumePromise = helper.consumeStoredIntents([
       targetIntentId!,
       targetIntentId!,

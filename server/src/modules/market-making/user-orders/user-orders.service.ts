@@ -62,9 +62,13 @@ export class UserOrdersService {
 
   async findAllStrategyByUser(userId: string) {
     try {
-      const market_makings = await this.marketMakingRepository.findBy({
-        userId,
-      });
+      const market_makings = await this.marketMakingRepository
+        .createQueryBuilder('order')
+        .where('order.userId = :userId', { userId })
+        .andWhere('(order.source IS NULL OR order.source != :source)', {
+          source: 'admin_direct',
+        })
+        .getMany();
       const simply_grows = await this.simplyGrowRepository.findBy({ userId });
 
       return {
@@ -139,7 +143,13 @@ export class UserOrdersService {
 
   async findMarketMakingByUserId(userId: string): Promise<MarketMakingOrder[]> {
     try {
-      return await this.marketMakingRepository.findBy({ userId });
+      return await this.marketMakingRepository
+        .createQueryBuilder('order')
+        .where('order.userId = :userId', { userId })
+        .andWhere('(order.source IS NULL OR order.source != :source)', {
+          source: 'admin_direct',
+        })
+        .getMany();
     } catch (error) {
       this.logger.error(
         'Error finding market making orders by userId',
@@ -312,6 +322,18 @@ export class UserOrdersService {
     await this.marketMakingOrderIntentRepository.save(intent);
 
     return { orderId, memo, expiresAt };
+  }
+
+  async findPublicMarketMakingByOrderId(
+    orderId: string,
+  ): Promise<MarketMakingOrder | undefined> {
+    return await this.marketMakingRepository
+      .createQueryBuilder('order')
+      .where('order.orderId = :orderId', { orderId })
+      .andWhere('(order.source IS NULL OR order.source != :source)', {
+        source: 'admin_direct',
+      })
+      .getOne();
   }
 
   async listEnabledMarketMakingStrategies() {

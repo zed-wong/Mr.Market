@@ -5,7 +5,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { Job } from 'bull';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { MarketMakingCreateMemoDetails } from 'src/common/types/memo/memo';
@@ -24,9 +23,8 @@ import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { LocalCampaignService } from '../local-campaign/local-campaign.service';
 import { NetworkMappingService } from '../network-mapping/network-mapping.service';
 import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
-import { StrategyRuntimeDispatcherService } from '../strategy/execution/strategy-runtime-dispatcher.service';
-import { StrategyService } from '../strategy/strategy.service';
 import { mapStrategySnapshotToMarketMakingOrderFields } from './market-making-order-snapshot.utils';
+import { MarketMakingRuntimeService } from './market-making-runtime.service';
 import { UserOrdersService } from './user-orders.service';
 
 interface ProcessSnapshotJobData {
@@ -65,7 +63,7 @@ export class MarketMakingOrderProcessor {
 
   constructor(
     private readonly userOrdersService: UserOrdersService,
-    private readonly strategyService: StrategyService,
+    private readonly marketMakingRuntimeService: MarketMakingRuntimeService,
     private readonly feeService: FeeService,
     private readonly growDataRepository: GrowdataRepository,
     private readonly transactionService: TransactionService,
@@ -76,15 +74,12 @@ export class MarketMakingOrderProcessor {
     private readonly networkMappingService: NetworkMappingService,
     private readonly mixinClientService: MixinClientService,
     private readonly strategyConfigResolver: StrategyConfigResolverService,
-    private readonly strategyRuntimeDispatcher: StrategyRuntimeDispatcherService,
     @InjectRepository(MarketMakingPaymentState)
     private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
     @InjectRepository(MarketMakingOrderIntent)
     private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
-    @InjectRepository(StrategyDefinition)
-    private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
     private readonly balanceLedgerService: BalanceLedgerService,
   ) {}
 
@@ -1068,28 +1063,9 @@ export class MarketMakingOrderProcessor {
     );
 
     try {
-      if (!order.strategySnapshot?.resolvedConfig) {
-        throw new Error(`Order ${orderId} has no strategySnapshot.`);
-      }
+      await this.marketMakingRuntimeService.startOrder(order);
 
-      const { controllerType, resolvedConfig } = order.strategySnapshot;
-      const strategyType =
-        this.strategyRuntimeDispatcher.toStrategyType(controllerType);
-
-      await this.strategyRuntimeDispatcher.startByStrategyType(
-        strategyType,
-        resolvedConfig as Record<string, any>,
-      );
-
-      if (order.strategyDefinitionId) {
-        await this.strategyService.linkDefinitionToStrategyInstance(
-          order.userId,
-          orderId,
-          strategyType,
-          order.strategyDefinitionId,
-          strategyType === 'pureMarketMaking' ? orderId : undefined,
-        );
-      } else {
+      if (!order.strategyDefinitionId) {
         this.logger.warn(
           `Order ${orderId} started from strategySnapshot without strategyDefinitionId binding`,
         );
@@ -1119,27 +1095,10 @@ export class MarketMakingOrderProcessor {
     const order = await this.userOrdersService.findMarketMakingByOrderId(
       orderId,
     );
-    let strategyType =
-      this.strategyRuntimeDispatcher.toStrategyType('pureMarketMaking');
 
-    if (order?.strategyDefinitionId) {
-      const definition = await this.strategyDefinitionRepository.findOne({
-        where: { id: order.strategyDefinitionId },
-      });
-
-      if (definition) {
-        const controllerType =
-          this.strategyConfigResolver.getDefinitionControllerType(definition);
-
-        strategyType =
-          this.strategyRuntimeDispatcher.toStrategyType(controllerType);
-      }
-    }
-
-    await this.strategyRuntimeDispatcher.stopByStrategyType(
-      strategyType,
+    await this.marketMakingRuntimeService.stopOrder(
+      order,
       order?.userId || userId || 'system',
-      orderId,
     );
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,

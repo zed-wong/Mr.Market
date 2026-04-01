@@ -58,9 +58,7 @@ describe('Intent execution flow (mock system)', () => {
       'SENT',
       'NEW',
     ]);
-    const firstPendingPlacement = (
-      await helper.waitForPendingPlacements(1)
-    )[0];
+    const firstPendingPlacement = (await helper.waitForPendingPlacements(1))[0];
 
     expect(firstPendingPlacement).toBeDefined();
     expect(sentAndQueued[0]?.status).toBe('SENT');
@@ -97,7 +95,9 @@ describe('Intent execution flow (mock system)', () => {
       statuses: doneIntents.map((intent) => intent.status),
       addedHistoryCount: addedHistory.length,
       addedMappingCount: addedMappings.length,
-      mappingClientOrderIds: addedMappings.map((mapping) => mapping.clientOrderId),
+      mappingClientOrderIds: addedMappings.map(
+        (mapping) => mapping.clientOrderId,
+      ),
     });
 
     expect(doneIntents).toHaveLength(2);
@@ -151,9 +151,9 @@ describe('Intent execution flow (mock system)', () => {
     });
 
     expect(retryAttempt).toBeDefined();
-    expect((retryAttempt?.callIndex || 0) > (firstAttempt?.callIndex || 0)).toBe(
-      true,
-    );
+    expect(
+      (retryAttempt?.callIndex || 0) > (firstAttempt?.callIndex || 0),
+    ).toBe(true);
 
     log.step('releasing retried first placement');
     helper.releaseNextPlacement();

@@ -593,7 +593,8 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         })),
         upsertOrder: jest.fn().mockImplementation((order) => {
-          cumulativeFilledQty = order.cumulativeFilledQty || cumulativeFilledQty;
+          cumulativeFilledQty =
+            order.cumulativeFilledQty || cumulativeFilledQty;
         }),
       } as unknown as ExchangeOrderTrackerService,
       {

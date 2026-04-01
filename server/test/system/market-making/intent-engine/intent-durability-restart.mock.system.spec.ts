@@ -190,7 +190,9 @@ describe('Intent durability restart parity (mock system)', () => {
       expect(await firstModule.receiptRepository.count()).toBe(1);
       expect(await firstModule.outboxRepository.count()).toBe(1);
 
-      log.step('rewinding intent status to NEW while keeping durability receipt');
+      log.step(
+        'rewinding intent status to NEW while keeping durability receipt',
+      );
       await firstModule.intentRepository.save({
         ...firstPassIntent,
         status: 'NEW',

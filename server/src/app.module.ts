@@ -28,6 +28,7 @@ import { LedgerEntry } from './common/entities/ledger/ledger-entry.entity';
 import { RewardAllocation } from './common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from './common/entities/ledger/reward-ledger.entity';
 import { ShareLedgerEntry } from './common/entities/ledger/share-ledger-entry.entity';
+import { CampaignJoin } from './common/entities/market-making/campaign-join.entity';
 import { ExchangeOrderMapping } from './common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from './common/entities/market-making/market-making-order-intent.entity';
 import { Performance } from './common/entities/market-making/performance.entity';
@@ -156,6 +157,7 @@ function buildRedisConfig(configService: ConfigService) {
         RewardAllocation,
         ShareLedgerEntry,
         HufiScoreSnapshot,
+        CampaignJoin,
         StrategyOrderIntentEntity,
         ExchangeOrderMapping,
       ],

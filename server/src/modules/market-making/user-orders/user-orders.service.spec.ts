@@ -398,4 +398,76 @@ describe('UserOrdersService', () => {
       );
     });
   });
+
+  describe('user-facing source filters', () => {
+    it('filters admin direct orders from market-making lists', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      jest
+        .spyOn(marketMakingRepository, 'createQueryBuilder')
+        .mockReturnValue(queryBuilder as any);
+
+      await service.findMarketMakingByUserId('user-1');
+
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'order.userId = :userId',
+        {
+          userId: 'user-1',
+        },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(order.source IS NULL OR order.source != :source)',
+        { source: 'admin_direct' },
+      );
+    });
+
+    it('filters admin direct orders from public detail lookups', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(undefined),
+      };
+
+      jest
+        .spyOn(marketMakingRepository, 'createQueryBuilder')
+        .mockReturnValue(queryBuilder as any);
+
+      await service.findPublicMarketMakingByOrderId('order-1');
+
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'order.orderId = :orderId',
+        {
+          orderId: 'order-1',
+        },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(order.source IS NULL OR order.source != :source)',
+        { source: 'admin_direct' },
+      );
+    });
+
+    it('filters admin direct orders from combined user strategy lists', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      jest
+        .spyOn(marketMakingRepository, 'createQueryBuilder')
+        .mockReturnValue(queryBuilder as any);
+      jest.spyOn(simplyGrowRepository, 'findBy').mockResolvedValue([]);
+
+      await service.findAllStrategyByUser('user-1');
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(order.source IS NULL OR order.source != :source)',
+        { source: 'admin_direct' },
+      );
+    });
+  });
 });
