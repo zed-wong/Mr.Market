@@ -1,20 +1,11 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
+  import { formatFundAmount } from "./helpers";
 
   export let show = false;
   export let campaigns: Array<Record<string, unknown>> = [];
   export let onJoin: (campaign: Record<string, unknown>) => void;
   export let onClose: () => void;
-
-  function formatFundAmount(amount: unknown, decimals: unknown): string {
-    if (!amount) return "—";
-    const raw = String(amount);
-    const dec = Number(decimals) || 0;
-    if (dec <= 0) return raw;
-    const num = Number(raw) / Math.pow(10, dec);
-    if (isNaN(num)) return raw;
-    return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
-  }
 
   function getDetail(campaign: Record<string, unknown>, key: string): unknown {
     const d = campaign.details;
@@ -69,9 +60,17 @@
   let filterPair = "";
   let filterType = "";
 
-  $: exchanges = [...new Set(campaigns.map((c) => String(c.exchange_name || c.exchange || "")))].filter(Boolean);
-  $: pairsOptions = [...new Set(campaigns.map((c) => String(c.symbol || c.name || "")))].filter(Boolean);
-  $: types = [...new Set(campaigns.map((c) => String(c.type || "")))].filter(Boolean);
+  $: exchanges = [
+    ...new Set(
+      campaigns.map((c) => String(c.exchange_name || c.exchange || "")),
+    ),
+  ].filter(Boolean);
+  $: pairsOptions = [
+    ...new Set(campaigns.map((c) => String(c.symbol || c.name || ""))),
+  ].filter(Boolean);
+  $: types = [...new Set(campaigns.map((c) => String(c.type || "")))].filter(
+    Boolean,
+  );
 
   $: filtered = campaigns.filter((c) => {
     const name = String(c.symbol || c.name || "").toLowerCase();
@@ -95,10 +94,13 @@
 
   function statusColor(s: string): string {
     switch (s.toLowerCase()) {
-      case "active": return "text-success border-success bg-success/10";
+      case "active":
+        return "text-success border-success bg-success/10";
       case "ended":
-      case "closed": return "text-error border-error bg-error/10";
-      default: return "text-warning border-warning bg-warning/10";
+      case "closed":
+        return "text-error border-error bg-error/10";
+      default:
+        return "text-warning border-warning bg-warning/10";
     }
   }
 
@@ -112,28 +114,59 @@
 
 {#if show}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
-    <div class="modal-box bg-base-100 p-0 rounded-2xl max-w-[620px] shadow-2xl border border-base-200/50 max-h-[90vh] flex flex-col">
+    <div
+      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[620px] shadow-2xl border border-base-200/50 max-h-[90vh] flex flex-col"
+    >
       <!-- Header -->
       <div class="p-6 pb-0">
         <div class="flex items-start justify-between mb-1">
           <div>
-            <span class="text-xl font-bold text-base-content block">{$_("admin_direct_mm_available_campaigns")}</span>
-            <span class="text-sm text-base-content/50">{$_("admin_direct_mm_all_campaigns_subtitle")}</span>
+            <span class="text-xl font-bold text-base-content block"
+              >{$_("admin_direct_mm_available_campaigns")}</span
+            >
+            <span class="text-sm text-base-content/50"
+              >{$_("admin_direct_mm_all_campaigns_subtitle")}</span
+            >
           </div>
           <button
             class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
-            on:click={() => { resetFilters(); onClose(); }}
+            on:click={() => {
+              resetFilters();
+              onClose();
+            }}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-5 h-5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
 
         <!-- Search -->
         <div class="relative mt-4">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+            />
           </svg>
           <input
             class="input input-bordered w-full h-10 min-h-[40px] pl-4 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary"
@@ -177,7 +210,9 @@
       <!-- Campaign list -->
       <div class="flex-1 overflow-y-auto px-6 pb-6 min-h-[240px]">
         {#if filtered.length === 0}
-          <div class="flex items-center justify-center min-h-[240px] text-base-content/40 text-sm">
+          <div
+            class="flex items-center justify-center min-h-[240px] text-base-content/40 text-sm"
+          >
             {$_("admin_direct_mm_campaigns_empty")}
           </div>
         {/if}
@@ -186,11 +221,22 @@
           {#each filtered as campaign}
             {@const name = String(campaign.symbol || campaign.name || "—")}
             {@const status = String(campaign.status || "active")}
-            {@const exchange = String(campaign.exchange_name || campaign.exchange || "—")}
-            {@const rewardPool = formatFundAmount(campaign.fund_amount || campaign.rewardPool, campaign.fund_token_decimals)}
-            {@const rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "")}
-            {@const campaignType = String(campaign.type || campaign.campaignType || "Market Making")}
-            {@const startDate = formatDate(campaign.start_date || campaign.startDate)}
+            {@const exchange = String(
+              campaign.exchange_name || campaign.exchange || "—",
+            )}
+            {@const rewardPool = formatFundAmount(
+              campaign.fund_amount || campaign.rewardPool,
+              campaign.fund_token_decimals,
+            )}
+            {@const rewardToken = String(
+              campaign.fund_token_symbol || campaign.rewardToken || "",
+            )}
+            {@const campaignType = String(
+              campaign.type || campaign.campaignType || "Market Making",
+            )}
+            {@const startDate = formatDate(
+              campaign.start_date || campaign.startDate,
+            )}
             {@const endDate = formatDate(campaign.end_date || campaign.endDate)}
             {@const targetLabel = getTargetLabel(campaign.type)}
             {@const targetValue = getTargetValue(campaign)}
@@ -207,7 +253,11 @@
                     <span class="text-xs text-base-content/50">{exchange}</span>
                   </div>
                 </div>
-                <span class="text-[10px] font-bold tracking-wider capitalize rounded-md px-2 py-0.5 {statusColor(status)}">
+                <span
+                  class="text-[10px] font-bold tracking-wider capitalize rounded-md px-2 py-0.5 {statusColor(
+                    status,
+                  )}"
+                >
                   {status}
                 </span>
               </div>
@@ -215,25 +265,43 @@
               <!-- Info grid -->
               <div class="grid grid-cols-2 border border-base-300 rounded-xl">
                 <div class="p-3 border-r border-b border-base-300">
-                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_reward_pool")}</span>
+                  <span
+                    class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize"
+                    >{$_("admin_direct_mm_reward_pool")}</span
+                  >
                   <div class="mt-0.5">
-                    <span class="text-sm font-bold text-base-content">{rewardPool}{rewardToken ? ` ${rewardToken}` : ""}</span>
+                    <span class="text-sm font-bold text-base-content"
+                      >{rewardPool}{rewardToken ? ` ${rewardToken}` : ""}</span
+                    >
                   </div>
                 </div>
                 <div class="p-3 border-b border-base-300">
-                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_campaign_type")}</span>
+                  <span
+                    class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize"
+                    >{$_("admin_direct_mm_campaign_type")}</span
+                  >
                   <div class="mt-0.5">
-                    <span class="text-sm font-bold text-base-content capitalize">{campaignType}</span>
+                    <span class="text-sm font-bold text-base-content capitalize"
+                      >{campaignType}</span
+                    >
                   </div>
                 </div>
                 <div class="p-3 border-r border-base-300">
-                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{targetLabel}</span>
+                  <span
+                    class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize"
+                    >{targetLabel}</span
+                  >
                   <div class="mt-0.5">
-                    <span class="text-sm font-bold text-base-content">{targetValue}{targetToken ? ` ${targetToken}` : ""}</span>
+                    <span class="text-sm font-bold text-base-content"
+                      >{targetValue}{targetToken ? ` ${targetToken}` : ""}</span
+                    >
                   </div>
                 </div>
                 <div class="p-3">
-                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_duration")}</span>
+                  <span
+                    class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize"
+                    >{$_("admin_direct_mm_duration")}</span
+                  >
                   <div class="mt-0.5">
                     <span class="text-sm font-bold text-base-content">
                       {#if startDate && endDate}

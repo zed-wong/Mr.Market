@@ -1,5 +1,6 @@
 import { _ } from "svelte-i18n";
 import { get } from "svelte/store";
+import BigNumber from "bignumber.js";
 
 const errorKeyMap: Record<string, string> = {
   "API key not found": "admin_direct_mm_error_api_key_not_found",
@@ -89,9 +90,20 @@ export function parseConfigValue(raw: string): unknown {
   return trimmed;
 }
 
+export function formatFundAmount(amount: unknown, decimals: unknown): string {
+  if (!amount) return "—";
+  const raw = String(amount);
+  const dec = Number(decimals) || 0;
+  if (dec <= 0) return raw;
+  const bn = new BigNumber(raw);
+  if (bn.isNaN()) return raw;
+  return bn.dividedBy(new BigNumber(10).pow(dec)).toFormat();
+}
+
 export function normalizeConfigOverrides(
   configRows: { key: string; value: string }[],
   orderAmount: string,
+  orderQuoteAmount: string,
   orderSpread: string,
 ): Record<string, unknown> {
   const accumulator = configRows.reduce<Record<string, unknown>>(
@@ -105,6 +117,10 @@ export function normalizeConfigOverrides(
   if (orderAmount) {
     const num = Number(orderAmount);
     accumulator["amount"] = isNaN(num) ? orderAmount : num;
+  }
+  if (orderQuoteAmount) {
+    const num = Number(orderQuoteAmount);
+    accumulator["quoteAmount"] = isNaN(num) ? orderQuoteAmount : num;
   }
   if (orderSpread) {
     const num = Number(orderSpread);

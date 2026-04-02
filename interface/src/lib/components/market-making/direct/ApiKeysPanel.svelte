@@ -6,7 +6,9 @@
   export let apiKeys: AdminSingleKey[] = [];
 </script>
 
-<div class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50 flex flex-col h-full">
+<div
+  class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50 flex flex-col h-full"
+>
   <div class="flex items-center justify-between mb-2">
     <h2 class="text-[1.1rem] font-bold text-base-content">
       {$_("admin_direct_mm_api_keys_title")}
@@ -39,16 +41,14 @@
             <div
               class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center border border-slate-100"
             >
-              <ExchangeIcon
-                exchangeName={apiKey.exchange}
-                clazz="w-5 h-5"
-              />
+              <ExchangeIcon exchangeName={apiKey.exchange} clazz="w-5 h-5" />
             </div>
             <div class="flex flex-col">
               <span class="font-bold text-sm text-base-content"
-                >{apiKey.exchange} {apiKey.name}</span
+                >{apiKey.name}</span
               >
-              <span class="text-xs text-base-content/50">
+              <span class="text-xs text-base-content/50 capitalize">
+                {apiKey.exchange} •
                 {#if i === 0}
                   {$_("admin_direct_mm_api_key_status_active_pairs")}
                 {:else if i === 1}
@@ -97,8 +97,7 @@
       stroke="currentColor"
       stroke-width="2"
       stroke-linecap="round"
-      stroke-linejoin="round"
-      ><path d="M5 12h14" /><path d="M12 5v14" /></svg
+      stroke-linejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg
     >
     {$_("admin_direct_mm_manage_api_connections")}
   </button>
