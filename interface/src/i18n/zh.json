@@ -771,6 +771,8 @@
   "admin_direct_mm_exchange_label": "交易所",
   "admin_direct_mm_reward_pool": "奖励池",
   "admin_direct_mm_daily_volume_target": "每日成交量目标",
+  "admin_direct_mm_minimum_balance_target": "最低余额目标",
+  "admin_direct_mm_daily_balance_target": "每日余额目标",
   "admin_direct_mm_campaign_type": "活动类型",
   "admin_direct_mm_date_range": "时间范围",
   "admin_direct_mm_details": "详情",
@@ -820,5 +822,13 @@
   "admin_direct_mm_daily_volume": "每日交易量",
   "admin_direct_mm_duration": "持续时间",
   "admin_direct_mm_showing": "显示",
-  "admin_direct_mm_of": "共"
+  "admin_direct_mm_of": "共",
+  "admin_direct_mm_configure_deploy": "配置并部署新的流动性提供策略。",
+  "admin_direct_mm_search_pairs": "搜索交易对...",
+  "admin_direct_mm_order_parameters": "订单参数",
+  "admin_direct_mm_base_amount": "基础数量",
+  "admin_direct_mm_quote_amount": "报价数量",
+  "admin_direct_mm_spread_optional": "价差 %（可选）",
+  "admin_direct_mm_launch_order": "启动订单",
+  "admin_direct_mm_launching": "启动中..."
 }

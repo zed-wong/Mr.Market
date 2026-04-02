@@ -13,13 +13,70 @@
   export let onConfirm: () => void;
   export let onCancel: () => void;
 
+  function formatFundAmount(amount: unknown, decimals: unknown): string {
+    if (!amount) return $_("admin_direct_mm_na");
+    const raw = String(amount);
+    const dec = Number(decimals) || 0;
+    if (dec <= 0) return raw;
+    const num = Number(raw) / Math.pow(10, dec);
+    if (isNaN(num)) return raw;
+    return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
+
+  function getDetail(key: string): unknown {
+    const details = campaign.details;
+    if (details && typeof details === "object" && !Array.isArray(details)) {
+      return (details as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }
+
+  function formatTargetValue(value: unknown): string {
+    if (value === null || value === undefined || value === "") return $_("admin_direct_mm_na");
+    const num = Number(value);
+    if (Number.isNaN(num)) return String(value);
+    return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
+
+  function getTargetLabel(type: string): string {
+    switch (type.toUpperCase()) {
+      case "THRESHOLD":
+        return $_("admin_direct_mm_minimum_balance_target");
+      case "HOLDING":
+        return $_("admin_direct_mm_daily_balance_target");
+      default:
+        return $_("admin_direct_mm_daily_vol_target");
+    }
+  }
+
+  function getTargetValue(type: string): string {
+    if (type === "THRESHOLD") {
+      return formatTargetValue(getDetail("minimum_balance_target"));
+    }
+
+    if (type === "HOLDING") {
+      return formatTargetValue(getDetail("daily_balance_target"));
+    }
+
+    return formatTargetValue(getDetail("daily_volume_target"));
+  }
+
+  function getTargetToken(type: string): string {
+    if (type === "THRESHOLD" || type === "HOLDING") {
+      return campaignName;
+    }
+    return rewardToken;
+  }
+
   $: campaignName = String(campaign.symbol || campaign.name || $_("admin_direct_mm_title"));
   $: status = String(campaign.status || "active");
+  $: campaignType = String(campaign.type || campaign.campaignType || "MARKET_MAKING");
   $: exchange = String(campaign.exchange_name || campaign.exchange || $_("admin_direct_mm_na"));
-  $: rewardPool = String(campaign.fund_amount || campaign.rewardPool || $_("admin_direct_mm_na"));
+  $: rewardPool = formatFundAmount(campaign.fund_amount || campaign.rewardPool, campaign.fund_token_decimals);
   $: rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "");
-  $: dailyVolTarget = String(campaign.daily_vol_target || (campaign.details as Record<string, unknown>)?.daily_vol_target || campaign.dailyVolTarget || $_("admin_direct_mm_na"));
-  $: dailyVolToken = String(campaign.daily_vol_token || (campaign.details as Record<string, unknown>)?.daily_vol_token || campaign.dailyVolToken || "");
+  $: targetLabel = getTargetLabel(campaignType);
+  $: targetValue = getTargetValue(campaignType);
+  $: targetToken = getTargetToken(campaignType);
   $: oracleFees = String(campaign.oracleFees || $_("admin_direct_mm_na"));
   $: oracleFeesToken = String(campaign.oracleFeesToken || "");
   $: oracleFeesPercent = String(campaign.oracleFeesPercent || "");
@@ -89,11 +146,11 @@
           </div>
         </div>
         <div class="p-4 border-b border-base-300">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_daily_vol_target")}</span>
+          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{targetLabel}</span>
           <div class="mt-1">
-            <span class="text-base font-bold text-base-content">{dailyVolTarget}</span>
-            {#if dailyVolToken}
-              <span class="text-base font-bold text-base-content ml-1">{dailyVolToken}</span>
+            <span class="text-base font-bold text-base-content">{targetValue}</span>
+            {#if targetToken}
+              <span class="text-base font-bold text-base-content ml-1">{targetToken}</span>
             {/if}
           </div>
         </div>

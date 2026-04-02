@@ -24,8 +24,46 @@
     return undefined;
   }
 
-  const PAGE_SIZE = 3;
-  let currentPage = 0;
+  function formatTargetValue(value: unknown): string {
+    if (value === null || value === undefined || value === "") return "—";
+    const num = Number(value);
+    if (Number.isNaN(num)) return String(value);
+    return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
+
+  function getTargetLabel(type: unknown): string {
+    switch (String(type || "").toUpperCase()) {
+      case "THRESHOLD":
+        return $_("admin_direct_mm_minimum_balance_target");
+      case "HOLDING":
+        return $_("admin_direct_mm_daily_balance_target");
+      default:
+        return $_("admin_direct_mm_daily_volume_target");
+    }
+  }
+
+  function getTargetValue(campaign: Record<string, unknown>): string {
+    const type = String(campaign.type || "");
+
+    if (type === "THRESHOLD") {
+      return formatTargetValue(getDetail(campaign, "minimum_balance_target"));
+    }
+
+    if (type === "HOLDING") {
+      return formatTargetValue(getDetail(campaign, "daily_balance_target"));
+    }
+
+    return formatTargetValue(getDetail(campaign, "daily_volume_target"));
+  }
+
+  function getTargetToken(campaign: Record<string, unknown>): string {
+    const type = String(campaign.type || "");
+    if (type === "THRESHOLD" || type === "HOLDING") {
+      return String(campaign.symbol || campaign.name || "");
+    }
+    return String(campaign.fund_token_symbol || campaign.rewardToken || "");
+  }
+
   let searchQuery = "";
   let filterExchange = "";
   let filterPair = "";
@@ -48,10 +86,6 @@
     return true;
   });
 
-  $: totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  $: if (currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1);
-  $: paginated = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
-
   function formatDate(d: unknown): string {
     if (!d) return "";
     const date = new Date(String(d));
@@ -73,7 +107,6 @@
     filterExchange = "";
     filterPair = "";
     filterType = "";
-    currentPage = 0;
   }
 </script>
 
@@ -103,10 +136,9 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
           </svg>
           <input
-            class="input input-bordered w-full h-10 min-h-[40px] pl-9 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary"
+            class="input input-bordered w-full h-10 min-h-[40px] pl-4 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary"
             placeholder={$_("admin_direct_mm_search_campaign")}
             bind:value={searchQuery}
-            on:input={() => (currentPage = 0)}
           />
         </div>
 
@@ -115,7 +147,6 @@
           <select
             class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm"
             bind:value={filterExchange}
-            on:change={() => (currentPage = 0)}
           >
             <option value="">{$_("admin_direct_mm_all_exchanges")}</option>
             {#each exchanges as ex}
@@ -125,7 +156,6 @@
           <select
             class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm"
             bind:value={filterPair}
-            on:change={() => (currentPage = 0)}
           >
             <option value="">{$_("admin_direct_mm_all_pairs")}</option>
             {#each pairsOptions as p}
@@ -135,7 +165,6 @@
           <select
             class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm"
             bind:value={filterType}
-            on:change={() => (currentPage = 0)}
           >
             <option value="">{$_("admin_direct_mm_all_types")}</option>
             {#each types as t}
@@ -146,37 +175,35 @@
       </div>
 
       <!-- Campaign list -->
-      <div class="flex-1 overflow-y-auto px-6 pb-2">
-        {#if paginated.length === 0}
-          <div class="flex items-center justify-center py-12 text-base-content/40 text-sm">
+      <div class="flex-1 overflow-y-auto px-6 pb-6 min-h-[240px]">
+        {#if filtered.length === 0}
+          <div class="flex items-center justify-center min-h-[240px] text-base-content/40 text-sm">
             {$_("admin_direct_mm_campaigns_empty")}
           </div>
         {/if}
 
         <div class="flex flex-col gap-5">
-          {#each paginated as campaign}
+          {#each filtered as campaign}
             {@const name = String(campaign.symbol || campaign.name || "—")}
             {@const status = String(campaign.status || "active")}
             {@const exchange = String(campaign.exchange_name || campaign.exchange || "—")}
             {@const rewardPool = formatFundAmount(campaign.fund_amount || campaign.rewardPool, campaign.fund_token_decimals)}
             {@const rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "")}
-            {@const dailyVolTarget = String(campaign.daily_vol_target || getDetail(campaign, "daily_vol_target") || campaign.dailyVolTarget || "—")}
-            {@const dailyVolToken = String(campaign.daily_vol_token || getDetail(campaign, "daily_vol_token") || campaign.dailyVolToken || "")}
             {@const campaignType = String(campaign.type || campaign.campaignType || "Market Making")}
             {@const startDate = formatDate(campaign.start_date || campaign.startDate)}
             {@const endDate = formatDate(campaign.end_date || campaign.endDate)}
+            {@const targetLabel = getTargetLabel(campaign.type)}
+            {@const targetValue = getTargetValue(campaign)}
+            {@const targetToken = getTargetToken(campaign)}
 
             <div class="flex flex-col gap-3">
               <!-- Name + exchange + status -->
               <div class="flex items-start justify-between">
                 <div>
                   <span class="font-bold text-base-content text-[15px] block">
-                    {name} {campaignType !== "—" ? campaignType : ""}
+                    {name}
                   </span>
                   <div class="flex items-center gap-1.5 mt-0.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5 text-base-content/40">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3H21m-3.75 3H21" />
-                    </svg>
                     <span class="text-xs text-base-content/50">{exchange}</span>
                   </div>
                 </div>
@@ -200,9 +227,9 @@
                   </div>
                 </div>
                 <div class="p-3 border-r border-base-300">
-                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_daily_volume_target")}</span>
+                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{targetLabel}</span>
                   <div class="mt-0.5">
-                    <span class="text-sm font-bold text-base-content">{dailyVolTarget}{dailyVolToken ? ` ${dailyVolToken}` : ""}</span>
+                    <span class="text-sm font-bold text-base-content">{targetValue}{targetToken ? ` ${targetToken}` : ""}</span>
                   </div>
                 </div>
                 <div class="p-3">
@@ -229,44 +256,12 @@
             </div>
 
             <!-- Divider between campaigns (not after last) -->
-            {#if paginated.indexOf(campaign) < paginated.length - 1}
+            {#if filtered.indexOf(campaign) < filtered.length - 1}
               <div class="border-b border-base-200"></div>
             {/if}
           {/each}
         </div>
       </div>
-
-      <!-- Footer: pagination -->
-      {#if filtered.length > 0}
-        <div class="flex items-center justify-between px-6 py-4 border-t border-base-200">
-          <span class="text-sm text-base-content/50">
-            {$_("admin_direct_mm_showing")}
-            <span class="font-semibold text-base-content">{paginated.length}</span>
-            {$_("admin_direct_mm_of")}
-            <span class="font-semibold text-base-content">{filtered.length}</span>
-          </span>
-          <div class="flex gap-1">
-            <button
-              class="btn btn-sm btn-ghost btn-square border border-base-300"
-              disabled={currentPage === 0}
-              on:click={() => (currentPage = Math.max(0, currentPage - 1))}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-              </svg>
-            </button>
-            <button
-              class="btn btn-sm btn-ghost btn-square border border-base-300"
-              disabled={currentPage >= totalPages - 1}
-              on:click={() => (currentPage = Math.min(totalPages - 1, currentPage + 1))}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      {/if}
     </div>
   </div>
 {/if}

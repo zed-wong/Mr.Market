@@ -24,6 +24,43 @@
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
 
+  function formatTargetValue(value: unknown): string {
+    if (value === null || value === undefined || value === "") return "—";
+    const num = Number(value);
+    if (Number.isNaN(num)) return String(value);
+    return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
+
+  function getTargetLabel(type: unknown): string {
+    switch (String(type || "").toUpperCase()) {
+      case "THRESHOLD":
+        return $_("admin_direct_mm_minimum_balance_target");
+      case "HOLDING":
+        return $_("admin_direct_mm_daily_balance_target");
+      default:
+        return $_("admin_direct_mm_daily_volume_target");
+    }
+  }
+
+  function getTargetValue(campaign: Record<string, unknown>, details: Record<string, unknown>): string {
+    const type = String(campaign.type || "");
+    if (type === "THRESHOLD") {
+      return formatTargetValue(details.minimum_balance_target);
+    }
+    if (type === "HOLDING") {
+      return formatTargetValue(details.daily_balance_target);
+    }
+    return formatTargetValue(details.daily_volume_target);
+  }
+
+  function getTargetToken(campaign: Record<string, unknown>): string {
+    const type = String(campaign.type || "");
+    if (type === "THRESHOLD" || type === "HOLDING") {
+      return String(campaign.symbol || campaign.name || "");
+    }
+    return String(campaign.fund_token_symbol || campaign.rewardToken || "");
+  }
+
   function statusColor(s: string): string {
     switch (s.toLowerCase()) {
       case "active": return "text-success border-success";
@@ -63,11 +100,12 @@
     {@const exchange = String(campaign.exchange_name || campaign.exchange || "—")}
     {@const rewardPool = formatFundAmount(campaign.fund_amount || campaign.rewardPool, campaign.fund_token_decimals)}
     {@const rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "")}
-    {@const dailyVolTarget = String(campaign.daily_vol_target || campaignDetails.daily_vol_target || campaign.dailyVolTarget || "—")}
-    {@const dailyVolToken = String(campaign.daily_vol_token || campaignDetails.daily_vol_token || campaign.dailyVolToken || "")}
     {@const campaignType = String(campaign.type || campaign.campaignType || "Market Making")}
     {@const startDate = formatDate(campaign.start_date || campaign.startDate)}
     {@const endDate = formatDate(campaign.end_date || campaign.endDate)}
+    {@const targetLabel = getTargetLabel(campaign.type)}
+    {@const targetValue = getTargetValue(campaign, campaignDetails)}
+    {@const targetToken = getTargetToken(campaign)}
 
     <div class="bg-base-200/40 rounded-xl p-5 flex flex-col gap-4 mt-2">
       <!-- Header: pair name + status -->
@@ -102,9 +140,9 @@
           </div>
         </div>
         <div>
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_daily_volume_target")}</span>
+          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{targetLabel}</span>
           <div class="mt-0.5">
-            <span class="text-[15px] font-bold text-base-content">{dailyVolTarget}{dailyVolToken ? ` ${dailyVolToken}` : ""}</span>
+            <span class="text-[15px] font-bold text-base-content">{targetValue}{targetToken ? ` ${targetToken}` : ""}</span>
           </div>
         </div>
         <div>
