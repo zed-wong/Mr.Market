@@ -1,9 +1,11 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { formatFundAmount } from "./helpers";
+  import { formatFundAmount, getBadgeClass, getStateLabel } from "./helpers";
+  import type { CampaignJoinRecord } from "$lib/types/hufi/admin-direct-market-making";
 
   export let show = false;
   export let campaigns: Array<Record<string, unknown>> = [];
+  export let campaignJoins: CampaignJoinRecord[] = [];
   export let onJoin: (campaign: Record<string, unknown>) => void;
   export let onClose: () => void;
 
@@ -109,6 +111,14 @@
     filterExchange = "";
     filterPair = "";
     filterType = "";
+  }
+
+  function getJoinForCampaign(campaign: Record<string, unknown>): CampaignJoinRecord | undefined {
+    const addr = String(campaign.address || "").toLowerCase();
+    const chainId = Number(campaign.chainId || 0);
+    return campaignJoins.find(
+      (j) => j.campaignAddress.toLowerCase() === addr && j.chainId === chainId,
+    );
   }
 </script>
 
@@ -314,13 +324,21 @@
                 </div>
               </div>
 
-              <!-- Join button -->
-              <button
-                class="btn btn-primary text-white text-sm font-semibold rounded-lg w-full shadow-sm"
-                on:click={() => onJoin(campaign)}
-              >
-                {$_("admin_direct_mm_join_campaign_title")}
-              </button>
+              <!-- Join button or joined status -->
+              {#if getJoinForCampaign(campaign)}
+                <div class="flex items-center justify-center gap-2 py-2">
+                  <span class={getBadgeClass(getJoinForCampaign(campaign)?.status || "")}>
+                    {getStateLabel(getJoinForCampaign(campaign)?.status || "")}
+                  </span>
+                </div>
+              {:else}
+                <button
+                  class="btn btn-primary text-white text-sm font-semibold rounded-lg w-full shadow-sm"
+                  on:click={() => onJoin(campaign)}
+                >
+                  {$_("admin_direct_mm_join_campaign_title")}
+                </button>
+              {/if}
             </div>
 
             <!-- Divider between campaigns (not after last) -->

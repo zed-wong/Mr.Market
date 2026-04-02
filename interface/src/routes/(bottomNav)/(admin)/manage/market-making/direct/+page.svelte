@@ -451,6 +451,7 @@
 <AllCampaignsModal
   show={showAllCampaigns}
   {campaigns}
+  {campaignJoins}
   onJoin={openJoinFromAll}
   onClose={() => (showAllCampaigns = false)}
 />
