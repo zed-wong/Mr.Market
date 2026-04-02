@@ -349,17 +349,37 @@ export class AdminDirectMarketMakingService {
       throw new ConflictException('Campaign join already exists');
     }
 
+    const privateKey =
+      this.configService.get<string>('WEB3_PRIVATE_KEY') ||
+      process.env.WEB3_PRIVATE_KEY;
+
+    if (!privateKey) {
+      throw new BadRequestException('WEB3 private key is not configured');
+    }
+
+    if (!apiKey.exchange || !apiKey.api_key || !apiKey.api_secret) {
+      throw new BadRequestException('Exchange API key is incomplete');
+    }
+
+    await this.campaignService.joinCampaignWithAuth(
+      dto.evmAddress.toLowerCase(),
+      privateKey,
+      apiKey.exchange,
+      apiKey.api_key,
+      apiKey.api_secret,
+      dto.chainId,
+      dto.campaignAddress.toLowerCase(),
+    );
+
     const join = this.campaignJoinRepository.create({
       evmAddress: dto.evmAddress.toLowerCase(),
       apiKeyId: dto.apiKeyId,
       chainId: dto.chainId,
       campaignAddress: dto.campaignAddress.toLowerCase(),
-      status: 'pending',
+      status: 'joined',
     });
 
     const savedJoin = await this.campaignJoinRepository.save(join);
-
-    void this.finalizeCampaignJoin(savedJoin.id);
 
     return {
       id: savedJoin.id,
@@ -464,57 +484,6 @@ export class AdminDirectMarketMakingService {
     }
   }
 
-  private async finalizeCampaignJoin(joinId: string): Promise<void> {
-    const join = await this.campaignJoinRepository.findOne({
-      where: { id: joinId },
-    });
-
-    if (!join) {
-      return;
-    }
-
-    const privateKey =
-      this.configService.get<string>('WEB3_PRIVATE_KEY') ||
-      process.env.WEB3_PRIVATE_KEY;
-
-    if (!privateKey) {
-      await this.campaignJoinRepository.update(
-        { id: joinId },
-        { status: 'failed' },
-      );
-
-      return;
-    }
-
-    try {
-      await this.campaignService.joinCampaignWithAuth(
-        join.evmAddress,
-        privateKey,
-        join.chainId,
-        join.campaignAddress,
-      );
-
-      const current = await this.campaignJoinRepository.findOne({
-        where: { id: joinId },
-      });
-
-      await this.campaignJoinRepository.update(
-        { id: joinId },
-        { status: current?.orderId ? 'linked' : 'joined' },
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Campaign join ${joinId} failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      await this.campaignJoinRepository.update(
-        { id: joinId },
-        { status: 'failed' },
-      );
-    }
-  }
-
   private async linkCampaignJoinsToOrder(
     apiKeyId: string,
     orderId: string,
@@ -533,7 +502,7 @@ export class AdminDirectMarketMakingService {
             { id: join.id },
             {
               orderId,
-              status: join.status === 'pending' ? 'pending' : 'linked',
+              status: 'linked',
             },
           ),
         ),

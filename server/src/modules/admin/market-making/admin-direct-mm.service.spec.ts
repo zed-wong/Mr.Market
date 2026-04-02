@@ -58,6 +58,8 @@ describe('AdminDirectMarketMakingService', () => {
       readAPIKey: jest.fn().mockResolvedValue({
         exchange: 'binance',
         exchange_index: 'desk-1',
+        api_key: 'api-key',
+        api_secret: 'api-secret',
       }),
     };
     const exchange = {
@@ -491,15 +493,22 @@ describe('AdminDirectMarketMakingService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('returns pending immediately and schedules asynchronous campaign finalization', async () => {
-    const { service, exchangeApiKeyService, campaignJoinRepository } =
-      buildService();
+  it('joins campaign synchronously and persists successful join', async () => {
+    const {
+      service,
+      exchangeApiKeyService,
+      campaignJoinRepository,
+      configService,
+      campaignService,
+    } = buildService();
 
-    exchangeApiKeyService.readAPIKey.mockResolvedValue({ exchange: 'binance' });
+    configService.get.mockReturnValue('secret-key');
+    exchangeApiKeyService.readAPIKey.mockResolvedValue({
+      exchange: 'binance',
+      api_key: 'api-key',
+      api_secret: 'api-secret',
+    });
     campaignJoinRepository.findOne.mockResolvedValue(null);
-    const finalizeSpy = jest
-      .spyOn(service as any, 'finalizeCampaignJoin')
-      .mockResolvedValue(undefined);
 
     const result = await service.joinCampaign({
       evmAddress: '0x0000000000000000000000000000000000000001',
@@ -510,85 +519,84 @@ describe('AdminDirectMarketMakingService', () => {
 
     expect(result).toEqual({
       id: 'join-1',
-      status: 'pending',
+      status: 'joined',
       apiKeyId: 'api-key-1',
       campaignAddress: '0x0000000000000000000000000000000000000002',
       chainId: 1,
     });
-    expect(finalizeSpy).toHaveBeenCalledWith('join-1');
-  });
-
-  it('marks campaign joins as joined after async confirmation', async () => {
-    const { service, campaignJoinRepository, campaignService, configService } =
-      buildService();
-
-    configService.get.mockReturnValue('secret-key');
-    campaignJoinRepository.findOne
-      .mockResolvedValueOnce({
-        id: 'join-1',
-        evmAddress: '0x0000000000000000000000000000000000000001',
-        apiKeyId: 'api-key-1',
-        chainId: 1,
-        campaignAddress: '0x0000000000000000000000000000000000000002',
-        status: 'pending',
-      })
-      .mockResolvedValueOnce({
-        id: 'join-1',
-        orderId: null,
-      });
-
-    await (service as any).finalizeCampaignJoin('join-1');
-
     expect(campaignService.joinCampaignWithAuth).toHaveBeenCalledWith(
       '0x0000000000000000000000000000000000000001',
       'secret-key',
+      'binance',
+      'api-key',
+      'api-secret',
       1,
       '0x0000000000000000000000000000000000000002',
     );
-    expect(campaignJoinRepository.update).toHaveBeenCalledWith(
-      { id: 'join-1' },
-      { status: 'joined' },
+    expect(campaignJoinRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'joined',
+      }),
     );
   });
 
   it('marks campaign joins as linked when an order is already attached', async () => {
+    const { service, campaignJoinRepository } = buildService();
+
+    campaignJoinRepository.find.mockResolvedValueOnce([
+      {
+        id: 'join-1',
+        status: 'joined',
+      },
+    ]);
+
+    await (service as any).linkCampaignJoinsToOrder('api-key-1', 'order-1');
+
+    expect(campaignJoinRepository.update).toHaveBeenCalledWith(
+      { id: 'join-1' },
+      { orderId: 'order-1', status: 'linked' },
+    );
+  });
+
+  it('fails synchronously when no signing key is configured', async () => {
     const { service, campaignJoinRepository, configService } = buildService();
 
-    configService.get.mockReturnValue('secret-key');
-    campaignJoinRepository.findOne
-      .mockResolvedValueOnce({
-        id: 'join-1',
+    configService.get.mockReturnValue(undefined);
+    campaignJoinRepository.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.joinCampaign({
         evmAddress: '0x0000000000000000000000000000000000000001',
         apiKeyId: 'api-key-1',
         chainId: 1,
         campaignAddress: '0x0000000000000000000000000000000000000002',
-        status: 'pending',
-      })
-      .mockResolvedValueOnce({
-        id: 'join-1',
-        orderId: 'order-1',
-      });
-
-    await (service as any).finalizeCampaignJoin('join-1');
-
-    expect(campaignJoinRepository.update).toHaveBeenCalledWith(
-      { id: 'join-1' },
-      { status: 'linked' },
-    );
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('marks campaign joins as failed when no signing key is configured', async () => {
-    const { service, campaignJoinRepository, configService } = buildService();
+  it('fails synchronously when exchange api key is incomplete', async () => {
+    const {
+      service,
+      campaignJoinRepository,
+      exchangeApiKeyService,
+      configService,
+    } = buildService();
 
-    configService.get.mockReturnValue(undefined);
-    campaignJoinRepository.findOne.mockResolvedValue({ id: 'join-1' });
+    configService.get.mockReturnValue('secret-key');
+    campaignJoinRepository.findOne.mockResolvedValue(null);
+    exchangeApiKeyService.readAPIKey.mockResolvedValue({
+      exchange: 'binance',
+      api_key: 'api-key',
+    });
 
-    await (service as any).finalizeCampaignJoin('join-1');
-
-    expect(campaignJoinRepository.update).toHaveBeenCalledWith(
-      { id: 'join-1' },
-      { status: 'failed' },
-    );
+    await expect(
+      service.joinCampaign({
+        evmAddress: '0x0000000000000000000000000000000000000001',
+        apiKeyId: 'api-key-1',
+        chainId: 1,
+        campaignAddress: '0x0000000000000000000000000000000000000002',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('returns wallet status with derived address when WEB3 private key is configured', async () => {

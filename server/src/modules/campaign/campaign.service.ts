@@ -113,13 +113,10 @@ export class CampaignService {
     this.logger.log(`Authenticating Web3 user: ${wallet_address}`);
 
     try {
-      // Create a wallet instance from the private key to sign the nonce
       const { Wallet } = await import('ethers');
       const wallet = new Wallet(private_key);
-
-      // Sign the nonce using EIP-191 message signing convention
-      // signMessage automatically prepends "\x19Ethereum Signed Message:\n" + message.length
-      const signature = await wallet.signMessage(nonce);
+      const signableMessage = JSON.stringify({ nonce });
+      const signature = await wallet.signMessage(signableMessage);
 
       this.logger.log('Nonce signed successfully, requesting access token');
 
@@ -210,6 +207,55 @@ export class CampaignService {
     }
   }
 
+  async register_exchange_api_key(
+    access_token: string,
+    exchange_name: string,
+    api_key: string,
+    secret_key: string,
+    extras?: Record<string, unknown>,
+  ): Promise<any> {
+    this.logger.log(`Registering exchange API key for ${exchange_name}`);
+
+    try {
+      const payload: Record<string, unknown> = {
+        exchange_name,
+        api_key,
+        secret_key,
+      };
+
+      if (extras && Object.keys(extras).length > 0) {
+        payload.extras = extras;
+      }
+
+      const { data } = await this.hufiRecordingOracleAPI.post(
+        '/exchange-api-keys',
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${access_token}`,
+          },
+        },
+      );
+
+      this.logger.log(
+        `Successfully registered exchange API key for ${exchange_name}`,
+      );
+
+      return data;
+    } catch (error) {
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        'Unknown error occurred';
+
+      this.logger.warn(
+        `Error registering exchange API key for ${exchange_name}: ${errorMessage}`,
+        error.stack,
+      );
+      throw new Error(`Failed to register exchange API key: ${errorMessage}`);
+    }
+  }
+
   /**
    * Helper method: Complete Campaign Join Flow
    * Orchestrates the complete flow to join a campaign by chaining the three functions:
@@ -227,8 +273,12 @@ export class CampaignService {
   async joinCampaignWithAuth(
     wallet_address: string,
     private_key: string,
+    exchange_name: string,
+    api_key: string,
+    secret_key: string,
     chain_id: number,
     campaign_address: string,
+    extras?: Record<string, unknown>,
   ): Promise<any> {
     this.logger.log(
       `Starting complete campaign join flow for wallet: ${wallet_address}`,
@@ -245,7 +295,14 @@ export class CampaignService {
         private_key,
       );
 
-      // Step 3: Join the campaign using the access token
+      await this.register_exchange_api_key(
+        access_token,
+        exchange_name,
+        api_key,
+        secret_key,
+        extras,
+      );
+
       const result = await this.join_campaign(
         access_token,
         chain_id,
