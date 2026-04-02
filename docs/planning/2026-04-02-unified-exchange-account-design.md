@@ -1,5 +1,9 @@
 # Unified Exchange Account Design
 
+## Scope for Future Implementation
+
+This plan is marked as **TODO** — to be implemented in a future sprint.
+
 ## Problem
 
 The current exchange management is split into two confusing entities:
@@ -110,10 +114,6 @@ Single `/admin/settings/exchanges` page replaces both:
   - Icon URL (auto-filled from CCXT)
 - Test connectivity button before saving
 - Delete confirmation
-
-## Scope for Future Implementation
-
-This plan is marked as **TODO** — to be implemented in a future sprint.
 
 ### Estimated Effort
 
