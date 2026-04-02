@@ -392,7 +392,7 @@
     <!-- Top Row -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <ApiKeysPanel {apiKeys} />
-      <CampaignsPanel {campaigns} onJoin={openJoinModal} onViewAll={() => (showAllCampaigns = true)} />
+      <CampaignsPanel {campaigns} {campaignJoins} onJoin={openJoinModal} onViewAll={() => (showAllCampaigns = true)} onViewCampaigns={() => (showAllCampaigns = true)} />
     </div>
 
     <!-- Market Making -->
