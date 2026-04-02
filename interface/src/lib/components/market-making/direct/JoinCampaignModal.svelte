@@ -13,18 +13,18 @@
   export let onConfirm: () => void;
   export let onCancel: () => void;
 
-  $: campaignName = String(campaign.name || campaign.symbol || $_("admin_direct_mm_title"));
+  $: campaignName = String(campaign.symbol || campaign.name || $_("admin_direct_mm_title"));
   $: status = String(campaign.status || "active");
-  $: exchange = String(campaign.exchange || campaign.exchangeName || $_("admin_direct_mm_na"));
-  $: rewardPool = String(campaign.rewardPool || $_("admin_direct_mm_na"));
-  $: rewardToken = String(campaign.rewardToken || "");
-  $: dailyVolTarget = String(campaign.dailyVolTarget || $_("admin_direct_mm_na"));
-  $: dailyVolToken = String(campaign.dailyVolToken || "");
+  $: exchange = String(campaign.exchange_name || campaign.exchange || $_("admin_direct_mm_na"));
+  $: rewardPool = String(campaign.fund_amount || campaign.rewardPool || $_("admin_direct_mm_na"));
+  $: rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "");
+  $: dailyVolTarget = String(campaign.daily_vol_target || (campaign.details as Record<string, unknown>)?.daily_vol_target || campaign.dailyVolTarget || $_("admin_direct_mm_na"));
+  $: dailyVolToken = String(campaign.daily_vol_token || (campaign.details as Record<string, unknown>)?.daily_vol_token || campaign.dailyVolToken || "");
   $: oracleFees = String(campaign.oracleFees || $_("admin_direct_mm_na"));
   $: oracleFeesToken = String(campaign.oracleFeesToken || "");
   $: oracleFeesPercent = String(campaign.oracleFeesPercent || "");
-  $: startDate = campaign.startDate ? String(campaign.startDate) : "";
-  $: endDate = campaign.endDate ? String(campaign.endDate) : "";
+  $: startDate = campaign.start_date ? String(campaign.start_date) : (campaign.startDate ? String(campaign.startDate) : "");
+  $: endDate = campaign.end_date ? String(campaign.end_date) : (campaign.endDate ? String(campaign.endDate) : "");
   $: dateRange = startDate && endDate ? `(${startDate} - ${endDate})` : "";
 
   function statusColor(s: string): string {

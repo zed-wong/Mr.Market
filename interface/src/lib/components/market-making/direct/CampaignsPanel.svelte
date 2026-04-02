@@ -4,6 +4,7 @@
   export let onJoin: (campaign: Record<string, unknown>) => void;
 
   $: campaign = campaigns.length > 0 ? campaigns[0] : null;
+  $: campaignDetails = ((campaign?.details as Record<string, unknown>) || {});
 
   function formatDate(d: unknown): string {
     if (!d) return "";
@@ -48,14 +49,14 @@
   {#if campaign}
     {@const name = String(campaign.symbol || campaign.name || "—")}
     {@const status = String(campaign.status || "active")}
-    {@const exchange = String(campaign.exchange || campaign.exchangeName || "—")}
-    {@const rewardPool = String(campaign.rewardPool || "—")}
-    {@const rewardToken = String(campaign.rewardToken || "")}
-    {@const dailyVolTarget = String(campaign.dailyVolTarget || "—")}
-    {@const dailyVolToken = String(campaign.dailyVolToken || "")}
-    {@const campaignType = String(campaign.campaignType || campaign.type || "Market Making")}
-    {@const startDate = formatDate(campaign.startDate)}
-    {@const endDate = formatDate(campaign.endDate)}
+    {@const exchange = String(campaign.exchange_name || campaign.exchange || "—")}
+    {@const rewardPool = String(campaign.fund_amount || campaign.rewardPool || "—")}
+    {@const rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "")}
+    {@const dailyVolTarget = String(campaign.daily_vol_target || campaignDetails.daily_vol_target || campaign.dailyVolTarget || "—")}
+    {@const dailyVolToken = String(campaign.daily_vol_token || campaignDetails.daily_vol_token || campaign.dailyVolToken || "")}
+    {@const campaignType = String(campaign.type || campaign.campaignType || "Market Making")}
+    {@const startDate = formatDate(campaign.start_date || campaign.startDate)}
+    {@const endDate = formatDate(campaign.end_date || campaign.endDate)}
 
     <div class="bg-base-200/40 rounded-xl p-5 flex flex-col gap-4 mt-2">
       <!-- Header: pair name + status -->
