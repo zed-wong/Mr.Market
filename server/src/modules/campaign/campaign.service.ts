@@ -7,7 +7,7 @@ import axios, { AxiosInstance } from 'axios';
 import { ExchangeInitService } from '../infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from '../infrastructure/logger/logger.service';
 import { Web3Service } from '../web3/web3.service';
-import { CampaignDataDto } from './campaign.dto';
+import { CampaignDataDto, CampaignListResponseDto } from './campaign.dto';
 
 @Injectable()
 export class CampaignService {
@@ -39,17 +39,17 @@ export class CampaignService {
     });
   }
 
-  async getCampaigns() {
+  async getCampaigns(): Promise<CampaignDataDto[]> {
     this.logger.log('Getting HuFi campaigns');
 
     try {
       const { data } = await this.hufiCampaignLauncherAPI.get<
-        CampaignDataDto[]
-      >('/campaign?chainId=137');
+        CampaignListResponseDto
+      >('/campaigns?chain_id=137&status=active&limit=100&page=1');
 
       this.logger.log('Finished getting HuFi campaigns');
 
-      return data;
+      return data.results;
     } catch (error) {
       this.logger.warn(`Error getting HuFi campaigns: ${error.message}`);
 
@@ -289,8 +289,8 @@ export class CampaignService {
     this.logger.log('Getting running campaigns');
     const runningCampaigns = campaigns.filter((campaign) => {
       return (
-        campaign.status !== 'Complete' &&
-        new Date(campaign.endBlock * 1000) >= new Date()
+        campaign.status !== 'completed' &&
+        new Date(campaign.end_date) >= new Date()
       );
     });
 
@@ -305,11 +305,11 @@ export class CampaignService {
     for (const campaign of runningCampaigns) {
       try {
         const walletAddress = await this.web3Service
-          .getSigner(campaign.chainId)
+          .getSigner(campaign.chain_id)
           .getAddress();
 
         const { data: joined } = await this.hufiRecordingOracleAPI.get(
-          `/mr-market/campaign?chainId=${campaign.chainId}&address=${campaign.address}&walletAddress=${walletAddress}`,
+          `/mr-market/campaign?chainId=${campaign.chain_id}&address=${campaign.address}&walletAddress=${walletAddress}`,
         );
 
         if (joined) {
@@ -318,21 +318,21 @@ export class CampaignService {
         }
 
         const exchangeInstance = await this.exchangeService.getExchange(
-          campaign.exchangeName,
+          campaign.exchange_name,
           'read-only',
         );
 
         await this.hufiRecordingOracleAPI.post('/mr-market/campaign', {
           wallet_address: walletAddress,
-          chain_id: campaign.chainId,
+          chain_id: campaign.chain_id,
           address: campaign.address,
-          exchange_name: campaign.exchangeName,
+          exchange_name: campaign.exchange_name,
           api_key: exchangeInstance.apiKey,
           secret: exchangeInstance.secret,
         });
 
         this.logger.log(
-          `Joined Hu-Fi campaign:\n\tChainId: ${campaign.chainId}\n\tAddress: ${campaign.address}\n\tExchange: ${campaign.exchangeName}`,
+          `Joined Hu-Fi campaign:\n\tChainId: ${campaign.chain_id}\n\tAddress: ${campaign.address}\n\tExchange: ${campaign.exchange_name}`,
         );
       } catch (e) {
         this.logger.warn('Error joining campaign: ', e.message);

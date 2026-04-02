@@ -33,20 +33,20 @@ export class CampaignSyncService {
       try {
         const existing = await this.campaignRepository.findOneBy({
           address: item.address,
-          chainId: item.chainId,
+          chainId: item.chain_id,
         });
 
         const mapped = {
           name: item.address,
           address: item.address,
-          chainId: item.chainId,
+          chainId: item.chain_id,
           pair: item.symbol,
-          exchange: item.exchangeName,
-          rewardToken: item.token,
-          startTime: this.toSafeDate(item.startBlock),
-          endTime: this.toSafeDate(item.endBlock),
+          exchange: item.exchange_name,
+          rewardToken: item.fund_token,
+          startTime: new Date(item.start_date),
+          endTime: new Date(item.end_date),
           status: this.mapStatus(item.status),
-          totalReward: this.toSafeNumber(item.totalFundedAmount),
+          totalReward: this.toSafeNumber(item.fund_amount),
           type: item.type,
           updatedAt: new Date(getRFC3339Timestamp()),
         };
@@ -63,7 +63,7 @@ export class CampaignSyncService {
         this.logger.error(
           `Failed syncing campaign ${String(
             item?.address || 'unknown',
-          )} on chain ${String(item?.chainId || 'unknown')}: ${error.message}`,
+          )} on chain ${String(item?.chain_id || 'unknown')}: ${error.message}`,
         );
         continue;
       }
