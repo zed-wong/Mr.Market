@@ -3,7 +3,7 @@ Follow KISS, YAGNI, and DRY. Don't add unnecessary code. Reuse existing codebase
 
 # Tech Stack
 - **Frontend**: Svelte 4 (not 5) + SvelteKit + daisyui/tailwind + svelte-i18n (`$_()`)
-- **Backend**: bignumber.js, getRFC3339Timestamp()
+- **Backend**: Always use bignumber.js for calculation, and getRFC3339Timestamp() for timestamp
 
 # Styling Rules
 - daisyui semantic colors only: `text-base-100` / `bg-base-100` / `text-base-content` / `bg-base-content` / `bg-base-300`

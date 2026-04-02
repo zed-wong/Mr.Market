@@ -6,11 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Wallet } from 'ethers';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
 import { randomUUID } from 'crypto';
+import { Wallet } from 'ethers';
 import { CampaignJoin } from 'src/common/entities/market-making/campaign-join.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
@@ -376,7 +376,10 @@ export class AdminDirectMarketMakingService {
     });
   }
 
-  async getWalletStatus(): Promise<{ configured: boolean; address: string | null }> {
+  async getWalletStatus(): Promise<{
+    configured: boolean;
+    address: string | null;
+  }> {
     const privateKey =
       this.configService.get<string>('WEB3_PRIVATE_KEY') ||
       this.configService.get<string>('web3.private_key') ||
