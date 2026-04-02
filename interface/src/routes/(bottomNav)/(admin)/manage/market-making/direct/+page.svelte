@@ -20,7 +20,11 @@
   } from "$lib/types/hufi/admin-direct-market-making";
   import type { GrowInfo } from "$lib/types/hufi/grow";
 
-  import { getErrorMessage, getRecoveryHint, normalizeConfigOverrides } from "$lib/components/market-making/direct/helpers";
+  import {
+    getErrorMessage,
+    getRecoveryHint,
+    normalizeConfigOverrides,
+  } from "$lib/components/market-making/direct/helpers";
   import ApiKeysPanel from "$lib/components/market-making/direct/ApiKeysPanel.svelte";
   import CampaignsPanel from "$lib/components/market-making/direct/CampaignsPanel.svelte";
   import OrdersTable from "$lib/components/market-making/direct/OrdersTable.svelte";
@@ -81,6 +85,7 @@
   let joinCampaignChainId = 0;
   let joinCampaignApiKeyId = "";
   let joinCampaignEvmAddress = "";
+  let selectedCampaign: Record<string, unknown> = {};
 
   $: orders = initialOrders;
   $: campaigns = initialCampaigns;
@@ -88,7 +93,9 @@
   $: activeOrdersCount = orders.filter(
     (o) => o.runtimeState === "running" || o.runtimeState === "active",
   ).length;
-  $: stoppedOrdersCount = orders.filter((o) => o.runtimeState === "stopped").length;
+  $: stoppedOrdersCount = orders.filter(
+    (o) => o.runtimeState === "stopped",
+  ).length;
   $: exchangeOptions = Array.from(new Set(apiKeys.map((key) => key.exchange)));
   $: filteredPairs = pairs.filter(
     (pair) => !startExchangeName || pair.exchange_id === startExchangeName,
@@ -155,7 +162,11 @@
           strategyDefinitionId: startStrategyDefinitionId,
           apiKeyId: selectedApiKey.key_id,
           accountLabel: selectedApiKey.exchange_index,
-          configOverrides: normalizeConfigOverrides(configRows, orderAmount, orderSpread),
+          configOverrides: normalizeConfigOverrides(
+            configRows,
+            orderAmount,
+            orderSpread,
+          ),
         },
         token,
       );
@@ -333,6 +344,7 @@
   }
 
   function openJoinModal(campaign: Record<string, unknown>) {
+    selectedCampaign = campaign;
     joinCampaignAddress = String(campaign.address || "");
     joinCampaignChainId = Number(campaign.chainId || 0);
     showJoinModal = true;
@@ -347,7 +359,7 @@
   }
 </script>
 
-<div class="bg-[#F8F8FA] min-h-screen pb-10">
+<div class="min-h-screen pb-10 bg-slate-50">
   <div class="max-w-[1400px] mx-auto p-4 sm:p-6 md:p-8 space-y-6">
     <!-- Top Row -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -358,7 +370,6 @@
     <!-- Market Making -->
     <OrdersTable
       {orders}
-      {activeOrdersCount}
       onCreateClick={() => (showStartForm = !showStartForm)}
       onStartAllClick={() => (showStartAllModal = true)}
       onStopAllClick={() => (showStopAllConfirm = true)}
@@ -412,6 +423,7 @@
   show={showJoinModal}
   {isJoiningCampaign}
   {apiKeys}
+  campaign={selectedCampaign}
   bind:joinCampaignApiKeyId
   bind:joinCampaignEvmAddress
   onConfirm={submitCampaignJoin}

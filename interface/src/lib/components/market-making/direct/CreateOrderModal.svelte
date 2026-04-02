@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { _ } from "svelte-i18n";
   import type { AdminSingleKey } from "$lib/types/hufi/admin";
   import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
 
@@ -24,9 +23,9 @@
 {#if show}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
     <div
-      class="modal-box bg-base-100 p-8 rounded-2xl max-w-[480px] shadow-2xl border border-base-200/50"
+      class="modal-box bg-white p-0 rounded-[20px] max-w-[480px] overflow-hidden shadow-[0_24px_80px_-20px_rgba(15,23,42,0.25)] border border-white/70"
     >
-      <div class="flex justify-between items-center mb-6">
+      <div class="px-6 pt-6 pb-5 bg-violet-50/60 flex justify-between items-center">
         <h3 class="font-bold text-[22px] text-base-content tracking-tight">
           Create New Order
         </h3>
@@ -50,16 +49,17 @@
         </button>
       </div>
 
-      <div class="flex flex-col gap-5">
+      <div class="px-6 py-6 flex flex-col gap-5 bg-white border-t border-slate-100">
         <!-- Exchange -->
         <div class="form-control w-full">
-          <label class="label pb-2 pt-0"
+          <label for="direct-order-exchange" class="label pb-2 pt-0"
             ><span class="label-text font-semibold text-base-content"
               >Exchange</span
             ></label
           >
           <select
-            class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm"
+            id="direct-order-exchange"
+            class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm"
             bind:value={startExchangeName}
           >
             <option value="" disabled selected>Select Exchange</option>
@@ -71,7 +71,7 @@
 
         <!-- Trading Pair -->
         <div class="form-control w-full">
-          <label class="label pb-2 pt-0"
+          <label for="direct-order-pair" class="label pb-2 pt-0"
             ><span class="label-text font-semibold text-base-content"
               >Trading Pair</span
             ></label
@@ -97,7 +97,8 @@
               >
             </div>
             <select
-              class="select select-bordered w-full pl-10 h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm"
+              id="direct-order-pair"
+              class="select select-bordered w-full pl-10 h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm"
               bind:value={startPair}
             >
               <option value="" disabled selected>Select Trading Pair</option>
@@ -110,13 +111,14 @@
 
         <!-- Strategy -->
         <div class="form-control w-full">
-          <label class="label pb-2 pt-0"
+          <label for="direct-order-strategy" class="label pb-2 pt-0"
             ><span class="label-text font-semibold text-base-content"
               >Strategy</span
             ></label
           >
           <select
-            class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm"
+            id="direct-order-strategy"
+            class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm"
             bind:value={startStrategyDefinitionId}
           >
             <option value="" disabled selected>Select Strategy</option>
@@ -128,13 +130,14 @@
 
         <!-- API Key -->
         <div class="form-control w-full">
-          <label class="label pb-2 pt-0"
+          <label for="direct-order-api-key" class="label pb-2 pt-0"
             ><span class="label-text font-semibold text-base-content"
               >API Key</span
             ></label
           >
           <select
-            class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm"
+            id="direct-order-api-key"
+            class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm"
             bind:value={startApiKeyId}
           >
             <option value="" disabled selected>Select API Key</option>
@@ -146,7 +149,7 @@
 
         <!-- Order Parameters (Amount & Spread %) -->
         <div class="form-control w-full mt-1">
-          <label class="label pb-3 pt-0"
+          <label for="direct-order-amount" class="label pb-3 pt-0"
             ><span class="label-text font-semibold text-base-content"
               >Order Parameters</span
             ></label
@@ -157,9 +160,10 @@
                 >Amount</span
               >
               <input
+                id="direct-order-amount"
                 type="text"
                 placeholder="Amount"
-                class="input input-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm"
+                class="input input-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm"
                 bind:value={orderAmount}
               />
             </div>
@@ -168,9 +172,10 @@
                 >Spread %</span
               >
               <input
+                id="direct-order-spread"
                 type="text"
                 placeholder="Spread %"
-                class="input input-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm"
+                class="input input-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm"
                 bind:value={orderSpread}
               />
             </div>
@@ -180,11 +185,11 @@
         <!-- Actions -->
         <div class="flex gap-3 justify-end mt-4">
           <button
-            class="btn bg-[#F0EEF7] hover:bg-[#E5E2F0] border-none text-base-content px-6 h-[44px] min-h-[44px] rounded-lg font-semibold shadow-sm"
+            class="btn bg-violet-50 hover:bg-violet-100 border-none text-slate-700 px-6 h-[44px] min-h-[44px] rounded-lg font-semibold shadow-none"
             on:click={onClose}>Cancel</button
           >
           <button
-            class="btn bg-[#503CF5] hover:bg-[#432EEB] border-none text-white px-6 h-[44px] min-h-[44px] rounded-lg font-semibold shadow-sm"
+            class="btn bg-indigo-600 hover:bg-indigo-700 border-none text-white px-6 h-[44px] min-h-[44px] rounded-lg font-semibold shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)]"
             on:click={onSubmit}
             disabled={isStarting}
           >

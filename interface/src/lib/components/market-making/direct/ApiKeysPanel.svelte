@@ -11,7 +11,7 @@
       Exchange API Keys
     </h2>
     <div
-      class="text-[#4F39F6] cursor-pointer bg-transparent hover:bg-[#F1F0FF] p-2 rounded-lg transition-colors"
+      class="text-blue-600 cursor-pointer bg-transparent hover:bg-blue-50 p-2 rounded-lg transition-colors"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -32,11 +32,11 @@
     {#each apiKeys as apiKey, i}
       {#if i < 3}
         <div
-          class="flex items-center justify-between p-4 rounded-xl bg-[#FCFCFD] border border-[#F1F1F5]"
+          class="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-100"
         >
           <div class="flex items-center gap-4">
             <div
-              class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center border border-gray-100"
+              class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center border border-slate-100"
             >
               <ExchangeIcon
                 exchangeName={apiKey.exchange}
@@ -61,13 +61,13 @@
           <div>
             {#if i === 2}
               <div
-                class="bg-[#FFEFEF] text-[#D83232] text-[10px] font-bold px-3 py-1 rounded border border-[#FFDADA] tracking-wide uppercase"
+                class="bg-red-50 text-red-600 text-[10px] font-bold px-3 py-1 rounded border border-red-100 tracking-wide capitalize"
               >
                 Disconnected
               </div>
             {:else}
               <div
-                class="bg-[#E5F9E3] text-[#1CAD48] text-[10px] font-bold px-3 py-1 rounded border border-[#CFF0CF] tracking-wide uppercase"
+                class="bg-red-50 text-red-600 text-[10px] font-bold px-3 py-1 rounded border border-red-100 tracking-wide capitalize"
               >
                 Connected
               </div>
@@ -84,7 +84,7 @@
   </div>
 
   <button
-    class="w-full mt-4 py-3 rounded-xl bg-[#F4F2FF] text-[#4F39F6] font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#EAE7FF] transition-colors border-none"
+    class="w-full mt-4 py-3 rounded-xl bg-blue-50 text-blue-600 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors border-none"
     on:click={() => window.open("/manage/settings/api-keys", "_blank")}
   >
     <svg

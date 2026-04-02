@@ -45,7 +45,7 @@ export class CampaignService {
     try {
       const { data } = await this.hufiCampaignLauncherAPI.get<
         CampaignDataDto[]
-      >('/campaign?chainId=-1');
+      >('/campaign?chainId=137');
 
       this.logger.log('Finished getting HuFi campaigns');
 

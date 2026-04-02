@@ -15,6 +15,19 @@
 
   // Mock permissions - TODO: Update backend to include permissions in API response
   const permissions = ["Read", "Trade"];
+
+  function formatCreatedValue(value?: string) {
+    if (!value) return "—";
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+    });
+  }
 </script>
 
 <tr class="hover:bg-base-200/30 transition-colors">
@@ -63,7 +76,7 @@
   <!-- CREATED Column -->
   <td>
     <span class="text-sm text-base-content/70"
-      >{key.last_update || "Oct 24, 2023"}</span
+      >{formatCreatedValue(key.last_update)}</span
     >
   </td>
 

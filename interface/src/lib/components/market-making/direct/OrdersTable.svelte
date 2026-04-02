@@ -3,7 +3,6 @@
   import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
 
   export let orders: DirectOrderSummary[] = [];
-  export let activeOrdersCount = 0;
   export let onCreateClick: () => void;
   export let onStartAllClick: () => void;
   export let onStopAllClick: () => void;
@@ -19,14 +18,14 @@
       <h2 class="text-[1.1rem] font-bold text-base-content">
         Market Making
       </h2>
-      <p class="text-[13px] text-base-content/50 mt-1">
+      <span class="text-[13px] text-base-content/50 mt-1">
         Strategic execution and real-time liquidity management.
-      </p>
+      </span>
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
       <button
-        class="btn bg-[#503CF5] hover:bg-[#432EEB] text-white border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
+        class="btn bg-blue-600 hover:bg-blue-700 text-white border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
         on:click={onCreateClick}
       >
         <svg
@@ -47,7 +46,7 @@
         Create New Order
       </button>
       <button
-        class="btn bg-[#F0EEF7] hover:bg-[#E5E2F0] text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm text-opacity-90"
+        class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm text-opacity-90"
         on:click={onStartAllClick}
       >
         <svg
@@ -61,7 +60,7 @@
         Start All
       </button>
       <button
-        class="btn bg-[#FDEDEE] hover:bg-[#FADDE0] text-[#D83232] border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
+        class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
         on:click={onStopAllClick}
       >
         <svg
@@ -83,27 +82,27 @@
       <thead>
         <tr>
           <th
-            class="py-4 px-4 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100"
+            class="py-4 px-4 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
             >Exchange</th
           >
           <th
-            class="py-4 px-4 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100"
+            class="py-4 px-4 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
             >Trading Pair</th
           >
           <th
-            class="py-4 px-2 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100"
+            class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
             >Strategy</th
           >
           <th
-            class="py-4 px-2 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100"
+            class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
             >Status</th
           >
           <th
-            class="py-4 px-2 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100"
+            class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
             >Created Time</th
           >
           <th
-            class="py-4 px-4 text-xs text-right font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100"
+            class="py-4 px-4 text-xs text-right font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
             >Actions</th
           >
         </tr>
@@ -118,13 +117,13 @@
         {/if}
         {#each orders as order, i}
           <tr
-            class="hover:bg-base-200/30 transition-colors border-b border-gray-50 last:border-0 cursor-pointer"
+            class="hover:bg-base-200/30 transition-colors border-b border-base-300/60 last:border-0 cursor-pointer"
             on:click={() => onOrderClick(order)}
           >
             <td class="py-4 px-4">
               <div class="flex items-center gap-3">
                 <div
-                  class="bg-[#F8F9FE] w-8 h-8 rounded-full flex items-center justify-center border border-[#EDEEF4]"
+                  class="bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center border border-slate-100"
                 >
                   <ExchangeIcon
                     exchangeName={order.exchangeName}
@@ -144,7 +143,7 @@
             </td>
             <td class="py-4 px-2">
               <span
-                class="inline-flex bg-[#F5F4FF] text-[#4F39F6] px-2.5 py-1 rounded-[6px] text-xs font-semibold whitespace-nowrap"
+                class="inline-flex bg-indigo-50 text-blue-600 px-2.5 py-1 rounded-[6px] text-xs font-semibold whitespace-nowrap"
               >
                 {order.strategyName ||
                   (i === 0
@@ -157,22 +156,22 @@
             <td class="py-4 px-2 whitespace-nowrap">
               {#if order.runtimeState === "running" || order.runtimeState === "active"}
                 <span
-                  class="inline-flex items-center gap-1.5 bg-[#EAF8EE] text-[#1CAD48] px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase"
+                  class="inline-flex items-center gap-1.5 bg-green-50 text-green-600 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
                 >
-                  <span class="w-1.5 h-1.5 bg-[#1CAD48] rounded-full"></span>
+                  <span class="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
                   Running
                 </span>
               {:else if order.runtimeState === "stopped"}
                 <span
-                  class="inline-flex items-center gap-1.5 bg-[#F1F0F5] text-[#6E6A7D] px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase"
+                  class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
                 >
                   Paused
                 </span>
               {:else}
                 <span
-                  class="inline-flex items-center gap-1.5 bg-[#EAF8EE] text-[#1CAD48] px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase"
+                  class="inline-flex items-center gap-1.5 bg-green-50 text-green-600 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
                 >
-                  <span class="w-1.5 h-1.5 bg-[#1CAD48] rounded-full"></span>
+                  <span class="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
                   Running
                 </span>
               {/if}
@@ -203,7 +202,7 @@
             <td class="py-4 px-4 flex justify-end items-center gap-3">
               {#if order.runtimeState === "running" || order.runtimeState === "active"}
                 <button
-                  class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-gray-100 text-[#D83232] hover:bg-[#FDEFEF] transition-colors"
+                  class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-red-600 hover:bg-red-50 transition-colors"
                   aria-label="Stop"
                   on:click|stopPropagation={() => onStopOrder(order)}
                 >
@@ -229,7 +228,7 @@
                 </button>
               {:else}
                 <button
-                  class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-gray-100 text-[#4F39F6] hover:bg-[#F3F2FF] transition-colors"
+                  class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-blue-600 hover:bg-blue-50 transition-colors"
                   aria-label="Play"
                 >
                   <svg
@@ -247,7 +246,7 @@
                 </button>
               {/if}
               <button
-                class="bg-[#F5F4FF] text-[#4F39F6] px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#EAE7FF] transition-colors whitespace-nowrap"
+                class="bg-indigo-50 text-blue-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-colors whitespace-nowrap"
               >
                 Details
               </button>
