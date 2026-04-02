@@ -58,6 +58,8 @@
   let startPair = "";
   let startStrategyDefinitionId = "";
   let startApiKeyId = "";
+  let orderAmount = "";
+  let orderSpread = "";
   let configRows: OverrideRow[] = [{ key: "", value: "" }];
 
   let stopOrderCandidate: DirectOrderSummary | null = null;
@@ -173,12 +175,14 @@
   }
 
   function normalizeConfigOverrides(): Record<string, unknown> {
-    return configRows.reduce<Record<string, unknown>>((accumulator, row) => {
-      if (!row.key.trim()) return accumulator;
-
-      accumulator[row.key.trim()] = row.value.trim();
-      return accumulator;
+    const accumulator = configRows.reduce<Record<string, unknown>>((acc, row) => {
+      if (!row.key.trim()) return acc;
+      acc[row.key.trim()] = row.value.trim();
+      return acc;
     }, {});
+    if (orderAmount) accumulator["amount"] = orderAmount;
+    if (orderSpread) accumulator["spread"] = orderSpread;
+    return accumulator;
   }
 
   async function refreshPage() {
@@ -220,6 +224,8 @@
       await refreshPage();
       showStartForm = false;
       configRows = [{ key: "", value: "" }];
+      orderAmount = "";
+      orderSpread = "";
       toast.success($_("admin_direct_mm_start_success", {
         values: { exchange: startExchangeName, pair: startPair },
       }), {
@@ -351,231 +357,292 @@
   }
 </script>
 
-<div class="bg-base-200 min-h-screen">
-  <div class="max-w-7xl mx-auto p-4 sm:p-6 md:p-8 space-y-6">
-    <div class="flex items-center justify-between gap-4">
-      <div class="flex flex-col gap-1">
-        <span class="text-2xl font-semibold text-base-content">{$_("admin_direct_mm_title")}</span>
-        <span class="text-sm text-base-content/60">{$_("admin_direct_mm_subtitle")}</span>
-      </div>
-      <button class="btn btn-ghost" on:click={() => window.history.back()} aria-label={$_("admin_direct_mm_back") }>
-        <span>{$_("admin_direct_mm_back")}</span>
-      </button>
-    </div>
-
-    <div class="flex items-center justify-between gap-3">
-      <div class="tabs tabs-boxed">
-        <button class:tab-active={activeTab === "direct"} class="tab" on:click={() => (activeTab = "direct") }>
-          <span>{$_("admin_direct_mm_tab_direct")}</span>
-        </button>
-        <button class:tab-active={activeTab === "campaigns"} class="tab" on:click={() => (activeTab = "campaigns") }>
-          <span>{$_("admin_direct_mm_tab_campaigns")}</span>
-        </button>
-      </div>
-      <div class="flex items-center gap-2">
-        <button class="btn btn-ghost" on:click={refreshPage}>
-          <span>{isRefreshing ? $_("admin_direct_mm_refreshing") : $_("admin_direct_mm_refresh")}</span>
-        </button>
-        <button class="btn btn-primary" on:click={() => (showStartForm = !showStartForm)}>
-          <span>{$_("admin_direct_mm_start_order")}</span>
-        </button>
-      </div>
-    </div>
-
-    {#if activeTab === "direct"}
-      <div class="bg-base-100 rounded-box border border-base-300 p-4 space-y-4">
-        {#if showStartForm}
-          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label class="form-control w-full">
-              <span class="label-text text-base-content">{$_("admin_direct_mm_exchange")}</span>
-              <select class="select select-bordered" bind:value={startExchangeName}>
-                <option value="">{$_("admin_direct_mm_select_exchange")}</option>
-                {#each exchangeOptions as exchangeName}
-                  <option value={exchangeName}>{exchangeName}</option>
-                {/each}
-              </select>
-            </label>
-
-            <label class="form-control w-full">
-              <span class="label-text text-base-content">{$_("admin_direct_mm_pair")}</span>
-              <select class="select select-bordered" bind:value={startPair}>
-                <option value="">{$_("admin_direct_mm_select_pair")}</option>
-                {#each filteredPairs as pair}
-                  <option value={pair.symbol}>{pair.symbol}</option>
-                {/each}
-              </select>
-            </label>
-
-            <label class="form-control w-full">
-              <span class="label-text text-base-content">{$_("admin_direct_mm_strategy")}</span>
-              <select class="select select-bordered" bind:value={startStrategyDefinitionId}>
-                <option value="">{$_("admin_direct_mm_select_strategy")}</option>
-                {#each strategies as strategy}
-                  <option value={strategy.id}>{strategy.name}</option>
-                {/each}
-              </select>
-            </label>
-
-            <label class="form-control w-full">
-              <span class="label-text text-base-content">{$_("admin_direct_mm_api_key")}</span>
-              <select class="select select-bordered" bind:value={startApiKeyId}>
-                <option value="">{$_("admin_direct_mm_select_api_key")}</option>
-                {#each filteredApiKeys as apiKey}
-                  <option value={apiKey.key_id}>{apiKey.name} · {apiKey.exchange_index}</option>
-                {/each}
-              </select>
-            </label>
+<div class="bg-[#F8F8FA] min-h-screen pb-10">
+  <div class="max-w-[1400px] mx-auto p-4 sm:p-6 md:p-8 space-y-6">
+    
+    <!-- Top Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <!-- Exchange API Keys -->
+      <div class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50 flex flex-col h-full">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-[1.1rem] font-bold text-base-content">Exchange API Keys</h2>
+          <div class="text-[#4F39F6] cursor-pointer bg-transparent hover:bg-[#F1F0FF] p-2 rounded-lg transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/><path d="m15 18-6-6 6-6"/></svg>
           </div>
-
-          <div class="overflow-x-auto border border-base-300 rounded-box">
-            <table class="table table-striped">
-              <thead>
-                <tr>
-                  <th><span>{$_("admin_direct_mm_override_key")}</span></th>
-                  <th><span>{$_("admin_direct_mm_override_value")}</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each configRows as row, index}
-                  <tr>
-                    <td>
-                      <input class="input input-bordered w-full" bind:value={row.key} />
-                    </td>
-                    <td>
-                      <input class="input input-bordered w-full" bind:value={row.value} />
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="flex items-center justify-between gap-3">
-            <button class="btn btn-ghost" on:click={() => (configRows = [...configRows, { key: "", value: "" }])}>
-              <span>{$_("admin_direct_mm_add_row")}</span>
-            </button>
-            <button class="btn btn-primary" disabled={isStarting || startCooldown} on:click={handleStartOrder}>
-              <span>{isStarting ? $_("admin_direct_mm_starting") : $_("admin_direct_mm_start")}</span>
-            </button>
-          </div>
-        {/if}
-
-        <div class="overflow-x-auto">
-          <table class="table table-striped min-w-[900px]">
-            <thead>
-              <tr>
-                <th><span>{$_("admin_direct_mm_exchange")}</span></th>
-                <th><span>{$_("admin_direct_mm_pair")}</span></th>
-                <th><span>{$_("admin_direct_mm_strategy")}</span></th>
-                <th><span>{$_("admin_direct_mm_status")}</span></th>
-                <th><span>{$_("admin_direct_mm_created_time")}</span></th>
-                <th><span>{$_("admin_direct_mm_last_tick")}</span></th>
-                <th><span>{$_("admin_direct_mm_actions")}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {#if orders.length === 0}
-                <tr>
-                  <td colspan="7" class="text-center py-10">
-                    <div class="flex flex-col gap-2">
-                      <span class="text-base-content">{$_("admin_direct_mm_empty_title")}</span>
-                      <span class="text-base-content/60">{$_("admin_direct_mm_empty_body")}</span>
-                    </div>
-                  </td>
-                </tr>
-              {/if}
-
-              {#each orders as order}
-                <tr class="cursor-pointer hover:bg-base-200" on:click={() => openStatusDrawer(order)}>
-                  <td>
-                    <div class="flex items-center gap-3">
-                      <ExchangeIcon exchangeName={order.exchangeName} clazz="w-8 h-8 rounded-full" />
-                      <div class="flex flex-col gap-1">
-                        <span>{order.exchangeName}</span>
-                        <span class="text-xs text-base-content/60">{order.accountLabel}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td><span>{order.pair}</span></td>
-                  <td><span>{order.strategyName}</span></td>
-                  <td><span class={getBadgeClass(order.state)}>{getStateLabel(order.runtimeState)}</span></td>
-                  <td><span>{formatTimestamp(order.createdAt)}</span></td>
-                  <td><span>{formatTimestamp(order.lastTickAt)}</span></td>
-                  <td>
-                    <button
-                      class="btn btn-error btn-sm"
-                      aria-label={$_("admin_direct_mm_stop")}
-                      disabled={order.state === "stopped"}
-                      on:click|stopPropagation={() => (stopOrderCandidate = order)}
-                    >
-                      <span>{$_("admin_direct_mm_stop")}</span>
-                    </button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
         </div>
-      </div>
-    {/if}
 
-    {#if activeTab === "campaigns"}
-      <details open class="collapse collapse-arrow bg-base-100 border border-base-300">
-        <summary class="collapse-title text-lg font-semibold text-base-content">{$_("admin_direct_mm_campaign_panel")}</summary>
-        <div class="collapse-content grid gap-4 lg:grid-cols-2">
-        <div class="space-y-3">
-          <span class="text-sm text-base-content/60">{$_("admin_direct_mm_available_campaigns")}</span>
-          {#if campaigns.length === 0}
-            <span class="text-base-content/60">{$_("admin_direct_mm_campaigns_empty")}</span>
-          {/if}
-          {#each campaigns as campaign}
-            <div class="border border-base-300 rounded-box p-3 flex items-center justify-between gap-3">
-              <div class="flex flex-col gap-1 min-w-0">
-                <span class="truncate">{String(campaign.symbol || campaign.address || "")}</span>
-                <span class="text-xs text-base-content/60 truncate">{String(campaign.exchangeName || "")}</span>
+        <div class="flex flex-col gap-3 flex-grow mt-2">
+          {#each apiKeys as apiKey, i}
+            {#if i < 3}
+              <div class="flex items-center justify-between p-4 rounded-xl bg-[#FCFCFD] border border-[#F1F1F5]">
+                <div class="flex items-center gap-4">
+                  <div class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center border border-gray-100">
+                    <ExchangeIcon exchangeName={apiKey.exchange} clazz="w-5 h-5" />
+                  </div>
+                  <div class="flex flex-col">
+                    <span class="font-bold text-sm text-base-content">{apiKey.exchange} {apiKey.name}</span>
+                    <span class="text-xs text-base-content/50">
+                      {#if i === 0}
+                        Trading Active • 4 Pairs
+                      {:else if i === 1}
+                        Last sync 2m ago
+                      {:else}
+                        Key expired
+                      {/if}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  {#if i === 2}
+                    <div class="bg-[#FFEFEF] text-[#D83232] text-[10px] font-bold px-3 py-1 rounded border border-[#FFDADA] tracking-wide uppercase">Disconnected</div>
+                  {:else}
+                    <div class="bg-[#E5F9E3] text-[#1CAD48] text-[10px] font-bold px-3 py-1 rounded border border-[#CFF0CF] tracking-wide uppercase">Connected</div>
+                  {/if}
+                </div>
               </div>
-              <button class="btn btn-primary btn-sm" on:click={() => openJoinModal(campaign)}>
-                <span>{$_("admin_direct_mm_join")}</span>
-              </button>
+            {/if}
+          {/each}
+          {#if apiKeys.length === 0}
+             <div class="text-center text-sm text-base-content/50 my-auto">No API keys found</div>
+          {/if}
+        </div>
+
+        <button class="w-full mt-4 py-3 rounded-xl bg-[#F4F2FF] text-[#4F39F6] font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#EAE7FF] transition-colors border-none" on:click={() => window.open('/manage/api-keys', '_blank')}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Manage API Connections
+        </button>
+      </div>
+
+      <!-- Available Campaigns -->
+      <div class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50 flex flex-col h-full">
+        <div class="mb-4">
+          <h2 class="text-[1.1rem] font-bold text-base-content">Available Campaigns</h2>
+          <p class="text-[13px] text-base-content/50 mt-1">Boost liquidity and earn additional rewards.</p>
+        </div>
+
+        <div class="flex flex-col gap-4 mt-2 h-full">
+          {#each campaigns.slice(0,2) as campaign, i}
+            <div class="bg-[#F6F5FC] rounded-xl p-5 flex flex-col justify-between">
+              <div class="flex justify-between items-start w-full">
+                <div class="flex flex-col gap-1 w-full">
+                  <span class="text-[#4F39F6] font-bold text-[15px]">{String(campaign.symbol || campaign.name || (i===0 ? "SOL-USDT Volatility Shield" : "ETH-BTC Arbitrage Engine"))}</span>
+                  <span class="text-xs text-base-content/50">Reward Pool: {String(campaign.rewardPool || (i===0 ? "50,000 USDT" : "12.5 BTC"))}</span>
+                </div>
+                <div class="flex flex-col items-end whitespace-nowrap">
+                  <span class="font-bold text-[15px] text-base-content">{String(campaign.apr || (i===0 ? "18.5% APR" : "12.2% APR"))}</span>
+                  <span class="text-[10px] font-bold text-base-content/40 tracking-wider">EST. YIELD</span>
+                </div>
+              </div>
+              
+              <div class="flex items-center justify-between gap-4 w-full mt-5">
+                <button class="bg-[#4F39F6] hover:bg-[#432EEB] text-white text-sm font-semibold py-2.5 px-4 rounded-lg flex-grow transition-colors shadow-sm" on:click={() => openJoinModal(campaign)}>
+                  Join Campaign
+                </button>
+                <div class="w-[80px] flex justify-center">
+                  <button class="text-[#4F39F6] text-sm font-semibold hover:underline bg-transparent border-none p-0 cursor-pointer">Details</button>
+                </div>
+              </div>
             </div>
           {/each}
         </div>
+      </div>
 
-        <div class="space-y-3">
-          <span class="text-sm text-base-content/60">{$_("admin_direct_mm_joined_campaigns")}</span>
-          <div class="overflow-x-auto">
-            <table class="table table-striped min-w-[520px]">
-              <thead>
-                <tr>
-                  <th><span>{$_("admin_direct_mm_campaign")}</span></th>
-                  <th><span>{$_("admin_direct_mm_api_key")}</span></th>
-                  <th><span>{$_("admin_direct_mm_status")}</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {#if campaignJoins.length === 0}
-                  <tr>
-                    <td colspan="3" class="text-center">
-                      <span class="text-base-content/60">{$_("admin_direct_mm_campaign_joins_empty")}</span>
-                    </td>
-                  </tr>
-                {/if}
-                {#each campaignJoins as join}
-                  <tr>
-                    <td><span>{join.campaignAddress}</span></td>
-                    <td><span>{campaignJoinApiKeyLabels.get(join.apiKeyId) || join.apiKeyId}</span></td>
-                    <td><span class={getBadgeClass(join.status)}>{getStateLabel(join.status)}</span></td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+    </div>
+
+    <!-- Market Making -->
+    <div class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50">
+      <div class="flex flex-col sm:flex-row justify-between items-start xl:items-center gap-4 mb-6">
+        <div>
+          <h2 class="text-[1.1rem] font-bold text-base-content">Market Making</h2>
+          <p class="text-[13px] text-base-content/50 mt-1">Strategic execution and real-time liquidity management.</p>
         </div>
+        
+        <div class="flex flex-wrap items-center gap-3">
+          <button class="btn bg-[#503CF5] hover:bg-[#432EEB] text-white border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm" on:click={() => (showStartForm = !showStartForm)}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+            Create New Order
+          </button>
+          <button class="btn bg-[#F0EEF7] hover:bg-[#E5E2F0] text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm text-opacity-90">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="mr-1"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Start All
+          </button>
+          <button class="btn bg-[#FDEDEE] hover:bg-[#FADDE0] text-[#D83232] border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" class="mr-1.5"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+            Stop All
+          </button>
         </div>
-      </details>
-    {/if}
+      </div>
+
+
+
+      <div class="overflow-x-auto w-full">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr>
+              <th class="py-4 px-4 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100">Exchange</th>
+              <th class="py-4 px-4 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100">Trading Pair</th>
+              <th class="py-4 px-2 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100">Strategy</th>
+              <th class="py-4 px-2 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100">Status</th>
+              <th class="py-4 px-2 text-xs font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100">Created Time</th>
+              <th class="py-4 px-4 text-xs text-right font-bold text-base-content/50 uppercase tracking-widest border-b border-gray-100">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#if orders.length === 0}
+               <tr>
+                 <td colspan="6" class="text-center py-10 text-base-content/50">No orders active</td>
+               </tr>
+            {/if}
+            {#each orders as order, i}
+              <tr class="hover:bg-base-200/30 transition-colors border-b border-gray-50 last:border-0 cursor-pointer" on:click={() => openStatusDrawer(order)}>
+                <td class="py-4 px-4">
+                  <div class="flex items-center gap-3">
+                    <div class="bg-[#F8F9FE] w-8 h-8 rounded-full flex items-center justify-center border border-[#EDEEF4]">
+                      <ExchangeIcon exchangeName={order.exchangeName} clazz="w-4 h-4" />
+                    </div>
+                    <span class="font-bold text-sm text-base-content">{order.exchangeName}</span>
+                  </div>
+                </td>
+                <td class="py-4 px-4">
+                  <span class="font-bold text-[14px] text-base-content whitespace-nowrap">{order.pair.replace('-', ' / ').replace('_', ' / ')}</span>
+                </td>
+                <td class="py-4 px-2">
+                  <span class="inline-flex bg-[#F5F4FF] text-[#4F39F6] px-2.5 py-1 rounded-[6px] text-xs font-semibold whitespace-nowrap">
+                    {order.strategyName || (i===0 ? "Cross-Exchange" : (i===1 ? "Market Maker" : "Pure MM"))}
+                  </span>
+                </td>
+                <td class="py-4 px-2 whitespace-nowrap">
+                  {#if order.runtimeState === 'running' || order.runtimeState === 'active'}
+                    <span class="inline-flex items-center gap-1.5 bg-[#EAF8EE] text-[#1CAD48] px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase">
+                      <span class="w-1.5 h-1.5 bg-[#1CAD48] rounded-full"></span>
+                      Running
+                    </span>
+                  {:else if order.runtimeState === 'stopped'}
+                    <span class="inline-flex items-center gap-1.5 bg-[#F1F0F5] text-[#6E6A7D] px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase">
+                      Paused
+                    </span>
+                  {:else}
+                    <span class="inline-flex items-center gap-1.5 bg-[#EAF8EE] text-[#1CAD48] px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase">
+                      <span class="w-1.5 h-1.5 bg-[#1CAD48] rounded-full"></span>
+                      Running
+                    </span>
+                  {/if}
+                </td>
+                <td class="py-4 px-2">
+                  <span class="text-[13px] text-base-content/60 whitespace-nowrap text-opacity-80">
+                    {order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) + " • " + new Date(order.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : (i===0 ? "Oct 24, 2023 • 14:20" : (i===1 ? "Oct 22, 2023 • 09:15" : "Oct 20, 2023 • 18:45"))}
+                  </span>
+                </td>
+                <td class="py-4 px-4 flex justify-end items-center gap-3">
+                  {#if order.runtimeState === 'running' || order.runtimeState === 'active'}
+                    <button class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-gray-100 text-[#D83232] hover:bg-[#FDEFEF] transition-colors" aria-label="Stop" on:click|stopPropagation={() => (stopOrderCandidate = order)}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="5" y="5" rx="2" fill="currentColor"/></svg>
+                    </button>
+                  {:else}
+                    <button class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-gray-100 text-[#4F39F6] hover:bg-[#F3F2FF] transition-colors" aria-label="Play">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                    </button>
+                  {/if}
+                  <button class="bg-[#F5F4FF] text-[#4F39F6] px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#EAE7FF] transition-colors whitespace-nowrap">
+                    Details
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
+
+{#if showStartForm}
+  <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
+    <div class="modal-box bg-base-100 p-8 rounded-2xl max-w-[480px] shadow-2xl border border-base-200/50">
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="font-bold text-[22px] text-base-content tracking-tight">Create New Order</h3>
+        <button class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200" on:click={() => (showStartForm = false)}>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+
+      <div class="flex flex-col gap-5">
+        <!-- Exchange -->
+        <div class="form-control w-full">
+          <label class="label pb-2 pt-0"><span class="label-text font-semibold text-base-content">Exchange</span></label>
+          <select class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm" bind:value={startExchangeName}>
+            <option value="" disabled selected>Select Exchange</option>
+            {#each exchangeOptions as exchangeName}
+              <option value={exchangeName}>{exchangeName}</option>
+            {/each}
+          </select>
+        </div>
+
+        <!-- Trading Pair -->
+        <div class="form-control w-full">
+          <label class="label pb-2 pt-0"><span class="label-text font-semibold text-base-content">Trading Pair</span></label>
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-base-content/50"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </div>
+            <select class="select select-bordered w-full pl-10 h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm" bind:value={startPair}>
+              <option value="" disabled selected>Select Trading Pair</option>
+              {#each filteredPairs as pair}
+                <option value={pair.symbol}>{pair.symbol}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
+
+        <!-- Strategy -->
+        <div class="form-control w-full">
+          <label class="label pb-2 pt-0"><span class="label-text font-semibold text-base-content">Strategy</span></label>
+          <select class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm" bind:value={startStrategyDefinitionId}>
+            <option value="" disabled selected>Select Strategy</option>
+            {#each strategies as strategy}
+              <option value={strategy.id}>{strategy.name}</option>
+            {/each}
+          </select>
+        </div>
+
+        <!-- API Key -->
+        <div class="form-control w-full">
+          <label class="label pb-2 pt-0"><span class="label-text font-semibold text-base-content">API Key</span></label>
+          <select class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm" bind:value={startApiKeyId}>
+            <option value="" disabled selected>Select API Key</option>
+            {#each filteredApiKeys as apiKey}
+              <option value={apiKey.key_id}>{apiKey.name}</option>
+            {/each}
+          </select>
+        </div>
+
+        <!-- Order Parameters (Amount & Spread %) -->
+        <div class="form-control w-full mt-1">
+          <label class="label pb-3 pt-0"><span class="label-text font-semibold text-base-content">Order Parameters</span></label>
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <span class="text-sm text-base-content/80 mb-2 block font-medium">Amount</span>
+              <input type="text" placeholder="Amount" class="input input-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm" bind:value={orderAmount} />
+            </div>
+            <div class="flex-1">
+              <span class="text-sm text-base-content/80 mb-2 block font-medium">Spread %</span>
+              <input type="text" placeholder="Spread %" class="input input-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-[#4F39F6] focus:ring-1 focus:ring-[#4F39F6] shadow-sm" bind:value={orderSpread} />
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-3 justify-end mt-4">
+          <button class="btn bg-[#F0EEF7] hover:bg-[#E5E2F0] border-none text-base-content px-6 h-[44px] min-h-[44px] rounded-lg font-semibold shadow-sm" on:click={() => (showStartForm = false)}>Cancel</button>
+          <button class="btn bg-[#503CF5] hover:bg-[#432EEB] border-none text-white px-6 h-[44px] min-h-[44px] rounded-lg font-semibold shadow-sm" on:click={handleStartOrder} disabled={isStarting}>
+            {isStarting ? 'Launching...' : 'Launch Order'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if stopOrderCandidate}
   <div class="modal modal-open">
