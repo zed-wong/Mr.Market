@@ -113,9 +113,10 @@ export class AdminDirectMarketMakingService {
           marketMakingOrderId: orderId,
           pair: dto.pair,
           exchangeName: dto.exchangeName,
-          accountLabel: dto.accountLabel,
         },
       );
+
+    resolvedConfig.resolvedConfig.accountLabel = dto.accountLabel;
 
     const warnings = await this.runBalancePreCheck(
       dto.exchangeName,
@@ -489,19 +490,21 @@ export class AdminDirectMarketMakingService {
     orderId: string,
   ): Promise<void> {
     const joins = await this.campaignJoinRepository.find({
-      where: { apiKeyId },
+      where: { apiKeyId, orderId: null as unknown as string },
     });
 
     await Promise.all(
-      joins.map((join) =>
-        this.campaignJoinRepository.update(
-          { id: join.id },
-          {
-            orderId,
-            status: join.status === 'pending' ? 'pending' : 'linked',
-          },
+      joins
+        .filter((join) => join.status !== 'failed' && join.status !== 'detached')
+        .map((join) =>
+          this.campaignJoinRepository.update(
+            { id: join.id },
+            {
+              orderId,
+              status: join.status === 'pending' ? 'pending' : 'linked',
+            },
+          ),
         ),
-      ),
     );
   }
 
