@@ -7,12 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type CampaignJoinStatus =
-  | 'pending'
-  | 'linked'
-  | 'detached'
-  | 'joined'
-  | 'failed';
+export type CampaignJoinStatus = 'pending' | 'linked' | 'detached' | 'joined';
 
 @Entity()
 @Unique('UQ_campaign_join_binding', [

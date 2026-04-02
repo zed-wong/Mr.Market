@@ -13,6 +13,19 @@
   $: campaignDetails = (campaign?.details as Record<string, unknown>) || {};
   $: hasJoins = campaignJoins.length > 0;
 
+  function getJoinCampaign(
+    join: CampaignJoinRecord,
+  ): Record<string, unknown> | null {
+    return (
+      campaigns.find(
+        (campaign) =>
+          String(campaign.address || "").toLowerCase() ===
+            join.campaignAddress.toLowerCase() &&
+          Number(campaign.chain_id || campaign.chainId || 137) === join.chainId,
+      ) || null
+    );
+  }
+
   function formatDate(d: unknown): string {
     if (!d) return "";
     const date = new Date(String(d));
@@ -93,7 +106,10 @@
           {$_("admin_direct_mm_joined_campaigns")}
         </span>
         <span class="text-[13px] text-base-content/50 mt-1">
-          {campaignJoins.length} {campaignJoins.length === 1 ? $_("admin_direct_mm_campaign").toLowerCase() : $_("admin_direct_mm_campaign").toLowerCase() + "s"}
+          {campaignJoins.length}
+          {campaignJoins.length === 1
+            ? $_("admin_direct_mm_campaign").toLowerCase()
+            : $_("admin_direct_mm_campaign").toLowerCase() + "s"}
         </span>
       </div>
       <button
@@ -120,39 +136,64 @@
 
     <div class="flex flex-col gap-3 mt-2">
       {#each campaignJoins as join}
+        {@const joinedCampaign = getJoinCampaign(join)}
+        {@const joinedName = String(
+          joinedCampaign?.symbol ||
+            joinedCampaign?.name ||
+            shortenAddress(join.campaignAddress),
+        )}
+        {@const joinedExchange = String(
+          joinedCampaign?.exchange_name || joinedCampaign?.exchange || "—",
+        )}
         <div class="bg-base-200/40 rounded-xl p-4 flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div
                 class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold"
               >
-                {shortenAddress(join.campaignAddress).charAt(0).toUpperCase()}
+                {joinedName.charAt(0).toUpperCase()}
               </div>
-              <span class="text-sm font-bold text-base-content">
-                {shortenAddress(join.campaignAddress)}
-              </span>
+              <div class="flex flex-col">
+                <span class="text-sm font-bold text-base-content">
+                  {joinedName}
+                </span>
+                <span class="text-xs text-base-content/50">
+                  {joinedExchange}
+                </span>
+              </div>
             </div>
             <span class={getBadgeClass(join.status)}>
               {getStateLabel(join.status)}
             </span>
           </div>
-          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-base-content/60">
+          <div
+            class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-base-content/60"
+          >
             <div>
-              <span class="text-base-content/40">{$_("admin_direct_mm_evm_address")}:</span>
-              <span class="ml-1 font-mono">{shortenAddress(join.evmAddress)}</span>
+              <span class="text-base-content/40"
+                >{$_("admin_direct_mm_campaign_address")}:</span
+              >
+              <span class="ml-1 font-mono"
+                >{shortenAddress(join.campaignAddress)}</span
+              >
             </div>
             <div>
               <span class="text-base-content/40">API Key:</span>
-              <span class="ml-1 font-mono">{shortenAddress(join.apiKeyId)}</span>
+              <span class="ml-1 font-mono">{shortenAddress(join.apiKeyId)}</span
+              >
             </div>
             {#if join.orderId}
               <div>
                 <span class="text-base-content/40">Order:</span>
-                <span class="ml-1 font-mono">{shortenAddress(join.orderId)}</span>
+                <span class="ml-1 font-mono"
+                  >{shortenAddress(join.orderId)}</span
+                >
               </div>
             {/if}
             <div>
-              <span class="text-base-content/40">{$_("admin_direct_mm_created_time")}:</span>
+              <span class="text-base-content/40"
+                >{$_("admin_direct_mm_created_time")}:</span
+              >
               <span class="ml-1">{formatDate(join.createdAt)}</span>
             </div>
           </div>
@@ -233,7 +274,8 @@
               </div>
             </div>
             <div class="flex flex-col">
-              <span class="font-bold text-base-content text-[15px]">{name}</span>
+              <span class="font-bold text-base-content text-[15px]">{name}</span
+              >
               <span class="text-xs text-base-content/50"
                 >{$_("admin_direct_mm_exchange_label")}: {exchange}</span
               >

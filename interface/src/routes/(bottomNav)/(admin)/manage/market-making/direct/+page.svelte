@@ -347,8 +347,8 @@
       );
       await refreshPage();
       showJoinModal = false;
-      toast.success($_("admin_direct_mm_campaign_join_pending"), {
-        description: $_("admin_direct_mm_recovery_monitor_status"),
+      toast.success($_("admin_direct_mm_campaign_join_success"), {
+        description: $_("admin_direct_mm_joined_campaigns"),
       });
     } catch (error) {
       toast.error(getErrorMessage(error), {
@@ -367,7 +367,7 @@
   function openJoinModal(campaign: Record<string, unknown>) {
     selectedCampaign = campaign;
     joinCampaignAddress = String(campaign.address || "");
-    joinCampaignChainId = Number(campaign.chainId || 0);
+    joinCampaignChainId = Number(campaign.chain_id || campaign.chainId || 137);
     joinCampaignEvmAddress = walletStatusAddress;
     showJoinModal = true;
   }

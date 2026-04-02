@@ -75,7 +75,9 @@ export class AdminDirectMarketMakingService {
     dto: DirectStartMarketMakingDto,
     adminUserId?: string,
   ): Promise<{ orderId: string; state: string; warnings: string[] }> {
-    const apiKey = await this.exchangeApiKeyService.readAPIKey(dto.apiKeyId);
+    const apiKey = await this.exchangeApiKeyService.readDecryptedAPIKey(
+      dto.apiKeyId,
+    );
 
     if (!apiKey) {
       throw new BadRequestException('API key not found');
@@ -330,7 +332,11 @@ export class AdminDirectMarketMakingService {
   }
 
   async joinCampaign(dto: CampaignJoinRequestDto) {
-    const apiKey = await this.exchangeApiKeyService.readAPIKey(dto.apiKeyId);
+    const normalizedChainId =
+      Number(dto.chainId) > 0 ? Number(dto.chainId) : 137;
+    const apiKey = await this.exchangeApiKeyService.readDecryptedAPIKey(
+      dto.apiKeyId,
+    );
 
     if (!apiKey) {
       throw new BadRequestException('API key not found');
@@ -341,7 +347,7 @@ export class AdminDirectMarketMakingService {
         evmAddress: dto.evmAddress.toLowerCase(),
         apiKeyId: dto.apiKeyId,
         campaignAddress: dto.campaignAddress.toLowerCase(),
-        chainId: dto.chainId,
+        chainId: normalizedChainId,
       },
     });
 
@@ -367,14 +373,14 @@ export class AdminDirectMarketMakingService {
       apiKey.exchange,
       apiKey.api_key,
       apiKey.api_secret,
-      dto.chainId,
+      normalizedChainId,
       dto.campaignAddress.toLowerCase(),
     );
 
     const join = this.campaignJoinRepository.create({
       evmAddress: dto.evmAddress.toLowerCase(),
       apiKeyId: dto.apiKeyId,
-      chainId: dto.chainId,
+      chainId: normalizedChainId,
       campaignAddress: dto.campaignAddress.toLowerCase(),
       status: 'joined',
     });
@@ -494,9 +500,7 @@ export class AdminDirectMarketMakingService {
 
     await Promise.all(
       joins
-        .filter(
-          (join) => join.status !== 'failed' && join.status !== 'detached',
-        )
+        .filter((join) => join.status !== 'detached')
         .map((join) =>
           this.campaignJoinRepository.update(
             { id: join.id },
@@ -520,7 +524,7 @@ export class AdminDirectMarketMakingService {
           { id: join.id },
           {
             orderId: null,
-            status: join.status === 'failed' ? 'failed' : 'detached',
+            status: 'detached',
           },
         ),
       ),

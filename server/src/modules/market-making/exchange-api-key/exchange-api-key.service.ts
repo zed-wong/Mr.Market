@@ -711,6 +711,32 @@ export class ExchangeApiKeyService {
     return await this.exchangeRepository.readAPIKey(keyId);
   }
 
+  async readDecryptedAPIKey(keyId: string): Promise<APIKeysConfig | null> {
+    const key = await this.exchangeRepository.readAPIKey(keyId);
+
+    if (!key) {
+      return null;
+    }
+
+    const privateKey =
+      this.configService.get<string>('admin.encryption_private_key') || '';
+
+    let apiSecret = key.api_secret;
+
+    if (privateKey) {
+      try {
+        apiSecret = decrypt(apiSecret, privateKey);
+      } catch (e) {
+        this.logger.warn(`Failed to decrypt key ${key.key_id}: ${e.message}`);
+      }
+    }
+
+    return {
+      ...key,
+      api_secret: apiSecret,
+    };
+  }
+
   async findFirstAPIKeyByExchange(
     exchange: string,
   ): Promise<APIKeysConfig | null> {

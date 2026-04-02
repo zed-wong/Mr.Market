@@ -61,6 +61,12 @@ describe('AdminDirectMarketMakingService', () => {
         api_key: 'api-key',
         api_secret: 'api-secret',
       }),
+      readDecryptedAPIKey: jest.fn().mockResolvedValue({
+        exchange: 'binance',
+        exchange_index: 'desk-1',
+        api_key: 'api-key',
+        api_secret: 'plain-secret',
+      }),
     };
     const exchange = {
       fetchBalance: jest.fn().mockResolvedValue({
@@ -529,7 +535,7 @@ describe('AdminDirectMarketMakingService', () => {
       'secret-key',
       'binance',
       'api-key',
-      'api-secret',
+      'plain-secret',
       1,
       '0x0000000000000000000000000000000000000002',
     );
@@ -537,6 +543,41 @@ describe('AdminDirectMarketMakingService', () => {
       expect.objectContaining({
         status: 'joined',
       }),
+    );
+  });
+
+  it('defaults campaign join chain id to 137 when request chainId is invalid', async () => {
+    const {
+      service,
+      exchangeApiKeyService,
+      campaignJoinRepository,
+      configService,
+      campaignService,
+    } = buildService();
+
+    configService.get.mockReturnValue('secret-key');
+    exchangeApiKeyService.readDecryptedAPIKey.mockResolvedValue({
+      exchange: 'binance',
+      api_key: 'api-key',
+      api_secret: 'plain-secret',
+    });
+    campaignJoinRepository.findOne.mockResolvedValue(null);
+
+    await service.joinCampaign({
+      evmAddress: '0x0000000000000000000000000000000000000001',
+      apiKeyId: 'api-key-1',
+      chainId: 0,
+      campaignAddress: '0x0000000000000000000000000000000000000002',
+    });
+
+    expect(campaignService.joinCampaignWithAuth).toHaveBeenCalledWith(
+      '0x0000000000000000000000000000000000000001',
+      'secret-key',
+      'binance',
+      'api-key',
+      'plain-secret',
+      137,
+      '0x0000000000000000000000000000000000000002',
     );
   });
 
@@ -584,7 +625,7 @@ describe('AdminDirectMarketMakingService', () => {
 
     configService.get.mockReturnValue('secret-key');
     campaignJoinRepository.findOne.mockResolvedValue(null);
-    exchangeApiKeyService.readAPIKey.mockResolvedValue({
+    exchangeApiKeyService.readDecryptedAPIKey.mockResolvedValue({
       exchange: 'binance',
       api_key: 'api-key',
     });

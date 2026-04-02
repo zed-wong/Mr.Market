@@ -94,6 +94,12 @@
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
 
+  function shortenAddress(address: string): string {
+    if (!address) return "";
+    if (address.length <= 12) return address;
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  }
+
   function statusColor(s: string): string {
     switch (s.toLowerCase()) {
       case "active":
@@ -113,9 +119,11 @@
     filterType = "";
   }
 
-  function getJoinForCampaign(campaign: Record<string, unknown>): CampaignJoinRecord | undefined {
+  function getJoinForCampaign(
+    campaign: Record<string, unknown>,
+  ): CampaignJoinRecord | undefined {
     const addr = String(campaign.address || "").toLowerCase();
-    const chainId = Number(campaign.chainId || 0);
+    const chainId = Number(campaign.chain_id || campaign.chainId || 137);
     return campaignJoins.find(
       (j) => j.campaignAddress.toLowerCase() === addr && j.chainId === chainId,
     );
@@ -326,8 +334,15 @@
 
               <!-- Join button or joined status -->
               {#if getJoinForCampaign(campaign)}
-                <div class="flex items-center justify-center gap-2 py-2">
-                  <span class={getBadgeClass(getJoinForCampaign(campaign)?.status || "")}>
+                <div class="flex items-center justify-between gap-2 py-2">
+                  <span class="text-xs text-base-content/50">
+                    {shortenAddress(String(campaign.address || ""))}
+                  </span>
+                  <span
+                    class={getBadgeClass(
+                      getJoinForCampaign(campaign)?.status || "",
+                    )}
+                  >
                     {getStateLabel(getJoinForCampaign(campaign)?.status || "")}
                   </span>
                 </div>

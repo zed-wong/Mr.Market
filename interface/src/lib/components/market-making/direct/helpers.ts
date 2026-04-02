@@ -41,10 +41,9 @@ export function getRecoveryHint(error: unknown): string {
 }
 
 export function getBadgeClass(state: string): string {
-  if (state === "running" || state === "active") return "badge badge-success";
+  if (state === "joined") return "badge badge-success text-base-100";
   if (state === "created" || state === "pending" || state === "linked")
     return "badge badge-warning";
-  if (state === "failed") return "badge badge-error";
   return "badge";
 }
 
@@ -55,7 +54,6 @@ export function getStateLabel(state: string): string {
     running: "admin_direct_mm_state_running",
     created: "admin_direct_mm_state_created",
     stopped: "admin_direct_mm_state_stopped",
-    failed: "admin_direct_mm_state_failed",
     pending: "admin_direct_mm_state_pending",
     linked: "admin_direct_mm_state_linked",
     detached: "admin_direct_mm_state_detached",
