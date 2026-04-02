@@ -100,6 +100,22 @@ export class UserOrdersService {
     return await this.simplyGrowRepository.findOneBy({ orderId });
   }
 
+  async findOwnedSimplyGrowByOrderId(
+    userId: string,
+    orderId: string,
+  ): Promise<SimplyGrowOrder> {
+    const order = await this.simplyGrowRepository.findOneBy({
+      orderId,
+      userId,
+    });
+
+    if (!order) {
+      throw new NotFoundException('Simply grow order not found');
+    }
+
+    return order;
+  }
+
   async findSimplyGrowByUserId(userId: string): Promise<SimplyGrowOrder[]> {
     return await this.simplyGrowRepository.findBy({ userId });
   }
@@ -204,6 +220,19 @@ export class UserOrdersService {
 
   async findMarketMakingPaymentStateByIdRaw(orderId: string) {
     return await this.paymentStateRepository.findOneBy({ orderId });
+  }
+
+  async findOwnedMarketMakingPaymentStateById(userId: string, orderId: string) {
+    const result = await this.paymentStateRepository.findOneBy({
+      orderId,
+      userId,
+    });
+
+    if (!result) {
+      throw new NotFoundException('Payment state not found');
+    }
+
+    return { code: 200, message: 'Found', data: result };
   }
 
   async findMarketMakingPaymentStateByState(
@@ -334,6 +363,26 @@ export class UserOrdersService {
         source: 'admin_direct',
       })
       .getOne();
+  }
+
+  async findOwnedMarketMakingByOrderId(
+    userId: string,
+    orderId: string,
+  ): Promise<MarketMakingOrder> {
+    const order = await this.marketMakingRepository
+      .createQueryBuilder('order')
+      .where('order.orderId = :orderId', { orderId })
+      .andWhere('order.userId = :userId', { userId })
+      .andWhere('(order.source IS NULL OR order.source != :source)', {
+        source: 'admin_direct',
+      })
+      .getOne();
+
+    if (!order) {
+      throw new NotFoundException('Market making order not found');
+    }
+
+    return order;
   }
 
   async listEnabledMarketMakingStrategies() {

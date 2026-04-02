@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-04-02
+
+- Bind private user-orders reads and market-making intent creation to the authenticated JWT user, add ownership checks for payment/detail lookups, and cover the security change with controller/service unit tests
+
 ## 2026-04-01
 
 - Add an English planning note that frames the backend as a `Funding Layer` plus `Execution Layer`, with mixin, manual funding, and EVM wallets treated as funding sources that converge on a shared `ready_to_start` state
@@ -260,8 +264,6 @@
 
 - Remove interface-side market making memo generator so intent API remains the memo source of truth
 - Add guards and queue alignment for market-making processing (BigNumber import, withdrawal monitor retries, VWAP safety)
-
-## 2026-02-02
 
 - Allow market-making fee checks to treat base/quote assets as fees and dedupe payment check jobs per order
 

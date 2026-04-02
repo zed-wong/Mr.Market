@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -468,6 +469,94 @@ describe('UserOrdersService', () => {
         '(order.source IS NULL OR order.source != :source)',
         { source: 'admin_direct' },
       );
+    });
+
+    it('scopes owned market-making detail lookups to the authenticated user', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(undefined),
+      };
+
+      jest
+        .spyOn(marketMakingRepository, 'createQueryBuilder')
+        .mockReturnValue(queryBuilder as any);
+
+      await expect(
+        service.findOwnedMarketMakingByOrderId('user-1', 'order-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'order.orderId = :orderId',
+        {
+          orderId: 'order-1',
+        },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'order.userId = :userId',
+        {
+          userId: 'user-1',
+        },
+      );
+    });
+  });
+
+  describe('ownership checks', () => {
+    it('returns payment state only when it belongs to the user', async () => {
+      const paymentState = {
+        orderId: 'order-1',
+        userId: 'user-1',
+      } as MarketMakingPaymentState;
+
+      const findOneBySpy = jest
+        .spyOn(
+          testingModule.get<Repository<MarketMakingPaymentState>>(
+            getRepositoryToken(MarketMakingPaymentState),
+          ),
+          'findOneBy',
+        )
+        .mockResolvedValueOnce(paymentState);
+
+      await expect(
+        service.findOwnedMarketMakingPaymentStateById('user-1', 'order-1'),
+      ).resolves.toEqual({
+        code: 200,
+        message: 'Found',
+        data: paymentState,
+      });
+
+      expect(findOneBySpy).toHaveBeenCalledWith({
+        orderId: 'order-1',
+        userId: 'user-1',
+      });
+    });
+
+    it('rejects payment state lookups for other users', async () => {
+      jest
+        .spyOn(
+          testingModule.get<Repository<MarketMakingPaymentState>>(
+            getRepositoryToken(MarketMakingPaymentState),
+          ),
+          'findOneBy',
+        )
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOwnedMarketMakingPaymentStateById('user-2', 'order-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects simply grow detail lookups for other users', async () => {
+      jest.spyOn(simplyGrowRepository, 'findOneBy').mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOwnedSimplyGrowByOrderId('user-2', 'order-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(simplyGrowRepository.findOneBy).toHaveBeenCalledWith({
+        orderId: 'order-1',
+        userId: 'user-2',
+      });
     });
   });
 });
