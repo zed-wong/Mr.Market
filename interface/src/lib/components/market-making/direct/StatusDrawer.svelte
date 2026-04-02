@@ -3,7 +3,7 @@
   import {
     getBadgeClass,
     getStateLabel,
-  } from "./helpers";
+  } from "$lib/components/market-making/direct/helpers";
   import type { DirectOrderSummary, DirectOrderStatus } from "$lib/types/hufi/admin-direct-market-making";
 
   export let order: DirectOrderSummary | null = null;

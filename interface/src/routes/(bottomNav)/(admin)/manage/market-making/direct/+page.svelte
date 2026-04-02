@@ -20,16 +20,16 @@
   } from "$lib/types/hufi/admin-direct-market-making";
   import type { GrowInfo } from "$lib/types/hufi/grow";
 
-  import { getErrorMessage, getRecoveryHint, normalizeConfigOverrides } from "./components/helpers";
-  import ApiKeysPanel from "./components/ApiKeysPanel.svelte";
-  import CampaignsPanel from "./components/CampaignsPanel.svelte";
-  import OrdersTable from "./components/OrdersTable.svelte";
-  import CreateOrderModal from "./components/CreateOrderModal.svelte";
-  import StartAllModal from "./components/StartAllModal.svelte";
-  import StopAllModal from "./components/StopAllModal.svelte";
-  import StopOrderModal from "./components/StopOrderModal.svelte";
-  import JoinCampaignModal from "./components/JoinCampaignModal.svelte";
-  import StatusDrawer from "./components/StatusDrawer.svelte";
+  import { getErrorMessage, getRecoveryHint, normalizeConfigOverrides } from "$lib/components/market-making/direct/helpers";
+  import ApiKeysPanel from "$lib/components/market-making/direct/ApiKeysPanel.svelte";
+  import CampaignsPanel from "$lib/components/market-making/direct/CampaignsPanel.svelte";
+  import OrdersTable from "$lib/components/market-making/direct/OrdersTable.svelte";
+  import CreateOrderModal from "$lib/components/market-making/direct/CreateOrderModal.svelte";
+  import StartAllModal from "$lib/components/market-making/direct/StartAllModal.svelte";
+  import StopAllModal from "$lib/components/market-making/direct/StopAllModal.svelte";
+  import StopOrderModal from "$lib/components/market-making/direct/StopOrderModal.svelte";
+  import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
+  import StatusDrawer from "$lib/components/market-making/direct/StatusDrawer.svelte";
 
   type OverrideRow = { key: string; value: string };
 
