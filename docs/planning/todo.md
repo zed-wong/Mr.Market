@@ -133,7 +133,7 @@ Admin page
 - [] 4. Merge manage exchange and api keys into one page, has consistent logic and don't make user confuse
 
 Admin exchanges management
-- [] 1. should design a way to merge /exchanges and /api-keys. so user don't get confused when adding exchange. api keys should be managed in the same place as exchanges, should be in the dropdown of the added exchange management page
+- [future] 1. Unified Exchange Account design — merge `admin_exchanges` + `api_keys_config` into single `ExchangeAccount` entity. See `docs/planning/2026-04-02-unified-exchange-account-design.md` for full design.
 
 # Hufi
 

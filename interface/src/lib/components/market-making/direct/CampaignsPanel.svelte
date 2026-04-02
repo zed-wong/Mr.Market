@@ -134,7 +134,7 @@
       </button>
     </div>
 
-    <div class="flex flex-col gap-3 mt-2">
+    <div class="mt-2 flex max-h-64 flex-col gap-3 overflow-y-auto pr-1">
       {#each campaignJoins as join}
         {@const joinedCampaign = getJoinCampaign(join)}
         {@const joinedName = String(

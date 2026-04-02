@@ -2,7 +2,7 @@
   import { _ } from "svelte-i18n";
   import { toast } from "svelte-sonner";
   import type { AdminSingleKey } from "$lib/types/hufi/admin";
-  import { formatFundAmount } from "./helpers";
+  
 
   export let show = false;
   export let isJoiningCampaign = false;
@@ -15,25 +15,6 @@
   export let onConfirm: () => void;
   export let onCancel: () => void;
 
-  function getDetail(key: string): unknown {
-    const details = campaign.details;
-    if (details && typeof details === "object" && !Array.isArray(details)) {
-      return (details as Record<string, unknown>)[key];
-    }
-    return undefined;
-  }
-
-  function formatDate(d: unknown): string {
-    if (!d) return "";
-    const date = new Date(String(d));
-    if (isNaN(date.getTime())) return String(d);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  }
-
   $: campaignName = String(
     campaign.symbol || campaign.name || $_("admin_direct_mm_title"),
   );
@@ -43,34 +24,6 @@
   $: status = String(campaign.status || "active");
   $: exchange = String(
     campaign.exchange_name || campaign.exchange || $_("admin_direct_mm_na"),
-  );
-  $: rewardPool = formatFundAmount(
-    campaign.fund_amount || campaign.rewardPool,
-    campaign.fund_token_decimals,
-  );
-  $: rewardToken = String(
-    campaign.fund_token_symbol || campaign.rewardToken || "",
-  );
-  $: dailyVolTarget = String(
-    campaign.daily_vol_target ||
-      getDetail("daily_volume_target") ||
-      campaign.dailyVolTarget ||
-      $_("admin_direct_mm_na"),
-  );
-  $: dailyVolToken = String(
-    campaign.daily_vol_token ||
-      getDetail("daily_vol_token") ||
-      campaign.dailyVolToken ||
-      "",
-  );
-  $: startDate = formatDate(campaign.start_date || campaign.startDate);
-  $: endDate = formatDate(campaign.end_date || campaign.endDate);
-  $: formattedDateRange =
-    startDate && endDate
-      ? `${startDate} - ${endDate}`
-      : $_("admin_direct_mm_na");
-  $: selectedApiKey = apiKeys.find(
-    (apiKey) => apiKey.key_id === joinCampaignApiKeyId,
   );
 
   function statusColor(s: string): string {
@@ -157,7 +110,6 @@
         <div class="mt-5 flex flex-col gap-2">
           <span class="text-[1.7rem] font-bold leading-tight text-base-content">
             {campaignName}
-            {campaignType}
           </span>
           <div class="flex items-center gap-2">
             <span class="h-2 w-2 rounded-full {statusDot(status)}"></span>
@@ -234,59 +186,16 @@
               <option value="">{$_("admin_direct_mm_select_api_key")}</option>
               {#each apiKeys as apiKey}
                 <option value={apiKey.key_id}>
-                  {apiKey.name} · {apiKey.exchange}
+                  <span>
+                    {apiKey.name}
+                  </span>
+                  <span class="capitalize">
+                    · {apiKey.exchange}
+                  </span>
                 </option>
               {/each}
             </select>
-            {#if selectedApiKey}
-              <span class="mt-1 text-[11px] text-base-content/45">
-                {selectedApiKey.exchange_index}
-              </span>
-            {/if}
           </label>
-        </div>
-
-        <div class="mt-6 grid grid-cols-2 gap-3">
-          <div class="rounded-2xl bg-primary/5 p-4">
-            <span
-              class="block text-[10px] font-bold tracking-wider text-base-content/40 capitalize"
-            >
-              {$_("admin_direct_mm_reward_pool")}
-            </span>
-            <span class="mt-2 block text-lg font-bold text-base-content">
-              {rewardPool}{rewardToken ? ` ${rewardToken}` : ""}
-            </span>
-          </div>
-          <div class="rounded-2xl bg-primary/5 p-4">
-            <span
-              class="block text-[10px] font-bold tracking-wider text-base-content/40 capitalize"
-            >
-              {$_("admin_direct_mm_daily_vol_target")}
-            </span>
-            <span class="mt-2 block text-lg font-bold text-base-content">
-              {dailyVolTarget}{dailyVolToken ? ` ${dailyVolToken}` : ""}
-            </span>
-          </div>
-          <div class="rounded-2xl bg-primary/5 p-4">
-            <span
-              class="block text-[10px] font-bold tracking-wider text-base-content/40 capitalize"
-            >
-              {$_("admin_direct_mm_exchange")}
-            </span>
-            <span class="mt-2 block text-lg font-bold text-base-content"
-              >{exchange}</span
-            >
-          </div>
-          <div class="rounded-2xl bg-primary/5 p-4">
-            <span
-              class="block text-[10px] font-bold tracking-wider text-base-content/40 capitalize"
-            >
-              {$_("admin_direct_mm_date_range")}
-            </span>
-            <span class="mt-2 block text-lg font-bold text-base-content"
-              >{formattedDateRange}</span
-            >
-          </div>
         </div>
 
         <div class="mt-7 flex items-center justify-end gap-4">

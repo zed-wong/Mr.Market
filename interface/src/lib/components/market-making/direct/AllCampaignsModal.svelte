@@ -260,7 +260,7 @@
             {@const targetValue = getTargetValue(campaign)}
             {@const targetToken = getTargetToken(campaign)}
 
-            <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-3 rounded-2xl bg-base-200 p-6">
               <!-- Name + exchange + status -->
               <div class="flex items-start justify-between">
                 <div>

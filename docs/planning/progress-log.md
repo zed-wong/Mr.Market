@@ -4,6 +4,10 @@
 
 - Bind private user-orders reads and market-making intent creation to the authenticated JWT user, add ownership checks for payment/detail lookups, and cover the security change with controller/service unit tests
 
+## 2026-04-02 — Unified Exchange Account Design
+
+- Designed and documented unified `ExchangeAccount` entity to replace `admin_exchanges` + `api_keys_config` split. Root cause: `admin_exchanges.enable` has no runtime effect — CCXT always needs credentials. Saved to `docs/planning/2026-04-02-unified-exchange-account-design.md`, marked as future TODO in `todo.md`.
+
 ## 2026-04-01
 
 - Add an English planning note that frames the backend as a `Funding Layer` plus `Execution Layer`, with mixin, manual funding, and EVM wallets treated as funding sources that converge on a shared `ready_to_start` state
