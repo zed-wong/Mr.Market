@@ -811,5 +811,14 @@
   "admin_direct_mm_state_joined": "已加入",
   "admin_direct_mm_state_gone": "已移除",
   "admin_direct_mm_state_stale": "已过期",
-  "admin_direct_mm_state_unknown": "未知"
+  "admin_direct_mm_state_unknown": "未知",
+  "admin_direct_mm_all_campaigns_subtitle": "发现机构级做市活动。",
+  "admin_direct_mm_search_campaign": "搜索活动名称...",
+  "admin_direct_mm_all_exchanges": "所有交易所",
+  "admin_direct_mm_all_pairs": "所有交易对",
+  "admin_direct_mm_all_types": "所有类型",
+  "admin_direct_mm_daily_volume": "每日交易量",
+  "admin_direct_mm_duration": "持续时间",
+  "admin_direct_mm_showing": "显示",
+  "admin_direct_mm_of": "共"
 }

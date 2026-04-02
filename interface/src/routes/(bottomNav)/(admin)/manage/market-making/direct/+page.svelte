@@ -33,6 +33,7 @@
   import StopAllModal from "$lib/components/market-making/direct/StopAllModal.svelte";
   import StopOrderModal from "$lib/components/market-making/direct/StopOrderModal.svelte";
   import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
+  import AllCampaignsModal from "$lib/components/market-making/direct/AllCampaignsModal.svelte";
   import StatusDrawer from "$lib/components/market-making/direct/StatusDrawer.svelte";
 
   type OverrideRow = { key: string; value: string };
@@ -79,6 +80,7 @@
   let statusPollTimer: ReturnType<typeof setInterval> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
+  let showAllCampaigns = false;
   let showJoinModal = false;
   let isJoiningCampaign = false;
   let joinCampaignAddress = "";
@@ -343,6 +345,11 @@
     }
   }
 
+  function openJoinFromAll(campaign: Record<string, unknown>) {
+    showAllCampaigns = false;
+    openJoinModal(campaign);
+  }
+
   function openJoinModal(campaign: Record<string, unknown>) {
     selectedCampaign = campaign;
     joinCampaignAddress = String(campaign.address || "");
@@ -364,7 +371,7 @@
     <!-- Top Row -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <ApiKeysPanel {apiKeys} />
-      <CampaignsPanel {campaigns} onJoin={openJoinModal} />
+      <CampaignsPanel {campaigns} onJoin={openJoinModal} onViewAll={() => (showAllCampaigns = true)} />
     </div>
 
     <!-- Market Making -->
@@ -417,6 +424,13 @@
   {isStopping}
   onConfirm={confirmStopOrder}
   onCancel={() => (stopOrderCandidate = null)}
+/>
+
+<AllCampaignsModal
+  show={showAllCampaigns}
+  {campaigns}
+  onJoin={openJoinFromAll}
+  onClose={() => (showAllCampaigns = false)}
 />
 
 <JoinCampaignModal

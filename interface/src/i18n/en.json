@@ -814,5 +814,14 @@
   "admin_direct_mm_state_joined": "JOINED",
   "admin_direct_mm_state_gone": "GONE",
   "admin_direct_mm_state_stale": "STALE",
-  "admin_direct_mm_state_unknown": "UNKNOWN"
+  "admin_direct_mm_state_unknown": "UNKNOWN",
+  "admin_direct_mm_all_campaigns_subtitle": "Discover institutional grade market making campaigns.",
+  "admin_direct_mm_search_campaign": "Search campaign name...",
+  "admin_direct_mm_all_exchanges": "All Exchanges",
+  "admin_direct_mm_all_pairs": "All Pairs",
+  "admin_direct_mm_all_types": "All Types",
+  "admin_direct_mm_daily_volume": "Daily Volume",
+  "admin_direct_mm_duration": "Duration",
+  "admin_direct_mm_showing": "Showing",
+  "admin_direct_mm_of": "of"
 }

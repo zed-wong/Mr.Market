@@ -68,7 +68,7 @@
               </div>
             {:else}
               <div
-                class="bg-red-50 text-red-600 text-[10px] font-bold px-3 py-1 rounded border border-red-100 tracking-wide capitalize"
+                class="bg-success/10 text-success text-[10px] font-bold px-3 py-1 rounded border border-success/20 tracking-wide capitalize"
               >
                 {$_("admin_direct_mm_api_key_connected")}
               </div>

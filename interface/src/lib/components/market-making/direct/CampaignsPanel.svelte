@@ -2,9 +2,20 @@
   import { _ } from "svelte-i18n";
   export let campaigns: Array<Record<string, unknown>> = [];
   export let onJoin: (campaign: Record<string, unknown>) => void;
+  export let onViewAll: () => void = () => {};
 
   $: campaign = campaigns.length > 0 ? campaigns[0] : null;
   $: campaignDetails = ((campaign?.details as Record<string, unknown>) || {});
+
+  function formatFundAmount(amount: unknown, decimals: unknown): string {
+    if (!amount) return "—";
+    const raw = String(amount);
+    const dec = Number(decimals) || 0;
+    if (dec <= 0) return raw;
+    const num = Number(raw) / Math.pow(10, dec);
+    if (isNaN(num)) return raw;
+    return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
 
   function formatDate(d: unknown): string {
     if (!d) return "";
@@ -34,15 +45,15 @@
       </span>
     </div>
     {#if campaigns.length > 1}
-      <a
-        href="/manage/market-making/direct/campaigns"
-        class="text-primary font-semibold text-sm flex items-center gap-1 hover:underline whitespace-nowrap"
+      <button
+        class="text-primary font-semibold text-sm flex items-center gap-1 hover:underline whitespace-nowrap bg-transparent border-none p-0 cursor-pointer"
+        on:click={onViewAll}
       >
         {$_("admin_direct_mm_view_all")}
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
         </svg>
-      </a>
+      </button>
     {/if}
   </div>
 
@@ -50,7 +61,7 @@
     {@const name = String(campaign.symbol || campaign.name || "—")}
     {@const status = String(campaign.status || "active")}
     {@const exchange = String(campaign.exchange_name || campaign.exchange || "—")}
-    {@const rewardPool = String(campaign.fund_amount || campaign.rewardPool || "—")}
+    {@const rewardPool = formatFundAmount(campaign.fund_amount || campaign.rewardPool, campaign.fund_token_decimals)}
     {@const rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "")}
     {@const dailyVolTarget = String(campaign.daily_vol_target || campaignDetails.daily_vol_target || campaign.dailyVolTarget || "—")}
     {@const dailyVolToken = String(campaign.daily_vol_token || campaignDetails.daily_vol_token || campaign.dailyVolToken || "")}
