@@ -590,4 +590,32 @@ describe('AdminDirectMarketMakingService', () => {
       { status: 'failed' },
     );
   });
+
+  it('returns wallet status with derived address when WEB3 private key is configured', async () => {
+    const { service, configService } = buildService();
+
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'WEB3_PRIVATE_KEY' || key === 'web3.private_key') {
+        return '0x59c6995e998f97a5a0044966f094538e0d7d4e1b3f43b4374c1c1ff717a8ba4c';
+      }
+
+      return undefined;
+    });
+
+    await expect(service.getWalletStatus()).resolves.toEqual({
+      configured: true,
+      address: '0x18010af8cdbc0aa92f0d3d38bbde742ef6d265ad',
+    });
+  });
+
+  it('returns wallet status as not configured when WEB3 private key is missing', async () => {
+    const { service, configService } = buildService();
+
+    configService.get.mockReturnValue(undefined);
+
+    await expect(service.getWalletStatus()).resolves.toEqual({
+      configured: false,
+      address: null,
+    });
+  });
 });

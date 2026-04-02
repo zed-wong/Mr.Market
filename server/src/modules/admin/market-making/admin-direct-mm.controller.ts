@@ -13,6 +13,7 @@ import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 import {
   CampaignJoinRequestDto,
   DirectStartMarketMakingDto,
+  DirectWalletStatusDto,
   DirectStopMarketMakingDto,
 } from './admin-direct-mm.dto';
 import { AdminDirectMarketMakingService } from './admin-direct-mm.service';
@@ -72,5 +73,11 @@ export class AdminDirectMarketMakingController {
   @ApiOperation({ summary: 'List HuFi campaign joins' })
   async listCampaignJoins() {
     return this.adminDirectMarketMakingService.listCampaignJoins();
+  }
+
+  @Get('wallet-status')
+  @ApiOperation({ summary: 'Get server EVM wallet status for admin direct market making' })
+  async getWalletStatus(): Promise<DirectWalletStatusDto> {
+    return this.adminDirectMarketMakingService.getWalletStatus();
   }
 }

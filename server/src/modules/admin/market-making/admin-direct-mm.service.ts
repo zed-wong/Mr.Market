@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Wallet } from 'ethers';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
@@ -373,6 +374,32 @@ export class AdminDirectMarketMakingService {
     return this.campaignJoinRepository.find({
       order: { updatedAt: 'DESC' },
     });
+  }
+
+  async getWalletStatus(): Promise<{ configured: boolean; address: string | null }> {
+    const privateKey =
+      this.configService.get<string>('WEB3_PRIVATE_KEY') ||
+      this.configService.get<string>('web3.private_key') ||
+      process.env.WEB3_PRIVATE_KEY;
+
+    if (!privateKey) {
+      return {
+        configured: false,
+        address: null,
+      };
+    }
+
+    try {
+      return {
+        configured: true,
+        address: new Wallet(privateKey).address.toLowerCase(),
+      };
+    } catch {
+      return {
+        configured: false,
+        address: null,
+      };
+    }
   }
 
   mapCCXTError(error: unknown): HttpException {

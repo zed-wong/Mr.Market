@@ -1,6 +1,8 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
+  import { toast } from "svelte-sonner";
   import type { AdminSingleKey } from "$lib/types/hufi/admin";
+  import { formatFundAmount } from "./helpers";
 
   export let show = false;
   export let isJoiningCampaign = false;
@@ -13,16 +15,6 @@
   export let onConfirm: () => void;
   export let onCancel: () => void;
 
-  function formatFundAmount(amount: unknown, decimals: unknown): string {
-    if (!amount) return $_("admin_direct_mm_na");
-    const raw = String(amount);
-    const dec = Number(decimals) || 0;
-    if (dec <= 0) return raw;
-    const num = Number(raw) / Math.pow(10, dec);
-    if (isNaN(num)) return raw;
-    return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
-  }
-
   function getDetail(key: string): unknown {
     const details = campaign.details;
     if (details && typeof details === "object" && !Array.isArray(details)) {
@@ -31,203 +23,307 @@
     return undefined;
   }
 
-  function formatTargetValue(value: unknown): string {
-    if (value === null || value === undefined || value === "") return $_("admin_direct_mm_na");
-    const num = Number(value);
-    if (Number.isNaN(num)) return String(value);
-    return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  function formatDate(d: unknown): string {
+    if (!d) return "";
+    const date = new Date(String(d));
+    if (isNaN(date.getTime())) return String(d);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   }
 
-  function getTargetLabel(type: string): string {
-    switch (type.toUpperCase()) {
-      case "THRESHOLD":
-        return $_("admin_direct_mm_minimum_balance_target");
-      case "HOLDING":
-        return $_("admin_direct_mm_daily_balance_target");
-      default:
-        return $_("admin_direct_mm_daily_vol_target");
-    }
-  }
-
-  function getTargetValue(type: string): string {
-    if (type === "THRESHOLD") {
-      return formatTargetValue(getDetail("minimum_balance_target"));
-    }
-
-    if (type === "HOLDING") {
-      return formatTargetValue(getDetail("daily_balance_target"));
-    }
-
-    return formatTargetValue(getDetail("daily_volume_target"));
-  }
-
-  function getTargetToken(type: string): string {
-    if (type === "THRESHOLD" || type === "HOLDING") {
-      return campaignName;
-    }
-    return rewardToken;
-  }
-
-  $: campaignName = String(campaign.symbol || campaign.name || $_("admin_direct_mm_title"));
+  $: campaignName = String(
+    campaign.symbol || campaign.name || $_("admin_direct_mm_title"),
+  );
+  $: campaignType = String(
+    campaign.type || campaign.campaignType || "Market Making",
+  );
   $: status = String(campaign.status || "active");
-  $: campaignType = String(campaign.type || campaign.campaignType || "MARKET_MAKING");
-  $: exchange = String(campaign.exchange_name || campaign.exchange || $_("admin_direct_mm_na"));
-  $: rewardPool = formatFundAmount(campaign.fund_amount || campaign.rewardPool, campaign.fund_token_decimals);
-  $: rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "");
-  $: targetLabel = getTargetLabel(campaignType);
-  $: targetValue = getTargetValue(campaignType);
-  $: targetToken = getTargetToken(campaignType);
-  $: oracleFees = String(campaign.oracleFees || $_("admin_direct_mm_na"));
-  $: oracleFeesToken = String(campaign.oracleFeesToken || "");
-  $: oracleFeesPercent = String(campaign.oracleFeesPercent || "");
-  $: startDate = campaign.start_date ? String(campaign.start_date) : (campaign.startDate ? String(campaign.startDate) : "");
-  $: endDate = campaign.end_date ? String(campaign.end_date) : (campaign.endDate ? String(campaign.endDate) : "");
-  $: dateRange = startDate && endDate ? `(${startDate} - ${endDate})` : "";
+  $: exchange = String(
+    campaign.exchange_name || campaign.exchange || $_("admin_direct_mm_na"),
+  );
+  $: rewardPool = formatFundAmount(
+    campaign.fund_amount || campaign.rewardPool,
+    campaign.fund_token_decimals,
+  );
+  $: rewardToken = String(
+    campaign.fund_token_symbol || campaign.rewardToken || "",
+  );
+  $: dailyVolTarget = String(
+    campaign.daily_vol_target ||
+      getDetail("daily_volume_target") ||
+      campaign.dailyVolTarget ||
+      $_("admin_direct_mm_na"),
+  );
+  $: dailyVolToken = String(
+    campaign.daily_vol_token ||
+      getDetail("daily_vol_token") ||
+      campaign.dailyVolToken ||
+      "",
+  );
+  $: startDate = formatDate(campaign.start_date || campaign.startDate);
+  $: endDate = formatDate(campaign.end_date || campaign.endDate);
+  $: formattedDateRange =
+    startDate && endDate
+      ? `${startDate} - ${endDate}`
+      : $_("admin_direct_mm_na");
+  $: selectedApiKey = apiKeys.find(
+    (apiKey) => apiKey.key_id === joinCampaignApiKeyId,
+  );
 
   function statusColor(s: string): string {
     switch (s.toLowerCase()) {
-      case "active": return "text-success";
+      case "active":
+        return "text-success";
       case "ended":
-      case "closed": return "text-error";
-      default: return "text-warning";
+      case "closed":
+        return "text-error";
+      default:
+        return "text-warning";
     }
+  }
+
+  function statusDot(s: string): string {
+    switch (s.toLowerCase()) {
+      case "active":
+        return "bg-success";
+      case "ended":
+      case "closed":
+        return "bg-error";
+      default:
+        return "bg-warning";
+    }
+  }
+
+  async function copyAddress() {
+    if (!joinCampaignEvmAddress) return;
+    await navigator.clipboard.writeText(joinCampaignEvmAddress);
+    toast.success($_("copied"));
   }
 </script>
 
 {#if show}
-  <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
-    <div class="modal-box bg-base-100 p-8 rounded-2xl max-w-[520px] shadow-2xl border border-base-200/50">
-      <!-- Header -->
-      <div class="flex items-start justify-between mb-5">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-base-300 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-base-content/70">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-            </svg>
-          </div>
-          <div>
-            <span class="text-lg font-bold text-base-content">{campaignName}</span>
-            <div class="flex items-center gap-1.5 mt-0.5">
-              <span class="w-2 h-2 rounded-full {status.toLowerCase() === 'active' ? 'bg-success' : 'bg-warning'}"></span>
-              <span class="text-xs font-semibold tracking-wider capitalize {statusColor(status)}">{status}</span>
-            </div>
-          </div>
-        </div>
-        <button
-          class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
-          on:click={onCancel}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- Description -->
-      <span class="text-sm text-base-content/70 leading-relaxed">
-        {$_("admin_direct_mm_join_campaign_description", {
-          values: {
-            campaignName,
-            exchange: exchange !== $_("admin_direct_mm_na") ? exchange : "",
-            dateRange,
-          },
-        })}
-      </span>
-
-      <!-- Info Grid -->
-      <div class="grid grid-cols-2 border border-base-300 rounded-xl mt-5">
-        <div class="p-4 border-r border-b border-base-300">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_reward_pool")}</span>
-          <div class="mt-1">
-            <span class="text-base font-bold text-primary">{rewardPool}</span>
-            {#if rewardToken}
-              <span class="text-base font-bold text-primary ml-1">{rewardToken}</span>
-            {/if}
-          </div>
-        </div>
-        <div class="p-4 border-b border-base-300">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{targetLabel}</span>
-          <div class="mt-1">
-            <span class="text-base font-bold text-base-content">{targetValue}</span>
-            {#if targetToken}
-              <span class="text-base font-bold text-base-content ml-1">{targetToken}</span>
-            {/if}
-          </div>
-        </div>
-        <div class="p-4 border-r border-base-300">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_oracle_fees")}</span>
-          <div class="mt-1">
-            <span class="text-base font-bold text-base-content">{oracleFees}</span>
-            {#if oracleFeesToken}
-              <span class="text-base font-bold text-base-content ml-1">{oracleFeesToken}</span>
-            {/if}
-            {#if oracleFeesPercent}
-              <span class="text-sm text-base-content/40 ml-1">({oracleFeesPercent})</span>
-            {/if}
-          </div>
-        </div>
-        <div class="p-4">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_exchange")}</span>
-          <div class="mt-1">
-            <span class="text-base font-bold text-base-content">{exchange}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Form Fields -->
-      <div class="flex flex-col gap-4 mt-5">
-        <label class="form-control w-full">
-          <span class="label-text text-base-content text-sm font-semibold mb-1.5">
-            {$_("admin_direct_mm_evm_address")}
-          </span>
-          <input
-            class="input input-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
-            bind:value={joinCampaignEvmAddress}
-            placeholder={$_("admin_direct_mm_evm_address_placeholder")}
-          />
-        </label>
-        <label class="form-control w-full">
-          <span class="label-text text-base-content text-sm font-semibold mb-1.5">
-            {$_("admin_direct_mm_api_key")}
-          </span>
-          <select
-            class="select select-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
-            bind:value={joinCampaignApiKeyId}
+  <div class="modal modal-open bg-black/25 backdrop-blur-sm">
+    <div
+      class="modal-box max-w-[440px] overflow-hidden rounded-[28px] border border-base-200/60 bg-base-100 p-0 shadow-2xl"
+    >
+      <div class="bg-primary/5 px-7 pb-6 pt-7">
+        <div class="flex items-start justify-between">
+          <div
+            class="flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary"
           >
-            <option value="">{$_("admin_direct_mm_select_api_key")}</option>
-            {#each apiKeys as apiKey}
-              <option value={apiKey.key_id}>
-                {apiKey.name} · {apiKey.exchange} · {apiKey.exchange_index}
-              </option>
-            {/each}
-          </select>
-        </label>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M8.5 7A5.5 5.5 0 0 1 18 10.5" />
+              <path d="M15.5 17A5.5 5.5 0 0 1 6 13.5" />
+              <path d="M17 5.5v5h-5" />
+              <path d="M7 18.5v-5h5" />
+              <path d="M12 8.75v6.5" />
+              <path d="M9.75 11h4.5" />
+            </svg>
+          </div>
+          <button
+            class="btn btn-ghost btn-sm btn-circle text-base-content/50"
+            on:click={onCancel}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="h-4 w-4"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div class="mt-5 flex flex-col gap-2">
+          <span class="text-[1.7rem] font-bold leading-tight text-base-content">
+            {campaignName}
+            {campaignType}
+          </span>
+          <div class="flex items-center gap-2">
+            <span class="h-2 w-2 rounded-full {statusDot(status)}"></span>
+            <span
+              class="text-[11px] font-bold tracking-wider capitalize {statusColor(
+                status,
+              )}"
+            >
+              {status}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <!-- Actions -->
-      <div class="flex gap-3 justify-end mt-6">
-        <button
-          class="btn btn-ghost text-primary font-semibold px-6"
-          on:click={onCancel}
-        >
-          <span>{$_("admin_direct_mm_cancel")}</span>
-        </button>
-        <button
-          class="btn btn-primary text-white font-semibold px-6 gap-2"
-          disabled={isJoiningCampaign}
-          on:click={onConfirm}
-        >
-          <span>
-            {isJoiningCampaign
-              ? $_("admin_direct_mm_joining")
-              : $_("admin_direct_mm_join")}
-          </span>
-          {#if !isJoiningCampaign}
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-            </svg>
-          {/if}
-        </button>
+      <div class="px-7 pb-7 pt-6">
+        <span class="block text-sm leading-7 text-base-content/70">
+          You are about to join
+          <span class="font-semibold text-primary"
+            >{campaignName} {campaignType}</span
+          >
+          campaign{exchange !== $_("admin_direct_mm_na")
+            ? ` on ${exchange}`
+            : ""}. Please review the campaign parameters before proceeding.
+        </span>
+
+        <div class="mt-6 flex flex-col gap-4">
+          <label class="form-control w-full">
+            <span class="mb-2 text-xs font-semibold text-base-content/70">
+              {$_("admin_direct_mm_evm_address")}
+            </span>
+            <div
+              class="flex min-h-[48px] items-center gap-2 rounded-xl bg-primary/5 px-4"
+            >
+              <span
+                class="flex-1 truncate font-mono text-sm text-base-content/85"
+              >
+                {joinCampaignEvmAddress ||
+                  $_("admin_direct_mm_evm_address_placeholder")}
+              </span>
+              {#if joinCampaignEvmAddress}
+                <button
+                  class="btn btn-ghost btn-sm btn-circle h-8 min-h-8 w-8 text-primary"
+                  on:click={copyAddress}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path
+                      d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                    />
+                  </svg>
+                </button>
+              {/if}
+            </div>
+          </label>
+
+          <label class="form-control w-full">
+            <span class="mb-2 text-xs font-semibold text-base-content/70">
+              {$_("admin_direct_mm_api_key")}
+            </span>
+            <select
+              class="select select-bordered min-h-[40px] w-full bg-base-100 text-base-content focus:outline-none focus:border-primary"
+              bind:value={joinCampaignApiKeyId}
+            >
+              <option value="">{$_("admin_direct_mm_select_api_key")}</option>
+              {#each apiKeys as apiKey}
+                <option value={apiKey.key_id}>
+                  {apiKey.name} · {apiKey.exchange}
+                </option>
+              {/each}
+            </select>
+            {#if selectedApiKey}
+              <span class="mt-1 text-[11px] text-base-content/45">
+                {selectedApiKey.exchange_index}
+              </span>
+            {/if}
+          </label>
+        </div>
+
+        <div class="mt-6 grid grid-cols-2 gap-3">
+          <div class="rounded-2xl bg-primary/5 p-4">
+            <span
+              class="block text-[10px] font-bold tracking-wider text-base-content/40 capitalize"
+            >
+              {$_("admin_direct_mm_reward_pool")}
+            </span>
+            <span class="mt-2 block text-lg font-bold text-base-content">
+              {rewardPool}{rewardToken ? ` ${rewardToken}` : ""}
+            </span>
+          </div>
+          <div class="rounded-2xl bg-primary/5 p-4">
+            <span
+              class="block text-[10px] font-bold tracking-wider text-base-content/40 capitalize"
+            >
+              {$_("admin_direct_mm_daily_vol_target")}
+            </span>
+            <span class="mt-2 block text-lg font-bold text-base-content">
+              {dailyVolTarget}{dailyVolToken ? ` ${dailyVolToken}` : ""}
+            </span>
+          </div>
+          <div class="rounded-2xl bg-primary/5 p-4">
+            <span
+              class="block text-[10px] font-bold tracking-wider text-base-content/40 capitalize"
+            >
+              {$_("admin_direct_mm_exchange")}
+            </span>
+            <span class="mt-2 block text-lg font-bold text-base-content"
+              >{exchange}</span
+            >
+          </div>
+          <div class="rounded-2xl bg-primary/5 p-4">
+            <span
+              class="block text-[10px] font-bold tracking-wider text-base-content/40 capitalize"
+            >
+              {$_("admin_direct_mm_date_range")}
+            </span>
+            <span class="mt-2 block text-lg font-bold text-base-content"
+              >{formattedDateRange}</span
+            >
+          </div>
+        </div>
+
+        <div class="mt-7 flex items-center justify-end gap-4">
+          <button
+            class="btn btn-ghost px-5 font-semibold text-base-content"
+            on:click={onCancel}
+          >
+            {$_("admin_direct_mm_cancel")}
+          </button>
+          <button
+            class="btn btn-primary gap-2 px-6 font-semibold text-white"
+            disabled={isJoiningCampaign}
+            on:click={onConfirm}
+          >
+            <span
+              >{isJoiningCampaign
+                ? $_("admin_direct_mm_joining")
+                : $_("admin_direct_mm_join_now")}</span
+            >
+            {#if !isJoiningCampaign}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="2"
+                stroke="currentColor"
+                class="h-4 w-4"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+                />
+              </svg>
+            {/if}
+          </button>
+        </div>
       </div>
     </div>
   </div>

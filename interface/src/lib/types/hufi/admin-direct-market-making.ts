@@ -94,3 +94,8 @@ export interface CampaignJoinPayload {
   chainId: number;
   campaignAddress: string;
 }
+
+export interface DirectWalletStatus {
+  configured: boolean;
+  address: string | null;
+}

@@ -63,3 +63,11 @@ export class CampaignJoinRequestDto {
   @Matches(/^0x[a-fA-F0-9]{40}$/)
   campaignAddress: string;
 }
+
+export class DirectWalletStatusDto {
+  @ApiProperty()
+  configured: boolean;
+
+  @ApiProperty({ nullable: true })
+  address: string | null;
+}

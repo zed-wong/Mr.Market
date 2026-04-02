@@ -6,6 +6,7 @@ import type {
   DirectOrderStatus,
   DirectOrderSummary,
   DirectStartPayload,
+  DirectWalletStatus,
 } from "$lib/types/hufi/admin-direct-market-making";
 
 export const listDirectOrders = async (
@@ -101,6 +102,20 @@ export const listCampaignJoins = async (
 ): Promise<CampaignJoinRecord[]> => {
   const response = await fetch(
     `${MRM_BACKEND_URL}/admin/market-making/campaign-joins`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const getDirectWalletStatus = async (
+  token: string,
+): Promise<DirectWalletStatus> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/wallet-status`,
     {
       method: "GET",
       headers: getHeaders(token),

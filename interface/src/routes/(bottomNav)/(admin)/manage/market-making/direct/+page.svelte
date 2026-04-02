@@ -17,6 +17,7 @@
     CampaignJoinRecord,
     DirectOrderStatus,
     DirectOrderSummary,
+    DirectWalletStatus,
   } from "$lib/types/hufi/admin-direct-market-making";
   import type { GrowInfo } from "$lib/types/hufi/grow";
 
@@ -27,6 +28,7 @@
   } from "$lib/components/market-making/direct/helpers";
   import ApiKeysPanel from "$lib/components/market-making/direct/ApiKeysPanel.svelte";
   import CampaignsPanel from "$lib/components/market-making/direct/CampaignsPanel.svelte";
+  import EvmWalletStatusBar from "$lib/components/market-making/direct/EvmWalletStatusBar.svelte";
   import OrdersTable from "$lib/components/market-making/direct/OrdersTable.svelte";
   import CreateOrderModal from "$lib/components/market-making/direct/CreateOrderModal.svelte";
   import StartAllModal from "$lib/components/market-making/direct/StartAllModal.svelte";
@@ -47,6 +49,10 @@
   >;
   $: initialCampaignJoins = ($page.data.campaignJoins ||
     []) as CampaignJoinRecord[];
+  $: walletStatus = ($page.data.walletStatus || {
+    configured: false,
+    address: null,
+  }) as DirectWalletStatus;
   $: pairs = growInfo?.market_making?.pairs || [];
 
   let orders = initialOrders;
@@ -64,6 +70,7 @@
   let startStrategyDefinitionId = "";
   let startApiKeyId = "";
   let orderAmount = "";
+  let orderQuoteAmount = "";
   let orderSpread = "";
   let configRows: OverrideRow[] = [{ key: "", value: "" }];
 
@@ -107,6 +114,11 @@
   );
   $: selectedApiKey =
     apiKeys.find((key) => key.key_id === startApiKeyId) || null;
+  $: walletStatusAddress = walletStatus.address || "";
+  $: hasWalletConfigured = walletStatus.configured;
+  $: walletStatusHint = hasWalletConfigured
+    ? $_("admin_direct_mm_wallet_status_loaded_hint")
+    : $_("admin_direct_mm_wallet_status_missing_hint");
 
   if (!heartbeatTimer) {
     heartbeatTimer = setInterval(() => {
@@ -167,6 +179,7 @@
           configOverrides: normalizeConfigOverrides(
             configRows,
             orderAmount,
+            orderQuoteAmount,
             orderSpread,
           ),
         },
@@ -177,6 +190,7 @@
       showStartForm = false;
       configRows = [{ key: "", value: "" }];
       orderAmount = "";
+      orderQuoteAmount = "";
       orderSpread = "";
       toast.success(
         $_("admin_direct_mm_start_success", {
@@ -354,6 +368,7 @@
     selectedCampaign = campaign;
     joinCampaignAddress = String(campaign.address || "");
     joinCampaignChainId = Number(campaign.chainId || 0);
+    joinCampaignEvmAddress = walletStatusAddress;
     showJoinModal = true;
   }
 
@@ -368,6 +383,12 @@
 
 <div class="min-h-screen pb-10 bg-slate-50">
   <div class="max-w-[1400px] mx-auto p-4 sm:p-6 md:p-8 space-y-6">
+    <EvmWalletStatusBar
+      evmAddress={walletStatusAddress}
+      {hasWalletConfigured}
+      hint={walletStatusHint}
+    />
+
     <!-- Top Row -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <ApiKeysPanel {apiKeys} />
@@ -398,6 +419,7 @@
   bind:startStrategyDefinitionId
   bind:startApiKeyId
   bind:orderAmount
+  bind:orderQuoteAmount
   bind:orderSpread
   onSubmit={handleStartOrder}
   onClose={() => (showStartForm = false)}
