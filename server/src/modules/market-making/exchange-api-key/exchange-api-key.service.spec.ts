@@ -92,6 +92,7 @@ describe('ExchangeApiKeyService', () => {
           name: 'default',
           api_key: 'key',
           api_secret: 'secret',
+          created_at: '2026-04-02T00:00:00.000Z',
         } as APIKeysConfig,
       ]);
 
@@ -100,6 +101,7 @@ describe('ExchangeApiKeyService', () => {
     const result = await service.readAllAPIKeys();
 
     expect(result[0].api_secret).toBe('********');
+    expect(result[0].state).toBe('alive');
   });
 
   it('seeds API keys from env configs when DB is empty', async () => {
@@ -122,7 +124,35 @@ describe('ExchangeApiKeyService', () => {
         name: 'default',
         api_key: 'key',
         api_secret: 'enc(secret)',
+        created_at: expect.any(String),
       }),
     );
+  });
+
+  it('sets created_at when adding an api key', async () => {
+    const addAPIKey = jest.fn().mockImplementation(async (value) => value);
+    const { service } = makeService({ addAPIKey });
+    const fetchBalanceSpy = jest
+      .spyOn((ccxt as any).binance.prototype, 'fetchBalance')
+      .mockResolvedValue({ free: {} } as any);
+
+    try {
+      const result = await service.addApiKey({
+        key_id: '1',
+        exchange: 'binance',
+        exchange_index: 'default',
+        name: 'default',
+        api_key: 'key',
+        api_secret: 'transport-secret',
+      } as APIKeysConfig);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          created_at: expect.any(String),
+        }),
+      );
+    } finally {
+      fetchBalanceSpy.mockRestore();
+    }
   });
 });

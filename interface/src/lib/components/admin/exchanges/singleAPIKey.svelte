@@ -76,7 +76,7 @@
   <!-- CREATED Column -->
   <td>
     <span class="text-sm text-base-content/70"
-      >{formatCreatedValue(key.last_update)}</span
+      >{formatCreatedValue(key.created_at)}</span
     >
   </td>
 

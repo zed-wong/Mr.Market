@@ -119,12 +119,42 @@ export class ExchangeApiKeyService {
   async readAllAPIKeys() {
     const keys = await this.exchangeRepository.readAllAPIKeys();
 
-    return keys.map((k) => {
-      return {
-        ...k,
-        api_secret: '********', // Mask secret
-      };
-    });
+    return keys.map((k) => ({
+      ...k,
+      api_secret: '********',
+      state: this.resolveApiKeyState(k),
+    }));
+  }
+
+  private resolveApiKeyState(key: APIKeysConfig): string {
+    const exchangeClass = ccxt[key.exchange];
+
+    if (!exchangeClass) {
+      return 'error';
+    }
+
+    try {
+      const instance = this.exchangeInstances[key.key_id];
+
+      if (instance) {
+        return 'alive';
+      }
+
+      new exchangeClass({
+        apiKey: key.api_key,
+        secret: key.api_secret,
+      });
+
+      return 'alive';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      this.logger.warn(
+        `Failed to initialize exchange client for key ${key.key_id}: ${message}`,
+      );
+
+      return 'error';
+    }
   }
 
   async readDecryptedAPIKeys(): Promise<APIKeysConfig[]> {
@@ -189,6 +219,7 @@ export class ExchangeApiKeyService {
         apiKeyConfig.name = account.label || 'default';
         apiKeyConfig.api_key = account.apiKey;
         apiKeyConfig.api_secret = encrypt(account.secret, publicKey);
+        apiKeyConfig.created_at = getRFC3339Timestamp();
 
         await this.exchangeRepository.addAPIKey(apiKeyConfig);
         savedCount += 1;
@@ -667,6 +698,7 @@ export class ExchangeApiKeyService {
     );
 
     key.api_secret = storageEncryptedSecret;
+    key.created_at = key.created_at || getRFC3339Timestamp();
     const savedKey = await this.exchangeRepository.addAPIKey(key);
 
     // reload keys to update memory

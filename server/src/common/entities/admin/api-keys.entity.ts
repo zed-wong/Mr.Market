@@ -23,4 +23,7 @@ export class APIKeysConfig {
 
   @Column()
   api_secret: string; // The secret
+
+  @Column()
+  created_at: string; // RFC3339 creation timestamp
 }
