@@ -495,7 +495,9 @@ export class AdminDirectMarketMakingService {
 
     await Promise.all(
       joins
-        .filter((join) => join.status !== 'failed' && join.status !== 'detached')
+        .filter(
+          (join) => join.status !== 'failed' && join.status !== 'detached',
+        )
         .map((join) =>
           this.campaignJoinRepository.update(
             { id: join.id },

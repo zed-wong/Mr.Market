@@ -13,14 +13,14 @@
   export let onConfirm: () => void;
   export let onCancel: () => void;
 
-  $: campaignName = String(campaign.name || campaign.symbol || "Market Making");
+  $: campaignName = String(campaign.name || campaign.symbol || $_("admin_direct_mm_title"));
   $: status = String(campaign.status || "active");
-  $: exchange = String(campaign.exchange || campaign.exchangeName || "—");
-  $: rewardPool = String(campaign.rewardPool || "—");
+  $: exchange = String(campaign.exchange || campaign.exchangeName || $_("admin_direct_mm_na"));
+  $: rewardPool = String(campaign.rewardPool || $_("admin_direct_mm_na"));
   $: rewardToken = String(campaign.rewardToken || "");
-  $: dailyVolTarget = String(campaign.dailyVolTarget || "—");
+  $: dailyVolTarget = String(campaign.dailyVolTarget || $_("admin_direct_mm_na"));
   $: dailyVolToken = String(campaign.dailyVolToken || "");
-  $: oracleFees = String(campaign.oracleFees || "—");
+  $: oracleFees = String(campaign.oracleFees || $_("admin_direct_mm_na"));
   $: oracleFeesToken = String(campaign.oracleFeesToken || "");
   $: oracleFeesPercent = String(campaign.oracleFeesPercent || "");
   $: startDate = campaign.startDate ? String(campaign.startDate) : "";
@@ -68,13 +68,19 @@
 
       <!-- Description -->
       <span class="text-sm text-base-content/70 leading-relaxed">
-        You are about to commit capital to the {campaignName} campaign{exchange !== '—' ? ` on ${exchange}` : ''}{dateRange ? ` ${dateRange}` : ''}. Please review the campaign parameters before proceeding.
+        {$_("admin_direct_mm_join_campaign_description", {
+          values: {
+            campaignName,
+            exchange: exchange !== $_("admin_direct_mm_na") ? exchange : "",
+            dateRange,
+          },
+        })}
       </span>
 
       <!-- Info Grid -->
       <div class="grid grid-cols-2 border border-base-300 rounded-xl mt-5">
         <div class="p-4 border-r border-b border-base-300">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">Reward Pool</span>
+          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_reward_pool")}</span>
           <div class="mt-1">
             <span class="text-base font-bold text-primary">{rewardPool}</span>
             {#if rewardToken}
@@ -83,7 +89,7 @@
           </div>
         </div>
         <div class="p-4 border-b border-base-300">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">Daily Vol. Target</span>
+          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_daily_vol_target")}</span>
           <div class="mt-1">
             <span class="text-base font-bold text-base-content">{dailyVolTarget}</span>
             {#if dailyVolToken}
@@ -92,7 +98,7 @@
           </div>
         </div>
         <div class="p-4 border-r border-base-300">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">Oracle Fees</span>
+          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_oracle_fees")}</span>
           <div class="mt-1">
             <span class="text-base font-bold text-base-content">{oracleFees}</span>
             {#if oracleFeesToken}
@@ -104,7 +110,7 @@
           </div>
         </div>
         <div class="p-4">
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">Exchange</span>
+          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_exchange")}</span>
           <div class="mt-1">
             <span class="text-base font-bold text-base-content">{exchange}</span>
           </div>
@@ -120,7 +126,7 @@
           <input
             class="input input-bordered w-full h-11 min-h-[44px] bg-base-100 text-base-content focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
             bind:value={joinCampaignEvmAddress}
-            placeholder="0x..."
+            placeholder={$_("admin_direct_mm_evm_address_placeholder")}
           />
         </label>
         <label class="form-control w-full">

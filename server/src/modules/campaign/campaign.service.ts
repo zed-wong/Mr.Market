@@ -43,9 +43,10 @@ export class CampaignService {
     this.logger.log('Getting HuFi campaigns');
 
     try {
-      const { data } = await this.hufiCampaignLauncherAPI.get<
-        CampaignListResponseDto
-      >('/campaigns?chain_id=137&status=active&limit=100&page=1');
+      const { data } =
+        await this.hufiCampaignLauncherAPI.get<CampaignListResponseDto>(
+          '/campaigns?chain_id=137&status=active&limit=100&page=1',
+        );
 
       this.logger.log('Finished getting HuFi campaigns');
 

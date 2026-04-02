@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import ExchangeIcon from "$lib/components/common/exchangeIcon.svelte";
   import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
 
@@ -16,10 +17,10 @@
   >
     <div>
       <h2 class="text-[1.1rem] font-bold text-base-content">
-        Market Making
+        {$_("admin_direct_mm_title")}
       </h2>
       <span class="text-[13px] text-base-content/50 mt-1">
-        Strategic execution and real-time liquidity management.
+        {$_("admin_direct_mm_orders_subtitle")}
       </span>
     </div>
 
@@ -43,7 +44,7 @@
             d="M12 8v8"
           /></svg
         >
-        Create New Order
+        {$_("admin_direct_mm_create_new_order")}
       </button>
       <button
         class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm text-opacity-90"
@@ -57,7 +58,7 @@
           fill="currentColor"
           class="mr-1"><polygon points="5 3 19 12 5 21 5 3" /></svg
         >
-        Start All
+        {$_("admin_direct_mm_start_all")}
       </button>
       <button
         class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
@@ -72,7 +73,7 @@
           class="mr-1.5"
           ><rect width="18" height="18" x="3" y="3" rx="2" /></svg
         >
-        Stop All
+        {$_("admin_direct_mm_stop_all")}
       </button>
     </div>
   </div>
@@ -83,27 +84,27 @@
         <tr>
           <th
             class="py-4 px-4 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >Exchange</th
+            >{$_("admin_direct_mm_exchange")}</th
           >
           <th
             class="py-4 px-4 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >Trading Pair</th
+            >{$_("admin_direct_mm_trading_pair")}</th
           >
           <th
             class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >Strategy</th
+            >{$_("admin_direct_mm_strategy")}</th
           >
           <th
             class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >Status</th
+            >{$_("admin_direct_mm_status")}</th
           >
           <th
             class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >Created Time</th
+            >{$_("admin_direct_mm_created_time")}</th
           >
           <th
             class="py-4 px-4 text-xs text-right font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >Actions</th
+            >{$_("admin_direct_mm_actions")}</th
           >
         </tr>
       </thead>
@@ -111,7 +112,7 @@
         {#if orders.length === 0}
           <tr>
             <td colspan="6" class="text-center py-10 text-base-content/50"
-              >No orders active</td
+              >{$_("admin_direct_mm_empty_title")}</td
             >
           </tr>
         {/if}
@@ -147,10 +148,10 @@
               >
                 {order.strategyName ||
                   (i === 0
-                    ? "Cross-Exchange"
+                    ? $_("admin_direct_mm_strategy_cross_exchange")
                     : i === 1
-                      ? "Market Maker"
-                      : "Pure MM")}
+                      ? $_("admin_direct_mm_strategy_market_maker")
+                      : $_("admin_direct_mm_strategy_pure_mm"))}
               </span>
             </td>
             <td class="py-4 px-2 whitespace-nowrap">
@@ -159,20 +160,20 @@
                   class="inline-flex items-center gap-1.5 bg-green-50 text-green-600 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
                 >
                   <span class="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
-                  Running
+                  {$_("admin_direct_mm_running")}
                 </span>
               {:else if order.runtimeState === "stopped"}
                 <span
                   class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
                 >
-                  Paused
+                  {$_("admin_direct_mm_paused")}
                 </span>
               {:else}
                 <span
                   class="inline-flex items-center gap-1.5 bg-green-50 text-green-600 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
                 >
                   <span class="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
-                  Running
+                  {$_("admin_direct_mm_running")}
                 </span>
               {/if}
             </td>
@@ -193,17 +194,17 @@
                       hour12: false,
                     })
                   : i === 0
-                    ? "Oct 24, 2023 • 14:20"
+                    ? $_("admin_direct_mm_placeholder_date_one")
                     : i === 1
-                      ? "Oct 22, 2023 • 09:15"
-                      : "Oct 20, 2023 • 18:45"}
+                      ? $_("admin_direct_mm_placeholder_date_two")
+                      : $_("admin_direct_mm_placeholder_date_three")}
               </span>
             </td>
             <td class="py-4 px-4 flex justify-end items-center gap-3">
               {#if order.runtimeState === "running" || order.runtimeState === "active"}
                 <button
                   class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-red-600 hover:bg-red-50 transition-colors"
-                  aria-label="Stop"
+                  aria-label={$_("admin_direct_mm_stop")}
                   on:click|stopPropagation={() => onStopOrder(order)}
                 >
                   <svg
@@ -229,7 +230,7 @@
               {:else}
                 <button
                   class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-blue-600 hover:bg-blue-50 transition-colors"
-                  aria-label="Play"
+                  aria-label={$_("admin_direct_mm_play")}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -248,7 +249,7 @@
               <button
                 class="bg-indigo-50 text-blue-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-colors whitespace-nowrap"
               >
-                Details
+                {$_("admin_direct_mm_details")}
               </button>
             </td>
           </tr>

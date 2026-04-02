@@ -212,7 +212,7 @@
         activeOrders.map((o) => stopDirectOrder(o.orderId, token)),
       );
       await refreshPage();
-      toast.success("Stopped all active orders", {
+      toast.success($_("admin_direct_mm_stop_all_success"), {
         description: $_("admin_direct_mm_recovery_refresh_status"),
       });
       showStopAllConfirm = false;

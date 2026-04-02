@@ -966,7 +966,7 @@ export class MarketMakingOrderProcessor {
           const campaigns = await this.hufiCampaignService.getCampaigns();
           const matchingCampaign = campaigns.find(
             (c) =>
-              c.chainId === hufiCampaign.chainId &&
+              c.chain_id === hufiCampaign.chainId &&
               c.address.toLowerCase() ===
                 hufiCampaign.campaignAddress.toLowerCase(),
           );

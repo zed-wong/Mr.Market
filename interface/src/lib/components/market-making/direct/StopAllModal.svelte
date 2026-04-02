@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   export let show = false;
   export let isStoppingAll = false;
   export let activeOrdersCount = 0;
@@ -20,15 +21,15 @@
         </div>
 
         <h3 class="mt-5 font-bold text-[22px] text-slate-900 tracking-tight leading-[1.15]">
-          Confirm Stop All Orders
+          {$_("admin_direct_mm_stop_all_title")}
         </h3>
       </div>
 
       <div class="px-6 py-5 bg-white border-t border-rose-100">
         <span class="text-[15px] text-slate-700 leading-relaxed">
-          You are about to stop all <strong
-            >{activeOrdersCount} currently running algorithmic strategies.</strong
-          >
+          {$_("admin_direct_mm_stop_all_body", {
+            values: { activeOrdersCount },
+          })}
         </span>
 
         <div
@@ -53,8 +54,7 @@
             >
           </div>
           <span class="text-[13px] text-slate-600 leading-relaxed pr-2">
-            This will immediately halt all automated order management and
-            execution for the selected campaigns.
+            {$_("admin_direct_mm_stop_all_warning")}
           </span>
         </div>
 
@@ -63,14 +63,14 @@
             class="btn flex-1 bg-violet-50 hover:bg-violet-100 border-none text-slate-700 h-[44px] min-h-[44px] rounded-lg font-semibold shadow-none"
             on:click={onCancel}
           >
-            Cancel
+            {$_("admin_direct_mm_cancel")}
           </button>
           <button
             class="btn flex-1 bg-red-600 hover:bg-red-700 border-none text-white h-[44px] min-h-[44px] rounded-lg font-semibold shadow-[0_10px_24px_-12px_rgba(220,38,38,0.9)]"
             on:click={onConfirm}
             disabled={isStoppingAll}
           >
-            {isStoppingAll ? "Stopping..." : "Stop All Orders"}
+            {isStoppingAll ? $_("admin_direct_mm_stopping") : $_("admin_direct_mm_stop_all")}
             {#if !isStoppingAll}
               <svg
                 xmlns="http://www.w3.org/2000/svg"

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import ExchangeIcon from "$lib/components/common/exchangeIcon.svelte";
   import type { AdminSingleKey } from "$lib/types/hufi/admin";
 
@@ -8,7 +9,7 @@
 <div class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50 flex flex-col h-full">
   <div class="flex items-center justify-between mb-2">
     <h2 class="text-[1.1rem] font-bold text-base-content">
-      Exchange API Keys
+      {$_("admin_direct_mm_api_keys_title")}
     </h2>
     <div
       class="text-blue-600 cursor-pointer bg-transparent hover:bg-blue-50 p-2 rounded-lg transition-colors"
@@ -49,11 +50,11 @@
               >
               <span class="text-xs text-base-content/50">
                 {#if i === 0}
-                  Trading Active • 4 Pairs
+                  {$_("admin_direct_mm_api_key_status_active_pairs")}
                 {:else if i === 1}
-                  Last sync 2m ago
+                  {$_("admin_direct_mm_api_key_status_last_sync")}
                 {:else}
-                  Key expired
+                  {$_("admin_direct_mm_api_key_status_expired")}
                 {/if}
               </span>
             </div>
@@ -63,13 +64,13 @@
               <div
                 class="bg-red-50 text-red-600 text-[10px] font-bold px-3 py-1 rounded border border-red-100 tracking-wide capitalize"
               >
-                Disconnected
+                {$_("admin_direct_mm_api_key_disconnected")}
               </div>
             {:else}
               <div
                 class="bg-red-50 text-red-600 text-[10px] font-bold px-3 py-1 rounded border border-red-100 tracking-wide capitalize"
               >
-                Connected
+                {$_("admin_direct_mm_api_key_connected")}
               </div>
             {/if}
           </div>
@@ -78,7 +79,7 @@
     {/each}
     {#if apiKeys.length === 0}
       <div class="text-center text-sm text-base-content/50 my-auto">
-        No API keys found
+        {$_("admin_direct_mm_api_keys_empty")}
       </div>
     {/if}
   </div>
@@ -99,6 +100,6 @@
       stroke-linejoin="round"
       ><path d="M5 12h14" /><path d="M12 5v14" /></svg
     >
-    Manage API Connections
+    {$_("admin_direct_mm_manage_api_connections")}
   </button>
 </div>

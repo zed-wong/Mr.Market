@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   export let show = false;
   export let isStartingAll = false;
   export let stoppedOrdersCount = 0;
@@ -28,20 +29,15 @@
           <h3
             class="mt-5 font-bold text-[22px] leading-[1.15] text-slate-900 tracking-tight"
           >
-            Confirm Operations<br />Commencement
+            {$_("admin_direct_mm_start_all_title")}<br />{$_("admin_direct_mm_start_all_title_suffix")}
           </h3>
         </div>
 
         <div class="px-6 py-5 bg-white border-t border-slate-100">
           <span class="text-[15px] leading-relaxed text-slate-700">
-            You are about to initiate the <span class="font-bold text-blue-600"
-              >Start All</span
-            >
-            command. This action will resume
-            <span class="font-bold text-base-content"
-              >{stoppedOrdersCount} currently paused algorithmic strategies</span
-            >
-            across the Global Equity portfolio.
+            {$_("admin_direct_mm_start_all_body", {
+              values: { stoppedOrdersCount },
+            })}
           </span>
 
           <div
@@ -61,22 +57,21 @@
               >
             </div>
             <span class="text-[12.5px] leading-relaxed text-slate-600 pr-2">
-              Active orders will begin execution against current market spreads
-              immediately upon confirmation.
+              {$_("admin_direct_mm_start_all_warning")}
             </span>
           </div>
 
           <div class="flex gap-3 mt-6">
             <button
               class="btn bg-violet-50 hover:bg-violet-100 border-none text-slate-700 w-[120px] h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
-              on:click={onCancel}>Cancel</button
+              on:click={onCancel}>{$_("admin_direct_mm_cancel")}</button
             >
             <button
               class="btn bg-indigo-600 hover:bg-indigo-700 border-none text-white flex-1 h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
               disabled={isStartingAll}
               on:click={onConfirm}
             >
-              {isStartingAll ? "Starting..." : "Confirm Start"}
+              {isStartingAll ? $_("admin_direct_mm_starting") : $_("admin_direct_mm_confirm_start")}
               {#if !isStartingAll}<svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"

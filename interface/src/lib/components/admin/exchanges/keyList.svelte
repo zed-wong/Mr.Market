@@ -16,6 +16,9 @@
   let currentPage = 1;
   const itemsPerPage = 4;
   $: totalPages = Math.ceil(keys.length / itemsPerPage);
+  $: if (currentPage > totalPages) {
+    currentPage = Math.max(1, totalPages);
+  }
   $: paginatedKeys = keys.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage,
@@ -39,9 +42,17 @@
       </tr>
     </thead>
     <tbody>
-      {#each paginatedKeys as key (key.key_id)}
-        <SingleApiKey {key} on:delete={handleDelete} />
-      {/each}
+      {#if paginatedKeys.length === 0}
+        <tr>
+          <td colspan="6" class="text-center py-8 text-base-content/60">
+            {$_("no_api_keys_found")}
+          </td>
+        </tr>
+      {:else}
+        {#each paginatedKeys as key (key.key_id)}
+          <SingleApiKey {key} on:delete={handleDelete} />
+        {/each}
+      {/if}
     </tbody>
   </table>
 </div>
@@ -84,7 +95,7 @@
     {/each}
     <button
       class="join-item btn btn-sm"
-      disabled={currentPage === totalPages}
+      disabled={totalPages === 0 || currentPage === totalPages}
       on:click={() => (currentPage = Math.min(totalPages, currentPage + 1))}
     >
       »
