@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   BadRequestException,
-  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -17,13 +16,6 @@ describe('AdminDirectMarketMakingService', () => {
     const strategyDefinitionRepository = {
       findOne: jest.fn(),
       find: jest.fn(),
-    };
-    const campaignJoinRepository = {
-      create: jest.fn((payload) => payload),
-      findOne: jest.fn(),
-      find: jest.fn().mockResolvedValue([]),
-      save: jest.fn(async (payload) => ({ id: 'join-1', ...payload })),
-      update: jest.fn().mockResolvedValue(undefined),
     };
     const userOrdersService = {
       createMarketMaking: jest.fn(async (payload) => payload),
@@ -95,6 +87,7 @@ describe('AdminDirectMarketMakingService', () => {
     };
     const campaignService = {
       getCampaigns: jest.fn().mockResolvedValue([]),
+      isCampaignJoined: jest.fn().mockResolvedValue(false),
       joinCampaignWithAuth: jest.fn().mockResolvedValue(undefined),
     };
     const configService = {
@@ -104,7 +97,6 @@ describe('AdminDirectMarketMakingService', () => {
     const service = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
       strategyDefinitionRepository as any,
-      campaignJoinRepository as any,
       userOrdersService as any,
       marketMakingRuntimeService as any,
       strategyConfigResolver as any,
@@ -123,7 +115,6 @@ describe('AdminDirectMarketMakingService', () => {
       service,
       marketMakingRepository,
       strategyDefinitionRepository,
-      campaignJoinRepository,
       userOrdersService,
       marketMakingRuntimeService,
       strategyConfigResolver,
@@ -151,8 +142,20 @@ describe('AdminDirectMarketMakingService', () => {
     },
   };
 
+  const originalWeb3PrivateKey = process.env.WEB3_PRIVATE_KEY;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.WEB3_PRIVATE_KEY;
+  });
+
+  afterAll(() => {
+    if (originalWeb3PrivateKey === undefined) {
+      delete process.env.WEB3_PRIVATE_KEY;
+      return;
+    }
+
+    process.env.WEB3_PRIVATE_KEY = originalWeb3PrivateKey;
   });
 
   it('starts a direct order and updates it to running', async () => {
@@ -161,7 +164,6 @@ describe('AdminDirectMarketMakingService', () => {
       strategyDefinitionRepository,
       userOrdersService,
       marketMakingRuntimeService,
-      campaignJoinRepository,
     } = buildService();
 
     strategyDefinitionRepository.findOne.mockResolvedValue({
@@ -169,8 +171,6 @@ describe('AdminDirectMarketMakingService', () => {
       enabled: true,
       controllerType: 'pureMarketMaking',
     });
-    campaignJoinRepository.find.mockResolvedValue([]);
-
     const result = await service.directStart(directStartDto, 'admin-user');
 
     expect(result).toEqual({
@@ -287,7 +287,6 @@ describe('AdminDirectMarketMakingService', () => {
       marketMakingRepository,
       marketMakingRuntimeService,
       userOrdersService,
-      campaignJoinRepository,
     } = buildService();
 
     marketMakingRepository.findOne.mockResolvedValue({
@@ -296,8 +295,6 @@ describe('AdminDirectMarketMakingService', () => {
       source: 'admin_direct',
       state: 'running',
     });
-    campaignJoinRepository.find.mockResolvedValue([]);
-
     await expect(service.directStop('order-1')).resolves.toEqual({
       orderId: 'order-1',
       state: 'stopped',
@@ -482,12 +479,40 @@ describe('AdminDirectMarketMakingService', () => {
     expect(result.stale).toBe(true);
   });
 
-  it('rejects duplicate campaign joins', async () => {
-    const { service, exchangeApiKeyService, campaignJoinRepository } =
+  it('lists campaigns with joined flags', async () => {
+    const { service, campaignService, configService } = buildService();
+
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'WEB3_PRIVATE_KEY' || key === 'web3.private_key') {
+        return '0x59c6995e998f97a5a0044966f094538e0d7d4e1b3f43b4374c1c1ff717a8ba4c';
+      }
+
+      return undefined;
+    });
+    campaignService.getCampaigns.mockResolvedValue([
+      { address: '0xabc', chain_id: 1 },
+      { address: '0xdef', chain_id: 137 },
+    ]);
+    campaignService.isCampaignJoined
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    await expect(service.listCampaigns()).resolves.toEqual([
+      { address: '0xabc', chain_id: 1, joined: true },
+      { address: '0xdef', chain_id: 137, joined: false },
+    ]);
+  });
+
+  it('joins campaign synchronously through HuFi proxy', async () => {
+    const { service, exchangeApiKeyService, configService, campaignService } =
       buildService();
 
-    exchangeApiKeyService.readAPIKey.mockResolvedValue({ exchange: 'binance' });
-    campaignJoinRepository.findOne.mockResolvedValue({ id: 'join-1' });
+    configService.get.mockReturnValue('secret-key');
+    exchangeApiKeyService.readDecryptedAPIKey.mockResolvedValue({
+      exchange: 'binance',
+      api_key: 'api-key',
+      api_secret: 'plain-secret',
+    });
 
     await expect(
       service.joinCampaign({
@@ -496,40 +521,13 @@ describe('AdminDirectMarketMakingService', () => {
         chainId: 1,
         campaignAddress: '0x0000000000000000000000000000000000000002',
       }),
-    ).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('joins campaign synchronously and persists successful join', async () => {
-    const {
-      service,
-      exchangeApiKeyService,
-      campaignJoinRepository,
-      configService,
-      campaignService,
-    } = buildService();
-
-    configService.get.mockReturnValue('secret-key');
-    exchangeApiKeyService.readAPIKey.mockResolvedValue({
-      exchange: 'binance',
-      api_key: 'api-key',
-      api_secret: 'api-secret',
-    });
-    campaignJoinRepository.findOne.mockResolvedValue(null);
-
-    const result = await service.joinCampaign({
-      evmAddress: '0x0000000000000000000000000000000000000001',
-      apiKeyId: 'api-key-1',
-      chainId: 1,
-      campaignAddress: '0x0000000000000000000000000000000000000002',
-    });
-
-    expect(result).toEqual({
-      id: 'join-1',
+    ).resolves.toEqual({
       status: 'joined',
       apiKeyId: 'api-key-1',
       campaignAddress: '0x0000000000000000000000000000000000000002',
       chainId: 1,
     });
+
     expect(campaignService.joinCampaignWithAuth).toHaveBeenCalledWith(
       '0x0000000000000000000000000000000000000001',
       'secret-key',
@@ -539,21 +537,11 @@ describe('AdminDirectMarketMakingService', () => {
       1,
       '0x0000000000000000000000000000000000000002',
     );
-    expect(campaignJoinRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: 'joined',
-      }),
-    );
   });
 
   it('defaults campaign join chain id to 137 when request chainId is invalid', async () => {
-    const {
-      service,
-      exchangeApiKeyService,
-      campaignJoinRepository,
-      configService,
-      campaignService,
-    } = buildService();
+    const { service, exchangeApiKeyService, configService, campaignService } =
+      buildService();
 
     configService.get.mockReturnValue('secret-key');
     exchangeApiKeyService.readDecryptedAPIKey.mockResolvedValue({
@@ -561,7 +549,6 @@ describe('AdminDirectMarketMakingService', () => {
       api_key: 'api-key',
       api_secret: 'plain-secret',
     });
-    campaignJoinRepository.findOne.mockResolvedValue(null);
 
     await service.joinCampaign({
       evmAddress: '0x0000000000000000000000000000000000000001',
@@ -581,29 +568,10 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('links campaign joins to an attached order', async () => {
-    const { service, campaignJoinRepository } = buildService();
-
-    campaignJoinRepository.find.mockResolvedValueOnce([
-      {
-        id: 'join-1',
-        status: 'joined',
-      },
-    ]);
-
-    await (service as any).linkCampaignJoinsToOrder('api-key-1', 'order-1');
-
-    expect(campaignJoinRepository.update).toHaveBeenCalledWith(
-      { id: 'join-1' },
-      { orderId: 'order-1' },
-    );
-  });
-
   it('fails synchronously when no signing key is configured', async () => {
-    const { service, campaignJoinRepository, configService } = buildService();
+    const { service, configService } = buildService();
 
     configService.get.mockReturnValue(undefined);
-    campaignJoinRepository.findOne.mockResolvedValue(null);
 
     await expect(
       service.joinCampaign({
@@ -616,15 +584,9 @@ describe('AdminDirectMarketMakingService', () => {
   });
 
   it('fails synchronously when exchange api key is incomplete', async () => {
-    const {
-      service,
-      campaignJoinRepository,
-      exchangeApiKeyService,
-      configService,
-    } = buildService();
+    const { service, exchangeApiKeyService, configService } = buildService();
 
     configService.get.mockReturnValue('secret-key');
-    campaignJoinRepository.findOne.mockResolvedValue(null);
     exchangeApiKeyService.readDecryptedAPIKey.mockResolvedValue({
       exchange: 'binance',
       api_key: 'api-key',

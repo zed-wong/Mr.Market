@@ -1,20 +1,47 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { formatFundAmount, getBadgeClass, getStateLabel } from "./helpers";
-  import type { CampaignJoinRecord } from "$lib/types/hufi/admin-direct-market-making";
+  import { formatFundAmount } from "./helpers";
+  import type { AdminCampaign } from "$lib/types/hufi/admin-direct-market-making";
 
   export let show = false;
-  export let campaigns: Array<Record<string, unknown>> = [];
-  export let campaignJoins: CampaignJoinRecord[] = [];
-  export let onJoin: (campaign: Record<string, unknown>) => void;
+  export let campaigns: AdminCampaign[] = [];
+  export let onJoin: (campaign: AdminCampaign) => void;
   export let onClose: () => void;
 
-  function getDetail(campaign: Record<string, unknown>, key: string): unknown {
-    const d = campaign.details;
-    if (d && typeof d === "object" && !Array.isArray(d)) {
-      return (d as Record<string, unknown>)[key];
+  let searchQuery = "";
+  let filterExchange = "";
+  let filterPair = "";
+  let filterType = "";
+
+  $: exchanges = [...new Set(campaigns.map((c) => String(c.exchange_name || c.exchange || "")))].filter(Boolean);
+  $: pairsOptions = [...new Set(campaigns.map((c) => String(c.symbol || c.name || "")))].filter(Boolean);
+  $: types = [...new Set(campaigns.map((c) => String(c.type || "")))].filter(Boolean);
+  $: filtered = campaigns.filter((c) => {
+    const name = String(c.symbol || c.name || "").toLowerCase();
+    const exchange = String(c.exchange_name || c.exchange || "");
+    const type = String(c.type || "");
+    const pair = String(c.symbol || c.name || "");
+
+    if (searchQuery && !name.includes(searchQuery.toLowerCase())) return false;
+    if (filterExchange && exchange !== filterExchange) return false;
+    if (filterPair && pair !== filterPair) return false;
+    if (filterType && type !== filterType) return false;
+    return true;
+  });
+
+  function getDetail(campaign: AdminCampaign, key: string): unknown {
+    const details = campaign.details;
+    if (details && typeof details === "object" && !Array.isArray(details)) {
+      return (details as Record<string, unknown>)[key];
     }
     return undefined;
+  }
+
+  function formatDate(d: unknown): string {
+    if (!d) return "";
+    const date = new Date(String(d));
+    if (isNaN(date.getTime())) return String(d);
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
 
   function formatTargetValue(value: unknown): string {
@@ -35,69 +62,23 @@
     }
   }
 
-  function getTargetValue(campaign: Record<string, unknown>): string {
+  function getTargetValue(campaign: AdminCampaign): string {
     const type = String(campaign.type || "");
-
     if (type === "THRESHOLD") {
       return formatTargetValue(getDetail(campaign, "minimum_balance_target"));
     }
-
     if (type === "HOLDING") {
       return formatTargetValue(getDetail(campaign, "daily_balance_target"));
     }
-
     return formatTargetValue(getDetail(campaign, "daily_volume_target"));
   }
 
-  function getTargetToken(campaign: Record<string, unknown>): string {
+  function getTargetToken(campaign: AdminCampaign): string {
     const type = String(campaign.type || "");
     if (type === "THRESHOLD" || type === "HOLDING") {
       return String(campaign.symbol || campaign.name || "");
     }
     return String(campaign.fund_token_symbol || campaign.rewardToken || "");
-  }
-
-  let searchQuery = "";
-  let filterExchange = "";
-  let filterPair = "";
-  let filterType = "";
-
-  $: exchanges = [
-    ...new Set(
-      campaigns.map((c) => String(c.exchange_name || c.exchange || "")),
-    ),
-  ].filter(Boolean);
-  $: pairsOptions = [
-    ...new Set(campaigns.map((c) => String(c.symbol || c.name || ""))),
-  ].filter(Boolean);
-  $: types = [...new Set(campaigns.map((c) => String(c.type || "")))].filter(
-    Boolean,
-  );
-
-  $: filtered = campaigns.filter((c) => {
-    const name = String(c.symbol || c.name || "").toLowerCase();
-    const exchange = String(c.exchange_name || c.exchange || "");
-    const type = String(c.type || "");
-    const pair = String(c.symbol || c.name || "");
-
-    if (searchQuery && !name.includes(searchQuery.toLowerCase())) return false;
-    if (filterExchange && exchange !== filterExchange) return false;
-    if (filterPair && pair !== filterPair) return false;
-    if (filterType && type !== filterType) return false;
-    return true;
-  });
-
-  function formatDate(d: unknown): string {
-    if (!d) return "";
-    const date = new Date(String(d));
-    if (isNaN(date.getTime())) return String(d);
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  }
-
-  function shortenAddress(address: string): string {
-    if (!address) return "";
-    if (address.length <= 12) return address;
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
   }
 
   function statusColor(s: string): string {
@@ -118,248 +99,85 @@
     filterPair = "";
     filterType = "";
   }
-
-  function getJoinForCampaign(
-    campaign: Record<string, unknown>,
-  ): CampaignJoinRecord | undefined {
-    const addr = String(campaign.address || "").toLowerCase();
-    const chainId = Number(campaign.chain_id || campaign.chainId || 137);
-    return campaignJoins.find(
-      (j) => j.campaignAddress.toLowerCase() === addr && j.chainId === chainId,
-    );
-  }
 </script>
 
 {#if show}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
-    <div
-      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[620px] shadow-2xl border border-base-200/50 max-h-[90vh] flex flex-col"
-    >
-      <!-- Header -->
+    <div class="modal-box bg-base-100 p-0 rounded-2xl max-w-[620px] shadow-2xl border border-base-200/50 max-h-[90vh] flex flex-col">
       <div class="p-6 pb-0">
         <div class="flex items-start justify-between mb-1">
           <div>
-            <span class="text-xl font-bold text-base-content block"
-              >{$_("admin_direct_mm_available_campaigns")}</span
-            >
-            <span class="text-sm text-base-content/50"
-              >{$_("admin_direct_mm_all_campaigns_subtitle")}</span
-            >
+            <span class="text-xl font-bold text-base-content block">{$_("admin_direct_mm_available_campaigns")}</span>
+            <span class="text-sm text-base-content/50">{$_("admin_direct_mm_all_campaigns_subtitle")}</span>
           </div>
-          <button
-            class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
-            on:click={() => {
-              resetFilters();
-              onClose();
-            }}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="2"
-              stroke="currentColor"
-              class="w-5 h-5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+          <button class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200" on:click={() => { resetFilters(); onClose(); }}>
+            x
           </button>
         </div>
-
-        <!-- Search -->
         <div class="relative mt-4">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-            />
-          </svg>
-          <input
-            class="input input-bordered w-full h-10 min-h-[40px] pl-4 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary"
-            placeholder={$_("admin_direct_mm_search_campaign")}
-            bind:value={searchQuery}
-          />
+          <input class="input input-bordered w-full h-10 min-h-[40px] pl-4 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary" placeholder={$_("admin_direct_mm_search_campaign")} bind:value={searchQuery} />
         </div>
-
-        <!-- Filters -->
         <div class="flex gap-3 mt-3 pb-4">
-          <select
-            class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm"
-            bind:value={filterExchange}
-          >
+          <select class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm" bind:value={filterExchange}>
             <option value="">{$_("admin_direct_mm_all_exchanges")}</option>
-            {#each exchanges as ex}
-              <option value={ex}>{ex}</option>
-            {/each}
+            {#each exchanges as ex}<option value={ex}>{ex}</option>{/each}
           </select>
-          <select
-            class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm"
-            bind:value={filterPair}
-          >
+          <select class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm" bind:value={filterPair}>
             <option value="">{$_("admin_direct_mm_all_pairs")}</option>
-            {#each pairsOptions as p}
-              <option value={p}>{p}</option>
-            {/each}
+            {#each pairsOptions as p}<option value={p}>{p}</option>{/each}
           </select>
-          <select
-            class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm"
-            bind:value={filterType}
-          >
+          <select class="select select-bordered select-sm flex-1 bg-base-100 text-base-content text-sm" bind:value={filterType}>
             <option value="">{$_("admin_direct_mm_all_types")}</option>
-            {#each types as t}
-              <option value={t}>{t}</option>
-            {/each}
+            {#each types as t}<option value={t}>{t}</option>{/each}
           </select>
         </div>
       </div>
 
-      <!-- Campaign list -->
       <div class="flex-1 overflow-y-auto px-6 pb-6 min-h-[240px]">
         {#if filtered.length === 0}
-          <div
-            class="flex items-center justify-center min-h-[240px] text-base-content/40 text-sm"
-          >
+          <div class="flex items-center justify-center min-h-[240px] text-base-content/40 text-sm">
             {$_("admin_direct_mm_campaigns_empty")}
           </div>
         {/if}
 
         <div class="flex flex-col gap-5">
           {#each filtered as campaign}
-            {@const name = String(campaign.symbol || campaign.name || "—")}
-            {@const status = String(campaign.status || "active")}
-            {@const exchange = String(
-              campaign.exchange_name || campaign.exchange || "—",
-            )}
-            {@const rewardPool = formatFundAmount(
-              campaign.fund_amount || campaign.rewardPool,
-              campaign.fund_token_decimals,
-            )}
-            {@const rewardToken = String(
-              campaign.fund_token_symbol || campaign.rewardToken || "",
-            )}
-            {@const campaignType = String(
-              campaign.type || campaign.campaignType || "Market Making",
-            )}
-            {@const startDate = formatDate(
-              campaign.start_date || campaign.startDate,
-            )}
-            {@const endDate = formatDate(campaign.end_date || campaign.endDate)}
-            {@const targetLabel = getTargetLabel(campaign.type)}
-            {@const targetValue = getTargetValue(campaign)}
-            {@const targetToken = getTargetToken(campaign)}
-
+            {@const rewardPool = formatFundAmount(campaign.fund_amount || campaign.rewardPool, campaign.fund_token_decimals)}
+            {@const rewardToken = String(campaign.fund_token_symbol || campaign.rewardToken || "")}
             <div class="flex flex-col gap-3 rounded-2xl bg-base-200 p-6">
-              <!-- Name + exchange + status -->
               <div class="flex items-start justify-between">
                 <div>
-                  <span class="font-bold text-base-content text-[15px] block">
-                    {name}
-                  </span>
-                  <div class="flex items-center gap-1.5 mt-0.5">
-                    <span class="text-xs text-base-content/50">{exchange}</span>
-                  </div>
+                  <span class="font-bold text-base-content text-[15px] block">{String(campaign.symbol || campaign.name || "—")}</span>
+                  <span class="text-xs text-base-content/50">{String(campaign.exchange_name || campaign.exchange || "—")}</span>
                 </div>
-                <span
-                  class="text-[10px] font-bold tracking-wider capitalize rounded-md px-2 py-0.5 {statusColor(
-                    status,
-                  )}"
-                >
-                  {status}
+                <span class={`text-[10px] font-bold tracking-wider capitalize rounded-md px-2 py-0.5 ${statusColor(String(campaign.status || "active"))}`}>
+                  {String(campaign.status || "active")}
                 </span>
               </div>
-
-              <!-- Info grid -->
               <div class="grid grid-cols-2 border border-base-300 rounded-xl">
                 <div class="p-3 border-r border-b border-base-300">
-                  <span
-                    class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize"
-                    >{$_("admin_direct_mm_reward_pool")}</span
-                  >
-                  <div class="mt-0.5">
-                    <span class="text-sm font-bold text-base-content"
-                      >{rewardPool}{rewardToken ? ` ${rewardToken}` : ""}</span
-                    >
-                  </div>
+                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_reward_pool")}</span>
+                  <div class="mt-0.5"><span class="text-sm font-bold text-base-content">{rewardPool}{rewardToken ? ` ${rewardToken}` : ""}</span></div>
                 </div>
                 <div class="p-3 border-b border-base-300">
-                  <span
-                    class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize"
-                    >{$_("admin_direct_mm_campaign_type")}</span
-                  >
-                  <div class="mt-0.5">
-                    <span class="text-sm font-bold text-base-content capitalize"
-                      >{campaignType}</span
-                    >
-                  </div>
+                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_campaign_type")}</span>
+                  <div class="mt-0.5"><span class="text-sm font-bold text-base-content capitalize">{String(campaign.type || campaign.campaignType || "Market Making")}</span></div>
                 </div>
                 <div class="p-3 border-r border-base-300">
-                  <span
-                    class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize"
-                    >{targetLabel}</span
-                  >
-                  <div class="mt-0.5">
-                    <span class="text-sm font-bold text-base-content"
-                      >{targetValue}{targetToken ? ` ${targetToken}` : ""}</span
-                    >
-                  </div>
+                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{getTargetLabel(campaign.type)}</span>
+                  <div class="mt-0.5"><span class="text-sm font-bold text-base-content">{getTargetValue(campaign)}{getTargetToken(campaign) ? ` ${getTargetToken(campaign)}` : ""}</span></div>
                 </div>
                 <div class="p-3">
-                  <span
-                    class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize"
-                    >{$_("admin_direct_mm_duration")}</span
-                  >
-                  <div class="mt-0.5">
-                    <span class="text-sm font-bold text-base-content">
-                      {#if startDate && endDate}
-                        {startDate} - {endDate}
-                      {:else}
-                        —
-                      {/if}
-                    </span>
-                  </div>
+                  <span class="text-[10px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_duration")}</span>
+                  <div class="mt-0.5"><span class="text-sm font-bold text-base-content">{formatDate(campaign.start_date || campaign.startDate)} - {formatDate(campaign.end_date || campaign.endDate)}</span></div>
                 </div>
               </div>
-
-              <!-- Join button or joined status -->
-              {#if getJoinForCampaign(campaign)}
-                <div class="flex items-center justify-between gap-2 py-2">
-                  <span class="text-xs text-base-content/50">
-                    {shortenAddress(String(campaign.address || ""))}
-                  </span>
-                  <span
-                    class={getBadgeClass(
-                      getJoinForCampaign(campaign)?.status || "",
-                    )}
-                  >
-                    {getStateLabel(getJoinForCampaign(campaign)?.status || "")}
-                  </span>
-                </div>
+              {#if campaign.joined}
+                <span class="badge badge-success badge-outline">{$_("admin_direct_mm_joined_campaigns")}</span>
               {:else}
-                <button
-                  class="btn btn-primary text-white text-sm font-semibold rounded-lg w-full shadow-sm"
-                  on:click={() => onJoin(campaign)}
-                >
-                  {$_("admin_direct_mm_join_campaign_title")}
-                </button>
+                <button class="btn btn-primary text-white text-sm font-semibold rounded-lg w-full shadow-sm" on:click={() => onJoin(campaign)}>{$_("admin_direct_mm_join_campaign_title")}</button>
               {/if}
             </div>
-
-            <!-- Divider between campaigns (not after last) -->
-            {#if filtered.indexOf(campaign) < filtered.length - 1}
-              <div class="border-b border-base-200"></div>
-            {/if}
           {/each}
         </div>
       </div>

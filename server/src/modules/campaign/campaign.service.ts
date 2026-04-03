@@ -366,8 +366,10 @@ export class CampaignService {
           .getSigner(campaign.chain_id)
           .getAddress();
 
-        const { data: joined } = await this.hufiRecordingOracleAPI.get(
-          `/mr-market/campaign?chainId=${campaign.chain_id}&address=${campaign.address}&walletAddress=${walletAddress}`,
+        const joined = await this.isCampaignJoined(
+          campaign.chain_id,
+          campaign.address,
+          walletAddress,
         );
 
         if (joined) {

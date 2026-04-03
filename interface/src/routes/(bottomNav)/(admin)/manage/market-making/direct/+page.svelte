@@ -14,7 +14,7 @@
   import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
   import type { AdminSingleKey } from "$lib/types/hufi/admin";
   import type {
-    CampaignJoinRecord,
+    AdminCampaign,
     DirectOrderStatus,
     DirectOrderSummary,
     DirectWalletStatus,
@@ -34,8 +34,8 @@
   import StartAllModal from "$lib/components/market-making/direct/StartAllModal.svelte";
   import StopAllModal from "$lib/components/market-making/direct/StopAllModal.svelte";
   import StopOrderModal from "$lib/components/market-making/direct/StopOrderModal.svelte";
-  import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
   import AllCampaignsModal from "$lib/components/market-making/direct/AllCampaignsModal.svelte";
+  import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
   import OrderDetailsDialog from "$lib/components/market-making/direct/OrderDetailsDialog.svelte";
 
   type OverrideRow = { key: string; value: string };
@@ -44,11 +44,7 @@
   $: strategies = ($page.data.strategies || []) as MarketMakingStrategy[];
   $: apiKeys = ($page.data.apiKeys || []) as AdminSingleKey[];
   $: initialOrders = ($page.data.directOrders || []) as DirectOrderSummary[];
-  $: initialCampaigns = ($page.data.campaigns || []) as Array<
-    Record<string, unknown>
-  >;
-  $: initialCampaignJoins = ($page.data.campaignJoins ||
-    []) as CampaignJoinRecord[];
+  $: initialCampaigns = ($page.data.campaigns || []) as AdminCampaign[];
   $: walletStatus = ($page.data.walletStatus || {
     configured: false,
     address: null,
@@ -57,7 +53,6 @@
 
   let orders = initialOrders;
   let campaigns = initialCampaigns;
-  let campaignJoins = initialCampaignJoins;
 
   let showStartForm = false;
   let showStartAllModal = false;
@@ -92,11 +87,10 @@
   let joinCampaignChainId = 0;
   let joinCampaignApiKeyId = "";
   let joinCampaignEvmAddress = "";
-  let selectedCampaign: Record<string, unknown> = {};
+  let selectedCampaign: AdminCampaign | null = null;
 
   $: orders = initialOrders;
   $: campaigns = initialCampaigns;
-  $: campaignJoins = initialCampaignJoins;
   $: activeOrdersCount = orders.filter(
     (o) => o.runtimeState === "running" || o.runtimeState === "active",
   ).length;
@@ -284,7 +278,10 @@
     showOrderDetails = true;
     detailsLoading = true;
     const token = getToken();
-    if (!token) { detailsLoading = false; return; }
+    if (!token) {
+      detailsLoading = false;
+      return;
+    }
     try {
       detailsData = await getDirectOrderStatus(order.orderId, token);
     } catch {
@@ -343,16 +340,17 @@
     }
   }
 
-  function openJoinFromAll(campaign: Record<string, unknown>) {
+  function openJoinFromAll(campaign: AdminCampaign) {
     showAllCampaigns = false;
     openJoinModal(campaign);
   }
 
-  function openJoinModal(campaign: Record<string, unknown>) {
+  function openJoinModal(campaign: AdminCampaign) {
     selectedCampaign = campaign;
     joinCampaignAddress = String(campaign.address || "");
     joinCampaignChainId = Number(campaign.chain_id || campaign.chainId || 137);
     joinCampaignEvmAddress = walletStatusAddress;
+    joinCampaignApiKeyId = "";
     showJoinModal = true;
   }
 
@@ -362,7 +360,9 @@
     const token = getToken();
     if (!token) return;
 
-    const stoppedOrders = orders.filter((order) => order.runtimeState === "stopped");
+    const stoppedOrders = orders.filter(
+      (order) => order.runtimeState === "stopped",
+    );
     if (stoppedOrders.length === 0) {
       showStartAllModal = false;
       return;
@@ -395,7 +395,7 @@
   }
 </script>
 
-<div class="min-h-screen pb-10 bg-slate-50">
+<div class="min-h-screen pb-10 bg-base-300">
   <div class="max-w-[1400px] mx-auto p-4 sm:p-6 md:p-8 space-y-6">
     <EvmWalletStatusBar
       evmAddress={walletStatusAddress}
@@ -403,13 +403,15 @@
       hint={walletStatusHint}
     />
 
-    <!-- Top Row -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <ApiKeysPanel {apiKeys} {orders} />
-      <CampaignsPanel {campaigns} {campaignJoins} onJoin={openJoinModal} onViewAll={() => (showAllCampaigns = true)} onViewCampaigns={() => (showAllCampaigns = true)} />
+      <CampaignsPanel
+        {campaigns}
+        onJoin={openJoinModal}
+        onViewAll={() => (showAllCampaigns = true)}
+      />
     </div>
 
-    <!-- Market Making -->
     <OrdersTable
       {orders}
       onCreateClick={() => (showStartForm = !showStartForm)}
@@ -466,7 +468,6 @@
 <AllCampaignsModal
   show={showAllCampaigns}
   {campaigns}
-  {campaignJoins}
   onJoin={openJoinFromAll}
   onClose={() => (showAllCampaigns = false)}
 />
@@ -475,7 +476,7 @@
   show={showJoinModal}
   {isJoiningCampaign}
   {apiKeys}
-  campaign={selectedCampaign}
+  campaign={selectedCampaign || {}}
   bind:joinCampaignApiKeyId
   bind:joinCampaignEvmAddress
   onConfirm={submitCampaignJoin}

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   HttpException,
   Injectable,
   NotFoundException,
@@ -11,7 +10,6 @@ import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
 import { randomUUID } from 'crypto';
 import { Wallet } from 'ethers';
-import { CampaignJoin } from 'src/common/entities/market-making/campaign-join.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
@@ -44,6 +42,8 @@ type RuntimeSessionLike = {
   accountLabel?: string;
 };
 
+type AdminCampaign = Record<string, unknown> & { joined: boolean };
+
 @Injectable()
 export class AdminDirectMarketMakingService {
   private readonly logger = new CustomLogger(
@@ -55,8 +55,6 @@ export class AdminDirectMarketMakingService {
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
     @InjectRepository(StrategyDefinition)
     private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
-    @InjectRepository(CampaignJoin)
-    private readonly campaignJoinRepository: Repository<CampaignJoin>,
     private readonly userOrdersService: UserOrdersService,
     private readonly marketMakingRuntimeService: MarketMakingRuntimeService,
     private readonly strategyConfigResolver: StrategyConfigResolverService,
@@ -151,7 +149,6 @@ export class AdminDirectMarketMakingService {
         orderId,
         'running',
       );
-      await this.linkCampaignJoinsToOrder(dto.apiKeyId, orderId);
 
       return {
         orderId,
@@ -189,7 +186,6 @@ export class AdminDirectMarketMakingService {
       orderId,
       'stopped',
     );
-    await this.detachCampaignJoinsForOrder(orderId);
 
     return {
       orderId,
@@ -225,9 +221,6 @@ export class AdminDirectMarketMakingService {
         orderId,
         'running',
       );
-      if (order.apiKeyId) {
-        await this.linkCampaignJoinsToOrder(order.apiKeyId, orderId);
-      }
 
       return {
         orderId,
@@ -373,8 +366,20 @@ export class AdminDirectMarketMakingService {
     };
   }
 
-  async listCampaigns() {
-    return this.campaignService.getCampaigns();
+  async listCampaigns(): Promise<AdminCampaign[]> {
+    const campaigns = await this.campaignService.getCampaigns();
+    const walletStatus = await this.getWalletStatus();
+
+    if (!walletStatus.address) {
+      return campaigns.map((campaign) => ({ ...campaign, joined: false }));
+    }
+
+    return Promise.all(
+      campaigns.map(async (campaign) => ({
+        ...campaign,
+        joined: await this.isCampaignJoined(campaign, walletStatus.address),
+      })),
+    );
   }
 
   async joinCampaign(dto: CampaignJoinRequestDto) {
@@ -388,21 +393,9 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException('API key not found');
     }
 
-    const existing = await this.campaignJoinRepository.findOne({
-      where: {
-        evmAddress: dto.evmAddress.toLowerCase(),
-        apiKeyId: dto.apiKeyId,
-        campaignAddress: dto.campaignAddress.toLowerCase(),
-        chainId: normalizedChainId,
-      },
-    });
-
-    if (existing) {
-      throw new ConflictException('Campaign join already exists');
-    }
-
     const privateKey =
       this.configService.get<string>('WEB3_PRIVATE_KEY') ||
+      this.configService.get<string>('web3.private_key') ||
       process.env.WEB3_PRIVATE_KEY;
 
     if (!privateKey) {
@@ -423,29 +416,12 @@ export class AdminDirectMarketMakingService {
       dto.campaignAddress.toLowerCase(),
     );
 
-    const join = this.campaignJoinRepository.create({
-      evmAddress: dto.evmAddress.toLowerCase(),
-      apiKeyId: dto.apiKeyId,
-      chainId: normalizedChainId,
-      campaignAddress: dto.campaignAddress.toLowerCase(),
-      status: 'joined',
-    });
-
-    const savedJoin = await this.campaignJoinRepository.save(join);
-
     return {
-      id: savedJoin.id,
-      status: savedJoin.status,
-      apiKeyId: savedJoin.apiKeyId,
-      campaignAddress: savedJoin.campaignAddress,
-      chainId: savedJoin.chainId,
+      status: 'joined',
+      apiKeyId: dto.apiKeyId,
+      campaignAddress: dto.campaignAddress.toLowerCase(),
+      chainId: normalizedChainId,
     };
-  }
-
-  async listCampaignJoins() {
-    return this.campaignJoinRepository.find({
-      order: { updatedAt: 'DESC' },
-    });
   }
 
   async getWalletStatus(): Promise<{
@@ -536,31 +512,34 @@ export class AdminDirectMarketMakingService {
     }
   }
 
-  private async linkCampaignJoinsToOrder(
-    apiKeyId: string,
-    orderId: string,
-  ): Promise<void> {
-    const joins = await this.campaignJoinRepository.find({
-      where: { apiKeyId, orderId: null as unknown as string },
-    });
+  private async isCampaignJoined(
+    campaign: Record<string, unknown>,
+    walletAddress: string,
+  ): Promise<boolean> {
+    const chainId = Number(campaign.chain_id || campaign.chainId || 137);
+    const campaignAddress = String(
+      campaign.address || campaign.campaignAddress || '',
+    ).toLowerCase();
 
-    await Promise.all(
-      joins.map((join) =>
-        this.campaignJoinRepository.update({ id: join.id }, { orderId }),
-      ),
-    );
-  }
+    if (!campaignAddress) {
+      return false;
+    }
 
-  private async detachCampaignJoinsForOrder(orderId: string): Promise<void> {
-    const joins = await this.campaignJoinRepository.find({
-      where: { orderId },
-    });
+    try {
+      return await this.campaignService.isCampaignJoined(
+        chainId,
+        campaignAddress,
+        walletAddress,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to read joined status for campaign ${campaignAddress} on chain ${chainId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
 
-    await Promise.all(
-      joins.map((join) =>
-        this.campaignJoinRepository.update({ id: join.id }, { orderId: null }),
-      ),
-    );
+      return false;
+    }
   }
 
   private getRuntimeSession(orderId: string): RuntimeSessionLike | null {

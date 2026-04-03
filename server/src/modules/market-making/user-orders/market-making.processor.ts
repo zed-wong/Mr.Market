@@ -20,7 +20,6 @@ import { Repository } from 'typeorm';
 import { getRFC3339Timestamp } from '../../../common/helpers/utils';
 import { FeeService } from '../fee/fee.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
-import { LocalCampaignService } from '../local-campaign/local-campaign.service';
 import { NetworkMappingService } from '../network-mapping/network-mapping.service';
 import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
 import { mapStrategySnapshotToMarketMakingOrderFields } from './market-making-order-snapshot.utils';
@@ -68,7 +67,6 @@ export class MarketMakingOrderProcessor {
     private readonly growDataRepository: GrowdataRepository,
     private readonly transactionService: TransactionService,
     private readonly withdrawalService: WithdrawalService,
-    private readonly localCampaignService: LocalCampaignService,
     private readonly hufiCampaignService: CampaignService,
     private readonly exchangeService: ExchangeApiKeyService,
     private readonly networkMappingService: NetworkMappingService,
@@ -935,7 +933,7 @@ export class MarketMakingOrderProcessor {
       };
     }>,
   ) {
-    const { orderId, campaignId, hufiCampaign } = job.data;
+    const { orderId, hufiCampaign } = job.data;
 
     this.logger.log(`Joining campaign for order ${orderId}`);
 
@@ -953,16 +951,12 @@ export class MarketMakingOrderProcessor {
         throw new Error(`Order ${orderId} not found`);
       }
 
-      // Step 1: Try to join HuFi campaign (external Web3 integration)
-      let hufiJoinResult = null;
-
       if (hufiCampaign?.chainId && hufiCampaign?.campaignAddress) {
         try {
           this.logger.log(
             `Joining HuFi campaign: chainId=${hufiCampaign.chainId}, address=${hufiCampaign.campaignAddress}`,
           );
 
-          // Get active campaigns to find matching one
           const campaigns = await this.hufiCampaignService.getCampaigns();
           const matchingCampaign = campaigns.find(
             (c) =>
@@ -972,40 +966,19 @@ export class MarketMakingOrderProcessor {
           );
 
           if (matchingCampaign) {
-            // Use the @Cron auto-join logic from CampaignService
-            // The cron job handles Web3 auth and joining
             this.logger.log(
               `Found matching HuFi campaign: ${matchingCampaign.address}. Will be auto-joined by cron.`,
             );
-            hufiJoinResult = { scheduled: true, campaign: matchingCampaign };
           } else {
             this.logger.warn(
               `HuFi campaign not found: chainId=${hufiCampaign.chainId}, address=${hufiCampaign.campaignAddress}`,
             );
           }
         } catch (hufiError) {
-          // HuFi join failure should not block the MM order flow
           this.logger.error(
             `Failed to join HuFi campaign (non-blocking): ${hufiError.message}`,
           );
         }
-      }
-
-      // Step 2: Store local campaign record for tracking and reward distribution
-      const localCampaignId =
-        campaignId || `mm_${order.exchangeName}_${order.pair}`;
-      const participation = await this.localCampaignService.joinCampaign(
-        order.userId,
-        localCampaignId,
-        orderId,
-      );
-
-      this.logger.log(
-        `Local campaign record created for order ${orderId}: participationId=${participation.id}`,
-      );
-
-      if (hufiJoinResult) {
-        this.logger.log(`HuFi campaign join scheduled for order ${orderId}`);
       }
 
       await this.userOrdersService.updateMarketMakingOrderState(
@@ -1013,7 +986,6 @@ export class MarketMakingOrderProcessor {
         'campaign_joined',
       );
 
-      // Queue market making start
       await (job.queue as any).add(
         'start_mm',
         {

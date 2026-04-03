@@ -23,7 +23,6 @@ import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.reposit
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
-import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/strategy/execution/strategy-runtime-dispatcher.service';
@@ -229,10 +228,6 @@ export class MarketMakingPaymentHelper {
                 pairId === pairConfig.id ? pairConfig : null,
               ),
           },
-        },
-        {
-          provide: LocalCampaignService,
-          useValue: {},
         },
         {
           provide: MixinClientService,

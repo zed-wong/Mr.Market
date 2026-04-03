@@ -32,7 +32,6 @@ import { ExchangeOrderMappingService } from 'src/modules/market-making/execution
 import { FillRoutingService } from 'src/modules/market-making/execution/fill-routing.service';
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
-import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
 import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from 'src/modules/market-making/strategy/controllers/strategy-controller.registry';
@@ -290,10 +289,6 @@ export class MarketMakingSingleTickHelper {
         },
         {
           provide: GrowdataRepository,
-          useValue: {},
-        },
-        {
-          provide: LocalCampaignService,
           useValue: {},
         },
         {

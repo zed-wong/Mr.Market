@@ -4,7 +4,6 @@ import { getAllAPIKeys } from "$lib/helpers/mrm/admin/exchanges";
 import {
   getDirectWalletStatus,
   listAdminCampaigns,
-  listCampaignJoins,
   listDirectOrders,
 } from "$lib/helpers/mrm/admin/direct-market-making";
 
@@ -20,7 +19,6 @@ export const load: PageLoad = async ({ depends }) => {
       apiKeys: [],
       directOrders: [],
       campaigns: [],
-      campaignJoins: [],
       walletStatus: { configured: false, address: null },
     };
   }
@@ -34,20 +32,18 @@ export const load: PageLoad = async ({ depends }) => {
       apiKeys: [],
       directOrders: [],
       campaigns: [],
-      campaignJoins: [],
       walletStatus: { configured: false, address: null },
     };
   }
 
   try {
-    const [growInfo, strategies, apiKeys, directOrders, campaigns, campaignJoins, walletStatus] =
+    const [growInfo, strategies, apiKeys, directOrders, campaigns, walletStatus] =
       await Promise.all([
         getGrowBasicInfo(),
         getEnabledMarketMakingStrategies(),
         getAllAPIKeys(token),
         listDirectOrders(token),
         listAdminCampaigns(token),
-        listCampaignJoins(token),
         getDirectWalletStatus(token),
       ]);
 
@@ -57,7 +53,6 @@ export const load: PageLoad = async ({ depends }) => {
       apiKeys,
       directOrders,
       campaigns,
-      campaignJoins,
       walletStatus,
     };
   } catch (error) {
@@ -69,7 +64,6 @@ export const load: PageLoad = async ({ depends }) => {
       apiKeys: [],
       directOrders: [],
       campaigns: [],
-      campaignJoins: [],
       walletStatus: { configured: false, address: null },
     };
   }

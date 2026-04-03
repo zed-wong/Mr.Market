@@ -1,8 +1,8 @@
 import { MRM_BACKEND_URL } from "$lib/helpers/constants";
 import { getHeaders, handleApiResponse } from "$lib/helpers/mrm/common";
 import type {
+  AdminCampaign,
   CampaignJoinPayload,
-  CampaignJoinRecord,
   DirectOrderStatus,
   DirectOrderSummary,
   DirectStartPayload,
@@ -88,11 +88,14 @@ export const getDirectOrderStatus = async (
 
 export const listAdminCampaigns = async (
   token: string,
-): Promise<Array<Record<string, unknown>>> => {
-  const response = await fetch(`${MRM_BACKEND_URL}/admin/market-making/campaigns`, {
-    method: "GET",
-    headers: getHeaders(token),
-  });
+): Promise<AdminCampaign[]> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/campaigns`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
 
   return handleApiResponse(response);
 };
@@ -100,27 +103,13 @@ export const listAdminCampaigns = async (
 export const joinAdminCampaign = async (
   payload: CampaignJoinPayload,
   token: string,
-): Promise<CampaignJoinRecord> => {
+): Promise<{ status: string; apiKeyId: string; campaignAddress: string; chainId: number }> => {
   const response = await fetch(
     `${MRM_BACKEND_URL}/admin/market-making/campaign-join`,
     {
       method: "POST",
       headers: getHeaders(token),
       body: JSON.stringify(payload),
-    },
-  );
-
-  return handleApiResponse(response);
-};
-
-export const listCampaignJoins = async (
-  token: string,
-): Promise<CampaignJoinRecord[]> => {
-  const response = await fetch(
-    `${MRM_BACKEND_URL}/admin/market-making/campaign-joins`,
-    {
-      method: "GET",
-      headers: getHeaders(token),
     },
   );
 

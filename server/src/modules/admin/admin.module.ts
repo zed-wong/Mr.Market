@@ -4,7 +4,6 @@ import { CustomConfigEntity } from 'src/common/entities/admin/custom-config.enti
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
-import { CampaignJoin } from 'src/common/entities/market-making/campaign-join.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
@@ -52,7 +51,6 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
       StrategyInstance,
       StrategyDefinition,
       MarketMakingOrder,
-      CampaignJoin,
       MixinUser,
       Contribution,
       Performance,

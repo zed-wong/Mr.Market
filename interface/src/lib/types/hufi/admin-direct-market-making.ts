@@ -67,16 +67,9 @@ export interface DirectOrderStatus {
   stale: boolean;
 }
 
-export interface CampaignJoinRecord {
-  id: string;
-  evmAddress: string;
-  apiKeyId: string;
-  chainId: number;
-  campaignAddress: string;
-  orderId?: string | null;
-  status: 'joined';
-  createdAt: string;
-  updatedAt: string;
+export interface AdminCampaign {
+  joined: boolean;
+  [key: string]: unknown;
 }
 
 export interface DirectStartPayload {

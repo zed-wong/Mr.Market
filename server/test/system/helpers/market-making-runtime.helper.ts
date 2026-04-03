@@ -27,7 +27,6 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
-import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import {
@@ -199,10 +198,6 @@ export class MarketMakingRuntimeHelper {
         },
         {
           provide: GrowdataRepository,
-          useValue: {},
-        },
-        {
-          provide: LocalCampaignService,
           useValue: {},
         },
         {

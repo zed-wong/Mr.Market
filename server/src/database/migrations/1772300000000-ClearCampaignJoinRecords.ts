@@ -11,11 +11,9 @@ export class ClearCampaignJoinRecords1772300000000
     );
 
     if (tableExists.length > 0) {
-      await queryRunner.query(`DELETE FROM "campaign_join"`);
+      await queryRunner.query(`DROP TABLE "campaign_join"`);
     }
   }
 
-  public async down(): Promise<void> {
-    // Deleted rows cannot be restored
-  }
+  public async down(): Promise<void> {}
 }

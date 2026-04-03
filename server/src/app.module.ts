@@ -12,8 +12,6 @@ import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { AppController } from './app.controller';
 import { APIKeysConfig } from './common/entities/admin/api-keys.entity';
 import { CustomConfigEntity } from './common/entities/admin/custom-config.entity';
-import { Campaign } from './common/entities/campaign/campaign.entity';
-import { CampaignParticipation } from './common/entities/campaign/campaign-participation.entity';
 import { Contribution } from './common/entities/campaign/contribution.entity';
 import { HufiScoreSnapshot } from './common/entities/campaign/hufi-score-snapshot.entity';
 import {
@@ -28,7 +26,6 @@ import { LedgerEntry } from './common/entities/ledger/ledger-entry.entity';
 import { RewardAllocation } from './common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from './common/entities/ledger/reward-ledger.entity';
 import { ShareLedgerEntry } from './common/entities/ledger/share-ledger-entry.entity';
-import { CampaignJoin } from './common/entities/market-making/campaign-join.entity';
 import { ExchangeOrderMapping } from './common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from './common/entities/market-making/market-making-order-intent.entity';
 import { Performance } from './common/entities/market-making/performance.entity';
@@ -67,7 +64,6 @@ import { LoggerModule } from './modules/infrastructure/logger/logger.module';
 import { CustomLogger } from './modules/infrastructure/logger/logger.service';
 import { DurabilityModule } from './modules/market-making/durability/durability.module';
 import { LedgerModule } from './modules/market-making/ledger/ledger.module';
-import { LocalCampaignModule } from './modules/market-making/local-campaign/local-campaign.module';
 import { MetricsModule } from './modules/market-making/metrics/metrics.module';
 import { OrchestrationModule } from './modules/market-making/orchestration/orchestration.module';
 import { PerformanceModule } from './modules/market-making/performance/performance.module';
@@ -146,8 +142,6 @@ function buildRedisConfig(configService: ConfigService) {
         GrowdataArbitragePair,
         GrowdataMarketMakingPair,
         Withdrawal,
-        Campaign,
-        CampaignParticipation,
         MarketMakingOrderIntent,
         LedgerEntry,
         BalanceReadModel,
@@ -157,7 +151,6 @@ function buildRedisConfig(configService: ConfigService) {
         RewardAllocation,
         ShareLedgerEntry,
         HufiScoreSnapshot,
-        CampaignJoin,
         StrategyOrderIntentEntity,
         ExchangeOrderMapping,
       ],
@@ -186,7 +179,6 @@ function buildRedisConfig(configService: ConfigService) {
     Web3Module,
     MetricsModule,
     UserOrdersModule,
-    LocalCampaignModule,
     TickModule,
     LedgerModule,
     DurabilityModule,

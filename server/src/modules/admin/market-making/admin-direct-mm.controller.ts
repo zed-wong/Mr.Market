@@ -71,15 +71,9 @@ export class AdminDirectMarketMakingController {
   }
 
   @Post('campaign-join')
-  @ApiOperation({ summary: 'Join a HuFi campaign asynchronously' })
+  @ApiOperation({ summary: 'Join a HuFi campaign through backend proxy' })
   async joinCampaign(@Body() body: CampaignJoinRequestDto) {
     return this.adminDirectMarketMakingService.joinCampaign(body);
-  }
-
-  @Get('campaign-joins')
-  @ApiOperation({ summary: 'List HuFi campaign joins' })
-  async listCampaignJoins() {
-    return this.adminDirectMarketMakingService.listCampaignJoins();
   }
 
   @Get('wallet-status')

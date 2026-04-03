@@ -186,7 +186,6 @@ describe('MarketMakingOrderProcessor', () => {
       } as any,
       transactionService as any,
       { executeWithdrawal: jest.fn() } as any,
-      { joinCampaign: jest.fn() } as any,
       { getCampaigns: jest.fn() } as any,
       {
         findFirstAPIKeyByExchange: jest.fn(),

@@ -10,7 +10,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import { StrategyInstance } from '../market-making/strategy-instances.entity';
+import type { StrategyInstance } from '../market-making/strategy-instances.entity';
 import { MixinUser } from '../mixin/mixin-user.entity';
 
 @Entity()
