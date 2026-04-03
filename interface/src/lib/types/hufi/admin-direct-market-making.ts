@@ -74,7 +74,7 @@ export interface CampaignJoinRecord {
   chainId: number;
   campaignAddress: string;
   orderId?: string | null;
-  status: 'pending' | 'linked' | 'detached' | 'joined';
+  status: 'joined';
   createdAt: string;
   updatedAt: string;
 }

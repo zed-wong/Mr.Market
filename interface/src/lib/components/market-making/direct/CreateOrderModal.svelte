@@ -22,6 +22,8 @@
   export let onClose: () => void;
 
   let pairSearch = "";
+  let pairDropdownOpen = false;
+  let pairInputEl: HTMLInputElement;
 
   $: searchedPairs = pairSearch
     ? filteredPairs.filter((p) =>
@@ -31,6 +33,22 @@
 
   $: if (filteredApiKeys.length > 0 && !filteredApiKeys.find(k => k.key_id === startApiKeyId)) {
     startApiKeyId = filteredApiKeys[0].key_id;
+  }
+
+  function openPairDropdown() {
+    pairDropdownOpen = true;
+    pairSearch = "";
+    setTimeout(() => pairInputEl?.focus(), 0);
+  }
+
+  function selectPair(symbol: string) {
+    startPair = symbol;
+    pairSearch = "";
+    pairDropdownOpen = false;
+  }
+
+  function handlePairBlur() {
+    setTimeout(() => { pairDropdownOpen = false; }, 150);
   }
 </script>
 
@@ -78,31 +96,44 @@
         <div class="bg-base-200/40 rounded-xl p-4">
           <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2">{$_("admin_direct_mm_trading_pair")}</span>
           <div class="relative">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40">
-              <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-            </svg>
-            <input
-              class="input input-bordered w-full h-10 min-h-[40px] pl-9 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
-              placeholder={$_("admin_direct_mm_search_pairs")}
-              bind:value={pairSearch}
-            />
+            {#if pairDropdownOpen}
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 absolute z-10 left-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+              </svg>
+              <input
+                bind:this={pairInputEl}
+                class="input input-bordered w-full h-10 min-h-[40px] pl-9 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+                placeholder={$_("admin_direct_mm_search_pairs")}
+                bind:value={pairSearch}
+                on:blur={handlePairBlur}
+              />
+            {:else}
+              <button
+                class="flex items-center justify-between w-full h-10 min-h-[40px] px-3 bg-base-100 text-sm rounded-lg border border-base-300 hover:border-primary transition-colors"
+                on:click={openPairDropdown}
+              >
+                <span class={startPair ? 'text-base-content font-medium' : 'text-base-content/40'}>
+                  {startPair || $_("admin_direct_mm_search_pairs")}
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-base-content/40">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </button>
+            {/if}
+            {#if pairDropdownOpen && searchedPairs.length > 0}
+              <div class="absolute z-10 left-0 right-0 mt-1 max-h-40 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-lg">
+                {#each searchedPairs as pair}
+                  <button
+                    class="w-full text-left px-3 py-2 text-sm hover:bg-base-200 transition-colors
+                      {startPair === pair.symbol ? 'bg-primary/10 text-primary font-semibold' : 'text-base-content'}"
+                    on:click={() => selectPair(pair.symbol)}
+                  >
+                    {pair.symbol}
+                  </button>
+                {/each}
+              </div>
+            {/if}
           </div>
-          {#if pairSearch && searchedPairs.length > 0}
-            <div class="mt-2 max-h-32 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-sm">
-              {#each searchedPairs as pair}
-                <button
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-base-200 transition-colors
-                    {startPair === pair.symbol ? 'bg-primary/10 text-primary font-semibold' : 'text-base-content'}"
-                  on:click={() => { startPair = pair.symbol; pairSearch = ''; }}
-                >
-                  {pair.symbol}
-                </button>
-              {/each}
-            </div>
-          {/if}
-          {#if startPair && !pairSearch}
-            <span class="text-sm text-base-content mt-2 block font-medium">{startPair}</span>
-          {/if}
         </div>
 
         <!-- Strategy -->

@@ -37,6 +37,7 @@
   import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
   import AllCampaignsModal from "$lib/components/market-making/direct/AllCampaignsModal.svelte";
   import StatusDrawer from "$lib/components/market-making/direct/StatusDrawer.svelte";
+  import OrderDetailsDialog from "$lib/components/market-making/direct/OrderDetailsDialog.svelte";
 
   type OverrideRow = { key: string; value: string };
 
@@ -86,6 +87,11 @@
   let nowMs = Date.now();
   let statusPollTimer: ReturnType<typeof setInterval> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+  let showOrderDetails = false;
+  let detailsOrder: DirectOrderSummary | null = null;
+  let detailsData: DirectOrderStatus | null = null;
+  let detailsLoading = false;
 
   let showAllCampaigns = false;
   let showJoinModal = false;
@@ -317,6 +323,28 @@
     }
   }
 
+  async function openOrderDetails(order: DirectOrderSummary) {
+    detailsOrder = order;
+    showOrderDetails = true;
+    detailsLoading = true;
+    const token = getToken();
+    if (!token) { detailsLoading = false; return; }
+    try {
+      detailsData = await getDirectOrderStatus(order.orderId, token);
+    } catch {
+      detailsData = null;
+    } finally {
+      detailsLoading = false;
+    }
+  }
+
+  function closeOrderDetails() {
+    showOrderDetails = false;
+    detailsOrder = null;
+    detailsData = null;
+    detailsLoading = false;
+  }
+
   async function submitCampaignJoin() {
     if (isJoiningCampaign) return;
     const token = getToken();
@@ -402,7 +430,7 @@
       onStartAllClick={() => (showStartAllModal = true)}
       onStopAllClick={() => (showStopAllConfirm = true)}
       onStopOrder={(order) => (stopOrderCandidate = order)}
-      onOrderClick={openStatusDrawer}
+      onOrderClick={openOrderDetails}
     />
   </div>
 </div>
@@ -473,4 +501,13 @@
   loading={statusLoading}
   {nowMs}
   onClose={closeStatusDrawer}
+/>
+
+<OrderDetailsDialog
+  show={showOrderDetails}
+  order={detailsOrder}
+  data={detailsData}
+  loading={detailsLoading}
+  onClose={closeOrderDetails}
+  onStartOrder={() => { closeOrderDetails(); showStartForm = true; }}
 />

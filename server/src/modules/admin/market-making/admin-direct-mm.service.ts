@@ -499,17 +499,9 @@ export class AdminDirectMarketMakingService {
     });
 
     await Promise.all(
-      joins
-        .filter((join) => join.status !== 'detached')
-        .map((join) =>
-          this.campaignJoinRepository.update(
-            { id: join.id },
-            {
-              orderId,
-              status: 'linked',
-            },
-          ),
-        ),
+      joins.map((join) =>
+        this.campaignJoinRepository.update({ id: join.id }, { orderId }),
+      ),
     );
   }
 
@@ -520,13 +512,7 @@ export class AdminDirectMarketMakingService {
 
     await Promise.all(
       joins.map((join) =>
-        this.campaignJoinRepository.update(
-          { id: join.id },
-          {
-            orderId: null,
-            status: 'detached',
-          },
-        ),
+        this.campaignJoinRepository.update({ id: join.id }, { orderId: null }),
       ),
     );
   }

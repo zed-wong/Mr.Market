@@ -42,8 +42,7 @@ export function getRecoveryHint(error: unknown): string {
 
 export function getBadgeClass(state: string): string {
   if (state === "joined") return "badge badge-success text-base-100";
-  if (state === "created" || state === "pending" || state === "linked")
-    return "badge badge-warning";
+  if (state === "created") return "badge badge-warning";
   return "badge";
 }
 
@@ -54,9 +53,6 @@ export function getStateLabel(state: string): string {
     running: "admin_direct_mm_state_running",
     created: "admin_direct_mm_state_created",
     stopped: "admin_direct_mm_state_stopped",
-    pending: "admin_direct_mm_state_pending",
-    linked: "admin_direct_mm_state_linked",
-    detached: "admin_direct_mm_state_detached",
     joined: "admin_direct_mm_state_joined",
     gone: "admin_direct_mm_state_gone",
     stale: "admin_direct_mm_state_stale",
@@ -114,7 +110,7 @@ export function normalizeConfigOverrides(
   );
   if (orderAmount) {
     const num = Number(orderAmount);
-    accumulator["amount"] = isNaN(num) ? orderAmount : num;
+    accumulator["orderAmount"] = isNaN(num) ? orderAmount : num;
   }
   if (orderQuoteAmount) {
     const num = Number(orderQuoteAmount);
@@ -122,7 +118,8 @@ export function normalizeConfigOverrides(
   }
   if (orderSpread) {
     const num = Number(orderSpread);
-    accumulator["spread"] = isNaN(num) ? orderSpread : num;
+    accumulator["bidSpread"] = isNaN(num) ? orderSpread : num;
+    accumulator["askSpread"] = isNaN(num) ? orderSpread : num;
   }
   return accumulator;
 }
