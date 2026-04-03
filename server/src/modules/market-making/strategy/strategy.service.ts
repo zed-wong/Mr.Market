@@ -1173,8 +1173,15 @@ export class StrategyService
         })
       : this.buildLegacyQuotes(params, priceSource);
 
+    this.logger.log(
+      `[${strategyKey}] midPrice=${priceSource.toFixed()} bidSpread=${params.bidSpread} askSpread=${params.askSpread} layers=${params.numberOfLayers} openBuys=${existingOpenOrdersBySide.buy} openSells=${existingOpenOrdersBySide.sell}`,
+    );
+
     for (const quote of quotes) {
       if (!quote.shouldCreate) {
+        this.logger.log(
+          `[${strategyKey}] Skipped layer-${quote.layer} ${quote.side} ${quote.qty}@${quote.price}: shouldCreate=false (hanging orders)`,
+        );
         continue;
       }
       const quotePrice = new BigNumber(quote.price);
@@ -1182,15 +1189,23 @@ export class StrategyService
       if (
         quote.side === 'buy' &&
         params.ceilingPrice !== undefined &&
+        params.ceilingPrice > 0 &&
         priceSource.isGreaterThan(params.ceilingPrice)
       ) {
+        this.logger.log(
+          `[${strategyKey}] Skipped layer-${quote.layer} buy: price ${priceSource.toFixed()} > ceilingPrice ${params.ceilingPrice}`,
+        );
         continue;
       }
       if (
         quote.side === 'sell' &&
         params.floorPrice !== undefined &&
+        params.floorPrice > 0 &&
         priceSource.isLessThan(params.floorPrice)
       ) {
+        this.logger.log(
+          `[${strategyKey}] Skipped layer-${quote.layer} sell: price ${priceSource.toFixed()} < floorPrice ${params.floorPrice}`,
+        );
         continue;
       }
 

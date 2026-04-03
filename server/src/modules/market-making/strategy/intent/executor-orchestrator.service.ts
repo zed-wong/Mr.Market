@@ -42,6 +42,12 @@ export class ExecutorOrchestratorService {
       await this.strategyIntentExecutionService?.consumeIntents(intents);
     }
 
+    for (const intent of intents) {
+      this.logger.log(
+        `Intent ${intent.type} ${intent.side} ${intent.qty}@${intent.price} ${intent.exchange} ${intent.pair} [${strategyKey}] (driver=${intentExecutionDriver})`,
+      );
+    }
+
     this.logger.log(
       `Published ${intents.length} intents for ${strategyKey} (driver=${intentExecutionDriver})`,
     );

@@ -127,6 +127,9 @@ export class StrategyIntentExecutionService {
     );
 
     if (!this.executeIntents) {
+      this.logger.warn(
+        `Skipping intent ${intent.intentId} (execute_intents=false): ${intent.type} ${intent.side} ${intent.qty}@${intent.price} ${intent.exchange} ${intent.pair}`,
+      );
       this.processedIntentIds.add(intent.intentId);
       await this.strategyIntentStoreService?.updateIntentStatus(
         intent.intentId,
