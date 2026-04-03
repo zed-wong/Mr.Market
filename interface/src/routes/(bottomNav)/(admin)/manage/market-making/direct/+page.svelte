@@ -3,11 +3,11 @@
   import { page } from "$app/stores";
   import { _ } from "svelte-i18n";
   import { toast } from "svelte-sonner";
-  import { onDestroy } from "svelte";
 
   import {
     getDirectOrderStatus,
     joinAdminCampaign,
+    resumeDirectOrder,
     startDirectOrder,
     stopDirectOrder,
   } from "$lib/helpers/mrm/admin/direct-market-making";
@@ -36,7 +36,6 @@
   import StopOrderModal from "$lib/components/market-making/direct/StopOrderModal.svelte";
   import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
   import AllCampaignsModal from "$lib/components/market-making/direct/AllCampaignsModal.svelte";
-  import StatusDrawer from "$lib/components/market-making/direct/StatusDrawer.svelte";
   import OrderDetailsDialog from "$lib/components/market-making/direct/OrderDetailsDialog.svelte";
 
   type OverrideRow = { key: string; value: string };
@@ -81,13 +80,6 @@
   let stopOrderCandidate: DirectOrderSummary | null = null;
   let isStopping = false;
 
-  let statusDrawerOrder: DirectOrderSummary | null = null;
-  let statusDrawerData: DirectOrderStatus | null = null;
-  let statusLoading = false;
-  let nowMs = Date.now();
-  let statusPollTimer: ReturnType<typeof setInterval> | null = null;
-  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-
   let showOrderDetails = false;
   let detailsOrder: DirectOrderSummary | null = null;
   let detailsData: DirectOrderStatus | null = null;
@@ -125,21 +117,6 @@
   $: walletStatusHint = hasWalletConfigured
     ? $_("admin_direct_mm_wallet_status_loaded_hint")
     : $_("admin_direct_mm_wallet_status_missing_hint");
-
-  if (!heartbeatTimer) {
-    heartbeatTimer = setInterval(() => {
-      nowMs = Date.now();
-    }, 1000);
-  }
-
-  onDestroy(() => {
-    if (statusPollTimer) {
-      clearInterval(statusPollTimer);
-    }
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-    }
-  });
 
   function getToken(): string {
     return localStorage.getItem("admin-access-token") || "";
@@ -238,12 +215,6 @@
         description: $_("admin_direct_mm_recovery_refresh_status"),
       });
       showStopAllConfirm = false;
-      if (
-        statusDrawerOrder &&
-        activeOrders.some((o) => o.orderId === statusDrawerOrder!.orderId)
-      ) {
-        statusDrawerData = null;
-      }
     } catch (error) {
       toast.error(getErrorMessage(error), {
         description: getRecoveryHint(error),
@@ -269,9 +240,6 @@
         description: $_("admin_direct_mm_recovery_refresh_status"),
       });
       stopOrderCandidate = null;
-      if (statusDrawerOrder?.orderId === stoppedOrderId) {
-        statusDrawerData = null;
-      }
     } catch (error) {
       toast.error(getErrorMessage(error), {
         description: getRecoveryHint(error),
@@ -281,45 +249,33 @@
     }
   }
 
-  async function openStatusDrawer(order: DirectOrderSummary) {
-    statusDrawerOrder = order;
-    statusLoading = true;
-    await loadStatus(order.orderId);
-
-    if (statusPollTimer) {
-      clearInterval(statusPollTimer);
-    }
-
-    statusPollTimer = setInterval(() => {
-      if (statusDrawerOrder) {
-        void loadStatus(statusDrawerOrder.orderId);
-      }
-    }, 5000);
-  }
-
-  async function loadStatus(orderId: string) {
+  async function handleResumeOrder(order: DirectOrderSummary) {
     const token = getToken();
 
     if (!token) return;
 
     try {
-      statusDrawerData = await getDirectOrderStatus(orderId, token);
+      const result = await resumeDirectOrder(order.orderId, token);
+      await refreshPage();
+      toast.success(
+        $_("admin_direct_mm_start_success", {
+          values: { exchange: order.exchangeName, pair: order.pair },
+        }),
+        {
+          description:
+            result.warnings.length > 0
+              ? result.warnings.join(" · ")
+              : $_("admin_direct_mm_recovery_monitor_status"),
+        },
+      );
+
+      if (showOrderDetails && detailsOrder?.orderId === order.orderId) {
+        closeOrderDetails();
+      }
     } catch (error) {
       toast.error(getErrorMessage(error), {
         description: getRecoveryHint(error),
       });
-    } finally {
-      statusLoading = false;
-    }
-  }
-
-  function closeStatusDrawer() {
-    statusDrawerOrder = null;
-    statusDrawerData = null;
-    statusLoading = false;
-    if (statusPollTimer) {
-      clearInterval(statusPollTimer);
-      statusPollTimer = null;
     }
   }
 
@@ -400,12 +356,42 @@
     showJoinModal = true;
   }
 
-  function handleStartAll() {
-    isStartingAll = true;
-    setTimeout(() => {
-      isStartingAll = false;
+  async function handleStartAll() {
+    if (isStartingAll) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    const stoppedOrders = orders.filter((order) => order.runtimeState === "stopped");
+    if (stoppedOrders.length === 0) {
       showStartAllModal = false;
-    }, 1000);
+      return;
+    }
+
+    isStartingAll = true;
+
+    try {
+      const results = await Promise.all(
+        stoppedOrders.map((order) => resumeDirectOrder(order.orderId, token)),
+      );
+
+      await refreshPage();
+      showStartAllModal = false;
+
+      const warnings = results.flatMap((result) => result.warnings);
+      toast.success($_("admin_direct_mm_start_all_success"), {
+        description:
+          warnings.length > 0
+            ? warnings.join(" · ")
+            : $_("admin_direct_mm_recovery_monitor_status"),
+      });
+    } catch (error) {
+      toast.error(getErrorMessage(error), {
+        description: getRecoveryHint(error),
+      });
+    } finally {
+      isStartingAll = false;
+    }
   }
 </script>
 
@@ -419,7 +405,7 @@
 
     <!-- Top Row -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <ApiKeysPanel {apiKeys} />
+      <ApiKeysPanel {apiKeys} {orders} />
       <CampaignsPanel {campaigns} {campaignJoins} onJoin={openJoinModal} onViewAll={() => (showAllCampaigns = true)} onViewCampaigns={() => (showAllCampaigns = true)} />
     </div>
 
@@ -430,6 +416,7 @@
       onStartAllClick={() => (showStartAllModal = true)}
       onStopAllClick={() => (showStopAllConfirm = true)}
       onStopOrder={(order) => (stopOrderCandidate = order)}
+      onResumeOrder={handleResumeOrder}
       onOrderClick={openOrderDetails}
     />
   </div>
@@ -495,19 +482,17 @@
   onCancel={() => (showJoinModal = false)}
 />
 
-<StatusDrawer
-  order={statusDrawerOrder}
-  data={statusDrawerData}
-  loading={statusLoading}
-  {nowMs}
-  onClose={closeStatusDrawer}
-/>
-
 <OrderDetailsDialog
   show={showOrderDetails}
   order={detailsOrder}
   data={detailsData}
   loading={detailsLoading}
   onClose={closeOrderDetails}
-  onStartOrder={() => { closeOrderDetails(); showStartForm = true; }}
+  onStartOrder={() => detailsOrder && handleResumeOrder(detailsOrder)}
+  onStopOrder={() => {
+    if (detailsOrder) {
+      closeOrderDetails();
+      stopOrderCandidate = detailsOrder;
+    }
+  }}
 />

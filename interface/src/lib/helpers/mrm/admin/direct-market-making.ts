@@ -55,6 +55,22 @@ export const stopDirectOrder = async (
   return handleApiResponse(response);
 };
 
+export const resumeDirectOrder = async (
+  orderId: string,
+  token: string,
+): Promise<{ orderId: string; state: string; warnings: string[] }> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-resume`,
+    {
+      method: "POST",
+      headers: getHeaders(token),
+      body: JSON.stringify({ orderId }),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
 export const getDirectOrderStatus = async (
   orderId: string,
   token: string,

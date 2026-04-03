@@ -581,7 +581,7 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('marks campaign joins as linked when an order is already attached', async () => {
+  it('links campaign joins to an attached order', async () => {
     const { service, campaignJoinRepository } = buildService();
 
     campaignJoinRepository.find.mockResolvedValueOnce([
@@ -595,7 +595,7 @@ describe('AdminDirectMarketMakingService', () => {
 
     expect(campaignJoinRepository.update).toHaveBeenCalledWith(
       { id: 'join-1' },
-      { orderId: 'order-1', status: 'linked' },
+      { orderId: 'order-1' },
     );
   });
 

@@ -53,6 +53,7 @@ export function getStateLabel(state: string): string {
     running: "admin_direct_mm_state_running",
     created: "admin_direct_mm_state_created",
     stopped: "admin_direct_mm_state_stopped",
+    failed: "admin_direct_mm_state_failed",
     joined: "admin_direct_mm_state_joined",
     gone: "admin_direct_mm_state_gone",
     stale: "admin_direct_mm_state_stale",

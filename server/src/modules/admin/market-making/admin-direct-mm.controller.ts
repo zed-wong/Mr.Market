@@ -12,6 +12,7 @@ import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 
 import {
   CampaignJoinRequestDto,
+  DirectResumeMarketMakingDto,
   DirectStartMarketMakingDto,
   DirectStopMarketMakingDto,
   DirectWalletStatusDto,
@@ -43,6 +44,12 @@ export class AdminDirectMarketMakingController {
   @ApiOperation({ summary: 'Stop a direct admin market-making order' })
   async directStop(@Body() body: DirectStopMarketMakingDto) {
     return this.adminDirectMarketMakingService.directStop(body.orderId);
+  }
+
+  @Post('direct-resume')
+  @ApiOperation({ summary: 'Resume a direct admin market-making order' })
+  async directResume(@Body() body: DirectResumeMarketMakingDto) {
+    return this.adminDirectMarketMakingService.directResume(body.orderId);
   }
 
   @Get('direct-orders')

@@ -45,6 +45,13 @@ export class DirectStopMarketMakingDto {
   orderId: string;
 }
 
+export class DirectResumeMarketMakingDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  orderId: string;
+}
+
 export class CampaignJoinRequestDto {
   @ApiProperty()
   @IsString()

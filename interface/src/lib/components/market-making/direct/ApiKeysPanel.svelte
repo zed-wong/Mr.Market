@@ -2,8 +2,67 @@
   import { _ } from "svelte-i18n";
   import ExchangeIcon from "$lib/components/common/exchangeIcon.svelte";
   import type { AdminSingleKey } from "$lib/types/hufi/admin";
+  import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
 
   export let apiKeys: AdminSingleKey[] = [];
+  export let orders: DirectOrderSummary[] = [];
+
+  function isConnected(apiKey: AdminSingleKey): boolean {
+    return (apiKey.state || "").toLowerCase() === "alive";
+  }
+
+  function getActivePairsCount(apiKey: AdminSingleKey): number {
+    return orders.filter(
+      (order) =>
+        order.apiKeyId === apiKey.key_id &&
+        (order.runtimeState === "running" || order.runtimeState === "active"),
+    ).length;
+  }
+
+  function formatRelativeTime(value?: string): string {
+    if (!value) return $_("admin_direct_mm_na");
+
+    const timestamp = new Date(value);
+    if (Number.isNaN(timestamp.getTime())) return $_("admin_direct_mm_na");
+
+    const diffMs = timestamp.getTime() - Date.now();
+    const diffMinutes = Math.round(diffMs / 60000);
+    const diffHours = Math.round(diffMs / 3600000);
+    const diffDays = Math.round(diffMs / 86400000);
+    const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+    if (Math.abs(diffMinutes) < 60) {
+      return formatter.format(diffMinutes, "minute");
+    }
+
+    if (Math.abs(diffHours) < 24) {
+      return formatter.format(diffHours, "hour");
+    }
+
+    return formatter.format(diffDays, "day");
+  }
+
+  function getStatusText(apiKey: AdminSingleKey): string {
+    const activePairsCount = getActivePairsCount(apiKey);
+
+    if (activePairsCount > 0) {
+      return $_("admin_direct_mm_api_key_status_active_pairs", {
+        values: { count: activePairsCount },
+      });
+    }
+
+    if (apiKey.last_update) {
+      return $_("admin_direct_mm_api_key_status_last_sync", {
+        values: { value: formatRelativeTime(apiKey.last_update) },
+      });
+    }
+
+    if (!isConnected(apiKey)) {
+      return $_("admin_direct_mm_api_key_status_expired");
+    }
+
+    return $_("admin_direct_mm_na");
+  }
 </script>
 
 <div
@@ -48,19 +107,12 @@
                 >{apiKey.name}</span
               >
               <span class="text-xs text-base-content/50 capitalize">
-                {apiKey.exchange} •
-                {#if i === 0}
-                  {$_("admin_direct_mm_api_key_status_active_pairs")}
-                {:else if i === 1}
-                  {$_("admin_direct_mm_api_key_status_last_sync")}
-                {:else}
-                  {$_("admin_direct_mm_api_key_status_expired")}
-                {/if}
+                {apiKey.exchange} • {getStatusText(apiKey)}
               </span>
             </div>
           </div>
           <div>
-            {#if i === 2}
+            {#if !isConnected(apiKey)}
               <div
                 class="bg-red-50 text-red-600 text-[10px] font-bold px-3 py-1 rounded border border-red-100 tracking-wide capitalize"
               >

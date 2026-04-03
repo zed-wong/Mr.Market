@@ -2,13 +2,64 @@
   import { _ } from "svelte-i18n";
   import ExchangeIcon from "$lib/components/common/exchangeIcon.svelte";
   import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
+  import { getStateLabel } from "$lib/components/market-making/direct/helpers";
 
   export let orders: DirectOrderSummary[] = [];
   export let onCreateClick: () => void;
   export let onStartAllClick: () => void;
   export let onStopAllClick: () => void;
   export let onStopOrder: (order: DirectOrderSummary) => void;
+  export let onResumeOrder: (order: DirectOrderSummary) => void;
   export let onOrderClick: (order: DirectOrderSummary) => void;
+
+  function formatPair(pair: string): string {
+    return pair.replace(/[-_]/g, " / ");
+  }
+
+  function formatCreatedAt(createdAt: string): string {
+    if (!createdAt) return $_("admin_direct_mm_na");
+
+    const date = new Date(createdAt);
+    if (Number.isNaN(date.getTime())) return $_("admin_direct_mm_na");
+
+    return `${date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })} • ${date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })}`;
+  }
+
+  function getStrategyLabel(order: DirectOrderSummary): string {
+    return order.strategyName || order.strategyDefinitionId || $_("admin_direct_mm_na");
+  }
+
+  function isActiveState(runtimeState: string): boolean {
+    return runtimeState === "running" || runtimeState === "active";
+  }
+
+  function getStatusClasses(runtimeState: string): string {
+    if (isActiveState(runtimeState)) {
+      return "bg-green-50 text-green-600";
+    }
+
+    if (runtimeState === "stopped") {
+      return "bg-slate-100 text-slate-500";
+    }
+
+    if (runtimeState === "failed" || runtimeState === "gone") {
+      return "bg-red-50 text-red-600";
+    }
+
+    if (runtimeState === "created" || runtimeState === "stale") {
+      return "bg-amber-50 text-amber-600";
+    }
+
+    return "bg-slate-100 text-slate-500";
+  }
 </script>
 
 <div class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50">
@@ -116,7 +167,7 @@
             >
           </tr>
         {/if}
-        {#each orders as order, i}
+        {#each orders as order}
           <tr
             class="hover:bg-base-200/30 transition-colors border-b border-base-300/60 last:border-0 cursor-pointer"
             on:click={() => onOrderClick(order)}
@@ -139,69 +190,35 @@
             <td class="py-4 px-4">
               <span
                 class="font-bold text-[14px] text-base-content whitespace-nowrap"
-                >{order.pair.replace("-", " / ").replace("_", " / ")}</span
+                >{formatPair(order.pair)}</span
               >
             </td>
             <td class="py-4 px-2">
               <span
                 class="inline-flex bg-indigo-50 text-blue-600 px-2.5 py-1 rounded-[6px] text-xs font-semibold whitespace-nowrap"
               >
-                {order.strategyName ||
-                  (i === 0
-                    ? $_("admin_direct_mm_strategy_cross_exchange")
-                    : i === 1
-                      ? $_("admin_direct_mm_strategy_market_maker")
-                      : $_("admin_direct_mm_strategy_pure_mm"))}
+                {getStrategyLabel(order)}
               </span>
             </td>
             <td class="py-4 px-2 whitespace-nowrap">
-              {#if order.runtimeState === "running" || order.runtimeState === "active"}
-                <span
-                  class="inline-flex items-center gap-1.5 bg-green-50 text-green-600 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
-                >
-                  <span class="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
-                  {$_("admin_direct_mm_running")}
-                </span>
-              {:else if order.runtimeState === "stopped"}
-                <span
-                  class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
-                >
-                  {$_("admin_direct_mm_paused")}
-                </span>
-              {:else}
-                <span
-                  class="inline-flex items-center gap-1.5 bg-green-50 text-green-600 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize"
-                >
-                  <span class="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
-                  {$_("admin_direct_mm_running")}
-                </span>
-              {/if}
+              <span
+                class={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide capitalize ${getStatusClasses(order.runtimeState)}`}
+              >
+                {#if isActiveState(order.runtimeState)}
+                  <span class="w-1.5 h-1.5 bg-current rounded-full"></span>
+                {/if}
+                {getStateLabel(order.runtimeState)}
+              </span>
             </td>
             <td class="py-4 px-2">
               <span
                 class="text-[13px] text-base-content/60 whitespace-nowrap text-opacity-80"
               >
-                {order.createdAt
-                  ? new Date(order.createdAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    }) +
-                    " • " +
-                    new Date(order.createdAt).toLocaleTimeString("en-US", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                    })
-                  : i === 0
-                    ? $_("admin_direct_mm_placeholder_date_one")
-                    : i === 1
-                      ? $_("admin_direct_mm_placeholder_date_two")
-                      : $_("admin_direct_mm_placeholder_date_three")}
+                {formatCreatedAt(order.createdAt)}
               </span>
             </td>
             <td class="py-4 px-4 flex justify-end items-center gap-3">
-              {#if order.runtimeState === "running" || order.runtimeState === "active"}
+              {#if isActiveState(order.runtimeState)}
                 <button
                   class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-red-600 hover:bg-red-50 transition-colors"
                   aria-label={$_("admin_direct_mm_stop")}
@@ -231,6 +248,7 @@
                 <button
                   class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-blue-600 hover:bg-blue-50 transition-colors"
                   aria-label={$_("admin_direct_mm_play")}
+                  on:click|stopPropagation={() => onResumeOrder(order)}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -248,6 +266,7 @@
               {/if}
               <button
                 class="bg-indigo-50 text-blue-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                on:click|stopPropagation={() => onOrderClick(order)}
               >
                 {$_("admin_direct_mm_details")}
               </button>

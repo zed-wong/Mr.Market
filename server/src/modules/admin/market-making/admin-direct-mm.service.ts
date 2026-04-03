@@ -197,6 +197,52 @@ export class AdminDirectMarketMakingService {
     };
   }
 
+  async directResume(
+    orderId: string,
+  ): Promise<{ orderId: string; state: string; warnings: string[] }> {
+    const order = await this.marketMakingRepository.findOne({
+      where: { orderId, source: 'admin_direct' },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    if (order.state !== 'stopped') {
+      throw new BadRequestException('Only stopped orders can be resumed');
+    }
+
+    const accountLabel = this.readAccountLabel(order);
+    const warnings = await this.runBalancePreCheck(
+      order.exchangeName,
+      order.pair,
+      accountLabel,
+      order.strategySnapshot?.resolvedConfig || {},
+    );
+
+    try {
+      await this.marketMakingRuntimeService.startOrder(order);
+      await this.userOrdersService.updateMarketMakingOrderState(
+        orderId,
+        'running',
+      );
+      if (order.apiKeyId) {
+        await this.linkCampaignJoinsToOrder(order.apiKeyId, orderId);
+      }
+
+      return {
+        orderId,
+        state: 'running',
+        warnings,
+      };
+    } catch (error) {
+      await this.userOrdersService.updateMarketMakingOrderState(
+        orderId,
+        'failed',
+      );
+      throw this.mapCCXTError(error);
+    }
+  }
+
   async listDirectOrders() {
     const orders = await this.marketMakingRepository.find({
       where: { source: 'admin_direct' },

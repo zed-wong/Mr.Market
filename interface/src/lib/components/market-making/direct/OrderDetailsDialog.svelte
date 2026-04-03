@@ -13,6 +13,7 @@
   export let loading = false;
   export let onClose: () => void;
   export let onStartOrder: () => void;
+  export let onStopOrder: () => void;
 
   function copyOrderId() {
     if (!order) return;
@@ -50,6 +51,8 @@
   $: lastUpdated = data?.lastUpdatedAt
     ? data.lastUpdatedAt.replace("T", " ").slice(0, 19)
     : "";
+  $: isRunning =
+    order?.runtimeState === "running" || order?.runtimeState === "active";
 </script>
 
 {#if show && order}
@@ -258,11 +261,16 @@
               {$_("admin_direct_mm_close_dialog")}
             </button>
             <button
-              class="btn bg-primary hover:bg-primary/90 text-primary-content font-semibold px-6 rounded-lg"
-              on:click={onStartOrder}
+              class={`btn font-semibold px-6 rounded-lg ${
+                isRunning
+                  ? "bg-error hover:bg-error/90 text-error-content"
+                  : "bg-primary hover:bg-primary/90 text-primary-content"
+              }`}
+              on:click={isRunning ? onStopOrder : onStartOrder}
             >
-
-              {$_("admin_direct_mm_start_order")}
+              {isRunning
+                ? $_("admin_direct_mm_stop")
+                : $_("admin_direct_mm_start_order")}
             </button>
           </div>
         </div>
