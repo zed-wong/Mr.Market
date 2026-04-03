@@ -73,7 +73,9 @@
   }
 </script>
 
-<div class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50 flex flex-col h-full gap-4">
+<div
+  class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50 flex flex-col h-full gap-4"
+>
   <div class="flex items-start justify-between">
     <div>
       <span class="text-[1.1rem] font-base text-base-content block">
@@ -100,7 +102,9 @@
   {#if joinedCampaigns.length > 0}
     <div class="flex flex-col gap-3 max-h-64 overflow-y-auto pr-1">
       {#each joinedCampaigns as campaign}
-        <div class="bg-base-200/40 rounded-xl p-4 flex items-center justify-between gap-3">
+        <div
+          class="bg-base-200/40 rounded-xl p-4 flex items-center justify-between gap-3"
+        >
           <div class="flex flex-col">
             <span class="text-sm font-bold text-base-content">
               {String(campaign.symbol || campaign.name || "—")}
@@ -122,9 +126,15 @@
       featuredCampaign.fund_amount || featuredCampaign.rewardPool,
       featuredCampaign.fund_token_decimals,
     )}
-    {@const rewardToken = String(featuredCampaign.fund_token_symbol || featuredCampaign.rewardToken || "")}
-    {@const startDate = formatDate(featuredCampaign.start_date || featuredCampaign.startDate)}
-    {@const endDate = formatDate(featuredCampaign.end_date || featuredCampaign.endDate)}
+    {@const rewardToken = String(
+      featuredCampaign.fund_token_symbol || featuredCampaign.rewardToken || "",
+    )}
+    {@const startDate = formatDate(
+      featuredCampaign.start_date || featuredCampaign.startDate,
+    )}
+    {@const endDate = formatDate(
+      featuredCampaign.end_date || featuredCampaign.endDate,
+    )}
     <div class="bg-base-200/40 rounded-xl p-5 flex flex-col gap-4">
       <div class="flex items-center justify-between">
         <div class="flex flex-col">
@@ -132,51 +142,90 @@
             {String(featuredCampaign.symbol || featuredCampaign.name || "—")}
           </span>
           <span class="text-xs text-base-content/50">
-            {$_("admin_direct_mm_exchange_label")}: {String(featuredCampaign.exchange_name || featuredCampaign.exchange || "—")}
+            {$_("admin_direct_mm_exchange_label")}: {String(
+              featuredCampaign.exchange_name ||
+                featuredCampaign.exchange ||
+                "—",
+            )}
           </span>
         </div>
-        <span class={`text-xs font-bold tracking-wider capitalize border rounded-md px-2 py-0.5 ${statusColor(String(featuredCampaign.status || "active"))}`}>
+        <span
+          class={`text-xs font-bold tracking-wider capitalize border rounded-md px-2 py-0.5 ${statusColor(String(featuredCampaign.status || "active"))}`}
+        >
           {String(featuredCampaign.status || "active")}
         </span>
       </div>
 
       <div class="grid grid-cols-2 gap-y-4 gap-x-6">
         <div>
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_reward_pool")}</span>
+          <span
+            class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize"
+            >{$_("admin_direct_mm_reward_pool")}</span
+          >
           <div class="mt-0.5">
-            <span class="text-[15px] font-bold text-base-content">{rewardPool}{rewardToken ? ` ${rewardToken}` : ""}</span>
+            <span class="text-[15px] font-bold text-base-content"
+              >{rewardPool}{rewardToken ? ` ${rewardToken}` : ""}</span
+            >
           </div>
         </div>
         <div>
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{getTargetLabel(featuredCampaign.type)}</span>
+          <span
+            class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize"
+            >{getTargetLabel(featuredCampaign.type)}</span
+          >
           <div class="mt-0.5">
-            <span class="text-[15px] font-bold text-base-content">{getTargetValue(featuredCampaign)}{getTargetToken(featuredCampaign) ? ` ${getTargetToken(featuredCampaign)}` : ""}</span>
+            <span class="text-[15px] font-bold text-base-content"
+              >{getTargetValue(featuredCampaign)}{getTargetToken(
+                featuredCampaign,
+              )
+                ? ` ${getTargetToken(featuredCampaign)}`
+                : ""}</span
+            >
           </div>
         </div>
         <div>
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_campaign_type")}</span>
+          <span
+            class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize"
+            >{$_("admin_direct_mm_campaign_type")}</span
+          >
           <div class="mt-0.5">
-            <span class="text-[15px] font-bold text-base-content">{String(featuredCampaign.type || featuredCampaign.campaignType || "Market Making")}</span>
+            <span class="text-[15px] font-bold text-base-content"
+              >{String(
+                featuredCampaign.type ||
+                  featuredCampaign.campaignType ||
+                  "Market Making",
+              )}</span
+            >
           </div>
         </div>
         <div>
-          <span class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize">{$_("admin_direct_mm_date_range")}</span>
+          <span
+            class="text-[11px] font-semibold tracking-wider text-base-content/40 capitalize"
+            >{$_("admin_direct_mm_date_range")}</span
+          >
           <div class="mt-0.5">
             <span class="text-[15px] font-bold text-base-content">
-              {#if startDate && endDate}{startDate} - {endDate}{:else}{$_("admin_direct_mm_na")}{/if}
+              {#if startDate && endDate}{startDate} - {endDate}{:else}{$_(
+                  "admin_direct_mm_na",
+                )}{/if}
             </span>
           </div>
         </div>
       </div>
 
       {#if !featuredCampaign.joined}
-        <button class="btn btn-primary text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm" on:click={() => onJoin(featuredCampaign)}>
+        <button
+          class="btn btn-primary text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm"
+          on:click={() => onJoin(featuredCampaign)}
+        >
           {$_("admin_direct_mm_join_campaign_title")}
         </button>
       {/if}
     </div>
   {:else}
-    <div class="flex items-center justify-center h-full text-base-content/40 text-sm">
+    <div
+      class="flex items-center justify-center h-full text-base-content/40 text-sm"
+    >
       {$_("admin_direct_mm_campaigns_empty")}
     </div>
   {/if}

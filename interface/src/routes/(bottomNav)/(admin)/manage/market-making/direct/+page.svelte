@@ -395,7 +395,7 @@
   }
 </script>
 
-<div class="min-h-screen pb-10 bg-base-300">
+<div class="min-h-screen pb-10 bg-slate-50">
   <div class="max-w-[1400px] mx-auto p-4 sm:p-6 md:p-8 space-y-6">
     <EvmWalletStatusBar
       evmAddress={walletStatusAddress}
