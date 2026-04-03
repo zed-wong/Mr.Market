@@ -798,6 +798,7 @@
   "admin_direct_mm_join_campaign_description": "You are about to commit capital to the {campaignName} campaign {exchange} {dateRange}. Please review the campaign parameters before proceeding.",
   "admin_direct_mm_daily_vol_target": "Daily Vol. Target",
   "admin_direct_mm_oracle_fees": "Oracle Fees",
+  "admin_direct_mm_evm_address": "EVM Address",
   "admin_direct_mm_evm_address_placeholder": "0x...",
   "admin_direct_mm_start_all_title": "Confirm Operations",
   "admin_direct_mm_start_all_title_suffix": "Commencement",

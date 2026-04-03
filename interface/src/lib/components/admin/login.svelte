@@ -28,7 +28,6 @@
             localStorage.setItem("admin-password", pass);
             localStorage.setItem("admin-access-token", accessToken);
             loginLoading.set(false);
-            goto("/manage/settings");
             return true;
         }
         submitted.set(true);
