@@ -2,7 +2,7 @@
 Follow KISS, YAGNI, and DRY. Don't add unnecessary code. Reuse existing codebase.
 
 # Tech Stack
-- **Frontend**: Svelte 4 (not 5) + SvelteKit + daisyui/tailwind + svelte-i18n (`$_()`)
+- **Frontend**: Always use Svelte 4 syntax + SvelteKit + daisyui/tailwind + svelte-i18n (`$_()`)
 - **Backend**: Always use bignumber.js for calculation, and getRFC3339Timestamp() for timestamp
 
 # Styling Rules
