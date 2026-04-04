@@ -377,7 +377,10 @@ export class AdminDirectMarketMakingService {
     return Promise.all(
       campaigns.map(async (campaign) => ({
         ...campaign,
-        joined: await this.isCampaignJoined(campaign, walletStatus.address),
+        joined: await this.isCampaignJoined(
+          campaign as unknown as Record<string, unknown>,
+          walletStatus.address,
+        ),
       })),
     );
   }

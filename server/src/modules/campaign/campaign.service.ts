@@ -145,6 +145,19 @@ export class CampaignService {
     }
   }
 
+
+  async isCampaignJoined(
+    chainId: number,
+    address: string,
+    walletAddress: string,
+  ): Promise<boolean> {
+    const { data } = await this.hufiRecordingOracleAPI.get(
+      `/mr-market/campaign?chainId=${chainId}&address=${address}&walletAddress=${walletAddress}`,
+    );
+
+    return Boolean(data);
+  }
+
   /**
    * Function 3: Join Campaign
    * Enroll the authenticated user into a specific HuFi campaign.
