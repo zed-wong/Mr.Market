@@ -84,28 +84,30 @@ export class ExchangeOrderTrackerService
       (order) => order.status === 'open' || order.status === 'partially_filled',
     );
 
-    for (const order of openOrders) {
-      const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
-        order.exchange,
-        order.pair,
-        order.exchangeOrderId,
-      );
+    const results = await Promise.allSettled(
+      openOrders.map(async (order) => {
+        const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
+          order.exchange,
+          order.pair,
+          order.exchangeOrderId,
+        );
 
-      if (!latest) {
-        continue;
-      }
+        if (!latest) {
+          return;
+        }
 
-      const normalizedStatus = this.normalizeStatus(latest.status);
+        const normalizedStatus = this.normalizeStatus(latest.status);
 
-      this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), {
-        ...order,
-        cumulativeFilledQty:
-          this.normalizeFilledValue(latest?.filled) ||
-          order.cumulativeFilledQty,
-        status: normalizedStatus,
-        updatedAt: getRFC3339Timestamp(),
-      });
-    }
+        this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), {
+          ...order,
+          cumulativeFilledQty:
+            this.normalizeFilledValue(latest?.filled) ||
+            order.cumulativeFilledQty,
+          status: normalizedStatus,
+          updatedAt: getRFC3339Timestamp(),
+        });
+      }),
+    );
   }
 
   private normalizeStatus(status: string): TrackedOrder['status'] {

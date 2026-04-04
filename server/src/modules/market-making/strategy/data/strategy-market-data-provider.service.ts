@@ -7,9 +7,14 @@ import { ExchangeConnectorAdapterService } from '../../execution/exchange-connec
 import { OrderBookTrackerService } from '../../trackers/order-book-tracker.service';
 
 type BookLevel = [number, number];
+type CachedPrice = { price: number; ts: number };
+
+const PRICE_CACHE_TTL_MS = 1 * 1000; // 1s
 
 @Injectable()
 export class StrategyMarketDataProviderService {
+  private readonly priceCache = new Map<string, CachedPrice>();
+
   constructor(
     private readonly orderBookTrackerService: OrderBookTrackerService,
     private readonly exchangeConnectorAdapterService: ExchangeConnectorAdapterService,
@@ -17,6 +22,28 @@ export class StrategyMarketDataProviderService {
   ) {}
 
   async getReferencePrice(
+    exchangeName: string,
+    pair: string,
+    priceSourceType: PriceSourceType,
+  ): Promise<number> {
+    const cacheKey = `${exchangeName}:${pair}:${priceSourceType}`;
+    const cached = this.priceCache.get(cacheKey);
+
+    if (cached && Date.now() - cached.ts < PRICE_CACHE_TTL_MS) {
+      return cached.price;
+    }
+
+    const price = await this.fetchReferencePrice(
+      exchangeName,
+      pair,
+      priceSourceType,
+    );
+    this.priceCache.set(cacheKey, { price, ts: Date.now() });
+
+    return price;
+  }
+
+  private async fetchReferencePrice(
     exchangeName: string,
     pair: string,
     priceSourceType: PriceSourceType,
