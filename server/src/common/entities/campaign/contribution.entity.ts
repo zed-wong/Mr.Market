@@ -10,8 +10,8 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import type { StrategyInstance } from '../market-making/strategy-instances.entity';
 import { MixinUser } from '../mixin/mixin-user.entity';
+import { StrategyInstance } from '../market-making/strategy-instances.entity';
 
 @Entity()
 export class Contribution {
@@ -42,7 +42,7 @@ export class Contribution {
   @Column()
   tokenAddress: string; // New field for token contract address
 
-  @ManyToOne(() => StrategyInstance, (strategy) => strategy.contributions, {
+  @ManyToOne('StrategyInstance', 'contributions', {
     onDelete: 'CASCADE',
   })
   strategy: StrategyInstance;

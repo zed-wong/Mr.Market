@@ -11,8 +11,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-
 import { Contribution } from '../campaign/contribution.entity';
+
 
 @Entity('strategy_instances')
 export class StrategyInstance {
@@ -46,7 +46,7 @@ export class StrategyInstance {
   @Column()
   status: string; // "running", "stopped", etc.
 
-  @OneToMany(() => Contribution, (contribution) => contribution.strategy)
+  @OneToMany('Contribution', 'strategy')
   contributions: Contribution[];
 
   @CreateDateColumn()
