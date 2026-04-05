@@ -145,17 +145,21 @@ export class CampaignService {
     }
   }
 
+  async getJoinedCampaignKeys(accessToken: string): Promise<Set<string>> {
+    const { data } = await this.hufiRecordingOracleAPI.get<{
+      results: Array<Record<string, unknown>>;
+    }>('/campaigns', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-  async isCampaignJoined(
-    chainId: number,
-    address: string,
-    walletAddress: string,
-  ): Promise<boolean> {
-    const { data } = await this.hufiRecordingOracleAPI.get(
-      `/mr-market/campaign?chainId=${chainId}&address=${address}&walletAddress=${walletAddress}`,
+    return new Set(
+      (data.results ?? []).map(
+        (c) =>
+          `${c.chain_id ?? ''}:${String(
+            c.escrow_address ?? c.address ?? '',
+          ).toLowerCase()}`,
+      ),
     );
-
-    return Boolean(data);
   }
 
   /**
@@ -373,19 +377,38 @@ export class CampaignService {
 
     this.logger.log(`Joining ${runningCampaigns.length} campaigns`);
 
+    const firstCampaign = runningCampaigns[0];
+    const walletAddress = await this.web3Service
+      .getSigner(firstCampaign.chain_id)
+      .getAddress();
+
+    let joinedKeys: Set<string>;
+
+    try {
+      const nonce = await this.get_auth_nonce(walletAddress);
+      const privateKey = this.web3Service.getSigner(
+        firstCampaign.chain_id,
+      ).privateKey;
+      const accessToken = await this.authenticate_web3_user(
+        walletAddress,
+        nonce,
+        privateKey,
+      );
+
+      joinedKeys = await this.getJoinedCampaignKeys(accessToken);
+    } catch (e) {
+      this.logger.warn(
+        'Failed to fetch joined campaigns, skipping join check: ',
+        e.message,
+      );
+      joinedKeys = new Set();
+    }
+
     for (const campaign of runningCampaigns) {
       try {
-        const walletAddress = await this.web3Service
-          .getSigner(campaign.chain_id)
-          .getAddress();
+        const key = `${campaign.chain_id}:${campaign.address.toLowerCase()}`;
 
-        const joined = await this.isCampaignJoined(
-          campaign.chain_id,
-          campaign.address,
-          walletAddress,
-        );
-
-        if (joined) {
+        if (joinedKeys.has(key)) {
           this.logger.log('Already joined campaign');
           continue;
         }

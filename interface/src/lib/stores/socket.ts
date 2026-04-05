@@ -1,7 +1,7 @@
-// src/stores/socketStore.js
 import io from 'socket.io-client';
 import { writable, get } from 'svelte/store';
 import { CandlePair } from './market'; // Import your CandlePair store
+import { MRM_SOCKET_URL } from '../helpers/constants';
 
 function createSocket() {
   const { subscribe, set } = writable(null);
@@ -12,7 +12,7 @@ function createSocket() {
   const connect = () => {
     // Initialize the socket connection if it's not already established
     if (!socket) {
-      socket = io('http://localhost:3000');
+      socket = io(MRM_SOCKET_URL);
 
       socket.on('connect', () => {
         console.log('Socket connected');

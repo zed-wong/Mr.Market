@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import BigNumber from 'bignumber.js';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 
@@ -9,17 +10,22 @@ import { OrderBookTrackerService } from '../../trackers/order-book-tracker.servi
 type BookLevel = [number, number];
 type CachedPrice = { price: number; ts: number };
 
-const PRICE_CACHE_TTL_MS = 1 * 1000; // 1s
-
 @Injectable()
 export class StrategyMarketDataProviderService {
   private readonly priceCache = new Map<string, CachedPrice>();
+  private readonly priceCacheTtlMs: number;
 
   constructor(
+    private readonly configService: ConfigService,
     private readonly orderBookTrackerService: OrderBookTrackerService,
     private readonly exchangeConnectorAdapterService: ExchangeConnectorAdapterService,
     private readonly marketdataService: MarketdataService,
-  ) {}
+  ) {
+    this.priceCacheTtlMs = Math.max(
+      0,
+      Number(this.configService.get('strategy.price_cache_ttl_ms', 0)),
+    );
+  }
 
   async getReferencePrice(
     exchangeName: string,
@@ -27,9 +33,10 @@ export class StrategyMarketDataProviderService {
     priceSourceType: PriceSourceType,
   ): Promise<number> {
     const cacheKey = `${exchangeName}:${pair}:${priceSourceType}`;
-    const cached = this.priceCache.get(cacheKey);
+    const cached =
+      this.priceCacheTtlMs > 0 ? this.priceCache.get(cacheKey) : undefined;
 
-    if (cached && Date.now() - cached.ts < PRICE_CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.ts < this.priceCacheTtlMs) {
       return cached.price;
     }
 
@@ -38,7 +45,10 @@ export class StrategyMarketDataProviderService {
       pair,
       priceSourceType,
     );
-    this.priceCache.set(cacheKey, { price, ts: Date.now() });
+
+    if (this.priceCacheTtlMs > 0) {
+      this.priceCache.set(cacheKey, { price, ts: Date.now() });
+    }
 
     return price;
   }

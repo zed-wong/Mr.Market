@@ -11,8 +11,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Contribution } from '../campaign/contribution.entity';
 
+import { Contribution } from '../campaign/contribution.entity';
 
 @Entity('strategy_instances')
 export class StrategyInstance {

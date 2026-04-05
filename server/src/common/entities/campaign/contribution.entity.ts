@@ -10,8 +10,8 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import { MixinUser } from '../mixin/mixin-user.entity';
 import { StrategyInstance } from '../market-making/strategy-instances.entity';
+import { MixinUser } from '../mixin/mixin-user.entity';
 
 @Entity()
 export class Contribution {

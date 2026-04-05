@@ -1174,7 +1174,13 @@ export class StrategyService
       : this.buildLegacyQuotes(params, priceSource);
 
     this.logger.log(
-      `[${strategyKey}] midPrice=${priceSource.toFixed()} bidSpread=${params.bidSpread} askSpread=${params.askSpread} layers=${params.numberOfLayers} openBuys=${existingOpenOrdersBySide.buy} openSells=${existingOpenOrdersBySide.sell}`,
+      `[${strategyKey}] midPrice=${priceSource.toFixed()} bidSpread=${
+        params.bidSpread
+      } askSpread=${params.askSpread} layers=${
+        params.numberOfLayers
+      } openBuys=${existingOpenOrdersBySide.buy} openSells=${
+        existingOpenOrdersBySide.sell
+      }`,
     );
 
     for (const quote of quotes) {
@@ -1193,7 +1199,11 @@ export class StrategyService
         priceSource.isGreaterThan(params.ceilingPrice)
       ) {
         this.logger.log(
-          `[${strategyKey}] Skipped layer-${quote.layer} buy: price ${priceSource.toFixed()} > ceilingPrice ${params.ceilingPrice}`,
+          `[${strategyKey}] Skipped layer-${
+            quote.layer
+          } buy: price ${priceSource.toFixed()} > ceilingPrice ${
+            params.ceilingPrice
+          }`,
         );
         continue;
       }
@@ -1204,7 +1214,11 @@ export class StrategyService
         priceSource.isLessThan(params.floorPrice)
       ) {
         this.logger.log(
-          `[${strategyKey}] Skipped layer-${quote.layer} sell: price ${priceSource.toFixed()} < floorPrice ${params.floorPrice}`,
+          `[${strategyKey}] Skipped layer-${
+            quote.layer
+          } sell: price ${priceSource.toFixed()} < floorPrice ${
+            params.floorPrice
+          }`,
         );
         continue;
       }

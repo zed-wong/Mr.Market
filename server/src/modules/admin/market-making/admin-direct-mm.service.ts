@@ -374,15 +374,40 @@ export class AdminDirectMarketMakingService {
       return campaigns.map((campaign) => ({ ...campaign, joined: false }));
     }
 
-    return Promise.all(
-      campaigns.map(async (campaign) => ({
-        ...campaign,
-        joined: await this.isCampaignJoined(
-          campaign as unknown as Record<string, unknown>,
-          walletStatus.address,
-        ),
-      })),
-    );
+    let joinedKeys: Set<string>;
+
+    try {
+      const privateKey =
+        this.configService.get<string>('WEB3_PRIVATE_KEY') ||
+        this.configService.get<string>('web3.private_key') ||
+        process.env.WEB3_PRIVATE_KEY;
+
+      const nonce = await this.campaignService.get_auth_nonce(
+        walletStatus.address,
+      );
+      const accessToken = await this.campaignService.authenticate_web3_user(
+        walletStatus.address,
+        nonce,
+        privateKey,
+      );
+
+      joinedKeys = await this.campaignService.getJoinedCampaignKeys(
+        accessToken,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to fetch joined campaigns: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      joinedKeys = new Set();
+    }
+
+    return campaigns.map((campaign) => {
+      const key = `${campaign.chain_id}:${campaign.address.toLowerCase()}`;
+
+      return { ...campaign, joined: joinedKeys.has(key) };
+    });
   }
 
   async joinCampaign(dto: CampaignJoinRequestDto) {
@@ -446,7 +471,7 @@ export class AdminDirectMarketMakingService {
     try {
       return {
         configured: true,
-        address: new Wallet(privateKey).address.toLowerCase(),
+        address: new Wallet(privateKey).address,
       };
     } catch {
       return {
@@ -512,36 +537,6 @@ export class AdminDirectMarketMakingService {
       return warnings;
     } catch (error) {
       throw this.mapCCXTError(error);
-    }
-  }
-
-  private async isCampaignJoined(
-    campaign: Record<string, unknown>,
-    walletAddress: string,
-  ): Promise<boolean> {
-    const chainId = Number(campaign.chain_id || campaign.chainId || 137);
-    const campaignAddress = String(
-      campaign.address || campaign.campaignAddress || '',
-    ).toLowerCase();
-
-    if (!campaignAddress) {
-      return false;
-    }
-
-    try {
-      return await this.campaignService.isCampaignJoined(
-        chainId,
-        campaignAddress,
-        walletAddress,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to read joined status for campaign ${campaignAddress} on chain ${chainId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-
-      return false;
     }
   }
 

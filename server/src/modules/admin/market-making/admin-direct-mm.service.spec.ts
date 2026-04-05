@@ -1,8 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import { AdminDirectMarketMakingService } from './admin-direct-mm.service';
 
@@ -152,6 +149,7 @@ describe('AdminDirectMarketMakingService', () => {
   afterAll(() => {
     if (originalWeb3PrivateKey === undefined) {
       delete process.env.WEB3_PRIVATE_KEY;
+
       return;
     }
 
