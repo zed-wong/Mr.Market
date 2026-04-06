@@ -14,7 +14,7 @@ export class GrowdataService {
     @Inject(CACHE_MANAGER) private cacheService: Cache,
     private readonly growdataRepository: GrowdataRepository,
     private readonly mixinClientService: MixinClientService,
-  ) {}
+  ) { }
 
   private cachingTTL = 60; // 1 minute
 
@@ -97,7 +97,7 @@ export class GrowdataService {
   async getAllMarketMakingPairs() {
     const pairs = await this.growdataRepository.findAllMarketMakingPairs();
 
-    this.logger.debug(`MarketMakingPairs: ${JSON.stringify(pairs)}`);
+    // this.logger.debug(`MarketMakingPairs: ${JSON.stringify(pairs)}`);
 
     const assetIds = pairs.flatMap((pair) => [
       pair.base_asset_id,

@@ -600,9 +600,7 @@ describe('StrategyService', () => {
       'client1-pureMarketMaking',
     );
 
-    expect(intents.some((intent) => intent.type === 'STOP_CONTROLLER')).toBe(
-      true,
-    );
+    expect(intents).toEqual([]);
   });
 
   it('removes pooled executor session when stopping a strategy', async () => {

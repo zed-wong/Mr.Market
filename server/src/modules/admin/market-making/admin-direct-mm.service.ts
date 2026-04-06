@@ -13,6 +13,7 @@ import { Wallet } from 'ethers';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -295,12 +296,15 @@ export class AdminDirectMarketMakingService {
     const session = this.getRuntimeSession(orderId);
     const lastTickAt = this.getEstimatedLastTickAt(session);
     const accountLabel = this.readAccountLabel(order);
+    const strategyKey = createPureMarketMakingStrategyKey(orderId);
     const privateEvent = this.privateStreamTrackerService.getLatestEvent(
       order.exchangeName,
       accountLabel,
     );
-    const openOrders = this.exchangeOrderTrackerService.getOpenOrders(orderId);
-    const intents = this.strategyService.getLatestIntentsForStrategy(orderId);
+    const openOrders = this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
+    const intents = order.state === 'stopped'
+      ? []
+      : this.strategyService.getLatestIntentsForStrategy(strategyKey);
     const book = this.orderBookTrackerService.getOrderBook(
       order.exchangeName,
       order.pair,

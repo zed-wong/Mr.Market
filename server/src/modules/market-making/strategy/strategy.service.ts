@@ -501,6 +501,7 @@ export class StrategyService
     };
 
     await this.publishIntents(strategyKey, [stopIntent]);
+    this.latestIntentsByStrategy.delete(strategyKey);
   }
 
   async stopMarketMakingStrategyForOrder(
@@ -689,6 +690,10 @@ export class StrategyService
 
   getLatestIntentsForStrategy(strategyKey: string): StrategyOrderIntent[] {
     return this.latestIntentsByStrategy.get(strategyKey) || [];
+  }
+
+  clearIntentsForStrategy(strategyKey: string): void {
+    this.latestIntentsByStrategy.delete(strategyKey);
   }
 
   private async upsertSession(
