@@ -17,7 +17,7 @@ export type ExchangePairFill = {
 };
 
 export type ExchangePairExecutorOrderConfig = {
-  strategyKey?: string;
+  strategyKey: string;
   strategyType: StrategyType;
   clientId: string;
   cadenceMs: number;
@@ -88,7 +88,7 @@ export class ExchangePairExecutor {
       exchange: this.exchange,
       pair: this.pair,
       runId: config.runId || this.generateRunId(),
-      strategyKey: config.strategyKey || orderId,
+      strategyKey: config.strategyKey,
       strategyType: config.strategyType,
       userId,
       accountLabel:
