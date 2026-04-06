@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { invalidate } from "$app/navigation";
   import { page } from "$app/stores";
   import { _ } from "svelte-i18n";
@@ -40,16 +41,44 @@
 
   type OverrideRow = { key: string; value: string };
 
-  $: growInfo = ($page.data.growInfo || null) as GrowInfo | null;
-  $: strategies = ($page.data.strategies || []) as MarketMakingStrategy[];
-  $: apiKeys = ($page.data.apiKeys || []) as AdminSingleKey[];
-  $: initialOrders = ($page.data.directOrders || []) as DirectOrderSummary[];
-  $: initialCampaigns = ($page.data.campaigns || []) as AdminCampaign[];
-  $: walletStatus = ($page.data.walletStatus || {
-    configured: false,
-    address: null,
-  }) as DirectWalletStatus;
+  let growInfo: GrowInfo | null = null;
+  let strategies: MarketMakingStrategy[] = [];
+  let apiKeys: AdminSingleKey[] = [];
+  let initialOrders: DirectOrderSummary[] = [];
+  let initialCampaigns: AdminCampaign[] = [];
+  let walletStatus: DirectWalletStatus = { configured: false, address: null };
+  let pageLoading = true;
+
   $: pairs = growInfo?.market_making?.pairs || [];
+
+  async function resolvePageData() {
+    pageLoading = true;
+    try {
+      const data = $page.data;
+      const [gInfo, strats, keys, orders, camps, wallet] = await Promise.all([
+        data.growInfo,
+        data.strategies,
+        data.apiKeys,
+        data.directOrders,
+        data.campaigns,
+        data.walletStatus,
+      ]);
+      growInfo = gInfo || null;
+      strategies = strats || [];
+      apiKeys = keys || [];
+      initialOrders = orders || [];
+      initialCampaigns = camps || [];
+      walletStatus = wallet || { configured: false, address: null };
+    } finally {
+      pageLoading = false;
+    }
+  }
+
+  onMount(() => {
+    resolvePageData();
+  });
+
+  $: if ($page.data) resolvePageData();
 
   let orders = initialOrders;
   let campaigns = initialCampaigns;
@@ -397,6 +426,14 @@
 
 <div class="min-h-screen pb-10 bg-slate-50">
   <div class="max-w-[1400px] mx-auto p-4 sm:p-6 md:p-8 space-y-6">
+    {#if pageLoading}
+      <div class="skeleton h-12 w-full rounded-xl"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="skeleton h-48 w-full rounded-xl"></div>
+        <div class="skeleton h-48 w-full rounded-xl"></div>
+      </div>
+      <div class="skeleton h-64 w-full rounded-xl"></div>
+    {:else}
     <EvmWalletStatusBar
       evmAddress={walletStatusAddress}
       {hasWalletConfigured}
@@ -421,6 +458,7 @@
       onResumeOrder={handleResumeOrder}
       onOrderClick={openOrderDetails}
     />
+    {/if}
   </div>
 </div>
 

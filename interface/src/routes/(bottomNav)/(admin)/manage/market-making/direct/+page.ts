@@ -36,35 +36,12 @@ export const load: PageLoad = async ({ depends }) => {
     };
   }
 
-  try {
-    const [growInfo, strategies, apiKeys, directOrders, campaigns, walletStatus] =
-      await Promise.all([
-        getGrowBasicInfo(),
-        getEnabledMarketMakingStrategies(),
-        getAllAPIKeys(token),
-        listDirectOrders(token),
-        listAdminCampaigns(token),
-        getDirectWalletStatus(token),
-      ]);
-
-    return {
-      growInfo,
-      strategies,
-      apiKeys,
-      directOrders,
-      campaigns,
-      walletStatus,
-    };
-  } catch (error) {
-    console.error("Failed to load admin direct market-making page", error);
-
-    return {
-      growInfo: null,
-      strategies: [],
-      apiKeys: [],
-      directOrders: [],
-      campaigns: [],
-      walletStatus: { configured: false, address: null },
-    };
-  }
+  return {
+    growInfo: getGrowBasicInfo().catch(() => null),
+    strategies: getEnabledMarketMakingStrategies().catch(() => []),
+    apiKeys: getAllAPIKeys(token).catch(() => []),
+    directOrders: listDirectOrders(token).catch(() => []),
+    campaigns: listAdminCampaigns(token).catch(() => []),
+    walletStatus: getDirectWalletStatus(token).catch(() => ({ configured: false, address: null })),
+  };
 };

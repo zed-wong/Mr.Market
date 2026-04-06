@@ -85,6 +85,18 @@ export function parseConfigValue(raw: string): unknown {
   return trimmed;
 }
 
+const typeI18nMap: Record<string, string> = {
+  MARKET_MAKING: "admin_direct_mm_type_market_making",
+  THRESHOLD: "admin_direct_mm_type_threshold",
+  HOLDING: "admin_direct_mm_type_holding",
+};
+
+export function formatCampaignType(type: unknown): string {
+  const key = String(type || "").toUpperCase();
+  const i18nKey = typeI18nMap[key];
+  return i18nKey ? get(_)(i18nKey) : String(type || "");
+}
+
 export function formatFundAmount(amount: unknown, decimals: unknown): string {
   if (!amount) return "—";
   const raw = String(amount);

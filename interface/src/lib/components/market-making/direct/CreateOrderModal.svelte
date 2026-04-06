@@ -31,7 +31,10 @@
       )
     : filteredPairs;
 
-  $: if (filteredApiKeys.length > 0 && !filteredApiKeys.find(k => k.key_id === startApiKeyId)) {
+  $: if (
+    filteredApiKeys.length > 0 &&
+    !filteredApiKeys.find((k) => k.key_id === startApiKeyId)
+  ) {
     startApiKeyId = filteredApiKeys[0].key_id;
   }
 
@@ -48,44 +51,79 @@
   }
 
   function handlePairBlur() {
-    setTimeout(() => { pairDropdownOpen = false; }, 150);
+    setTimeout(() => {
+      pairDropdownOpen = false;
+    }, 150);
   }
 </script>
 
 {#if show}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
-    <div class="modal-box bg-base-100 p-0 rounded-2xl max-w-[480px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto">
+    <div
+      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[480px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto no-scrollbar"
+    >
       <!-- Header -->
       <div class="px-7 pt-6 pb-4">
         <div class="flex items-start justify-between">
-          <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-primary">
-              <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 9a.75.75 0 0 0-1.5 0v2.25H9a.75.75 0 0 0 0 1.5h2.25V15a.75.75 0 0 0 1.5 0v-2.25H15a.75.75 0 0 0 0-1.5h-2.25V9Z" clip-rule="evenodd" />
+          <div
+            class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="w-5 h-5 text-primary"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 9a.75.75 0 0 0-1.5 0v2.25H9a.75.75 0 0 0 0 1.5h2.25V15a.75.75 0 0 0 1.5 0v-2.25H15a.75.75 0 0 0 0-1.5h-2.25V9Z"
+                clip-rule="evenodd"
+              />
             </svg>
           </div>
           <button
             class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
             on:click={onClose}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-5 h-5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
-        <span class="text-xl font-bold text-base-content block mt-3">{$_("admin_direct_mm_create_new_order")}</span>
-        <span class="text-sm text-base-content/50 block mt-1">{$_("admin_direct_mm_configure_deploy")}</span>
+        <span class="text-xl font-bold text-base-content block mt-3"
+          >{$_("admin_direct_mm_create_new_order")}</span
+        >
+        <span class="text-sm text-base-content/50 block mt-1"
+          >{$_("admin_direct_mm_configure_deploy")}</span
+        >
       </div>
 
       <!-- Form -->
       <div class="px-7 pb-7 flex flex-col gap-5">
         <!-- Exchange -->
         <div class="bg-base-200/40 rounded-xl p-4">
-          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2">{$_("admin_direct_mm_exchange")}</span>
+          <span
+            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+            >{$_("admin_direct_mm_exchange")}</span
+          >
           <select
             class="select select-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
             bind:value={startExchangeName}
           >
-            <option value="" disabled selected>{$_("admin_direct_mm_select_exchange")}</option>
+            <option value="" disabled selected
+              >{$_("admin_direct_mm_select_exchange")}</option
+            >
             {#each exchangeOptions as exchangeName}
               <option value={exchangeName}>{exchangeName}</option>
             {/each}
@@ -94,11 +132,25 @@
 
         <!-- Trading Pair -->
         <div class="bg-base-200/40 rounded-xl p-4">
-          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2">{$_("admin_direct_mm_trading_pair")}</span>
+          <span
+            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+            >{$_("admin_direct_mm_trading_pair")}</span
+          >
           <div class="relative">
             {#if pairDropdownOpen}
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 absolute z-10 left-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none">
-                <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-4 h-4 absolute z-10 left-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+                />
               </svg>
               <input
                 bind:this={pairInputEl}
@@ -112,20 +164,39 @@
                 class="flex items-center justify-between w-full h-10 min-h-[40px] px-3 bg-base-100 text-sm rounded-lg border border-base-300 hover:border-primary transition-colors"
                 on:click={openPairDropdown}
               >
-                <span class={startPair ? 'text-base-content font-medium' : 'text-base-content/40'}>
+                <span
+                  class={startPair
+                    ? "text-base-content font-medium"
+                    : "text-base-content/40"}
+                >
                   {startPair || $_("admin_direct_mm_search_pairs")}
                 </span>
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-base-content/40">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                  class="w-4 h-4 text-base-content/40"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                  />
                 </svg>
               </button>
             {/if}
             {#if pairDropdownOpen && searchedPairs.length > 0}
-              <div class="absolute z-10 left-0 right-0 mt-1 max-h-40 overflow-y-auto border border-base-300 rounded-lg bg-base-100 shadow-lg">
+              <div
+                class="absolute z-10 left-0 right-0 mt-1 max-h-40 overflow-y-auto no-scrollbar border border-base-300 rounded-lg bg-base-100 shadow-lg"
+              >
                 {#each searchedPairs as pair}
                   <button
                     class="w-full text-left px-3 py-2 text-sm hover:bg-base-200 transition-colors
-                      {startPair === pair.symbol ? 'bg-primary/10 text-primary font-semibold' : 'text-base-content'}"
+                      {startPair === pair.symbol
+                      ? 'bg-primary/10 text-primary font-semibold'
+                      : 'text-base-content'}"
                     on:click={() => selectPair(pair.symbol)}
                   >
                     {pair.symbol}
@@ -138,21 +209,35 @@
 
         <!-- Strategy -->
         <div class="bg-base-200/40 rounded-xl p-4">
-          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2">{$_("admin_direct_mm_strategy")}</span>
+          <span
+            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+            >{$_("admin_direct_mm_strategy")}</span
+          >
           {#if strategies.length <= 3}
             <div class="flex flex-col gap-1.5">
               {#each strategies as strategy}
                 <button
                   class="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors border
                     {startStrategyDefinitionId === strategy.id
-                      ? 'bg-primary/5 text-primary font-semibold border-primary/20'
-                      : 'text-base-content hover:bg-base-200 border-transparent'}"
+                    ? 'bg-primary/5 text-primary font-semibold border-primary/20'
+                    : 'text-base-content bg-base-300 hover:bg-base-300 border-transparent'}"
                   on:click={() => (startStrategyDefinitionId = strategy.id)}
                 >
                   <span>{strategy.name}</span>
                   {#if startStrategyDefinitionId === strategy.id}
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 text-primary">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="2.5"
+                      stroke="currentColor"
+                      class="w-4 h-4 text-primary"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="m4.5 12.75 6 6 9-13.5"
+                      />
                     </svg>
                   {/if}
                 </button>
@@ -163,7 +248,9 @@
               class="select select-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
               bind:value={startStrategyDefinitionId}
             >
-              <option value="" disabled selected>{$_("admin_direct_mm_select_strategy")}</option>
+              <option value="" disabled selected
+                >{$_("admin_direct_mm_select_strategy")}</option
+              >
               {#each strategies as strategy}
                 <option value={strategy.id}>{strategy.name}</option>
               {/each}
@@ -171,41 +258,55 @@
           {/if}
         </div>
 
-        <!-- Order Parameters -->
-        <div>
-          <span class="text-xs font-semibold text-base-content/60 tracking-wider block mb-3">{$_("admin_direct_mm_order_parameters")}</span>
-          <div class="flex gap-3">
-            <div class="flex-1 bg-base-200/40 rounded-xl p-4">
-              <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2">{$_("admin_direct_mm_base_amount")}</span>
-              <input
-                type="text"
-                placeholder="0.00"
-                class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
-                bind:value={orderAmount}
-              />
-            </div>
-            <div class="flex-1 bg-base-200/40 rounded-xl p-4">
-              <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2">{$_("admin_direct_mm_quote_amount")}</span>
-              <input
-                type="text"
-                placeholder="0.00"
-                class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
-                bind:value={orderQuoteAmount}
-              />
+        {#if startStrategyDefinitionId}
+          <!-- Order Parameters -->
+          <div>
+            <span
+              class="text-xs font-semibold text-base-content/60 tracking-wider block mb-3"
+              >{$_("admin_direct_mm_order_parameters")}</span
+            >
+            <div class="flex gap-3">
+              <div class="flex-1 bg-base-200/40 rounded-xl p-4">
+                <span
+                  class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                  >{$_("admin_direct_mm_base_amount")}</span
+                >
+                <input
+                  type="text"
+                  placeholder="0.00"
+                  class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+                  bind:value={orderAmount}
+                />
+              </div>
+              <div class="flex-1 bg-base-200/40 rounded-xl p-4">
+                <span
+                  class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                  >{$_("admin_direct_mm_quote_amount")}</span
+                >
+                <input
+                  type="text"
+                  placeholder="0.00"
+                  class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+                  bind:value={orderQuoteAmount}
+                />
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Spread -->
-        <div class="bg-base-200/40 rounded-xl p-4">
-          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2">{$_("admin_direct_mm_spread_optional")}</span>
-          <input
-            type="text"
-            placeholder="0.0%"
-            class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
-            bind:value={orderSpread}
-          />
-        </div>
+          <!-- Spread -->
+          <div class="bg-base-200/40 rounded-xl p-4">
+            <span
+              class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+              >{$_("admin_direct_mm_spread_optional")}</span
+            >
+            <input
+              type="text"
+              placeholder="0.0%"
+              class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+              bind:value={orderSpread}
+            />
+          </div>
+        {/if}
 
         <!-- Actions -->
         <div class="flex gap-3 justify-end mt-2">
@@ -220,10 +321,25 @@
             on:click={onSubmit}
             disabled={isStarting}
           >
-            <span>{isStarting ? $_("admin_direct_mm_launching") : $_("admin_direct_mm_launch_order")}</span>
+            <span
+              >{isStarting
+                ? $_("admin_direct_mm_launching")
+                : $_("admin_direct_mm_launch_order")}</span
+            >
             {#if !isStarting}
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="2"
+                stroke="currentColor"
+                class="w-4 h-4"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+                />
               </svg>
             {/if}
           </button>
