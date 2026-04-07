@@ -108,26 +108,6 @@
             </div>
           {/each}
         </div>
-
-        <div class="space-y-2">
-          <span class="text-sm font-semibold text-base-content"
-            >{$_("admin_direct_mm_open_orders")}</span
-          >
-          {#if data.openOrders.length === 0}
-            <span class="text-sm text-base-content/60"
-              >{$_("admin_direct_mm_no_open_orders")}</span
-            >
-          {/if}
-          {#each data.openOrders as openOrder}
-            <div class="border border-base-300 rounded-box p-2 text-sm">
-              <span>{openOrder.side} · {openOrder.price} · {openOrder.qty}</span
-              >
-              <span class="block text-base-content/60"
-                >{openOrder.exchangeOrderId}</span
-              >
-            </div>
-          {/each}
-        </div>
       {/if}
     </div>
   </div>

@@ -25,11 +25,18 @@ type TrackedOrder = {
   updatedAt: string;
 };
 
+type FillLogEntry = {
+  ts: string;
+  side: string;
+  qty: string;
+};
+
 @Injectable()
 export class ExchangeOrderTrackerService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
   private readonly orders = new Map<string, TrackedOrder>();
+  private readonly fillLog = new Map<string, FillLogEntry[]>();
 
   constructor(
     @Optional()
@@ -79,7 +86,15 @@ export class ExchangeOrderTrackerService
     return this.orders.get(this.toKey(exchange, exchangeOrderId));
   }
 
-  async onTick(_: string): Promise<void> {
+  getFillCount(strategyKey: string, windowMs: number): number {
+    if (windowMs <= 0) {
+      return 0;
+    }
+
+    return this.getPrunedFillLog(strategyKey, Date.now() - windowMs).length;
+  }
+
+  async onTick(ts: string): Promise<void> {
     const openOrders = [...this.orders.values()].filter(
       (order) => order.status === 'open' || order.status === 'partially_filled',
     );
@@ -98,16 +113,57 @@ export class ExchangeOrderTrackerService
 
         const normalizedStatus = this.normalizeStatus(latest.status);
 
-        this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), {
+        const nextFilledQty =
+          this.normalizeFilledValue(latest?.filled) || order.cumulativeFilledQty;
+        const nextOrder: TrackedOrder = {
           ...order,
-          cumulativeFilledQty:
-            this.normalizeFilledValue(latest?.filled) ||
-            order.cumulativeFilledQty,
+          cumulativeFilledQty: nextFilledQty,
           status: normalizedStatus,
           updatedAt: getRFC3339Timestamp(),
-        });
+        };
+
+        this.recordFill(order, nextOrder, ts);
+        this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), nextOrder);
       }),
     );
+  }
+
+  private recordFill(
+    previousOrder: TrackedOrder,
+    nextOrder: TrackedOrder,
+    ts: string,
+  ): void {
+    const previousFilledQty = Number(previousOrder.cumulativeFilledQty || 0);
+    const nextFilledQty = Number(nextOrder.cumulativeFilledQty || 0);
+
+    if (!Number.isFinite(nextFilledQty) || nextFilledQty <= previousFilledQty) {
+      return;
+    }
+
+    const fills = this.getPrunedFillLog(
+      previousOrder.strategyKey,
+      Date.parse(ts) - 60 * 60 * 1000,
+    );
+
+    fills.push({
+      ts,
+      side: previousOrder.side,
+      qty: String(nextFilledQty - previousFilledQty),
+    });
+
+    this.fillLog.set(previousOrder.strategyKey, fills);
+  }
+
+  private getPrunedFillLog(strategyKey: string, cutoffMs: number): FillLogEntry[] {
+    const fills = (this.fillLog.get(strategyKey) || []).filter((entry) => {
+      const entryMs = Date.parse(entry.ts);
+
+      return Number.isFinite(entryMs) && entryMs >= cutoffMs;
+    });
+
+    this.fillLog.set(strategyKey, fills);
+
+    return fills;
   }
 
   private normalizeStatus(status: string): TrackedOrder['status'] {

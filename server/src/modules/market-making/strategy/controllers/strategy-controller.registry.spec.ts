@@ -103,6 +103,7 @@ describe('StrategyControllerRegistry', () => {
 
     expect(controller.getCadenceMs({ orderRefreshTime: 200 })).toBe(1000);
     expect(controller.getCadenceMs({ orderRefreshTime: 2500 })).toBe(2500);
+    expect(controller.getCadenceMs({})).toBe(1000);
 
     await expect(
       controller.decideActions(

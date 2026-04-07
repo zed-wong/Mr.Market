@@ -353,6 +353,11 @@ export class AdminDirectMarketMakingService {
         : null;
 
     const executorHealth = this.resolveExecutorHealth(session);
+    const executor = this.executorRegistry.findExecutorByOrderId(orderId);
+    const recentErrors =
+      executor && typeof executor.getRecentErrors === 'function'
+        ? executor.getRecentErrors(orderId)
+        : [];
 
     return {
       orderId,
@@ -364,6 +369,11 @@ export class AdminDirectMarketMakingService {
       privateStreamEventAt: privateEvent?.receivedAt || null,
       openOrders,
       intents,
+      fillCount1h: this.exchangeOrderTrackerService.getFillCount(
+        strategyKey,
+        60 * 60 * 1000,
+      ),
+      recentErrors,
       spread,
       inventoryBalances,
       stale: executorHealth === 'stale',

@@ -33,7 +33,7 @@ describe('AdminDirectMarketMakingService', () => {
           bidSpread: 0.001,
           askSpread: 0.001,
           orderAmount: 10,
-          orderRefreshTime: 15000,
+          orderRefreshTime: 1000,
           numberOfLayers: 1,
           priceSourceType: 'MID_PRICE',
           amountChangePerLayer: 0,
@@ -75,6 +75,7 @@ describe('AdminDirectMarketMakingService', () => {
     };
     const exchangeOrderTrackerService = {
       getOpenOrders: jest.fn().mockReturnValue([]),
+      getFillCount: jest.fn().mockReturnValue(0),
     };
     const privateStreamTrackerService = {
       getLatestEvent: jest.fn().mockReturnValue(null),
@@ -258,7 +259,7 @@ describe('AdminDirectMarketMakingService', () => {
         bidSpread: 0.001,
         askSpread: 0.001,
         orderAmount: 20,
-        orderRefreshTime: 15000,
+        orderRefreshTime: 1000,
         numberOfLayers: 1,
         priceSourceType: 'MID_PRICE',
         amountChangePerLayer: 0,
@@ -421,6 +422,13 @@ describe('AdminDirectMarketMakingService', () => {
     orderBookTrackerService.getOrderBook.mockReturnValue({
       bids: [[100, 1]],
       asks: [[101, 1]],
+    });
+    executorRegistry.findExecutorByOrderId.mockReturnValue({
+      getSession: () => ({
+        orderId: 'order-1',
+        cadenceMs: 5000,
+        nextRunAtMs: Date.now() + 5000,
+      }),
     });
 
     const result = await service.getDirectOrderStatus('order-1');

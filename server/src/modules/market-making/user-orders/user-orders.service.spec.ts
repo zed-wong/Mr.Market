@@ -258,7 +258,7 @@ describe('UserOrdersService', () => {
         strategyDefinitionId: 'strategy-1',
         configOverrides: {
           bidSpread: 0.002,
-          orderRefreshTime: 15000,
+          orderRefreshTime: 1000,
         },
       });
 
@@ -284,7 +284,7 @@ describe('UserOrdersService', () => {
           strategyDefinitionId: 'strategy-1',
           configOverrides: {
             bidSpread: 0.002,
-            orderRefreshTime: 15000,
+            orderRefreshTime: 1000,
           },
           state: 'pending',
         }),
@@ -364,7 +364,7 @@ describe('UserOrdersService', () => {
           marketMakingPairId: 'pair-1',
           strategyDefinitionId: 'strategy-1',
           configOverrides: {
-            orderRefreshTime: '15000' as any,
+            orderRefreshTime: '1000' as any,
           },
         }),
       ).rejects.toThrow('Config field orderRefreshTime must be number');

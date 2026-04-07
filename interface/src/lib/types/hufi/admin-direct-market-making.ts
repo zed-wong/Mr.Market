@@ -53,6 +53,11 @@ export interface DirectOrderStatus {
     status?: string;
     updatedAt?: string;
   }>;
+  fillCount1h?: number;
+  recentErrors?: Array<{
+    ts: string;
+    message: string;
+  }>;
   spread: {
     bid: string;
     ask: string;

@@ -56,11 +56,17 @@ export type ExchangePairExecutorHandlers = {
   ): Promise<void> | void;
 };
 
+type RecentErrorEntry = {
+  ts: string;
+  message: string;
+};
+
 export class ExchangePairExecutor {
   private readonly strategySessions = new Map<
     string,
     ExchangePairExecutorSession
   >();
+  private readonly recentErrors = new Map<string, RecentErrorEntry[]>();
   private handlers: ExchangePairExecutorHandlers;
 
   constructor(
@@ -122,6 +128,10 @@ export class ExchangePairExecutor {
     );
   }
 
+  getRecentErrors(orderId: string): RecentErrorEntry[] {
+    return [...(this.recentErrors.get(orderId) || [])];
+  }
+
   isEmpty(): boolean {
     return this.strategySessions.size === 0;
   }
@@ -146,6 +156,7 @@ export class ExchangePairExecutor {
       try {
         await this.handlers.onTick?.(session, ts);
       } catch (error) {
+        this.recordRecentError(session.orderId, error, ts);
         await this.handlers.onTickError?.(session, error, ts);
       } finally {
         const nextSession = this.strategySessions.get(session.orderId);
@@ -170,9 +181,25 @@ export class ExchangePairExecutor {
       try {
         await this.handlers.onFill?.(session, fill);
       } catch (error) {
+        this.recordRecentError(session.orderId, error, fill.receivedAt);
         await this.handlers.onFillError?.(session, error, fill);
       }
     }
+  }
+
+  private recordRecentError(
+    orderId: string,
+    error: unknown,
+    ts?: string | null,
+  ): void {
+    const entries = [...(this.recentErrors.get(orderId) || [])];
+
+    entries.push({
+      ts: ts || new Date().toISOString(),
+      message: error instanceof Error ? error.message : String(error),
+    });
+
+    this.recentErrors.set(orderId, entries.slice(-10));
   }
 
   private generateRunId(): string {

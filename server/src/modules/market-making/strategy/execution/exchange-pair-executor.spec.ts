@@ -150,4 +150,5 @@ describe('ExchangePairExecutor', () => {
 
     expect(calls).toEqual(['a', 'b']);
   });
+
 });

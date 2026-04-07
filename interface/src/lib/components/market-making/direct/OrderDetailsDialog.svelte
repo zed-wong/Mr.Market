@@ -15,13 +15,6 @@
   export let onStartOrder: () => void;
   export let onStopOrder: () => void;
 
-  // Mock data for fields not yet supported by the API
-  const mockFills1h = 17;
-  const mockErrors: { ts: string; message: string }[] = [
-    { ts: "2026-04-07T14:32:11Z", message: "Rate limited by exchange" },
-    { ts: "2026-04-07T14:28:03Z", message: "Order placement timeout" },
-  ];
-
   function copyOrderId() {
     if (!order) return;
     navigator.clipboard.writeText(order.orderId);
@@ -55,9 +48,11 @@
     const diffMs = Date.now() - Date.parse(iso);
     if (diffMs < 0) return $_("admin_direct_mm_just_now");
     const seconds = Math.floor(diffMs / 1000);
-    if (seconds < 60) return $_("admin_direct_mm_seconds_ago", { values: { seconds } });
+    if (seconds < 60)
+      return $_("admin_direct_mm_seconds_ago", { values: { seconds } });
     const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return $_("admin_direct_mm_minutes_ago", { values: { m: minutes } });
+    if (minutes < 60)
+      return $_("admin_direct_mm_minutes_ago", { values: { m: minutes } });
     const hours = Math.floor(minutes / 60);
     return $_("admin_direct_mm_hours_ago", { values: { h: hours } });
   }
@@ -86,6 +81,8 @@
     order?.runtimeState === "running" || order?.runtimeState === "active";
   $: isStale = data?.stale ?? false;
   $: skewPercent = data ? computeSkewPercent(data.inventoryBalances) : null;
+  $: fills1h = data?.fillCount1h ?? 0;
+  $: recentErrors = data?.recentErrors ?? [];
 </script>
 
 <svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
@@ -167,36 +164,53 @@
       </div>
 
       {#if loading && !data}
-        <div class="px-7 pb-7 flex items-center justify-center py-12">
+        <div class="px-7 pb-16 flex items-center justify-center py-12">
           <span class="loading loading-spinner loading-md text-primary"></span>
         </div>
       {:else}
         <div class="px-7 pb-7 flex flex-col gap-5">
           <!-- Market Info Bar -->
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-xs font-bold bg-base-200 px-2.5 py-1 rounded capitalize"
+            <span
+              class="text-xs font-bold bg-base-200 px-2.5 py-1 rounded capitalize"
               >{order.exchangeName}</span
             >
             <span class="text-xs font-bold bg-base-200 px-2.5 py-1 rounded"
               >{order.pair}</span
             >
-            <span class="text-xs text-base-content/50 px-2.5 py-1 rounded bg-base-200"
+            <span
+              class="text-xs text-base-content/50 px-2.5 py-1 rounded bg-base-200"
               >{$_("admin_direct_mm_strategy_label")}: {order.strategyName}</span
             >
             {#if order.createdAt}
               <span class="text-[10px] text-base-content/40 ml-auto"
-                >{$_("admin_direct_mm_created_at")}: {formatTimestamp(order.createdAt)}</span
+                >{$_("admin_direct_mm_created_at")}: {formatTimestamp(
+                  order.createdAt,
+                )}</span
               >
             {/if}
           </div>
 
           <!-- Stale Warning Banner -->
           {#if isStale}
-            <div class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-xl px-4 py-2.5">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-warning shrink-0">
-                <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+            <div
+              class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-xl px-4 py-2.5"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                class="w-4 h-4 text-warning shrink-0"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                  clip-rule="evenodd"
+                />
               </svg>
-              <span class="text-xs text-warning font-semibold">{$_("admin_direct_mm_stale_warning")}</span>
+              <span class="text-xs text-warning font-semibold"
+                >{$_("admin_direct_mm_stale_warning")}</span
+              >
             </div>
           {/if}
 
@@ -204,9 +218,20 @@
           {#if order.warnings && order.warnings.length > 0}
             <div class="flex flex-col gap-1.5">
               {#each order.warnings as warning}
-                <div class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5 text-warning shrink-0">
-                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+                <div
+                  class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-lg px-3 py-2"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    class="w-3.5 h-3.5 text-warning shrink-0"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                      clip-rule="evenodd"
+                    />
                   </svg>
                   <span class="text-xs text-warning">{warning}</span>
                 </div>
@@ -218,22 +243,28 @@
           <div class="grid grid-cols-3 gap-3">
             <!-- Spread -->
             <div class="border border-base-300 rounded-xl p-3 text-center">
-              <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+              <span
+                class="text-[10px] text-base-content/40 font-semibold block mb-1"
                 >{$_("admin_direct_mm_spread_label")}</span
               >
               {#if data?.spread}
-                <span class="text-sm font-bold text-base-content block">{data.spread.absolute}</span>
+                <span class="text-sm font-bold text-base-content block"
+                  >{data.spread.absolute}</span
+                >
                 <span class="text-[10px] text-base-content/40"
                   >{data.spread.bid} / {data.spread.ask}</span
                 >
               {:else}
-                <span class="text-sm text-base-content/30">{$_("admin_direct_mm_no_spread")}</span>
+                <span class="text-sm text-base-content/30"
+                  >{$_("admin_direct_mm_no_spread")}</span
+                >
               {/if}
             </div>
 
             <!-- Last Tick Ago -->
             <div class="border border-base-300 rounded-xl p-3 text-center">
-              <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+              <span
+                class="text-[10px] text-base-content/40 font-semibold block mb-1"
                 >{$_("admin_direct_mm_last_tick_ago")}</span
               >
               <span class="text-sm font-bold text-base-content block"
@@ -241,15 +272,14 @@
               >
             </div>
 
-            <!-- Fills (1h) — mock -->
-            <div class="border border-base-300 rounded-xl p-3 text-center relative">
-              <span class="absolute top-1.5 right-1.5 text-[8px] bg-base-200 text-base-content/40 px-1 rounded"
-                >{$_("admin_direct_mm_mock_badge")}</span
-              >
-              <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+            <div class="border border-base-300 rounded-xl p-3 text-center">
+              <span
+                class="text-[10px] text-base-content/40 font-semibold block mb-1"
                 >{$_("admin_direct_mm_fills_1h")}</span
               >
-              <span class="text-sm font-bold text-base-content block">{mockFills1h}</span>
+              <span class="text-sm font-bold text-base-content block"
+                >{fills1h}</span
+              >
             </div>
           </div>
 
@@ -440,10 +470,14 @@
                     >{$_("admin_direct_mm_inventory_skew")}</span
                   >
                   <span class="text-[10px] text-base-content/50"
-                    >{data.inventoryBalances[0].asset} {skewPercent}% / {data.inventoryBalances[1].asset} {100 - skewPercent}%</span
+                    >{data.inventoryBalances[0].asset}
+                    {skewPercent}% / {data.inventoryBalances[1].asset}
+                    {100 - skewPercent}%</span
                   >
                 </div>
-                <div class="w-full h-2 rounded-full bg-base-200 overflow-hidden flex">
+                <div
+                  class="w-full h-2 rounded-full bg-base-200 overflow-hidden flex"
+                >
                   <div
                     class="h-full bg-primary/70 rounded-l-full transition-all"
                     style="width: {skewPercent}%"
@@ -457,24 +491,33 @@
             {/if}
           </div>
 
-          <!-- Recent Errors — mock -->
           <div>
             <div class="flex items-center gap-1.5 mb-3 h-5">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5 text-error">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                class="w-3.5 h-3.5 text-error"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                  clip-rule="evenodd"
+                />
               </svg>
               <span class="text-xs font-bold text-base-content"
                 >{$_("admin_direct_mm_recent_errors")}</span
               >
-              <span class="text-[8px] bg-base-200 text-base-content/40 px-1 rounded"
-                >{$_("admin_direct_mm_mock_badge")}</span
-              >
             </div>
-            {#if mockErrors.length > 0}
+            {#if recentErrors.length > 0}
               <div class="flex flex-col gap-1.5">
-                {#each mockErrors as err}
-                  <div class="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
-                    <span class="text-xs text-base-content/70">{err.message}</span>
+                {#each recentErrors as err}
+                  <div
+                    class="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2"
+                  >
+                    <span class="text-xs text-base-content/70"
+                      >{err.message}</span
+                    >
                     <span class="text-[10px] text-base-content/40 shrink-0 ml-2"
                       >{err.ts.replace("T", " ").slice(11, 19)}</span
                     >
@@ -482,8 +525,10 @@
                 {/each}
               </div>
             {:else}
-              <div class="border border-dashed border-base-300 rounded-xl py-4 flex items-center justify-center">
-                <span class="text-xs text-base-content/40 italic"
+              <div
+                class="border border-dashed border-base-300 rounded-xl py-4 flex items-center justify-center"
+              >
+                <span class="text-xs text-base-content/40"
                   >{$_("admin_direct_mm_no_recent_errors")}</span
                 >
               </div>

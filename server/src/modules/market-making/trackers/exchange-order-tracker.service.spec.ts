@@ -2,6 +2,10 @@
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 
 describe('ExchangeOrderTrackerService', () => {
+  beforeEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('upserts order states and returns open orders by strategy', async () => {
     const service = new ExchangeOrderTrackerService();
 
@@ -101,4 +105,5 @@ describe('ExchangeOrderTrackerService', () => {
       'mexc',
     );
   });
+
 });

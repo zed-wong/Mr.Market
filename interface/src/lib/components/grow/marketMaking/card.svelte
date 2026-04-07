@@ -12,7 +12,7 @@
     bidSpread: "0.1",
     askSpread: "0.1",
     orderAmount: "1",
-    orderRefreshTime: "15000",
+    orderRefreshTime: "1000",
     numberOfLayers: "1",
     priceSourceType: "mid_price",
     amountChangePerLayer: "1",
