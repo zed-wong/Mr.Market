@@ -6,6 +6,9 @@ import { OrderBookTrackerService } from '../../trackers/order-book-tracker.servi
 import { StrategyMarketDataProviderService } from './strategy-market-data-provider.service';
 
 describe('StrategyMarketDataProviderService', () => {
+  const configService = {
+    get: jest.fn().mockReturnValue(0),
+  };
   const orderBookTrackerService = {
     getOrderBook: jest.fn(),
   };
@@ -21,6 +24,7 @@ describe('StrategyMarketDataProviderService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     service = new StrategyMarketDataProviderService(
+      configService as any,
       orderBookTrackerService as unknown as OrderBookTrackerService,
       exchangeConnectorAdapterService as unknown as ExchangeConnectorAdapterService,
       marketdataService as unknown as MarketdataService,

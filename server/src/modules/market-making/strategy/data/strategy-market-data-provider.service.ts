@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import BigNumber from 'bignumber.js';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { MarketdataService } from '../../../data/market-data/market-data.service';
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
@@ -12,6 +13,9 @@ type CachedPrice = { price: number; ts: number };
 
 @Injectable()
 export class StrategyMarketDataProviderService {
+  private readonly logger = new CustomLogger(
+    StrategyMarketDataProviderService.name,
+  );
   private readonly priceCache = new Map<string, CachedPrice>();
   private readonly priceCacheTtlMs: number;
 
@@ -73,6 +77,14 @@ export class StrategyMarketDataProviderService {
       if (trackedPrice !== undefined) {
         return trackedPrice;
       }
+
+      this.logger.warn(
+        `Tracked order book unusable for ${exchangeName} ${pair} (${priceSourceType})`,
+      );
+    } else {
+      this.logger.warn(
+        `Tracked order book miss for ${exchangeName} ${pair} (${priceSourceType})`,
+      );
     }
 
     try {
@@ -90,10 +102,21 @@ export class StrategyMarketDataProviderService {
       if (fetchedPrice !== undefined) {
         return fetchedPrice;
       }
-    } catch {
-      // fall through to ticker fallback
+
+      this.logger.warn(
+        `fetchOrderBook returned unusable book for ${exchangeName} ${pair} (${priceSourceType})`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `fetchOrderBook failed for ${exchangeName} ${pair} (${priceSourceType}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
+    this.logger.warn(
+      `Falling back to ticker for ${exchangeName} ${pair} (${priceSourceType})`,
+    );
     const ticker = await this.marketdataService.getTickerPrice(
       exchangeName,
       pair,
