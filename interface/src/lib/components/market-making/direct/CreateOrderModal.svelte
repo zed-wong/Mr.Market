@@ -57,6 +57,8 @@
   }
 </script>
 
+<svelte:window on:keydown={(e) => show && e.key === 'Escape' && onClose()} />
+
 {#if show}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
     <div

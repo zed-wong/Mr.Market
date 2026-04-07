@@ -8,6 +8,8 @@
   export let onCancel: () => void;
 </script>
 
+<svelte:window on:keydown={(e) => order && e.key === 'Escape' && onCancel()} />
+
 {#if order}
   <div class="modal modal-open">
     <div class="modal-box">

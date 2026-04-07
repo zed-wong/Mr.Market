@@ -63,7 +63,7 @@
       return $_("admin_direct_mm_api_key_status_expired");
     }
 
-    return $_("admin_direct_mm_na");
+    return $_("admin_direct_mm_api_key_status_idle");
   }
 </script>
 

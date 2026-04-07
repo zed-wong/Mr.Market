@@ -28,6 +28,7 @@ export interface AdminSingleKey {
   name: string;
   api_key: string;
   api_secret: string;
+  permissions?: string;
   state?: string;
   created_at?: string;
   last_update?: string;

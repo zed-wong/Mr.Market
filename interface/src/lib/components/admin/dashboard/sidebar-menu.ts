@@ -42,11 +42,6 @@ export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
           value: "/manage/settings/market-making",
         },
         {
-          key: "direct-market-making",
-          labelKey: "admin_direct_mm_nav",
-          value: "/manage/market-making/direct",
-        },
-        {
           key: "fees",
           labelKey: "fees",
           value: "/manage/settings/fees",
@@ -60,6 +55,11 @@ export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
           key: "api-keys",
           labelKey: "api_keys",
           value: "/manage/settings/api-keys",
+        },
+        {
+          key: "direct-market-making",
+          labelKey: "admin_direct_mm_nav",
+          value: "/manage/market-making/direct",
         },
       ],
     },

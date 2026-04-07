@@ -23,6 +23,7 @@
   $: exchange = String(
     campaign.exchange_name || campaign.exchange || $_("admin_direct_mm_na"),
   );
+  $: readOnlyKeys = apiKeys.filter(k => k.permissions === 'read');
 
   function statusColor(s: string): string {
     switch (s.toLowerCase()) {
@@ -54,6 +55,8 @@
     toast.success($_("copied"));
   }
 </script>
+
+<svelte:window on:keydown={(e) => show && e.key === 'Escape' && onCancel()} />
 
 {#if show}
   <div class="modal modal-open bg-black/25 backdrop-blur-sm">
@@ -159,12 +162,17 @@
               bind:value={joinCampaignApiKeyId}
             >
               <option value="">{$_("admin_direct_mm_select_api_key")}</option>
-              {#each apiKeys as apiKey}
+              {#each readOnlyKeys as apiKey}
                 <option value={apiKey.key_id}>
                   {apiKey.name} · {apiKey.exchange}
                 </option>
               {/each}
             </select>
+            {#if readOnlyKeys.length === 0 && apiKeys.length > 0}
+              <span class="mt-1 text-xs text-warning">
+                {$_("no_read_only_keys_hint")}
+              </span>
+            {/if}
           </label>
         </div>
 

@@ -15,6 +15,13 @@
   export let onStartOrder: () => void;
   export let onStopOrder: () => void;
 
+  // Mock data for fields not yet supported by the API
+  const mockFills1h = 17;
+  const mockErrors: { ts: string; message: string }[] = [
+    { ts: "2026-04-07T14:32:11Z", message: "Rate limited by exchange" },
+    { ts: "2026-04-07T14:28:03Z", message: "Order placement timeout" },
+  ];
+
   function copyOrderId() {
     if (!order) return;
     navigator.clipboard.writeText(order.orderId);
@@ -22,9 +29,9 @@
   }
 
   function getHealthDot(health: string): string {
-    if (health === "active") return "bg-green-500";
-    if (health === "gone") return "bg-red-500";
-    return "bg-yellow-500";
+    if (health === "active") return "bg-success";
+    if (health === "gone") return "bg-error";
+    return "bg-warning";
   }
 
   function getHealthLabel(health: string): string {
@@ -32,15 +39,38 @@
   }
 
   function getHealthColor(health: string): string {
-    if (health === "active") return "text-green-600";
-    if (health === "gone") return "text-red-600";
-    return "text-yellow-600";
+    if (health === "active") return "text-success";
+    if (health === "gone") return "text-error";
+    return "text-warning";
   }
 
   function getConnectivity(d: DirectOrderStatus): string {
     if (!d.privateStreamEventAt)
       return $_("admin_direct_mm_connectivity_inactive");
     return $_("admin_direct_mm_connectivity_active");
+  }
+
+  function formatTimeAgo(iso: string | null): string {
+    if (!iso) return $_("admin_direct_mm_na");
+    const diffMs = Date.now() - Date.parse(iso);
+    if (diffMs < 0) return $_("admin_direct_mm_just_now");
+    const seconds = Math.floor(diffMs / 1000);
+    if (seconds < 60) return $_("admin_direct_mm_seconds_ago", { values: { seconds } });
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return $_("admin_direct_mm_minutes_ago", { values: { m: minutes } });
+    const hours = Math.floor(minutes / 60);
+    return $_("admin_direct_mm_hours_ago", { values: { h: hours } });
+  }
+
+  function computeSkewPercent(
+    balances: DirectOrderStatus["inventoryBalances"],
+  ): number | null {
+    if (!balances || balances.length < 2) return null;
+    const a = parseFloat(balances[0].total) || 0;
+    const b = parseFloat(balances[1].total) || 0;
+    const sum = a + b;
+    if (sum === 0) return null;
+    return Math.round((a / sum) * 100);
   }
 
   $: stateLabel = data
@@ -54,12 +84,16 @@
     : "";
   $: isRunning =
     order?.runtimeState === "running" || order?.runtimeState === "active";
+  $: isStale = data?.stale ?? false;
+  $: skewPercent = data ? computeSkewPercent(data.inventoryBalances) : null;
 </script>
+
+<svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
 
 {#if show && order}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
     <div
-      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[520px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto"
+      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[560px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto"
     >
       <!-- Header -->
       <div class="px-7 pt-6 pb-4">
@@ -138,17 +172,102 @@
         </div>
       {:else}
         <div class="px-7 pb-7 flex flex-col gap-5">
+          <!-- Market Info Bar -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold bg-base-200 px-2.5 py-1 rounded capitalize"
+              >{order.exchangeName}</span
+            >
+            <span class="text-xs font-bold bg-base-200 px-2.5 py-1 rounded"
+              >{order.pair}</span
+            >
+            <span class="text-xs text-base-content/50 px-2.5 py-1 rounded bg-base-200"
+              >{$_("admin_direct_mm_strategy_label")}: {order.strategyName}</span
+            >
+            {#if order.createdAt}
+              <span class="text-[10px] text-base-content/40 ml-auto"
+                >{$_("admin_direct_mm_created_at")}: {formatTimestamp(order.createdAt)}</span
+              >
+            {/if}
+          </div>
+
+          <!-- Stale Warning Banner -->
+          {#if isStale}
+            <div class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-xl px-4 py-2.5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-warning shrink-0">
+                <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+              </svg>
+              <span class="text-xs text-warning font-semibold">{$_("admin_direct_mm_stale_warning")}</span>
+            </div>
+          {/if}
+
+          <!-- Warnings Banner -->
+          {#if order.warnings && order.warnings.length > 0}
+            <div class="flex flex-col gap-1.5">
+              {#each order.warnings as warning}
+                <div class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5 text-warning shrink-0">
+                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+                  </svg>
+                  <span class="text-xs text-warning">{warning}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          <!-- Key Metrics Row -->
+          <div class="grid grid-cols-3 gap-3">
+            <!-- Spread -->
+            <div class="border border-base-300 rounded-xl p-3 text-center">
+              <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                >{$_("admin_direct_mm_spread_label")}</span
+              >
+              {#if data?.spread}
+                <span class="text-sm font-bold text-base-content block">{data.spread.absolute}</span>
+                <span class="text-[10px] text-base-content/40"
+                  >{data.spread.bid} / {data.spread.ask}</span
+                >
+              {:else}
+                <span class="text-sm text-base-content/30">{$_("admin_direct_mm_no_spread")}</span>
+              {/if}
+            </div>
+
+            <!-- Last Tick Ago -->
+            <div class="border border-base-300 rounded-xl p-3 text-center">
+              <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                >{$_("admin_direct_mm_last_tick_ago")}</span
+              >
+              <span class="text-sm font-bold text-base-content block"
+                >{formatTimeAgo(data?.lastTickAt ?? order.lastTickAt)}</span
+              >
+            </div>
+
+            <!-- Fills (1h) — mock -->
+            <div class="border border-base-300 rounded-xl p-3 text-center relative">
+              <span class="absolute top-1.5 right-1.5 text-[8px] bg-base-200 text-base-content/40 px-1 rounded"
+                >{$_("admin_direct_mm_mock_badge")}</span
+              >
+              <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                >{$_("admin_direct_mm_fills_1h")}</span
+              >
+              <span class="text-sm font-bold text-base-content block">{mockFills1h}</span>
+            </div>
+          </div>
+
           <!-- Status Cards Row -->
           <div class="grid grid-cols-2 gap-4">
             <!-- General Status -->
             <div class="border border-base-300 rounded-xl p-4">
-              <div class="flex items-center gap-1.5 mb-3">
-                <span class="text-primary text-sm">{"<>"}</span>
+              <div class="flex items-center gap-1.5 mb-3 h-5">
+                <div class="w-3.5 h-3.5 flex items-center justify-center">
+                  <span class="text-primary text-[10px] font-bold leading-none"
+                    >{"<>"}</span
+                  >
+                </div>
                 <span class="text-xs font-bold text-base-content"
                   >{$_("admin_direct_mm_general_status")}</span
                 >
               </div>
-              <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center justify-between h-6 mb-2">
                 <span class="text-xs text-base-content/60"
                   >{$_("admin_direct_mm_order_state")}</span
                 >
@@ -157,9 +276,9 @@
                   >{stateLabel}</span
                 >
               </div>
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between h-6">
                 <span
-                  class="text-[10px] font-bold text-base-content/40 tracking-wider capitalize"
+                  class="text-xs text-base-content/60 tracking-wider capitalize"
                   >{$_("admin_direct_mm_last_updated_label")}</span
                 >
                 <span class="text-[10px] text-base-content/50"
@@ -170,7 +289,7 @@
 
             <!-- Health Metrics -->
             <div class="border border-base-300 rounded-xl p-4">
-              <div class="flex items-center gap-1.5 mb-3">
+              <div class="flex items-center gap-1.5 mb-3 h-5">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 20 20"
@@ -188,7 +307,7 @@
                 >
               </div>
               {#if data}
-                <div class="flex items-center justify-between mb-1.5">
+                <div class="flex items-center justify-between h-6 mb-2">
                   <span class="text-xs text-base-content/60"
                     >{$_("admin_direct_mm_executor_health")}</span
                   >
@@ -205,22 +324,8 @@
                     >
                   </div>
                 </div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-xs text-base-content/60"
-                    >{$_("admin_direct_mm_stale_status")}</span
-                  >
-                  <div class="flex items-center gap-1.5">
-                    <span
-                      class="w-2 h-2 rounded-full {data.stale
-                        ? 'bg-yellow-500'
-                        : 'bg-green-500'}"
-                    ></span>
-                    <span class="text-xs font-semibold"
-                      >{data.stale ? "True" : "False"}</span
-                    >
-                  </div>
-                </div>
-                <div class="flex items-center justify-between">
+
+                <div class="flex items-center justify-between h-6">
                   <span class="text-xs text-base-content/60"
                     >{$_("admin_direct_mm_connectivity")}</span
                   >
@@ -229,16 +334,18 @@
                   >
                 </div>
               {:else}
-                <span class="text-xs text-base-content/40"
-                  >{$_("admin_direct_mm_na")}</span
-                >
+                <div class="h-14 flex items-center">
+                  <span class="text-xs text-base-content/40"
+                    >{$_("admin_direct_mm_na")}</span
+                  >
+                </div>
               {/if}
             </div>
           </div>
 
           <!-- Inventory Balances -->
           <div>
-            <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center justify-between mb-3 h-5">
               <div class="flex items-center gap-1.5">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -324,98 +431,63 @@
                 </tbody>
               </table>
             </div>
+
+            <!-- Inventory Skew Bar -->
+            {#if skewPercent !== null && data && data.inventoryBalances.length >= 2}
+              <div class="mt-3">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-[10px] text-base-content/40 font-semibold"
+                    >{$_("admin_direct_mm_inventory_skew")}</span
+                  >
+                  <span class="text-[10px] text-base-content/50"
+                    >{data.inventoryBalances[0].asset} {skewPercent}% / {data.inventoryBalances[1].asset} {100 - skewPercent}%</span
+                  >
+                </div>
+                <div class="w-full h-2 rounded-full bg-base-200 overflow-hidden flex">
+                  <div
+                    class="h-full bg-primary/70 rounded-l-full transition-all"
+                    style="width: {skewPercent}%"
+                  ></div>
+                  <div
+                    class="h-full bg-secondary/50 rounded-r-full transition-all"
+                    style="width: {100 - skewPercent}%"
+                  ></div>
+                </div>
+              </div>
+            {/if}
           </div>
 
-          <!-- Open Orders & Active Intents -->
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <div class="flex items-center gap-1.5 mb-3">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  class="w-3.5 h-3.5 text-primary"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M.99 5.24A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25l.01 9.5A2.25 2.25 0 0 1 16.76 17H3.26A2.25 2.25 0 0 1 1 14.75l-.01-9.51Zm1.51 2.06v7.45c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75V7.3H2.5Z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-                <span class="text-xs font-bold text-base-content"
-                  >{$_("admin_direct_mm_open_orders")}</span
+          <!-- Recent Errors — mock -->
+          <div>
+            <div class="flex items-center gap-1.5 mb-3 h-5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5 text-error">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+              </svg>
+              <span class="text-xs font-bold text-base-content"
+                >{$_("admin_direct_mm_recent_errors")}</span
+              >
+              <span class="text-[8px] bg-base-200 text-base-content/40 px-1 rounded"
+                >{$_("admin_direct_mm_mock_badge")}</span
+              >
+            </div>
+            {#if mockErrors.length > 0}
+              <div class="flex flex-col gap-1.5">
+                {#each mockErrors as err}
+                  <div class="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
+                    <span class="text-xs text-base-content/70">{err.message}</span>
+                    <span class="text-[10px] text-base-content/40 shrink-0 ml-2"
+                      >{err.ts.replace("T", " ").slice(11, 19)}</span
+                    >
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <div class="border border-dashed border-base-300 rounded-xl py-4 flex items-center justify-center">
+                <span class="text-xs text-base-content/40 italic"
+                  >{$_("admin_direct_mm_no_recent_errors")}</span
                 >
               </div>
-              {#if data && data.openOrders.length > 0}
-                <div class="flex flex-col gap-2">
-                  {#each data.openOrders as openOrder}
-                    <div
-                      class="border border-base-300 rounded-lg p-2.5 text-xs"
-                    >
-                      <span class="font-semibold capitalize"
-                        >{openOrder.side}</span
-                      >
-                      <span class="text-base-content/50">
-                        · {openOrder.price} · {openOrder.qty}</span
-                      >
-                    </div>
-                  {/each}
-                </div>
-              {:else}
-                <div
-                  class="border border-dashed border-base-300 rounded-xl py-5 flex items-center justify-center"
-                >
-                  <span class="text-xs text-base-content/40 italic"
-                    >{$_("admin_direct_mm_no_open_orders")}</span
-                  >
-                </div>
-              {/if}
-            </div>
-
-            <div>
-              <div class="flex items-center gap-1.5 mb-3">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  class="w-3.5 h-3.5 text-primary"
-                >
-                  <path
-                    d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h6.572l-1.305 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 17.25 8h-6.572l1.305-6.093Z"
-                  />
-                </svg>
-                <span class="text-xs font-bold text-base-content"
-                  >{$_("admin_direct_mm_active_intents")}</span
-                >
-              </div>
-              {#if data && data.intents.length > 0}
-                <div class="flex flex-col gap-2">
-                  {#each data.intents as intent}
-                    <div
-                      class="border border-base-300 rounded-lg p-2.5 text-xs"
-                    >
-                      <span class="font-semibold capitalize"
-                        >{intent.type || intent.side || ""}</span
-                      >
-                      {#if intent.price}<span class="text-base-content/50">
-                          · {intent.price}</span
-                        >{/if}
-                      {#if intent.qty}<span class="text-base-content/50">
-                          · {intent.qty}</span
-                        >{/if}
-                    </div>
-                  {/each}
-                </div>
-              {:else}
-                <div
-                  class="border border-dashed border-base-300 rounded-xl py-5 flex items-center justify-center"
-                >
-                  <span class="text-xs text-base-content/40 italic"
-                    >{$_("admin_direct_mm_no_active_intents")}</span
-                  >
-                </div>
-              {/if}
-            </div>
+            {/if}
           </div>
 
           <!-- Actions -->
