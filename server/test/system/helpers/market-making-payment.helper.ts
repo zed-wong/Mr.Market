@@ -322,7 +322,7 @@ export class MarketMakingPaymentHelper {
           bidSpread: 0.001,
           askSpread: 0.001,
           orderAmount: 0.01,
-          orderRefreshTime: 15000,
+          orderRefreshTime: 1000,
           numberOfLayers: 1,
           priceSourceType: PriceSourceType.MID_PRICE,
           amountChangePerLayer: 0,

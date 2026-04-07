@@ -22,6 +22,7 @@ import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
+import { OrderBookIngestionService } from '../trackers/order-book-ingestion.service';
 import { PrivateStreamIngestionService } from '../trackers/private-stream-ingestion.service';
 import { ExecutorAction } from './config/executor-action.types';
 import {
@@ -121,6 +122,8 @@ export class StrategyService
     private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
     @Optional()
     private readonly executorRegistry?: ExecutorRegistry,
+    @Optional()
+    private readonly orderBookIngestionService?: OrderBookIngestionService,
     @Optional()
     private readonly privateStreamIngestionService?: PrivateStreamIngestionService,
     @Optional()
@@ -772,6 +775,10 @@ export class StrategyService
         pooledTarget.exchange,
         pooledTarget.pair,
         accountLabel,
+      );
+      this.orderBookIngestionService?.ensureSubscribed(
+        pooledTarget.exchange,
+        pooledTarget.pair,
       );
 
       this.sessions.set(strategyKey, pooledSession);
@@ -1921,6 +1928,10 @@ export class StrategyService
       pooledTarget.exchange,
       pooledTarget.pair,
       this.resolveAccountLabel(session.strategyType, session.params),
+    );
+    this.orderBookIngestionService?.releaseSubscription(
+      pooledTarget.exchange,
+      pooledTarget.pair,
     );
   }
 
