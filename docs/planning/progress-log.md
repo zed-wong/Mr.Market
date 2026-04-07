@@ -3,6 +3,7 @@
 ## 2026-04-07
 
 - Route market-making order book tracking through the shared `MarketdataService` stream, add a thin `OrderBookIngestionService` consumer for runtime session start/stop, and log tracker/order-book/ticker fallback reasons so strategy pricing no longer depends on per-tick ticker HTTP requests when websocket books are available
+- Add bounded retry/backoff to exchange client initialization so transient `loadMarkets()` failures do not permanently leave an exchange in `failed` state until config changes
 
 ## 2026-04-02
 

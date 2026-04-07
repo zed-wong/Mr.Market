@@ -275,8 +275,8 @@ This section explains each module with three questions:
 
 #### `infrastructure/exchange-init/exchange-init.module.ts`
 
-- What: exchange client/bootstrap initialization service, including `test:system`-gated sandbox boot for system-test parity.
-- Why: all exchange operations need consistent startup, caching, sandbox toggles, and client lifecycle.
+- What: exchange client/bootstrap initialization service, including `test:system`-gated sandbox boot for system-test parity and bounded retry/backoff around transient client boot failures.
+- Why: all exchange operations need consistent startup, caching, sandbox toggles, and client lifecycle without letting one temporary network failure permanently strand an exchange in `failed`.
 - Where: used across fee checks, health checks, strategy execution dependencies, and sandbox execution-system tests.
 
 #### `infrastructure/health/health.module.ts`

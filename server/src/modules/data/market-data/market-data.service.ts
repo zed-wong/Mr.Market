@@ -30,7 +30,7 @@ export class MarketdataService {
   constructor(
     @Inject(CACHE_MANAGER) private cacheService: Cache,
     private ExchangeInitService: ExchangeInitService,
-  ) {}
+  ) { }
 
   async getSupportedExchanges(): Promise<string[]> {
     return this.ExchangeInitService.getSupportedExchanges();
@@ -155,14 +155,6 @@ export class MarketdataService {
     onData: (data: any) => void,
     limit = 14,
   ): Promise<void> {
-    const exchange = this.ExchangeInitService.getExchange(exchangeName);
-
-    if (!exchange || !exchange.has.watchOrderBook) {
-      throw new Error(
-        `Exchange ${exchangeName} does not support watchOrderBook or is not configured.`,
-      );
-    }
-
     const subscriptionKey = createCompositeKey(
       'orderbook',
       exchangeName,
@@ -177,11 +169,19 @@ export class MarketdataService {
 
     while (this.isSubscriptionActive(subscriptionKey)) {
       try {
+        const exchange = this.ExchangeInitService.getExchange(exchangeName);
+
+        if (!exchange || !exchange.has.watchOrderBook) {
+          throw new Error(
+            `Exchange ${exchangeName} does not support watchOrderBook or is not configured.`,
+          );
+        }
+
         const orderBook = await exchange.watchOrderBook(symbol, limit);
 
         onData(orderBook);
       } catch (error) {
-        this.logger.error(
+        this.logger.warn(
           `Error watching order book for ${symbol} on ${exchangeName}: ${error.message}`,
         );
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Reconnect after a delay
@@ -477,8 +477,7 @@ export class MarketdataService {
         listener(orderBook);
       } catch (error) {
         this.logger.error(
-          `Order book listener failed for ${subscriptionKey}: ${
-            error instanceof Error ? error.message : String(error)
+          `Order book listener failed for ${subscriptionKey}: ${error instanceof Error ? error.message : String(error)
           }`,
         );
       }

@@ -45,6 +45,8 @@ export class ExchangeInitService {
   >();
   private readonly marketsCacheTtlSeconds = 60 * 60;
   private readonly refreshIntervalMs = 10 * 1000;
+  private readonly initializationRetryAttempts = 3;
+  private readonly initializationRetryDelayMs = 1000;
   private apiKeysSignature: string | null = null;
 
   constructor(
@@ -528,6 +530,72 @@ export class ExchangeInitService {
     return new Error(String(error));
   }
 
+  private async initializeAccountWithRetry(
+    config: ExchangeConfig,
+    account: ExchangeAccountConfig,
+  ): Promise<ccxt.Exchange> {
+    let lastError: Error | null = null;
+
+    for (
+      let attempt = 1;
+      attempt <= this.initializationRetryAttempts;
+      attempt += 1
+    ) {
+      try {
+        const exchange = new config.class({
+          apiKey: account.apiKey,
+          secret: account.secret,
+          password: account.password,
+          uid: account.uid,
+        });
+
+        if (account.sandboxMode) {
+          this.applySandboxExchangeOverrides(config.name, exchange);
+
+          if (typeof (exchange as any).setSandboxMode !== 'function') {
+            throw new Error(
+              `Exchange ${config.name} does not expose setSandboxMode(true)`,
+            );
+          }
+
+          (exchange as any).setSandboxMode(true);
+        }
+
+        await exchange.loadMarkets();
+
+        if (config.name === 'probit' && exchange.has['signIn']) {
+          try {
+            await exchange.signIn();
+            this.logger.log(
+              `${config.name} ${account.label} signed in successfully.`,
+            );
+          } catch (error) {
+            const normalizedError = this.normalizeInitializationError(error);
+
+            this.logger.error(
+              `ProBit ${account.label} sign-in failed: ${normalizedError.message}`,
+            );
+          }
+        }
+
+        return exchange;
+      } catch (error) {
+        lastError = this.normalizeInitializationError(error);
+
+        if (attempt >= this.initializationRetryAttempts) {
+          break;
+        }
+
+        this.logger.warn(
+          `Retrying initialization for ${config.name} ${account.label} after attempt ${attempt}/${this.initializationRetryAttempts}: ${lastError.message}`,
+        );
+        await this.sleep(this.initializationRetryDelayMs);
+      }
+    }
+
+    throw lastError || new Error('exchange initialization failed');
+  }
+
   private async initializeExchangeConfigs(exchangeConfigs: ExchangeConfig[]) {
     this.exchanges.clear();
     this.defaultAccounts.clear();
@@ -558,43 +626,10 @@ export class ExchangeInitService {
         await Promise.all(
           configuredAccounts.map(async (account) => {
             try {
-              const exchange = new config.class({
-                apiKey: account.apiKey,
-                secret: account.secret,
-                password: account.password,
-                uid: account.uid,
-              });
-
-              if (account.sandboxMode) {
-                this.applySandboxExchangeOverrides(config.name, exchange);
-
-                if (typeof (exchange as any).setSandboxMode !== 'function') {
-                  throw new Error(
-                    `Exchange ${config.name} does not expose setSandboxMode(true)`,
-                  );
-                }
-
-                (exchange as any).setSandboxMode(true);
-              }
-
-              await exchange.loadMarkets();
-
-              // Call signIn only for ProBit accounts
-              if (config.name === 'probit' && exchange.has['signIn']) {
-                try {
-                  await exchange.signIn();
-                  this.logger.log(
-                    `${config.name} ${account.label} signed in successfully.`,
-                  );
-                } catch (error) {
-                  const normalizedError =
-                    this.normalizeInitializationError(error);
-
-                  this.logger.error(
-                    `ProBit ${account.label} sign-in failed: ${normalizedError.message}`,
-                  );
-                }
-              }
+              const exchange = await this.initializeAccountWithRetry(
+                config,
+                account,
+              );
 
               // Save the initialized exchange
               exchangeMap.set(account.label, exchange);
@@ -755,6 +790,14 @@ export class ExchangeInitService {
     }, intervalMs);
 
     keepAliveTimer.unref?.();
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    if (ms <= 0) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   getExchange(exchangeName: string, label: string = 'default'): ccxt.Exchange {

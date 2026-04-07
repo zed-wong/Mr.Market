@@ -8,11 +8,19 @@ describe('OrderBookIngestionService', () => {
       subscribeOrderBook: jest.fn(),
       unsubscribeOrderBook: jest.fn(),
     };
+    const exchangeConnectorAdapterService = {
+      fetchOrderBook: jest.fn().mockResolvedValue({
+        bids: [[99, 1]],
+        asks: [[101, 2]],
+        nonce: 5,
+      }),
+    };
     const orderBookTrackerService = {
       queueSnapshot: jest.fn(),
     };
     const service = new OrderBookIngestionService(
       marketdataService as unknown as MarketdataService,
+      exchangeConnectorAdapterService as any,
       orderBookTrackerService as unknown as OrderBookTrackerService,
     );
 
@@ -44,5 +52,87 @@ describe('OrderBookIngestionService', () => {
 
     service.releaseSubscription('binance', 'BTC/USDT');
     expect(marketdataService.unsubscribeOrderBook).toHaveBeenCalledTimes(1);
+  });
+
+  it('still forwards unusable streamed books to the tracker queue', () => {
+    const marketdataService = {
+      subscribeOrderBook: jest.fn(),
+      unsubscribeOrderBook: jest.fn(),
+    };
+    const exchangeConnectorAdapterService = {
+      fetchOrderBook: jest.fn().mockResolvedValue({
+        bids: [],
+        asks: [],
+        nonce: 3,
+      }),
+    };
+    const orderBookTrackerService = {
+      queueSnapshot: jest.fn(),
+    };
+    const service = new OrderBookIngestionService(
+      marketdataService as unknown as MarketdataService,
+      exchangeConnectorAdapterService as any,
+      orderBookTrackerService as unknown as OrderBookTrackerService,
+    );
+
+    service.ensureSubscribed('mexc', 'XIN/USDT');
+
+    const onData = marketdataService.subscribeOrderBook.mock.calls[0][3];
+
+    onData({
+      bids: [],
+      asks: [],
+      nonce: 9,
+    });
+
+    expect(orderBookTrackerService.queueSnapshot).toHaveBeenCalledWith(
+      'mexc',
+      'XIN/USDT',
+      {
+        bids: [],
+        asks: [],
+        sequence: 9,
+      },
+    );
+  });
+
+  it('seeds the tracker from REST before waiting for websocket updates', async () => {
+    const marketdataService = {
+      subscribeOrderBook: jest.fn(),
+      unsubscribeOrderBook: jest.fn(),
+    };
+    const exchangeConnectorAdapterService = {
+      fetchOrderBook: jest.fn().mockResolvedValue({
+        bids: [[59.8, 1.2]],
+        asks: [[60.1, 0.8]],
+        nonce: 11,
+      }),
+    };
+    const orderBookTrackerService = {
+      queueSnapshot: jest.fn(),
+    };
+    const service = new OrderBookIngestionService(
+      marketdataService as unknown as MarketdataService,
+      exchangeConnectorAdapterService as any,
+      orderBookTrackerService as unknown as OrderBookTrackerService,
+    );
+
+    service.ensureSubscribed('mexc', 'XIN/USDT');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(exchangeConnectorAdapterService.fetchOrderBook).toHaveBeenCalledWith(
+      'mexc',
+      'XIN/USDT',
+    );
+    expect(orderBookTrackerService.queueSnapshot).toHaveBeenCalledWith(
+      'mexc',
+      'XIN/USDT',
+      {
+        bids: [[59.8, 1.2]],
+        asks: [[60.1, 0.8]],
+        sequence: 11,
+      },
+    );
   });
 });

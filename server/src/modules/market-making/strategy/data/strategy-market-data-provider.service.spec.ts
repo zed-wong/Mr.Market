@@ -68,6 +68,22 @@ describe('StrategyMarketDataProviderService', () => {
     expect(marketdataService.getTickerPrice).not.toHaveBeenCalled();
   });
 
+  it('accepts uppercase price source values from stored/runtime configs', async () => {
+    orderBookTrackerService.getOrderBook.mockReturnValue(undefined);
+    exchangeConnectorAdapterService.fetchOrderBook.mockResolvedValue({
+      bids: [[99, 1]],
+      asks: [[101, 1]],
+    });
+
+    const result = await service.getReferencePrice(
+      'binance',
+      'BTC/USDT',
+      'MID_PRICE' as unknown as PriceSourceType,
+    );
+
+    expect(result).toBe(100);
+  });
+
   it('falls back to ticker for reference price when books unavailable', async () => {
     orderBookTrackerService.getOrderBook.mockReturnValue(undefined);
     exchangeConnectorAdapterService.fetchOrderBook.mockRejectedValue(
@@ -82,6 +98,24 @@ describe('StrategyMarketDataProviderService', () => {
     );
 
     expect(result).toBe(123.45);
+  });
+
+  it('does not fall back to ticker for mid price when books are unavailable', async () => {
+    orderBookTrackerService.getOrderBook.mockReturnValue(undefined);
+    exchangeConnectorAdapterService.fetchOrderBook.mockResolvedValue({
+      bids: [],
+      asks: [],
+    });
+    marketdataService.getTickerPrice.mockResolvedValue({ last: 123.45 });
+
+    await expect(
+      service.getReferencePrice(
+        'binance',
+        'BTC/USDT',
+        PriceSourceType.MID_PRICE,
+      ),
+    ).rejects.toThrow('no usable order book');
+    expect(marketdataService.getTickerPrice).not.toHaveBeenCalled();
   });
 
   it('returns best bid/ask from tracker first', async () => {

@@ -123,6 +123,38 @@ describe('ExchangeinitService', () => {
     expect(initializeExchangeConfigsSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('retries transient exchange initialization failures before giving up', async () => {
+    class FlakyExchange {
+      static attempts = 0;
+      has = {};
+
+      async loadMarkets() {
+        FlakyExchange.attempts += 1;
+
+        if (FlakyExchange.attempts < 3) {
+          throw new Error('temporary network failure');
+        }
+      }
+    }
+
+    (service as any).initializationRetryDelayMs = 0;
+
+    const exchange = await (service as any).initializeAccountWithRetry(
+      {
+        name: 'mexc',
+        class: FlakyExchange,
+      },
+      {
+        label: 'default',
+        apiKey: 'key',
+        secret: 'secret',
+      },
+    );
+
+    expect(exchange).toBeInstanceOf(FlakyExchange);
+    expect(FlakyExchange.attempts).toBe(3);
+  });
+
   it('uses env-driven sandbox config when sandbox credentials are present', async () => {
     process.env.MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE = 'true';
     process.env.CCXT_SANDBOX_EXCHANGE = 'binance';

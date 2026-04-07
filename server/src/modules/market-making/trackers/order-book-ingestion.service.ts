@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { MarketdataService } from '../../data/market-data/market-data.service';
+import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { OrderBookTrackerService } from './order-book-tracker.service';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class OrderBookIngestionService implements OnModuleDestroy {
 
   constructor(
     private readonly marketdataService: MarketdataService,
+    private readonly exchangeConnectorAdapterService: ExchangeConnectorAdapterService,
     private readonly orderBookTrackerService: OrderBookTrackerService,
   ) {}
 
@@ -29,14 +31,24 @@ export class OrderBookIngestionService implements OnModuleDestroy {
     const consumerId = this.toConsumerId(key);
 
     this.consumerIdByKey.set(key, consumerId);
+    void this.seedFromRestOrderBook(exchange, pair);
     this.marketdataService.subscribeOrderBook(
       exchange,
       pair,
       consumerId,
       (orderBook) => {
+        const bids = this.asBookLevels(orderBook?.bids);
+        const asks = this.asBookLevels(orderBook?.asks);
+
+        if (bids.length === 0 || asks.length === 0) {
+          this.logger.warn(
+            `Received unusable streamed order book for ${exchange} ${pair} bids=${bids.length} asks=${asks.length}`,
+          );
+        }
+
         this.orderBookTrackerService.queueSnapshot(exchange, pair, {
-          bids: this.asBookLevels(orderBook?.bids),
-          asks: this.asBookLevels(orderBook?.asks),
+          bids,
+          asks,
           sequence: this.resolveSequence(orderBook),
         });
       },
@@ -77,6 +89,39 @@ export class OrderBookIngestionService implements OnModuleDestroy {
 
     this.consumerIdByKey.clear();
     this.refCountByKey.clear();
+  }
+
+  private async seedFromRestOrderBook(
+    exchange: string,
+    pair: string,
+  ): Promise<void> {
+    try {
+      const orderBook = await this.exchangeConnectorAdapterService.fetchOrderBook(
+        exchange,
+        pair,
+      );
+      const bids = this.asBookLevels(orderBook?.bids);
+      const asks = this.asBookLevels(orderBook?.asks);
+
+      if (bids.length === 0 || asks.length === 0) {
+        this.logger.warn(
+          `REST seed returned unusable order book for ${exchange} ${pair} bids=${bids.length} asks=${asks.length}`,
+        );
+      }
+
+      this.orderBookTrackerService.queueSnapshot(exchange, pair, {
+        bids,
+        asks,
+        sequence: this.resolveSequence(orderBook),
+      });
+      this.logger.log(`Seeded market-making order book snapshot ${exchange}:${pair}`);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to seed market-making order book for ${exchange} ${pair}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private resolveSequence(orderBook: any): number {

@@ -36,7 +36,9 @@ export class StrategyMarketDataProviderService {
     pair: string,
     priceSourceType: PriceSourceType,
   ): Promise<number> {
-    const cacheKey = `${exchangeName}:${pair}:${priceSourceType}`;
+    const normalizedPriceSourceType =
+      this.normalizePriceSourceType(priceSourceType);
+    const cacheKey = `${exchangeName}:${pair}:${normalizedPriceSourceType}`;
     const cached =
       this.priceCacheTtlMs > 0 ? this.priceCache.get(cacheKey) : undefined;
 
@@ -47,7 +49,7 @@ export class StrategyMarketDataProviderService {
     const price = await this.fetchReferencePrice(
       exchangeName,
       pair,
-      priceSourceType,
+      normalizedPriceSourceType,
     );
 
     if (this.priceCacheTtlMs > 0) {
@@ -62,6 +64,8 @@ export class StrategyMarketDataProviderService {
     pair: string,
     priceSourceType: PriceSourceType,
   ): Promise<number> {
+    const allowTickerFallback =
+      priceSourceType === PriceSourceType.LAST_PRICE;
     const tracked = this.orderBookTrackerService.getOrderBook(
       exchangeName,
       pair,
@@ -111,6 +115,12 @@ export class StrategyMarketDataProviderService {
         `fetchOrderBook failed for ${exchangeName} ${pair} (${priceSourceType}): ${
           error instanceof Error ? error.message : String(error)
         }`,
+      );
+    }
+
+    if (!allowTickerFallback) {
+      throw new Error(
+        `no usable order book for ${exchangeName} ${pair} (${priceSourceType})`,
       );
     }
 
@@ -226,10 +236,12 @@ export class StrategyMarketDataProviderService {
     asks: BookLevel[] | undefined,
     priceSourceType: PriceSourceType,
   ): number | undefined {
+    const normalizedPriceSourceType =
+      this.normalizePriceSourceType(priceSourceType);
     const bestBid = this.toPositiveNumber(bids?.[0]?.[0]);
     const bestAsk = this.toPositiveNumber(asks?.[0]?.[0]);
 
-    if (priceSourceType === PriceSourceType.MID_PRICE) {
+    if (normalizedPriceSourceType === PriceSourceType.MID_PRICE) {
       if (bestBid !== undefined && bestAsk !== undefined) {
         return new BigNumber(bestBid).plus(bestAsk).dividedBy(2).toNumber();
       }
@@ -237,15 +249,15 @@ export class StrategyMarketDataProviderService {
       return undefined;
     }
 
-    if (priceSourceType === PriceSourceType.BEST_BID) {
+    if (normalizedPriceSourceType === PriceSourceType.BEST_BID) {
       return bestBid;
     }
 
-    if (priceSourceType === PriceSourceType.BEST_ASK) {
+    if (normalizedPriceSourceType === PriceSourceType.BEST_ASK) {
       return bestAsk;
     }
 
-    if (priceSourceType === PriceSourceType.LAST_PRICE) {
+    if (normalizedPriceSourceType === PriceSourceType.LAST_PRICE) {
       if (bestBid !== undefined && bestAsk !== undefined) {
         return new BigNumber(bestBid).plus(bestAsk).dividedBy(2).toNumber();
       }
@@ -279,5 +291,29 @@ export class StrategyMarketDataProviderService {
         );
       })
       .map((level) => [Number(level[0]), Number(level[1])]);
+  }
+
+  private normalizePriceSourceType(value: unknown): PriceSourceType {
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
+
+    if (normalized === 'mid_price' || normalized === 'midprice') {
+      return PriceSourceType.MID_PRICE;
+    }
+
+    if (normalized === 'best_bid' || normalized === 'bestbid') {
+      return PriceSourceType.BEST_BID;
+    }
+
+    if (normalized === 'best_ask' || normalized === 'bestask') {
+      return PriceSourceType.BEST_ASK;
+    }
+
+    if (normalized === 'last_price' || normalized === 'lastprice') {
+      return PriceSourceType.LAST_PRICE;
+    }
+
+    return value as PriceSourceType;
   }
 }

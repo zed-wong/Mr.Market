@@ -2,9 +2,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 @Injectable()
 export class ExchangeConnectorAdapterService {
+  private readonly logger = new CustomLogger(
+    ExchangeConnectorAdapterService.name,
+  );
   private readonly lastRequestAtMsByExchange = new Map<string, number>();
   private readonly requestChainByExchange = new Map<string, Promise<void>>();
   private readonly minRequestIntervalMs: number;
@@ -76,8 +80,23 @@ export class ExchangeConnectorAdapterService {
   async fetchOrderBook(exchangeName: string, pair: string): Promise<any> {
     return await this.withRateLimit(exchangeName, async () => {
       const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const orderBook = await exchange.fetchOrderBook(pair);
 
-      return await exchange.fetchOrderBook(pair);
+      this.logger.log(
+        `fetchOrderBook ${exchange.id || exchangeName} ${pair} bids=${
+          Array.isArray(orderBook?.bids) ? orderBook.bids.length : 0
+        } asks=${Array.isArray(orderBook?.asks) ? orderBook.asks.length : 0} topBid=${
+          Array.isArray(orderBook?.bids) && orderBook.bids.length > 0
+            ? JSON.stringify(orderBook.bids[0])
+            : 'null'
+        } topAsk=${
+          Array.isArray(orderBook?.asks) && orderBook.asks.length > 0
+            ? JSON.stringify(orderBook.asks[0])
+            : 'null'
+        }`,
+      );
+
+      return orderBook;
     });
   }
 
