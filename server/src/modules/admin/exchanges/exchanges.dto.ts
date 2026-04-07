@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class AddAPIKeyDto {
   @ApiProperty({ description: 'The name of exchange' })
@@ -27,4 +27,13 @@ export class AddAPIKeyDto {
   @IsString()
   @IsNotEmpty()
   api_secret: string;
+
+  @ApiProperty({
+    description: 'Key permissions: read or read-trade',
+    required: false,
+    default: 'read',
+  })
+  @IsString()
+  @IsOptional()
+  permissions?: string;
 }

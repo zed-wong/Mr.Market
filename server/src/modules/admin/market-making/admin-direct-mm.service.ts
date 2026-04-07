@@ -438,6 +438,12 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException('Exchange API key is incomplete');
     }
 
+    if (apiKey.permissions !== 'read') {
+      throw new BadRequestException(
+        'Only read-only API keys can be registered with Hufi Recording Oracle. Using executable keys would expose trading credentials.',
+      );
+    }
+
     await this.campaignService.joinCampaignWithAuth(
       dto.evmAddress.toLowerCase(),
       privateKey,

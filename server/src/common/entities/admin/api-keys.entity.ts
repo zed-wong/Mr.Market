@@ -24,6 +24,9 @@ export class APIKeysConfig {
   @Column()
   api_secret: string; // The secret
 
+  @Column({ default: 'read' })
+  permissions: string; // 'read' or 'read-trade'
+
   @Column()
   created_at: string; // RFC3339 creation timestamp
 }

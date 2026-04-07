@@ -219,6 +219,7 @@ export class ExchangeApiKeyService {
         apiKeyConfig.name = account.label || 'default';
         apiKeyConfig.api_key = account.apiKey;
         apiKeyConfig.api_secret = encrypt(account.secret, publicKey);
+        apiKeyConfig.permissions = account.label === 'read-only' ? 'read' : 'read-trade';
         apiKeyConfig.created_at = getRFC3339Timestamp();
 
         await this.exchangeRepository.addAPIKey(apiKeyConfig);
