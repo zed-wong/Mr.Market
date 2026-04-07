@@ -78,7 +78,7 @@
 >
   <div class="flex items-start justify-between">
     <div>
-      <span class="text-[1.1rem] font-base text-base-content block">
+      <span class="text-[1.1rem] text-base-content block">
         {hasJoined
           ? $_("admin_direct_mm_joined_campaigns")
           : $_("admin_direct_mm_available_campaigns")}

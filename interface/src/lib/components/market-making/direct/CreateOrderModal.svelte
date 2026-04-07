@@ -25,6 +25,13 @@
   let pairDropdownOpen = false;
   let pairInputEl: HTMLInputElement;
 
+  $: baseCoin = startPair ? startPair.split("/")[0] : "";
+  $: quoteCoin = startPair ? startPair.split("/")[1] : "";
+
+  $: baseAmountError = orderAmount && isNaN(Number(orderAmount));
+  $: quoteAmountError = orderQuoteAmount && isNaN(Number(orderQuoteAmount));
+  $: spreadError = orderSpread && isNaN(Number(orderSpread));
+
   $: searchedPairs = pairSearch
     ? filteredPairs.filter((p) =>
         p.symbol.toLowerCase().includes(pairSearch.toLowerCase()),
@@ -57,7 +64,7 @@
   }
 </script>
 
-<svelte:window on:keydown={(e) => show && e.key === 'Escape' && onClose()} />
+<svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
 
 {#if show}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
@@ -123,7 +130,7 @@
             class="select select-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
             bind:value={startExchangeName}
           >
-            <option value="" disabled selected
+            <option value="" disabled selected hidden
               >{$_("admin_direct_mm_select_exchange")}</option
             >
             {#each exchangeOptions as exchangeName}
@@ -131,6 +138,36 @@
             {/each}
           </select>
         </div>
+
+        {#if startExchangeName}
+          <div class="bg-base-200/40 rounded-xl p-4">
+            <span
+              class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+              >{$_("admin_direct_mm_api_key")}</span
+            >
+            {#if filteredApiKeys.length > 0}
+              <select
+                class="select select-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                bind:value={startApiKeyId}
+              >
+                <option value="" disabled selected hidden
+                  >{$_("admin_direct_mm_select_api_key")}</option
+                >
+                {#each filteredApiKeys as apiKey}
+                  <option value={apiKey.key_id}>
+                    {apiKey.name} ({apiKey.exchange_index})
+                  </option>
+                {/each}
+              </select>
+            {:else}
+              <div
+                class="h-10 min-h-[40px] px-3 rounded-lg border border-dashed border-base-300 bg-base-100 flex items-center text-sm text-base-content/50"
+              >
+                {$_("admin_direct_mm_no_executable_api_key")}
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <!-- Trading Pair -->
         <div class="bg-base-200/40 rounded-xl p-4">
@@ -250,7 +287,7 @@
               class="select select-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
               bind:value={startStrategyDefinitionId}
             >
-              <option value="" disabled selected
+              <option value="" disabled selected hidden
                 >{$_("admin_direct_mm_select_strategy")}</option
               >
               {#each strategies as strategy}
@@ -263,34 +300,99 @@
         {#if startStrategyDefinitionId}
           <!-- Order Parameters -->
           <div>
-            <span
-              class="text-xs font-semibold text-base-content/60 tracking-wider block mb-3"
-              >{$_("admin_direct_mm_order_parameters")}</span
-            >
+            <div class="flex items-center gap-1.5 mb-1">
+              <span
+                class="text-xs font-semibold text-base-content/60 tracking-wider"
+                >{$_("admin_direct_mm_order_parameters")}</span
+              >
+              <div
+                class="tooltip tooltip-right"
+                data-tip={$_("admin_direct_mm_order_parameters_hint")}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                  class="w-3.5 h-3.5 text-base-content/40"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"
+                  />
+                </svg>
+              </div>
+            </div>
             <div class="flex gap-3">
               <div class="flex-1 bg-base-200/40 rounded-xl p-4">
                 <span
                   class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                  >{$_("admin_direct_mm_base_amount")}</span
+                  >{$_("admin_direct_mm_base_amount")}{baseCoin
+                    ? ` (${baseCoin})`
+                    : ""}</span
                 >
-                <input
-                  type="text"
-                  placeholder="0.00"
-                  class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
-                  bind:value={orderAmount}
-                />
+                <div class="relative">
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="e.g. 0.01"
+                    class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
+                      {baseAmountError ? 'border-error' : ''}"
+                    class:pr-16={baseCoin}
+                    bind:value={orderAmount}
+                  />
+                  {#if baseCoin}
+                    <span
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
+                      >{baseCoin}</span
+                    >
+                  {/if}
+                </div>
+                {#if baseAmountError}
+                  <span class="text-xs text-error mt-1 block"
+                    >{$_("admin_direct_mm_invalid_number")}</span
+                  >
+                {:else}
+                  <span class="text-xs text-base-content/40 mt-1 block"
+                    >{$_("admin_direct_mm_base_amount_hint")}</span
+                  >
+                {/if}
               </div>
               <div class="flex-1 bg-base-200/40 rounded-xl p-4">
                 <span
                   class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                  >{$_("admin_direct_mm_quote_amount")}</span
+                  >{$_("admin_direct_mm_quote_amount")}{quoteCoin
+                    ? ` (${quoteCoin})`
+                    : ""}</span
                 >
-                <input
-                  type="text"
-                  placeholder="0.00"
-                  class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
-                  bind:value={orderQuoteAmount}
-                />
+                <div class="relative">
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="e.g. 100"
+                    class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
+                      {quoteAmountError ? 'border-error' : ''}"
+                    class:pr-16={quoteCoin}
+                    bind:value={orderQuoteAmount}
+                  />
+                  {#if quoteCoin}
+                    <span
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
+                      >{quoteCoin}</span
+                    >
+                  {/if}
+                </div>
+                {#if quoteAmountError}
+                  <span class="text-xs text-error mt-1 block"
+                    >{$_("admin_direct_mm_invalid_number")}</span
+                  >
+                {:else}
+                  <span class="text-xs text-base-content/40 mt-1 block"
+                    >{$_("admin_direct_mm_quote_amount_hint")}</span
+                  >
+                {/if}
               </div>
             </div>
           </div>
@@ -301,12 +403,30 @@
               class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
               >{$_("admin_direct_mm_spread_optional")}</span
             >
-            <input
-              type="text"
-              placeholder="0.0%"
-              class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
-              bind:value={orderSpread}
-            />
+            <div class="relative">
+              <input
+                type="text"
+                inputmode="decimal"
+                placeholder="e.g. 0.5"
+                class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
+                  {spreadError ? 'border-error' : ''}"
+                class:pr-10={true}
+                bind:value={orderSpread}
+              />
+              <span
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
+                >%</span
+              >
+            </div>
+            {#if spreadError}
+              <span class="text-xs text-error mt-1 block"
+                >{$_("admin_direct_mm_invalid_number")}</span
+              >
+            {:else}
+              <span class="text-xs text-base-content/40 mt-1 block"
+                >{$_("admin_direct_mm_spread_hint")}</span
+              >
+            {/if}
           </div>
         {/if}
 

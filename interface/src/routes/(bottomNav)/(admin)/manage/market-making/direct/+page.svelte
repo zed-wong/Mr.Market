@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { invalidate } from "$app/navigation";
   import { page } from "$app/stores";
   import { _ } from "svelte-i18n";
@@ -35,11 +35,14 @@
   import StartAllModal from "$lib/components/market-making/direct/StartAllModal.svelte";
   import StopAllModal from "$lib/components/market-making/direct/StopAllModal.svelte";
   import StopOrderModal from "$lib/components/market-making/direct/StopOrderModal.svelte";
+  import ResumeOrderModal from "$lib/components/market-making/direct/ResumeOrderModal.svelte";
   import AllCampaignsModal from "$lib/components/market-making/direct/AllCampaignsModal.svelte";
   import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
   import OrderDetailsDialog from "$lib/components/market-making/direct/OrderDetailsDialog.svelte";
 
   type OverrideRow = { key: string; value: string };
+
+  const ORDER_DETAILS_REFRESH_INTERVAL_MS = 5000;
 
   let growInfo: GrowInfo | null = null;
   let strategies: MarketMakingStrategy[] = [];
@@ -104,10 +107,21 @@
   let stopOrderCandidate: DirectOrderSummary | null = null;
   let isStopping = false;
 
+  let resumeOrderCandidate: DirectOrderSummary | null = null;
+  let isResuming = false;
+
   let showOrderDetails = false;
   let detailsOrder: DirectOrderSummary | null = null;
   let detailsData: DirectOrderStatus | null = null;
   let detailsLoading = false;
+  let detailsRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  let detailsRefreshing = false;
+  let detailsRefreshingOrderId: string | null = null;
+  let detailsPollingOrderId: string | null = null;
+  let pendingOrderDetailsRefresh: {
+    orderId: string;
+    options: { silent?: boolean };
+  } | null = null;
 
   let showAllCampaigns = false;
   let showJoinModal = false;
@@ -131,7 +145,7 @@
     (pair) => !startExchangeName || pair.exchange_id === startExchangeName,
   );
   $: filteredApiKeys = apiKeys.filter(
-    (key) => !startExchangeName || key.exchange === startExchangeName,
+    (key) => key.permissions === "read-trade",
   );
   $: selectedApiKey =
     apiKeys.find((key) => key.key_id === startApiKeyId) || null;
@@ -140,6 +154,15 @@
   $: walletStatusHint = hasWalletConfigured
     ? $_("admin_direct_mm_wallet_status_loaded_hint")
     : $_("admin_direct_mm_wallet_status_missing_hint");
+  $: {
+    const orderId = showOrderDetails ? detailsOrder?.orderId || null : null;
+
+    if (orderId) {
+      startOrderDetailsPolling(orderId);
+    } else {
+      stopOrderDetailsPolling();
+    }
+  }
 
   function getToken(): string {
     return localStorage.getItem("admin-access-token") || "";
@@ -230,10 +253,15 @@
       const activeOrders = orders.filter(
         (o) => o.runtimeState === "running" || o.runtimeState === "active",
       );
+      const activeIds = new Set(activeOrders.map((o) => o.orderId));
       await Promise.all(
         activeOrders.map((o) => stopDirectOrder(o.orderId, token)),
       );
-      await refreshPage();
+      orders = orders.map((o) =>
+        activeIds.has(o.orderId)
+          ? { ...o, runtimeState: "stopped" as const }
+          : o,
+      );
       toast.success($_("admin_direct_mm_stop_all_success"), {
         description: $_("admin_direct_mm_recovery_refresh_status"),
       });
@@ -258,7 +286,11 @@
     try {
       const stoppedOrderId = stopOrderCandidate.orderId;
       await stopDirectOrder(stoppedOrderId, token);
-      await refreshPage();
+      orders = orders.map((o) =>
+        o.orderId === stoppedOrderId
+          ? { ...o, runtimeState: "stopped" as const }
+          : o,
+      );
       toast.success($_("admin_direct_mm_stop_success"), {
         description: $_("admin_direct_mm_recovery_refresh_status"),
       });
@@ -272,14 +304,26 @@
     }
   }
 
-  async function handleResumeOrder(order: DirectOrderSummary) {
+  function handleResumeOrder(order: DirectOrderSummary) {
+    resumeOrderCandidate = order;
+  }
+
+  async function confirmResumeOrder() {
+    if (!resumeOrderCandidate || isResuming) return;
     const token = getToken();
 
     if (!token) return;
 
+    isResuming = true;
+    const order = resumeOrderCandidate;
+
     try {
       const result = await resumeDirectOrder(order.orderId, token);
-      await refreshPage();
+      orders = orders.map((o) =>
+        o.orderId === order.orderId
+          ? { ...o, runtimeState: "running" as const }
+          : o,
+      );
       toast.success(
         $_("admin_direct_mm_start_success", {
           values: { exchange: order.exchangeName, pair: order.pair },
@@ -291,6 +335,7 @@
               : $_("admin_direct_mm_recovery_monitor_status"),
         },
       );
+      resumeOrderCandidate = null;
 
       if (showOrderDetails && detailsOrder?.orderId === order.orderId) {
         closeOrderDetails();
@@ -299,33 +344,105 @@
       toast.error(getErrorMessage(error), {
         description: getRecoveryHint(error),
       });
+    } finally {
+      isResuming = false;
     }
   }
 
   async function openOrderDetails(order: DirectOrderSummary) {
     detailsOrder = order;
     showOrderDetails = true;
-    detailsLoading = true;
-    const token = getToken();
-    if (!token) {
-      detailsLoading = false;
+    await loadOrderDetails(order.orderId);
+  }
+
+  function stopOrderDetailsPolling() {
+    if (detailsRefreshTimer) {
+      clearInterval(detailsRefreshTimer);
+      detailsRefreshTimer = null;
+    }
+
+    detailsPollingOrderId = null;
+  }
+
+  function startOrderDetailsPolling(orderId: string) {
+    if (detailsRefreshTimer && detailsPollingOrderId === orderId) {
       return;
     }
+
+    stopOrderDetailsPolling();
+    detailsPollingOrderId = orderId;
+    detailsRefreshTimer = setInterval(async () => {
+      if (!showOrderDetails || detailsOrder?.orderId !== orderId) {
+        return;
+      }
+
+      await loadOrderDetails(orderId, { silent: true });
+    }, ORDER_DETAILS_REFRESH_INTERVAL_MS);
+  }
+
+  async function loadOrderDetails(
+    orderId: string,
+    options: { silent?: boolean } = {},
+  ) {
+    if (detailsRefreshing) {
+      if (detailsRefreshingOrderId !== orderId) {
+        pendingOrderDetailsRefresh = { orderId, options };
+      }
+
+      return;
+    }
+
+    detailsRefreshing = true;
+    detailsRefreshingOrderId = orderId;
+
+    if (!options.silent) {
+      detailsLoading = true;
+    }
+
     try {
-      detailsData = await getDirectOrderStatus(order.orderId, token);
+      const token = getToken();
+      if (!token) {
+        return;
+      }
+
+      const nextDetails = await getDirectOrderStatus(orderId, token);
+
+      if (detailsOrder?.orderId === orderId) {
+        detailsData = nextDetails;
+      }
     } catch {
-      detailsData = null;
+      if (detailsOrder?.orderId === orderId) {
+        detailsData = null;
+      }
     } finally {
+      detailsRefreshing = false;
+      detailsRefreshingOrderId = null;
       detailsLoading = false;
+
+      const nextRefresh = pendingOrderDetailsRefresh;
+      pendingOrderDetailsRefresh = null;
+
+      if (
+        nextRefresh &&
+        showOrderDetails &&
+        detailsOrder?.orderId === nextRefresh.orderId
+      ) {
+        void loadOrderDetails(nextRefresh.orderId, nextRefresh.options);
+      }
     }
   }
 
   function closeOrderDetails() {
+    stopOrderDetailsPolling();
     showOrderDetails = false;
     detailsOrder = null;
     detailsData = null;
     detailsLoading = false;
   }
+
+  onDestroy(() => {
+    stopOrderDetailsPolling();
+  });
 
   async function submitCampaignJoin() {
     if (isJoiningCampaign) return;
@@ -400,11 +517,15 @@
     isStartingAll = true;
 
     try {
+      const stoppedIds = new Set(stoppedOrders.map((o) => o.orderId));
       const results = await Promise.all(
         stoppedOrders.map((order) => resumeDirectOrder(order.orderId, token)),
       );
-
-      await refreshPage();
+      orders = orders.map((o) =>
+        stoppedIds.has(o.orderId)
+          ? { ...o, runtimeState: "running" as const }
+          : o,
+      );
       showStartAllModal = false;
 
       const warnings = results.flatMap((result) => result.warnings);
@@ -434,30 +555,30 @@
       </div>
       <div class="skeleton h-64 w-full rounded-xl"></div>
     {:else}
-    <EvmWalletStatusBar
-      evmAddress={walletStatusAddress}
-      {hasWalletConfigured}
-      hint={walletStatusHint}
-    />
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <ApiKeysPanel {apiKeys} {orders} />
-      <CampaignsPanel
-        {campaigns}
-        onJoin={openJoinModal}
-        onViewAll={() => (showAllCampaigns = true)}
+      <EvmWalletStatusBar
+        evmAddress={walletStatusAddress}
+        {hasWalletConfigured}
+        hint={walletStatusHint}
       />
-    </div>
 
-    <OrdersTable
-      {orders}
-      onCreateClick={() => (showStartForm = !showStartForm)}
-      onStartAllClick={() => (showStartAllModal = true)}
-      onStopAllClick={() => (showStopAllConfirm = true)}
-      onStopOrder={(order) => (stopOrderCandidate = order)}
-      onResumeOrder={handleResumeOrder}
-      onOrderClick={openOrderDetails}
-    />
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ApiKeysPanel {apiKeys} {orders} />
+        <CampaignsPanel
+          {campaigns}
+          onJoin={openJoinModal}
+          onViewAll={() => (showAllCampaigns = true)}
+        />
+      </div>
+
+      <OrdersTable
+        {orders}
+        onCreateClick={() => (showStartForm = !showStartForm)}
+        onStartAllClick={() => (showStartAllModal = true)}
+        onStopAllClick={() => (showStopAllConfirm = true)}
+        onStopOrder={(order) => (stopOrderCandidate = order)}
+        onResumeOrder={handleResumeOrder}
+        onOrderClick={openOrderDetails}
+      />
     {/if}
   </div>
 </div>
@@ -503,6 +624,13 @@
   onCancel={() => (stopOrderCandidate = null)}
 />
 
+<ResumeOrderModal
+  order={resumeOrderCandidate}
+  {isResuming}
+  onConfirm={confirmResumeOrder}
+  onCancel={() => (resumeOrderCandidate = null)}
+/>
+
 <AllCampaignsModal
   show={showAllCampaigns}
   {campaigns}
@@ -527,11 +655,18 @@
   data={detailsData}
   loading={detailsLoading}
   onClose={closeOrderDetails}
-  onStartOrder={() => detailsOrder && handleResumeOrder(detailsOrder)}
+  onStartOrder={() => {
+    if (detailsOrder) {
+      const order = detailsOrder;
+      closeOrderDetails();
+      handleResumeOrder(order);
+    }
+  }}
   onStopOrder={() => {
     if (detailsOrder) {
+      const order = detailsOrder;
       closeOrderDetails();
-      stopOrderCandidate = detailsOrder;
+      stopOrderCandidate = order;
     }
   }}
 />

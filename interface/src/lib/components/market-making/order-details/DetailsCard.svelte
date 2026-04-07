@@ -180,8 +180,7 @@
                 class="flex items-center gap-3 text-gray-400 group-hover:text-gray-600 transition-colors"
             >
                 <div class="w-5 flex justify-center items-center">
-                    <span
-                        class="font-serif italic font-bold text-lg leading-none"
+                    <span class="font-serif font-bold text-lg leading-none"
                         >$</span
                     >
                 </div>

@@ -491,25 +491,25 @@
             {/if}
           </div>
 
-          <div>
-            <div class="flex items-center gap-1.5 mb-3 h-5">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                class="w-3.5 h-3.5 text-error"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <span class="text-xs font-bold text-base-content"
-                >{$_("admin_direct_mm_recent_errors")}</span
-              >
-            </div>
-            {#if recentErrors.length > 0}
+          {#if recentErrors.length > 0}
+            <div>
+              <div class="flex items-center gap-1.5 mb-3 h-5">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  class="w-3.5 h-3.5 text-error"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <span class="text-xs font-bold text-base-content"
+                  >{$_("admin_direct_mm_recent_errors")}</span
+                >
+              </div>
               <div class="flex flex-col gap-1.5">
                 {#each recentErrors as err}
                   <div
@@ -524,37 +524,60 @@
                   </div>
                 {/each}
               </div>
-            {:else}
-              <div
-                class="border border-dashed border-base-300 rounded-xl py-4 flex items-center justify-center"
-              >
-                <span class="text-xs text-base-content/40"
-                  >{$_("admin_direct_mm_no_recent_errors")}</span
-                >
-              </div>
-            {/if}
-          </div>
+            </div>
+          {/if}
 
           <!-- Actions -->
-          <div class="flex items-center justify-center gap-4 mt-2">
+          <div class="flex gap-3 mt-2">
             <button
-              class="btn btn-ghost text-base-content font-semibold px-6"
+              class="btn bg-violet-50 hover:bg-violet-100 border-none text-slate-700 w-[120px] h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
               on:click={onClose}
             >
               {$_("close")}
             </button>
-            <button
-              class={`btn font-semibold px-6 rounded-lg ${
-                isRunning
-                  ? "bg-error hover:bg-error/90 text-error-content"
-                  : "bg-primary hover:bg-primary/90 text-primary-content"
-              }`}
-              on:click={isRunning ? onStopOrder : onStartOrder}
-            >
-              {isRunning
-                ? $_("admin_direct_mm_stop")
-                : $_("admin_direct_mm_start_order")}
-            </button>
+            {#if isRunning}
+              <button
+                class="btn flex-1 bg-red-600 hover:bg-red-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(220,38,38,0.9)] flex items-center justify-center gap-1.5"
+                on:click={onStopOrder}
+              >
+                {$_("admin_direct_mm_confirm_stop")}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="ml-1"
+                >
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
+            {:else}
+              <button
+                class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
+                on:click={onStartOrder}
+              >
+                {$_("admin_direct_mm_resume_order")}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
+            {/if}
           </div>
         </div>
       {/if}
