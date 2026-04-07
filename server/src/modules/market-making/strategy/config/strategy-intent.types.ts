@@ -8,7 +8,13 @@ export type StrategyIntentType =
   | 'STOP_CONTROLLER'
   | 'STOP_EXECUTOR';
 
-export type StrategyIntentStatus = 'NEW' | 'SENT' | 'ACKED' | 'FAILED' | 'DONE';
+export type StrategyIntentStatus =
+  | 'NEW'
+  | 'SENT'
+  | 'ACKED'
+  | 'FAILED'
+  | 'DONE'
+  | 'CANCELLED';
 
 export type StrategyOrderIntent = {
   type: StrategyIntentType;

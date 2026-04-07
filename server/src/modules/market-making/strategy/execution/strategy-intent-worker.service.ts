@@ -5,8 +5,11 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Repository } from 'typeorm';
 
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
@@ -30,6 +33,9 @@ export class StrategyIntentWorkerService
 
   constructor(
     private readonly configService: ConfigService,
+    @Optional()
+    @InjectRepository(StrategyInstance)
+    private readonly strategyInstanceRepository?: Repository<StrategyInstance>,
     @Optional()
     private readonly strategyIntentStoreService?: StrategyIntentStoreService,
     @Optional()
@@ -131,11 +137,21 @@ export class StrategyIntentWorkerService
         continue;
       }
 
-      const headIntent = await this.strategyIntentStoreService.getHeadIntent(
+      const isStrategyRunning = await this.isStrategyRunning(strategyKey);
+
+      if (!isStrategyRunning) {
+        await this.strategyIntentStoreService.cancelPendingIntents(
+          strategyKey,
+          'strategy stopped before intent execution',
+        );
+        continue;
+      }
+
+      const headIntent = await this.strategyIntentStoreService.getNextNewIntent(
         strategyKey,
       );
 
-      if (!headIntent || headIntent.status !== 'NEW') {
+      if (!headIntent) {
         continue;
       }
 
@@ -244,5 +260,21 @@ export class StrategyIntentWorkerService
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async isStrategyRunning(strategyKey: string): Promise<boolean> {
+    if (!this.strategyInstanceRepository) {
+      return true;
+    }
+
+    const strategyInstance = await this.strategyInstanceRepository.findOne({
+      where: { strategyKey },
+    });
+
+    if (!strategyInstance) {
+      return true;
+    }
+
+    return strategyInstance.status === 'running';
   }
 }

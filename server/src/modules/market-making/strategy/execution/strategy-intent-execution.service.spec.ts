@@ -54,6 +54,13 @@ describe('StrategyIntentExecutionService', () => {
     appendOutboxEvent: jest.fn().mockResolvedValue(undefined),
   };
 
+  const strategyInstanceRepository = {
+    findOne: jest.fn().mockResolvedValue({
+      strategyKey: 'u1-c1-pureMarketMaking',
+      status: 'running',
+    }),
+  };
+
   const createConfigService = (executeIntents: boolean) =>
     ({
       get: jest.fn((key: string, defaultValue?: boolean) => {
@@ -96,6 +103,7 @@ describe('StrategyIntentExecutionService', () => {
       configService,
       exchangeConnectorAdapterService as any,
       executionHistoryRepository as any,
+      strategyInstanceRepository as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
@@ -114,6 +122,10 @@ describe('StrategyIntentExecutionService', () => {
       status: 'canceled',
     });
     exchangeOrderMappingService.countMappingsForOrder.mockResolvedValue(0);
+    strategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: 'u1-c1-pureMarketMaking',
+      status: 'running',
+    });
   });
 
   it('executes CREATE_LIMIT_ORDER intents once (idempotent)', async () => {
@@ -302,6 +314,63 @@ describe('StrategyIntentExecutionService', () => {
       baseIntent.intentId,
       'FAILED',
       'exchange down',
+    );
+  });
+
+  it('cancels an in-flight intent when the strategy is stopped before execution', async () => {
+    strategyInstanceRepository.findOne.mockResolvedValueOnce({
+      strategyKey: baseIntent.strategyKey,
+      status: 'stopped',
+    });
+    const service = createService(true);
+
+    await expect(service.consumeIntents([baseIntent])).resolves.toBeUndefined();
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'CANCELLED',
+      'strategy stopped before intent execution',
+    );
+    expect(intentStoreService.updateIntentStatus).not.toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'FAILED',
+      expect.anything(),
+    );
+  });
+
+  it('cancels retries when the strategy stops between attempts', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValueOnce(
+      new Error('temporary'),
+    );
+    strategyInstanceRepository.findOne
+      .mockResolvedValueOnce({
+        strategyKey: baseIntent.strategyKey,
+        status: 'running',
+      })
+      .mockResolvedValueOnce({
+        strategyKey: baseIntent.strategyKey,
+        status: 'running',
+      })
+      .mockResolvedValueOnce({
+        strategyKey: baseIntent.strategyKey,
+        status: 'stopped',
+      });
+    const service = createService(true);
+
+    await expect(
+      service.consumeIntents([{ ...baseIntent, intentId: 'retry-stop' }]),
+    ).resolves.toBeUndefined();
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(1);
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'retry-stop',
+      'CANCELLED',
+      'strategy stopped before intent execution',
     );
   });
 

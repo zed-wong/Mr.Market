@@ -4,6 +4,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
@@ -26,6 +27,7 @@ type OrderBookDelta = {
 export class OrderBookTrackerService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new CustomLogger(OrderBookTrackerService.name);
   private readonly books = new Map<string, OrderBookState>();
   private readonly snapshotQueue = new Map<string, OrderBookState[]>();
   private readonly deltaQueue = new Map<string, OrderBookDelta[]>();
@@ -66,6 +68,9 @@ export class OrderBookTrackerService
 
     queue.push(snapshot);
     this.snapshotQueue.set(key, queue);
+    this.logger.log(
+      `Queued order book snapshot ${key} bids=${snapshot.bids.length} asks=${snapshot.asks.length} sequence=${snapshot.sequence} queueDepth=${queue.length}`,
+    );
   }
 
   queueDelta(exchange: string, pair: string, delta: OrderBookDelta): void {
@@ -98,6 +103,9 @@ export class OrderBookTrackerService
           asks: [...lastSnapshot.asks],
           sequence: lastSnapshot.sequence,
         });
+        this.logger.log(
+          `Applied order book snapshot ${key} bids=${lastSnapshot.bids.length} asks=${lastSnapshot.asks.length} sequence=${lastSnapshot.sequence}`,
+        );
       }
 
       for (const delta of deltas) {

@@ -44,6 +44,7 @@ import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
 import { ExecutorRegistry } from './execution/executor-registry';
+import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
 
@@ -122,6 +123,8 @@ export class StrategyService
     private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
     @Optional()
     private readonly executorRegistry?: ExecutorRegistry,
+    @Optional()
+    private readonly strategyIntentStoreService?: StrategyIntentStoreService,
     @Optional()
     private readonly orderBookIngestionService?: OrderBookIngestionService,
     @Optional()
@@ -486,6 +489,10 @@ export class StrategyService
     const activeSession = this.sessions.get(strategyKey);
 
     await this.removeSession(strategyKey, activeSession);
+    await this.strategyIntentStoreService?.cancelPendingIntents(
+      strategyKey,
+      'strategy stopped before intent execution',
+    );
 
     const stopIntent: StrategyOrderIntent = {
       type: 'STOP_CONTROLLER',
@@ -500,7 +507,10 @@ export class StrategyService
       price: '0',
       qty: '0',
       createdAt: getRFC3339Timestamp(),
-      status: 'NEW',
+      status: 'CANCELLED',
+      metadata: {
+        reason: 'strategy stopped',
+      },
     };
 
     await this.publishIntents(strategyKey, [stopIntent]);
@@ -775,6 +785,11 @@ export class StrategyService
         pooledTarget.exchange,
         pooledTarget.pair,
         accountLabel,
+      );
+      this.logger.log(
+        `Order book ingestion available=${Boolean(
+          this.orderBookIngestionService,
+        )} for ${pooledTarget.exchange} ${pooledTarget.pair}`,
       );
       this.orderBookIngestionService?.ensureSubscribed(
         pooledTarget.exchange,

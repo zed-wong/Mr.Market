@@ -73,6 +73,12 @@ describe('AdminDirectMarketMakingService', () => {
     const strategyService = {
       getLatestIntentsForStrategy: jest.fn().mockReturnValue([]),
     };
+    const strategyIntentStoreService = {
+      getQueueState: jest.fn().mockResolvedValue({
+        blockedByFailure: false,
+        headIntentStatus: null,
+      }),
+    };
     const exchangeOrderTrackerService = {
       getOpenOrders: jest.fn().mockReturnValue([]),
       getFillCount: jest.fn().mockReturnValue(0),
@@ -102,6 +108,7 @@ describe('AdminDirectMarketMakingService', () => {
       exchangeInitService as any,
       executorRegistry as any,
       strategyService as any,
+      strategyIntentStoreService as any,
       exchangeOrderTrackerService as any,
       privateStreamTrackerService as any,
       orderBookTrackerService as any,
@@ -121,6 +128,7 @@ describe('AdminDirectMarketMakingService', () => {
       exchange,
       executorRegistry,
       strategyService,
+      strategyIntentStoreService,
       exchangeOrderTrackerService,
       privateStreamTrackerService,
       orderBookTrackerService,
@@ -483,6 +491,52 @@ describe('AdminDirectMarketMakingService', () => {
     expect(result.executorHealth).toBe('stale');
     expect(result.runtimeState).toBe('stale');
     expect(result.stale).toBe(true);
+  });
+
+  it('reports failed runtime state when the intent queue is blocked by a failed head intent', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      executorRegistry,
+      strategyIntentStoreService,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      strategySnapshot: { resolvedConfig: { accountLabel: 'desk-1' } },
+    });
+    executorRegistry.findExecutorByOrderId.mockReturnValue({
+      getSession: () => ({
+        orderId: 'order-1',
+        cadenceMs: 5000,
+        nextRunAtMs: Date.now() + 5000,
+      }),
+      getRecentErrors: () => [],
+    });
+    strategyIntentStoreService.getQueueState.mockResolvedValue({
+      blockedByFailure: true,
+      headIntentStatus: 'FAILED',
+      failedHeadIntentId: 'intent-1',
+      failedHeadUpdatedAt: '2026-04-01T00:00:03.000Z',
+      failedHeadErrorReason: 'minimum notional',
+    });
+
+    const result = await service.getDirectOrderStatus('order-1');
+
+    expect(result.executorHealth).toBe('active');
+    expect(result.runtimeState).toBe('failed');
+    expect(result.lastUpdatedAt).toBe('2026-04-01T00:00:03.000Z');
+    expect(result.recentErrors).toEqual([
+      {
+        ts: '2026-04-01T00:00:03.000Z',
+        message: 'minimum notional',
+      },
+    ]);
   });
 
   it('lists campaigns with joined flags', async () => {

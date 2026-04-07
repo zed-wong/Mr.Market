@@ -64,6 +64,7 @@
     "express": "^4.18.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "protobufjs": "^7.5.3",
     "socket.io": "^4.7.3",
     "sodium-native": "^5.0.10",
     "sqlite3": "^5.1.7",

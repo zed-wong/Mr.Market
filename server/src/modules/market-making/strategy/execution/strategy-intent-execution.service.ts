@@ -2,6 +2,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -16,6 +17,13 @@ import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
+class IntentCancelledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IntentCancelledError';
+  }
+}
+
 @Injectable()
 export class StrategyIntentExecutionService {
   private readonly logger = new CustomLogger(
@@ -26,6 +34,8 @@ export class StrategyIntentExecutionService {
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
   private readonly nextClientOrderSeqByOrderId = new Map<string, number>();
+  private readonly stoppedExecutionReason =
+    'strategy stopped before intent execution';
 
   constructor(
     private readonly configService: ConfigService,
@@ -33,6 +43,9 @@ export class StrategyIntentExecutionService {
     @Optional()
     @InjectRepository(StrategyExecutionHistory)
     private readonly strategyExecutionHistoryRepository?: Repository<StrategyExecutionHistory>,
+    @Optional()
+    @InjectRepository(StrategyInstance)
+    private readonly strategyInstanceRepository?: Repository<StrategyInstance>,
     @Optional()
     private readonly durabilityService?: DurabilityService,
     @Optional()
@@ -121,6 +134,10 @@ export class StrategyIntentExecutionService {
       return;
     }
 
+    if (!(await this.ensureStrategyStillRunning(intent))) {
+      return;
+    }
+
     await this.strategyIntentStoreService?.updateIntentStatus(
       intent.intentId,
       'SENT',
@@ -153,15 +170,17 @@ export class StrategyIntentExecutionService {
       if (intent.type === 'CREATE_LIMIT_ORDER') {
         const orderId = this.resolveOrderIdForClientOrderId(intent);
         const clientOrderId = await this.reserveClientOrderId(orderId);
-        const result = await this.runWithRetries(() =>
-          this.exchangeConnectorAdapterService.placeLimitOrder(
-            intent.exchange,
-            intent.pair,
-            intent.side,
-            intent.qty,
-            intent.price,
-            clientOrderId,
-          ),
+        const result = await this.runWithRetries(
+          intent,
+          () =>
+            this.exchangeConnectorAdapterService.placeLimitOrder(
+              intent.exchange,
+              intent.pair,
+              intent.side,
+              intent.qty,
+              intent.price,
+              clientOrderId,
+            ),
         );
 
         if (result?.id) {
@@ -216,12 +235,14 @@ export class StrategyIntentExecutionService {
           throw new Error('CANCEL_ORDER intent missing mixinOrderId');
         }
 
-        const result = await this.runWithRetries(() =>
-          this.exchangeConnectorAdapterService.cancelOrder(
-            intent.exchange,
-            intent.pair,
-            intent.mixinOrderId,
-          ),
+        const result = await this.runWithRetries(
+          intent,
+          () =>
+            this.exchangeConnectorAdapterService.cancelOrder(
+              intent.exchange,
+              intent.pair,
+              intent.mixinOrderId,
+            ),
         );
 
         const orderId = this.resolveOrderIdForClientOrderId(intent);
@@ -277,34 +298,36 @@ export class StrategyIntentExecutionService {
         );
         const side = intent.side;
 
-        const result = await this.runWithRetries(() =>
-          this.dexVolumeStrategyService!.executeCycle({
-            dexId,
-            chainId,
-            tokenIn,
-            tokenOut,
-            feeTier,
-            baseTradeAmount: Number(
-              (metadata as Record<string, unknown>).baseTradeAmount || 0,
-            ),
-            baseIncrementPercentage: Number(
-              (metadata as Record<string, unknown>).baseIncrementPercentage ||
-                0,
-            ),
-            pricePushRate: Number(
-              (metadata as Record<string, unknown>).pricePushRate || 0,
-            ),
-            executedTrades: Number.isFinite(executedTradesRaw)
-              ? executedTradesRaw
-              : 0,
-            side,
-            slippageBps: Number(
-              (metadata as Record<string, unknown>).slippageBps || 0,
-            ),
-            recipient:
-              String((metadata as Record<string, unknown>).recipient || '') ||
-              undefined,
-          }),
+        const result = await this.runWithRetries(
+          intent,
+          () =>
+            this.dexVolumeStrategyService!.executeCycle({
+              dexId,
+              chainId,
+              tokenIn,
+              tokenOut,
+              feeTier,
+              baseTradeAmount: Number(
+                (metadata as Record<string, unknown>).baseTradeAmount || 0,
+              ),
+              baseIncrementPercentage: Number(
+                (metadata as Record<string, unknown>).baseIncrementPercentage ||
+                  0,
+              ),
+              pricePushRate: Number(
+                (metadata as Record<string, unknown>).pricePushRate || 0,
+              ),
+              executedTrades: Number.isFinite(executedTradesRaw)
+                ? executedTradesRaw
+                : 0,
+              side,
+              slippageBps: Number(
+                (metadata as Record<string, unknown>).slippageBps || 0,
+              ),
+              recipient:
+                String((metadata as Record<string, unknown>).recipient || '') ||
+                undefined,
+            }),
         );
 
         await this.strategyExecutionHistoryRepository?.save(
@@ -362,6 +385,10 @@ export class StrategyIntentExecutionService {
       );
       this.processedIntentIds.add(intent.intentId);
     } catch (error) {
+      if (error instanceof IntentCancelledError) {
+        return;
+      }
+
       await this.strategyIntentStoreService?.updateIntentStatus(
         intent.intentId,
         'FAILED',
@@ -407,10 +434,17 @@ export class StrategyIntentExecutionService {
     return buildSubmittedClientOrderId(orderId, nextSeq);
   }
 
-  private async runWithRetries<T>(work: () => Promise<T>): Promise<T> {
+  private async runWithRetries<T>(
+    intent: StrategyOrderIntent,
+    work: () => Promise<T>,
+  ): Promise<T> {
     let attempt = 0;
 
     while (true) {
+      if (!(await this.ensureStrategyStillRunning(intent))) {
+        throw new IntentCancelledError(this.stoppedExecutionReason);
+      }
+
       try {
         return await work();
       } catch (error) {
@@ -430,6 +464,31 @@ export class StrategyIntentExecutionService {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async ensureStrategyStillRunning(
+    intent: StrategyOrderIntent,
+  ): Promise<boolean> {
+    if (!this.strategyInstanceRepository) {
+      return true;
+    }
+
+    const strategyInstance = await this.strategyInstanceRepository.findOne({
+      where: { strategyKey: intent.strategyKey },
+    });
+
+    if (!strategyInstance || strategyInstance.status === 'running') {
+      return true;
+    }
+
+    await this.strategyIntentStoreService?.updateIntentStatus(
+      intent.intentId,
+      'CANCELLED',
+      this.stoppedExecutionReason,
+    );
+    this.processedIntentIds.add(intent.intentId);
+
+    return false;
   }
 
   private toBoolean(value: unknown, defaultValue: boolean): boolean {

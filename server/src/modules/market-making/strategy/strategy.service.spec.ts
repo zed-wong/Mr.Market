@@ -13,6 +13,7 @@ import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
 import { ExecutorRegistry } from './execution/executor-registry';
+import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { StrategyService } from './strategy.service';
 
@@ -40,6 +41,9 @@ describe('StrategyService', () => {
   let exchangeInitService: ExchangeInitServiceMock;
   let executorOrchestratorService: {
     dispatchActions: jest.Mock;
+  };
+  let strategyIntentStoreService: {
+    cancelPendingIntents: jest.Mock;
   };
   let balanceLedgerService: {
     adjust: jest.Mock;
@@ -103,6 +107,9 @@ describe('StrategyService', () => {
     balanceLedgerService = {
       adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
+    strategyIntentStoreService = {
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
+    };
     strategyMarketDataProviderService = {
       getReferencePrice: jest.fn().mockResolvedValue(100.5),
       getBestBidAsk: jest
@@ -139,6 +146,10 @@ describe('StrategyService', () => {
         {
           provide: StrategyMarketDataProviderService,
           useValue: strategyMarketDataProviderService,
+        },
+        {
+          provide: StrategyIntentStoreService,
+          useValue: strategyIntentStoreService,
         },
         ExecutorRegistry,
         { provide: ConfigService, useValue: { get: jest.fn() } },
@@ -592,8 +603,15 @@ describe('StrategyService', () => {
     expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
       'client1-pureMarketMaking',
       expect.arrayContaining([
-        expect.objectContaining({ type: 'STOP_CONTROLLER' }),
+        expect.objectContaining({
+          type: 'STOP_CONTROLLER',
+          status: 'CANCELLED',
+        }),
       ]),
+    );
+    expect(strategyIntentStoreService.cancelPendingIntents).toHaveBeenCalledWith(
+      'client1-pureMarketMaking',
+      'strategy stopped before intent execution',
     );
 
     const intents = service.getLatestIntentsForStrategy(

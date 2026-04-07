@@ -20,6 +20,10 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
+import {
+  StrategyIntentQueueState,
+  StrategyIntentStoreService,
+} from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
@@ -63,6 +67,7 @@ export class AdminDirectMarketMakingService {
     private readonly exchangeInitService: ExchangeInitService,
     private readonly executorRegistry: ExecutorRegistry,
     private readonly strategyService: StrategyService,
+    private readonly strategyIntentStoreService: StrategyIntentStoreService,
     private readonly exchangeOrderTrackerService: ExchangeOrderTrackerService,
     private readonly privateStreamTrackerService: PrivateStreamTrackerService,
     private readonly orderBookTrackerService: OrderBookTrackerService,
@@ -254,11 +259,28 @@ export class AdminDirectMarketMakingService {
       definitions.map((definition) => [definition.id, definition]),
     );
 
-    return orders.map((order) => {
+    return await Promise.all(orders.map(async (order) => {
       const session = this.getRuntimeSession(order.orderId);
-      const status = this.resolveRuntimeState(order.state, session);
+      const strategyKey = createPureMarketMakingStrategyKey(order.orderId);
+      const queueState =
+        order.state === 'running'
+          ? await this.strategyIntentStoreService.getQueueState(strategyKey)
+          : null;
+      const status = this.resolveRuntimeState(order.state, session, queueState);
       const lastTickAt = this.getEstimatedLastTickAt(session);
       const accountLabel = this.readAccountLabel(order);
+      const warnings: string[] = [];
+
+      if (
+        lastTickAt &&
+        Date.now() - Date.parse(lastTickAt) > DIRECT_ORDER_STALE_MS
+      ) {
+        warnings.push('executor_stale');
+      }
+
+      if (queueState?.blockedByFailure) {
+        warnings.push('execution_blocked');
+      }
 
       return {
         orderId: order.orderId,
@@ -275,13 +297,9 @@ export class AdminDirectMarketMakingService {
         lastTickAt,
         accountLabel,
         apiKeyId: order.apiKeyId || null,
-        warnings:
-          lastTickAt &&
-          Date.now() - Date.parse(lastTickAt) > DIRECT_ORDER_STALE_MS
-            ? ['executor_stale']
-            : [],
+        warnings,
       };
-    });
+    }));
   }
 
   async getDirectOrderStatus(orderId: string) {
@@ -297,6 +315,10 @@ export class AdminDirectMarketMakingService {
     const lastTickAt = this.getEstimatedLastTickAt(session);
     const accountLabel = this.readAccountLabel(order);
     const strategyKey = createPureMarketMakingStrategyKey(orderId);
+    const queueState =
+      order.state === 'running'
+        ? await this.strategyIntentStoreService.getQueueState(strategyKey)
+        : null;
     const privateEvent = this.privateStreamTrackerService.getLatestEvent(
       order.exchangeName,
       accountLabel,
@@ -358,14 +380,38 @@ export class AdminDirectMarketMakingService {
       executor && typeof executor.getRecentErrors === 'function'
         ? executor.getRecentErrors(orderId)
         : [];
+    const runtimeState = this.resolveRuntimeState(
+      order.state,
+      session,
+      queueState,
+    );
+
+    if (
+      queueState?.blockedByFailure &&
+      queueState.failedHeadUpdatedAt &&
+      queueState.failedHeadErrorReason &&
+      !recentErrors.some(
+        (entry) =>
+          entry.ts === queueState.failedHeadUpdatedAt &&
+          entry.message === queueState.failedHeadErrorReason,
+      )
+    ) {
+      recentErrors.unshift({
+        ts: queueState.failedHeadUpdatedAt,
+        message: queueState.failedHeadErrorReason,
+      });
+    }
 
     return {
       orderId,
       state: order.state,
-      runtimeState: this.resolveRuntimeState(order.state, session),
+      runtimeState,
       executorHealth,
       lastTickAt,
-      lastUpdatedAt: privateEvent?.receivedAt || lastTickAt || order.createdAt,
+      lastUpdatedAt:
+        queueState?.blockedByFailure && queueState.failedHeadUpdatedAt
+          ? queueState.failedHeadUpdatedAt
+          : privateEvent?.receivedAt || lastTickAt || order.createdAt,
       privateStreamEventAt: privateEvent?.receivedAt || null,
       openOrders,
       intents,
@@ -604,9 +650,14 @@ export class AdminDirectMarketMakingService {
   private resolveRuntimeState(
     orderState: string,
     session: RuntimeSessionLike | null,
+    queueState?: StrategyIntentQueueState | null,
   ): string {
     if (orderState !== 'running') {
       return orderState;
+    }
+
+    if (queueState?.blockedByFailure) {
+      return 'failed';
     }
 
     return this.resolveExecutorHealth(session);

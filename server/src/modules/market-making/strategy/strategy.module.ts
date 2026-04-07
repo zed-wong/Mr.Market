@@ -109,6 +109,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyService,
     StrategyConfigResolverService,
     StrategyRuntimeDispatcherService,
+    StrategyIntentStoreService,
   ],
 })
 export class StrategyModule {}
