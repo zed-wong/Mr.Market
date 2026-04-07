@@ -247,9 +247,9 @@ This section explains each module with three questions:
 
 #### `data/market-data/market-data.module.ts`
 
-- What: serves market data through service/controller/gateway.
-- Why: strategies and UI need live and queryable market states.
-- Where: used by strategy market data provider and realtime client features.
+- What: serves market data through service/controller/gateway, with shared internal order-book subscriptions multiplexed to multiple consumers.
+- Why: strategies and UI need one live market-data stream instead of duplicate exchange websocket connections.
+- Where: used by strategy market data provider, market-making order-book ingestion, and realtime client features.
 
 #### `data/spot-data/spot-data.module.ts`
 
@@ -319,8 +319,8 @@ This section explains each module with three questions:
 
 #### `market-making/trackers/trackers.module.ts`
 
-- What: tracks order books, private stream events, and exchange order status.
-- Why: execution and reconciliation require current exchange-side state.
+- What: tracks order books, private stream events, and exchange order status, including a thin order-book ingestion layer that subscribes market-making sessions to the shared market-data stream.
+- Why: execution and reconciliation require current exchange-side state without falling back to per-tick REST/ticker requests.
 - Where: used by strategy runtime and pause/withdraw drain logic.
 
 #### `market-making/execution/execution.module.ts`

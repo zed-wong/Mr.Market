@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-04-07
+
+- Route market-making order book tracking through the shared `MarketdataService` stream, add a thin `OrderBookIngestionService` consumer for runtime session start/stop, and log tracker/order-book/ticker fallback reasons so strategy pricing no longer depends on per-tick ticker HTTP requests when websocket books are available
+
 ## 2026-04-02
 
 - Bind private user-orders reads and market-making intent creation to the authenticated JWT user, add ownership checks for payment/detail lookups, and cover the security change with controller/service unit tests
