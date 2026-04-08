@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import { toast } from "svelte-sonner";
   import { updateStrategyDefinition } from "$lib/helpers/mrm/admin/strategy";
+  import SchemaConfigForm from "./SchemaConfigForm.svelte";
   import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
 
   export let show = false;
@@ -12,32 +13,21 @@
 
   let name = "";
   let description = "";
-  let configSchema = "{}";
-  let defaultConfig = "{}";
+  let configSchema: Record<string, unknown> = {};
+  let defaultConfig: Record<string, unknown> = {};
   let visibility = "system";
   let createdBy = "";
 
-  let schemaError = false;
-  let defaultConfigError = false;
-
-  function validateJson(value: string): boolean {
-    try {
-      JSON.parse(value);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+  let schemaOpen = false;
 
   $: if (definition) {
     name = definition.name || "";
     description = definition.description || "";
-    configSchema = JSON.stringify(definition.configSchema, null, 2);
-    defaultConfig = JSON.stringify(definition.defaultConfig, null, 2);
+    configSchema = (definition.configSchema as Record<string, unknown>) || {};
+    defaultConfig = (definition.defaultConfig as Record<string, unknown>) || {};
     visibility = definition.visibility || "system";
     createdBy = definition.createdBy || "";
-    schemaError = false;
-    defaultConfigError = false;
+    schemaOpen = false;
   }
 
   function handleClose() {
@@ -46,14 +36,6 @@
 
   async function handleSubmit() {
     if (!definition) return;
-
-    schemaError = !validateJson(configSchema);
-    defaultConfigError = !validateJson(defaultConfig);
-
-    if (schemaError || defaultConfigError) {
-      toast.error($_("admin_strategy_invalid_json"));
-      return;
-    }
 
     if (!name.trim()) {
       toast.error($_("admin_strategy_required_fields"));
@@ -68,8 +50,7 @@
         {
           name: name.trim(),
           description: description.trim() || undefined,
-          configSchema: JSON.parse(configSchema),
-          defaultConfig: JSON.parse(defaultConfig),
+          defaultConfig,
           visibility,
           createdBy: createdBy.trim() || undefined,
         },
@@ -97,7 +78,7 @@
 {#if show && definition}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
     <div
-      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[520px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto no-scrollbar"
+      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[640px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto no-scrollbar"
     >
       <!-- Header -->
       <div class="px-7 pt-6 pb-4">
@@ -171,35 +152,36 @@
           ></textarea>
         </div>
 
-        <!-- Config Schema (read-only) -->
+        <!-- Config Schema (read-only, collapsible) -->
         <div class="bg-base-200/40 rounded-xl p-4">
           <div class="flex items-center justify-between mb-2">
             <span class="text-xs font-semibold text-base-content/50 tracking-wider"
               >{$_("admin_strategy_config_schema")}</span
             >
-            <span class="text-[10px] font-medium text-base-content/40 bg-base-300 px-2 py-0.5 rounded">{$_("admin_strategy_immutable")}</span>
+            <button
+              class="text-xs text-primary font-semibold hover:underline bg-transparent border-none p-0 cursor-pointer flex items-center gap-1"
+              on:click={() => (schemaOpen = !schemaOpen)}
+            >
+              {#if schemaOpen}
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                Hide
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                View
+              {/if}
+            </button>
           </div>
-          <textarea
-            class="textarea textarea-bordered w-full bg-base-200 text-base-content/50 text-sm font-mono focus:outline-none border-base-300 resize-none h-28 cursor-not-allowed"
-            bind:value={configSchema}
-            readonly
-          ></textarea>
+          {#if schemaOpen}
+            <pre class="text-xs text-base-content/70 font-mono bg-base-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(configSchema, null, 2)}</pre>
+          {/if}
         </div>
 
-        <!-- Default Config -->
+        <!-- Default Config — form-based editor -->
         <div class="bg-base-200/40 rounded-xl p-4">
-          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-3"
             >{$_("admin_strategy_default_config")}</span
           >
-          <textarea
-            class="textarea textarea-bordered w-full bg-base-100 text-base-content text-sm font-mono focus:outline-none focus:border-primary border-base-300 resize-none h-28
-              {defaultConfigError ? 'border-error' : ''}"
-            bind:value={defaultConfig}
-            on:change={() => (defaultConfigError = !validateJson(defaultConfig))}
-          ></textarea>
-          {#if defaultConfigError}
-            <span class="text-xs text-error mt-1 block">{$_("admin_strategy_invalid_json")}</span>
-          {/if}
+          <SchemaConfigForm schema={configSchema} bind:config={defaultConfig} />
         </div>
 
         <!-- Visibility + CreatedBy row -->

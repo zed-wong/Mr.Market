@@ -2,6 +2,8 @@
   import { _ } from "svelte-i18n";
   import { toast } from "svelte-sonner";
   import { createStrategyDefinition } from "$lib/helpers/mrm/admin/strategy";
+  import { CONFIG_SCHEMA_TEMPLATES } from "./configTemplates";
+  import SchemaConfigForm from "./SchemaConfigForm.svelte";
 
   export let show = false;
   export let isSubmitting = false;
@@ -12,13 +14,13 @@
   let name = "";
   let description = "";
   let controllerType = "pureMarketMaking";
-  let configSchema = "{}";
-  let defaultConfig = "{}";
+  let configSchema: Record<string, unknown> = {};
+  let defaultConfig: Record<string, unknown> = {};
   let visibility = "system";
   let createdBy = "";
 
   let schemaError = false;
-  let defaultConfigError = false;
+  let schemaText = "";
 
   const CONTROLLER_TYPES = [
     { value: "pureMarketMaking", label: "Market Making" },
@@ -27,13 +29,20 @@
     { value: "timeIndicator", label: "Time Indicator" },
   ];
 
-  function validateJson(value: string): boolean {
-    try {
-      JSON.parse(value);
-      return true;
-    } catch {
-      return false;
-    }
+  function getInitialSchema(type: string): Record<string, unknown> {
+    const template = CONFIG_SCHEMA_TEMPLATES[type];
+    return template ? JSON.parse(JSON.stringify(template)) : {};
+  }
+
+  function applyTemplate(type: string) {
+    configSchema = getInitialSchema(type);
+    schemaText = JSON.stringify(configSchema, null, 2);
+    defaultConfig = {};
+  }
+
+  function handleControllerTypeChange(type: string) {
+    controllerType = type;
+    applyTemplate(type);
   }
 
   function reset() {
@@ -41,12 +50,12 @@
     name = "";
     description = "";
     controllerType = "pureMarketMaking";
-    configSchema = "{}";
-    defaultConfig = "{}";
+    configSchema = {};
+    schemaText = "";
+    defaultConfig = {};
     visibility = "system";
     createdBy = "";
     schemaError = false;
-    defaultConfigError = false;
   }
 
   function handleClose() {
@@ -54,11 +63,18 @@
     onClose();
   }
 
-  async function handleSubmit() {
-    schemaError = !validateJson(configSchema);
-    defaultConfigError = !validateJson(defaultConfig);
+  function handleSchemaTextChange() {
+    schemaError = false;
+    try {
+      configSchema = JSON.parse(schemaText);
+      schemaError = false;
+    } catch {
+      schemaError = true;
+    }
+  }
 
-    if (schemaError || defaultConfigError) {
+  async function handleSubmit() {
+    if (schemaError || schemaText.trim() === "") {
       toast.error($_("admin_strategy_invalid_json"));
       return;
     }
@@ -77,8 +93,8 @@
           name: name.trim(),
           description: description.trim() || undefined,
           controllerType,
-          configSchema: JSON.parse(configSchema),
-          defaultConfig: JSON.parse(defaultConfig),
+          configSchema,
+          defaultConfig,
           visibility,
           createdBy: createdBy.trim() || undefined,
         },
@@ -100,6 +116,10 @@
   function getToken(): string {
     return localStorage.getItem("admin-access-token") || "";
   }
+
+  $: if (show) {
+    applyTemplate(controllerType);
+  }
 </script>
 
 <svelte:window on:keydown={(e) => show && e.key === "Escape" && handleClose()} />
@@ -107,7 +127,7 @@
 {#if show}
   <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
     <div
-      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[520px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto no-scrollbar"
+      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[640px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto no-scrollbar"
     >
       <!-- Header -->
       <div class="px-7 pt-6 pb-4">
@@ -208,7 +228,7 @@
                   {controllerType === type.value
                   ? 'bg-primary/5 text-primary font-semibold border-primary/20'
                   : 'text-base-content bg-base-300 hover:bg-base-300 border-transparent'}"
-                on:click={() => (controllerType = type.value)}
+                on:click={() => handleControllerTypeChange(type.value)}
               >
                 {type.label}
               </button>
@@ -218,36 +238,34 @@
 
         <!-- Config Schema -->
         <div class="bg-base-200/40 rounded-xl p-4">
-          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-            >{$_("admin_strategy_config_schema")}</span
-          >
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-base-content/50 tracking-wider"
+              >{$_("admin_strategy_config_schema")}</span
+            >
+            <button
+              class="text-xs text-primary font-semibold hover:underline bg-transparent border-none p-0 cursor-pointer"
+              on:click={() => applyTemplate(controllerType)}
+            >
+              {$_("admin_strategy_reset_to_template")}
+            </button>
+          </div>
           <textarea
-            placeholder={'{}'}
-            class="textarea textarea-bordered w-full bg-base-100 text-base-content text-sm font-mono focus:outline-none focus:border-primary border-base-300 resize-none h-28
+            class="textarea textarea-bordered w-full bg-base-100 text-base-content text-sm font-mono focus:outline-none focus:border-primary border-base-300 resize-none h-36
               {schemaError ? 'border-error' : ''}"
-            bind:value={configSchema}
-            on:change={() => (schemaError = !validateJson(configSchema))}
+            bind:value={schemaText}
+            on:input={handleSchemaTextChange}
           ></textarea>
           {#if schemaError}
             <span class="text-xs text-error mt-1 block">{$_("admin_strategy_invalid_json")}</span>
           {/if}
         </div>
 
-        <!-- Default Config -->
+        <!-- Default Config — form-based editor -->
         <div class="bg-base-200/40 rounded-xl p-4">
-          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-3"
             >{$_("admin_strategy_default_config")}</span
           >
-          <textarea
-            placeholder={'{}'}
-            class="textarea textarea-bordered w-full bg-base-100 text-base-content text-sm font-mono focus:outline-none focus:border-primary border-base-300 resize-none h-28
-              {defaultConfigError ? 'border-error' : ''}"
-            bind:value={defaultConfig}
-            on:change={() => (defaultConfigError = !validateJson(defaultConfig))}
-          ></textarea>
-          {#if defaultConfigError}
-            <span class="text-xs text-error mt-1 block">{$_("admin_strategy_invalid_json")}</span>
-          {/if}
+          <SchemaConfigForm schema={configSchema} bind:config={defaultConfig} />
         </div>
 
         <!-- Visibility + CreatedBy row -->

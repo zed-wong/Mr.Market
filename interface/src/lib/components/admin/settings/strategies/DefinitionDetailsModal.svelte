@@ -1,11 +1,15 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { formatDate, getControllerTypeLabel, getControllerTypeClasses, getVisibilityLabel } from "./helpers";
+  import SchemaConfigForm from "./SchemaConfigForm.svelte";
   import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
 
   export let show = false;
   export let definition: StrategyDefinition | null = null;
   export let onClose: () => void;
+
+  $: schema = (definition?.configSchema as Record<string, unknown>) || {};
+  $: config = (definition?.defaultConfig as Record<string, unknown>) || {};
 </script>
 
 <svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
@@ -117,7 +121,7 @@
           {/if}
         </div>
 
-        <!-- Config Schema -->
+        <!-- Config Schema (read-only <pre>) -->
         <div class="bg-base-200/40 rounded-xl p-4">
           <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
             >{$_("admin_strategy_config_schema")}</span
@@ -125,12 +129,12 @@
           <pre class="text-xs text-base-content/70 font-mono bg-base-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(definition.configSchema, null, 2)}</pre>
         </div>
 
-        <!-- Default Config -->
+        <!-- Default Config — read-only form view -->
         <div class="bg-base-200/40 rounded-xl p-4">
-          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-3"
             >{$_("admin_strategy_default_config")}</span
           >
-          <pre class="text-xs text-base-content/70 font-mono bg-base-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(definition.defaultConfig, null, 2)}</pre>
+          <SchemaConfigForm {schema} {config} readOnly />
         </div>
       </div>
     </div>
