@@ -34,17 +34,7 @@ Use dated files, but keep the document role clear.
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**
   Role: rolling chronological implementation log
-- **`2026-03-18-market-making-testing-roadmap.md`**
-  Role: market-making testing roadmap for stage order, boundaries, and phase gates
-- **`2026-03-15-ccxt-sandbox-integration-testing-plan.md`**
-  Role: detailed Track A sandbox execution plan
-- **`2026-03-20-system-test-gap-analysis-and-improvement-plan.md`**
-  Role: gap-analysis reference for current system-test coverage and remaining infrastructure/runtime fidelity work
-- **`2026-03-21-persistent-sandbox-market-making-validation-plan.md`**
-  Role: current operator-facing persistent sandbox validation proposal
-- **`2026-03-23-dual-mode-self-hosted-cli-idea.md`**
-  Role: IDEA — dual-mode architecture (SaaS + self-hosted CLI) for future consideration
-
+  
 ## When To Update Vs Create
 
 - If work is continuing within the same phase and the same document role, update the existing dated doc.
