@@ -51,6 +51,10 @@ export interface MarketMakingPair {
   target_price?: string;
   exchange_id: string;
   custom_fee_rate?: string;
+  min_order_amount?: string;
+  max_order_amount?: string;
+  amount_significant_figures?: string;
+  price_significant_figures?: string;
   enable: boolean;
 }
 

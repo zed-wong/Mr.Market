@@ -242,6 +242,7 @@ This section explains each module with three questions:
 #### `data/grow-data/grow-data.module.ts`
 
 - What: manages grow and market-making pair metadata repository and APIs.
+- Includes: market-making pair execution constraints such as min/max order amount and amount/price precision snapshots.
 - Why: strategy and order flows require trusted pair/exchange metadata.
 - Where: used in order-intent creation and admin pair management.
 

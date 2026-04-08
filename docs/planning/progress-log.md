@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-04-08
+
+- Add `min_order_amount`, `max_order_amount`, `amount_significant_figures`, and `price_significant_figures` to grow market-making pairs with a migration, seed population, and shared frontend/backend types
+
 ## 2026-04-07
 
 - Route market-making order book tracking through the shared `MarketdataService` stream, add a thin `OrderBookIngestionService` consumer for runtime session start/stop, and log tracker/order-book/ticker fallback reasons so strategy pricing no longer depends on per-tick ticker HTTP requests when websocket books are available
