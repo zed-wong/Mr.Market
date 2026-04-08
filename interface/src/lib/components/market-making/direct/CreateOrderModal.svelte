@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BigNumber from "bignumber.js";
   import { _ } from "svelte-i18n";
   import type { AdminSingleKey } from "$lib/types/hufi/admin";
   import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
@@ -15,7 +16,7 @@
   export let startStrategyDefinitionId = "";
   export let startApiKeyId = "";
   export let orderAmount = "";
-  export let orderQuoteAmount = "";
+  export let minOrderAmount = "";
   export let orderSpread = "";
 
   export let onSubmit: () => void;
@@ -26,11 +27,16 @@
   let pairInputEl: HTMLInputElement;
 
   $: baseCoin = startPair ? startPair.split("/")[0] : "";
-  $: quoteCoin = startPair ? startPair.split("/")[1] : "";
 
-  $: baseAmountError = orderAmount && isNaN(Number(orderAmount));
-  $: quoteAmountError = orderQuoteAmount && isNaN(Number(orderQuoteAmount));
+  $: orderAmountError = orderAmount && isNaN(Number(orderAmount));
+  $: orderAmountBelowMinimum =
+    !orderAmountError &&
+    !!orderAmount &&
+    !!minOrderAmount &&
+    new BigNumber(orderAmount).isFinite() &&
+    new BigNumber(orderAmount).isLessThan(minOrderAmount);
   $: spreadError = orderSpread && isNaN(Number(orderSpread));
+  $: submitDisabled = isStarting || orderAmountError || orderAmountBelowMinimum;
 
   $: searchedPairs = pairSearch
     ? filteredPairs.filter((p) =>
@@ -325,11 +331,11 @@
                 </svg>
               </div>
             </div>
-            <div class="flex gap-3">
-              <div class="flex-1 bg-base-200/40 rounded-xl p-4">
+            <div class="bg-base-200/40 rounded-xl p-4">
+              <div class="flex-1">
                 <span
                   class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                  >{$_("admin_direct_mm_base_amount")}{baseCoin
+                  >{$_("admin_direct_mm_order_amount")}{baseCoin
                     ? ` (${baseCoin})`
                     : ""}</span
                 >
@@ -339,7 +345,7 @@
                     inputmode="decimal"
                     placeholder="e.g. 0.01"
                     class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
-                      {baseAmountError ? 'border-error' : ''}"
+                      {orderAmountError ? 'border-error' : ''}"
                     class:pr-16={baseCoin}
                     bind:value={orderAmount}
                   />
@@ -350,47 +356,23 @@
                     >
                   {/if}
                 </div>
-                {#if baseAmountError}
+                {#if orderAmountError}
                   <span class="text-xs text-error mt-1 block"
                     >{$_("admin_direct_mm_invalid_number")}</span
                   >
-                {:else}
-                  <span class="text-xs text-base-content/40 mt-1 block"
-                    >{$_("admin_direct_mm_base_amount_hint")}</span
-                  >
-                {/if}
-              </div>
-              <div class="flex-1 bg-base-200/40 rounded-xl p-4">
-                <span
-                  class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                  >{$_("admin_direct_mm_quote_amount")}{quoteCoin
-                    ? ` (${quoteCoin})`
-                    : ""}</span
-                >
-                <div class="relative">
-                  <input
-                    type="text"
-                    inputmode="decimal"
-                    placeholder="e.g. 100"
-                    class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
-                      {quoteAmountError ? 'border-error' : ''}"
-                    class:pr-16={quoteCoin}
-                    bind:value={orderQuoteAmount}
-                  />
-                  {#if quoteCoin}
-                    <span
-                      class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
-                      >{quoteCoin}</span
-                    >
-                  {/if}
-                </div>
-                {#if quoteAmountError}
+                {:else if orderAmountBelowMinimum}
                   <span class="text-xs text-error mt-1 block"
-                    >{$_("admin_direct_mm_invalid_number")}</span
+                    >{$_("admin_direct_mm_order_amount_minimum_hint", {
+                      values: { amount: minOrderAmount },
+                    })}</span
                   >
                 {:else}
                   <span class="text-xs text-base-content/40 mt-1 block"
-                    >{$_("admin_direct_mm_quote_amount_hint")}</span
+                    >{minOrderAmount
+                      ? $_("admin_direct_mm_order_amount_hint_with_min", {
+                          values: { amount: minOrderAmount },
+                        })
+                      : $_("admin_direct_mm_order_amount_hint")}</span
                   >
                 {/if}
               </div>
@@ -441,7 +423,7 @@
           <button
             class="btn btn-primary text-primary-content font-semibold px-6 gap-2"
             on:click={onSubmit}
-            disabled={isStarting}
+            disabled={submitDisabled}
           >
             <span
               >{isStarting

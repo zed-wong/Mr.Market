@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BigNumber from "bignumber.js";
   import { onDestroy, onMount } from "svelte";
   import { invalidate } from "$app/navigation";
   import { page } from "$app/stores";
@@ -97,7 +98,6 @@
   let startStrategyDefinitionId = "";
   let startApiKeyId = "";
   let orderAmount = "";
-  let orderQuoteAmount = "";
   let orderSpread = "";
   let configRows: OverrideRow[] = [{ key: "", value: "" }];
 
@@ -144,6 +144,12 @@
   $: filteredPairs = pairs.filter(
     (pair) => !startExchangeName || pair.exchange_id === startExchangeName,
   );
+  $: selectedPairConfig =
+    pairs.find(
+      (pair) =>
+        pair.exchange_id === startExchangeName && pair.symbol === startPair,
+    ) || null;
+  $: minOrderAmount = selectedPairConfig?.min_order_amount || "";
   $: filteredApiKeys = apiKeys.filter(
     (key) => key.permissions === "read-trade",
   );
@@ -191,6 +197,20 @@
       return;
     }
 
+    if (
+      orderAmount &&
+      minOrderAmount &&
+      new BigNumber(orderAmount).isFinite() &&
+      new BigNumber(orderAmount).isLessThan(minOrderAmount)
+    ) {
+      toast.error($_("admin_direct_mm_error_order_amount_too_low"), {
+        description: $_("admin_direct_mm_order_amount_minimum_hint", {
+          values: { amount: minOrderAmount },
+        }),
+      });
+      return;
+    }
+
     isStarting = true;
     startCooldown = true;
     setTimeout(() => {
@@ -208,7 +228,6 @@
           configOverrides: normalizeConfigOverrides(
             configRows,
             orderAmount,
-            orderQuoteAmount,
             orderSpread,
           ),
         },
@@ -219,7 +238,6 @@
       showStartForm = false;
       configRows = [{ key: "", value: "" }];
       orderAmount = "";
-      orderQuoteAmount = "";
       orderSpread = "";
       toast.success(
         $_("admin_direct_mm_start_success", {
@@ -595,7 +613,7 @@
   bind:startStrategyDefinitionId
   bind:startApiKeyId
   bind:orderAmount
-  bind:orderQuoteAmount
+  {minOrderAmount}
   bind:orderSpread
   onSubmit={handleStartOrder}
   onClose={() => (showStartForm = false)}

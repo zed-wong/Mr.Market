@@ -10,6 +10,9 @@ describe('AdminDirectMarketMakingService', () => {
       findOne: jest.fn(),
       find: jest.fn(),
     };
+    const growdataMarketMakingPairRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
     const strategyDefinitionRepository = {
       findOne: jest.fn(),
       find: jest.fn(),
@@ -100,6 +103,7 @@ describe('AdminDirectMarketMakingService', () => {
 
     const service = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
+      growdataMarketMakingPairRepository as any,
       strategyDefinitionRepository as any,
       userOrdersService as any,
       marketMakingRuntimeService as any,
@@ -119,6 +123,7 @@ describe('AdminDirectMarketMakingService', () => {
     return {
       service,
       marketMakingRepository,
+      growdataMarketMakingPairRepository,
       strategyDefinitionRepository,
       userOrdersService,
       marketMakingRuntimeService,
@@ -288,6 +293,28 @@ describe('AdminDirectMarketMakingService', () => {
     expect(result.warnings).toEqual(['Low BTC balance', 'Low USDT balance']);
   });
 
+  it('rejects direct start when order amount is below the market minimum', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      growdataMarketMakingPairRepository,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: directStartDto.strategyDefinitionId,
+      enabled: true,
+    });
+    growdataMarketMakingPairRepository.findOne.mockResolvedValue({
+      exchange_id: 'binance',
+      symbol: 'BTC/USDT',
+      min_order_amount: '20',
+    });
+
+    await expect(service.directStart(directStartDto, 'admin-user')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
   it('stops a direct order via the shared runtime service', async () => {
     const {
       service,
@@ -413,7 +440,12 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       source: 'admin_direct',
       createdAt: '2026-04-01T00:00:00.000Z',
-      strategySnapshot: { resolvedConfig: { accountLabel: 'desk-1' } },
+      strategySnapshot: {
+        resolvedConfig: {
+          accountLabel: 'desk-1',
+          orderAmount: 10,
+        },
+      },
     });
     executorRegistry.findExecutorByOrderId.mockReturnValue({
       getSession: () => ({
@@ -443,6 +475,12 @@ describe('AdminDirectMarketMakingService', () => {
 
     expect(result.executorHealth).toBe('active');
     expect(result.runtimeState).toBe('active');
+    expect(result.orderConfig).toEqual({
+      orderAmount: '10',
+      bidSpread: null,
+      askSpread: null,
+      numberOfLayers: null,
+    });
     expect(result.spread).toEqual({ bid: '100', ask: '101', absolute: '1' });
   });
 

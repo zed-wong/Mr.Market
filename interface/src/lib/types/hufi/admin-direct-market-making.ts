@@ -58,6 +58,12 @@ export interface DirectOrderStatus {
     ts: string;
     message: string;
   }>;
+  orderConfig: {
+    orderAmount: string | null;
+    bidSpread: string | null;
+    askSpread: string | null;
+    numberOfLayers: string | null;
+  };
   spread: {
     bid: string;
     ask: string;

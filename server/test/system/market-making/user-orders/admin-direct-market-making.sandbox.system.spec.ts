@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
@@ -41,6 +42,9 @@ describe('Admin direct market making runtime (system)', () => {
     const marketMakingRepository = moduleRef.get(
       getRepositoryToken(MarketMakingOrder),
     );
+    const growdataMarketMakingPairRepository = moduleRef.get(
+      getRepositoryToken(GrowdataMarketMakingPair),
+    );
     const strategyDefinitionRepository = moduleRef.get(
       getRepositoryToken(StrategyDefinition),
     );
@@ -73,6 +77,7 @@ describe('Admin direct market making runtime (system)', () => {
 
     const adminDirectService = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
+      growdataMarketMakingPairRepository as any,
       strategyDefinitionRepository as any,
       {
         create: jest.fn((payload) => payload),

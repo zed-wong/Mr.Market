@@ -110,7 +110,6 @@ export function formatFundAmount(amount: unknown, decimals: unknown): string {
 export function normalizeConfigOverrides(
   configRows: { key: string; value: string }[],
   orderAmount: string,
-  orderQuoteAmount: string,
   orderSpread: string,
 ): Record<string, unknown> {
   const accumulator = configRows.reduce<Record<string, unknown>>(
@@ -124,10 +123,6 @@ export function normalizeConfigOverrides(
   if (orderAmount) {
     const num = Number(orderAmount);
     accumulator["orderAmount"] = isNaN(num) ? orderAmount : num;
-  }
-  if (orderQuoteAmount) {
-    const num = Number(orderQuoteAmount);
-    accumulator["quoteAmount"] = isNaN(num) ? orderQuoteAmount : num;
   }
   if (orderSpread) {
     const num = Number(orderSpread);

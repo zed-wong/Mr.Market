@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BigNumber from "bignumber.js";
   import { _ } from "svelte-i18n";
   import { toast } from "svelte-sonner";
   import type {
@@ -61,11 +62,21 @@
     balances: DirectOrderStatus["inventoryBalances"],
   ): number | null {
     if (!balances || balances.length < 2) return null;
-    const a = parseFloat(balances[0].total) || 0;
-    const b = parseFloat(balances[1].total) || 0;
-    const sum = a + b;
-    if (sum === 0) return null;
-    return Math.round((a / sum) * 100);
+    const a = new BigNumber(balances[0].total || 0);
+    const b = new BigNumber(balances[1].total || 0);
+    const sum = a.plus(b);
+    if (sum.isZero()) return null;
+    return a
+      .dividedBy(sum)
+      .multipliedBy(100)
+      .decimalPlaces(0, BigNumber.ROUND_HALF_UP)
+      .toNumber();
+  }
+
+  function formatSpread(val: string | null | undefined): string {
+    if (val === null || val === undefined || val === "")
+      return $_("admin_direct_mm_na");
+    return new BigNumber(val).multipliedBy(100).toString() + "%";
   }
 
   $: stateLabel = data
@@ -370,6 +381,71 @@
                   >
                 </div>
               {/if}
+            </div>
+          </div>
+
+          <!-- Order Config -->
+          <div>
+            <div class="flex items-center justify-between mb-3 h-5">
+              <div class="flex items-center gap-1.5">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  class="w-3.5 h-3.5 text-primary"
+                >
+                  <path
+                    d="M4.75 3A1.75 1.75 0 0 0 3 4.75v10.5C3 16.216 3.784 17 4.75 17h10.5A1.75 1.75 0 0 0 17 15.25V4.75A1.75 1.75 0 0 0 15.25 3H4.75ZM5.5 6.75A.75.75 0 0 1 6.25 6h7.5a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1-.75-.75Zm0 3.5a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 0 1.5h-3.5a.75.75 0 0 1-.75-.75Zm0 3.5a.75.75 0 0 1 .75-.75h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1-.75-.75Z"
+                  />
+                </svg>
+                <span class="text-xs font-bold text-base-content"
+                  >{$_("admin_direct_mm_order_config")}</span
+                >
+              </div>
+              <span class="text-[10px] text-base-content/40 font-semibold"
+                >{$_("admin_direct_mm_order_config_hint")}</span
+              >
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="border border-base-300 rounded-xl p-3">
+                <span
+                  class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                  >{$_("admin_direct_mm_order_amount")}</span
+                >
+                <span class="text-sm font-bold text-base-content block"
+                  >{data?.orderConfig?.orderAmount ||
+                    $_("admin_direct_mm_na")}</span
+                >
+              </div>
+              <div class="border border-base-300 rounded-xl p-3">
+                <span
+                  class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                  >{$_("admin_direct_mm_layers")}</span
+                >
+                <span class="text-sm font-bold text-base-content block"
+                  >{data?.orderConfig?.numberOfLayers ||
+                    $_("admin_direct_mm_na")}</span
+                >
+              </div>
+              <div class="border border-base-300 rounded-xl p-3">
+                <span
+                  class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                  >{$_("admin_direct_mm_bid_spread")}</span
+                >
+                <span class="text-sm font-bold text-base-content block"
+                  >{formatSpread(data?.orderConfig?.bidSpread)}</span
+                >
+              </div>
+              <div class="border border-base-300 rounded-xl p-3">
+                <span
+                  class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                  >{$_("admin_direct_mm_ask_spread")}</span
+                >
+                <span class="text-sm font-bold text-base-content block"
+                  >{formatSpread(data?.orderConfig?.askSpread)}</span
+                >
+              </div>
             </div>
           </div>
 

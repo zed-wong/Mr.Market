@@ -10,6 +10,7 @@ import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
 import { randomUUID } from 'crypto';
 import { Wallet } from 'ethers';
+import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
@@ -58,6 +59,8 @@ export class AdminDirectMarketMakingService {
   constructor(
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
+    @InjectRepository(GrowdataMarketMakingPair)
+    private readonly growdataMarketMakingPairRepository: Repository<GrowdataMarketMakingPair>,
     @InjectRepository(StrategyDefinition)
     private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
     private readonly userOrdersService: UserOrdersService,
@@ -124,6 +127,12 @@ export class AdminDirectMarketMakingService {
       );
 
     resolvedConfig.resolvedConfig.accountLabel = dto.accountLabel;
+
+    await this.validateMinimumOrderAmount(
+      dto.exchangeName,
+      dto.pair,
+      resolvedConfig.resolvedConfig,
+    );
 
     const warnings = await this.runBalancePreCheck(
       dto.exchangeName,
@@ -399,8 +408,32 @@ export class AdminDirectMarketMakingService {
       recentErrors.unshift({
         ts: queueState.failedHeadUpdatedAt,
         message: queueState.failedHeadErrorReason,
-      });
+        });
     }
+
+    const resolvedConfig = order.strategySnapshot?.resolvedConfig || {};
+    const orderConfig = {
+      orderAmount:
+        resolvedConfig.orderAmount !== undefined &&
+        resolvedConfig.orderAmount !== null
+          ? String(resolvedConfig.orderAmount)
+          : null,
+      bidSpread:
+        resolvedConfig.bidSpread !== undefined &&
+        resolvedConfig.bidSpread !== null
+          ? String(resolvedConfig.bidSpread)
+          : null,
+      askSpread:
+        resolvedConfig.askSpread !== undefined &&
+        resolvedConfig.askSpread !== null
+          ? String(resolvedConfig.askSpread)
+          : null,
+      numberOfLayers:
+        resolvedConfig.numberOfLayers !== undefined &&
+        resolvedConfig.numberOfLayers !== null
+          ? String(resolvedConfig.numberOfLayers)
+          : null,
+    };
 
     return {
       orderId,
@@ -420,6 +453,7 @@ export class AdminDirectMarketMakingService {
         60 * 60 * 1000,
       ),
       recentErrors,
+      orderConfig,
       spread,
       inventoryBalances,
       stale: executorHealth === 'stale',
@@ -603,6 +637,33 @@ export class AdminDirectMarketMakingService {
       return warnings;
     } catch (error) {
       throw this.mapCCXTError(error);
+    }
+  }
+
+  private async validateMinimumOrderAmount(
+    exchangeName: string,
+    pair: string,
+    resolvedConfig: Record<string, unknown>,
+  ): Promise<void> {
+    const pairConfig = await this.growdataMarketMakingPairRepository.findOne({
+      where: { exchange_id: exchangeName, symbol: pair },
+    });
+    const minimum = String(pairConfig?.min_order_amount || '').trim();
+
+    if (!minimum) {
+      return;
+    }
+
+    const orderAmount = new BigNumber(String(resolvedConfig.orderAmount || ''));
+
+    if (!orderAmount.isFinite()) {
+      return;
+    }
+
+    if (orderAmount.isLessThan(minimum)) {
+      throw new BadRequestException(
+        `Order amount ${orderAmount.toFixed()} is below minimum ${minimum} for ${exchangeName} ${pair}`,
+      );
     }
   }
 
