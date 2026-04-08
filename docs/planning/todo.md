@@ -46,8 +46,8 @@ Completed work should stay in `progress-log.md`, not here.
 #### Detailed Checklist
 
 User orders security
-- [] 1. add authentication and ownership checks for user order list/detail/payment/history endpoints under `user-orders`
-- [] 2. keep `GET /user-orders/market-making/strategies` public for frontend strategy selection
+- [x] 1. add authentication and ownership checks for user order list/detail/payment/history endpoints under `user-orders`
+- [x] 2. keep `GET /user-orders/market-making/strategies` public for frontend strategy selection
 
 ### Market-making Funding Lifecycle
 
