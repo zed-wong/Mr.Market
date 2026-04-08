@@ -14,12 +14,6 @@ export type SidebarMenuItem = {
 
 export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
   return [
-    // {
-    //   key: "dashboard",
-    //   labelKey: "dashboard",
-    //   value: "/manage",
-    //   icon: "dashboard",
-    // },
     {
       key: "settings",
       labelKey: "settings",
@@ -47,14 +41,14 @@ export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
           value: "/manage/settings/fees",
         },
         {
-          key: "strategies",
-          labelKey: "strategies",
-          value: "/manage/settings/strategies",
-        },
-        {
           key: "api-keys",
           labelKey: "api_keys",
           value: "/manage/settings/api-keys",
+        },
+        {
+          key: "strategies",
+          labelKey: "strategies",
+          value: "/manage/settings/strategies",
         },
         {
           key: "direct-market-making",
