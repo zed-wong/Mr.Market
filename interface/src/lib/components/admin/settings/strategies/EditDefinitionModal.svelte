@@ -1,0 +1,268 @@
+<script lang="ts">
+  import { _ } from "svelte-i18n";
+  import { toast } from "svelte-sonner";
+  import { updateStrategyDefinition } from "$lib/helpers/mrm/admin/strategy";
+  import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
+
+  export let show = false;
+  export let definition: StrategyDefinition | null = null;
+  export let isSubmitting = false;
+  export let onSuccess: () => void;
+  export let onClose: () => void;
+
+  let name = "";
+  let description = "";
+  let configSchema = "{}";
+  let defaultConfig = "{}";
+  let visibility = "system";
+  let createdBy = "";
+
+  let schemaError = false;
+  let defaultConfigError = false;
+
+  function validateJson(value: string): boolean {
+    try {
+      JSON.parse(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  $: if (definition) {
+    name = definition.name || "";
+    description = definition.description || "";
+    configSchema = JSON.stringify(definition.configSchema, null, 2);
+    defaultConfig = JSON.stringify(definition.defaultConfig, null, 2);
+    visibility = definition.visibility || "system";
+    createdBy = definition.createdBy || "";
+    schemaError = false;
+    defaultConfigError = false;
+  }
+
+  function handleClose() {
+    onClose();
+  }
+
+  async function handleSubmit() {
+    if (!definition) return;
+
+    schemaError = !validateJson(configSchema);
+    defaultConfigError = !validateJson(defaultConfig);
+
+    if (schemaError || defaultConfigError) {
+      toast.error($_("admin_strategy_invalid_json"));
+      return;
+    }
+
+    if (!name.trim()) {
+      toast.error($_("admin_strategy_required_fields"));
+      return;
+    }
+
+    isSubmitting = true;
+
+    try {
+      await updateStrategyDefinition(
+        definition.id,
+        {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          configSchema: JSON.parse(configSchema),
+          defaultConfig: JSON.parse(defaultConfig),
+          visibility,
+          createdBy: createdBy.trim() || undefined,
+        },
+        getToken(),
+      );
+
+      toast.success($_("admin_strategy_definition_updated"));
+      onSuccess();
+    } catch (error) {
+      toast.error($_("admin_strategy_update_failed"), {
+        description: String(error),
+      });
+    } finally {
+      isSubmitting = false;
+    }
+  }
+
+  function getToken(): string {
+    return localStorage.getItem("admin-access-token") || "";
+  }
+</script>
+
+<svelte:window on:keydown={(e) => show && e.key === "Escape" && handleClose()} />
+
+{#if show && definition}
+  <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
+    <div
+      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[520px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto no-scrollbar"
+    >
+      <!-- Header -->
+      <div class="px-7 pt-6 pb-4">
+        <div class="flex items-start justify-between">
+          <div
+            class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-5 h-5 text-primary"
+            >
+              <path d="m15.232 5.232 3.536 3.536m-2.036-5.036a2.5 2.5 0 1 1 3.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </div>
+          <button
+            class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
+            on:click={handleClose}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-5 h-5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <span class="text-xl font-bold text-base-content block mt-3"
+          >{$_("admin_strategy_edit_definition")}</span
+        >
+        <span class="text-sm text-base-content/50 block mt-1 font-mono bg-base-200/60 px-2 py-0.5 rounded inline-block">
+          {definition.key}
+        </span>
+      </div>
+
+      <!-- Form -->
+      <div class="px-7 pb-7 flex flex-col gap-4">
+        <!-- Name -->
+        <div class="bg-base-200/40 rounded-xl p-4">
+          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+            >{$_("admin_strategy_name")} *</span
+          >
+          <input
+            type="text"
+            class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+            bind:value={name}
+          />
+        </div>
+
+        <!-- Description -->
+        <div class="bg-base-200/40 rounded-xl p-4">
+          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+            >{$_("admin_strategy_description")}</span
+          >
+          <textarea
+            class="textarea textarea-bordered w-full bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 resize-none h-20"
+            bind:value={description}
+          ></textarea>
+        </div>
+
+        <!-- Config Schema (read-only) -->
+        <div class="bg-base-200/40 rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-base-content/50 tracking-wider"
+              >{$_("admin_strategy_config_schema")}</span
+            >
+            <span class="text-[10px] font-medium text-base-content/40 bg-base-300 px-2 py-0.5 rounded">{$_("admin_strategy_immutable")}</span>
+          </div>
+          <textarea
+            class="textarea textarea-bordered w-full bg-base-200 text-base-content/50 text-sm font-mono focus:outline-none border-base-300 resize-none h-28 cursor-not-allowed"
+            bind:value={configSchema}
+            readonly
+          ></textarea>
+        </div>
+
+        <!-- Default Config -->
+        <div class="bg-base-200/40 rounded-xl p-4">
+          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+            >{$_("admin_strategy_default_config")}</span
+          >
+          <textarea
+            class="textarea textarea-bordered w-full bg-base-100 text-base-content text-sm font-mono focus:outline-none focus:border-primary border-base-300 resize-none h-28
+              {defaultConfigError ? 'border-error' : ''}"
+            bind:value={defaultConfig}
+            on:change={() => (defaultConfigError = !validateJson(defaultConfig))}
+          ></textarea>
+          {#if defaultConfigError}
+            <span class="text-xs text-error mt-1 block">{$_("admin_strategy_invalid_json")}</span>
+          {/if}
+        </div>
+
+        <!-- Visibility + CreatedBy row -->
+        <div class="flex gap-3">
+          <div class="flex-1 bg-base-200/40 rounded-xl p-4">
+            <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+              >{$_("admin_strategy_visibility")}</span
+            >
+            <select
+              class="select select-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+              bind:value={visibility}
+            >
+              <option value="system">System</option>
+              <option value="public">Public</option>
+            </select>
+          </div>
+          <div class="flex-1 bg-base-200/40 rounded-xl p-4">
+            <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+              >{$_("admin_strategy_created_by")}</span
+            >
+            <input
+              type="text"
+              class="input input-bordered w-full h-10 min-h-[40px] bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
+              bind:value={createdBy}
+            />
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-3 justify-end mt-2">
+          <button
+            class="btn btn-ghost text-base-content font-semibold px-6"
+            on:click={handleClose}
+          >
+            {$_("admin_strategy_cancel")}
+          </button>
+          <button
+            class="btn btn-primary text-primary-content font-semibold px-6 gap-2"
+            on:click={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {#if isSubmitting}
+              <span class="loading loading-spinner loading-sm"></span>
+            {:else}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="2"
+                stroke="currentColor"
+                class="w-4 h-4"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+                />
+              </svg>
+            {/if}
+            {$_("admin_strategy_save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
