@@ -3,9 +3,9 @@ import 'dotenv/config';
 
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import helmet from 'helmet';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import * as encryption from './common/helpers/crypto';

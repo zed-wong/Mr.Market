@@ -96,10 +96,11 @@ export class OrderBookIngestionService implements OnModuleDestroy {
     pair: string,
   ): Promise<void> {
     try {
-      const orderBook = await this.exchangeConnectorAdapterService.fetchOrderBook(
-        exchange,
-        pair,
-      );
+      const orderBook =
+        await this.exchangeConnectorAdapterService.fetchOrderBook(
+          exchange,
+          pair,
+        );
       const bids = this.asBookLevels(orderBook?.bids);
       const asks = this.asBookLevels(orderBook?.asks);
 
@@ -114,7 +115,9 @@ export class OrderBookIngestionService implements OnModuleDestroy {
         asks,
         sequence: this.resolveSequence(orderBook),
       });
-      this.logger.log(`Seeded market-making order book snapshot ${exchange}:${pair}`);
+      this.logger.log(
+        `Seeded market-making order book snapshot ${exchange}:${pair}`,
+      );
     } catch (error) {
       this.logger.warn(
         `Failed to seed market-making order book for ${exchange} ${pair}: ${
@@ -125,7 +128,9 @@ export class OrderBookIngestionService implements OnModuleDestroy {
   }
 
   private resolveSequence(orderBook: any): number {
-    const sequence = Number(orderBook?.nonce ?? orderBook?.timestamp ?? Date.now());
+    const sequence = Number(
+      orderBook?.nonce ?? orderBook?.timestamp ?? Date.now(),
+    );
 
     return Number.isFinite(sequence) ? sequence : Date.now();
   }

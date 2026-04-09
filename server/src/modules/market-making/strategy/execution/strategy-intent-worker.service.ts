@@ -6,8 +6,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 

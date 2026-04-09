@@ -409,10 +409,11 @@ describe('StrategyIntentWorkerService', () => {
     await wait(40);
     await service.onModuleDestroy();
 
-    expect(strategyIntentStoreService.cancelPendingIntents).toHaveBeenCalledWith(
-      's1',
-      'strategy stopped before intent execution',
-    );
-    expect(strategyIntentExecutionService.consumeIntents).not.toHaveBeenCalled();
+    expect(
+      strategyIntentStoreService.cancelPendingIntents,
+    ).toHaveBeenCalledWith('s1', 'strategy stopped before intent execution');
+    expect(
+      strategyIntentExecutionService.consumeIntents,
+    ).not.toHaveBeenCalled();
   });
 });

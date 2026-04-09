@@ -508,7 +508,7 @@ describe('MarketMakingOrderProcessor', () => {
           bidSpread: 0.1,
           askSpread: 0.2,
           orderAmount: 10,
-            orderRefreshTime: 1000,
+          orderRefreshTime: 1000,
           numberOfLayers: 2,
         },
       },
@@ -679,7 +679,7 @@ describe('MarketMakingOrderProcessor', () => {
         marketMakingOrderId: 'order-1',
         exchangeName: 'binance',
         bidSpread: 0.002,
-          orderRefreshTime: 1000,
+        orderRefreshTime: 1000,
       }),
     );
     expect(marketMakingRepository.save).toHaveBeenCalledWith(

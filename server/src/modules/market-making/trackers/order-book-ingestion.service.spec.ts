@@ -1,6 +1,6 @@
 import { MarketdataService } from '../../data/market-data/market-data.service';
-import { OrderBookTrackerService } from './order-book-tracker.service';
 import { OrderBookIngestionService } from './order-book-ingestion.service';
+import { OrderBookTrackerService } from './order-book-tracker.service';
 
 describe('OrderBookIngestionService', () => {
   it('subscribes once per exchange pair and forwards snapshots to the tracker', () => {

@@ -414,9 +414,9 @@ describe('StrategyIntentStoreService', () => {
         )
         .map((row) => row.status),
     ).toEqual(['CANCELLED', 'CANCELLED', 'CANCELLED']);
-    expect(
-      rows.find((row) => row.intentId === 'intent-failed')?.status,
-    ).toBe('FAILED');
+    expect(rows.find((row) => row.intentId === 'intent-failed')?.status).toBe(
+      'FAILED',
+    );
     expect(rows.find((row) => row.intentId === 'intent-done')?.status).toBe(
       'DONE',
     );

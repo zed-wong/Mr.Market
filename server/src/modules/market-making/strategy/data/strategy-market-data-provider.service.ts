@@ -64,8 +64,7 @@ export class StrategyMarketDataProviderService {
     pair: string,
     priceSourceType: PriceSourceType,
   ): Promise<number> {
-    const allowTickerFallback =
-      priceSourceType === PriceSourceType.LAST_PRICE;
+    const allowTickerFallback = priceSourceType === PriceSourceType.LAST_PRICE;
     const tracked = this.orderBookTrackerService.getOrderBook(
       exchangeName,
       pair,
