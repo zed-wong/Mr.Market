@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   Injectable,
+  OnApplicationShutdown,
   OnModuleDestroy,
   OnModuleInit,
   Optional,
@@ -19,10 +20,14 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
+import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
-import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
+import {
+  ExchangeOrderTrackerService,
+  TrackedOrder,
+} from '../trackers/exchange-order-tracker.service';
 import { OrderBookIngestionService } from '../trackers/order-book-ingestion.service';
 import { PrivateStreamIngestionService } from '../trackers/private-stream-ingestion.service';
 import { ExecutorAction } from './config/executor-action.types';
@@ -95,7 +100,11 @@ type ConnectorHealthStatus = 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED';
 
 @Injectable()
 export class StrategyService
-  implements TickComponent, OnModuleInit, OnModuleDestroy
+  implements
+    TickComponent,
+    OnModuleInit,
+    OnModuleDestroy,
+    OnApplicationShutdown
 {
   private readonly logger = new CustomLogger(StrategyService.name);
   private readonly sessions = new Map<string, StrategyRuntimeSession>();
@@ -140,6 +149,8 @@ export class StrategyService
     private readonly balanceLedgerService?: BalanceLedgerService,
     @Optional()
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
+    @Optional()
+    private readonly exchangeOrderMappingService?: ExchangeOrderMappingService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -155,6 +166,7 @@ export class StrategyService
     const nowMs = Date.now();
 
     for (const strategy of runningStrategies) {
+      await this.restoreRuntimeStateForStrategy(strategy);
       await this.upsertSession(
         strategy.strategyKey,
         strategy.strategyType as StrategyType,
@@ -173,12 +185,13 @@ export class StrategyService
   }
 
   async stop(): Promise<void> {
-    for (const session of [...this.sessions.values()]) {
-      await this.detachSessionFromExecutor(session);
-    }
-
+    await this.cancelAllRunningStrategies('service stop');
     this.sessions.clear();
     this.executorRegistry?.clear();
+  }
+
+  async onApplicationShutdown(signal?: string): Promise<void> {
+    await this.cancelAllRunningStrategies(signal || 'shutdown');
   }
 
   async health(): Promise<boolean> {
@@ -1160,6 +1173,10 @@ export class StrategyService
       ? params.oracleExchangeName
       : params.exchangeName;
 
+    if (await this.shouldTriggerKillSwitch(strategyKey, params)) {
+      return [];
+    }
+
     if (this.getConnectorHealthStatus(params.exchangeName) !== 'CONNECTED') {
       return [];
     }
@@ -2028,9 +2045,9 @@ export class StrategyService
 
   private async cancelTrackedOrdersForStrategy(
     strategyKey: string,
+    timeoutMs = 10_000,
   ): Promise<void> {
-    const openOrders =
-      this.exchangeOrderTrackerService?.getOpenOrders(strategyKey) || [];
+    const openOrders = this.getCancelableTrackedOrders(strategyKey);
 
     await Promise.all(
       openOrders.map(async (order) => {
@@ -2064,6 +2081,8 @@ export class StrategyService
         }
       }),
     );
+
+    await this.waitForTrackedOrdersToSettle(strategyKey, timeoutMs);
   }
 
   private async detachSessionFromExecutor(
@@ -2261,6 +2280,7 @@ export class StrategyService
     }
 
     await this.applyFillToBalanceLedger(session, fill);
+    this.recordSessionPnL(session, fill);
 
     session.lastFillTimestamp = Date.now();
     const delayMs = Number(
@@ -2559,6 +2579,518 @@ export class StrategyService
         mixinOrderId: order.exchangeOrderId,
         createdAt: ts,
       }));
+  }
+
+  private async restoreRuntimeStateForStrategy(
+    strategy: StrategyInstance,
+  ): Promise<void> {
+    if (
+      strategy.strategyType !== 'pureMarketMaking' ||
+      !this.exchangeConnectorAdapterService
+    ) {
+      return;
+    }
+
+    const params = strategy.parameters as PureMarketMakingStrategyDto;
+    const exchange = this.readString(params.exchangeName);
+    const pair = this.readString(params.pair);
+
+    if (!exchange || !pair) {
+      return;
+    }
+
+    let openOrders: any[] = [];
+
+    try {
+      openOrders = await this.exchangeConnectorAdapterService.fetchOpenOrders(
+        exchange,
+        pair,
+      );
+    } catch (error) {
+      const { message } = this.toErrorDetails(error);
+
+      this.logger.warn(
+        `Startup reconciliation skipped for ${strategy.strategyKey}: fetchOpenOrders failed (${message})`,
+      );
+
+      return;
+    }
+
+    const trackedOrders =
+      (((this.exchangeOrderTrackerService as any)?.getTrackedOrders?.(
+        strategy.strategyKey,
+      ) as TrackedOrder[]) ||
+        []) as TrackedOrder[];
+    const trackedByExchangeOrderId = new Map(
+      trackedOrders.map((order) => [order.exchangeOrderId, order]),
+    );
+    const seenOpenExchangeOrderIds = new Set<string>();
+
+    for (const openOrder of openOrders) {
+      const exchangeOrderId = this.readString(openOrder?.id);
+      const clientOrderId = this.readString(
+        openOrder?.clientOrderId || openOrder?.clientOid,
+      );
+
+      if (!exchangeOrderId) {
+        continue;
+      }
+
+      seenOpenExchangeOrderIds.add(exchangeOrderId);
+
+      const trackedOrder = trackedByExchangeOrderId.get(exchangeOrderId);
+
+      if (trackedOrder) {
+        this.exchangeOrderTrackerService?.upsertOrder({
+          ...trackedOrder,
+          clientOrderId: clientOrderId || trackedOrder.clientOrderId,
+          price: this.readString(openOrder?.price, trackedOrder.price),
+          qty: this.readString(
+            openOrder?.amount || openOrder?.qty,
+            trackedOrder.qty,
+          ),
+          cumulativeFilledQty: this.readString(
+            openOrder?.filled,
+            trackedOrder.cumulativeFilledQty || '0',
+          ),
+          status:
+            this.normalizeExchangeOrderStatus(openOrder?.status) ||
+            trackedOrder.status,
+          updatedAt: getRFC3339Timestamp(),
+        });
+        continue;
+      }
+
+      if (
+        !(await this.isOrderOwnedByStrategy(
+          strategy,
+          clientOrderId,
+          exchangeOrderId,
+        ))
+      ) {
+        continue;
+      }
+
+      await this.cancelRecoveredExchangeOrder(
+        strategy,
+        exchange,
+        pair,
+        exchangeOrderId,
+        clientOrderId,
+        openOrder,
+      );
+    }
+
+    for (const trackedOrder of trackedOrders) {
+      if (
+        this.isTrackedOrderTerminal(trackedOrder.status) ||
+        seenOpenExchangeOrderIds.has(trackedOrder.exchangeOrderId)
+      ) {
+        continue;
+      }
+
+      try {
+        const latest = await this.exchangeConnectorAdapterService.fetchOrder(
+          trackedOrder.exchange,
+          trackedOrder.pair,
+          trackedOrder.exchangeOrderId,
+        );
+
+        if (!latest) {
+          continue;
+        }
+
+        this.exchangeOrderTrackerService?.upsertOrder({
+          ...trackedOrder,
+          clientOrderId:
+            this.readString(latest?.clientOrderId || latest?.clientOid) ||
+            trackedOrder.clientOrderId,
+          price: this.readString(latest?.price, trackedOrder.price),
+          qty: this.readString(
+            latest?.amount || latest?.qty,
+            trackedOrder.qty,
+          ),
+          cumulativeFilledQty: this.readString(
+            latest?.filled,
+            trackedOrder.cumulativeFilledQty || '0',
+          ),
+          status:
+            this.normalizeExchangeOrderStatus(latest?.status) ||
+            trackedOrder.status,
+          updatedAt: getRFC3339Timestamp(),
+        });
+      } catch (error) {
+        const { message } = this.toErrorDetails(error);
+
+        this.logger.warn(
+          `Startup fetchOrder reconciliation skipped for ${trackedOrder.exchangeOrderId}: ${message}`,
+        );
+      }
+    }
+  }
+
+  private async cancelAllRunningStrategies(reason: string): Promise<void> {
+    for (const session of [...this.sessions.values()]) {
+      await this.strategyInstanceRepository.update(
+        { strategyKey: session.strategyKey },
+        { status: 'stopped', updatedAt: new Date() },
+      );
+
+      if (session.strategyType === 'pureMarketMaking') {
+        await this.cancelTrackedOrdersForStrategy(session.strategyKey);
+      }
+
+      await this.strategyIntentStoreService?.cancelPendingIntents(
+        session.strategyKey,
+        `strategy stopped during ${reason}`,
+      );
+      await this.detachSessionFromExecutor(session);
+    }
+  }
+
+  private getCancelableTrackedOrders(strategyKey: string): TrackedOrder[] {
+    const trackedOrders =
+      ((this.exchangeOrderTrackerService as any)?.getTrackedOrders?.(
+        strategyKey,
+      ) as TrackedOrder[]) ||
+      this.exchangeOrderTrackerService?.getOpenOrders(strategyKey) ||
+      [];
+
+    return trackedOrders.filter(
+      (order) =>
+        order?.exchangeOrderId &&
+        !this.isTrackedOrderTerminal(String(order.status || '')),
+    );
+  }
+
+  private async waitForTrackedOrdersToSettle(
+    strategyKey: string,
+    timeoutMs: number,
+  ): Promise<void> {
+    if (
+      !this.exchangeOrderTrackerService ||
+      !this.exchangeConnectorAdapterService ||
+      timeoutMs <= 0
+    ) {
+      return;
+    }
+
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const pendingOrders = this.getCancelableTrackedOrders(strategyKey);
+
+      if (pendingOrders.length === 0) {
+        return;
+      }
+
+      await Promise.all(
+        pendingOrders.map(async (order) => {
+          try {
+            const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
+              order.exchange,
+              order.pair,
+              order.exchangeOrderId,
+            );
+
+            if (!latest) {
+              return;
+            }
+
+            this.exchangeOrderTrackerService?.upsertOrder({
+              ...order,
+              clientOrderId:
+                this.readString(latest?.clientOrderId || latest?.clientOid) ||
+                order.clientOrderId,
+              cumulativeFilledQty: this.readString(
+                latest?.filled,
+                order.cumulativeFilledQty || '0',
+              ),
+              status:
+                this.normalizeExchangeOrderStatus(latest?.status) ||
+                order.status,
+              updatedAt: getRFC3339Timestamp(),
+            });
+          } catch {
+            return;
+          }
+        }),
+      );
+
+      await this.sleep(200);
+    }
+  }
+
+  private async shouldTriggerKillSwitch(
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+  ): Promise<boolean> {
+    const threshold = params.killSwitchThreshold;
+    const session = this.sessions.get(strategyKey);
+
+    if (threshold === undefined || threshold === null || !session) {
+      return false;
+    }
+
+    const realizedPnl = Number(session.realizedPnlQuote || 0);
+
+    if (!Number.isFinite(realizedPnl)) {
+      return false;
+    }
+
+    const parsedAbsolute = this.parseKillSwitchAbsoluteThreshold(threshold);
+    const parsedPercent = this.parseKillSwitchPercentThreshold(threshold);
+
+    const hitAbsolute =
+      parsedAbsolute !== null && realizedPnl <= parsedAbsolute.negated().toNumber();
+    const hitPercent =
+      parsedPercent !== null &&
+      Number(session.tradedQuoteVolume || 0) > 0 &&
+      Math.abs(realizedPnl) / Number(session.tradedQuoteVolume || 0) >=
+        parsedPercent &&
+      realizedPnl < 0;
+
+    if (!hitAbsolute && !hitPercent) {
+      return false;
+    }
+
+    this.logger.warn(
+      `Kill switch triggered for ${strategyKey}: realizedPnl=${realizedPnl} threshold=${String(
+        threshold,
+      )}`,
+    );
+    await this.stopStrategyForUser(
+      session.userId,
+      session.clientId,
+      session.strategyType,
+    );
+
+    return true;
+  }
+
+  private recordSessionPnL(
+    session: StrategyRuntimeSession,
+    fill: {
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+    },
+  ): void {
+    if (!fill.side || !fill.price || !fill.qty) {
+      return;
+    }
+
+    const price = new BigNumber(fill.price);
+    const qty = new BigNumber(fill.qty);
+
+    if (
+      !price.isFinite() ||
+      !qty.isFinite() ||
+      price.isLessThanOrEqualTo(0) ||
+      qty.isLessThanOrEqualTo(0)
+    ) {
+      return;
+    }
+
+    const currentInventoryQty = new BigNumber(session.inventoryBaseQty || 0);
+    const currentInventoryCost = new BigNumber(session.inventoryCostQuote || 0);
+    const currentRealizedPnl = new BigNumber(session.realizedPnlQuote || 0);
+    const currentTradedVolume = new BigNumber(session.tradedQuoteVolume || 0);
+    const fillNotional = price.multipliedBy(qty);
+
+    let nextInventoryQty = currentInventoryQty;
+    let nextInventoryCost = currentInventoryCost;
+    let nextRealizedPnl = currentRealizedPnl;
+
+    if (fill.side === 'buy') {
+      nextInventoryQty = currentInventoryQty.plus(qty);
+      nextInventoryCost = currentInventoryCost.plus(fillNotional);
+    } else {
+      const matchedQty = BigNumber.min(qty, currentInventoryQty);
+
+      if (matchedQty.isGreaterThan(0) && currentInventoryQty.isGreaterThan(0)) {
+        const averageCost = currentInventoryCost.dividedBy(currentInventoryQty);
+        const matchedCost = averageCost.multipliedBy(matchedQty);
+        const matchedProceeds = price.multipliedBy(matchedQty);
+
+        nextRealizedPnl = nextRealizedPnl.plus(matchedProceeds.minus(matchedCost));
+        nextInventoryQty = currentInventoryQty.minus(matchedQty);
+        nextInventoryCost = BigNumber.max(
+          currentInventoryCost.minus(matchedCost),
+          0,
+        );
+      }
+    }
+
+    session.inventoryBaseQty = nextInventoryQty.toNumber();
+    session.inventoryCostQuote = nextInventoryCost.toNumber();
+    session.realizedPnlQuote = nextRealizedPnl.toNumber();
+    session.tradedQuoteVolume = currentTradedVolume.plus(fillNotional).toNumber();
+    session.params = {
+      ...session.params,
+      inventoryBaseQty: session.inventoryBaseQty,
+      inventoryCostQuote: session.inventoryCostQuote,
+      realizedPnlQuote: session.realizedPnlQuote,
+      tradedQuoteVolume: session.tradedQuoteVolume,
+    };
+  }
+
+  private async isOrderOwnedByStrategy(
+    strategy: StrategyInstance,
+    clientOrderId: string,
+    exchangeOrderId: string,
+  ): Promise<boolean> {
+    const strategyOrderId = this.readString(
+      strategy.marketMakingOrderId,
+      strategy.clientId,
+    );
+
+    if (!strategyOrderId || !this.exchangeOrderMappingService) {
+      return false;
+    }
+
+    if (clientOrderId) {
+      const byClientOrderId =
+        await this.exchangeOrderMappingService.findByClientOrderId(
+          clientOrderId,
+        );
+
+      if (byClientOrderId?.orderId === strategyOrderId) {
+        return true;
+      }
+    }
+
+    if (exchangeOrderId) {
+      const byExchangeOrderId =
+        await this.exchangeOrderMappingService.findByExchangeOrderId(
+          exchangeOrderId,
+        );
+
+      if (byExchangeOrderId?.orderId === strategyOrderId) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async cancelRecoveredExchangeOrder(
+    strategy: StrategyInstance,
+    exchange: string,
+    pair: string,
+    exchangeOrderId: string,
+    clientOrderId: string,
+    openOrder: Record<string, any>,
+  ): Promise<void> {
+    try {
+      const result = await this.exchangeConnectorAdapterService?.cancelOrder(
+        exchange,
+        pair,
+        exchangeOrderId,
+      );
+      const nextStatus =
+        this.normalizeExchangeOrderStatus(result?.status) || 'pending_cancel';
+
+      this.exchangeOrderTrackerService?.upsertOrder({
+        orderId: this.readString(strategy.marketMakingOrderId, strategy.clientId),
+        strategyKey: strategy.strategyKey,
+        exchange,
+        pair,
+        exchangeOrderId,
+        clientOrderId: clientOrderId || undefined,
+        side: openOrder?.side === 'sell' ? 'sell' : 'buy',
+        price: this.readString(openOrder?.price, '0'),
+        qty: this.readString(openOrder?.amount || openOrder?.qty, '0'),
+        cumulativeFilledQty: this.readString(openOrder?.filled, '0'),
+        status: nextStatus,
+        createdAt: getRFC3339Timestamp(),
+        updatedAt: getRFC3339Timestamp(),
+      });
+    } catch (error) {
+      const { message } = this.toErrorDetails(error);
+
+      this.logger.warn(
+        `Failed startup orphan cleanup for ${strategy.strategyKey}:${exchangeOrderId}: ${message}`,
+      );
+    }
+  }
+
+  private isTrackedOrderTerminal(status: string): boolean {
+    return ['filled', 'cancelled', 'failed'].includes(
+      String(status || '').toLowerCase(),
+    );
+  }
+
+  private normalizeExchangeOrderStatus(
+    status: unknown,
+  ): TrackedOrder['status'] | null {
+    const normalized = String(status || '').trim().toLowerCase();
+
+    if (!normalized) {
+      return null;
+    }
+    if (normalized === 'open' || normalized === 'new') {
+      return 'open';
+    }
+    if (
+      normalized === 'partially_filled' ||
+      normalized === 'partially-filled'
+    ) {
+      return 'partially_filled';
+    }
+    if (normalized === 'pending_cancel') {
+      return 'pending_cancel';
+    }
+    if (normalized === 'closed' || normalized === 'filled') {
+      return 'filled';
+    }
+    if (normalized === 'canceled' || normalized === 'cancelled') {
+      return 'cancelled';
+    }
+
+    return 'failed';
+  }
+
+  private parseKillSwitchAbsoluteThreshold(
+    threshold: number | string,
+  ): BigNumber | null {
+    if (typeof threshold === 'string' && threshold.trim().endsWith('%')) {
+      return null;
+    }
+
+    const parsed = new BigNumber(threshold);
+
+    if (!parsed.isFinite() || parsed.isLessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  private parseKillSwitchPercentThreshold(
+    threshold: number | string,
+  ): number | null {
+    if (typeof threshold !== 'string') {
+      return null;
+    }
+
+    const trimmed = threshold.trim();
+
+    if (!trimmed.endsWith('%')) {
+      return null;
+    }
+
+    const parsed = Number(trimmed.slice(0, -1));
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+
+    return parsed / 100;
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private isWithinTimeWindow(params: TimeIndicatorStrategyDto): boolean {

@@ -227,6 +227,13 @@ export class PureMarketMakingStrategyDto {
     example: 0.02,
   })
   hangingOrdersCancelPct?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Stop the strategy when realized loss breaches this threshold. Use a positive absolute quote value or a percentage string like "5%".',
+    example: '5%',
+  })
+  killSwitchThreshold?: number | string;
 }
 export class ExecuteVolumeStrategyDto {
   @ApiPropertyOptional({

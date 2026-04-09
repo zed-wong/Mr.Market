@@ -110,6 +110,22 @@ export class ExchangePairExecutor {
         typeof config.params?.lastFillTimestamp === 'number'
           ? config.params.lastFillTimestamp
           : undefined,
+      realizedPnlQuote:
+        typeof config.params?.realizedPnlQuote === 'number'
+          ? config.params.realizedPnlQuote
+          : 0,
+      tradedQuoteVolume:
+        typeof config.params?.tradedQuoteVolume === 'number'
+          ? config.params.tradedQuoteVolume
+          : 0,
+      inventoryBaseQty:
+        typeof config.params?.inventoryBaseQty === 'number'
+          ? config.params.inventoryBaseQty
+          : 0,
+      inventoryCostQuote:
+        typeof config.params?.inventoryCostQuote === 'number'
+          ? config.params.inventoryCostQuote
+          : 0,
       params: config.params || {},
     };
 

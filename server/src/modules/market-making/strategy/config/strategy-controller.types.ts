@@ -19,6 +19,10 @@ export type StrategyRuntimeSession = {
   cadenceMs: number;
   nextRunAtMs: number;
   lastFillTimestamp?: number;
+  realizedPnlQuote?: number;
+  tradedQuoteVolume?: number;
+  inventoryBaseQty?: number;
+  inventoryCostQuote?: number;
   params: Record<string, unknown>;
 };
 

@@ -7,6 +7,7 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
+import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { PerformanceService } from '../performance/performance.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
@@ -52,6 +53,7 @@ describe('StrategyService', () => {
   };
   let exchangeOrderTrackerService: {
     getOpenOrders: jest.Mock;
+    getTrackedOrders: jest.Mock;
     upsertOrder: jest.Mock;
   };
   let strategyMarketDataProviderService: {
@@ -63,6 +65,12 @@ describe('StrategyService', () => {
     loadTradingRules: jest.Mock;
     fetchBalance: jest.Mock;
     cancelOrder: jest.Mock;
+    fetchOpenOrders: jest.Mock;
+    fetchOrder: jest.Mock;
+  };
+  let exchangeOrderMappingService: {
+    findByClientOrderId: jest.Mock;
+    findByExchangeOrderId: jest.Mock;
   };
 
   const mockStrategyInstanceRepository = {
@@ -120,6 +128,7 @@ describe('StrategyService', () => {
     };
     exchangeOrderTrackerService = {
       getOpenOrders: jest.fn().mockReturnValue([]),
+      getTrackedOrders: jest.fn().mockReturnValue([]),
       upsertOrder: jest.fn(),
     };
     strategyIntentStoreService = {
@@ -147,6 +156,12 @@ describe('StrategyService', () => {
         free: { BTC: 10, USDT: 1000 },
       }),
       cancelOrder: jest.fn().mockResolvedValue({ status: 'cancelled' }),
+      fetchOpenOrders: jest.fn().mockResolvedValue([]),
+      fetchOrder: jest.fn().mockResolvedValue(null),
+    };
+    exchangeOrderMappingService = {
+      findByClientOrderId: jest.fn().mockResolvedValue(null),
+      findByExchangeOrderId: jest.fn().mockResolvedValue(null),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -187,6 +202,10 @@ describe('StrategyService', () => {
           provide: ExchangeConnectorAdapterService,
           useValue: exchangeConnectorAdapterService,
         },
+        {
+          provide: ExchangeOrderMappingService,
+          useValue: exchangeOrderMappingService,
+        },
         ExecutorRegistry,
         { provide: ConfigService, useValue: { get: jest.fn() } },
         {
@@ -225,6 +244,102 @@ describe('StrategyService', () => {
 
     await service.executePureMarketMakingStrategy(strategyParamsDto);
     await service.executeMMCycle(strategyParamsDto);
+  });
+
+  it('restores tracked PMM orders and cancels orphan exchange orders on startup', async () => {
+    const strategy = {
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      parameters: {
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+    };
+
+    mockStrategyInstanceRepository.find.mockResolvedValue([strategy]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'order-1',
+        strategyKey: strategy.strategyKey,
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'ex-known',
+        clientOrderId: 'mm-known',
+        side: 'buy',
+        price: '99',
+        qty: '1',
+        cumulativeFilledQty: '0',
+        status: 'pending_create',
+        createdAt: '2026-04-09T00:00:00.000Z',
+        updatedAt: '2026-04-09T00:00:00.000Z',
+      },
+    ]);
+    exchangeConnectorAdapterService.fetchOpenOrders.mockResolvedValue([
+      {
+        id: 'ex-known',
+        clientOrderId: 'mm-known',
+        status: 'open',
+        side: 'buy',
+        price: '99',
+        amount: '1',
+        filled: '0',
+      },
+      {
+        id: 'ex-orphan',
+        clientOrderId: 'mm-orphan',
+        status: 'open',
+        side: 'sell',
+        price: '101',
+        amount: '1',
+        filled: '0',
+      },
+    ]);
+    exchangeOrderMappingService.findByClientOrderId.mockImplementation(
+      async (clientOrderId: string) =>
+        clientOrderId === 'mm-orphan' ? { orderId: 'order-1' } : null,
+    );
+    jest.spyOn(service, 'getCadenceMs').mockReturnValue(1000);
+    jest.spyOn(service as any, 'upsertSession').mockResolvedValue({
+      strategyKey: strategy.strategyKey,
+    });
+
+    await service.start();
+
+    expect(exchangeConnectorAdapterService.fetchOpenOrders).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'ex-orphan',
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-known',
+        status: 'open',
+      }),
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-orphan',
+        status: 'cancelled',
+      }),
+    );
   });
 
   it('registers pure market making runtime in pooled executor registry', async () => {
@@ -659,6 +774,56 @@ describe('StrategyService', () => {
     expect(intents).toEqual([]);
   });
 
+  it('cancels tracked orders for active sessions during application shutdown', async () => {
+    (service as any).sessions.set('order-1-pureMarketMaking', {
+      runId: 'run-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+      },
+    });
+    exchangeOrderTrackerService.getTrackedOrders
+      .mockReturnValueOnce([
+        {
+          orderId: 'order-1',
+          strategyKey: 'order-1-pureMarketMaking',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'ex-open',
+          side: 'buy',
+          price: '99',
+          qty: '1',
+          status: 'open',
+          createdAt: '2026-04-09T00:00:00.000Z',
+          updatedAt: '2026-04-09T00:00:00.000Z',
+        },
+      ])
+      .mockReturnValue([]);
+
+    await service.onApplicationShutdown('SIGTERM');
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'order-1-pureMarketMaking' },
+      expect.objectContaining({ status: 'stopped' }),
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'ex-open',
+    );
+    expect(strategyIntentStoreService.cancelPendingIntents).toHaveBeenCalledWith(
+      'order-1-pureMarketMaking',
+      expect.stringContaining('SIGTERM'),
+    );
+  });
+
   it('removes pooled executor session when stopping a strategy', async () => {
     const strategyParamsDto: PureMarketMakingStrategyDto = {
       userId: '1',
@@ -686,21 +851,23 @@ describe('StrategyService', () => {
   });
 
   it('cancels tracked open orders during stop', async () => {
-    exchangeOrderTrackerService.getOpenOrders.mockReturnValue([
-      {
-        orderId: 'client1',
-        strategyKey: 'client1-pureMarketMaking',
-        exchange: 'bitfinex',
-        pair: 'BTC/USDT',
-        exchangeOrderId: 'ex-1',
-        side: 'buy',
-        price: '100',
-        qty: '1',
-        status: 'open',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-      },
-    ]);
+    const trackedOrder = {
+      orderId: 'client1',
+      strategyKey: 'client1-pureMarketMaking',
+      exchange: 'bitfinex',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    exchangeOrderTrackerService.getOpenOrders.mockReturnValue([trackedOrder]);
+    exchangeOrderTrackerService.getTrackedOrders
+      .mockReturnValueOnce([trackedOrder])
+      .mockReturnValue([]);
 
     await service.stopStrategyForUser('1', 'client1', 'pureMarketMaking');
 
@@ -1821,6 +1988,65 @@ describe('StrategyService', () => {
         '2026-03-11T00:00:00.000Z',
       ),
     ).resolves.toHaveLength(1);
+  });
+
+  it('triggers the PMM kill switch and stops the strategy when realized loss breaches the threshold', async () => {
+    (service as any).sessions.set('order-1-pureMarketMaking', {
+      runId: 'run-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      realizedPnlQuote: -25,
+      tradedQuoteVolume: 100,
+      params: {
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+      },
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+          killSwitchThreshold: 10,
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'order-1-pureMarketMaking' },
+      expect.objectContaining({ status: 'stopped' }),
+    );
+    expect(strategyIntentStoreService.cancelPendingIntents).toHaveBeenCalledWith(
+      'order-1-pureMarketMaking',
+      'strategy stopped before intent execution',
+    );
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
+      'order-1-pureMarketMaking',
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'STOP_CONTROLLER',
+        }),
+      ]),
+    );
   });
 
   it('emits cancel actions for stale or far-drifted PMM orders', async () => {
