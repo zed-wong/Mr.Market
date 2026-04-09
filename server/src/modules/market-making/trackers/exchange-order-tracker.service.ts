@@ -153,7 +153,9 @@ export class ExchangeOrderTrackerService
     return [...this.orders.values()].filter(
       (order) =>
         order.strategyKey === strategyKey &&
-        (order.status === 'open' || order.status === 'partially_filled'),
+        (order.status === 'pending_create' ||
+          order.status === 'open' ||
+          order.status === 'partially_filled'),
     );
   }
 

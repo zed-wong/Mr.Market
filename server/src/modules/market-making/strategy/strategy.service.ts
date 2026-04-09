@@ -1512,6 +1512,28 @@ export class StrategyService
         continue;
       }
 
+      if (currentSideOrders.length > 0) {
+        const cancelActions = currentSideOrders
+          .filter((order) => order.status !== 'pending_create')
+          .map((order, index) => ({
+            type: 'CANCEL_ORDER' as const,
+            intentId: `${strategyKey}:${ts}:refresh-cancel-${side}-${index}`,
+            strategyInstanceId: strategyKey,
+            strategyKey,
+            userId: params.userId,
+            clientId: params.clientId,
+            exchange: params.exchangeName,
+            pair: params.pair,
+            side: order.side,
+            price: order.price,
+            qty: order.qty,
+            mixinOrderId: order.exchangeOrderId,
+            createdAt: ts,
+          }));
+
+        actions.push(...cancelActions);
+      }
+
       actions.push(...sideActions);
     }
 

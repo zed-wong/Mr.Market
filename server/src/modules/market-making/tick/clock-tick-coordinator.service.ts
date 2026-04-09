@@ -72,6 +72,10 @@ export class ClockTickCoordinatorService
       this.intervalId = undefined;
     }
 
+    while (this.tickInProgress) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
     for (const item of [...this.getSortedComponents()].reverse()) {
       await item.component.stop();
     }
@@ -91,6 +95,11 @@ export class ClockTickCoordinatorService
 
     try {
       for (const item of this.getSortedComponents()) {
+        if (!this.running) {
+          this.logger.log('Tick aborted: coordinator stopped mid-tick');
+          break;
+        }
+
         const isHealthy = await item.component.health();
 
         if (!isHealthy) {
