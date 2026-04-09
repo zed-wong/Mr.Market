@@ -1,8 +1,9 @@
 import { BullModule } from '@nestjs/bull';
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as dotenv from 'dotenv';
 import { join } from 'path';
@@ -32,6 +33,7 @@ import { Performance } from './common/entities/market-making/performance.entity'
 import { StrategyDefinition } from './common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from './common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from './common/entities/market-making/strategy-instances.entity';
+import { TrackedOrderEntity } from './common/entities/market-making/tracked-order.entity';
 import { StrategyOrderIntentEntity } from './common/entities/market-making/strategy-order-intent.entity';
 import {
   MixinReleaseHistory,
@@ -153,6 +155,7 @@ function buildRedisConfig(configService: ConfigService) {
         HufiScoreSnapshot,
         StrategyOrderIntentEntity,
         ExchangeOrderMapping,
+        TrackedOrderEntity,
       ],
       synchronize: false,
       migrations: [join(__dirname, 'database/migrations/*{.ts,.js}')],
@@ -195,6 +198,12 @@ function buildRedisConfig(configService: ConfigService) {
     }),
   ],
   controllers: [AppController, AdminController],
-  providers: [CustomLogger],
+  providers: [
+    CustomLogger,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

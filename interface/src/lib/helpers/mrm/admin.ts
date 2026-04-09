@@ -1,4 +1,3 @@
-import { createHash } from "crypto";
 import { goto } from "$app/navigation";
 import { MRM_BACKEND_URL } from "../constants"
 import type { AdminPasswordResp } from "$lib/types/hufi/admin"
@@ -40,24 +39,15 @@ export const checkPassword = async (pass: string): Promise<string> => {
 }
 
 export const autoCheckPassword = async (path: string = '/manage/settings'): Promise<boolean> => {
-  const pass = localStorage.getItem('admin-password')
-  if (!pass) {
+  const accessToken = localStorage.getItem('admin-access-token')
+  if (!accessToken) {
     return false
-  }
-  const hashedAdminPassword = createHash("sha256").update(pass).digest("hex");
-  const accessToken = await checkPassword(hashedAdminPassword);
-  if (accessToken) {
-    submitted.set(true);
-    checked.set(true);
-    correct.set(true);
-    localStorage.setItem("admin-access-token", accessToken);
-    goto(path);
-    return true;
   }
   submitted.set(true);
   checked.set(true);
-  correct.set(false);
-  return false;
+  correct.set(true);
+  goto(path);
+  return true;
 }
 
 export const exit = () => {
