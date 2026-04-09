@@ -1,7 +1,7 @@
 import { BullModule } from '@nestjs/bull';
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -33,8 +33,8 @@ import { Performance } from './common/entities/market-making/performance.entity'
 import { StrategyDefinition } from './common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from './common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from './common/entities/market-making/strategy-instances.entity';
-import { TrackedOrderEntity } from './common/entities/market-making/tracked-order.entity';
 import { StrategyOrderIntentEntity } from './common/entities/market-making/strategy-order-intent.entity';
+import { TrackedOrderEntity } from './common/entities/market-making/tracked-order.entity';
 import {
   MixinReleaseHistory,
   MixinReleaseToken,

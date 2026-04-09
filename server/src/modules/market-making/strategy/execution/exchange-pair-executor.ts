@@ -106,6 +106,10 @@ export class ExchangePairExecutor {
       marketMakingOrderId: config.marketMakingOrderId ?? orderId,
       cadenceMs: Math.max(0, Number(config.cadenceMs || 0)),
       nextRunAtMs: config.nextRunAtMs ?? Date.now(),
+      lastFillTimestamp:
+        typeof config.params?.lastFillTimestamp === 'number'
+          ? config.params.lastFillTimestamp
+          : undefined,
       params: config.params || {},
     };
 

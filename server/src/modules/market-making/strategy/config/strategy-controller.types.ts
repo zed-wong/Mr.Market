@@ -18,6 +18,7 @@ export type StrategyRuntimeSession = {
   marketMakingOrderId?: string;
   cadenceMs: number;
   nextRunAtMs: number;
+  lastFillTimestamp?: number;
   params: Record<string, unknown>;
 };
 

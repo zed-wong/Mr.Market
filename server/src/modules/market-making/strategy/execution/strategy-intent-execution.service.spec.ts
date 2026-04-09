@@ -23,6 +23,8 @@ describe('StrategyIntentExecutionService', () => {
 
   const exchangeOrderTrackerService = {
     upsertOrder: jest.fn(),
+    getTrackedOrders: jest.fn().mockReturnValue([]),
+    getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
   };
 
   const exchangeOrderMappingService = {
@@ -145,6 +147,7 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('c1', 0),
+      { postOnly: false },
     );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       baseIntent.intentId,
@@ -171,7 +174,76 @@ describe('StrategyIntentExecutionService', () => {
       expect.objectContaining({
         exchangeOrderId: 'order-1',
         clientOrderId: buildSubmittedClientOrderId('c1', 0),
+        status: 'pending_create',
       }),
+    );
+  });
+
+  it('passes postOnly to limit-order execution', async () => {
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-post-only',
+        postOnly: true,
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('c1', 0),
+      { postOnly: true },
+    );
+  });
+
+  it('deduplicates create intents when an equivalent order is already pending_create', async () => {
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValueOnce([
+      {
+        side: 'buy',
+        status: 'pending_create',
+        price: '100',
+        qty: '1',
+      },
+    ]);
+    const service = createService(true);
+
+    await service.consumeIntents([baseIntent]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'DONE',
+    );
+  });
+
+  it('deduplicates cancel intents when the tracked order is already pending cancel', async () => {
+    exchangeOrderTrackerService.getByExchangeOrderId.mockReturnValueOnce({
+      status: 'pending_cancel',
+    });
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-cancel-dedup',
+        type: 'CANCEL_ORDER',
+        mixinOrderId: 'exchange-order-1',
+      },
+    ]);
+
+    expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-cancel-dedup',
+      'DONE',
     );
   });
 
@@ -509,6 +581,7 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-1', 0),
+      { postOnly: false },
     );
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
@@ -520,6 +593,7 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-1', 1),
+      { postOnly: false },
     );
   });
 
@@ -563,6 +637,7 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-restart', 2),
+      { postOnly: false },
     );
 
     jest.clearAllMocks();
@@ -595,6 +670,7 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-restart', 3),
+      { postOnly: false },
     );
   });
 });

@@ -18,8 +18,22 @@ describe('ExchangeOrderTrackerService', () => {
       side: 'buy',
       price: '100',
       qty: '1',
-      status: 'open',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
       updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'u1-c1',
+      strategyKey: 'u1-c1-pureMarketMaking',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.500Z',
     });
 
     service.upsertOrder({
@@ -32,6 +46,7 @@ describe('ExchangeOrderTrackerService', () => {
       price: '101',
       qty: '1',
       status: 'filled',
+      createdAt: '2026-02-11T00:00:01.000Z',
       updatedAt: '2026-02-11T00:00:01.000Z',
     });
 
@@ -59,7 +74,8 @@ describe('ExchangeOrderTrackerService', () => {
       side: 'buy',
       price: '100',
       qty: '1',
-      status: 'open',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
 
@@ -68,6 +84,44 @@ describe('ExchangeOrderTrackerService', () => {
     const tracked = service.getByExchangeOrderId('binance', 'ex-1');
 
     expect(tracked?.status).toBe('filled');
+  });
+
+  it('rejects illegal transitions and keeps cumulative fills monotonic', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    service.upsertOrder({
+      orderId: 'u1-c1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      cumulativeFilledQty: '0.4',
+      status: 'partially_filled',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'u1-c1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      cumulativeFilledQty: '0.1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:01.000Z',
+    });
+
+    const tracked = service.getByExchangeOrderId('binance', 'ex-1');
+
+    expect(tracked?.status).toBe('partially_filled');
+    expect(tracked?.cumulativeFilledQty).toBe('0.4');
   });
 
   it('keeps same exchange order id from different exchanges isolated', () => {
@@ -83,6 +137,7 @@ describe('ExchangeOrderTrackerService', () => {
       price: '100',
       qty: '1',
       status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
     service.upsertOrder({
@@ -95,6 +150,7 @@ describe('ExchangeOrderTrackerService', () => {
       price: '101',
       qty: '1',
       status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
 
@@ -105,5 +161,4 @@ describe('ExchangeOrderTrackerService', () => {
       'mexc',
     );
   });
-
 });

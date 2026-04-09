@@ -30,6 +30,7 @@ export type StrategyOrderIntent = {
   qty: string;
   mixinOrderId?: string;
   executionCategory?: StrategyExecutionCategory;
+  postOnly?: boolean;
   metadata?: Record<string, unknown>;
   createdAt: string;
   status: StrategyIntentStatus;

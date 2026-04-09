@@ -184,6 +184,7 @@ export class PrivateStreamTrackerService
         cumulativeFilledQty:
           fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
         status: fill.status,
+        createdAt: trackedOrder.createdAt,
         updatedAt: fill.receivedAt,
       });
     }

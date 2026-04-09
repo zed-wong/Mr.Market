@@ -4,13 +4,26 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import BigNumber from 'bignumber.js';
+import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { Repository } from 'typeorm';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 
-type TrackedOrder = {
+export type TrackedOrderState =
+  | 'pending_create'
+  | 'open'
+  | 'partially_filled'
+  | 'pending_cancel'
+  | 'filled'
+  | 'cancelled'
+  | 'failed';
+
+export type TrackedOrder = {
   orderId: string;
   strategyKey: string;
   exchange: string;
@@ -21,7 +34,8 @@ type TrackedOrder = {
   price: string;
   qty: string;
   cumulativeFilledQty?: string;
-  status: 'open' | 'partially_filled' | 'filled' | 'cancelled' | 'failed';
+  status: TrackedOrderState;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -35,6 +49,34 @@ type FillLogEntry = {
 export class ExchangeOrderTrackerService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
+  private static readonly terminalStates = new Set<TrackedOrderState>([
+    'filled',
+    'cancelled',
+    'failed',
+  ]);
+  private static readonly validTransitions: Record<
+    TrackedOrderState,
+    TrackedOrderState[]
+  > = {
+    pending_create: ['open', 'partially_filled', 'filled', 'failed'],
+    open: [
+      'partially_filled',
+      'pending_cancel',
+      'filled',
+      'cancelled',
+      'failed',
+    ],
+    partially_filled: [
+      'partially_filled',
+      'pending_cancel',
+      'filled',
+      'cancelled',
+    ],
+    pending_cancel: ['partially_filled', 'filled', 'cancelled', 'failed'],
+    filled: [],
+    cancelled: [],
+    failed: [],
+  };
   private readonly orders = new Map<string, TrackedOrder>();
   private readonly fillLog = new Map<string, FillLogEntry[]>();
 
@@ -43,9 +85,13 @@ export class ExchangeOrderTrackerService
     private readonly clockTickCoordinatorService?: ClockTickCoordinatorService,
     @Optional()
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
+    @Optional()
+    @InjectRepository(TrackedOrderEntity)
+    private readonly trackedOrderRepository?: Repository<TrackedOrderEntity>,
   ) {}
 
   async onModuleInit(): Promise<void> {
+    await this.hydratePersistedOrders();
     this.clockTickCoordinatorService?.register(
       'exchange-order-tracker',
       this,
@@ -70,12 +116,47 @@ export class ExchangeOrderTrackerService
   }
 
   upsertOrder(order: TrackedOrder): void {
-    this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), order);
+    const key = this.toKey(order.exchange, order.exchangeOrderId);
+    const existingOrder = this.orders.get(key);
+
+    if (existingOrder) {
+      const nextStatus = this.resolveNextStatus(existingOrder, order);
+
+      if (!nextStatus) {
+        return;
+      }
+
+      const nextOrder = this.mergeOrder(existingOrder, order, nextStatus);
+
+      this.orders.set(key, nextOrder);
+      void this.persistOrder(nextOrder, key);
+
+      return;
+    }
+
+    const createdOrder = {
+      ...order,
+      createdAt: order.createdAt || order.updatedAt,
+      cumulativeFilledQty: this.normalizeCumulativeFilledQty(
+        order.cumulativeFilledQty,
+      ),
+    };
+
+    this.orders.set(key, createdOrder);
+    void this.persistOrder(createdOrder, key);
   }
 
   getOpenOrders(strategyKey: string): TrackedOrder[] {
     return [...this.orders.values()].filter(
-      (order) => order.strategyKey === strategyKey && order.status === 'open',
+      (order) =>
+        order.strategyKey === strategyKey &&
+        (order.status === 'open' || order.status === 'partially_filled'),
+    );
+  }
+
+  getTrackedOrders(strategyKey: string): TrackedOrder[] {
+    return [...this.orders.values()].filter(
+      (order) => order.strategyKey === strategyKey,
     );
   }
 
@@ -96,10 +177,14 @@ export class ExchangeOrderTrackerService
 
   async onTick(ts: string): Promise<void> {
     const openOrders = [...this.orders.values()].filter(
-      (order) => order.status === 'open' || order.status === 'partially_filled',
+      (order) =>
+        order.status === 'pending_create' ||
+        order.status === 'open' ||
+        order.status === 'partially_filled' ||
+        order.status === 'pending_cancel',
     );
 
-    const results = await Promise.allSettled(
+    await Promise.allSettled(
       openOrders.map(async (order) => {
         const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
           order.exchange,
@@ -114,7 +199,8 @@ export class ExchangeOrderTrackerService
         const normalizedStatus = this.normalizeStatus(latest.status);
 
         const nextFilledQty =
-          this.normalizeFilledValue(latest?.filled) || order.cumulativeFilledQty;
+          this.normalizeFilledValue(latest?.filled) ||
+          order.cumulativeFilledQty;
         const nextOrder: TrackedOrder = {
           ...order,
           cumulativeFilledQty: nextFilledQty,
@@ -123,7 +209,7 @@ export class ExchangeOrderTrackerService
         };
 
         this.recordFill(order, nextOrder, ts);
-        this.orders.set(this.toKey(order.exchange, order.exchangeOrderId), nextOrder);
+        this.upsertOrder(nextOrder);
       }),
     );
   }
@@ -154,7 +240,10 @@ export class ExchangeOrderTrackerService
     this.fillLog.set(previousOrder.strategyKey, fills);
   }
 
-  private getPrunedFillLog(strategyKey: string, cutoffMs: number): FillLogEntry[] {
+  private getPrunedFillLog(
+    strategyKey: string,
+    cutoffMs: number,
+  ): FillLogEntry[] {
     const fills = (this.fillLog.get(strategyKey) || []).filter((entry) => {
       const entryMs = Date.parse(entry.ts);
 
@@ -169,11 +258,17 @@ export class ExchangeOrderTrackerService
   private normalizeStatus(status: string): TrackedOrder['status'] {
     const value = (status || '').toLowerCase();
 
+    if (value === 'pending_create') {
+      return 'pending_create';
+    }
     if (value === 'open' || value === 'new') {
       return 'open';
     }
     if (value === 'partially_filled' || value === 'partially-filled') {
       return 'partially_filled';
+    }
+    if (value === 'pending_cancel') {
+      return 'pending_cancel';
     }
     if (value === 'closed' || value === 'filled') {
       return 'filled';
@@ -199,5 +294,120 @@ export class ExchangeOrderTrackerService
     }
 
     return undefined;
+  }
+
+  private resolveNextStatus(
+    previousOrder: TrackedOrder,
+    nextOrder: TrackedOrder,
+  ): TrackedOrderState | null {
+    if (previousOrder.status === nextOrder.status) {
+      return nextOrder.status;
+    }
+
+    if (ExchangeOrderTrackerService.terminalStates.has(previousOrder.status)) {
+      return null;
+    }
+
+    if (
+      ExchangeOrderTrackerService.validTransitions[
+        previousOrder.status
+      ].includes(nextOrder.status)
+    ) {
+      return nextOrder.status;
+    }
+
+    return null;
+  }
+
+  private mergeOrder(
+    previousOrder: TrackedOrder,
+    nextOrder: TrackedOrder,
+    status: TrackedOrderState,
+  ): TrackedOrder {
+    const previousFilledQty = new BigNumber(
+      previousOrder.cumulativeFilledQty || 0,
+    );
+    const nextFilledQty = new BigNumber(nextOrder.cumulativeFilledQty || 0);
+
+    return {
+      ...previousOrder,
+      ...nextOrder,
+      status,
+      createdAt: previousOrder.createdAt || nextOrder.createdAt,
+      clientOrderId: nextOrder.clientOrderId || previousOrder.clientOrderId,
+      cumulativeFilledQty: this.normalizeCumulativeFilledQty(
+        BigNumber.max(previousFilledQty, nextFilledQty).toFixed(),
+      ),
+    };
+  }
+
+  private normalizeCumulativeFilledQty(value: unknown): string | undefined {
+    const normalized = this.normalizeFilledValue(value);
+
+    if (!normalized) {
+      return undefined;
+    }
+
+    const bigNumberValue = new BigNumber(normalized);
+
+    if (!bigNumberValue.isFinite() || bigNumberValue.isNegative()) {
+      return undefined;
+    }
+
+    return bigNumberValue.toFixed();
+  }
+
+  private async hydratePersistedOrders(): Promise<void> {
+    if (!this.trackedOrderRepository) {
+      return;
+    }
+
+    const rows = await this.trackedOrderRepository.find();
+
+    for (const row of rows) {
+      this.orders.set(row.trackingKey, {
+        orderId: row.orderId,
+        strategyKey: row.strategyKey,
+        exchange: row.exchange,
+        pair: row.pair,
+        exchangeOrderId: row.exchangeOrderId,
+        clientOrderId: row.clientOrderId,
+        side: row.side as 'buy' | 'sell',
+        price: row.price,
+        qty: row.qty,
+        cumulativeFilledQty: row.cumulativeFilledQty,
+        status: row.status as TrackedOrderState,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      });
+    }
+  }
+
+  private async persistOrder(
+    order: TrackedOrder,
+    trackingKey: string,
+  ): Promise<void> {
+    if (!this.trackedOrderRepository) {
+      return;
+    }
+
+    await this.trackedOrderRepository.save(
+      this.trackedOrderRepository.create({
+        trackingKey,
+        orderId: order.orderId,
+        strategyKey: order.strategyKey,
+        exchange: order.exchange,
+        pair: order.pair,
+        exchangeOrderId: order.exchangeOrderId,
+        clientOrderId: order.clientOrderId,
+        side: order.side,
+        price: order.price,
+        qty: order.qty,
+        cumulativeFilledQty: order.cumulativeFilledQty,
+        status: order.status,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      }),
+    );
   }
 }

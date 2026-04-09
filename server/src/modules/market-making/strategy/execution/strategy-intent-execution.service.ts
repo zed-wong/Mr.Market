@@ -168,19 +168,38 @@ export class StrategyIntentExecutionService {
 
     try {
       if (intent.type === 'CREATE_LIMIT_ORDER') {
+        const trackedOrders =
+          this.exchangeOrderTrackerService?.getTrackedOrders(intent.strategyKey) ||
+          [];
+        if (
+          trackedOrders.some(
+            (order) =>
+              order.side === intent.side &&
+              order.status === 'pending_create' &&
+              order.price === intent.price &&
+              order.qty === intent.qty,
+          )
+        ) {
+          await this.strategyIntentStoreService?.updateIntentStatus(
+            intent.intentId,
+            'DONE',
+          );
+
+          return;
+        }
+
         const orderId = this.resolveOrderIdForClientOrderId(intent);
         const clientOrderId = await this.reserveClientOrderId(orderId);
-        const result = await this.runWithRetries(
-          intent,
-          () =>
-            this.exchangeConnectorAdapterService.placeLimitOrder(
-              intent.exchange,
-              intent.pair,
-              intent.side,
-              intent.qty,
-              intent.price,
-              clientOrderId,
-            ),
+        const result = await this.runWithRetries(intent, () =>
+          this.exchangeConnectorAdapterService.placeLimitOrder(
+            intent.exchange,
+            intent.pair,
+            intent.side,
+            intent.qty,
+            intent.price,
+            clientOrderId,
+            { postOnly: Boolean(intent.postOnly) },
+          ),
         );
 
         if (result?.id) {
@@ -224,7 +243,8 @@ export class StrategyIntentExecutionService {
             price: intent.price,
             qty: intent.qty,
             cumulativeFilledQty: '0',
-            status: 'open',
+            status: 'pending_create',
+            createdAt: getRFC3339Timestamp(),
             updatedAt: getRFC3339Timestamp(),
           });
         }
@@ -235,14 +255,31 @@ export class StrategyIntentExecutionService {
           throw new Error('CANCEL_ORDER intent missing mixinOrderId');
         }
 
-        const result = await this.runWithRetries(
-          intent,
-          () =>
-            this.exchangeConnectorAdapterService.cancelOrder(
-              intent.exchange,
-              intent.pair,
-              intent.mixinOrderId,
-            ),
+        const trackedOrder = this.exchangeOrderTrackerService?.getByExchangeOrderId(
+          intent.exchange,
+          intent.mixinOrderId,
+        );
+
+        if (
+          trackedOrder &&
+          (trackedOrder.status === 'pending_cancel' ||
+            trackedOrder.status === 'cancelled' ||
+            trackedOrder.status === 'filled')
+        ) {
+          await this.strategyIntentStoreService?.updateIntentStatus(
+            intent.intentId,
+            'DONE',
+          );
+
+          return;
+        }
+
+        const result = await this.runWithRetries(intent, () =>
+          this.exchangeConnectorAdapterService.cancelOrder(
+            intent.exchange,
+            intent.pair,
+            intent.mixinOrderId,
+          ),
         );
 
         const orderId = this.resolveOrderIdForClientOrderId(intent);
@@ -259,7 +296,8 @@ export class StrategyIntentExecutionService {
           status:
             result?.status === 'canceled' || result?.status === 'cancelled'
               ? 'cancelled'
-              : 'failed',
+              : 'pending_cancel',
+          createdAt: getRFC3339Timestamp(),
           updatedAt: getRFC3339Timestamp(),
         });
       }
@@ -298,36 +336,34 @@ export class StrategyIntentExecutionService {
         );
         const side = intent.side;
 
-        const result = await this.runWithRetries(
-          intent,
-          () =>
-            this.dexVolumeStrategyService!.executeCycle({
-              dexId,
-              chainId,
-              tokenIn,
-              tokenOut,
-              feeTier,
-              baseTradeAmount: Number(
-                (metadata as Record<string, unknown>).baseTradeAmount || 0,
-              ),
-              baseIncrementPercentage: Number(
-                (metadata as Record<string, unknown>).baseIncrementPercentage ||
-                  0,
-              ),
-              pricePushRate: Number(
-                (metadata as Record<string, unknown>).pricePushRate || 0,
-              ),
-              executedTrades: Number.isFinite(executedTradesRaw)
-                ? executedTradesRaw
-                : 0,
-              side,
-              slippageBps: Number(
-                (metadata as Record<string, unknown>).slippageBps || 0,
-              ),
-              recipient:
-                String((metadata as Record<string, unknown>).recipient || '') ||
-                undefined,
-            }),
+        const result = await this.runWithRetries(intent, () =>
+          this.dexVolumeStrategyService!.executeCycle({
+            dexId,
+            chainId,
+            tokenIn,
+            tokenOut,
+            feeTier,
+            baseTradeAmount: Number(
+              (metadata as Record<string, unknown>).baseTradeAmount || 0,
+            ),
+            baseIncrementPercentage: Number(
+              (metadata as Record<string, unknown>).baseIncrementPercentage ||
+                0,
+            ),
+            pricePushRate: Number(
+              (metadata as Record<string, unknown>).pricePushRate || 0,
+            ),
+            executedTrades: Number.isFinite(executedTradesRaw)
+              ? executedTradesRaw
+              : 0,
+            side,
+            slippageBps: Number(
+              (metadata as Record<string, unknown>).slippageBps || 0,
+            ),
+            recipient:
+              String((metadata as Record<string, unknown>).recipient || '') ||
+              undefined,
+          }),
         );
 
         await this.strategyExecutionHistoryRepository?.save(
