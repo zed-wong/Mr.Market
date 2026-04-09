@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-04-09
+
+- Add a dated PMM minimum-safe-stability close-gap plan in `docs/planning/2026-04-09-pmm-minimum-safe-stability-gap-plan.md`, narrowing the Hummingbot gap list into phased must-have/should-have/recommended work for single-venue PMM safe operation
+
 ## 2026-04-08
 
 - Add `min_order_amount`, `max_order_amount`, `amount_significant_figures`, and `price_significant_figures` to grow market-making pairs with a migration, seed population, and shared frontend/backend types

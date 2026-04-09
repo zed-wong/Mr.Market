@@ -8,47 +8,6 @@ Completed work should stay in `progress-log.md`, not here.
 
 ## Backend
 
-### System Test Improvements
-
-#### Summary
-
-- Close infrastructure and operational fidelity gaps identified in the 2026-03-20 gap analysis.
-- Three phases: P0 (remaining coordinator work after completed database + durability), P1 (reconciliation + queue + reconnect + rate-limit), P2 (multi-pair + cadence + runtime config coverage).
-- See `docs/planning/2026-03-20-system-test-gap-analysis-and-improvement-plan.md` for full rationale.
-
-#### P0 — High impact, low cost (~5 h)
-
-- [x] 1. Switch `MarketMakingSingleTickHelper` to file-based SQLite with WAL mode (add `createSystemTestDatabaseConfig` to `sandbox-system.helper.ts`, temp dir cleanup in afterAll)
-- [x] 2. Add `ClockTickCoordinator` integration system spec — register real tick components, call `tickOnce()`, and assert the real coordinator path; current code aborts on first thrown component error, so the coverage now documents stop-on-first-error behavior instead of assuming per-component isolation
-- [x] 3. Add `DurabilityService` system spec — append outbox event, mark processed once (true), mark processed again with same key (false/idempotent)
-
-#### P1 — Medium impact, medium cost (~5 h)
-
-- [x] 4. Add `ReconciliationService` system spec — one valid + one violation case per reconciliation type (ledger invariant, reward consistency, stale SENT intent)
-- [x] 5. Add queue dispatch shape test — lock down queued payment job name, data shape, retry/backoff options, and deterministic jobId convention
-- [x] 6. Add back-off logic unit test for `PrivateStreamIngestionService.getBackoffDelayMs` — verify 0 ms on first failure, exponential growth, and 30 s cap
-- [x] 7. Add WebSocket reconnection smoke test — verify one `watchOrders` failure is retried and the recovered event still routes through the runtime surface
-- [x] 8. Add adapter-level rate-limit regression coverage so a failed request still releases the per-exchange limiter chain and later requests continue
-
-#### P2 — Lower priority (~4 h)
-
-- [x] 9. Add multi-pair executor isolation test — create two orders with different pairs, assert separate executor instances, ticking one pair produces zero intents for the other
-- [x] 10. Add explicit far-future cadence guard assertion — set `nextRunAtMs` to `Date.now() + 999_999_999`, call `onTick`, confirm zero new intents
-- [x] 11. Add runtime config-safety coverage — keep existing schema validation, and add system coverage for config override safety/runtime helper-path validation
-
-### Security
-
-#### Summary
-
-- Add authentication and ownership checks for private `user-orders` list, detail, payment, and history endpoints.
-- Keep `GET /user-orders/market-making/strategies` public for frontend strategy selection.
-
-#### Detailed Checklist
-
-User orders security
-- [x] 1. add authentication and ownership checks for user order list/detail/payment/history endpoints under `user-orders`
-- [x] 2. keep `GET /user-orders/market-making/strategies` public for frontend strategy selection
-
 ### Market-making Funding Lifecycle
 
 #### Summary
@@ -63,15 +22,15 @@ User orders security
 #### Detailed Checklist
 
 Validation of create market making process
-- [] 3. backend can withdraw to exchange (should link exchange api key only from db)
-- [] 4. after withdrawal to exchange, the deposit status can be tracked by backend, update in real time
-- [] 5. after arrival of deposit to exchange, then join campaign should be triggered automatically
-- [] 6. after join campaign, or no campain to join, the market making handler can start mm right away
-- [] 7. implement actual HuFi join campaign execution in market making `join_campaign` flow (not only local participation)
-- [] 8. implement actual HuFi join campaign execution in `CampaignService.joinCampaigns` cron flow
-- [] 9. add backend tests for market making `join_campaign` flow: successful HuFi join, no campaign match, and failure fallback behavior
-- [] 10. add backend tests for cron auto-join flow: already joined skip, new campaign join, and API error handling
-- [] 11. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
+- [ ] 3. backend can withdraw to exchange (should link exchange api key only from db)
+- [ ] 4. after withdrawal to exchange, the deposit status can be tracked by backend, update in real time
+- [ ] 5. after arrival of deposit to exchange, then join campaign should be triggered automatically
+- [ ] 6. after join campaign, or no campain to join, the market making handler can start mm right away
+- [ ] 7. implement actual HuFi join campaign execution in market making `join_campaign` flow (not only local participation)
+- [ ] 8. implement actual HuFi join campaign execution in `CampaignService.joinCampaigns` cron flow
+- [ ] 9. add backend tests for market making `join_campaign` flow: successful HuFi join, no campaign match, and failure fallback behavior
+- [ ] 10. add backend tests for cron auto-join flow: already joined skip, new campaign join, and API error handling
+- [ ] 11. user call stop endpoint or initialize withdrawal, can be handled correctly by backend on time
 
 ### Execution and Reporting
 
@@ -84,9 +43,9 @@ Validation of create market making process
 #### Detailed Checklist
 
 Market making execution system
-- [] 1. market making execution system, including order status updates, place/cancel order logs, error handling. reflect on user's market making orders details.
-- [] 2. comprehensive order tracking, including volume created, profit made, placed order count, filled order amount, success/failure/cancel count.
-- [] 3. campaign reward trading, calculate reward based on performance.
+- [ ] 1. market making execution system, including order status updates, place/cancel order logs, error handling. reflect on user's market making orders details.
+- [ ] 2. comprehensive order tracking, including volume created, profit made, placed order count, filled order amount, success/failure/cancel count.
+- [ ] 3. campaign reward trading, calculate reward based on performance.
 
 ### Deferred Strategy Follow-ups
 
@@ -101,16 +60,16 @@ Market making execution system
 #### Detailed Checklist
 
 Deferred strategy follow-ups
-- [] 1. Remove `exchangeName`/`pair` from `StrategyInstance.parameters` - get from `MarketMakingOrder` binding at runtime instead of duplicating in params (conceptual cleanup, medium effort ~10-15 files)
-- [] 2. Fix volume strategy controller follow-ups before expanding reuse: sanitize cadence input, keep rerun backward-compatible with legacy parameter keys, and stop deriving tenant identity from `strategyInstance.parameters.userId/clientId`
-- [] 3. Move `userId`/`clientId`/`marketMakingOrderId` injection in strategy config resolution to after schema validation so strict schemas with `additionalProperties: false` can pass correctly
-- [] 4. Make legacy admin strategy start fail on ambiguous enabled definitions instead of silently picking the oldest matching `controllerType`
-- [] 5. Validate `controllerType` on strategy definition creation and reject unsupported controller values early
-- [] 6. Roll back started runtime sessions when admin strategy start succeeds in dispatcher but fails to link the definition in storage
-- [] 6. Align admin strategy definition/instance endpoints with more idiomatic REST semantics and boolean query parsing, then add controller tests for the new routes
-- [] 7. Add TTL or explicit invalidation for cached market-making strategies in `interface/src/lib/helpers/mrm/marketMakingPayment.ts`
-- [] 8. Reset CCXT seeder cache per run and add a timeout guard around `loadMarkets()` to avoid hanging the seed process
-- [] 9. Parallelize chain icon fetching during pair seed generation and wrap `runSeed()` database cleanup in `try/finally`
+- [ ] 1. Remove `exchangeName`/`pair` from `StrategyInstance.parameters` - get from `MarketMakingOrder` binding at runtime instead of duplicating in params (conceptual cleanup, medium effort ~10-15 files)
+- [ ] 2. Fix volume strategy controller follow-ups before expanding reuse: sanitize cadence input, keep rerun backward-compatible with legacy parameter keys, and stop deriving tenant identity from `strategyInstance.parameters.userId/clientId`
+- [ ] 3. Move `userId`/`clientId`/`marketMakingOrderId` injection in strategy config resolution to after schema validation so strict schemas with `additionalProperties: false` can pass correctly
+- [ ] 4. Make legacy admin strategy start fail on ambiguous enabled definitions instead of silently picking the oldest matching `controllerType`
+- [ ] 5. Validate `controllerType` on strategy definition creation and reject unsupported controller values early
+- [ ] 6. Roll back started runtime sessions when admin strategy start succeeds in dispatcher but fails to link the definition in storage
+- [ ] 7. Align admin strategy definition/instance endpoints with more idiomatic REST semantics and boolean query parsing, then add controller tests for the new routes
+- [ ] 8. Add TTL or explicit invalidation for cached market-making strategies in `interface/src/lib/helpers/mrm/marketMakingPayment.ts`
+- [ ] 9. Reset CCXT seeder cache per run and add a timeout guard around `loadMarkets()` to avoid hanging the seed process
+- [ ] 10. Parallelize chain icon fetching during pair seed generation and wrap `runSeed()` database cleanup in `try/finally`
 
 ### Intent Worker Rate-Limiting
 
@@ -124,16 +83,7 @@ Deferred strategy follow-ups
 
 #### Detailed Checklist
 
-- [future] See `docs/planning/2026-04-08-intent-worker-rate-limiting-improvements.md` for full design.
-  - [future] IntentTypeClassifier — classify intents as `query` or `mutation` by `type` field
-  - [future] ExchangeRateLimitRegistry — per-exchange, per-intent-type concurrency limits from config
-  - [future] InFlightTracker — structured tracker with restart reconciliation
-  - [future] IntentRetryScheduler — exponential backoff, maxRetries, `RETRYING` status
-  - [future] IntentWorkerMetrics — structured log events on dispatch/complete/fail/slot-exhausted
-  - [future] Add `retryCount`/`maxRetries` columns to `strategy_order_intents` entity
-  - [future] Refactor `StrategyIntentWorkerService` to use tracker, classifier, registry, scheduler
-  - [future] Wire retry failure path in `StrategyIntentExecutionService`
-  - [future] Update tests for new classification, limits, retry, and reconciliation paths
+- [ ] Implement the plan in `docs/planning/2026-04-08-intent-worker-rate-limiting-improvements.md`
 
 ## Interface
 
@@ -149,14 +99,14 @@ Deferred strategy follow-ups
 #### Detailed Checklist
 
 Admin page
-- [] 0. Design a manage strategy page that allows admin to add/remove/create template strategies and custom strategies
-- [] 1. Add a setup guide for initialization that is step by step, allowing admin to have basic understanding of how setting works, and makes it easier to set up all the things
-- [] 2. Support sorting and filter in manage market making pairs/spot trading pairs
-- [] 3. Update Admin login page UI design to be consistent with other pages
-- [] 4. Merge manage exchange and api keys into one page, has consistent logic and don't make user confuse
+- [ ] 0. Design a manage strategy page that allows admin to add/remove/create template strategies and custom strategies
+- [ ] 1. Add a setup guide for initialization that is step by step, allowing admin to have basic understanding of how setting works, and makes it easier to set up all the things
+- [ ] 2. Support sorting and filter in manage market making pairs/spot trading pairs
+- [ ] 3. Update Admin login page UI design to be consistent with other pages
+- [ ] 4. Merge manage exchange and api keys into one page, has consistent logic and don't make user confuse
 
 Admin exchanges management
-- [future] 1. Unified Exchange Account design — merge `admin_exchanges` + `api_keys_config` into single `ExchangeAccount` entity. See `docs/planning/2026-04-02-unified-exchange-account-design.md` for full design.
+- [ ] Unified Exchange Account design — merge `admin_exchanges` + `api_keys_config` into single `ExchangeAccount` entity. See `docs/planning/2026-04-02-unified-exchange-account-design.md` for full design.
 
 # Hufi
 
@@ -174,24 +124,23 @@ Admin exchanges management
 
 #### Detailed Checklist
 
-- [-] 0. Mr.Market users can see all campaigns, and specific campaign details under /market-making/hufi
-- [] 1. Mr.Market users should see volume created by Hufi campaigns
-- [] 2. Mr.Market users can create campaigns with mixin wallet under /market-making/hufi
-- [] 3. Mr.Market users can join hufi campaigns by creating market making orders with mixin wallet under /market-making/hufi
-- [] 4. Mr.Market users can see joined hufi campaigns (via market making orders) under /market-making/hufi
-- [] 5. Mr.Market users can see their created campaigns with mixin wallet under /market-making/hufi
+- [ ] 1. Mr.Market users should see volume created by Hufi campaigns
+- [ ] 2. Mr.Market users can create campaigns with mixin wallet under /market-making/hufi
+- [ ] 3. Mr.Market users can join hufi campaigns by creating market making orders with mixin wallet under /market-making/hufi
+- [ ] 4. Mr.Market users can see joined hufi campaigns (via market making orders) under /market-making/hufi
+- [ ] 5. Mr.Market users can see their created campaigns with mixin wallet under /market-making/hufi
 
-- [] 6. Mr.Market users can create campaigns with evm wallets (including mixin evm wallet) under /market-making/hufi
-- [] 7. Mr.Market users can join hufi campaigns by creating market making orders with evm wallets under /market-making/hufi
-- [] 8. Mr.Market users can see joined hufi campaigns with evm wallets under /market-making/hufi
-- [] 9. Mr.Market users can see their created campaigns with evm wallets under /market-making/hufi
+- [ ] 6. Mr.Market users can create campaigns with evm wallets (including mixin evm wallet) under /market-making/hufi
+- [ ] 7. Mr.Market users can join hufi campaigns by creating market making orders with evm wallets under /market-making/hufi
+- [ ] 8. Mr.Market users can see joined hufi campaigns with evm wallets under /market-making/hufi
+- [ ] 9. Mr.Market users can see their created campaigns with evm wallets under /market-making/hufi
 
-- [] 10. HuFi Learn more page should introduce each types of campaigns
-- [] 11. HuFi campaigns page should have a filter button put on top of the page, allowing user open dialog to filter campaigns (by campaign type, create/end date, DESC or ASC, reward amount)
-- [] 12. For different types of campaigns, should have different types of actions in details page
+- [ ] 10. HuFi Learn more page should introduce each types of campaigns
+- [ ] 11. HuFi campaigns page should have a filter button put on top of the page, allowing user open dialog to filter campaigns (by campaign type, create/end date, DESC or ASC, reward amount)
+- [ ] 12. For different types of campaigns, should have different types of actions in details page
 
 ### Current UI follow-ups
 
-- [] 13. Test join campaign process manually
-- [] 14. Show user created order in `/market-making/+page.svelte`
-- [] 15. Show created order details in detail page
+- [ ] 13. Test join campaign process manually
+- [ ] 14. Show user created order in `/market-making/+page.svelte`
+- [ ] 15. Show created order details in detail page
