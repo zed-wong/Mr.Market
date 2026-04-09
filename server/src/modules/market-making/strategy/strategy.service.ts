@@ -1334,7 +1334,7 @@ export class StrategyService
             quote.qty
           }@${
             quote.price
-          }: effective spread ${effectiveSpread.toFixed()} < minimumSpread ${effectiveMinimumSpread}`,
+          }: effective spread ${effectiveSpread.toFixed()} < effectiveMinimumSpread ${effectiveMinimumSpread}`,
         );
         continue;
       }

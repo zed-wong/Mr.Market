@@ -61,6 +61,11 @@ describe('AdminDirectMarketMakingService', () => {
       }),
     };
     const exchange = {
+      markets: {
+        'BTC/USDT': {
+          maker: 0,
+        },
+      },
       fetchBalance: jest.fn().mockResolvedValue({
         free: { BTC: 1, USDT: 1000 },
         used: { BTC: 0.2, USDT: 0 },
@@ -315,6 +320,20 @@ describe('AdminDirectMarketMakingService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('rejects direct start when spreads are below the effective minimum spread', async () => {
+    const { service, strategyDefinitionRepository, exchange } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: directStartDto.strategyDefinitionId,
+      enabled: true,
+    });
+    exchange.markets['BTC/USDT'].maker = 0.002;
+
+    await expect(service.directStart(directStartDto)).rejects.toThrow(
+      'PMM spread config will never quote',
+    );
+  });
+
   it('stops a direct order via the shared runtime service', async () => {
     const {
       service,
@@ -365,6 +384,38 @@ describe('AdminDirectMarketMakingService', () => {
     await expect(service.directStop('order-1')).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+
+  it('rejects direct resume when saved spreads are below the effective minimum spread', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      exchange,
+      marketMakingRuntimeService,
+    } = buildService();
+
+    exchange.markets['BTC/USDT'].maker = 0.002;
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'stopped',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      strategySnapshot: {
+        resolvedConfig: {
+          accountLabel: 'desk-1',
+          bidSpread: 0.001,
+          askSpread: 0.001,
+          orderAmount: 10,
+        },
+      },
+    });
+
+    await expect(service.directResume('order-1')).rejects.toThrow(
+      'PMM spread config will never quote',
+    );
+    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
   });
 
   it('lists only admin direct orders', async () => {

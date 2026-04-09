@@ -133,6 +133,12 @@ export class AdminDirectMarketMakingService {
       dto.pair,
       resolvedConfig.resolvedConfig,
     );
+    await this.validateExecutableSpreadConfig(
+      dto.exchangeName,
+      dto.accountLabel,
+      dto.pair,
+      resolvedConfig.resolvedConfig,
+    );
 
     const warnings = await this.runBalancePreCheck(
       dto.exchangeName,
@@ -223,6 +229,12 @@ export class AdminDirectMarketMakingService {
     }
 
     const accountLabel = this.readAccountLabel(order);
+    await this.validateExecutableSpreadConfig(
+      order.exchangeName,
+      accountLabel,
+      order.pair,
+      order.strategySnapshot?.resolvedConfig || {},
+    );
     const warnings = await this.runBalancePreCheck(
       order.exchangeName,
       order.pair,
@@ -673,6 +685,53 @@ export class AdminDirectMarketMakingService {
         `Order amount ${orderAmount.toFixed()} is below minimum ${minimum} for ${exchangeName} ${pair}`,
       );
     }
+  }
+
+  private async validateExecutableSpreadConfig(
+    exchangeName: string,
+    accountLabel: string,
+    pair: string,
+    resolvedConfig: Record<string, unknown>,
+  ): Promise<void> {
+    const bidSpread = Number(resolvedConfig.bidSpread || 0);
+    const askSpread = Number(resolvedConfig.askSpread || 0);
+    const configuredMinimumSpread = Number(resolvedConfig.minimumSpread || 0);
+    const exchange = this.exchangeInitService.getExchange(
+      exchangeName,
+      accountLabel,
+    );
+    const market = exchange?.markets?.[pair];
+    const makerFee = Number(market?.maker || exchange?.fees?.trading?.maker || 0);
+    const feeFloor =
+      Number.isFinite(makerFee) && makerFee > 0 ? makerFee * 2 : 0;
+    const effectiveMinimumSpread = Math.max(configuredMinimumSpread, feeFloor);
+
+    if (effectiveMinimumSpread <= 0) {
+      return;
+    }
+
+    const invalidSides: string[] = [];
+
+    if (Number.isFinite(bidSpread) && bidSpread > 0 && bidSpread < effectiveMinimumSpread) {
+      invalidSides.push(
+        `bidSpread ${bidSpread} < effectiveMinimumSpread ${effectiveMinimumSpread}`,
+      );
+    }
+    if (Number.isFinite(askSpread) && askSpread > 0 && askSpread < effectiveMinimumSpread) {
+      invalidSides.push(
+        `askSpread ${askSpread} < effectiveMinimumSpread ${effectiveMinimumSpread}`,
+      );
+    }
+
+    if (invalidSides.length === 0) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `PMM spread config will never quote for ${exchangeName} ${pair}: ${invalidSides.join(
+        '; ',
+      )}. Lower minimumSpread/fee floor or widen bid/ask spread.`,
+    );
   }
 
   private getRuntimeSession(orderId: string): RuntimeSessionLike | null {
