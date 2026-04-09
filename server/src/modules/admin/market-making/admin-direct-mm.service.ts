@@ -13,8 +13,8 @@ import { Wallet } from 'ethers';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -268,47 +268,53 @@ export class AdminDirectMarketMakingService {
       definitions.map((definition) => [definition.id, definition]),
     );
 
-    return await Promise.all(orders.map(async (order) => {
-      const session = this.getRuntimeSession(order.orderId);
-      const strategyKey = createPureMarketMakingStrategyKey(order.orderId);
-      const queueState =
-        order.state === 'running'
-          ? await this.strategyIntentStoreService.getQueueState(strategyKey)
-          : null;
-      const status = this.resolveRuntimeState(order.state, session, queueState);
-      const lastTickAt = this.getEstimatedLastTickAt(session);
-      const accountLabel = this.readAccountLabel(order);
-      const warnings: string[] = [];
+    return await Promise.all(
+      orders.map(async (order) => {
+        const session = this.getRuntimeSession(order.orderId);
+        const strategyKey = createPureMarketMakingStrategyKey(order.orderId);
+        const queueState =
+          order.state === 'running'
+            ? await this.strategyIntentStoreService.getQueueState(strategyKey)
+            : null;
+        const status = this.resolveRuntimeState(
+          order.state,
+          session,
+          queueState,
+        );
+        const lastTickAt = this.getEstimatedLastTickAt(session);
+        const accountLabel = this.readAccountLabel(order);
+        const warnings: string[] = [];
 
-      if (
-        lastTickAt &&
-        Date.now() - Date.parse(lastTickAt) > DIRECT_ORDER_STALE_MS
-      ) {
-        warnings.push('executor_stale');
-      }
+        if (
+          lastTickAt &&
+          Date.now() - Date.parse(lastTickAt) > DIRECT_ORDER_STALE_MS
+        ) {
+          warnings.push('executor_stale');
+        }
 
-      if (queueState?.blockedByFailure) {
-        warnings.push('execution_blocked');
-      }
+        if (queueState?.blockedByFailure) {
+          warnings.push('execution_blocked');
+        }
 
-      return {
-        orderId: order.orderId,
-        exchangeName: order.exchangeName,
-        pair: order.pair,
-        state: order.state,
-        runtimeState: status,
-        strategyDefinitionId: order.strategyDefinitionId,
-        strategyName:
-          definitionMap.get(order.strategyDefinitionId || '')?.name ||
-          order.strategySnapshot?.controllerType ||
-          '',
-        createdAt: order.createdAt,
-        lastTickAt,
-        accountLabel,
-        apiKeyId: order.apiKeyId || null,
-        warnings,
-      };
-    }));
+        return {
+          orderId: order.orderId,
+          exchangeName: order.exchangeName,
+          pair: order.pair,
+          state: order.state,
+          runtimeState: status,
+          strategyDefinitionId: order.strategyDefinitionId,
+          strategyName:
+            definitionMap.get(order.strategyDefinitionId || '')?.name ||
+            order.strategySnapshot?.controllerType ||
+            '',
+          createdAt: order.createdAt,
+          lastTickAt,
+          accountLabel,
+          apiKeyId: order.apiKeyId || null,
+          warnings,
+        };
+      }),
+    );
   }
 
   async getDirectOrderStatus(orderId: string) {
@@ -332,10 +338,12 @@ export class AdminDirectMarketMakingService {
       order.exchangeName,
       accountLabel,
     );
-    const openOrders = this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
-    const intents = order.state === 'stopped'
-      ? []
-      : this.strategyService.getLatestIntentsForStrategy(strategyKey);
+    const openOrders =
+      this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
+    const intents =
+      order.state === 'stopped'
+        ? []
+        : this.strategyService.getLatestIntentsForStrategy(strategyKey);
     const book = this.orderBookTrackerService.getOrderBook(
       order.exchangeName,
       order.pair,
@@ -408,7 +416,7 @@ export class AdminDirectMarketMakingService {
       recentErrors.unshift({
         ts: queueState.failedHeadUpdatedAt,
         message: queueState.failedHeadErrorReason,
-        });
+      });
     }
 
     const resolvedConfig = order.strategySnapshot?.resolvedConfig || {};

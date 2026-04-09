@@ -310,9 +310,9 @@ describe('AdminDirectMarketMakingService', () => {
       min_order_amount: '20',
     });
 
-    await expect(service.directStart(directStartDto, 'admin-user')).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.directStart(directStartDto, 'admin-user'),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('stops a direct order via the shared runtime service', async () => {
