@@ -1,7 +1,6 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { createHash } from "crypto";
-    import { goto } from "$app/navigation";
     import { checkPassword } from "$lib/helpers/mrm/admin";
     import {
         loginLoading,
@@ -9,10 +8,17 @@
         checked,
         correct,
     } from "$lib/stores/admin";
+    import { onMount } from "svelte";
 
     let password = "";
     let showPassword = false;
-    let shakeError = false;
+
+    // Market depth visualization state
+    let canvas: HTMLCanvasElement;
+    let ctx: CanvasRenderingContext2D;
+    let animationId: number;
+    let bids: { price: number; size: number }[] = [];
+    let asks: { price: number; size: number }[] = [];
 
     const login = async (pass: string) => {
         loginLoading.set(true);
@@ -32,7 +38,6 @@
         checked.set(true);
         correct.set(false);
         loginLoading.set(false);
-        // Trigger shake animation
         shakeError = true;
         setTimeout(() => (shakeError = false), 500);
         return false;
@@ -41,126 +46,291 @@
     const togglePasswordVisibility = () => {
         showPassword = !showPassword;
     };
+
+    // Generate synthetic market depth data
+    function generateDepthData() {
+        const basePrice = 67432.5;
+        bids = [];
+        asks = [];
+
+        // Generate bids (below base price)
+        let bidPrice = basePrice;
+        for (let i = 0; i < 20; i++) {
+            bidPrice -= Math.random() * 50 + 10;
+            bids.push({
+                price: bidPrice,
+                size: Math.random() * 2 + 0.1,
+            });
+        }
+
+        // Generate asks (above base price)
+        let askPrice = basePrice;
+        for (let i = 0; i < 20; i++) {
+            askPrice += Math.random() * 50 + 10;
+            asks.push({
+                price: askPrice,
+                size: Math.random() * 2 + 0.1,
+            });
+        }
+    }
+
+    // Update a single level (simulate live order book)
+    function updateLevel() {
+        const isBid = Math.random() > 0.5;
+        const arr = isBid ? bids : asks;
+        const idx = Math.floor(Math.random() * arr.length);
+        if (arr[idx]) {
+            arr[idx].size = Math.max(
+                0.01,
+                arr[idx].size + (Math.random() - 0.5) * 0.5,
+            );
+        }
+    }
+
+    // Draw the market depth visualization
+    function drawDepth() {
+        if (!ctx || !canvas) return;
+
+        // Use logical dimensions for drawing logic since ctx is already scaled
+        const rect = canvas.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+
+        // Clear canvas (physical dimensions are needed for clearing)
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const centerY = height / 2;
+        const rowHeight = height / 40;
+        const maxSize = 2.5;
+        // Ensure equal width for both sides regardless of canvas size
+        const sideWidth = width / 2;
+
+        // Draw bids (left side, green)
+        bids.forEach((bid, i) => {
+            const y = centerY - (i + 1) * rowHeight;
+            const barWidth = (bid.size / maxSize) * (sideWidth * 0.9);
+
+            ctx.fillStyle = "rgba(16, 185, 129, 0.08)";
+            ctx.fillRect(sideWidth - barWidth, y, barWidth, rowHeight - 1);
+
+            // Highlight if size is significant
+            if (bid.size > 1.5) {
+                ctx.fillStyle = "rgba(16, 185, 129, 0.15)";
+                ctx.fillRect(sideWidth - barWidth, y, barWidth, rowHeight - 1);
+            }
+        });
+
+        // Draw asks (right side, red)
+        asks.forEach((ask, i) => {
+            const y = centerY - (i + 1) * rowHeight;
+            const barWidth = (ask.size / maxSize) * (sideWidth * 0.9);
+
+            ctx.fillStyle = "rgba(239, 68, 68, 0.08)";
+            ctx.fillRect(sideWidth, y, barWidth, rowHeight - 1);
+
+            if (ask.size > 1.5) {
+                ctx.fillStyle = "rgba(239, 68, 68, 0.15)";
+                ctx.fillRect(sideWidth, y, barWidth, rowHeight - 1);
+            }
+        });
+
+        // Draw mirror below center
+        bids.forEach((bid, i) => {
+            const y = centerY + i * rowHeight;
+            const barWidth = (bid.size / maxSize) * (sideWidth * 0.9);
+
+            ctx.fillStyle = "rgba(16, 185, 129, 0.06)";
+            ctx.fillRect(sideWidth - barWidth, y, barWidth, rowHeight - 1);
+        });
+
+        asks.forEach((ask, i) => {
+            const y = centerY + i * rowHeight;
+            const barWidth = (ask.size / maxSize) * (sideWidth * 0.9);
+
+            ctx.fillStyle = "rgba(239, 68, 68, 0.06)";
+            ctx.fillRect(sideWidth, y, barWidth, rowHeight - 1);
+        });
+
+        // Draw center spread line
+        ctx.strokeStyle = "rgba(148, 163, 184, 0.2)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sideWidth, 0);
+        ctx.lineTo(sideWidth, height);
+        ctx.stroke();
+    }
+
+    function animate() {
+        updateLevel();
+        drawDepth();
+        animationId = requestAnimationFrame(() => {
+            setTimeout(animate, 100);
+        });
+    }
+
+    function setupCanvas() {
+        if (!canvas) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+
+        ctx = canvas.getContext("2d")!;
+        ctx.scale(dpr, dpr);
+
+        generateDepthData();
+        drawDepth();
+        animate();
+    }
+
+    onMount(() => {
+        setupCanvas();
+
+        return () => {
+            if (animationId) cancelAnimationFrame(animationId);
+        };
+    });
 </script>
 
-<div
-    class="min-h-screen flex flex-col items-center justify-center w-full px-4 py-12 relative overflow-hidden animate-gradient bg-linear-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-indigo-950"
->
-    <!-- Animated background orbs -->
-    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+<div class="min-h-screen w-full flex">
+    <!-- Left side: Market depth visualization -->
+    <div class="hidden lg:flex lg:w-1/2 relative bg-base-200 overflow-hidden">
+        <canvas
+            bind:this={canvas}
+            class="absolute inset-0 w-full h-full"
+            style="width: 100%; height: 100%;"
+        />
+
+        <!-- Overlay gradient for depth fade -->
         <div
-            class="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-400/20 rounded-full blur-3xl animate-float"
+            class="absolute inset-0 bg-gradient-to-r from-base-200 via-transparent to-transparent"
+            style="width: 30%;"
         ></div>
         <div
-            class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-float"
-            style="animation-delay: -3s;"
+            class="absolute inset-0 bg-gradient-to-l from-base-200 via-transparent to-transparent"
+            style="left: 70%;"
         ></div>
         <div
-            class="absolute top-1/2 right-1/3 w-64 h-64 bg-indigo-400/20 rounded-full blur-3xl animate-float"
-            style="animation-delay: -1.5s;"
+            class="absolute inset-0 bg-gradient-to-b from-base-200 via-transparent to-base-200"
+            style="height: 15%; top: 0;"
         ></div>
+        <div
+            class="absolute inset-0 bg-gradient-to-t from-base-200 via-transparent to-transparent"
+            style="height: 15%; bottom: 0;"
+        ></div>
+
+        <!-- Brand mark -->
+        <div class="absolute bottom-8 left-8">
+            <div class="flex items-center gap-3">
+                <div class="w-12 h-12 flex items-center justify-center">
+                    <img
+                        src="/mr-market-logo-transparent.svg"
+                        alt="Mr.Market"
+                        class="w-12 h-12 drop-shadow-sm"
+                    />
+                </div>
+                <div>
+                    <div
+                        class="text-xl font-semibold text-base-content tracking-tight"
+                    >
+                        Mr.Market
+                    </div>
+                    <div class="text-sm text-base-content/50">
+                        Market Making Engine
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Main card -->
+    <!-- Right side: Login form -->
     <div
-        class="glass-card relative w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-white/30 dark:border-white/10 {shakeError
-            ? 'animate-shake'
-            : ''}"
+        class="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 bg-base-100"
     >
-        <!-- Subtle glow effect behind card -->
-        <div
-            class="absolute inset-0 bg-linear-to-br from-blue-500/5 to-purple-500/5 dark:from-blue-400/10 dark:to-purple-400/10"
-        ></div>
-
-        <!-- Decorative top bar -->
-        <div
-            class="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"
-        ></div>
-
-        <div class="relative p-8 sm:p-10">
-            <!-- Header with icon -->
-            <div class="mb-10 text-center">
+        <!-- Mobile brand (visible only on small screens) -->
+        <div class="lg:hidden flex items-center gap-3 mb-12">
+            <div class="w-10 h-10 flex items-center justify-center">
+                <img
+                    src="/mr-market-logo-transparent.svg"
+                    alt="Mr.Market"
+                    class="w-10 h-10"
+                />
+            </div>
+            <div>
                 <div
-                    class="inline-flex items-center justify-center w-16 h-16 mb-4 rounded-2xl bg-linear-to-br from-blue-500 to-indigo-600 shadow-lg"
+                    class="text-lg font-semibold text-base-content tracking-tight"
                 >
-                    <svg
-                        class="w-8 h-8 text-white"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                        />
-                    </svg>
+                    Mr.Market
                 </div>
-                <h2
-                    class="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent mb-2"
+                <div class="text-xs text-base-content/50">
+                    Market Making Engine
+                </div>
+            </div>
+        </div>
+
+        <!-- Login card -->
+        <div class="w-full max-w-sm">
+            <div class="mb-8 flex flex-col">
+                <span
+                    class="text-left text-3xl font-semibold text-base-content mb-2 tracking-tight"
                 >
                     {$_("login")}
-                </h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400">
+                </span>
+                <span class="text-sm text-base-content/60 leading-relaxed">
                     {$_("welcome_to_admin_panel")}
-                </p>
+                </span>
             </div>
 
             <form
-                class="space-y-6"
+                class="space-y-5"
                 on:submit|preventDefault={() => login(password)}
             >
-                <div class="relative">
-                    <!-- Password input with floating label -->
+                <!-- Password input -->
+                <div class="form-control">
+                    <label for="password" class="label py-1.5">
+                        <span class="label-text text-sm font-medium"
+                            >{$_("enter_password")}</span
+                        >
+                    </label>
                     <div class="relative">
                         {#if showPassword}
                             <input
                                 type="text"
                                 name="password"
                                 id="password"
-                                placeholder=" "
                                 bind:value={password}
-                                class="peer w-full px-4 py-4 bg-white/50 dark:bg-gray-900/50 border-2 border-gray-200 dark:border-gray-700 rounded-xl text-base-content dark:text-white placeholder-transparent focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-all duration-300"
+                                class="input input-bordered w-full pr-11 h-11"
                                 required
+                                autofocus
                             />
                         {:else}
                             <input
                                 type="password"
                                 name="password"
                                 id="password"
-                                placeholder=" "
                                 bind:value={password}
-                                class="peer w-full px-4 py-4 bg-white/50 dark:bg-gray-900/50 border-2 border-gray-200 dark:border-gray-700 rounded-xl text-base-content dark:text-white placeholder-transparent focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-all duration-300"
+                                class="input input-bordered w-full pr-11 h-11"
                                 required
+                                autofocus
                             />
                         {/if}
-                        <label
-                            for="password"
-                            class="absolute left-4 top-4 text-gray-500 dark:text-gray-400 pointer-events-none transition-all duration-300 origin-left
-                     peer-focus:-translate-y-6 peer-focus:scale-75 peer-focus:text-blue-500 dark:peer-focus:text-blue-400
-                     peer-[:not(:placeholder-shown)]:-translate-y-6 peer-[:not(:placeholder-shown)]:scale-75 peer-[:not(:placeholder-shown)]:text-blue-500 dark:peer-[:not(:placeholder-shown)]:text-blue-400"
-                        >
-                            {$_("enter_password")}
-                        </label>
 
-                        <!-- Password visibility toggle -->
                         <button
                             type="button"
                             on:click={togglePasswordVisibility}
-                            class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-200 focus:outline-none"
+                            class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-base-content/40 hover:text-base-content transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
                             aria-label={showPassword
                                 ? "Hide password"
                                 : "Show password"}
                         >
                             {#if showPassword}
                                 <svg
-                                    class="w-5 h-5"
-                                    xmlns="http://www.w3.org/2000/svg"
+                                    class="w-4 h-4"
                                     fill="none"
-                                    viewBox="0 0 24 24"
                                     stroke="currentColor"
+                                    viewBox="0 0 24 24"
                                     stroke-width="2"
                                 >
                                     <path
@@ -176,11 +346,10 @@
                                 </svg>
                             {:else}
                                 <svg
-                                    class="w-5 h-5"
-                                    xmlns="http://www.w3.org/2000/svg"
+                                    class="w-4 h-4"
                                     fill="none"
-                                    viewBox="0 0 24 24"
                                     stroke="currentColor"
+                                    viewBox="0 0 24 24"
                                     stroke-width="2"
                                 >
                                     <path
@@ -194,18 +363,18 @@
                     </div>
                 </div>
 
-                <!-- Error state with enhanced styling -->
+                <!-- Error state -->
                 {#if $submitted && $checked && !$correct}
                     <div
-                        class="p-4 text-sm text-red-700 dark:text-red-400 rounded-xl bg-red-50/80 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800/50 flex items-start gap-3 animate-shake"
+                        class="alert alert-error alert-sm py-2.5"
                         role="alert"
+                        aria-live="polite"
                     >
                         <svg
-                            class="w-5 h-5 flex-shrink-0 mt-0.5"
-                            xmlns="http://www.w3.org/2000/svg"
+                            class="w-4 h-4 flex-shrink-0"
                             fill="none"
-                            viewBox="0 0 24 24"
                             stroke="currentColor"
+                            viewBox="0 0 24 24"
                             stroke-width="2"
                         >
                             <path
@@ -214,122 +383,49 @@
                                 d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                             />
                         </svg>
-                        <div>
-                            <span class="font-semibold block"
-                                >{$_("error")}</span
-                            >
-                            <span class="text-red-600/80 dark:text-red-400/80"
-                                >{$_("password_incorrect")}</span
-                            >
-                        </div>
+                        <span class="text-sm">{$_("password_incorrect")}</span>
                     </div>
                 {/if}
 
-                <!-- Enhanced submit button -->
+                <!-- Submit button -->
                 <button
                     type="submit"
-                    class="glow-button w-full relative overflow-hidden text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:ring-4 focus:outline-none focus:ring-blue-300/50 dark:focus:ring-blue-800/50 font-semibold rounded-xl text-sm px-6 py-4 text-center transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:from-blue-600 disabled:hover:to-indigo-600"
-                    disabled={$loginLoading}
+                    class="btn btn-primary w-full h-11 gap-2"
+                    disabled={$loginLoading || !password}
                 >
-                    <span
-                        class="relative z-10 flex items-center justify-center gap-2"
-                    >
-                        {#if $loginLoading}
-                            <svg
-                                class="w-5 h-5 animate-spin"
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                            >
-                                <circle
-                                    class="opacity-25"
-                                    cx="12"
-                                    cy="12"
-                                    r="10"
-                                    stroke="currentColor"
-                                    stroke-width="4"
-                                ></circle>
-                                <path
-                                    class="opacity-75"
-                                    fill="currentColor"
-                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                ></path>
-                            </svg>
-                            <span>{$_("loading")}...</span>
-                        {:else}
-                            <svg
-                                class="w-5 h-5"
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
-                                />
-                            </svg>
-                            <span>{$_("login")}</span>
-                        {/if}
-                    </span>
-                    <!-- Button shine effect -->
-                    <div
-                        class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"
-                    ></div>
+                    {#if $loginLoading}
+                        <span class="loading loading-spinner loading-sm"></span>
+                        <span class="text-sm">{$_("loading")}...</span>
+                    {:else}
+                        <span class="text-sm font-medium">{$_("login")}</span>
+                        <svg
+                            class="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            stroke-width="2"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
+                            />
+                        </svg>
+                    {/if}
                 </button>
             </form>
 
-            <!-- Footer accent -->
-            <div
-                class="mt-8 pt-6 border-t border-gray-200/50 dark:border-gray-700/50"
-            >
-                <div
-                    class="flex items-center justify-center gap-2 text-xs text-gray-400 dark:text-gray-500"
-                >
-                    <svg
-                        class="w-4 h-4"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                        />
-                    </svg>
-                    <span>Secure login powered by Mr.Market</span>
-                </div>
+            <!-- Footer note -->
+            <div class="mt-8 pt-6 border-t border-base-300">
+                <p class="text-xs text-base-content/40 text-center">
+                    Admin access only. Unauthorized use is prohibited.
+                </p>
             </div>
         </div>
     </div>
 </div>
 
 <style>
-    @keyframes gradient-shift {
-        0%,
-        100% {
-            background-position: 0% 50%;
-        }
-        50% {
-            background-position: 100% 50%;
-        }
-    }
-
-    @keyframes float {
-        0%,
-        100% {
-            transform: translateY(0px);
-        }
-        50% {
-            transform: translateY(-10px);
-        }
-    }
-
     @keyframes shake {
         0%,
         100% {
@@ -350,42 +446,13 @@
         }
     }
 
-    .animate-gradient {
-        background-size: 200% 200%;
-        animation: gradient-shift 8s ease infinite;
-    }
-
-    .animate-float {
-        animation: float 6s ease-in-out infinite;
-    }
-
     .animate-shake {
-        animation: shake 0.5s ease-in-out;
+        animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
     }
 
-    .glass-card {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-    }
-
-    :global(.dark) .glass-card {
-        background: rgba(17, 24, 39, 0.8);
-    }
-
-    .glow-button {
-        box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-    }
-
-    .glow-button:hover {
-        box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
-    }
-
-    :global(.dark) .glow-button {
-        box-shadow: 0 0 20px rgba(96, 165, 250, 0.3);
-    }
-
-    :global(.dark) .glow-button:hover {
-        box-shadow: 0 0 30px rgba(96, 165, 250, 0.5);
+    @media (prefers-reduced-motion: reduce) {
+        .animate-shake {
+            animation: none;
+        }
     }
 </style>
