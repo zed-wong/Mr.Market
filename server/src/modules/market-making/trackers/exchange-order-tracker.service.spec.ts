@@ -86,6 +86,63 @@ describe('ExchangeOrderTrackerService', () => {
     expect(tracked?.status).toBe('filled');
   });
 
+  it('routes recovered REST fill deltas through the executor exactly once', async () => {
+    const onFill = jest.fn();
+    const adapter = {
+      fetchOrder: jest
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'ex-1',
+          status: 'partially_filled',
+          filled: '0.5',
+        })
+        .mockResolvedValueOnce({
+          id: 'ex-1',
+          status: 'partially_filled',
+          filled: '0.5',
+        }),
+    };
+    const executorRegistry = {
+      getExecutor: jest.fn().mockReturnValue({
+        onFill,
+      }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined as any,
+      adapter as any,
+      executorRegistry as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'u1-c1',
+      strategyKey: 'u1-c1-pureMarketMaking',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'mm-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      cumulativeFilledQty: '0',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    await service.onTick('2026-02-11T00:00:01.000Z');
+    await service.onTick('2026-02-11T00:00:02.000Z');
+
+    expect(onFill).toHaveBeenCalledTimes(1);
+    expect(onFill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-1',
+        clientOrderId: 'mm-1',
+        qty: '0.5',
+        cumulativeQty: '0.5',
+      }),
+    );
+  });
+
   it('rejects illegal transitions and keeps cumulative fills monotonic', () => {
     const service = new ExchangeOrderTrackerService();
 

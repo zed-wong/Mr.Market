@@ -11,6 +11,7 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { Repository } from 'typeorm';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
+import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
 
@@ -85,6 +86,8 @@ export class ExchangeOrderTrackerService
     private readonly clockTickCoordinatorService?: ClockTickCoordinatorService,
     @Optional()
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
+    @Optional()
+    private readonly executorRegistry?: ExecutorRegistry,
     @Optional()
     @InjectRepository(TrackedOrderEntity)
     private readonly trackedOrderRepository?: Repository<TrackedOrderEntity>,
@@ -208,8 +211,12 @@ export class ExchangeOrderTrackerService
           updatedAt: getRFC3339Timestamp(),
         };
 
-        this.recordFill(order, nextOrder, ts);
+        const fillDelta = this.recordFill(order, nextOrder, ts);
         this.upsertOrder(nextOrder);
+
+        if (fillDelta) {
+          await this.routeRecoveredFill(order, nextOrder, fillDelta, ts);
+        }
       }),
     );
   }
@@ -218,12 +225,12 @@ export class ExchangeOrderTrackerService
     previousOrder: TrackedOrder,
     nextOrder: TrackedOrder,
     ts: string,
-  ): void {
+  ): { qty: string; cumulativeQty: string } | null {
     const previousFilledQty = Number(previousOrder.cumulativeFilledQty || 0);
     const nextFilledQty = Number(nextOrder.cumulativeFilledQty || 0);
 
     if (!Number.isFinite(nextFilledQty) || nextFilledQty <= previousFilledQty) {
-      return;
+      return null;
     }
 
     const fills = this.getPrunedFillLog(
@@ -238,6 +245,38 @@ export class ExchangeOrderTrackerService
     });
 
     this.fillLog.set(previousOrder.strategyKey, fills);
+
+    return {
+      qty: String(nextFilledQty - previousFilledQty),
+      cumulativeQty: String(nextFilledQty),
+    };
+  }
+
+  private async routeRecoveredFill(
+    previousOrder: TrackedOrder,
+    nextOrder: TrackedOrder,
+    fillDelta: { qty: string; cumulativeQty: string },
+    ts: string,
+  ): Promise<void> {
+    const executor = this.executorRegistry?.getExecutor(
+      previousOrder.exchange,
+      previousOrder.pair,
+    );
+
+    if (!executor) {
+      return;
+    }
+
+    await executor.onFill({
+      orderId: previousOrder.orderId,
+      exchangeOrderId: previousOrder.exchangeOrderId,
+      clientOrderId: previousOrder.clientOrderId,
+      side: previousOrder.side,
+      price: nextOrder.price || previousOrder.price,
+      qty: fillDelta.qty,
+      cumulativeQty: fillDelta.cumulativeQty,
+      receivedAt: ts,
+    });
   }
 
   private getPrunedFillLog(
