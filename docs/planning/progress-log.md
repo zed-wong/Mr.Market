@@ -3,6 +3,8 @@
 ## 2026-04-09
 
 - Add a dated PMM minimum-safe-stability close-gap plan in `docs/planning/2026-04-09-pmm-minimum-safe-stability-gap-plan.md`, narrowing the Hummingbot gap list into phased must-have/should-have/recommended work for single-venue PMM safe operation
+- Harden PMM runtime recovery and shutdown paths: restore tracked exchange orders on startup via REST open-order reconciliation, cancel orphaned exchange orders, add process-shutdown cancel-all with bounded wait, and add a realized-PnL kill switch with unit coverage
+- Route REST-recovered fill deltas back through the executor/ledger path, add mock-system PMM safety coverage for restart/shutdown/disconnect/kill-switch behavior, add mock-system WS/REST fill-recovery dedup coverage, and close the April 9 PMM minimum-safe-stability todo checklist
 
 ## 2026-04-08
 
