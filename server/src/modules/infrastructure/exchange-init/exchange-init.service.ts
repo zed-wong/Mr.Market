@@ -30,6 +30,10 @@ type ExchangeConfig = {
 };
 
 type ExchangeInitializationState = 'pending' | 'ready' | 'failed';
+type ExchangeReadyListener = (
+  exchangeName: string,
+  accountLabel: string,
+) => void | Promise<void>;
 const SYSTEM_TEST_SANDBOX_EXCHANGE_FLAG =
   'MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE';
 
@@ -43,6 +47,7 @@ export class ExchangeInitService {
     string,
     ExchangeInitializationState
   >();
+  private readonly exchangeReadyListeners = new Set<ExchangeReadyListener>();
   private readonly marketsCacheTtlSeconds = 60 * 60;
   private readonly refreshIntervalMs = 10 * 1000;
   private readonly initializationRetryAttempts = 3;
@@ -661,6 +666,7 @@ export class ExchangeInitService {
         if (exchangeMap.size > 0) {
           this.exchanges.set(config.name, exchangeMap);
           this.exchangeInitializationStates.set(config.name, 'ready');
+          this.notifyExchangeReady(config.name, [...exchangeMap.keys()]);
 
           return;
         }
@@ -798,6 +804,44 @@ export class ExchangeInitService {
     }
 
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  onExchangeReady(listener: ExchangeReadyListener): () => void {
+    this.exchangeReadyListeners.add(listener);
+
+    return () => {
+      this.exchangeReadyListeners.delete(listener);
+    };
+  }
+
+  isReady(exchangeName: string, label = 'default'): boolean {
+    try {
+      this.getExchange(exchangeName, label);
+      return true;
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
+  private notifyExchangeReady(
+    exchangeName: string,
+    accountLabels: string[],
+  ): void {
+    for (const accountLabel of accountLabels) {
+      for (const listener of this.exchangeReadyListeners) {
+        Promise.resolve(listener(exchangeName, accountLabel)).catch((error) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.error(
+            `Exchange ready listener failed for ${exchangeName}:${accountLabel}: ${message}`,
+          );
+        });
+      }
+    }
   }
 
   getExchange(exchangeName: string, label: string = 'default'): ccxt.Exchange {

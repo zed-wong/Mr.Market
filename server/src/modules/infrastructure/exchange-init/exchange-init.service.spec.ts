@@ -155,6 +155,25 @@ describe('ExchangeinitService', () => {
     expect(FlakyExchange.attempts).toBe(3);
   });
 
+  it('reports pending exchanges as not ready without throwing', () => {
+    (service as any).exchangeInitializationStates.set('mexc', 'pending');
+
+    expect(service.isReady('mexc')).toBe(false);
+  });
+
+  it('notifies ready listeners for each initialized account label', async () => {
+    const listener = jest.fn();
+    const unsubscribe = service.onExchangeReady(listener);
+
+    (service as any).notifyExchangeReady('mexc', ['default', 'desk-1']);
+    await Promise.resolve();
+
+    expect(listener).toHaveBeenNthCalledWith(1, 'mexc', 'default');
+    expect(listener).toHaveBeenNthCalledWith(2, 'mexc', 'desk-1');
+
+    unsubscribe();
+  });
+
   it('uses env-driven sandbox config when sandbox credentials are present', async () => {
     process.env.MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE = 'true';
     process.env.CCXT_SANDBOX_EXCHANGE = 'binance';
