@@ -18,6 +18,8 @@ describe('ExchangeConnectorAdapterService', () => {
     watchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
     watchBalance: jest.fn().mockResolvedValue({ total: {} }),
     loadMarkets: jest.fn().mockResolvedValue(undefined),
+    amountToPrecision: jest.fn((_pair: string, amount: number) => amount.toFixed(4)),
+    priceToPrecision: jest.fn((_pair: string, price: number) => price.toFixed(2)),
     markets: {
       'BTC/USDT': {
         limits: { amount: { min: 0.001 }, cost: { min: 10 } },
@@ -112,14 +114,28 @@ describe('ExchangeConnectorAdapterService', () => {
       service.loadTradingRules('binance', 'BTC/USDT'),
     ).resolves.toEqual({
       amountMin: 0.001,
-      amountStep: 0.0001,
       costMin: 10,
-      priceStep: 0.01,
       makerFee: 0.001,
     });
     await service.fetchBalance('binance');
 
     expect(exchange.fetchBalance).toHaveBeenCalled();
+  });
+
+  it('quantizes orders through ccxt precision helpers', () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    expect(
+      service.quantizeOrder('binance', 'BTC/USDT', '0.123456', '100.987'),
+    ).toEqual({
+      qty: '0.1235',
+      price: '100.99',
+    });
+    expect(exchange.amountToPrecision).toHaveBeenCalledWith('BTC/USDT', 0.123456);
+    expect(exchange.priceToPrecision).toHaveBeenCalledWith('BTC/USDT', 100.987);
   });
 
   it('serializes concurrent calls per exchange and applies interval after prior completion', async () => {

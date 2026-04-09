@@ -16,9 +16,7 @@ export class ExchangeConnectorAdapterService {
     string,
     {
       amountMin?: number;
-      amountStep?: number;
       costMin?: number;
-      priceStep?: number;
       makerFee?: number;
     }
   >();
@@ -141,9 +139,7 @@ export class ExchangeConnectorAdapterService {
     pair: string,
   ): Promise<{
     amountMin?: number;
-    amountStep?: number;
     costMin?: number;
-    priceStep?: number;
     makerFee?: number;
   }> {
     const key = this.toMarketKey(exchangeName, pair);
@@ -163,17 +159,7 @@ export class ExchangeConnectorAdapterService {
       const market = exchange?.markets?.[pair] || {};
       const rules = {
         amountMin: this.toFiniteNumber(market?.limits?.amount?.min),
-        amountStep:
-          this.toFiniteNumber(market?.precision?.amount) !== undefined
-            ? 1 /
-              10 ** Number(this.toFiniteNumber(market?.precision?.amount) || 0)
-            : undefined,
         costMin: this.toFiniteNumber(market?.limits?.cost?.min),
-        priceStep:
-          this.toFiniteNumber(market?.precision?.price) !== undefined
-            ? 1 /
-              10 ** Number(this.toFiniteNumber(market?.precision?.price) || 0)
-            : undefined,
         makerFee: this.toFiniteNumber(
           market?.maker || exchange?.fees?.trading?.maker,
         ),
@@ -183,6 +169,28 @@ export class ExchangeConnectorAdapterService {
 
       return rules;
     });
+  }
+
+  quantizeOrder(
+    exchangeName: string,
+    pair: string,
+    qty: string,
+    price: string,
+  ): { qty: string; price: string } {
+    const exchange = this.exchangeInitService.getExchange(exchangeName);
+    const quantizedQty =
+      typeof exchange.amountToPrecision === 'function'
+        ? exchange.amountToPrecision(pair, Number(qty))
+        : qty;
+    const quantizedPrice =
+      typeof exchange.priceToPrecision === 'function'
+        ? exchange.priceToPrecision(pair, Number(price))
+        : price;
+
+    return {
+      qty: String(quantizedQty),
+      price: String(quantizedPrice),
+    };
   }
 
   async fetchBalance(exchangeName: string): Promise<any> {
