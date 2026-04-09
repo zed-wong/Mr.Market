@@ -14,8 +14,17 @@ describe('ExchangeConnectorAdapterService', () => {
       .mockResolvedValue({ id: 'ex-order-1', status: 'open' }),
     fetchOpenOrders: jest.fn().mockResolvedValue([{ id: 'ex-order-1' }]),
     fetchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
+    fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 1, USDT: 1000 } }),
     watchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
     watchBalance: jest.fn().mockResolvedValue({ total: {} }),
+    loadMarkets: jest.fn().mockResolvedValue(undefined),
+    markets: {
+      'BTC/USDT': {
+        limits: { amount: { min: 0.001 }, cost: { min: 10 } },
+        precision: { amount: 4, price: 2 },
+        maker: 0.001,
+      },
+    },
   };
 
   const exchangeInitService = {
@@ -50,6 +59,7 @@ describe('ExchangeConnectorAdapterService', () => {
       '1',
       '100',
       'order-1:0',
+      { postOnly: true },
     );
     await service.cancelOrder('binance', 'BTC/USDT', 'ex-order-1');
 
@@ -59,7 +69,7 @@ describe('ExchangeConnectorAdapterService', () => {
       'buy',
       1,
       100,
-      { clientOrderId: 'order-1:0' },
+      { clientOrderId: 'order-1:0', postOnly: true },
     );
     expect(exchange.cancelOrder).toHaveBeenCalledWith('ex-order-1', 'BTC/USDT');
   });
@@ -90,6 +100,26 @@ describe('ExchangeConnectorAdapterService', () => {
 
     expect(exchange.watchOrderBook).toHaveBeenCalledWith('BTC/USDT');
     expect(exchange.watchBalance).toHaveBeenCalled();
+  });
+
+  it('loads trading rules and fetches balances through adapter', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    await expect(
+      service.loadTradingRules('binance', 'BTC/USDT'),
+    ).resolves.toEqual({
+      amountMin: 0.001,
+      amountStep: 0.0001,
+      costMin: 10,
+      priceStep: 0.01,
+      makerFee: 0.001,
+    });
+    await service.fetchBalance('binance');
+
+    expect(exchange.fetchBalance).toHaveBeenCalled();
   });
 
   it('serializes concurrent calls per exchange and applies interval after prior completion', async () => {

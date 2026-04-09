@@ -261,4 +261,35 @@ describeSandbox('Pure market making behavior parity (sandbox system)', () => {
 
     expect(finalIntentCount).toBe(initialIntentCount);
   });
+
+  it('does not re-quote during filled order delay cooldown', async () => {
+    const fixture = await helper.createPersistedPureMarketMakingOrder({
+      filledOrderDelay: 60_000,
+      hangingOrdersEnabled: false,
+      numberOfLayers: 1,
+    });
+    const { order } = fixture;
+
+    await helper.startOrder(order.orderId, order.userId);
+    await helper.runSingleTick(order.orderId);
+
+    const session = helper.getExecutorSession(
+      order.exchangeName,
+      order.pair,
+      order.orderId,
+    );
+
+    expect(session).toBeDefined();
+    session!.lastFillTimestamp = Date.now();
+    session!.nextRunAtMs = Date.now();
+
+    const initialIntentCount = (await helper.listStrategyIntents(order.orderId))
+      .length;
+
+    await helper.runSingleTick(order.orderId);
+
+    expect((await helper.listStrategyIntents(order.orderId)).length).toBe(
+      initialIntentCount,
+    );
+  });
 });

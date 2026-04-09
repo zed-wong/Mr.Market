@@ -18,6 +18,7 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
+import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
@@ -90,6 +91,8 @@ type PooledExecutorTarget = {
   orderId: string;
 };
 
+type ConnectorHealthStatus = 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED';
+
 @Injectable()
 export class StrategyService
   implements TickComponent, OnModuleInit, OnModuleDestroy
@@ -99,6 +102,10 @@ export class StrategyService
   private readonly latestIntentsByStrategy = new Map<
     string,
     StrategyOrderIntent[]
+  >();
+  private readonly connectorHealthByExchange = new Map<
+    string,
+    ConnectorHealthStatus
   >();
 
   private generateRunId(): string {
@@ -131,6 +138,8 @@ export class StrategyService
     private readonly privateStreamIngestionService?: PrivateStreamIngestionService,
     @Optional()
     private readonly balanceLedgerService?: BalanceLedgerService,
+    @Optional()
+    private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -174,6 +183,10 @@ export class StrategyService
 
   async health(): Promise<boolean> {
     return true;
+  }
+
+  getConnectorHealthStatus(exchange: string): ConnectorHealthStatus {
+    return this.connectorHealthByExchange.get(exchange) || 'CONNECTED';
   }
 
   async onTick(ts: string): Promise<void> {
@@ -487,6 +500,8 @@ export class StrategyService
     );
 
     const activeSession = this.sessions.get(strategyKey);
+
+    await this.cancelTrackedOrdersForStrategy(strategyKey);
 
     await this.removeSession(strategyKey, activeSession);
     await this.strategyIntentStoreService?.cancelPendingIntents(
@@ -1144,6 +1159,10 @@ export class StrategyService
     const priceExchange = params.oracleExchangeName
       ? params.oracleExchangeName
       : params.exchangeName;
+
+    if (this.getConnectorHealthStatus(params.exchangeName) !== 'CONNECTED') {
+      return [];
+    }
     let priceSource: BigNumber;
 
     try {
@@ -1154,7 +1173,9 @@ export class StrategyService
           params.priceSourceType,
         ),
       );
+      this.setConnectorHealthStatus(params.exchangeName, 'CONNECTED');
     } catch (error) {
+      this.setConnectorHealthStatus(params.exchangeName, 'DISCONNECTED');
       this.logger.warn(
         `Skipping cycle for ${strategyKey}: cannot resolve price source for ${params.exchangeName} ${params.pair} (${error.message})`,
       );
@@ -1174,10 +1195,30 @@ export class StrategyService
 
     const openOrders =
       this.exchangeOrderTrackerService?.getOpenOrders(strategyKey) || [];
+    const session = this.sessions.get(strategyKey);
+    const filledOrderDelay = Number(params.filledOrderDelay || 0);
+
+    if (
+      session &&
+      Number.isFinite(filledOrderDelay) &&
+      filledOrderDelay > 0 &&
+      typeof session.lastFillTimestamp === 'number' &&
+      Date.now() - session.lastFillTimestamp < filledOrderDelay
+    ) {
+      return [];
+    }
+
     const existingOpenOrdersBySide = {
       buy: openOrders.filter((order) => order.side === 'buy').length,
       sell: openOrders.filter((order) => order.side === 'sell').length,
     };
+    const staleCancellationActions = this.buildStaleOrderActions(
+      strategyKey,
+      params,
+      ts,
+      priceSource,
+      openOrders,
+    );
 
     const quotes = this.quoteExecutorManagerService
       ? this.quoteExecutorManagerService.buildQuotes({
@@ -1209,6 +1250,13 @@ export class StrategyService
         existingOpenOrdersBySide.sell
       }`,
     );
+
+    const minimumSpread = Number(params.minimumSpread || 0);
+    const availableBalances = await this.getAvailableBalancesForPair(
+      params.exchangeName,
+      params.pair,
+    );
+    const nextActionsBySide = new Map<'buy' | 'sell', ExecutorAction[]>();
 
     for (const quote of quotes) {
       if (!quote.shouldCreate) {
@@ -1250,25 +1298,96 @@ export class StrategyService
         continue;
       }
 
-      actions.push(
-        this.createIntent(
-          strategyKey,
-          strategyKey,
-          params.userId,
-          params.clientId,
-          params.exchangeName,
-          params.pair,
-          quote.side,
-          quotePrice,
-          new BigNumber(quote.qty),
-          ts,
-          `mm-layer-${quote.layer}-${quote.side}`,
-          'clob_cex',
-        ),
+      const effectiveSpread = quotePrice
+        .minus(priceSource)
+        .abs()
+        .dividedBy(priceSource);
+      const effectiveMinimumSpread = Math.max(
+        minimumSpread,
+        this.estimateMakerFeeSpread(params.exchangeName, params.pair),
       );
+
+      if (
+        Number.isFinite(effectiveMinimumSpread) &&
+        effectiveMinimumSpread > 0 &&
+        effectiveSpread.isLessThan(effectiveMinimumSpread)
+      ) {
+        this.logger.log(
+          `[${strategyKey}] Skipped layer-${quote.layer} ${quote.side} ${
+            quote.qty
+          }@${
+            quote.price
+          }: effective spread ${effectiveSpread.toFixed()} < minimumSpread ${effectiveMinimumSpread}`,
+        );
+        continue;
+      }
+
+      const quantized = await this.quantizeAndValidateQuote(
+        params.exchangeName,
+        params.pair,
+        quote.side,
+        new BigNumber(quote.qty),
+        quotePrice,
+        availableBalances,
+      );
+
+      if (!quantized) {
+        continue;
+      }
+
+      const action = this.createIntent(
+        strategyKey,
+        strategyKey,
+        params.userId,
+        params.clientId,
+        params.exchangeName,
+        params.pair,
+        quote.side,
+        quantized.price,
+        quantized.qty,
+        ts,
+        `mm-layer-${quote.layer}-${quote.side}`,
+        'clob_cex',
+        undefined,
+        true,
+      );
+      const actionsForSide = nextActionsBySide.get(quote.side) || [];
+
+      actionsForSide.push(action);
+      nextActionsBySide.set(quote.side, actionsForSide);
     }
 
-    return actions;
+    const tolerance = new BigNumber(params.orderRefreshTolerancePct || 0);
+
+    for (const [side, sideActions] of nextActionsBySide.entries()) {
+      const currentSideOrders = openOrders.filter(
+        (order) => order.side === side,
+      );
+
+      if (
+        tolerance.isGreaterThan(0) &&
+        currentSideOrders.length === sideActions.length &&
+        currentSideOrders.length > 0 &&
+        sideActions.every((action, index) => {
+          const existing = currentSideOrders[index];
+
+          return new BigNumber(existing.price)
+            .minus(action.price)
+            .abs()
+            .dividedBy(action.price)
+            .isLessThan(tolerance);
+        })
+      ) {
+        this.logger.log(
+          `[${strategyKey}] Skipped ${side} refresh: all quotes within tolerance ${tolerance.toFixed()}`,
+        );
+        continue;
+      }
+
+      actions.push(...sideActions);
+    }
+
+    return [...staleCancellationActions, ...actions];
   }
 
   private buildLegacyQuotes(
@@ -1352,6 +1471,7 @@ export class StrategyService
     suffix: string,
     executionCategory?: StrategyExecutionCategory,
     metadata?: Record<string, unknown>,
+    postOnly?: boolean,
   ): StrategyOrderIntent {
     return {
       type: 'CREATE_LIMIT_ORDER',
@@ -1366,6 +1486,7 @@ export class StrategyService
       price: price.toFixed(),
       qty: qty.toFixed(),
       executionCategory,
+      postOnly,
       metadata,
       createdAt: ts,
       status: 'NEW',
@@ -1905,6 +2026,46 @@ export class StrategyService
     this.sessions.delete(strategyKey);
   }
 
+  private async cancelTrackedOrdersForStrategy(
+    strategyKey: string,
+  ): Promise<void> {
+    const openOrders =
+      this.exchangeOrderTrackerService?.getOpenOrders(strategyKey) || [];
+
+    await Promise.all(
+      openOrders.map(async (order) => {
+        try {
+          const result = await this.exchangeConnectorAdapterService?.cancelOrder(
+            order.exchange,
+            order.pair,
+            order.exchangeOrderId,
+          );
+          const status = String(result?.status || '').toLowerCase();
+
+          this.exchangeOrderTrackerService?.upsertOrder(
+            status === 'canceled' || status === 'cancelled'
+              ? {
+                  ...order,
+                  status: 'cancelled',
+                  updatedAt: getRFC3339Timestamp(),
+                }
+              : {
+                  ...order,
+                  status: 'pending_cancel',
+                  updatedAt: getRFC3339Timestamp(),
+                },
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Failed cancel-all order cleanup for ${strategyKey}:${
+              order.exchangeOrderId
+            }: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }),
+    );
+  }
+
   private async detachSessionFromExecutor(
     session: StrategyRuntimeSession,
   ): Promise<void> {
@@ -2060,6 +2221,19 @@ export class StrategyService
     ts: string,
     error: unknown,
   ): void {
+    const session = this.sessions.get(strategyKey);
+    const exchange =
+      session?.strategyType === 'pureMarketMaking'
+        ? this.readString(
+            (session.params as unknown as PureMarketMakingStrategyDto)
+              .exchangeName,
+          )
+        : '';
+
+    if (exchange) {
+      this.setConnectorHealthStatus(exchange, 'DEGRADED');
+    }
+
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorTrace = error instanceof Error ? error.stack : undefined;
 
@@ -2088,9 +2262,16 @@ export class StrategyService
 
     await this.applyFillToBalanceLedger(session, fill);
 
-    // A fill invalidates the current quote shape, so make the session eligible
-    // for the next pooled tick immediately.
-    session.nextRunAtMs = Math.min(session.nextRunAtMs, Date.now());
+    session.lastFillTimestamp = Date.now();
+    const delayMs = Number(
+      (session.params as unknown as PureMarketMakingStrategyDto)
+        .filledOrderDelay || 0,
+    );
+
+    session.nextRunAtMs =
+      Number.isFinite(delayMs) && delayMs > 0
+        ? Math.max(session.nextRunAtMs, session.lastFillTimestamp + delayMs)
+        : Math.min(session.nextRunAtMs, Date.now());
   }
 
   private async applyFillToBalanceLedger(
@@ -2197,6 +2378,187 @@ export class StrategyService
       ].join(':');
 
     return ['mm-fill', session.strategyKey, stableIdentity].join(':');
+  }
+
+  private estimateMakerFeeSpread(exchangeName: string, pair: string): number {
+    try {
+      const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const market = exchange?.markets?.[pair];
+      const makerFee = Number(
+        market?.maker || exchange?.fees?.trading?.maker || 0,
+      );
+
+      return Number.isFinite(makerFee) && makerFee > 0 ? makerFee * 2 : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private setConnectorHealthStatus(
+    exchange: string,
+    status: ConnectorHealthStatus,
+  ): void {
+    const normalizedExchange = this.readString(exchange);
+
+    if (!normalizedExchange) {
+      return;
+    }
+
+    const previousStatus =
+      this.connectorHealthByExchange.get(normalizedExchange);
+
+    if (previousStatus === status) {
+      return;
+    }
+
+    this.connectorHealthByExchange.set(normalizedExchange, status);
+    this.logger.log(
+      `Connector health ${normalizedExchange}: ${
+        previousStatus || 'CONNECTED'
+      } -> ${status}`,
+    );
+  }
+
+  private async getAvailableBalancesForPair(
+    exchangeName: string,
+    pair: string,
+  ): Promise<{
+    base: BigNumber;
+    quote: BigNumber;
+    assets: { base: string; quote: string };
+  } | null> {
+    const assets = this.parseBaseQuote(pair);
+
+    if (!assets) {
+      return null;
+    }
+
+    const balance = await this.exchangeConnectorAdapterService?.fetchBalance(
+      exchangeName,
+    );
+
+    return {
+      base: new BigNumber(balance?.free?.[assets.base] || 0),
+      quote: new BigNumber(balance?.free?.[assets.quote] || 0),
+      assets,
+    };
+  }
+
+  private async quantizeAndValidateQuote(
+    exchangeName: string,
+    pair: string,
+    side: 'buy' | 'sell',
+    rawQty: BigNumber,
+    rawPrice: BigNumber,
+    availableBalances: {
+      base: BigNumber;
+      quote: BigNumber;
+      assets: { base: string; quote: string };
+    } | null,
+  ): Promise<{ price: BigNumber; qty: BigNumber } | null> {
+    if (!this.exchangeConnectorAdapterService) {
+      return { price: rawPrice, qty: rawQty };
+    }
+
+    if (!availableBalances) {
+      return null;
+    }
+
+    const { base, quote } = availableBalances;
+    const rules = await this.exchangeConnectorAdapterService.loadTradingRules(
+      exchangeName,
+      pair,
+    );
+    const price = this.quantizeValue(rawPrice, rules.priceStep);
+    const qty = this.quantizeValue(rawQty, rules.amountStep);
+
+    if (
+      qty.isLessThanOrEqualTo(0) ||
+      price.isLessThanOrEqualTo(0) ||
+      (rules.amountMin && qty.isLessThan(rules.amountMin)) ||
+      (rules.costMin && qty.multipliedBy(price).isLessThan(rules.costMin))
+    ) {
+      return null;
+    }
+
+    const notional = qty.multipliedBy(price);
+
+    if (side === 'buy' && quote.isLessThan(notional)) {
+      return null;
+    }
+    if (side === 'sell' && base.isLessThan(qty)) {
+      return null;
+    }
+
+    if (side === 'buy') {
+      availableBalances.quote = quote.minus(notional);
+    } else {
+      availableBalances.base = base.minus(qty);
+    }
+
+    return { price, qty };
+  }
+
+  private quantizeValue(value: BigNumber, step?: number): BigNumber {
+    if (!step || !Number.isFinite(step) || step <= 0) {
+      return value;
+    }
+
+    return value
+      .dividedBy(step)
+      .integerValue(BigNumber.ROUND_FLOOR)
+      .multipliedBy(step);
+  }
+
+  private buildStaleOrderActions(
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+    ts: string,
+    midPrice: BigNumber,
+    openOrders: Array<{
+      exchangeOrderId: string;
+      side: 'buy' | 'sell';
+      price: string;
+      qty: string;
+      createdAt: string;
+      status: string;
+    }>,
+  ): ExecutorAction[] {
+    const maxOrderAge = Number(params.maxOrderAge || 0);
+    const hangingOrdersCancelPct = Number(params.hangingOrdersCancelPct || 0);
+
+    return openOrders
+      .filter((order) => {
+        const ageMs = Date.now() - Date.parse(order.createdAt || ts);
+        const driftPct = new BigNumber(order.price)
+          .minus(midPrice)
+          .abs()
+          .dividedBy(midPrice);
+
+        return (
+          (Number.isFinite(maxOrderAge) &&
+            maxOrderAge > 0 &&
+            ageMs > maxOrderAge) ||
+          (Number.isFinite(hangingOrdersCancelPct) &&
+            hangingOrdersCancelPct > 0 &&
+            driftPct.isGreaterThan(hangingOrdersCancelPct))
+        );
+      })
+      .map((order, index) => ({
+        type: 'CANCEL_ORDER' as const,
+        intentId: `${strategyKey}:${ts}:stale-cancel-${index}`,
+        strategyInstanceId: strategyKey,
+        strategyKey,
+        userId: params.userId,
+        clientId: params.clientId,
+        exchange: params.exchangeName,
+        pair: params.pair,
+        side: order.side,
+        price: order.price,
+        qty: order.qty,
+        mixinOrderId: order.exchangeOrderId,
+        createdAt: ts,
+      }));
   }
 
   private isWithinTimeWindow(params: TimeIndicatorStrategyDto): boolean {

@@ -12,6 +12,7 @@ import { StrategyDefinition } from 'src/common/entities/market-making/strategy-d
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
+import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -78,6 +79,7 @@ const SINGLE_TICK_TEST_ENTITIES = [
   StrategyExecutionHistory,
   StrategyInstance,
   StrategyOrderIntentEntity,
+  TrackedOrderEntity,
 ];
 
 type RuntimeFixture = {
@@ -91,9 +93,14 @@ type PureMarketMakingRuntimeOverrides = {
   amountChangePerLayer?: number;
   amountChangeType?: 'fixed' | 'percentage';
   bidSpread?: number;
+  filledOrderDelay?: number;
   hangingOrdersEnabled?: boolean;
+  hangingOrdersCancelPct?: number;
+  maxOrderAge?: number;
+  minimumSpread?: number;
   numberOfLayers?: number;
   orderAmount?: number;
+  orderRefreshTolerancePct?: number;
   orderId?: string;
   orderRefreshTime?: number;
   pair?: string;
@@ -456,8 +463,13 @@ export class MarketMakingSingleTickHelper {
           amountChangeType,
           askSpread,
           bidSpread,
+          filledOrderDelay: overrides.filledOrderDelay,
           hangingOrdersEnabled: overrides.hangingOrdersEnabled,
+          hangingOrdersCancelPct: overrides.hangingOrdersCancelPct,
+          maxOrderAge: overrides.maxOrderAge,
+          minimumSpread: overrides.minimumSpread,
           orderAmount,
+          orderRefreshTolerancePct: overrides.orderRefreshTolerancePct,
           orderRefreshTime,
           numberOfLayers,
           pair,
@@ -702,9 +714,14 @@ export class MarketMakingSingleTickHelper {
       amountChangePerLayer: number;
       amountChangeType: 'fixed' | 'percentage';
       bidSpread: number;
+      filledOrderDelay?: number;
       hangingOrdersEnabled?: boolean;
+      hangingOrdersCancelPct?: number;
+      maxOrderAge?: number;
+      minimumSpread?: number;
       numberOfLayers: number;
       orderAmount: number;
+      orderRefreshTolerancePct?: number;
       orderRefreshTime: number;
       pair: string;
       userId: string;
@@ -728,6 +745,11 @@ export class MarketMakingSingleTickHelper {
         amountChangePerLayer: overrides.amountChangePerLayer,
         amountChangeType: overrides.amountChangeType,
         hangingOrdersEnabled: Boolean(overrides.hangingOrdersEnabled),
+        minimumSpread: overrides.minimumSpread,
+        orderRefreshTolerancePct: overrides.orderRefreshTolerancePct,
+        filledOrderDelay: overrides.filledOrderDelay,
+        maxOrderAge: overrides.maxOrderAge,
+        hangingOrdersCancelPct: overrides.hangingOrdersCancelPct,
       },
     };
   }

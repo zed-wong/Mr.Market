@@ -12,6 +12,16 @@ export class ExchangeConnectorAdapterService {
   private readonly lastRequestAtMsByExchange = new Map<string, number>();
   private readonly requestChainByExchange = new Map<string, Promise<void>>();
   private readonly minRequestIntervalMs: number;
+  private readonly marketRulesByKey = new Map<
+    string,
+    {
+      amountMin?: number;
+      amountStep?: number;
+      costMin?: number;
+      priceStep?: number;
+      makerFee?: number;
+    }
+  >();
 
   constructor(
     private readonly exchangeInitService: ExchangeInitService,
@@ -29,10 +39,14 @@ export class ExchangeConnectorAdapterService {
     qty: string,
     price: string,
     clientOrderId?: string,
+    options?: { postOnly?: boolean },
   ): Promise<any> {
     return await this.withRateLimit(exchangeName, async () => {
       const exchange = this.exchangeInitService.getExchange(exchangeName);
-      const params = clientOrderId ? { clientOrderId } : undefined;
+      const params = {
+        ...(clientOrderId ? { clientOrderId } : {}),
+        ...(options?.postOnly ? { postOnly: true } : {}),
+      };
 
       return await exchange.createOrder(
         pair,
@@ -40,7 +54,7 @@ export class ExchangeConnectorAdapterService {
         side,
         Number(qty),
         Number(price),
-        params,
+        Object.keys(params).length > 0 ? params : undefined,
       );
     });
   }
@@ -85,7 +99,9 @@ export class ExchangeConnectorAdapterService {
       this.logger.log(
         `fetchOrderBook ${exchange.id || exchangeName} ${pair} bids=${
           Array.isArray(orderBook?.bids) ? orderBook.bids.length : 0
-        } asks=${Array.isArray(orderBook?.asks) ? orderBook.asks.length : 0} topBid=${
+        } asks=${
+          Array.isArray(orderBook?.asks) ? orderBook.asks.length : 0
+        } topBid=${
           Array.isArray(orderBook?.bids) && orderBook.bids.length > 0
             ? JSON.stringify(orderBook.bids[0])
             : 'null'
@@ -118,6 +134,63 @@ export class ExchangeConnectorAdapterService {
     }
 
     return await exchange.watchBalance();
+  }
+
+  async loadTradingRules(
+    exchangeName: string,
+    pair: string,
+  ): Promise<{
+    amountMin?: number;
+    amountStep?: number;
+    costMin?: number;
+    priceStep?: number;
+    makerFee?: number;
+  }> {
+    const key = this.toMarketKey(exchangeName, pair);
+    const cached = this.marketRulesByKey.get(key);
+
+    if (cached) {
+      return cached;
+    }
+
+    return await this.withRateLimit(exchangeName, async () => {
+      const exchange = this.exchangeInitService.getExchange(exchangeName);
+
+      if (!exchange?.markets || !exchange.markets[pair]) {
+        await exchange.loadMarkets();
+      }
+
+      const market = exchange?.markets?.[pair] || {};
+      const rules = {
+        amountMin: this.toFiniteNumber(market?.limits?.amount?.min),
+        amountStep:
+          this.toFiniteNumber(market?.precision?.amount) !== undefined
+            ? 1 /
+              10 ** Number(this.toFiniteNumber(market?.precision?.amount) || 0)
+            : undefined,
+        costMin: this.toFiniteNumber(market?.limits?.cost?.min),
+        priceStep:
+          this.toFiniteNumber(market?.precision?.price) !== undefined
+            ? 1 /
+              10 ** Number(this.toFiniteNumber(market?.precision?.price) || 0)
+            : undefined,
+        makerFee: this.toFiniteNumber(
+          market?.maker || exchange?.fees?.trading?.maker,
+        ),
+      };
+
+      this.marketRulesByKey.set(key, rules);
+
+      return rules;
+    });
+  }
+
+  async fetchBalance(exchangeName: string): Promise<any> {
+    return await this.withRateLimit(exchangeName, async () => {
+      const exchange = this.exchangeInitService.getExchange(exchangeName);
+
+      return await exchange.fetchBalance();
+    });
   }
 
   private async withRateLimit<T>(
@@ -164,5 +237,15 @@ export class ExchangeConnectorAdapterService {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private toMarketKey(exchangeName: string, pair: string): string {
+    return `${exchangeName}:${pair}`;
+  }
+
+  private toFiniteNumber(value: unknown): number | undefined {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
 }

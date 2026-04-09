@@ -195,6 +195,38 @@ export class PureMarketMakingStrategyDto {
     example: 0.5,
   })
   currentBaseRatio?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum effective spread required to place or keep a quote',
+    example: 0.01,
+  })
+  minimumSpread?: number;
+
+  @ApiPropertyOptional({
+    description: 'Skip refresh when quote drift remains below this percentage',
+    example: 0.002,
+  })
+  orderRefreshTolerancePct?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cooldown after a fill before placing new quotes, in milliseconds',
+    example: 5000,
+  })
+  filledOrderDelay?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum order age before forced refresh, in milliseconds',
+    example: 60000,
+  })
+  maxOrderAge?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cancel hanging orders when their drift exceeds this percentage',
+    example: 0.02,
+  })
+  hangingOrdersCancelPct?: number;
 }
 export class ExecuteVolumeStrategyDto {
   @ApiPropertyOptional({
