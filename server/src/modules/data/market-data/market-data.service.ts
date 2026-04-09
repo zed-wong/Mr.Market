@@ -22,7 +22,10 @@ export class MarketdataService {
     string,
     Map<string, MarketDataListener>
   >();
-  private readonly orderBookSubscriptionTasks = new Map<string, Promise<void>>();
+  private readonly orderBookSubscriptionTasks = new Map<
+    string,
+    Promise<void>
+  >();
 
   private cachingTTL: 10; // 10s
 
@@ -30,7 +33,7 @@ export class MarketdataService {
   constructor(
     @Inject(CACHE_MANAGER) private cacheService: Cache,
     private ExchangeInitService: ExchangeInitService,
-  ) { }
+  ) {}
 
   async getSupportedExchanges(): Promise<string[]> {
     return this.ExchangeInitService.getSupportedExchanges();
@@ -201,7 +204,8 @@ export class MarketdataService {
       symbol,
     );
     const listeners =
-      this.orderBookListeners.get(subscriptionKey) || new Map<string, MarketDataListener>();
+      this.orderBookListeners.get(subscriptionKey) ||
+      new Map<string, MarketDataListener>();
 
     listeners.set(consumerId, onData);
     this.orderBookListeners.set(subscriptionKey, listeners);
@@ -477,7 +481,8 @@ export class MarketdataService {
         listener(orderBook);
       } catch (error) {
         this.logger.error(
-          `Order book listener failed for ${subscriptionKey}: ${error instanceof Error ? error.message : String(error)
+          `Order book listener failed for ${subscriptionKey}: ${
+            error instanceof Error ? error.message : String(error)
           }`,
         );
       }

@@ -14,7 +14,7 @@ export class GrowdataService {
     @Inject(CACHE_MANAGER) private cacheService: Cache,
     private readonly growdataRepository: GrowdataRepository,
     private readonly mixinClientService: MixinClientService,
-  ) { }
+  ) {}
 
   private cachingTTL = 60; // 1 minute
 
