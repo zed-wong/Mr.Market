@@ -3,13 +3,24 @@
     import { onMount } from "svelte";
     import { _ } from "svelte-i18n";
     import { page } from "$app/stores";
-    import { correct } from "$lib/stores/admin";
+    import { correct, showTokenExpired } from "$lib/stores/admin";
     import Login from "$lib/components/admin/login.svelte";
-    import { autoCheckPassword } from "$lib/helpers/mrm/admin";
+    import { autoCheckPassword, exit } from "$lib/helpers/mrm/admin";
     import SideBar from "$lib/components/admin/dashboard/sideBar.svelte";
     import { darkTheme } from "$lib/stores/theme";
     import { toAdminTheme } from "$lib/theme/themes";
     let sidebarOpen = false;
+    let tokenExpiredDialogEl;
+
+    $: if ($showTokenExpired && tokenExpiredDialogEl) {
+        tokenExpiredDialogEl.showModal();
+    }
+
+    const confirmTokenExpired = () => {
+        tokenExpiredDialogEl?.close();
+        showTokenExpired.set(false);
+        exit();
+    };
 
     $: adminTheme = toAdminTheme($darkTheme);
 
@@ -81,4 +92,18 @@
             <Login />
         </div>
     {/if}
+
+    <dialog bind:this={tokenExpiredDialogEl} class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box">
+            <span class="font-semibold text-lg">{$_("token_expired_title")}</span>
+            <p class="py-3 text-sm text-base-content/70">
+                {$_("token_expired_message")}
+            </p>
+            <div class="modal-action">
+                <button class="btn btn-primary" on:click={confirmTokenExpired}>
+                    {$_("login_again")}
+                </button>
+            </div>
+        </div>
+    </dialog>
 </main>
