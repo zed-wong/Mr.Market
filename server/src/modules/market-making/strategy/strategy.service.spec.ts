@@ -25,6 +25,11 @@ class PerformanceServiceMock {
 }
 
 class ExchangeInitServiceMock {
+  private readonly readyListeners: Array<
+    (exchangeName: string, accountLabel: string) => void | Promise<void>
+  > = [];
+  isReady = jest.fn().mockReturnValue(true);
+
   getExchange(exchangeName: string): any {
     return {
       id: exchangeName,
@@ -35,6 +40,26 @@ class ExchangeInitServiceMock {
 
   getSupportedExchanges(): string[] {
     return ['bitfinex', 'mexc', 'binance'];
+  }
+
+  onExchangeReady(
+    listener: (exchangeName: string, accountLabel: string) => void | Promise<void>,
+  ): () => void {
+    this.readyListeners.push(listener);
+
+    return () => {
+      const index = this.readyListeners.indexOf(listener);
+
+      if (index >= 0) {
+        this.readyListeners.splice(index, 1);
+      }
+    };
+  }
+
+  async emitReady(exchangeName: string, accountLabel: string): Promise<void> {
+    for (const listener of this.readyListeners) {
+      await listener(exchangeName, accountLabel);
+    }
   }
 }
 
@@ -63,6 +88,7 @@ describe('StrategyService', () => {
   };
   let exchangeConnectorAdapterService: {
     loadTradingRules: jest.Mock;
+    quantizeOrder: jest.Mock;
     fetchBalance: jest.Mock;
     cancelOrder: jest.Mock;
     fetchOpenOrders: jest.Mock;
@@ -147,11 +173,13 @@ describe('StrategyService', () => {
     exchangeConnectorAdapterService = {
       loadTradingRules: jest.fn().mockResolvedValue({
         amountMin: 0.001,
-        amountStep: 0.001,
         costMin: 10,
-        priceStep: 0.01,
         makerFee: 0.001,
       }),
+      quantizeOrder: jest.fn((_: string, __: string, qty: string, price: string) => ({
+        qty,
+        price,
+      })),
       fetchBalance: jest.fn().mockResolvedValue({
         free: { BTC: 10, USDT: 1000 },
       }),
@@ -220,8 +248,13 @@ describe('StrategyService', () => {
     exchangeInitService = module.get<ExchangeInitServiceMock>(
       ExchangeInitService as any,
     );
+    await service.onModuleInit();
 
     jest.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    await service.onModuleDestroy();
   });
 
   it('registers a pure market making session without executing orders directly', async () => {
@@ -1389,6 +1422,64 @@ describe('StrategyService', () => {
     dateNowSpy.mockRestore();
   });
 
+  it('queues pooled strategies from persistence until the exchange account is ready', async () => {
+    const nowMs = 1_700_000_000_000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+
+    exchangeInitService.isReady.mockReturnValue(false);
+    mockStrategyInstanceRepository.find.mockResolvedValue([
+      {
+        strategyKey: 'order-1-pureMarketMaking',
+        strategyType: 'pureMarketMaking',
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: null,
+        parameters: {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          orderRefreshTime: 1500,
+          accountLabel: 'default',
+        },
+      },
+    ]);
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockImplementation((strategyType: string) => {
+        if (strategyType === 'pureMarketMaking') {
+          return {
+            getCadenceMs: jest.fn(() => 1500),
+          };
+        }
+
+        return undefined;
+      }),
+      listControllerTypes: jest.fn(),
+    };
+
+    await service.start();
+
+    expect(
+      executorRegistry.getExecutor('binance', 'BTC/USDT')?.getSession('order-1'),
+    ).toBeUndefined();
+
+    exchangeInitService.isReady.mockReturnValue(true);
+    await exchangeInitService.emitReady('binance', 'default');
+
+    expect(
+      executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getSession('order-1'),
+    ).toEqual(
+      expect.objectContaining({
+        strategyKey: 'order-1-pureMarketMaking',
+        nextRunAtMs: nowMs,
+      }),
+    );
+
+    dateNowSpy.mockRestore();
+  });
+
   it('rejects legacy arbitrage sessions during start hydration', async () => {
     mockStrategyInstanceRepository.find.mockResolvedValue([
       {
@@ -1851,8 +1942,8 @@ describe('StrategyService', () => {
       ),
     ).resolves.toEqual([
       expect.objectContaining({
-        price: '100.12',
-        qty: '0.123',
+        price: '100.129',
+        qty: '0.1239',
       }),
     ]);
 

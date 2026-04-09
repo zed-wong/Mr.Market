@@ -108,6 +108,7 @@ export class StrategyService
 {
   private readonly logger = new CustomLogger(StrategyService.name);
   private readonly sessions = new Map<string, StrategyRuntimeSession>();
+  private readonly pendingActivationStrategies = new Map<string, StrategyInstance>();
   private readonly latestIntentsByStrategy = new Map<
     string,
     StrategyOrderIntent[]
@@ -116,6 +117,7 @@ export class StrategyService
     string,
     ConnectorHealthStatus
   >();
+  private detachExchangeReadyListener?: () => void;
 
   private generateRunId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -155,10 +157,19 @@ export class StrategyService
 
   async onModuleInit(): Promise<void> {
     this.clockTickCoordinatorService?.register('strategy-service', this, 20);
+    this.detachExchangeReadyListener = this.exchangeInitService.onExchangeReady(
+      (exchangeName, accountLabel) =>
+        void this.activatePendingStrategiesForExchange(
+          exchangeName,
+          accountLabel,
+        ),
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
     this.clockTickCoordinatorService?.unregister('strategy-service');
+    this.detachExchangeReadyListener?.();
+    this.detachExchangeReadyListener = undefined;
   }
 
   async start(): Promise<void> {
@@ -166,27 +177,14 @@ export class StrategyService
     const nowMs = Date.now();
 
     for (const strategy of runningStrategies) {
-      await this.restoreRuntimeStateForStrategy(strategy);
-      await this.upsertSession(
-        strategy.strategyKey,
-        strategy.strategyType as StrategyType,
-        strategy.userId,
-        strategy.clientId,
-        this.getCadenceMs(strategy.parameters, strategy.strategyType),
-        strategy.parameters,
-        strategy.marketMakingOrderId ||
-          (strategy.strategyType === 'pureMarketMaking'
-            ? strategy.clientId
-            : undefined),
-        nowMs,
-        this.generateRunId(),
-      );
+      await this.restoreOrQueueStrategy(strategy, nowMs);
     }
   }
 
   async stop(): Promise<void> {
     await this.cancelAllRunningStrategies('service stop');
     this.sessions.clear();
+    this.pendingActivationStrategies.clear();
     this.executorRegistry?.clear();
   }
 
@@ -511,6 +509,7 @@ export class StrategyService
       { strategyKey },
       { status: 'stopped', updatedAt: new Date() },
     );
+    this.pendingActivationStrategies.delete(strategyKey);
 
     const activeSession = this.sessions.get(strategyKey);
 
@@ -831,6 +830,116 @@ export class StrategyService
 
     throw new Error(
       `Cannot create session for strategyKey=${strategyKey}: executorRegistry not available or pooledTarget unresolved`,
+    );
+  }
+
+  private async restoreOrQueueStrategy(
+    strategy: StrategyInstance,
+    nextRunAtMs: number,
+  ): Promise<void> {
+    if (!this.canActivateStrategyImmediately(strategy)) {
+      this.pendingActivationStrategies.set(strategy.strategyKey, strategy);
+      this.logger.log(
+        `Queued pending activation for ${strategy.strategyKey}: exchange not ready yet`,
+      );
+      return;
+    }
+
+    await this.activateStrategyFromPersistence(strategy, nextRunAtMs);
+  }
+
+  private canActivateStrategyImmediately(strategy: StrategyInstance): boolean {
+    const target = this.resolvePooledExecutorTarget(
+      strategy.strategyType as StrategyType,
+      strategy.parameters as StrategyRuntimeSession['params'],
+      strategy.clientId,
+      strategy.marketMakingOrderId ||
+        (strategy.strategyType === 'pureMarketMaking'
+          ? strategy.clientId
+          : undefined),
+    );
+
+    if (!target) {
+      return true;
+    }
+
+    const accountLabel = this.resolveAccountLabel(
+      strategy.strategyType as StrategyType,
+      strategy.parameters as StrategyRuntimeSession['params'],
+    );
+
+    return this.exchangeInitService.isReady(
+      target.exchange,
+      accountLabel || 'default',
+    );
+  }
+
+  private async activatePendingStrategiesForExchange(
+    exchangeName: string,
+    accountLabel: string,
+  ): Promise<void> {
+    const pendingStrategies = [...this.pendingActivationStrategies.values()];
+
+    for (const strategy of pendingStrategies) {
+      const strategyType = strategy.strategyType as StrategyType;
+      const params = strategy.parameters as StrategyRuntimeSession['params'];
+      const target = this.resolvePooledExecutorTarget(
+        strategyType,
+        params,
+        strategy.clientId,
+        strategy.marketMakingOrderId ||
+          (strategy.strategyType === 'pureMarketMaking'
+            ? strategy.clientId
+            : undefined),
+      );
+
+      if (!target || target.exchange !== exchangeName) {
+        continue;
+      }
+
+      const strategyAccountLabel =
+        this.resolveAccountLabel(strategyType, params) || 'default';
+
+      if (strategyAccountLabel !== accountLabel) {
+        continue;
+      }
+
+      this.pendingActivationStrategies.delete(strategy.strategyKey);
+
+      try {
+        await this.activateStrategyFromPersistence(strategy, Date.now());
+        this.logger.log(
+          `Activated pending strategy ${strategy.strategyKey} after ${exchangeName}:${accountLabel} became ready`,
+        );
+      } catch (error) {
+        this.pendingActivationStrategies.set(strategy.strategyKey, strategy);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Pending activation failed for ${strategy.strategyKey} on ${exchangeName}:${accountLabel}: ${errorMessage}`,
+        );
+      }
+    }
+  }
+
+  private async activateStrategyFromPersistence(
+    strategy: StrategyInstance,
+    nextRunAtMs: number,
+  ): Promise<void> {
+    await this.restoreRuntimeStateForStrategy(strategy);
+    await this.upsertSession(
+      strategy.strategyKey,
+      strategy.strategyType as StrategyType,
+      strategy.userId,
+      strategy.clientId,
+      this.getCadenceMs(strategy.parameters, strategy.strategyType),
+      strategy.parameters,
+      strategy.marketMakingOrderId ||
+        (strategy.strategyType === 'pureMarketMaking'
+          ? strategy.clientId
+          : undefined),
+      nextRunAtMs,
+      this.generateRunId(),
     );
   }
 
@@ -1340,9 +1449,11 @@ export class StrategyService
       }
 
       const quantized = await this.quantizeAndValidateQuote(
+        strategyKey,
         params.exchangeName,
         params.pair,
         quote.side,
+        quote.layer,
         new BigNumber(quote.qty),
         quotePrice,
         availableBalances,
@@ -2465,9 +2576,11 @@ export class StrategyService
   }
 
   private async quantizeAndValidateQuote(
+    strategyKey: string,
     exchangeName: string,
     pair: string,
     side: 'buy' | 'sell',
+    layer: number,
     rawQty: BigNumber,
     rawPrice: BigNumber,
     availableBalances: {
@@ -2481,6 +2594,9 @@ export class StrategyService
     }
 
     if (!availableBalances) {
+      this.logger.warn(
+        `[${strategyKey}] Skipped layer-${layer} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: available balances unavailable for ${exchangeName} ${pair}`,
+      );
       return null;
     }
 
@@ -2489,8 +2605,14 @@ export class StrategyService
       exchangeName,
       pair,
     );
-    const price = this.quantizeValue(rawPrice, rules.priceStep);
-    const qty = this.quantizeValue(rawQty, rules.amountStep);
+    const quantized = this.exchangeConnectorAdapterService.quantizeOrder(
+      exchangeName,
+      pair,
+      rawQty.toFixed(),
+      rawPrice.toFixed(),
+    );
+    const price = new BigNumber(quantized.price);
+    const qty = new BigNumber(quantized.qty);
 
     if (
       qty.isLessThanOrEqualTo(0) ||
@@ -2498,15 +2620,58 @@ export class StrategyService
       (rules.amountMin && qty.isLessThan(rules.amountMin)) ||
       (rules.costMin && qty.multipliedBy(price).isLessThan(rules.costMin))
     ) {
+      const rejectionReasons: string[] = [];
+
+      if (qty.isLessThanOrEqualTo(0)) {
+        rejectionReasons.push(
+          `quantized qty ${qty.toFixed()} <= 0 (rawQty=${rawQty.toFixed()})`,
+        );
+      }
+      if (price.isLessThanOrEqualTo(0)) {
+        rejectionReasons.push(
+          `quantized price ${price.toFixed()} <= 0 (rawPrice=${rawPrice.toFixed()})`,
+        );
+      }
+      if (rules.amountMin && qty.isLessThan(rules.amountMin)) {
+        rejectionReasons.push(
+          `qty ${qty.toFixed()} ${availableBalances.assets.base} < amountMin ${new BigNumber(
+            rules.amountMin,
+          ).toFixed()} ${availableBalances.assets.base}`,
+        );
+      }
+      if (rules.costMin && qty.multipliedBy(price).isLessThan(rules.costMin)) {
+        rejectionReasons.push(
+          `notional ${qty
+            .multipliedBy(price)
+            .toFixed()} ${availableBalances.assets.quote} (${qty.toFixed()} ${
+            availableBalances.assets.base
+          } * ${price.toFixed()} ${availableBalances.assets.quote}/${
+            availableBalances.assets.base
+          }) < costMin ${new BigNumber(rules.costMin).toFixed()} ${
+            availableBalances.assets.quote
+          }`,
+        );
+      }
+      this.logger.warn(
+        `[${strategyKey}] Skipped layer-${layer} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${rejectionReasons.join(
+          '; ',
+        )}`,
+      );
       return null;
     }
 
     const notional = qty.multipliedBy(price);
 
     if (side === 'buy' && quote.isLessThan(notional)) {
+      this.logger.warn(
+        `[${strategyKey}] Skipped layer-${layer} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient quote balance ${quote.toFixed()} ${availableBalances.assets.quote} < required ${notional.toFixed()}`,
+      );
       return null;
     }
     if (side === 'sell' && base.isLessThan(qty)) {
+      this.logger.warn(
+        `[${strategyKey}] Skipped layer-${layer} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient base balance ${base.toFixed()} ${availableBalances.assets.base} < required ${qty.toFixed()}`,
+      );
       return null;
     }
 
@@ -2517,17 +2682,6 @@ export class StrategyService
     }
 
     return { price, qty };
-  }
-
-  private quantizeValue(value: BigNumber, step?: number): BigNumber {
-    if (!step || !Number.isFinite(step) || step <= 0) {
-      return value;
-    }
-
-    return value
-      .dividedBy(step)
-      .integerValue(BigNumber.ROUND_FLOOR)
-      .multipliedBy(step);
   }
 
   private buildStaleOrderActions(
