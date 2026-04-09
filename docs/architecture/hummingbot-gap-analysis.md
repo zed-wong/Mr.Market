@@ -21,12 +21,12 @@
 
 Mr.Market's execution engine is a **multi-tenant, tick-driven, intent-based pooled executor** system. It correctly solves multi-user order pooling — something Hummingbot (single-user, single-strategy) has no equivalent for. However, the executor boundary was scoped at `(exchange, pair)` rather than allowing multi-leg coordination, which blocks cross-venue strategies like XEMM and Spot-Perpetual Arbitrage.
 
-**Total gaps identified: 83** across 4 tiers.
+**Total gaps identified: 84** across 4 tiers.
 
 | Tier | Count | Scope |
 |---|---|---|
 | Tier 1: Foundation | 12 | Multi-leg executor, derivative connector, event bus, order state machine, user streams, trading rules, time sync, connector internals |
-| Tier 2: Strategies | 24 | XEMM, Perp MM, Spot-Perp Arb, AMM Arb, Avellaneda, proposal pipeline, PMM micro-features, arb specifics |
+| Tier 2: Strategies | 25 | XEMM, Perp MM, Spot-Perp Arb, AMM Arb, Avellaneda, proposal pipeline, PMM micro-features, arb specifics |
 | Tier 3: Executors + DeFi + Fees | 13 | Triple barrier, DCA, Grid, TWAP, CLMM LP, Gateway middleware, fee system depth |
 | Tier 4: Operations + Infra | 34 | Backtesting, trade recorder, PnL reporting, notifications, remote control, order book depth, deployment |
 
@@ -382,6 +382,14 @@ The engine correctly solved multi-tenancy but scoped the executor boundary too n
 |---|---|
 | **Hummingbot** | Force-cancel and refresh orders older than N seconds regardless of price movement |
 | **Status** | Missing — we only have `orderRefreshTime` |
+| **Priority** | Medium |
+
+#### #84 — Hanging Orders Cancel Percentage
+
+| | |
+|---|---|
+| **Hummingbot** | `hanging_orders_cancel_pct` — auto-cancel hanging orders when their price drifts more than N% from mid price; also renews hanging orders past `max_order_age` |
+| **Status** | We have `hangingOrdersEnabled` but no cancel-percentage threshold — hanging orders persist indefinitely regardless of price drift |
 | **Priority** | Medium |
 
 #### #52 — POST_ONLY Order Type

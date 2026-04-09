@@ -112,6 +112,29 @@ Deferred strategy follow-ups
 - [] 8. Reset CCXT seeder cache per run and add a timeout guard around `loadMarkets()` to avoid hanging the seed process
 - [] 9. Parallelize chain icon fetching during pair seed generation and wrap `runSeed()` database cleanup in `try/finally`
 
+### Intent Worker Rate-Limiting
+
+#### Summary
+
+- Replace flat per-exchange concurrency limit with intent-type-differentiated (query vs. mutation) limits per exchange.
+- Add per-exchange configuration so Binance, OKX, and small CEXs get appropriate limits.
+- Add retry with exponential backoff so failed intents are requeued instead of dropped.
+- Make in-flight state survive restart via DB reconciliation.
+- Add structured metrics for observability and runtime tuning.
+
+#### Detailed Checklist
+
+- [future] See `docs/planning/2026-04-08-intent-worker-rate-limiting-improvements.md` for full design.
+  - [future] IntentTypeClassifier — classify intents as `query` or `mutation` by `type` field
+  - [future] ExchangeRateLimitRegistry — per-exchange, per-intent-type concurrency limits from config
+  - [future] InFlightTracker — structured tracker with restart reconciliation
+  - [future] IntentRetryScheduler — exponential backoff, maxRetries, `RETRYING` status
+  - [future] IntentWorkerMetrics — structured log events on dispatch/complete/fail/slot-exhausted
+  - [future] Add `retryCount`/`maxRetries` columns to `strategy_order_intents` entity
+  - [future] Refactor `StrategyIntentWorkerService` to use tracker, classifier, registry, scheduler
+  - [future] Wire retry failure path in `StrategyIntentExecutionService`
+  - [future] Update tests for new classification, limits, retry, and reconciliation paths
+
 ## Interface
 
 ### Admin UX
