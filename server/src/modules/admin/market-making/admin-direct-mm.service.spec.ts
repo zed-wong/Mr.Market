@@ -669,9 +669,7 @@ describe('AdminDirectMarketMakingService', () => {
     expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
       'strategy-2',
       expect.objectContaining({
-        userId: 'admin-user',
         exchangeName: 'binance',
-        pair: 'BTC/USDT',
         symbol: 'BTC/USDT',
       }),
     );
@@ -681,9 +679,43 @@ describe('AdminDirectMarketMakingService', () => {
         userId: 'spoofed-user',
         clientId: 'spoofed-client',
         marketMakingOrderId: 'spoofed-order',
-        pair: 'ETH/USDT',
         symbol: 'ETH/USDT',
         exchangeName: 'kraken',
+      }),
+    );
+  });
+
+  it('injects system fields after dual-account schema validation succeeds', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      userOrdersService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-2',
+      enabled: true,
+      controllerType: 'dualAccountVolume',
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'dualAccountVolume',
+    );
+
+    await service.directStart(dualAccountStartDto, 'admin-user');
+
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'admin-user',
+        strategySnapshot: expect.objectContaining({
+          resolvedConfig: expect.objectContaining({
+            userId: 'admin-user',
+            clientId: expect.any(String),
+            marketMakingOrderId: expect.any(String),
+            pair: 'BTC/USDT',
+            exchangeName: 'binance',
+          }),
+        }),
       }),
     );
   });

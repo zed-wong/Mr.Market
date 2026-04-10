@@ -100,6 +100,7 @@ export class AdminDirectMarketMakingService {
     dto: DirectStartMarketMakingDto,
     adminUserId?: string,
   ): Promise<{ orderId: string; state: string; warnings: string[] }> {
+    const directUserId = adminUserId || 'admin-direct';
     const definition = await this.strategyDefinitionRepository.findOne({
       where: { id: dto.strategyDefinitionId, enabled: true },
     });
@@ -124,19 +125,26 @@ export class AdminDirectMarketMakingService {
     );
     const orderId = randomUUID();
     const configOverrides = this.sanitizeConfigOverrides(dto.configOverrides);
+    const resolverInput = {
+      ...configOverrides,
+      symbol: dto.pair,
+      exchangeName: dto.exchangeName,
+    };
+
+    this.logger.log(
+      `Admin direct-start config ${JSON.stringify({
+        strategyDefinitionId: dto.strategyDefinitionId,
+        controllerType,
+        rawConfigOverrideKeys: Object.keys(dto.configOverrides || {}),
+        sanitizedConfigOverrideKeys: Object.keys(configOverrides),
+        resolverInputKeys: Object.keys(resolverInput),
+      })}`,
+    );
 
     const resolvedConfig =
       await this.strategyConfigResolver.resolveForOrderSnapshot(
         dto.strategyDefinitionId,
-        {
-          ...configOverrides,
-          userId: adminUserId || 'admin-direct',
-          clientId: orderId,
-          marketMakingOrderId: orderId,
-          pair: dto.pair,
-          symbol: dto.pair,
-          exchangeName: dto.exchangeName,
-        },
+        resolverInput,
       );
 
     if (controllerType === 'dualAccountVolume') {
@@ -152,6 +160,12 @@ export class AdminDirectMarketMakingService {
       resolvedConfig.resolvedConfig.accountLabel =
         executionAccounts.primary.accountLabel;
     }
+
+    resolvedConfig.resolvedConfig.userId = directUserId;
+    resolvedConfig.resolvedConfig.clientId = orderId;
+    resolvedConfig.resolvedConfig.marketMakingOrderId = orderId;
+    resolvedConfig.resolvedConfig.pair = dto.pair;
+    resolvedConfig.resolvedConfig.exchangeName = dto.exchangeName;
 
     const warnings =
       controllerType === 'dualAccountVolume'
@@ -170,7 +184,7 @@ export class AdminDirectMarketMakingService {
 
     const order = this.marketMakingRepository.create({
       orderId,
-      userId: adminUserId || 'admin-direct',
+      userId: directUserId,
       pair: dto.pair,
       exchangeName: dto.exchangeName,
       strategyDefinitionId: dto.strategyDefinitionId,
