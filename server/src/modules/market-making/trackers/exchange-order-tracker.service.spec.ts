@@ -56,6 +56,62 @@ describe('ExchangeOrderTrackerService', () => {
     expect(openOrders[0].exchangeOrderId).toBe('ex-1');
   });
 
+  it('splits live orders from active slot orders', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    service.upsertOrder({
+      orderId: 'o1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'pending-create',
+      slotKey: 'layer-1-buy',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'o1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'open-order',
+      slotKey: 'layer-1-sell',
+      side: 'sell',
+      price: '101',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'o1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'pending-cancel',
+      slotKey: 'layer-2-buy',
+      side: 'buy',
+      price: '99',
+      qty: '1',
+      status: 'pending_cancel',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    expect(
+      service.getLiveOrders('strategy-1').map((order) => order.exchangeOrderId),
+    ).toEqual(['open-order']);
+    expect(
+      service
+        .getActiveSlotOrders('strategy-1')
+        .map((order) => order.exchangeOrderId),
+    ).toEqual(['pending-create', 'open-order', 'pending-cancel']);
+  });
+
   it('reconciles order status on tick via adapter poller', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'closed' }),

@@ -156,14 +156,27 @@ export class ExchangeOrderTrackerService
     void this.persistOrder(createdOrder, key);
   }
 
-  getOpenOrders(strategyKey: string): TrackedOrder[] {
+  getLiveOrders(strategyKey: string): TrackedOrder[] {
+    return [...this.orders.values()].filter(
+      (order) =>
+        order.strategyKey === strategyKey &&
+        (order.status === 'open' || order.status === 'partially_filled'),
+    );
+  }
+
+  getActiveSlotOrders(strategyKey: string): TrackedOrder[] {
     return [...this.orders.values()].filter(
       (order) =>
         order.strategyKey === strategyKey &&
         (order.status === 'pending_create' ||
           order.status === 'open' ||
-          order.status === 'partially_filled'),
+          order.status === 'partially_filled' ||
+          order.status === 'pending_cancel'),
     );
+  }
+
+  getOpenOrders(strategyKey: string): TrackedOrder[] {
+    return this.getLiveOrders(strategyKey);
   }
 
   getTrackedOrders(strategyKey: string): TrackedOrder[] {

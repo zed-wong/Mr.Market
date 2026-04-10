@@ -351,7 +351,7 @@ export class AdminDirectMarketMakingService {
       accountLabel,
     );
     const openOrders =
-      this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
+      this.exchangeOrderTrackerService.getLiveOrders(strategyKey);
     const intents =
       order.state === 'stopped'
         ? []
@@ -701,7 +701,9 @@ export class AdminDirectMarketMakingService {
       accountLabel,
     );
     const market = exchange?.markets?.[pair];
-    const makerFee = Number(market?.maker || exchange?.fees?.trading?.maker || 0);
+    const makerFee = Number(
+      market?.maker || exchange?.fees?.trading?.maker || 0,
+    );
     const feeFloor =
       Number.isFinite(makerFee) && makerFee > 0 ? makerFee * 2 : 0;
     const effectiveMinimumSpread = Math.max(configuredMinimumSpread, feeFloor);
@@ -712,12 +714,20 @@ export class AdminDirectMarketMakingService {
 
     const invalidSides: string[] = [];
 
-    if (Number.isFinite(bidSpread) && bidSpread > 0 && bidSpread < effectiveMinimumSpread) {
+    if (
+      Number.isFinite(bidSpread) &&
+      bidSpread > 0 &&
+      bidSpread < effectiveMinimumSpread
+    ) {
       invalidSides.push(
         `bidSpread ${bidSpread} < effectiveMinimumSpread ${effectiveMinimumSpread}`,
       );
     }
-    if (Number.isFinite(askSpread) && askSpread > 0 && askSpread < effectiveMinimumSpread) {
+    if (
+      Number.isFinite(askSpread) &&
+      askSpread > 0 &&
+      askSpread < effectiveMinimumSpread
+    ) {
       invalidSides.push(
         `askSpread ${askSpread} < effectiveMinimumSpread ${effectiveMinimumSpread}`,
       );

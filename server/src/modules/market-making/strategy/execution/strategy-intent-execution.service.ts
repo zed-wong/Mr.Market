@@ -168,10 +168,29 @@ export class StrategyIntentExecutionService {
 
     try {
       if (intent.type === 'CREATE_LIMIT_ORDER') {
+        const activeSlotOrders =
+          this.exchangeOrderTrackerService?.getActiveSlotOrders?.(
+            intent.strategyKey,
+          ) ||
+          this.exchangeOrderTrackerService?.getTrackedOrders(
+            intent.strategyKey,
+          ) ||
+          [];
         const trackedOrders =
           this.exchangeOrderTrackerService?.getTrackedOrders(
             intent.strategyKey,
           ) || [];
+        if (
+          intent.slotKey &&
+          activeSlotOrders.some((order) => order.slotKey === intent.slotKey)
+        ) {
+          await this.strategyIntentStoreService?.updateIntentStatus(
+            intent.intentId,
+            'DONE',
+          );
+
+          return;
+        }
         if (
           trackedOrders.some(
             (order) =>

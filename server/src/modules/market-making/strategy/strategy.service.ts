@@ -116,6 +116,7 @@ export class StrategyService
     string,
     StrategyOrderIntent[]
   >();
+  private readonly stoppingStrategyKeys = new Set<string>();
   private readonly connectorHealthByExchange = new Map<
     string,
     ConnectorHealthStatus
@@ -508,43 +509,49 @@ export class StrategyService
             client_id: clientId,
           });
 
-    await this.strategyInstanceRepository.update(
-      { strategyKey },
-      { status: 'stopped', updatedAt: new Date() },
-    );
-    this.pendingActivationStrategies.delete(strategyKey);
+    this.stoppingStrategyKeys.add(strategyKey);
 
-    const activeSession = this.sessions.get(strategyKey);
+    try {
+      await this.strategyInstanceRepository.update(
+        { strategyKey },
+        { status: 'stopped', updatedAt: new Date() },
+      );
+      this.pendingActivationStrategies.delete(strategyKey);
 
-    await this.cancelTrackedOrdersForStrategy(strategyKey);
+      const activeSession = this.sessions.get(strategyKey);
 
-    await this.removeSession(strategyKey, activeSession);
-    await this.strategyIntentStoreService?.cancelPendingIntents(
-      strategyKey,
-      'strategy stopped before intent execution',
-    );
+      await this.cancelTrackedOrdersForStrategy(strategyKey);
 
-    const stopIntent: StrategyOrderIntent = {
-      type: 'STOP_CONTROLLER',
-      intentId: `${strategyKey}:${Date.now()}:stop`,
-      strategyInstanceId: strategyKey,
-      strategyKey,
-      userId,
-      clientId,
-      exchange: '',
-      pair: '',
-      side: 'buy',
-      price: '0',
-      qty: '0',
-      createdAt: getRFC3339Timestamp(),
-      status: 'CANCELLED',
-      metadata: {
-        reason: 'strategy stopped',
-      },
-    };
+      await this.removeSession(strategyKey, activeSession);
+      await this.strategyIntentStoreService?.cancelPendingIntents(
+        strategyKey,
+        'strategy stopped before intent execution',
+      );
 
-    await this.publishIntents(strategyKey, [stopIntent]);
-    this.latestIntentsByStrategy.delete(strategyKey);
+      const stopIntent: StrategyOrderIntent = {
+        type: 'STOP_CONTROLLER',
+        intentId: `${strategyKey}:${Date.now()}:stop`,
+        strategyInstanceId: strategyKey,
+        strategyKey,
+        userId,
+        clientId,
+        exchange: '',
+        pair: '',
+        side: 'buy',
+        price: '0',
+        qty: '0',
+        createdAt: getRFC3339Timestamp(),
+        status: 'CANCELLED',
+        metadata: {
+          reason: 'strategy stopped',
+        },
+      };
+
+      await this.publishIntents(strategyKey, [stopIntent]);
+      this.latestIntentsByStrategy.delete(strategyKey);
+    } finally {
+      this.stoppingStrategyKeys.delete(strategyKey);
+    }
   }
 
   async stopMarketMakingStrategyForOrder(
@@ -1281,6 +1288,7 @@ export class StrategyService
     ts: string,
   ): Promise<ExecutorAction[]> {
     const actions: ExecutorAction[] = [];
+    const cancelledExchangeOrderIds = new Set<string>();
     const priceExchange = params.oracleExchangeName
       ? params.oracleExchangeName
       : params.exchangeName;
@@ -1322,8 +1330,16 @@ export class StrategyService
       return actions;
     }
 
-    const openOrders =
-      this.exchangeOrderTrackerService?.getOpenOrders(strategyKey) || [];
+    const activeOrders =
+      this.exchangeOrderTrackerService?.getActiveSlotOrders?.(strategyKey) ||
+      this.exchangeOrderTrackerService?.getOpenOrders?.(strategyKey) ||
+      [];
+    const liveOrders =
+      this.exchangeOrderTrackerService?.getLiveOrders?.(strategyKey) ||
+      activeOrders.filter(
+        (order) =>
+          order.status === 'open' || order.status === 'partially_filled',
+      );
     const session = this.sessions.get(strategyKey);
     const filledOrderDelay = Number(params.filledOrderDelay || 0);
 
@@ -1337,17 +1353,24 @@ export class StrategyService
       return [];
     }
 
-    const existingOpenOrdersBySide = {
-      buy: openOrders.filter((order) => order.side === 'buy').length,
-      sell: openOrders.filter((order) => order.side === 'sell').length,
+    const liveOrdersBySide = {
+      buy: liveOrders.filter((order) => order.side === 'buy').length,
+      sell: liveOrders.filter((order) => order.side === 'sell').length,
     };
     const staleCancellationActions = this.buildStaleOrderActions(
       strategyKey,
       params,
       ts,
       priceSource,
-      openOrders,
+      liveOrders,
     );
+
+    for (const action of staleCancellationActions) {
+      actions.push(action);
+      if (action.mixinOrderId) {
+        cancelledExchangeOrderIds.add(action.mixinOrderId);
+      }
+    }
 
     const quotes = this.quoteExecutorManagerService
       ? this.quoteExecutorManagerService.buildQuotes({
@@ -1365,8 +1388,6 @@ export class StrategyService
           currentBaseRatio: Number(params.currentBaseRatio || 0.5),
           makerHeavyMode: Boolean(params.makerHeavyMode),
           makerHeavyBiasBps: Number(params.makerHeavyBiasBps || 0),
-          hangingOrdersEnabled: Boolean(params.hangingOrdersEnabled),
-          existingOpenOrdersBySide,
         })
       : this.buildLegacyQuotes(params, priceSource);
 
@@ -1375,9 +1396,7 @@ export class StrategyService
         params.bidSpread
       } askSpread=${params.askSpread} layers=${
         params.numberOfLayers
-      } openBuys=${existingOpenOrdersBySide.buy} openSells=${
-        existingOpenOrdersBySide.sell
-      }`,
+      } liveBuys=${liveOrdersBySide.buy} liveSells=${liveOrdersBySide.sell}`,
     );
 
     const minimumSpread = Number(params.minimumSpread || 0);
@@ -1386,15 +1405,10 @@ export class StrategyService
       params.pair,
       params.accountLabel,
     );
-    const nextActionsBySide = new Map<'buy' | 'sell', ExecutorAction[]>();
+    const targetActionBySlot = new Map<string, ExecutorAction>();
 
     for (const quote of quotes) {
-      if (!quote.shouldCreate) {
-        this.logger.log(
-          `[${strategyKey}] Skipped layer-${quote.layer} ${quote.side} ${quote.qty}@${quote.price}: shouldCreate=false (hanging orders)`,
-        );
-        continue;
-      }
+      const slotKey = quote.slotKey || `layer-${quote.layer}-${quote.side}`;
       const quotePrice = new BigNumber(quote.price);
 
       if (
@@ -1404,9 +1418,7 @@ export class StrategyService
         priceSource.isGreaterThan(params.ceilingPrice)
       ) {
         this.logger.log(
-          `[${strategyKey}] Skipped layer-${
-            quote.layer
-          } buy: price ${priceSource.toFixed()} > ceilingPrice ${
+          `[${strategyKey}] Skipped ${slotKey} buy: price ${priceSource.toFixed()} > ceilingPrice ${
             params.ceilingPrice
           }`,
         );
@@ -1419,9 +1431,7 @@ export class StrategyService
         priceSource.isLessThan(params.floorPrice)
       ) {
         this.logger.log(
-          `[${strategyKey}] Skipped layer-${
-            quote.layer
-          } sell: price ${priceSource.toFixed()} < floorPrice ${
+          `[${strategyKey}] Skipped ${slotKey} sell: price ${priceSource.toFixed()} < floorPrice ${
             params.floorPrice
           }`,
         );
@@ -1443,9 +1453,7 @@ export class StrategyService
         effectiveSpread.isLessThan(effectiveMinimumSpread)
       ) {
         this.logger.log(
-          `[${strategyKey}] Skipped layer-${quote.layer} ${quote.side} ${
-            quote.qty
-          }@${
+          `[${strategyKey}] Skipped ${slotKey} ${quote.qty}@${
             quote.price
           }: effective spread ${effectiveSpread.toFixed()} < effectiveMinimumSpread ${effectiveMinimumSpread}`,
         );
@@ -1468,83 +1476,118 @@ export class StrategyService
         continue;
       }
 
-      const action = this.createIntent(
-        strategyKey,
-        strategyKey,
-        params.userId,
-        params.clientId,
-        params.exchangeName,
-        params.pair,
-        quote.side,
-        quantized.price,
-        quantized.qty,
-        ts,
-        `mm-layer-${quote.layer}-${quote.side}`,
-        'clob_cex',
-        undefined,
-        true,
-        params.accountLabel,
-      );
-      const actionsForSide = nextActionsBySide.get(quote.side) || [];
+      targetActionBySlot.set(slotKey, {
+        ...this.createIntent(
+          strategyKey,
+          strategyKey,
+          params.userId,
+          params.clientId,
+          params.exchangeName,
+          params.pair,
+          quote.side,
+          quantized.price,
+          quantized.qty,
+          ts,
+          `mm-${slotKey}`,
+          'clob_cex',
+          undefined,
+          true,
+          params.accountLabel,
+        ),
+        slotKey,
+      });
+    }
 
-      actionsForSide.push(action);
-      nextActionsBySide.set(quote.side, actionsForSide);
+    const unassignedActiveOrders = activeOrders.filter(
+      (order) => !order.slotKey,
+    );
+
+    for (const order of unassignedActiveOrders) {
+      this.appendCancelAction(
+        actions,
+        cancelledExchangeOrderIds,
+        this.buildCancelOrderAction(
+          strategyKey,
+          params,
+          order,
+          ts,
+          'unassigned',
+        ),
+      );
+    }
+
+    if (unassignedActiveOrders.length > 0) {
+      return actions;
+    }
+
+    const activeOrderBySlot = new Map<string, TrackedOrder>();
+
+    for (const order of activeOrders) {
+      if (!order.slotKey || activeOrderBySlot.has(order.slotKey)) {
+        continue;
+      }
+      activeOrderBySlot.set(order.slotKey, order);
     }
 
     const tolerance = new BigNumber(params.orderRefreshTolerancePct || 0);
+    const slotKeys = new Set<string>([
+      ...targetActionBySlot.keys(),
+      ...activeOrderBySlot.keys(),
+    ]);
 
-    for (const [side, sideActions] of nextActionsBySide.entries()) {
-      const currentSideOrders = openOrders.filter(
-        (order) => order.side === side,
-      );
+    for (const slotKey of slotKeys) {
+      const targetAction = targetActionBySlot.get(slotKey);
+      const currentOrder = activeOrderBySlot.get(slotKey);
 
-      if (
-        tolerance.isGreaterThan(0) &&
-        currentSideOrders.length === sideActions.length &&
-        currentSideOrders.length > 0 &&
-        sideActions.every((action, index) => {
-          const existing = currentSideOrders[index];
+      if (!currentOrder && targetAction) {
+        actions.push(targetAction);
+        continue;
+      }
 
-          return new BigNumber(existing.price)
-            .minus(action.price)
-            .abs()
-            .dividedBy(action.price)
-            .isLessThan(tolerance);
-        })
-      ) {
-        this.logger.log(
-          `[${strategyKey}] Skipped ${side} refresh: all quotes within tolerance ${tolerance.toFixed()}`,
+      if (currentOrder && !targetAction) {
+        this.appendCancelAction(
+          actions,
+          cancelledExchangeOrderIds,
+          this.buildCancelOrderAction(
+            strategyKey,
+            params,
+            currentOrder,
+            ts,
+            slotKey,
+          ),
         );
         continue;
       }
 
-      if (currentSideOrders.length > 0) {
-        const cancelActions = currentSideOrders
-          .filter((order) => order.status !== 'pending_create')
-          .map((order, index) => ({
-            type: 'CANCEL_ORDER' as const,
-            intentId: `${strategyKey}:${ts}:refresh-cancel-${side}-${index}`,
-            strategyInstanceId: strategyKey,
-            strategyKey,
-            userId: params.userId,
-            clientId: params.clientId,
-            exchange: params.exchangeName,
-            accountLabel: params.accountLabel,
-            pair: params.pair,
-            side: order.side,
-            price: order.price,
-            qty: order.qty,
-            mixinOrderId: order.exchangeOrderId,
-            createdAt: ts,
-          }));
-
-        actions.push(...cancelActions);
+      if (!currentOrder || !targetAction) {
+        continue;
       }
 
-      actions.push(...sideActions);
+      if (
+        currentOrder.status === 'pending_create' ||
+        currentOrder.status === 'pending_cancel'
+      ) {
+        continue;
+      }
+
+      if (this.isQuoteWithinTolerance(currentOrder, targetAction, tolerance)) {
+        continue;
+      }
+
+      this.appendCancelAction(
+        actions,
+        cancelledExchangeOrderIds,
+        this.buildCancelOrderAction(
+          strategyKey,
+          params,
+          currentOrder,
+          ts,
+          slotKey,
+        ),
+      );
     }
 
-    return [...staleCancellationActions, ...actions];
+    return actions;
   }
 
   private buildLegacyQuotes(
@@ -1552,17 +1595,17 @@ export class StrategyService
     priceSource: BigNumber,
   ): Array<{
     layer: number;
+    slotKey: string;
     side: 'buy' | 'sell';
     price: string;
     qty: string;
-    shouldCreate: boolean;
   }> {
     const quotes: Array<{
       layer: number;
+      slotKey: string;
       side: 'buy' | 'sell';
       price: string;
       qty: string;
-      shouldCreate: boolean;
     }> = [];
 
     let currentOrderAmount = new BigNumber(params.orderAmount);
@@ -1597,21 +1640,101 @@ export class StrategyService
 
       quotes.push({
         layer,
+        slotKey: `layer-${layer}-buy`,
         side: 'buy',
         price: buyPrice.toFixed(),
         qty: currentOrderAmount.toFixed(),
-        shouldCreate: true,
       });
       quotes.push({
         layer,
+        slotKey: `layer-${layer}-sell`,
         side: 'sell',
         price: sellPrice.toFixed(),
         qty: currentOrderAmount.toFixed(),
-        shouldCreate: true,
       });
     }
 
     return quotes;
+  }
+
+  private isQuoteWithinTolerance(
+    order: TrackedOrder,
+    action: ExecutorAction,
+    tolerance: BigNumber,
+  ): boolean {
+    if (order.side !== action.side) {
+      return false;
+    }
+
+    if (tolerance.isLessThanOrEqualTo(0)) {
+      return order.price === action.price && order.qty === action.qty;
+    }
+
+    const actionPrice = new BigNumber(action.price);
+
+    if (!actionPrice.isFinite() || actionPrice.isLessThanOrEqualTo(0)) {
+      return false;
+    }
+
+    return new BigNumber(order.price)
+      .minus(action.price)
+      .abs()
+      .dividedBy(actionPrice)
+      .isLessThan(tolerance);
+  }
+
+  private buildCancelOrderAction(
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+    order: Pick<
+      TrackedOrder,
+      'exchangeOrderId' | 'side' | 'price' | 'qty' | 'slotKey' | 'status'
+    >,
+    ts: string,
+    reason: string,
+  ): ExecutorAction | null {
+    if (
+      !order.exchangeOrderId ||
+      order.status === 'pending_cancel' ||
+      order.status === 'cancelled' ||
+      order.status === 'filled'
+    ) {
+      return null;
+    }
+
+    return {
+      type: 'CANCEL_ORDER',
+      intentId: `${strategyKey}:${ts}:cancel-${reason}-${order.exchangeOrderId}`,
+      strategyInstanceId: strategyKey,
+      strategyKey,
+      userId: params.userId,
+      clientId: params.clientId,
+      exchange: params.exchangeName,
+      accountLabel: params.accountLabel,
+      pair: params.pair,
+      side: order.side,
+      price: order.price,
+      qty: order.qty,
+      mixinOrderId: order.exchangeOrderId,
+      slotKey: order.slotKey,
+      createdAt: ts,
+    };
+  }
+
+  private appendCancelAction(
+    actions: ExecutorAction[],
+    cancelledExchangeOrderIds: Set<string>,
+    action: ExecutorAction | null,
+  ): void {
+    if (
+      !action?.mixinOrderId ||
+      cancelledExchangeOrderIds.has(action.mixinOrderId)
+    ) {
+      return;
+    }
+
+    cancelledExchangeOrderIds.add(action.mixinOrderId);
+    actions.push(action);
   }
 
   private createIntent(
@@ -1659,6 +1782,13 @@ export class StrategyService
     intents: ExecutorAction[],
   ): Promise<void> {
     if (intents.length === 0) {
+      return;
+    }
+
+    if (
+      this.stoppingStrategyKeys.has(strategyKey) &&
+      intents.some((intent) => intent.type !== 'STOP_CONTROLLER')
+    ) {
       return;
     }
 
@@ -2737,6 +2867,7 @@ export class StrategyService
     midPrice: BigNumber,
     openOrders: Array<{
       exchangeOrderId: string;
+      slotKey?: string;
       side: 'buy' | 'sell';
       price: string;
       qty: string;
@@ -2931,20 +3062,26 @@ export class StrategyService
 
   private async cancelAllRunningStrategies(reason: string): Promise<void> {
     for (const session of [...this.sessions.values()]) {
-      await this.strategyInstanceRepository.update(
-        { strategyKey: session.strategyKey },
-        { status: 'stopped', updatedAt: new Date() },
-      );
+      this.stoppingStrategyKeys.add(session.strategyKey);
 
-      if (session.strategyType === 'pureMarketMaking') {
-        await this.cancelTrackedOrdersForStrategy(session.strategyKey);
+      try {
+        await this.strategyInstanceRepository.update(
+          { strategyKey: session.strategyKey },
+          { status: 'stopped', updatedAt: new Date() },
+        );
+
+        if (session.strategyType === 'pureMarketMaking') {
+          await this.cancelTrackedOrdersForStrategy(session.strategyKey);
+        }
+
+        await this.strategyIntentStoreService?.cancelPendingIntents(
+          session.strategyKey,
+          `strategy stopped during ${reason}`,
+        );
+        await this.detachSessionFromExecutor(session);
+      } finally {
+        this.stoppingStrategyKeys.delete(session.strategyKey);
       }
-
-      await this.strategyIntentStoreService?.cancelPendingIntents(
-        session.strategyKey,
-        `strategy stopped during ${reason}`,
-      );
-      await this.detachSessionFromExecutor(session);
     }
   }
 

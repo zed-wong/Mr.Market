@@ -68,7 +68,7 @@ export class ReconciliationService {
   }
 
   getOpenOrdersForStrategy(strategyKey: string) {
-    return this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
+    return this.exchangeOrderTrackerService.getLiveOrders(strategyKey);
   }
 
   async reconcileRewardConsistency(): Promise<ReconciliationReport> {

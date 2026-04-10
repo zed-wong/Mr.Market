@@ -81,6 +81,8 @@ describe('StrategyService', () => {
   };
   let exchangeOrderTrackerService: {
     getOpenOrders: jest.Mock;
+    getLiveOrders: jest.Mock;
+    getActiveSlotOrders: jest.Mock;
     getTrackedOrders: jest.Mock;
     upsertOrder: jest.Mock;
   };
@@ -157,6 +159,8 @@ describe('StrategyService', () => {
     };
     exchangeOrderTrackerService = {
       getOpenOrders: jest.fn().mockReturnValue([]),
+      getLiveOrders: jest.fn().mockReturnValue([]),
+      getActiveSlotOrders: jest.fn().mockReturnValue([]),
       getTrackedOrders: jest.fn().mockReturnValue([]),
       upsertOrder: jest.fn(),
     };
@@ -1762,10 +1766,8 @@ describe('StrategyService', () => {
       (service as any).quoteExecutorManagerService.buildQuotes,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
-        existingOpenOrdersBySide: {
-          buy: 2,
-          sell: 1,
-        },
+        midPrice: '100',
+        numberOfLayers: 1,
       }),
     );
   });
@@ -1913,6 +1915,120 @@ describe('StrategyService', () => {
         postOnly: true,
       }),
     ]);
+  });
+
+  it('cancels an occupied slot without recreating it in the same tick when outside tolerance', async () => {
+    (service as any).exchangeOrderTrackerService = {
+      getActiveSlotOrders: jest.fn().mockReturnValue([
+        {
+          exchangeOrderId: 'ex-buy-1',
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '95',
+          qty: '1',
+          status: 'open',
+        },
+      ]),
+      getLiveOrders: jest.fn().mockReturnValue([
+        {
+          exchangeOrderId: 'ex-buy-1',
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '95',
+          qty: '1',
+          status: 'open',
+          createdAt: '2026-03-11T00:00:00.000Z',
+        },
+      ]),
+    };
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([
+        {
+          layer: 1,
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '99',
+          qty: '1',
+        },
+      ]),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        type: 'CANCEL_ORDER',
+        mixinOrderId: 'ex-buy-1',
+        slotKey: 'layer-1-buy',
+      }),
+    ]);
+  });
+
+  it('does not create a duplicate PMM order when the slot is already pending create', async () => {
+    (service as any).exchangeOrderTrackerService = {
+      getActiveSlotOrders: jest.fn().mockReturnValue([
+        {
+          exchangeOrderId: 'ex-pending-1',
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '99',
+          qty: '1',
+          status: 'pending_create',
+        },
+      ]),
+      getLiveOrders: jest.fn().mockReturnValue([]),
+    };
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([
+        {
+          layer: 1,
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '99',
+          qty: '1',
+        },
+      ]),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
   });
 
   it('quantizes PMM quotes and skips unaffordable or below-minimum orders', async () => {

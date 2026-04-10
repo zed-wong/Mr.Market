@@ -24,6 +24,7 @@ describe('StrategyIntentExecutionService', () => {
   const exchangeOrderTrackerService = {
     upsertOrder: jest.fn(),
     getTrackedOrders: jest.fn().mockReturnValue([]),
+    getActiveSlotOrders: jest.fn().mockReturnValue([]),
     getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
   };
 
@@ -202,6 +203,32 @@ describe('StrategyIntentExecutionService', () => {
       buildSubmittedClientOrderId('c1', 0),
       { postOnly: true, timeInForce: undefined },
       undefined,
+    );
+  });
+
+  it('deduplicates create intents when the slot already has an active tracked order', async () => {
+    exchangeOrderTrackerService.getActiveSlotOrders.mockReturnValueOnce([
+      {
+        slotKey: 'layer-1-buy',
+        status: 'open',
+      },
+    ]);
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-slot-dedup',
+        slotKey: 'layer-1-buy',
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-slot-dedup',
+      'DONE',
     );
   });
 

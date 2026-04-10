@@ -14,16 +14,14 @@ type BuildQuotesInput = {
   currentBaseRatio: number;
   makerHeavyMode: boolean;
   makerHeavyBiasBps: number;
-  hangingOrdersEnabled: boolean;
-  existingOpenOrdersBySide: { buy: number; sell: number };
 };
 
 type QuoteLevel = {
   layer: number;
+  slotKey: string;
   side: 'buy' | 'sell';
   price: string;
   qty: string;
-  shouldCreate: boolean;
 };
 
 @Injectable()
@@ -68,26 +66,19 @@ export class QuoteExecutorManagerService {
       const buyPrice = mid.multipliedBy(new BigNumber(1).minus(bidSpread));
       const sellPrice = mid.multipliedBy(new BigNumber(1).plus(askSpread));
 
-      const skipBuy =
-        input.hangingOrdersEnabled &&
-        layer <= input.existingOpenOrdersBySide.buy;
-      const skipSell =
-        input.hangingOrdersEnabled &&
-        layer <= input.existingOpenOrdersBySide.sell;
-
       quotes.push({
         layer,
+        slotKey: `layer-${layer}-buy`,
         side: 'buy',
         price: buyPrice.toFixed(),
         qty: currentQty.toFixed(),
-        shouldCreate: !skipBuy,
       });
       quotes.push({
         layer,
+        slotKey: `layer-${layer}-sell`,
         side: 'sell',
         price: sellPrice.toFixed(),
         qty: currentQty.toFixed(),
-        shouldCreate: !skipSell,
       });
     }
 
