@@ -52,7 +52,7 @@ This file maps key entities to module ownership and business usage.
 | `Contribution` | `campaign` | admin/reporting | Contribution records for campaign economics. |
 | `HufiScoreSnapshot` | `campaign` | reporting/admin | Daily HUFI score evidence. |
 | `CustomConfigEntity` | `infrastructure/custom-config` | `fee`, operations | Runtime tuning values. |
-| `APIKeysConfig` | `market-making/exchange-api-key` | `exchange`, `exchange-init`, execution paths | Exchange credential and mode configuration. |
+| `APIKeysConfig` | `market-making/exchange-api-key` | `exchange`, `exchange-init`, execution paths | Exchange credential config. Admin runtime account identity is the persisted `key_id`, not a client label alias. |
 
 ## Ownership rules used in current codebase
 

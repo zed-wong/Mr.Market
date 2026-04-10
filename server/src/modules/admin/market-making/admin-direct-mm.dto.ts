@@ -25,36 +25,21 @@ export class DirectStartMarketMakingDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   apiKeyId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   makerApiKeyId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   takerApiKeyId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  accountLabel?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  makerAccountLabel?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  takerAccountLabel?: string;
 
   @ApiPropertyOptional({ type: 'object', additionalProperties: true })
   @IsOptional()
@@ -83,7 +68,8 @@ export class CampaignJoinRequestDto {
   evmAddress: string;
 
   @ApiProperty()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   apiKeyId: string;
 
   @ApiProperty()

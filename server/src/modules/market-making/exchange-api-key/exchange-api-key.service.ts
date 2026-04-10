@@ -215,8 +215,8 @@ export class ExchangeApiKeyService {
         const apiKeyConfig = new APIKeysConfig();
 
         apiKeyConfig.exchange = config.name;
-        apiKeyConfig.exchange_index = account.label || 'default';
-        apiKeyConfig.name = account.label || 'default';
+        apiKeyConfig.name =
+          String(account.label || 'default').trim() || 'default';
         apiKeyConfig.api_key = account.apiKey;
         apiKeyConfig.api_secret = encrypt(account.secret, publicKey);
         apiKeyConfig.permissions =
@@ -670,12 +670,10 @@ export class ExchangeApiKeyService {
       );
     }
 
-    key.exchange_index = String(
-      key.exchange_index || key.name || 'default',
-    ).trim();
+    key.name = String(key.name || '').trim();
 
-    if (!key.exchange_index) {
-      key.exchange_index = 'default';
+    if (!key.name) {
+      throw new BadRequestException('API key name is required');
     }
 
     // 2. Validate with CCXT

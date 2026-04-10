@@ -24,7 +24,6 @@ export interface AdminSwapOrder {
 export interface AdminSingleKey {
   key_id: string;
   exchange: string;
-  exchange_index: string;
   name: string;
   api_key: string;
   api_secret: string;

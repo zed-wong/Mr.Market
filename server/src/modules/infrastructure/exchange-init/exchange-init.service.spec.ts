@@ -43,7 +43,6 @@ describe('ExchangeinitService', () => {
           {
             key_id: '1',
             exchange: 'binance',
-            exchange_index: 'default',
             name: 'default',
             api_key: 'key',
             api_secret: 'secret',
@@ -111,6 +110,31 @@ describe('ExchangeinitService', () => {
 
     expect(result).toEqual(['binance']);
     expect(exchangeService.readSupportedExchanges).toHaveBeenCalledTimes(1);
+  });
+
+  it('builds DB-backed exchange configs with key_id account labels', () => {
+    const exchangeConfigs = (service as any).buildExchangeConfigsFromDb([
+      {
+        key_id: '42',
+        exchange: 'binance',
+        name: 'desk-42',
+        api_key: 'key',
+        api_secret: 'secret',
+      },
+    ]);
+
+    expect(exchangeConfigs).toEqual([
+      expect.objectContaining({
+        name: 'binance',
+        accounts: [
+          expect.objectContaining({
+            label: '42',
+            apiKey: 'key',
+            secret: 'secret',
+          }),
+        ],
+      }),
+    ]);
   });
 
   it('refreshes exchanges when API keys change', async () => {
@@ -232,7 +256,6 @@ describe('ExchangeinitService', () => {
         {
           key_id: '1',
           exchange: 'binance',
-          exchange_index: 'default',
           name: 'default',
           api_key: 'key',
           api_secret: 'secret',

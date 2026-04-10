@@ -26,7 +26,6 @@
             [
                 key.name,
                 key.exchange,
-                key.exchange_index,
                 key.key_id,
                 key.api_key,
             ]

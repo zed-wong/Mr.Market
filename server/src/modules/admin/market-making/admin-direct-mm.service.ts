@@ -475,10 +475,14 @@ export class AdminDirectMarketMakingService {
         typeof resolvedConfig.dynamicRoleSwitching === 'boolean'
           ? resolvedConfig.dynamicRoleSwitching
           : null,
-      targetQuoteVolume: this.readConfigString(resolvedConfig.targetQuoteVolume),
+      targetQuoteVolume: this.readConfigString(
+        resolvedConfig.targetQuoteVolume,
+      ),
       publishedCycles: this.readConfigNumber(resolvedConfig.publishedCycles),
       completedCycles: this.readConfigNumber(resolvedConfig.completedCycles),
-      tradedQuoteVolume: this.readConfigString(resolvedConfig.tradedQuoteVolume),
+      tradedQuoteVolume: this.readConfigString(
+        resolvedConfig.tradedQuoteVolume,
+      ),
       realizedPnlQuote: this.readConfigString(resolvedConfig.realizedPnlQuote),
     };
 
@@ -648,8 +652,7 @@ export class AdminDirectMarketMakingService {
       const visibility = String(definition.visibility || 'public').trim();
 
       return (
-        ['public', 'admin'].includes(visibility) &&
-        controllerType.length > 0
+        ['public', 'admin'].includes(visibility) && controllerType.length > 0
       );
     });
   }
@@ -690,17 +693,15 @@ export class AdminDirectMarketMakingService {
       const maker = await this.validateExecutionAccount(
         dto.makerApiKeyId,
         dto.exchangeName,
-        dto.makerAccountLabel,
       );
       const taker = await this.validateExecutionAccount(
         dto.takerApiKeyId,
         dto.exchangeName,
-        dto.takerAccountLabel,
       );
 
-      if (maker.accountLabel === taker.accountLabel) {
+      if (maker.apiKeyId === taker.apiKeyId) {
         throw new BadRequestException(
-          'Maker and taker account labels must be different',
+          'Maker and taker API keys must be different',
         );
       }
 
@@ -711,7 +712,6 @@ export class AdminDirectMarketMakingService {
       primary: await this.validateExecutionAccount(
         dto.apiKeyId,
         dto.exchangeName,
-        dto.accountLabel,
       ),
     };
   }
@@ -719,7 +719,6 @@ export class AdminDirectMarketMakingService {
   private async validateExecutionAccount(
     apiKeyId: string | undefined,
     exchangeName: string,
-    requestedAccountLabel?: string,
   ): Promise<DirectExecutionAccount> {
     if (!apiKeyId) {
       throw new BadRequestException('API key not found');
@@ -735,13 +734,10 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException('API key exchange does not match request');
     }
 
-    const accountLabel = String(apiKey.exchange_index || 'default').trim();
-    const requestedLabel = String(requestedAccountLabel || '').trim();
+    const accountLabel = String(apiKey.key_id || '').trim();
 
-    if (requestedLabel && accountLabel !== requestedLabel) {
-      throw new BadRequestException(
-        'API key account label does not match request',
-      );
+    if (!accountLabel) {
+      throw new BadRequestException('API key identity is invalid');
     }
 
     return {
@@ -1041,7 +1037,9 @@ export class AdminDirectMarketMakingService {
     }
 
     try {
-      const apiKey = await this.exchangeApiKeyService.readAPIKey(order.apiKeyId);
+      const apiKey = await this.exchangeApiKeyService.readAPIKey(
+        order.apiKeyId,
+      );
       const apiKeyName = String(apiKey?.name || '').trim();
 
       return apiKeyName || this.readAccountLabel(order);
@@ -1088,18 +1086,7 @@ export class AdminDirectMarketMakingService {
   }
 
   private readAccountLabel(order: MarketMakingOrder): string {
-    const snapshotAccountLabel =
-      order.strategySnapshot?.resolvedConfig?.accountLabel;
-    const accountLabelCandidates = [
-      snapshotAccountLabel,
-      order.strategySnapshot?.resolvedConfig?.exchange_index,
-    ];
-    const accountLabel = accountLabelCandidates.find(
-      (value) =>
-        typeof value === 'string' &&
-        value.trim().length > 0 &&
-        !/^\d{10,}$/.test(value.trim()),
-    );
+    const accountLabel = order.strategySnapshot?.resolvedConfig?.accountLabel;
 
     return typeof accountLabel === 'string' && accountLabel.trim().length > 0
       ? accountLabel.trim()

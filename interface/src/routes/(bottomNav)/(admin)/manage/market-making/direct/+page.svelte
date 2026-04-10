@@ -244,7 +244,7 @@
       isDualAccountStrategy &&
       selectedMakerApiKey &&
       selectedTakerApiKey &&
-      selectedMakerApiKey.exchange_index === selectedTakerApiKey.exchange_index
+      selectedMakerApiKey.key_id === selectedTakerApiKey.key_id
     ) {
       toast.error($_("admin_direct_mm_error_distinct_accounts"), {
         description: $_("admin_direct_mm_recovery_distinct_accounts"),
@@ -295,8 +295,6 @@
             strategyDefinitionId: startStrategyDefinitionId,
             makerApiKeyId: selectedMakerApiKey!.key_id,
             takerApiKeyId: selectedTakerApiKey!.key_id,
-            makerAccountLabel: selectedMakerApiKey!.exchange_index,
-            takerAccountLabel: selectedTakerApiKey!.exchange_index,
             configOverrides,
           }
         : {
@@ -304,7 +302,6 @@
             pair: startPair,
             strategyDefinitionId: startStrategyDefinitionId,
             apiKeyId: selectedApiKey!.key_id,
-            accountLabel: selectedApiKey!.exchange_index,
             configOverrides,
           };
       const result = await startDirectOrder(payload, token);

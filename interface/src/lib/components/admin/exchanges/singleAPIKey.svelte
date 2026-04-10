@@ -57,7 +57,7 @@
     <div class="flex flex-col gap-1">
       <span class="font-medium text-sm">{key.name}</span>
       <code class="text-xs text-base-content/60 font-mono">
-        ...{key.api_key.slice(-6)}
+        {key.key_id}
       </code>
     </div>
   </td>

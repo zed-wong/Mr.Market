@@ -65,12 +65,9 @@
         return;
       }
 
-      const exchange_index = name.trim() || "default";
-
       await addAPIKey(
         {
           exchange,
-          exchange_index,
           name,
           api_key,
           api_secret: encryptedSecret,

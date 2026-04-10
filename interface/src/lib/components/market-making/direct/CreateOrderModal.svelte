@@ -222,7 +222,7 @@
                                 >
                                 {#each filteredApiKeys as apiKey}
                                     <option value={apiKey.key_id}>
-                                        {apiKey.name} ({apiKey.exchange_index})
+                                        {apiKey.name} ({apiKey.key_id})
                                     </option>
                                 {/each}
                             </select>
@@ -252,7 +252,7 @@
                                     >
                                     {#each filteredApiKeys as apiKey}
                                         <option value={apiKey.key_id}>
-                                            {apiKey.name} ({apiKey.exchange_index})
+                                            {apiKey.name} ({apiKey.key_id})
                                         </option>
                                     {/each}
                                 </select>

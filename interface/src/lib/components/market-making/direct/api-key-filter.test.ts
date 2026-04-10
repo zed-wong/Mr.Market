@@ -8,7 +8,6 @@ const apiKeys: AdminSingleKey[] = [
   {
     key_id: 'read-binance',
     exchange: 'binance',
-    exchange_index: 'read-only',
     name: 'binance-read',
     api_key: 'k1',
     api_secret: 's1',
@@ -17,7 +16,6 @@ const apiKeys: AdminSingleKey[] = [
   {
     key_id: 'trade-binance',
     exchange: 'binance',
-    exchange_index: 'default',
     name: 'binance-trade',
     api_key: 'k2',
     api_secret: 's2',
@@ -26,7 +24,6 @@ const apiKeys: AdminSingleKey[] = [
   {
     key_id: 'trade-mexc',
     exchange: 'mexc',
-    exchange_index: 'default',
     name: 'mexc-trade',
     api_key: 'k3',
     api_secret: 's3',

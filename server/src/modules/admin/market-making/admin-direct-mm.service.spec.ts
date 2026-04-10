@@ -32,7 +32,7 @@ describe('AdminDirectMarketMakingService', () => {
       resolveForOrderSnapshot: jest.fn().mockResolvedValue({
         controllerType: 'pureMarketMaking',
         resolvedConfig: {
-          accountLabel: 'desk-1',
+          accountLabel: 'api-key-1',
           bidSpread: 0.001,
           askSpread: 0.001,
           orderAmount: 10,
@@ -51,7 +51,8 @@ describe('AdminDirectMarketMakingService', () => {
         if (apiKeyId === 'api-key-2') {
           return {
             exchange: 'binance',
-            exchange_index: 'desk-2',
+            key_id: 'api-key-2',
+            name: 'desk-2',
             api_key: 'api-key-2',
             api_secret: 'api-secret-2',
           };
@@ -59,14 +60,16 @@ describe('AdminDirectMarketMakingService', () => {
 
         return {
           exchange: 'binance',
-          exchange_index: 'desk-1',
+          key_id: 'api-key-1',
+          name: 'desk-1',
           api_key: 'api-key',
           api_secret: 'api-secret',
         };
       }),
       readDecryptedAPIKey: jest.fn().mockResolvedValue({
         exchange: 'binance',
-        exchange_index: 'desk-1',
+        key_id: 'api-key-1',
+        name: 'desk-1',
         api_key: 'api-key',
         api_secret: 'plain-secret',
       }),
@@ -167,7 +170,6 @@ describe('AdminDirectMarketMakingService', () => {
     pair: 'BTC/USDT',
     strategyDefinitionId: 'strategy-1',
     apiKeyId: 'api-key-1',
-    accountLabel: 'desk-1',
     configOverrides: {
       bidSpread: 0.002,
     },
@@ -179,8 +181,6 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionId: 'strategy-2',
     makerApiKeyId: 'api-key-1',
     takerApiKeyId: 'api-key-2',
-    makerAccountLabel: 'desk-1',
-    takerAccountLabel: 'desk-2',
     configOverrides: {
       baseTradeAmount: 5,
       baseIntervalTime: 10,
@@ -306,7 +306,6 @@ describe('AdminDirectMarketMakingService', () => {
     strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
       controllerType: 'pureMarketMaking',
       resolvedConfig: {
-        accountLabel: 'desk-1',
         bidSpread: 0.001,
         askSpread: 0.001,
         orderAmount: 20,
@@ -437,7 +436,7 @@ describe('AdminDirectMarketMakingService', () => {
       pair: 'BTC/USDT',
       strategySnapshot: {
         resolvedConfig: {
-          accountLabel: 'desk-1',
+          accountLabel: 'api-key-1',
           bidSpread: 0.001,
           askSpread: 0.001,
           orderAmount: 10,
@@ -467,7 +466,7 @@ describe('AdminDirectMarketMakingService', () => {
         pair: 'BTC/USDT',
         state: 'running',
         strategyDefinitionId: 'strategy-1',
-        strategySnapshot: { resolvedConfig: { accountLabel: 'desk-1' } },
+        strategySnapshot: { resolvedConfig: { accountLabel: 'api-key-1' } },
         source: 'admin_direct',
         apiKeyId: 'api-key-1',
         createdAt: '2026-04-01T00:00:00.000Z',
@@ -485,7 +484,7 @@ describe('AdminDirectMarketMakingService', () => {
     });
     exchangeApiKeyService.readAPIKey.mockResolvedValue({
       exchange: 'binance',
-      exchange_index: 'desk-1',
+      key_id: 'api-key-1',
       name: 'default',
       api_key: 'api-key',
       api_secret: 'api-secret',
@@ -556,8 +555,8 @@ describe('AdminDirectMarketMakingService', () => {
         strategySnapshot: expect.objectContaining({
           controllerType: 'dualAccountVolume',
           resolvedConfig: expect.objectContaining({
-            makerAccountLabel: 'desk-1',
-            takerAccountLabel: 'desk-2',
+            makerAccountLabel: 'api-key-1',
+            takerAccountLabel: 'api-key-2',
             makerApiKeyId: 'api-key-1',
             takerApiKeyId: 'api-key-2',
           }),
@@ -566,7 +565,7 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('rejects direct start when dual-account labels resolve to the same account', async () => {
+  it('rejects direct start when dual-account requests reuse the same api key', async () => {
     const {
       service,
       strategyDefinitionRepository,
@@ -584,7 +583,8 @@ describe('AdminDirectMarketMakingService', () => {
     );
     exchangeApiKeyService.readAPIKey.mockResolvedValue({
       exchange: 'binance',
-      exchange_index: 'desk-1',
+      key_id: 'api-key-1',
+      name: 'desk-1',
       api_key: 'api-key',
       api_secret: 'api-secret',
     });
@@ -593,30 +593,8 @@ describe('AdminDirectMarketMakingService', () => {
       service.directStart({
         ...dualAccountStartDto,
         takerApiKeyId: 'api-key-1',
-        takerAccountLabel: 'desk-1',
       }),
-    ).rejects.toThrow('Maker and taker account labels must be different');
-  });
-
-  it('rejects direct start when a dual-account API key label does not match the request', async () => {
-    const { service, strategyDefinitionRepository, strategyConfigResolver } =
-      buildService();
-
-    strategyDefinitionRepository.findOne.mockResolvedValue({
-      id: 'strategy-2',
-      enabled: true,
-      controllerType: 'dualAccountVolume',
-    });
-    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
-      'dualAccountVolume',
-    );
-
-    await expect(
-      service.directStart({
-        ...dualAccountStartDto,
-        takerAccountLabel: 'desk-x',
-      }),
-    ).rejects.toThrow('API key account label does not match request');
+    ).rejects.toThrow('Maker and taker API keys must be different');
   });
 
   it('lists dual-account orders using the dual strategy key and account metadata', async () => {
@@ -640,8 +618,8 @@ describe('AdminDirectMarketMakingService', () => {
           controllerType: 'dualAccountVolume',
           resolvedConfig: {
             clientId: 'order-2',
-            makerAccountLabel: 'desk-1',
-            takerAccountLabel: 'desk-2',
+            makerAccountLabel: 'api-key-1',
+            takerAccountLabel: 'api-key-2',
             takerApiKeyId: 'api-key-2',
           },
         },
@@ -669,9 +647,9 @@ describe('AdminDirectMarketMakingService', () => {
     expect(await Promise.resolve(result)).toEqual([
       expect.objectContaining({
         controllerType: 'dualAccountVolume',
-        accountLabel: 'desk-1',
-        makerAccountLabel: 'desk-1',
-        takerAccountLabel: 'desk-2',
+        accountLabel: 'api-key-1',
+        makerAccountLabel: 'api-key-1',
+        takerAccountLabel: 'api-key-2',
         makerApiKeyId: 'api-key-1',
         takerApiKeyId: 'api-key-2',
       }),
@@ -741,8 +719,8 @@ describe('AdminDirectMarketMakingService', () => {
         controllerType: 'dualAccountVolume',
         resolvedConfig: {
           clientId: 'order-2',
-          makerAccountLabel: 'desk-1',
-          takerAccountLabel: 'desk-2',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
           takerApiKeyId: 'api-key-2',
           baseTradeAmount: 5,
           baseIncrementPercentage: 0.2,
@@ -803,7 +781,7 @@ describe('AdminDirectMarketMakingService', () => {
       apiKeyId: 'api-key-1',
       strategySnapshot: {
         resolvedConfig: {
-          accountLabel: 'desk-1',
+          accountLabel: 'api-key-1',
           orderAmount: 10,
         },
       },
@@ -863,7 +841,7 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       source: 'admin_direct',
       createdAt: '2026-04-01T00:00:00.000Z',
-      strategySnapshot: { resolvedConfig: { accountLabel: 'desk-1' } },
+      strategySnapshot: { resolvedConfig: { accountLabel: 'api-key-1' } },
     });
 
     const result = await service.getDirectOrderStatus('order-1');
@@ -886,13 +864,12 @@ describe('AdminDirectMarketMakingService', () => {
       strategySnapshot: {
         resolvedConfig: {
           accountLabel: '1775557569618',
-          exchange_index: 'desk-2',
         },
       },
     });
     exchangeApiKeyService.readAPIKey.mockResolvedValue({
       exchange: 'binance',
-      exchange_index: 'desk-2',
+      key_id: 'api-key-2',
       name: '',
       api_key: 'api-key',
       api_secret: 'api-secret',
@@ -900,7 +877,7 @@ describe('AdminDirectMarketMakingService', () => {
 
     const result = await service.getDirectOrderStatus('order-1');
 
-    expect(result.accountLabel).toBe('desk-2');
+    expect(result.accountLabel).toBe('1775557569618');
   });
 
   it('reports stale executor health when the last tick is too old', async () => {
@@ -914,7 +891,7 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       source: 'admin_direct',
       createdAt: '2026-04-01T00:00:00.000Z',
-      strategySnapshot: { resolvedConfig: { accountLabel: 'desk-1' } },
+      strategySnapshot: { resolvedConfig: { accountLabel: 'api-key-1' } },
     });
     executorRegistry.findExecutorByOrderId.mockReturnValue({
       getSession: () => ({
@@ -946,7 +923,7 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       source: 'admin_direct',
       createdAt: '2026-04-01T00:00:00.000Z',
-      strategySnapshot: { resolvedConfig: { accountLabel: 'desk-1' } },
+      strategySnapshot: { resolvedConfig: { accountLabel: 'api-key-1' } },
     });
     executorRegistry.findExecutorByOrderId.mockReturnValue({
       getSession: () => ({

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as ccxt from 'ccxt';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
@@ -37,6 +38,13 @@ describe('ExchangeApiKeyService', () => {
   };
 
   beforeEach(() => {
+    crypto.decrypt.mockImplementation((value: string) => {
+      if (value === 'transport-secret') {
+        return 'plain-secret';
+      }
+
+      return value;
+    });
     crypto.encrypt.mockImplementation((value: string) => `enc(${value})`);
     crypto.getPublicKeyFromPrivate.mockReturnValue('public-key');
   });
@@ -88,7 +96,6 @@ describe('ExchangeApiKeyService', () => {
         {
           key_id: '1',
           exchange: 'binance',
-          exchange_index: 'default',
           name: 'default',
           api_key: 'key',
           api_secret: 'secret',
@@ -120,7 +127,6 @@ describe('ExchangeApiKeyService', () => {
     expect(addAPIKey).toHaveBeenCalledWith(
       expect.objectContaining({
         exchange: 'binance',
-        exchange_index: 'default',
         name: 'default',
         api_key: 'key',
         api_secret: 'enc(secret)',
@@ -129,7 +135,7 @@ describe('ExchangeApiKeyService', () => {
     );
   });
 
-  it('falls back exchange_index from name when adding an api key', async () => {
+  it('trims name when adding an api key', async () => {
     const addAPIKey = jest.fn().mockImplementation(async (value) => value);
     const { service } = makeService({ addAPIKey });
     const fetchBalanceSpy = jest
@@ -140,22 +146,36 @@ describe('ExchangeApiKeyService', () => {
       const result = await service.addApiKey({
         key_id: '1',
         exchange: 'binance',
-        name: 'desk-1',
+        name: '  desk-1  ',
         api_key: 'key',
         api_secret: 'transport-secret',
       } as APIKeysConfig);
 
       expect(result).toEqual(
         expect.objectContaining({
-          exchange_index: 'desk-1',
+          name: 'desk-1',
         }),
       );
       expect(addAPIKey).toHaveBeenCalledWith(
-        expect.objectContaining({ exchange_index: 'desk-1' }),
+        expect.objectContaining({ name: 'desk-1' }),
       );
     } finally {
       fetchBalanceSpy.mockRestore();
     }
+  });
+
+  it('rejects blank api key names after trim', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.addApiKey({
+        key_id: '1',
+        exchange: 'binance',
+        name: '   ',
+        api_key: 'key',
+        api_secret: 'transport-secret',
+      } as APIKeysConfig),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('sets created_at when adding an api key', async () => {
@@ -169,7 +189,6 @@ describe('ExchangeApiKeyService', () => {
       const result = await service.addApiKey({
         key_id: '1',
         exchange: 'binance',
-        exchange_index: 'default',
         name: 'default',
         api_key: 'key',
         api_secret: 'transport-secret',

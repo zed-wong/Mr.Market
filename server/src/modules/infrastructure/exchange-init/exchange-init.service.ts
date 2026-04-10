@@ -486,7 +486,7 @@ export class ExchangeInitService {
       }
 
       const accounts = keys.map((key) => ({
-        label: key.exchange_index || '',
+        label: String(key.key_id || '').trim(),
         apiKey: key.api_key,
         secret: key.api_secret,
       }));
@@ -503,13 +503,7 @@ export class ExchangeInitService {
 
   private computeApiKeysSignature(apiKeys: APIKeysConfig[]): string {
     const entries = apiKeys.map((key) =>
-      [
-        key.key_id,
-        key.exchange,
-        key.exchange_index,
-        key.api_key,
-        key.api_secret,
-      ].join('::'),
+      [key.key_id, key.exchange, key.api_key, key.api_secret].join('::'),
     );
 
     entries.sort();

@@ -110,7 +110,6 @@ export type DirectStartPayload =
       pair: string;
       strategyDefinitionId: string;
       apiKeyId: string;
-      accountLabel: string;
       configOverrides?: Record<string, unknown>;
     }
   | {
@@ -119,8 +118,6 @@ export type DirectStartPayload =
       strategyDefinitionId: string;
       makerApiKeyId: string;
       takerApiKeyId: string;
-      makerAccountLabel: string;
-      takerAccountLabel: string;
       configOverrides?: Record<string, unknown>;
     };
 
