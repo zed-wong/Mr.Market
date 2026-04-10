@@ -78,8 +78,12 @@ export interface DirectOrderStatus {
     askSpread: string | null;
     numberOfLayers: string | null;
     baseIncrementPercentage: string | null;
+    dynamicRoleSwitching: boolean | null;
+    targetQuoteVolume: string | null;
     publishedCycles: number | null;
     completedCycles: number | null;
+    tradedQuoteVolume: string | null;
+    realizedPnlQuote: string | null;
   };
   spread: {
     bid: string;

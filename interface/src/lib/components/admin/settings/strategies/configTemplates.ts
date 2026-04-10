@@ -250,6 +250,14 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         enum: ["buy", "sell"],
         description: "Maker side for the first cycle",
       },
+      dynamicRoleSwitching: {
+        type: "boolean",
+        description: "Switch maker/taker roles dynamically based on balances",
+      },
+      targetQuoteVolume: {
+        type: "number",
+        description: "Stop once cumulative executed quote volume reaches this cap",
+      },
       makerDelayMs: {
         type: "number",
         description: "Delay before the taker IOC leg submits",

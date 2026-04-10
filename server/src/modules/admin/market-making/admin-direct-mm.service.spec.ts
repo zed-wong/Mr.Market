@@ -559,7 +559,12 @@ describe('AdminDirectMarketMakingService', () => {
   });
 
   it('rejects direct start when dual-account labels resolve to the same account', async () => {
-    const { service, strategyDefinitionRepository, exchangeApiKeyService, strategyConfigResolver } = buildService();
+    const {
+      service,
+      strategyDefinitionRepository,
+      exchangeApiKeyService,
+      strategyConfigResolver,
+    } = buildService();
 
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: 'strategy-2',
@@ -693,8 +698,12 @@ describe('AdminDirectMarketMakingService', () => {
           takerApiKeyId: 'api-key-2',
           baseTradeAmount: 5,
           baseIncrementPercentage: 0.2,
+          dynamicRoleSwitching: true,
+          targetQuoteVolume: 5000,
           publishedCycles: 7,
           completedCycles: 6,
+          tradedQuoteVolume: 3456.78,
+          realizedPnlQuote: 12.34,
         },
       },
     });
@@ -715,8 +724,12 @@ describe('AdminDirectMarketMakingService', () => {
       askSpread: null,
       numberOfLayers: null,
       baseIncrementPercentage: '0.2',
+      dynamicRoleSwitching: true,
+      targetQuoteVolume: '5000',
       publishedCycles: 7,
       completedCycles: 6,
+      tradedQuoteVolume: '3456.78',
+      realizedPnlQuote: '12.34',
     });
   });
 
@@ -779,8 +792,12 @@ describe('AdminDirectMarketMakingService', () => {
       askSpread: null,
       numberOfLayers: null,
       baseIncrementPercentage: null,
+      dynamicRoleSwitching: null,
+      targetQuoteVolume: null,
       publishedCycles: null,
       completedCycles: null,
+      tradedQuoteVolume: null,
+      realizedPnlQuote: null,
     });
     expect(result.spread).toEqual({ bid: '100', ask: '101', absolute: '1' });
   });

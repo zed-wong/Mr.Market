@@ -512,6 +512,51 @@
                     : formatSpread(data?.orderConfig?.askSpread)}</span
                 >
               </div>
+              {#if isDualAccountStrategy}
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_dynamic_role_switching")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.dynamicRoleSwitching === null
+                      ? $_("admin_direct_mm_na")
+                      : data?.orderConfig?.dynamicRoleSwitching
+                        ? "On"
+                        : "Off"}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_target_quote_volume")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.targetQuoteVolume ||
+                      $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_traded_quote_volume")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.tradedQuoteVolume ||
+                      $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_realized_pnl_quote")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.realizedPnlQuote ||
+                      $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+              {/if}
             </div>
           </div>
 

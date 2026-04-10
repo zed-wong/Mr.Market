@@ -133,8 +133,10 @@ export class AdminDirectMarketMakingService {
         executionAccounts.primary.accountLabel;
       resolvedConfig.resolvedConfig.takerAccountLabel =
         executionAccounts.secondary?.accountLabel;
-      resolvedConfig.resolvedConfig.makerApiKeyId = executionAccounts.primary.apiKeyId;
-      resolvedConfig.resolvedConfig.takerApiKeyId = executionAccounts.secondary?.apiKeyId;
+      resolvedConfig.resolvedConfig.makerApiKeyId =
+        executionAccounts.primary.apiKeyId;
+      resolvedConfig.resolvedConfig.takerApiKeyId =
+        executionAccounts.secondary?.apiKeyId;
     } else {
       resolvedConfig.resolvedConfig.accountLabel =
         executionAccounts.primary.accountLabel;
@@ -468,8 +470,15 @@ export class AdminDirectMarketMakingService {
       baseIncrementPercentage: this.readConfigString(
         resolvedConfig.baseIncrementPercentage,
       ),
+      dynamicRoleSwitching:
+        typeof resolvedConfig.dynamicRoleSwitching === 'boolean'
+          ? resolvedConfig.dynamicRoleSwitching
+          : null,
+      targetQuoteVolume: this.readConfigString(resolvedConfig.targetQuoteVolume),
       publishedCycles: this.readConfigNumber(resolvedConfig.publishedCycles),
       completedCycles: this.readConfigNumber(resolvedConfig.completedCycles),
+      tradedQuoteVolume: this.readConfigString(resolvedConfig.tradedQuoteVolume),
+      realizedPnlQuote: this.readConfigString(resolvedConfig.realizedPnlQuote),
     };
 
     return {
@@ -833,7 +842,9 @@ export class AdminDirectMarketMakingService {
     }
 
     const orderAmount = new BigNumber(
-      String(resolvedConfig.orderAmount ?? resolvedConfig.baseTradeAmount ?? ''),
+      String(
+        resolvedConfig.orderAmount ?? resolvedConfig.baseTradeAmount ?? '',
+      ),
     );
 
     if (!orderAmount.isFinite()) {
@@ -971,11 +982,14 @@ export class AdminDirectMarketMakingService {
     return createStrategyKey({
       type: controllerType,
       user_id:
-        String(order.userId || order.strategySnapshot?.resolvedConfig?.userId || '') ||
-        'admin-direct',
+        String(
+          order.userId || order.strategySnapshot?.resolvedConfig?.userId || '',
+        ) || 'admin-direct',
       client_id:
         String(
-          order.strategySnapshot?.resolvedConfig?.clientId || order.orderId || '',
+          order.strategySnapshot?.resolvedConfig?.clientId ||
+            order.orderId ||
+            '',
         ) || order.orderId,
     });
   }
@@ -1005,7 +1019,8 @@ export class AdminDirectMarketMakingService {
   }
 
   private readTakerAccountLabel(order: MarketMakingOrder): string {
-    const accountLabel = order.strategySnapshot?.resolvedConfig?.takerAccountLabel;
+    const accountLabel =
+      order.strategySnapshot?.resolvedConfig?.takerAccountLabel;
 
     return typeof accountLabel === 'string' && accountLabel.trim().length > 0
       ? accountLabel.trim()

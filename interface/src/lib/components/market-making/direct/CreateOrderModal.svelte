@@ -10,11 +10,14 @@
     export let filteredPairs: { symbol: string }[] = [];
     export let filteredApiKeys: AdminSingleKey[] = [];
     export let strategies: MarketMakingStrategy[] = [];
+    export let selectedControllerType = "";
 
     export let startExchangeName = "";
     export let startPair = "";
     export let startStrategyDefinitionId = "";
     export let startApiKeyId = "";
+    export let startMakerApiKeyId = "";
+    export let startTakerApiKeyId = "";
     export let orderAmount = "";
     export let minOrderAmount = "";
     export let orderSpread = "";
@@ -51,11 +54,34 @@
     ) {
         startApiKeyId = filteredApiKeys[0].key_id;
     }
-
+    $: if (
+        filteredApiKeys.length > 0 &&
+        !filteredApiKeys.find((k) => k.key_id === startMakerApiKeyId)
+    ) {
+        startMakerApiKeyId = filteredApiKeys[0].key_id;
+    }
+    $: if (
+        filteredApiKeys.length > 0 &&
+        !filteredApiKeys.find((k) => k.key_id === startTakerApiKeyId)
+    ) {
+        startTakerApiKeyId = filteredApiKeys[0].key_id;
+    }
+    $: isDualAccountStrategy = selectedControllerType === "dualAccountVolume";
     function openPairDropdown() {
         pairDropdownOpen = true;
         pairSearch = "";
         setTimeout(() => pairInputEl?.focus(), 0);
+    }
+
+    function handlePrimaryApiKeyChange(event: Event) {
+        const value = (event.currentTarget as HTMLSelectElement).value;
+
+        if (isDualAccountStrategy) {
+            startMakerApiKeyId = value;
+            return;
+        }
+
+        startApiKeyId = value;
     }
 
     function selectPair(symbol: string) {
@@ -150,12 +176,17 @@
                     <div class="bg-base-200/40 rounded-xl p-4">
                         <span
                             class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                            >{$_("admin_direct_mm_api_key")}</span
+                            >{isDualAccountStrategy
+                                ? $_("admin_direct_mm_maker_account")
+                                : $_("admin_direct_mm_api_key")}</span
                         >
                         {#if filteredApiKeys.length > 0}
                             <select
                                 class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
-                                bind:value={startApiKeyId}
+                                value={isDualAccountStrategy
+                                    ? startMakerApiKeyId
+                                    : startApiKeyId}
+                                on:change={handlePrimaryApiKeyChange}
                             >
                                 <option value="" disabled selected
                                     >{$_(
@@ -176,6 +207,37 @@
                             </div>
                         {/if}
                     </div>
+                    {#if isDualAccountStrategy}
+                        <div class="bg-base-200/40 rounded-xl p-4">
+                            <span
+                                class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                                >{$_("admin_direct_mm_taker_account")}</span
+                            >
+                            {#if filteredApiKeys.length > 0}
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    bind:value={startTakerApiKeyId}
+                                >
+                                    <option value="" disabled selected
+                                        >{$_(
+                                            "admin_direct_mm_read_trade_keys",
+                                        )}</option
+                                    >
+                                    {#each filteredApiKeys as apiKey}
+                                        <option value={apiKey.key_id}>
+                                            {apiKey.name} ({apiKey.exchange_index})
+                                        </option>
+                                    {/each}
+                                </select>
+                            {:else}
+                                <div
+                                    class="h-10 min-h-10 px-3 rounded-lg border border-dashed border-base-300 bg-base-100 flex items-center text-sm text-base-content/50"
+                                >
+                                    {$_("admin_direct_mm_no_executable_api_key")}
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
                 {/if}
 
                 <!-- Trading Pair -->
