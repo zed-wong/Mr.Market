@@ -97,6 +97,12 @@ type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   makerAccountLabel: string;
   takerAccountLabel: string;
   makerDelayMs: number;
+  dynamicRoleSwitching?: boolean;
+  targetQuoteVolume?: number;
+  tradedQuoteVolume?: number;
+  realizedPnlQuote?: number;
+  inventoryBaseQty?: number;
+  inventoryCostQuote?: number;
   publishedCycles?: number;
   completedCycles?: number;
 };
@@ -541,8 +547,17 @@ export class StrategyService
       makerAccountLabel,
       takerAccountLabel,
       makerDelayMs: Number(params.makerDelayMs || 0),
+      dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
+      targetQuoteVolume:
+        params.targetQuoteVolume !== undefined
+          ? Number(params.targetQuoteVolume)
+          : undefined,
       publishedCycles: 0,
       completedCycles: 0,
+      tradedQuoteVolume: 0,
+      realizedPnlQuote: 0,
+      inventoryBaseQty: 0,
+      inventoryCostQuote: 0,
     };
 
     const cadenceMs = Math.max(
@@ -929,6 +944,7 @@ export class StrategyService
       this.logger.log(
         `Queued pending activation for ${strategy.strategyKey}: exchange not ready yet`,
       );
+
       return;
     }
 
@@ -1009,6 +1025,7 @@ export class StrategyService
         this.pendingActivationStrategies.set(strategy.strategyKey, strategy);
         const errorMessage =
           error instanceof Error ? error.message : String(error);
+
         this.logger.warn(
           `Pending activation failed for ${strategy.strategyKey} on ${exchangeName}:${accountLabel}: ${errorMessage}`,
         );
@@ -1386,6 +1403,10 @@ export class StrategyService
     }
 
     const completedCycles = Number(latestParams.completedCycles || 0);
+    const tradedQuoteVolume = Number(
+      latestParams.tradedQuoteVolume || activeSession?.tradedQuoteVolume || 0,
+    );
+    const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
 
     if (completedCycles >= Number(latestParams.numTrades || 0)) {
       const activeBeforeStop = this.sessions.get(session.strategyKey);
@@ -1393,6 +1414,26 @@ export class StrategyService
       if (!this.isSameActiveSession(activeBeforeStop, session)) {
         this.logger.warn(
           `Skipping stale dual-account volume stop for ${session.strategyKey}: active session changed`,
+        );
+
+        return [];
+      }
+
+      await this.stopStrategyForUser(
+        session.userId,
+        session.clientId,
+        session.strategyType,
+      );
+
+      return [];
+    }
+
+    if (targetQuoteVolume > 0 && tradedQuoteVolume >= targetQuoteVolume) {
+      const activeBeforeStop = this.sessions.get(session.strategyKey);
+
+      if (!this.isSameActiveSession(activeBeforeStop, session)) {
+        this.logger.warn(
+          `Skipping stale dual-account target-volume stop for ${session.strategyKey}: active session changed`,
         );
 
         return [];
@@ -1509,6 +1550,19 @@ export class StrategyService
     }
 
     const cycleId = `${strategyKey}:cycle:${publishedCycles}`;
+    const resolvedAccounts = await this.resolveDualAccountCycleAccounts(
+      params,
+      side,
+      price,
+    );
+
+    if (!resolvedAccounts) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: unable to resolve maker/taker accounts for side=${side}`,
+      );
+
+      return [];
+    }
 
     return [
       this.createIntent(
@@ -1528,14 +1582,95 @@ export class StrategyService
           cycleId,
           orderId: `${params.clientId}:cycle:${publishedCycles}`,
           role: 'maker',
-          makerAccountLabel: params.makerAccountLabel,
-          takerAccountLabel: params.takerAccountLabel,
+          makerAccountLabel: resolvedAccounts.makerAccountLabel,
+          takerAccountLabel: resolvedAccounts.takerAccountLabel,
+          configuredMakerAccountLabel: params.makerAccountLabel,
+          configuredTakerAccountLabel: params.takerAccountLabel,
+          dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
           makerDelayMs: Number(params.makerDelayMs || 0),
         },
         true,
-        params.makerAccountLabel,
+        resolvedAccounts.makerAccountLabel,
       ),
     ];
+  }
+
+  private async resolveDualAccountCycleAccounts(
+    params: DualAccountVolumeStrategyParams,
+    side: 'buy' | 'sell',
+    price: BigNumber,
+  ): Promise<{
+    makerAccountLabel: string;
+    takerAccountLabel: string;
+  } | null> {
+    const configured = {
+      makerAccountLabel: params.makerAccountLabel,
+      takerAccountLabel: params.takerAccountLabel,
+    };
+
+    if (!params.dynamicRoleSwitching) {
+      return configured;
+    }
+
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      return configured;
+    }
+
+    const makerBalances = await this.getAvailableBalancesForPair(
+      params.exchangeName,
+      params.symbol,
+      params.makerAccountLabel,
+    );
+    const takerBalances = await this.getAvailableBalancesForPair(
+      params.exchangeName,
+      params.symbol,
+      params.takerAccountLabel,
+    );
+
+    if (!makerBalances || !takerBalances) {
+      return configured;
+    }
+
+    const capacity1 = this.computeDualAccountCapacity(
+      makerBalances,
+      takerBalances,
+      side,
+      price,
+    );
+    const capacity2 = this.computeDualAccountCapacity(
+      takerBalances,
+      makerBalances,
+      side,
+      price,
+    );
+
+    return capacity2.isGreaterThan(capacity1)
+      ? {
+          makerAccountLabel: params.takerAccountLabel,
+          takerAccountLabel: params.makerAccountLabel,
+        }
+      : configured;
+  }
+
+  private computeDualAccountCapacity(
+    makerBalances: {
+      base: BigNumber;
+      quote: BigNumber;
+    },
+    takerBalances: {
+      base: BigNumber;
+      quote: BigNumber;
+    },
+    side: 'buy' | 'sell',
+    price: BigNumber,
+  ): BigNumber {
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      return new BigNumber(0);
+    }
+
+    return side === 'buy'
+      ? BigNumber.min(makerBalances.quote.dividedBy(price), takerBalances.base)
+      : BigNumber.min(makerBalances.base, takerBalances.quote.dividedBy(price));
   }
 
   async buildPureMarketMakingActions(
@@ -2846,12 +2981,25 @@ export class StrategyService
       receivedAt?: string;
     },
   ): Promise<void> {
-    if (session.strategyType !== 'pureMarketMaking') {
+    if (
+      session.strategyType !== 'pureMarketMaking' &&
+      session.strategyType !== 'dualAccountVolume'
+    ) {
       return;
     }
 
     await this.applyFillToBalanceLedger(session, fill);
     this.recordSessionPnL(session, fill);
+
+    if (session.strategyType === 'dualAccountVolume') {
+      await this.persistStrategyParams(
+        session.strategyKey,
+        session.params as DualAccountVolumeStrategyParams,
+      );
+      session.nextRunAtMs = Math.min(session.nextRunAtMs, Date.now());
+
+      return;
+    }
 
     session.lastFillTimestamp = Date.now();
     const delayMs = Number(
@@ -3061,6 +3209,7 @@ export class StrategyService
       this.logger.warn(
         `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: available balances unavailable for ${exchangeName} ${pair}`,
       );
+
       return null;
     }
 
@@ -3125,6 +3274,7 @@ export class StrategyService
           '; ',
         )}`,
       );
+
       return null;
     }
 
@@ -3136,6 +3286,7 @@ export class StrategyService
           availableBalances.assets.quote
         } < required ${notional.toFixed()}`,
       );
+
       return null;
     }
     if (side === 'sell' && base.isLessThan(qty)) {
@@ -3144,6 +3295,7 @@ export class StrategyService
           availableBalances.assets.base
         } < required ${qty.toFixed()}`,
       );
+
       return null;
     }
 
@@ -3262,6 +3414,7 @@ export class StrategyService
   ): Promise<void> {
     if (strategy.strategyType === 'dualAccountVolume') {
       await this.restoreDualAccountVolumeRuntimeState(strategy);
+
       return;
     }
 

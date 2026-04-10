@@ -817,6 +817,7 @@ export class ExchangeInitService {
   isReady(exchangeName: string, label = 'default'): boolean {
     try {
       this.getExchange(exchangeName, label);
+
       return true;
     } catch (error) {
       if (error instanceof ServiceUnavailableException) {
@@ -836,6 +837,7 @@ export class ExchangeInitService {
         Promise.resolve(listener(exchangeName, accountLabel)).catch((error) => {
           const message =
             error instanceof Error ? error.message : String(error);
+
           this.logger.error(
             `Exchange ready listener failed for ${exchangeName}:${accountLabel}: ${message}`,
           );

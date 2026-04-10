@@ -180,6 +180,7 @@ export class StrategyIntentExecutionService {
           this.exchangeOrderTrackerService?.getTrackedOrders(
             intent.strategyKey,
           ) || [];
+
         if (
           intent.slotKey &&
           activeSlotOrders.some((order) => order.slotKey === intent.slotKey)

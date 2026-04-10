@@ -236,6 +236,7 @@ export class ExchangeOrderTrackerService
         };
 
         const fillDelta = this.recordFill(order, nextOrder, ts);
+
         this.upsertOrder(nextOrder);
 
         if (fillDelta) {

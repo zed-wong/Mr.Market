@@ -445,6 +445,25 @@ export class ExecuteDualAccountVolumeStrategyDto {
   @IsEnum(Side)
   postOnlySide?: Side;
 
+  @ApiPropertyOptional({
+    description:
+      'Allow maker/taker account roles to switch dynamically each cycle based on available balances',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  dynamicRoleSwitching?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Stop the strategy once cumulative executed quote volume reaches this cap',
+    example: 10000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  targetQuoteVolume?: number;
+
   @ApiProperty({ description: 'Maker exchange account label' })
   @IsString()
   makerAccountLabel: string;

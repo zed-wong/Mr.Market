@@ -194,7 +194,9 @@ describe('StrategyControllerRegistry', () => {
 
     expect(controller.getCadenceMs({ baseIntervalTime: 0.5 })).toBe(1000);
     expect(controller.getCadenceMs({ baseIntervalTime: 8 })).toBe(8000);
-    expect(controller.getCadenceMs({ baseIntervalTime: 'oops' as any })).toBe(10000);
+    expect(controller.getCadenceMs({ baseIntervalTime: 'oops' as any })).toBe(
+      10000,
+    );
 
     await expect(
       controller.decideActions(
@@ -258,7 +260,9 @@ describe('StrategyControllerRegistry', () => {
 
     expect(controller.getCadenceMs({ baseIntervalTime: 0.5 })).toBe(1000);
     expect(controller.getCadenceMs({ baseIntervalTime: 8 })).toBe(8000);
-    expect(controller.getCadenceMs({ intervalTime: 'oops' as any })).toBe(10000);
+    expect(controller.getCadenceMs({ intervalTime: 'oops' as any })).toBe(
+      10000,
+    );
 
     await expect(
       controller.decideActions(

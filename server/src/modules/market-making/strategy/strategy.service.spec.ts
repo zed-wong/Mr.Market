@@ -913,6 +913,7 @@ describe('StrategyService', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     };
+
     exchangeOrderTrackerService.getOpenOrders.mockReturnValue([trackedOrder]);
     exchangeOrderTrackerService.getTrackedOrders
       .mockReturnValueOnce([trackedOrder])
@@ -1655,6 +1656,8 @@ describe('StrategyService', () => {
         makerAccountLabel: 'maker',
         takerAccountLabel: 'taker',
         makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: 0,
         publishedCycles: 0,
         completedCycles: 0,
       },
@@ -1681,6 +1684,7 @@ describe('StrategyService', () => {
         postOnly: true,
         metadata: expect.objectContaining({
           role: 'maker',
+          makerAccountLabel: 'maker',
           takerAccountLabel: 'taker',
         }),
       }),
@@ -1694,6 +1698,110 @@ describe('StrategyService', () => {
       expect.objectContaining({
         parameters: expect.objectContaining({ publishedCycles: 1 }),
       }),
+    );
+  });
+
+  it('switches dual-account maker/taker roles when dynamic switching finds higher capacity on the taker side', async () => {
+    strategyMarketDataProviderService.getBestBidAsk.mockResolvedValue({
+      bestBid: 100,
+      bestAsk: 101,
+    });
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 5, USDT: 10 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 0.1, USDT: 5000 },
+      });
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: true,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        accountLabel: 'taker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'taker',
+          takerAccountLabel: 'maker',
+          dynamicRoleSwitching: true,
+        }),
+      }),
+    ]);
+  });
+
+  it('stops dual-account volume when target quote volume is reached', async () => {
+    const stopStrategyForUserSpy = jest
+      .spyOn(service, 'stopStrategyForUser')
+      .mockResolvedValue(undefined);
+    const session = {
+      runId: 'run-target',
+      strategyKey: 'dual-target',
+      strategyType: 'dualAccountVolume',
+      userId: 'user-1',
+      clientId: 'client-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      tradedQuoteVolume: 1500,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 100,
+        userId: 'user-1',
+        clientId: 'client-1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        publishedCycles: 0,
+        completedCycles: 0,
+        targetQuoteVolume: 1000,
+        tradedQuoteVolume: 1500,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: session.params,
+    });
+    (service as any).sessions.set(session.strategyKey, session);
+
+    await expect(
+      service.buildDualAccountVolumeSessionActions(
+        session as any,
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    expect(stopStrategyForUserSpy).toHaveBeenCalledWith(
+      'user-1',
+      'client-1',
+      'dualAccountVolume',
     );
   });
 

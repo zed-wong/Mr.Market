@@ -1,13 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import type { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
 import { StrategyMarketDataProviderService } from 'src/modules/market-making/strategy/data/strategy-market-data-provider.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
-import { StrategyIntentStoreService } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
 import { QuoteExecutorManagerService } from 'src/modules/market-making/strategy/intent/quote-executor-manager.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import {
@@ -37,7 +36,9 @@ function createStrategyRepo(
       }
 
       return state.filter((item) =>
-        Object.entries(where).every(([key, value]) => (item as any)[key] === value),
+        Object.entries(where).every(
+          ([key, value]) => (item as any)[key] === value,
+        ),
       );
     }),
     findOne: jest.fn(async ({ where } = {} as any) => {
@@ -181,7 +182,9 @@ describe('Pure market making safety gaps (mock system)', () => {
       strategyIntentStoreService as any,
       undefined,
       undefined,
-      { adjust: jest.fn().mockResolvedValue(undefined) } as unknown as BalanceLedgerService,
+      {
+        adjust: jest.fn().mockResolvedValue(undefined),
+      } as unknown as BalanceLedgerService,
       exchangeConnectorAdapterService as any,
       exchangeOrderMappingService as unknown as ExchangeOrderMappingService,
     );
@@ -309,9 +312,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       'BTC/USDT',
       'ex-2',
     );
-    expect(
-      executorRegistry.getExecutor('binance', 'BTC/USDT'),
-    ).toBeUndefined();
+    expect(executorRegistry.getExecutor('binance', 'BTC/USDT')).toBeUndefined();
   });
 
   it('pauses ticks while disconnected and resumes once connector health is restored', async () => {
@@ -324,7 +325,10 @@ describe('Pure market making safety gaps (mock system)', () => {
 
     const executor = executorRegistry.getExecutor('binance', 'BTC/USDT');
 
-    (strategyService as any).setConnectorHealthStatus('binance', 'DISCONNECTED');
+    (strategyService as any).setConnectorHealthStatus(
+      'binance',
+      'DISCONNECTED',
+    );
     await executor!.onTick(getRFC3339Timestamp());
 
     expect(executorOrchestratorService.dispatchActions).not.toHaveBeenCalled();

@@ -1,6 +1,5 @@
-import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
-
 import type { Side } from 'src/common/constants/side';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
 const DEFAULT_VOLUME_CADENCE_SECONDS = 10;
 const MIN_CADENCE_MS = 1000;

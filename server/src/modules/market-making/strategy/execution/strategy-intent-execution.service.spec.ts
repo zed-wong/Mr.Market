@@ -294,6 +294,46 @@ describe('StrategyIntentExecutionService', () => {
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
   });
 
+  it('keeps dynamic maker/taker metadata when executing inline dual-account taker', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
+      .mockResolvedValueOnce({ id: 'taker-order', status: 'filled' });
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-dynamic',
+        accountLabel: 'taker',
+        metadata: {
+          role: 'maker',
+          makerAccountLabel: 'taker',
+          takerAccountLabel: 'maker',
+          configuredMakerAccountLabel: 'maker',
+          configuredTakerAccountLabel: 'taker',
+          dynamicRoleSwitching: true,
+          makerDelayMs: 0,
+          cycleId: 'cycle-3',
+          orderId: 'dual-cycle-3',
+        },
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenNthCalledWith(
+      2,
+      'binance',
+      'BTC/USDT',
+      'sell',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('dual-cycle-3', 1),
+      { postOnly: false, timeInForce: 'IOC' },
+      'maker',
+    );
+  });
+
   it('deduplicates create intents when the slot already has an active tracked order', async () => {
     exchangeOrderTrackerService.getActiveSlotOrders.mockReturnValueOnce([
       {

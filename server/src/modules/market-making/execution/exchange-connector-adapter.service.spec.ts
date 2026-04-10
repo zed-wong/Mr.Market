@@ -18,8 +18,12 @@ describe('ExchangeConnectorAdapterService', () => {
     watchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
     watchBalance: jest.fn().mockResolvedValue({ total: {} }),
     loadMarkets: jest.fn().mockResolvedValue(undefined),
-    amountToPrecision: jest.fn((_pair: string, amount: number) => amount.toFixed(4)),
-    priceToPrecision: jest.fn((_pair: string, price: number) => price.toFixed(2)),
+    amountToPrecision: jest.fn((_pair: string, amount: number) =>
+      amount.toFixed(4),
+    ),
+    priceToPrecision: jest.fn((_pair: string, price: number) =>
+      price.toFixed(2),
+    ),
     markets: {
       'BTC/USDT': {
         limits: { amount: { min: 0.001 }, cost: { min: 10 } },
@@ -134,7 +138,10 @@ describe('ExchangeConnectorAdapterService', () => {
       qty: '0.1235',
       price: '100.99',
     });
-    expect(exchange.amountToPrecision).toHaveBeenCalledWith('BTC/USDT', 0.123456);
+    expect(exchange.amountToPrecision).toHaveBeenCalledWith(
+      'BTC/USDT',
+      0.123456,
+    );
     expect(exchange.priceToPrecision).toHaveBeenCalledWith('BTC/USDT', 100.987);
   });
 

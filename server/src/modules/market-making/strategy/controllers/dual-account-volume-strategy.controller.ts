@@ -38,12 +38,10 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     strategyInstance: StrategyInstance,
     service: StrategyService,
   ): Promise<void> {
-    await service.executeDualAccountVolumeStrategy(
-      {
-        ...(strategyInstance.parameters as ExecuteDualAccountVolumeStrategyDto),
-        userId: strategyInstance.userId,
-        clientId: strategyInstance.clientId,
-      },
-    );
+    await service.executeDualAccountVolumeStrategy({
+      ...(strategyInstance.parameters as ExecuteDualAccountVolumeStrategyDto),
+      userId: strategyInstance.userId,
+      clientId: strategyInstance.clientId,
+    });
   }
 }
