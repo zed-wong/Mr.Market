@@ -11,12 +11,17 @@ import { CampaignDataDto, CampaignListResponseDto } from './campaign.dto';
 
 @Injectable()
 export class CampaignService {
+  private static readonly ACCESS_TOKEN_TTL_MS = 5 * 60 * 1000;
   private readonly logger = new CustomLogger(CampaignService.name);
 
   private readonly campaignLauncherBaseUrl: string;
   private readonly recordingOracleBaseUrl: string;
   private readonly hufiCampaignLauncherAPI: AxiosInstance;
   private readonly hufiRecordingOracleAPI: AxiosInstance;
+  private readonly accessTokenCache = new Map<
+    string,
+    { token: string; expiresAt: number }
+  >();
 
   constructor(
     private readonly configService: ConfigService,
@@ -143,6 +148,36 @@ export class CampaignService {
       );
       throw new Error(`Failed to authenticate Web3 user: ${errorMessage}`);
     }
+  }
+
+  invalidateAccessToken(walletAddress: string): void {
+    this.accessTokenCache.delete(walletAddress.toLowerCase());
+  }
+
+  async getAccessToken(
+    walletAddress: string,
+    privateKey: string,
+  ): Promise<string> {
+    const cacheKey = walletAddress.toLowerCase();
+    const cached = this.accessTokenCache.get(cacheKey);
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.token;
+    }
+
+    const nonce = await this.get_auth_nonce(walletAddress);
+    const accessToken = await this.authenticate_web3_user(
+      walletAddress,
+      nonce,
+      privateKey,
+    );
+
+    this.accessTokenCache.set(cacheKey, {
+      token: accessToken,
+      expiresAt: Date.now() + CampaignService.ACCESS_TOKEN_TTL_MS,
+    });
+
+    return accessToken;
   }
 
   async getJoinedCampaignKeys(accessToken: string): Promise<Set<string>> {
@@ -302,13 +337,8 @@ export class CampaignService {
     );
 
     try {
-      // Step 1: Get authentication nonce
-      const nonce = await this.get_auth_nonce(wallet_address);
-
-      // Step 2: Authenticate and get access token
-      const access_token = await this.authenticate_web3_user(
+      const access_token = await this.getAccessToken(
         wallet_address,
-        nonce,
         private_key,
       );
 
@@ -385,15 +415,10 @@ export class CampaignService {
     let joinedKeys: Set<string>;
 
     try {
-      const nonce = await this.get_auth_nonce(walletAddress);
       const privateKey = this.web3Service.getSigner(
         firstCampaign.chain_id,
       ).privateKey;
-      const accessToken = await this.authenticate_web3_user(
-        walletAddress,
-        nonce,
-        privateKey,
-      );
+      const accessToken = await this.getAccessToken(walletAddress, privateKey);
 
       joinedKeys = await this.getJoinedCampaignKeys(accessToken);
     } catch (e) {

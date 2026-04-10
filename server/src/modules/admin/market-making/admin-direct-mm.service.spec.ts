@@ -80,6 +80,9 @@ describe('AdminDirectMarketMakingService', () => {
           maker: 0,
         },
       },
+      fetchTicker: jest.fn().mockResolvedValue({
+        last: 100,
+      }),
       fetchBalance: jest.fn().mockResolvedValue({
         free: { BTC: 1, USDT: 1000 },
         used: { BTC: 0.2, USDT: 0 },
@@ -88,6 +91,12 @@ describe('AdminDirectMarketMakingService', () => {
     };
     const exchangeInitService = {
       getExchange: jest.fn().mockReturnValue(exchange),
+      getCcxtExchangeMarkets: jest.fn().mockResolvedValue([
+        {
+          symbol: 'BTC/USDT',
+          limits: { amount: { min: 0.001 } },
+        },
+      ]),
     };
     const executorRegistry = {
       findExecutorByOrderId: jest.fn().mockReturnValue(null),
@@ -117,6 +126,7 @@ describe('AdminDirectMarketMakingService', () => {
       isCampaignJoined: jest.fn().mockResolvedValue(false),
       get_auth_nonce: jest.fn().mockResolvedValue('nonce'),
       authenticate_web3_user: jest.fn().mockResolvedValue('access-token'),
+      getAccessToken: jest.fn().mockResolvedValue('access-token'),
       getJoinedCampaignKeys: jest.fn().mockResolvedValue(new Set()),
       joinCampaignWithAuth: jest.fn().mockResolvedValue(undefined),
     };
@@ -352,6 +362,68 @@ describe('AdminDirectMarketMakingService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('rejects direct start when live market minimum blocks a stored zero minimum', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      growdataMarketMakingPairRepository,
+      exchangeInitService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: directStartDto.strategyDefinitionId,
+      enabled: true,
+    });
+    growdataMarketMakingPairRepository.findOne.mockResolvedValue({
+      exchange_id: 'binance',
+      symbol: 'BTC/USDT',
+      min_order_amount: '0',
+    });
+    exchangeInitService.getCcxtExchangeMarkets.mockResolvedValue([
+      {
+        symbol: 'BTC/USDT',
+        limits: { amount: { min: 20 } },
+      },
+    ]);
+
+    await expect(
+      service.directStart(directStartDto, 'admin-user'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects direct start when a live cost minimum implies a larger base amount', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      growdataMarketMakingPairRepository,
+      exchangeInitService,
+      exchange,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: directStartDto.strategyDefinitionId,
+      enabled: true,
+    });
+    growdataMarketMakingPairRepository.findOne.mockResolvedValue({
+      exchange_id: 'binance',
+      symbol: 'BTC/USDT',
+      min_order_amount: '0',
+    });
+    exchangeInitService.getCcxtExchangeMarkets.mockResolvedValue([
+      {
+        symbol: 'BTC/USDT',
+        limits: { cost: { min: 1000 } },
+      },
+    ]);
+    exchange.fetchTicker.mockResolvedValue({
+      last: 50,
+    });
+
+    await expect(
+      service.directStart(directStartDto, 'admin-user'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('rejects direct start when spreads are below the effective minimum spread', async () => {
     const { service, strategyDefinitionRepository, exchange } = buildService();
 
@@ -565,6 +637,57 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
+  it('sanitizes reserved config override fields before resolving dual-account config', async () => {
+    const { service, strategyDefinitionRepository, strategyConfigResolver } =
+      buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-2',
+      enabled: true,
+      controllerType: 'dualAccountVolume',
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'dualAccountVolume',
+    );
+
+    await service.directStart(
+      {
+        ...dualAccountStartDto,
+        configOverrides: {
+          ...dualAccountStartDto.configOverrides,
+          userId: 'spoofed-user',
+          clientId: 'spoofed-client',
+          marketMakingOrderId: 'spoofed-order',
+          pair: 'ETH/USDT',
+          symbol: 'ETH/USDT',
+          exchangeName: 'kraken',
+        },
+      },
+      'admin-user',
+    );
+
+    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
+      'strategy-2',
+      expect.objectContaining({
+        userId: 'admin-user',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        symbol: 'BTC/USDT',
+      }),
+    );
+    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
+      'strategy-2',
+      expect.not.objectContaining({
+        userId: 'spoofed-user',
+        clientId: 'spoofed-client',
+        marketMakingOrderId: 'spoofed-order',
+        pair: 'ETH/USDT',
+        symbol: 'ETH/USDT',
+        exchangeName: 'kraken',
+      }),
+    );
+  });
+
   it('rejects direct start when dual-account requests reuse the same api key', async () => {
     const {
       service,
@@ -764,7 +887,6 @@ describe('AdminDirectMarketMakingService', () => {
       service,
       marketMakingRepository,
       executorRegistry,
-      exchangeApiKeyService,
       privateStreamTrackerService,
       exchangeOrderTrackerService,
       strategyService,

@@ -2,6 +2,9 @@
 
 ## 2026-04-10
 
+- Add short-lived in-memory HuFi access-token caching in `CampaignService` and route admin campaign joined-status reads through the shared token helper to avoid nonce/sign/auth on every admin page refresh
+
+- Make admin direct MM minimum-order handling use real exchange market limits: frontend now resolves live CCXT minimums instead of rendering non-positive `0`, and backend now persists exchange-derived pair limits/precision when admin market-making pairs are added or refreshed
 - Rewrite `docs/planning/2026-04-10-api-key-identity-migration-plan.md` into an MVP hard-cutover plan: no old-client compatibility, no old-order/runtime preservation, `key_id` as the sole runtime identity, and a full DB reset + seed deployment assumption
 - Close the deferred volume controller follow-up: sanitize volume/dual-account cadence parsing, keep controller rerun compatible with legacy `incrementPercentage` / `intervalTime` / `tradeAmount` keys, and source rerun tenant identity from `StrategyInstance.userId/clientId` instead of persisted params
 - Start Phase 0 of `docs/archive/plans/2026-04-09-unified-execution-plan.md`: make exchange execution account-aware by threading `accountLabel` through the connector adapter, PMM runtime balance/rule/restore/cancel paths, tracked-order persistence, and intent execution
@@ -280,6 +283,10 @@
 ## 2026-02-05
 
 - Switch Playwright workflow to SQLite and remove Postgres service
+
+## 2026-04-10
+
+- Derive effective direct-order minimums from live exchange `amount.min` and `cost.min / price`, and surface rounded minimum hints in the admin direct order UI
 
 ## 2026-02-06
 

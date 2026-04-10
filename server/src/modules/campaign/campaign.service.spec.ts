@@ -151,12 +151,34 @@ describe('CampaignService', () => {
     });
   });
 
-  describe('joinCampaignWithAuth', () => {
-    it('runs auth, register exchange api key, then joins campaign', async () => {
+  describe('getAccessToken', () => {
+    it('reuses a cached access token for the same wallet', async () => {
       jest.spyOn(service, 'get_auth_nonce').mockResolvedValue('nonce-123');
       jest
         .spyOn(service, 'authenticate_web3_user')
         .mockResolvedValue('token-123');
+
+      await expect(
+        service.getAccessToken(
+          '0x1234567890abcdef1234567890abcdef12345678',
+          'private-key',
+        ),
+      ).resolves.toBe('token-123');
+      await expect(
+        service.getAccessToken(
+          '0x1234567890abcdef1234567890abcdef12345678',
+          'private-key',
+        ),
+      ).resolves.toBe('token-123');
+
+      expect(service.get_auth_nonce).toHaveBeenCalledTimes(1);
+      expect(service.authenticate_web3_user).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('joinCampaignWithAuth', () => {
+    it('runs auth, register exchange api key, then joins campaign', async () => {
+      jest.spyOn(service, 'getAccessToken').mockResolvedValue('token-123');
       jest
         .spyOn(service, 'register_exchange_api_key')
         .mockResolvedValue({ id: 'reg-1' });
@@ -174,6 +196,10 @@ describe('CampaignService', () => {
         ),
       ).resolves.toEqual({ id: 'join-1' });
 
+      expect(service.getAccessToken).toHaveBeenCalledWith(
+        '0x1234567890abcdef1234567890abcdef12345678',
+        'private-key',
+      );
       expect(service.register_exchange_api_key).toHaveBeenCalledWith(
         'token-123',
         'binance',

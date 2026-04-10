@@ -43,6 +43,14 @@ import {
 } from './admin-direct-mm.dto';
 
 const DIRECT_ORDER_STALE_MS = 15_000;
+const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
+  'userId',
+  'clientId',
+  'marketMakingOrderId',
+  'pair',
+  'symbol',
+  'exchangeName',
+]);
 
 type RuntimeSessionLike = {
   orderId: string;
@@ -115,11 +123,13 @@ export class AdminDirectMarketMakingService {
       controllerType,
     );
     const orderId = randomUUID();
+    const configOverrides = this.sanitizeConfigOverrides(dto.configOverrides);
+
     const resolvedConfig =
       await this.strategyConfigResolver.resolveForOrderSnapshot(
         dto.strategyDefinitionId,
         {
-          ...(dto.configOverrides || {}),
+          ...configOverrides,
           userId: adminUserId || 'admin-direct',
           clientId: orderId,
           marketMakingOrderId: orderId,
@@ -534,12 +544,8 @@ export class AdminDirectMarketMakingService {
         this.configService.get<string>('web3.private_key') ||
         process.env.WEB3_PRIVATE_KEY;
 
-      const nonce = await this.campaignService.get_auth_nonce(
+      const accessToken = await this.campaignService.getAccessToken(
         walletStatus.address,
-      );
-      const accessToken = await this.campaignService.authenticate_web3_user(
-        walletStatus.address,
-        nonce,
         privateKey,
       );
 
@@ -682,6 +688,20 @@ export class AdminDirectMarketMakingService {
     );
   }
 
+  private sanitizeConfigOverrides(
+    configOverrides?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!configOverrides) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(configOverrides).filter(
+        ([field]) => !DIRECT_RESERVED_CONFIG_FIELDS.has(field),
+      ),
+    );
+  }
+
   private async resolveExecutionAccounts(
     dto: DirectStartMarketMakingDto,
     controllerType: 'pureMarketMaking' | 'dualAccountVolume',
@@ -754,7 +774,12 @@ export class AdminDirectMarketMakingService {
     accountLabel: string,
     resolvedConfig: Record<string, unknown>,
   ): Promise<string[]> {
-    await this.validateMinimumOrderAmount(exchangeName, pair, resolvedConfig);
+    await this.validateMinimumOrderAmount(
+      exchangeName,
+      pair,
+      resolvedConfig,
+      accountLabel,
+    );
     await this.validateExecutableSpreadConfig(
       exchangeName,
       accountLabel,
@@ -779,7 +804,12 @@ export class AdminDirectMarketMakingService {
     },
     resolvedConfig: Record<string, unknown>,
   ): Promise<string[]> {
-    await this.validateMinimumOrderAmount(exchangeName, pair, resolvedConfig);
+    await this.validateMinimumOrderAmount(
+      exchangeName,
+      pair,
+      resolvedConfig,
+      executionAccounts.primary.accountLabel,
+    );
 
     const warnings = await Promise.all([
       this.runBalancePreCheck(
@@ -844,15 +874,149 @@ export class AdminDirectMarketMakingService {
     }
   }
 
+  private normalizeMarketSymbol(symbol?: string) {
+    return String(symbol || '')
+      .split(':')[0]
+      .trim()
+      .toUpperCase();
+  }
+
+  private readPositiveAmount(value: unknown): string {
+    const trimmed = String(value ?? '').trim();
+
+    if (!trimmed) {
+      return '';
+    }
+
+    const amount = new BigNumber(trimmed);
+
+    if (!amount.isFinite() || !amount.isGreaterThan(0)) {
+      return '';
+    }
+
+    return amount.toString();
+  }
+
+  private readPositiveBigNumber(value: unknown): BigNumber | null {
+    const amount = this.readPositiveAmount(value);
+
+    return amount ? new BigNumber(amount) : null;
+  }
+
+  private async resolveTickerPrice(
+    exchangeName: string,
+    pair: string,
+    accountLabel: string,
+  ): Promise<BigNumber | null> {
+    try {
+      const exchange = this.exchangeInitService.getExchange(
+        exchangeName,
+        accountLabel,
+      );
+      const ticker = await exchange.fetchTicker(pair);
+      const bid = this.readPositiveBigNumber(ticker?.bid);
+      const ask = this.readPositiveBigNumber(ticker?.ask);
+
+      if (bid && ask) {
+        return bid.plus(ask).dividedBy(2);
+      }
+
+      return (
+        this.readPositiveBigNumber(ticker?.last) ??
+        this.readPositiveBigNumber(ticker?.close) ??
+        bid ??
+        ask
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to resolve ticker price for ${exchangeName} ${pair}`,
+        error,
+      );
+
+      return null;
+    }
+  }
+
+  private async resolveMinimumOrderAmount(
+    exchangeName: string,
+    pair: string,
+    persistedMinimum: unknown,
+    accountLabel: string,
+  ): Promise<string> {
+    const candidates = [this.readPositiveBigNumber(persistedMinimum)].filter(
+      (value): value is BigNumber => value !== null,
+    );
+
+    try {
+      const markets = (await this.exchangeInitService.getCcxtExchangeMarkets(
+        exchangeName,
+      )) as Array<{
+        symbol?: string;
+        limits?: {
+          amount?: { min?: number | string | null };
+          cost?: { min?: number | string | null };
+        };
+      }>;
+      const normalizedPair = this.normalizeMarketSymbol(pair);
+      const market = Array.isArray(markets)
+        ? markets.find(
+            (item) =>
+              this.normalizeMarketSymbol(item?.symbol) === normalizedPair,
+          )
+        : undefined;
+      const amountMinimum = this.readPositiveBigNumber(
+        market?.limits?.amount?.min,
+      );
+      const costMinimum = this.readPositiveBigNumber(market?.limits?.cost?.min);
+
+      if (amountMinimum) {
+        candidates.push(amountMinimum);
+      }
+
+      if (costMinimum) {
+        const tickerPrice = await this.resolveTickerPrice(
+          exchangeName,
+          pair,
+          accountLabel,
+        );
+
+        if (tickerPrice) {
+          candidates.push(costMinimum.dividedBy(tickerPrice));
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to resolve minimum order amount for ${exchangeName} ${pair}`,
+        error,
+      );
+    }
+
+    if (candidates.length === 0) {
+      return '';
+    }
+
+    return candidates
+      .reduce((maximum, candidate) =>
+        candidate.isGreaterThan(maximum) ? candidate : maximum,
+      )
+      .toString();
+  }
+
   private async validateMinimumOrderAmount(
     exchangeName: string,
     pair: string,
     resolvedConfig: Record<string, unknown>,
+    accountLabel: string,
   ): Promise<void> {
     const pairConfig = await this.growdataMarketMakingPairRepository.findOne({
       where: { exchange_id: exchangeName, symbol: pair },
     });
-    const minimum = String(pairConfig?.min_order_amount || '').trim();
+    const minimum = await this.resolveMinimumOrderAmount(
+      exchangeName,
+      pair,
+      pairConfig?.min_order_amount,
+      accountLabel,
+    );
 
     if (!minimum) {
       return;
