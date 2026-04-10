@@ -7,13 +7,19 @@ import type {
   StrategyRuntimeSession,
 } from '../config/strategy-controller.types';
 import { StrategyService } from '../strategy.service';
+import {
+  normalizeVolumeRerunConfig,
+  sanitizeVolumeCadenceMs,
+} from './volume-controller.helpers';
 
 @Injectable()
 export class VolumeStrategyController implements StrategyController {
   readonly strategyType = 'volume' as const;
 
   getCadenceMs(parameters: Record<string, unknown>): number {
-    return Math.max(1000, Number(parameters?.baseIntervalTime || 10) * 1000);
+    return sanitizeVolumeCadenceMs(
+      parameters?.baseIntervalTime ?? parameters?.intervalTime,
+    );
   }
 
   async decideActions(
@@ -36,26 +42,28 @@ export class VolumeStrategyController implements StrategyController {
     strategyInstance: StrategyInstance,
     service: StrategyService,
   ): Promise<void> {
+    const config = normalizeVolumeRerunConfig(strategyInstance);
+
     await service.executeVolumeStrategy(
-      strategyInstance.parameters.exchangeName,
-      strategyInstance.parameters.symbol,
-      strategyInstance.parameters.baseIncrementPercentage,
-      strategyInstance.parameters.baseIntervalTime,
-      strategyInstance.parameters.baseTradeAmount,
-      strategyInstance.parameters.numTrades,
-      strategyInstance.parameters.userId,
-      strategyInstance.parameters.clientId,
-      strategyInstance.parameters.pricePushRate,
-      strategyInstance.parameters.postOnlySide,
-      strategyInstance.parameters.executionVenue,
-      strategyInstance.parameters.dexId,
-      strategyInstance.parameters.chainId,
-      strategyInstance.parameters.tokenIn,
-      strategyInstance.parameters.tokenOut,
-      strategyInstance.parameters.feeTier,
-      strategyInstance.parameters.slippageBps,
-      strategyInstance.parameters.recipient,
-      strategyInstance.parameters.executionCategory,
+      config.exchangeName,
+      config.symbol,
+      config.baseIncrementPercentage,
+      config.baseIntervalTime,
+      config.baseTradeAmount,
+      config.numTrades,
+      config.userId,
+      config.clientId,
+      config.pricePushRate,
+      config.postOnlySide,
+      config.executionVenue as any,
+      config.dexId as any,
+      config.chainId,
+      config.tokenIn,
+      config.tokenOut,
+      config.feeTier,
+      config.slippageBps,
+      config.recipient,
+      config.executionCategory,
     );
   }
 }

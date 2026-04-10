@@ -2,6 +2,7 @@
 
 ## 2026-04-10
 
+- Close the deferred volume controller follow-up: sanitize volume/dual-account cadence parsing, keep controller rerun compatible with legacy `incrementPercentage` / `intervalTime` / `tradeAmount` keys, and source rerun tenant identity from `StrategyInstance.userId/clientId` instead of persisted params
 - Start Phase 0 of `docs/planning/2026-04-09-unified-execution-plan.md`: make exchange execution account-aware by threading `accountLabel` through the connector adapter, PMM runtime balance/rule/restore/cancel paths, tracked-order persistence, and intent execution
 - Persist restart-critical strategy intent fields (`accountLabel`, `timeInForce`, `slotKey`, `postOnly`) plus tracked-order account metadata (`accountLabel`, `slotKey`, `role`) with a new nullable migration and unit coverage for adapter, tracker, intent execution/store/worker, and strategy runtime regression paths
 - Start Phase 1 of `docs/planning/2026-04-09-unified-execution-plan.md`: switch PMM quote generation to stable `slotKey` targets, split tracker live-vs-active slot queries, rewrite PMM refresh into cancel-first slot reconciliation, and add slot-aware create dedup plus stop-path publish gating

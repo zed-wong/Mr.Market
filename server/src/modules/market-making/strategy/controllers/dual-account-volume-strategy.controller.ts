@@ -8,13 +8,14 @@ import type {
   StrategyRuntimeSession,
 } from '../config/strategy-controller.types';
 import { StrategyService } from '../strategy.service';
+import { sanitizeVolumeCadenceMs } from './volume-controller.helpers';
 
 @Injectable()
 export class DualAccountVolumeStrategyController implements StrategyController {
   readonly strategyType = 'dualAccountVolume' as const;
 
   getCadenceMs(parameters: Record<string, unknown>): number {
-    return Math.max(1000, Number(parameters?.baseIntervalTime || 10) * 1000);
+    return sanitizeVolumeCadenceMs(parameters?.baseIntervalTime);
   }
 
   async decideActions(
@@ -38,7 +39,11 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     service: StrategyService,
   ): Promise<void> {
     await service.executeDualAccountVolumeStrategy(
-      strategyInstance.parameters as ExecuteDualAccountVolumeStrategyDto,
+      {
+        ...(strategyInstance.parameters as ExecuteDualAccountVolumeStrategyDto),
+        userId: strategyInstance.userId,
+        clientId: strategyInstance.clientId,
+      },
     );
   }
 }

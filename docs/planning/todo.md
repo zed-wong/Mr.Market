@@ -61,7 +61,7 @@ Market making execution system
 
 Deferred strategy follow-ups
 - [ ] 1. Remove `exchangeName`/`pair` from `StrategyInstance.parameters` - get from `MarketMakingOrder` binding at runtime instead of duplicating in params (conceptual cleanup, medium effort ~10-15 files)
-- [ ] 2. Fix volume strategy controller follow-ups before expanding reuse: sanitize cadence input, keep rerun backward-compatible with legacy parameter keys, and stop deriving tenant identity from `strategyInstance.parameters.userId/clientId`
+- [x] 2. Fix volume strategy controller follow-ups before expanding reuse: sanitize cadence input, keep rerun backward-compatible with legacy parameter keys, and stop deriving tenant identity from `strategyInstance.parameters.userId/clientId`
 - [ ] 3. Move `userId`/`clientId`/`marketMakingOrderId` injection in strategy config resolution to after schema validation so strict schemas with `additionalProperties: false` can pass correctly
 - [ ] 4. Make legacy admin strategy start fail on ambiguous enabled definitions instead of silently picking the oldest matching `controllerType`
 - [ ] 5. Validate `controllerType` on strategy definition creation and reject unsupported controller values early
