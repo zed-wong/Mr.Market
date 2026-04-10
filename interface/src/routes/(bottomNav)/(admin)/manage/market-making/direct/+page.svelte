@@ -101,6 +101,13 @@
   let startTakerApiKeyId = "";
   let orderAmount = "";
   let orderSpread = "";
+  let intervalTime = "30";
+  let numTrades = "100";
+  let pricePushRate = "0";
+  let postOnlySide = "buy";
+  let dynamicRoleSwitching = false;
+  let targetQuoteVolume = "";
+  let makerDelayMs = "250";
   let configRows: OverrideRow[] = [{ key: "", value: "" }];
 
   let showStopAllConfirm = false;
@@ -203,6 +210,13 @@
     configRows = [{ key: "", value: "" }];
     orderAmount = "";
     orderSpread = "";
+    intervalTime = "30";
+    numTrades = "100";
+    pricePushRate = "0";
+    postOnlySide = "buy";
+    dynamicRoleSwitching = false;
+    targetQuoteVolume = "";
+    makerDelayMs = "250";
   }
 
   async function handleStartOrder() {
@@ -264,6 +278,15 @@
         configRows,
         orderAmount,
         orderSpread,
+        {
+          intervalTime,
+          numTrades,
+          pricePushRate,
+          postOnlySide,
+          dynamicRoleSwitching,
+          targetQuoteVolume,
+          makerDelayMs,
+        },
       );
       const payload = isDualAccountStrategy
         ? {
@@ -666,9 +689,17 @@
   bind:startApiKeyId
   bind:startMakerApiKeyId
   bind:startTakerApiKeyId
+  {configRows}
   bind:orderAmount
   {minOrderAmount}
   bind:orderSpread
+  bind:intervalTime
+  bind:numTrades
+  bind:pricePushRate
+  bind:postOnlySide
+  bind:dynamicRoleSwitching
+  bind:targetQuoteVolume
+  bind:makerDelayMs
   onSubmit={handleStartOrder}
   onClose={resetStartForm}
 />

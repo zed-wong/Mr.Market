@@ -187,7 +187,7 @@ describe('UserOrdersService', () => {
   });
 
   describe('listEnabledMarketMakingStrategies', () => {
-    it('returns only enabled pure market making definitions for user selection', async () => {
+    it('returns only enabled public pure market making definitions for user selection', async () => {
       jest.spyOn(strategyDefinitionRepository, 'find').mockResolvedValueOnce([
         {
           id: 'strategy-1',
@@ -195,15 +195,27 @@ describe('UserOrdersService', () => {
           name: 'Basic MM',
           description: 'basic strategy',
           controllerType: 'pureMarketMaking',
+          visibility: 'public',
           defaultConfig: { bidSpread: 0.1 },
           configSchema: { type: 'object' },
         } as unknown as StrategyDefinition,
         {
           id: 'strategy-2',
+          key: 'dual-volume',
+          name: 'Dual Volume',
+          description: 'paired direct volume',
+          controllerType: 'dualAccountVolume',
+          visibility: 'admin',
+          defaultConfig: { baseTradeAmount: 5 },
+          configSchema: { type: 'object' },
+        } as unknown as StrategyDefinition,
+        {
+          id: 'strategy-3',
           key: 'volume',
           name: 'Volume',
           description: 'non-mm strategy',
           controllerType: 'volume',
+          visibility: 'public',
           defaultConfig: { incrementPercentage: 0.1 },
           configSchema: { type: 'object' },
         } as unknown as StrategyDefinition,
@@ -212,7 +224,7 @@ describe('UserOrdersService', () => {
       const result = await service.listEnabledMarketMakingStrategies();
 
       expect(strategyDefinitionRepository.find).toHaveBeenCalledWith({
-        where: { enabled: true },
+        where: { enabled: true, visibility: 'public' },
         order: { updatedAt: 'DESC' },
       });
       expect(result).toEqual([
@@ -395,7 +407,7 @@ describe('UserOrdersService', () => {
           strategyDefinitionId: 'strategy-2',
         }),
       ).rejects.toThrow(
-        'strategyDefinitionId must reference a pure market making definition',
+        'strategyDefinitionId must reference a public pure market making definition',
       );
     });
   });

@@ -8,12 +8,27 @@ import type {
   DirectStartPayload,
   DirectWalletStatus,
 } from "$lib/types/hufi/admin-direct-market-making";
+import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
 
 export const listDirectOrders = async (
   token: string,
 ): Promise<DirectOrderSummary[]> => {
   const response = await fetch(
     `${MRM_BACKEND_URL}/admin/market-making/direct-orders`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const listDirectStrategies = async (
+  token: string,
+): Promise<StrategyDefinition[]> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-strategies`,
     {
       method: "GET",
       headers: getHeaders(token),

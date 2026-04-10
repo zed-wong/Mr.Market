@@ -1,3 +1,5 @@
+export type StrategyDefinitionVisibility = "public" | "admin";
+
 export type StrategyDefinition = {
   id: string;
   key: string;
@@ -8,7 +10,7 @@ export type StrategyDefinition = {
   configSchema: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
   enabled: boolean;
-  visibility: string;
+  visibility: StrategyDefinitionVisibility;
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
@@ -22,7 +24,7 @@ export type StrategyDefinitionPayload = {
   executorType?: string;
   configSchema: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
-  visibility?: string;
+  visibility?: StrategyDefinitionVisibility;
   createdBy?: string;
 };
 

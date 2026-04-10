@@ -1,8 +1,9 @@
 import { browser } from "$app/environment";
-import { getGrowBasicInfo, getEnabledMarketMakingStrategies } from "$lib/helpers/mrm/grow";
+import { getGrowBasicInfo } from "$lib/helpers/mrm/grow";
 import { getAllAPIKeys } from "$lib/helpers/mrm/admin/exchanges";
 import {
   getDirectWalletStatus,
+  listDirectStrategies,
   listAdminCampaigns,
   listDirectOrders,
 } from "$lib/helpers/mrm/admin/direct-market-making";
@@ -38,7 +39,7 @@ export const load: PageLoad = async ({ depends }) => {
 
   return {
     growInfo: getGrowBasicInfo().catch(() => null),
-    strategies: getEnabledMarketMakingStrategies().catch(() => []),
+    strategies: listDirectStrategies(token).catch(() => []),
     apiKeys: getAllAPIKeys(token).catch(() => []),
     directOrders: listDirectOrders(token).catch(() => []),
     campaigns: listAdminCampaigns(token).catch(() => []),

@@ -363,7 +363,7 @@ export class AdminStrategyService {
       configSchema: dto.configSchema,
       defaultConfig: dto.defaultConfig,
       enabled: true,
-      visibility: dto.visibility || 'system',
+      visibility: dto.visibility || 'public',
       createdBy: dto.createdBy,
     });
 

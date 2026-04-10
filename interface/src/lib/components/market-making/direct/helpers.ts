@@ -107,11 +107,22 @@ export function formatFundAmount(amount: unknown, decimals: unknown): string {
   return bn.dividedBy(new BigNumber(10).pow(dec)).toFormat();
 }
 
+export interface DualAccountVolumeFields {
+  intervalTime: string;
+  numTrades: string;
+  pricePushRate: string;
+  postOnlySide: string;
+  dynamicRoleSwitching: boolean;
+  targetQuoteVolume: string;
+  makerDelayMs: string;
+}
+
 export function normalizeConfigOverrides(
   controllerType: string,
   configRows: { key: string; value: string }[],
   orderAmount: string,
   orderSpread: string,
+  dualFields?: DualAccountVolumeFields,
 ): Record<string, unknown> {
   const accumulator = configRows.reduce<Record<string, unknown>>(
     (acc, row) => {
@@ -140,6 +151,34 @@ export function normalizeConfigOverrides(
     } else {
       accumulator["bidSpread"] = value;
       accumulator["askSpread"] = value;
+    }
+  }
+  if (controllerType === "dualAccountVolume" && dualFields) {
+    if (dualFields.intervalTime) {
+      const num = Number(dualFields.intervalTime);
+      if (!isNaN(num)) accumulator["baseIntervalTime"] = num;
+    }
+    if (dualFields.numTrades) {
+      const num = Number(dualFields.numTrades);
+      if (!isNaN(num)) accumulator["numTrades"] = num;
+    }
+    if (dualFields.pricePushRate) {
+      const num = Number(dualFields.pricePushRate);
+      if (!isNaN(num)) accumulator["pricePushRate"] = num;
+    }
+    if (dualFields.postOnlySide) {
+      accumulator["postOnlySide"] = dualFields.postOnlySide;
+    }
+    if (dualFields.dynamicRoleSwitching) {
+      accumulator["dynamicRoleSwitching"] = true;
+    }
+    if (dualFields.targetQuoteVolume) {
+      const num = Number(dualFields.targetQuoteVolume);
+      if (!isNaN(num)) accumulator["targetQuoteVolume"] = num;
+    }
+    if (dualFields.makerDelayMs) {
+      const num = Number(dualFields.makerDelayMs);
+      if (!isNaN(num)) accumulator["makerDelayMs"] = num;
     }
   }
   return accumulator;

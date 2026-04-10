@@ -16,7 +16,7 @@
     let controllerType = "pureMarketMaking";
     let configSchema: Record<string, unknown> = {};
     let defaultConfig: Record<string, unknown> = {};
-    let visibility = "system";
+    let visibility = "public";
     let createdBy = "";
 
     let schemaError = false;
@@ -53,7 +53,7 @@
         configSchema = {};
         schemaText = "";
         defaultConfig = {};
-        visibility = "system";
+        visibility = "public";
         createdBy = "";
         schemaError = false;
     }
@@ -293,8 +293,8 @@
                             class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
                             bind:value={visibility}
                         >
-                            <option value="system">System</option>
                             <option value="public">Public</option>
+                            <option value="admin">Admin</option>
                         </select>
                     </div>
                     <div class="flex-1 bg-base-200/40 rounded-xl p-4">

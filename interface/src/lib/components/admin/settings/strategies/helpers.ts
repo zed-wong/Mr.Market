@@ -105,10 +105,10 @@ export function getStatusClasses(status: string): string {
 
 export function getVisibilityLabel(visibility: string): string {
   switch (visibility) {
-    case "system":
-      return "System";
     case "public":
       return "Public";
+    case "admin":
+      return "Admin";
     default:
       return visibility || "—";
   }

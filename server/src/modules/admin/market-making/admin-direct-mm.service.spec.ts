@@ -457,6 +457,7 @@ describe('AdminDirectMarketMakingService', () => {
       marketMakingRepository,
       strategyDefinitionRepository,
       executorRegistry,
+      exchangeApiKeyService,
     } = buildService();
 
     marketMakingRepository.find.mockResolvedValue([
@@ -482,6 +483,13 @@ describe('AdminDirectMarketMakingService', () => {
         nextRunAtMs: Date.now() + 5000,
       }),
     });
+    exchangeApiKeyService.readAPIKey.mockResolvedValue({
+      exchange: 'binance',
+      exchange_index: 'desk-1',
+      name: 'default',
+      api_key: 'api-key',
+      api_secret: 'api-secret',
+    });
 
     const result = await service.listDirectOrders();
 
@@ -489,11 +497,11 @@ describe('AdminDirectMarketMakingService', () => {
       where: { source: 'admin_direct' },
       order: { createdAt: 'DESC' },
     });
-    expect(result).toEqual([
+    expect(await Promise.resolve(result)).toEqual([
       expect.objectContaining({
         orderId: 'order-1',
         strategyName: 'Desk Strategy',
-        accountLabel: 'desk-1',
+        accountLabel: 'default',
       }),
     ]);
   });
@@ -658,7 +666,7 @@ describe('AdminDirectMarketMakingService', () => {
     expect(strategyIntentStoreService.getQueueState).toHaveBeenCalledWith(
       'admin-user-order-2-dualAccountVolume',
     );
-    expect(result).toEqual([
+    expect(await Promise.resolve(result)).toEqual([
       expect.objectContaining({
         controllerType: 'dualAccountVolume',
         accountLabel: 'desk-1',
@@ -668,6 +676,46 @@ describe('AdminDirectMarketMakingService', () => {
         takerApiKeyId: 'api-key-2',
       }),
     ]);
+  });
+
+  it('lists admin direct strategy definitions for public and admin visibility', async () => {
+    const { service, strategyDefinitionRepository } = buildService();
+
+    strategyDefinitionRepository.find.mockResolvedValue([
+      {
+        id: 'strategy-1',
+        key: 'pure-market-making',
+        name: 'Pure Market Making',
+        controllerType: 'pureMarketMaking',
+        visibility: 'public',
+        enabled: true,
+      },
+      {
+        id: 'strategy-2',
+        key: 'dual-account-volume',
+        name: 'Dual Account Volume',
+        controllerType: 'dualAccountVolume',
+        visibility: 'admin',
+        enabled: true,
+      },
+      {
+        id: 'strategy-3',
+        key: 'internal-hidden',
+        name: 'Hidden',
+        controllerType: 'pureMarketMaking',
+        visibility: 'private',
+        enabled: true,
+      },
+    ]);
+
+    await expect(service.listDirectStrategyDefinitions()).resolves.toEqual([
+      expect.objectContaining({ id: 'strategy-1', visibility: 'public' }),
+      expect.objectContaining({ id: 'strategy-2', visibility: 'admin' }),
+    ]);
+    expect(strategyDefinitionRepository.find).toHaveBeenCalledWith({
+      where: { enabled: true },
+      order: { updatedAt: 'DESC' },
+    });
   });
 
   it('reports dual-account status without private stream data and exposes cycle counters', async () => {
@@ -738,6 +786,7 @@ describe('AdminDirectMarketMakingService', () => {
       service,
       marketMakingRepository,
       executorRegistry,
+      exchangeApiKeyService,
       privateStreamTrackerService,
       exchangeOrderTrackerService,
       strategyService,
@@ -751,6 +800,7 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       source: 'admin_direct',
       createdAt: '2026-04-01T00:00:00.000Z',
+      apiKeyId: 'api-key-1',
       strategySnapshot: {
         resolvedConfig: {
           accountLabel: 'desk-1',
@@ -786,6 +836,7 @@ describe('AdminDirectMarketMakingService', () => {
 
     expect(result.executorHealth).toBe('active');
     expect(result.runtimeState).toBe('active');
+    expect(result.accountLabel).toBe('desk-1');
     expect(result.orderConfig).toEqual({
       orderAmount: '10',
       bidSpread: null,
@@ -819,6 +870,37 @@ describe('AdminDirectMarketMakingService', () => {
 
     expect(result.executorHealth).toBe('gone');
     expect(result.runtimeState).toBe('gone');
+  });
+
+  it('falls back to account label when api key name is unavailable', async () => {
+    const { service, marketMakingRepository, exchangeApiKeyService } =
+      buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      strategySnapshot: {
+        resolvedConfig: {
+          accountLabel: '1775557569618',
+          exchange_index: 'desk-2',
+        },
+      },
+    });
+    exchangeApiKeyService.readAPIKey.mockResolvedValue({
+      exchange: 'binance',
+      exchange_index: 'desk-2',
+      name: '',
+      api_key: 'api-key',
+      api_secret: 'api-secret',
+    });
+
+    const result = await service.getDirectOrderStatus('order-1');
+
+    expect(result.accountLabel).toBe('desk-2');
   });
 
   it('reports stale executor health when the last tick is too old', async () => {

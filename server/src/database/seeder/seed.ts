@@ -381,7 +381,7 @@ export async function seedStrategyDefinitions(
           unknown
         >,
         enabled: definition.enabled !== false,
-        visibility: String(definition.visibility || 'system'),
+        visibility: String(definition.visibility || 'public'),
         createdBy: definition.createdBy
           ? String(definition.createdBy)
           : undefined,

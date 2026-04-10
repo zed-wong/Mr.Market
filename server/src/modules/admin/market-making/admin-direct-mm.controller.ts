@@ -58,6 +58,14 @@ export class AdminDirectMarketMakingController {
     return this.adminDirectMarketMakingService.listDirectOrders();
   }
 
+  @Get('direct-strategies')
+  @ApiOperation({
+    summary: 'List admin direct strategy definitions (public + admin visibility)',
+  })
+  async listDirectStrategies() {
+    return this.adminDirectMarketMakingService.listDirectStrategyDefinitions();
+  }
+
   @Get('direct-orders/:id/status')
   @ApiOperation({ summary: 'Get runtime status for a direct admin order' })
   async getDirectOrderStatus(@Param('id') id: string) {

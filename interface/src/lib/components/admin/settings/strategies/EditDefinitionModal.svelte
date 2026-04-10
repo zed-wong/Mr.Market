@@ -15,7 +15,7 @@
     let description = "";
     let configSchema: Record<string, unknown> = {};
     let defaultConfig: Record<string, unknown> = {};
-    let visibility = "system";
+    let visibility = "public";
     let createdBy = "";
 
     let schemaOpen = false;
@@ -27,7 +27,7 @@
             (definition.configSchema as Record<string, unknown>) || {};
         defaultConfig =
             (definition.defaultConfig as Record<string, unknown>) || {};
-        visibility = definition.visibility || "system";
+        visibility = definition.visibility || "public";
         createdBy = definition.createdBy || "";
         schemaOpen = false;
     }
@@ -237,8 +237,8 @@
                             class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
                             bind:value={visibility}
                         >
-                            <option value="system">System</option>
                             <option value="public">Public</option>
+                            <option value="admin">Admin</option>
                         </select>
                     </div>
                     <div class="flex-1 bg-base-200/40 rounded-xl p-4">

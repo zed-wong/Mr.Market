@@ -307,9 +307,9 @@ export class UserOrdersService {
     if (!definition) {
       throw new NotFoundException('Strategy definition not found or disabled');
     }
-    if (!this.isPureMarketMakingDefinition(definition)) {
+    if (!this.isPublicUserMarketMakingDefinition(definition)) {
       throw new BadRequestException(
-        'strategyDefinitionId must reference a pure market making definition',
+        'strategyDefinitionId must reference a public pure market making definition',
       );
     }
 
@@ -387,12 +387,14 @@ export class UserOrdersService {
 
   async listEnabledMarketMakingStrategies() {
     const definitions = await this.strategyDefinitionRepository.find({
-      where: { enabled: true },
+      where: { enabled: true, visibility: 'public' },
       order: { updatedAt: 'DESC' },
     });
 
     return definitions
-      .filter((definition) => this.isPureMarketMakingDefinition(definition))
+      .filter((definition) =>
+        this.isPublicUserMarketMakingDefinition(definition),
+      )
       .map((definition) => ({
         id: definition.id,
         key: definition.key,
@@ -404,7 +406,7 @@ export class UserOrdersService {
       }));
   }
 
-  private isPureMarketMakingDefinition(
+  private isPublicUserMarketMakingDefinition(
     definition: Partial<StrategyDefinition> | null | undefined,
   ): boolean {
     const controllerType = normalizeControllerType(

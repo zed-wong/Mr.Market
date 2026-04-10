@@ -56,6 +56,7 @@ type AdminCampaign = Record<string, unknown> & { joined: boolean };
 type DirectExecutionAccount = {
   apiKeyId: string;
   accountLabel: string;
+  apiKeyName: string;
   apiKey: Record<string, any>;
 };
 
@@ -341,7 +342,7 @@ export class AdminDirectMarketMakingService {
           controllerType: this.readControllerType(order),
           createdAt: order.createdAt,
           lastTickAt,
-          accountLabel: this.readPrimaryAccountLabel(order),
+          accountLabel: await this.readPrimaryDisplayLabel(order),
           makerAccountLabel: this.readMakerAccountLabel(order),
           takerAccountLabel: this.readTakerAccountLabel(order),
           apiKeyId: order.apiKeyId || null,
@@ -486,7 +487,7 @@ export class AdminDirectMarketMakingService {
       state: order.state,
       runtimeState,
       controllerType,
-      accountLabel: primaryAccountLabel,
+      accountLabel: await this.readPrimaryDisplayLabel(order),
       makerAccountLabel: this.readMakerAccountLabel(order),
       takerAccountLabel: this.readTakerAccountLabel(order),
       apiKeyId: order.apiKeyId || null,
@@ -634,6 +635,25 @@ export class AdminDirectMarketMakingService {
     }
   }
 
+  async listDirectStrategyDefinitions(): Promise<StrategyDefinition[]> {
+    const definitions = await this.strategyDefinitionRepository.find({
+      where: { enabled: true },
+      order: { updatedAt: 'DESC' },
+    });
+
+    return definitions.filter((definition) => {
+      const controllerType = String(
+        definition.controllerType || definition.executorType || '',
+      ).trim();
+      const visibility = String(definition.visibility || 'public').trim();
+
+      return (
+        ['public', 'admin'].includes(visibility) &&
+        controllerType.length > 0
+      );
+    });
+  }
+
   mapCCXTError(error: unknown): HttpException {
     if (error instanceof HttpException) {
       return error;
@@ -727,6 +747,7 @@ export class AdminDirectMarketMakingService {
     return {
       apiKeyId,
       accountLabel,
+      apiKeyName: String(apiKey.name || '').trim(),
       apiKey,
     };
   }
@@ -1008,6 +1029,27 @@ export class AdminDirectMarketMakingService {
       : this.readAccountLabel(order);
   }
 
+  private async readPrimaryDisplayLabel(
+    order: MarketMakingOrder,
+  ): Promise<string> {
+    if (this.readControllerType(order) === 'dualAccountVolume') {
+      return this.readPrimaryAccountLabel(order);
+    }
+
+    if (!order.apiKeyId) {
+      return this.readAccountLabel(order);
+    }
+
+    try {
+      const apiKey = await this.exchangeApiKeyService.readAPIKey(order.apiKeyId);
+      const apiKeyName = String(apiKey?.name || '').trim();
+
+      return apiKeyName || this.readAccountLabel(order);
+    } catch {
+      return this.readAccountLabel(order);
+    }
+  }
+
   private readMakerAccountLabel(order: MarketMakingOrder): string {
     const accountLabel =
       order.strategySnapshot?.resolvedConfig?.makerAccountLabel ||
@@ -1046,7 +1088,18 @@ export class AdminDirectMarketMakingService {
   }
 
   private readAccountLabel(order: MarketMakingOrder): string {
-    const accountLabel = order.strategySnapshot?.resolvedConfig?.accountLabel;
+    const snapshotAccountLabel =
+      order.strategySnapshot?.resolvedConfig?.accountLabel;
+    const accountLabelCandidates = [
+      snapshotAccountLabel,
+      order.strategySnapshot?.resolvedConfig?.exchange_index,
+    ];
+    const accountLabel = accountLabelCandidates.find(
+      (value) =>
+        typeof value === 'string' &&
+        value.trim().length > 0 &&
+        !/^\d{10,}$/.test(value.trim()),
+    );
 
     return typeof accountLabel === 'string' && accountLabel.trim().length > 0
       ? accountLabel.trim()
