@@ -303,7 +303,6 @@
                                 bind:value={password}
                                 class="input input-bordered w-full pr-11 h-11"
                                 required
-                                autofocus
                             />
                         {:else}
                             <input
@@ -313,7 +312,6 @@
                                 bind:value={password}
                                 class="input input-bordered w-full pr-11 h-11"
                                 required
-                                autofocus
                             />
                         {/if}
 
@@ -443,16 +441,6 @@
         60%,
         80% {
             transform: translateX(4px);
-        }
-    }
-
-    .animate-shake {
-        animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-        .animate-shake {
-            animation: none;
         }
     }
 </style>

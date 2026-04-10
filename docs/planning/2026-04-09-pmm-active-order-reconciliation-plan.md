@@ -3,8 +3,7 @@
 Date: `2026-04-09`
 Status: `Proposed`
 Related:
-- `docs/planning/2026-04-09-pmm-minimum-safe-stability-gap-plan.md`
-- `docs/planning/2026-04-09-pmm-minimum-safe-stability-todo.md`
+- `docs/archive/plans/2026-04-09-pmm-minimum-safe-stability-gap-plan.md`
 
 ## Goal
 
@@ -21,6 +20,17 @@ The target behavior should be close to Hummingbot PMM semantics:
 - strategy cancels stale orders first
 - strategy only creates new orders when the relevant slot is free
 - by default, strategy waits for cancel completion before creating replacement orders
+
+## Prerequisites
+
+Before implementing slot reconciliation, a shared prerequisite patch should land first:
+
+- thread `accountLabel` through `ExchangeConnectorAdapterService` (`placeLimitOrder`, `cancelOrder`, `fetchOrder`, `fetchOpenOrders`, `fetchBalance`)
+- add `accountLabel` to `TrackedOrder` runtime model and `TrackedOrderEntity`
+- change tracker key from `exchange:exchangeOrderId` to `exchange:accountLabel:exchangeOrderId`
+- pass `accountLabel` in PMM paths that currently ignore it: `getAvailableBalancesForPair()`, `cancelTrackedOrdersForStrategy()`, `ExchangeOrderTrackerService.onTick()`
+
+This is not only a dual-account concern — PMM on non-default labeled accounts already has latent bugs where balance fetches and cancel cleanup hit the wrong exchange instance.
 
 ## Current Problems
 
@@ -167,6 +177,20 @@ Use cases:
 
 This avoids overloading the meaning of `getOpenOrders()`.
 
+### `getOpenOrders()` caller migration
+
+The existing `getOpenOrders()` currently returns `pending_create + open + partially_filled`. Its callers must be audited and migrated explicitly:
+
+| Caller | File | Intended semantic | Migrate to |
+|--------|------|-------------------|------------|
+| `buildPureMarketMakingActions` | `strategy.service.ts:1323` | slot occupancy for quote gating | `getActiveSlotOrders()` |
+| `getCancelableTrackedOrders` | `strategy.service.ts:2932` | all non-terminal orders for cancel cleanup | keep using `getTrackedOrders()` + terminal filter (already does this) |
+| `ReconciliationService.getOpenOrdersForStrategy` | `reconciliation.service.ts:70` | exchange-live orders for display | `getLiveOrders()` |
+| `PauseWithdrawOrchestratorService` | `pause-withdraw-orchestrator.service.ts:165` | exchange-live orders to cancel before withdraw | `getLiveOrders()` |
+| `AdminDirectMarketMakingService` | `admin-direct-mm.service.ts:354` | exchange-live active order count | `getLiveOrders()` |
+
+After migration, `getOpenOrders()` should be preserved temporarily as a deprecated alias for `getLiveOrders()` to avoid breaking any remaining callers, then removed in a follow-up.
+
 ## C. Move PMM decision-making to slot reconciliation
 
 The PMM strategy tick should be rewritten around three explicit steps.
@@ -239,6 +263,21 @@ This is a defensive fallback, not the primary source of truth.
 
 `ClockTickCoordinatorService` should remain a secondary coordinator-level protection, not the only stop safeguard.
 
+### Concrete stop gate implementation
+
+Current `stopStrategyForUser()` flow has a race window: between the DB status update (`status: 'stopped'`) and `removeSession()`, a concurrent tick can still call `decideActions()` and publish new intents. The `ensureStrategyStillRunning()` check in intent execution only queries the DB — it does not prevent strategy-side intent production.
+
+The recommended implementation:
+
+1. Add a `stoppingStrategyKeys: Set<string>` field on `StrategyService`
+2. `stopStrategyForUser()` adds the strategyKey to this set **first**, before any async cleanup
+3. `publishIntents()` checks `stoppingStrategyKeys` and no-ops if the strategy is stopping
+4. After cleanup completes, remove from the set
+
+This ensures that even if a concurrent `decideActions()` is already in progress, its output will be silently discarded at the publish boundary.
+
+Alternative: `publishIntents()` accepts an expected `runId` from the session and rejects publication if the session's runId has changed. This is slightly more robust but requires threading `runId` through all action builders.
+
 ## Behavior Alignment with Hummingbot
 
 This design is intentionally aligned with observed Hummingbot PMM source behavior:
@@ -265,8 +304,9 @@ Files likely affected:
 
 Changes:
 
-- add `slotKey` to PMM quote output
+- add `slotKey` to PMM quote output (`QuoteLevel` type)
 - add `slotKey` to create/cancel intents where applicable
+- refactor `QuoteExecutorManagerService.buildQuotes()` to become a pure target-state producer: return target quotes with slot identity, remove the `shouldCreate` / `existingOpenOrdersBySide` gating logic — that responsibility moves entirely to slot reconciliation in `buildPureMarketMakingActions()`
 
 ## 2. Tracked order model
 
@@ -406,15 +446,35 @@ Examples:
 
 ### 1. Data model expansion
 
-If `slotKey` is persisted, tracked-order schema and migration handling may be required.
+`slotKey` must be persisted on `TrackedOrderEntity`. This requires a schema migration.
+
+Migration strategy for existing tracked orders that lack `slotKey`:
+
+- **Option A (recommended)**: on deploy, treat existing tracked orders without `slotKey` as if their slot is unassigned. The next PMM tick will build a fresh target state and reconcile from scratch — any stale orders will be cancelled normally, new orders will be created with proper slot identity. No data backfill needed.
+- **Option B**: best-effort derive `slotKey` from side and price ordering during `hydratePersistedOrders()`. Risky because layer assignment is ambiguous without knowing the exact spread/layer config at the time of creation.
+- **Option C**: force cancel-and-rebuild for all running PMM sessions on deploy. Clean but disruptive.
 
 ### 2. Behavior change for existing PMM sessions
 
-Existing sessions may rely on current side-count behavior. Migration and backward compatibility must be handled carefully.
+Existing sessions rely on side-count behavior. After slot reconciliation lands:
+
+- PMM will no longer create replacement orders in the same tick as cancellation
+- this means refresh cycles take at least two ticks instead of one
+- strategies with aggressive `orderRefreshTime` may perceive slightly slower quote updates
+
+This is intentional and aligned with Hummingbot behavior, but should be documented in release notes.
 
 ### 3. Hanging-order interaction
 
-Slot reconciliation must not accidentally break existing hanging-order preservation logic.
+Slot reconciliation must not accidentally break existing hanging-order preservation logic. Specifically:
+
+- a hanging order should still occupy its slot and prevent duplicate creation
+- hanging order cancellation (`hangingOrdersCancelPct`) must go through the same slot reconciliation path
+- the `shouldCreate` flag in `QuoteExecutorManagerService` will be removed — hanging order preservation must be expressed as a reconciliation rule (hanging slot + target quote = no action, not cancel)
+
+### 4. `getOpenOrders()` semantic change risk
+
+Silently changing `getOpenOrders()` semantics would break callers that expect specific states. The migration table in section B must be followed strictly. Tests for all callers must be updated.
 
 ## Recommendation
 
