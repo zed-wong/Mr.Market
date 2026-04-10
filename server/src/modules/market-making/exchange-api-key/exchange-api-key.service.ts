@@ -670,6 +670,14 @@ export class ExchangeApiKeyService {
       );
     }
 
+    key.exchange_index = String(
+      key.exchange_index || key.name || 'default',
+    ).trim();
+
+    if (!key.exchange_index) {
+      key.exchange_index = 'default';
+    }
+
     // 2. Validate with CCXT
     try {
       const exchangeClass = ccxt[key.exchange];

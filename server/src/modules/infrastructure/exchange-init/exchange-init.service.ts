@@ -486,7 +486,7 @@ export class ExchangeInitService {
       }
 
       const accounts = keys.map((key) => ({
-        label: key.exchange_index || 'default',
+        label: key.exchange_index || '',
         apiKey: key.api_key,
         secret: key.api_secret,
       }));

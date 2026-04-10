@@ -129,6 +129,35 @@ describe('ExchangeApiKeyService', () => {
     );
   });
 
+  it('falls back exchange_index from name when adding an api key', async () => {
+    const addAPIKey = jest.fn().mockImplementation(async (value) => value);
+    const { service } = makeService({ addAPIKey });
+    const fetchBalanceSpy = jest
+      .spyOn((ccxt as any).binance.prototype, 'fetchBalance')
+      .mockResolvedValue({ free: {} } as any);
+
+    try {
+      const result = await service.addApiKey({
+        key_id: '1',
+        exchange: 'binance',
+        name: 'desk-1',
+        api_key: 'key',
+        api_secret: 'transport-secret',
+      } as APIKeysConfig);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          exchange_index: 'desk-1',
+        }),
+      );
+      expect(addAPIKey).toHaveBeenCalledWith(
+        expect.objectContaining({ exchange_index: 'desk-1' }),
+      );
+    } finally {
+      fetchBalanceSpy.mockRestore();
+    }
+  });
+
   it('sets created_at when adding an api key', async () => {
     const addAPIKey = jest.fn().mockImplementation(async (value) => value);
     const { service } = makeService({ addAPIKey });

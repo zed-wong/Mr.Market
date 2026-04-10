@@ -65,8 +65,17 @@
         return;
       }
 
+      const exchange_index = name.trim() || "default";
+
       await addAPIKey(
-        { exchange, name, api_key, api_secret: encryptedSecret, permissions: AddNewPermissions },
+        {
+          exchange,
+          exchange_index,
+          name,
+          api_key,
+          api_secret: encryptedSecret,
+          permissions: AddNewPermissions,
+        },
         token,
       );
     } catch (e: any) {
