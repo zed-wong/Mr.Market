@@ -215,8 +215,6 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
       "numTrades",
       "baseIncrementPercentage",
       "pricePushRate",
-      "makerAccountLabel",
-      "takerAccountLabel",
     ],
     properties: {
       exchangeName: {
@@ -251,14 +249,6 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         type: "string",
         enum: ["buy", "sell"],
         description: "Maker side for the first cycle",
-      },
-      makerAccountLabel: {
-        type: "string",
-        description: "Maker account label",
-      },
-      takerAccountLabel: {
-        type: "string",
-        description: "Taker account label",
       },
       makerDelayMs: {
         type: "number",

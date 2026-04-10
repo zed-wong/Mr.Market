@@ -14,10 +14,7 @@
     export let startExchangeName = "";
     export let startPair = "";
     export let startStrategyDefinitionId = "";
-    export let selectedControllerType = "";
     export let startApiKeyId = "";
-    export let startMakerApiKeyId = "";
-    export let startTakerApiKeyId = "";
     export let orderAmount = "";
     export let minOrderAmount = "";
     export let orderSpread = "";
@@ -39,12 +36,8 @@
         new BigNumber(orderAmount).isFinite() &&
         new BigNumber(orderAmount).isLessThan(minOrderAmount);
     $: spreadError = orderSpread && isNaN(Number(orderSpread));
-    $: isDualAccountStrategy = selectedControllerType === "dualAccountVolume";
     $: submitDisabled =
-        isStarting ||
-        orderAmountError ||
-        orderAmountBelowMinimum ||
-        (isDualAccountStrategy && startMakerApiKeyId === startTakerApiKeyId);
+        isStarting || orderAmountError || orderAmountBelowMinimum;
 
     $: searchedPairs = pairSearch
         ? filteredPairs.filter((p) =>
@@ -52,35 +45,11 @@
           )
         : filteredPairs;
 
-    $: if (!isDualAccountStrategy) {
-        if (
-            filteredApiKeys.length > 0 &&
-            !filteredApiKeys.find((k) => k.key_id === startApiKeyId)
-        ) {
-            startApiKeyId = filteredApiKeys[0].key_id;
-        }
-    }
-
-    $: if (isDualAccountStrategy) {
-        const [firstKey, secondKey] = filteredApiKeys;
-
-        if (
-            filteredApiKeys.length > 0 &&
-            !filteredApiKeys.find((k) => k.key_id === startMakerApiKeyId)
-        ) {
-            startMakerApiKeyId = firstKey?.key_id || "";
-        }
-
-        if (
-            filteredApiKeys.length > 1 &&
-            (!filteredApiKeys.find((k) => k.key_id === startTakerApiKeyId) ||
-                startTakerApiKeyId === startMakerApiKeyId)
-        ) {
-            startTakerApiKeyId =
-                filteredApiKeys.find((k) => k.key_id !== startMakerApiKeyId)?.key_id ||
-                secondKey?.key_id ||
-                "";
-        }
+    $: if (
+        filteredApiKeys.length > 0 &&
+        !filteredApiKeys.find((k) => k.key_id === startApiKeyId)
+    ) {
+        startApiKeyId = filteredApiKeys[0].key_id;
     }
 
     function openPairDropdown() {
@@ -168,11 +137,9 @@
                         class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
                         bind:value={startExchangeName}
                     >
-                        <option value="" disabled>
-                            <span class="text-xs text-base-content/60">
-                                {$_("admin_direct_mm_read_trade_keys")}
-                            </span>
-                        </option>
+                        <option value="" disabled selected hidden
+                            >{$_("admin_direct_mm_select_exchange")}</option
+                        >
                         {#each exchangeOptions as exchangeName}
                             <option value={exchangeName}>{exchangeName}</option>
                         {/each}
@@ -180,73 +147,27 @@
                 </div>
 
                 {#if startExchangeName}
-                    <div class="bg-base-200/40 rounded-xl p-4 flex flex-col gap-4">
+                    <div class="bg-base-200/40 rounded-xl p-4">
+                        <span
+                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                            >{$_("admin_direct_mm_api_key")}</span
+                        >
                         {#if filteredApiKeys.length > 0}
-                            {#if isDualAccountStrategy}
-                                <div>
-                                    <span
-                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                        >{$_("admin_direct_mm_maker_api_key")}</span
-                                    >
-                                    <select
-                                        class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
-                                        bind:value={startMakerApiKeyId}
-                                    >
-                                        <option value="" disabled selected hidden
-                                            >{$_("admin_direct_mm_select_api_key")}</option
-                                        >
-                                        {#each filteredApiKeys as apiKey}
-                                            <option value={apiKey.key_id}>
-                                                {apiKey.name} ({apiKey.exchange_index})
-                                            </option>
-                                        {/each}
-                                    </select>
-                                </div>
-                                <div>
-                                    <span
-                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                        >{$_("admin_direct_mm_taker_api_key")}</span
-                                    >
-                                    <select
-                                        class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
-                                        bind:value={startTakerApiKeyId}
-                                    >
-                                        <option value="" disabled selected hidden
-                                            >{$_("admin_direct_mm_select_api_key")}</option
-                                        >
-                                        {#each filteredApiKeys as apiKey}
-                                            <option value={apiKey.key_id}>
-                                                {apiKey.name} ({apiKey.exchange_index})
-                                            </option>
-                                        {/each}
-                                    </select>
-                                </div>
-                                {#if startMakerApiKeyId && startMakerApiKeyId === startTakerApiKeyId}
-                                    <span class="text-xs text-error"
-                                        >{$_("admin_direct_mm_error_distinct_accounts")}</span
-                                    >
-                                {/if}
-                            {:else}
-                                <div>
-                                    <span
-                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                        >{$_("admin_direct_mm_api_key")}</span
-                                    >
-                                    <select
-                                        class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
-                                        bind:value={startApiKeyId}
-                                    >
-                                        <option value="" disabled selected hidden
-                                            >{$_("admin_direct_mm_select_api_key")}</option
-                                        >
-                                        {#each filteredApiKeys as apiKey}
-                                            <option value={apiKey.key_id}>
-                                                {apiKey.name} ({apiKey.exchange_index})
-                                            </option>
-                                        {/each}
-                                    </select>
-                                </div>
-                            {/if}
+                            <select
+                                class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                bind:value={startApiKeyId}
+                            >
+                                <option value="" disabled selected
+                                    >{$_(
+                                        "admin_direct_mm_read_trade_keys",
+                                    )}</option
+                                >
+                                {#each filteredApiKeys as apiKey}
+                                    <option value={apiKey.key_id}>
+                                        {apiKey.name} ({apiKey.exchange_index})
+                                    </option>
+                                {/each}
+                            </select>
                         {:else}
                             <div
                                 class="h-10 min-h-10 px-3 rounded-lg border border-dashed border-base-300 bg-base-100 flex items-center text-sm text-base-content/50"
@@ -348,7 +269,7 @@
                                     class="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors border
                     {startStrategyDefinitionId === strategy.id
                                         ? 'bg-primary/5 text-primary font-semibold border-primary/20'
-                                        : 'text-base-content bg-base-300 hover:bg-base-300 border-transparent'}"
+                                        : 'text-base-content bg-slate-100 hover:bg-base-300 border-transparent'}"
                                     on:click={() =>
                                         (startStrategyDefinitionId =
                                             strategy.id)}
