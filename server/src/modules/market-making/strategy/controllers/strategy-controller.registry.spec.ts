@@ -2,6 +2,7 @@
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
 import { ArbitrageStrategyController } from './arbitrage-strategy.controller';
+import { DualAccountVolumeStrategyController } from './dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from './pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './strategy-controller.registry';
 import { TimeIndicatorStrategyController } from './time-indicator-strategy.controller';
@@ -13,6 +14,11 @@ describe('StrategyControllerRegistry', () => {
       .fn()
       .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
     executePureMarketMakingStrategy: jest.fn().mockResolvedValue(undefined),
+    buildDualAccountVolumeSessionActions: jest
+      .fn()
+      .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
+    onDualAccountVolumeActionsPublished: jest.fn().mockResolvedValue(undefined),
+    executeDualAccountVolumeStrategy: jest.fn().mockResolvedValue(undefined),
     buildArbitrageActions: jest
       .fn()
       .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
@@ -69,16 +75,24 @@ describe('StrategyControllerRegistry', () => {
   it('registers controllers by type and lists them in insertion order', () => {
     const pure = new PureMarketMakingStrategyController();
     const arbitrage = new ArbitrageStrategyController();
+    const dualAccountVolume = new DualAccountVolumeStrategyController();
     const volume = new VolumeStrategyController();
-    const registry = new StrategyControllerRegistry([pure, arbitrage, volume]);
+    const registry = new StrategyControllerRegistry([
+      pure,
+      arbitrage,
+      dualAccountVolume,
+      volume,
+    ]);
 
     expect(registry.getController('pureMarketMaking')).toBe(pure);
     expect(registry.getController('arbitrage')).toBe(arbitrage);
+    expect(registry.getController('dualAccountVolume')).toBe(dualAccountVolume);
     expect(registry.getController('volume')).toBe(volume);
     expect(registry.getController('missing')).toBeUndefined();
     expect(registry.listControllerTypes()).toEqual([
       'pureMarketMaking',
       'arbitrage',
+      'dualAccountVolume',
       'volume',
     ]);
   });
@@ -159,6 +173,56 @@ describe('StrategyControllerRegistry', () => {
       strategyInstance.parameters,
       5,
       4,
+    );
+  });
+
+  it('delegates dual-account volume controller operations to StrategyService', async () => {
+    const controller = new DualAccountVolumeStrategyController();
+    const strategyInstance = {
+      parameters: {
+        ...session.params,
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+      },
+    } as unknown as StrategyInstance;
+    const actions = [{ type: 'CREATE_LIMIT_ORDER' }] as any[];
+
+    expect(controller.getCadenceMs({ baseIntervalTime: 0.5 })).toBe(1000);
+    expect(controller.getCadenceMs({ baseIntervalTime: 8 })).toBe(8000);
+
+    await expect(
+      controller.decideActions(
+        { ...session, strategyType: 'dualAccountVolume' } as any,
+        '2026-03-11T00:00:00.000Z',
+        service as any,
+      ),
+    ).resolves.toEqual(actions);
+    await expect(
+      controller.onActionsPublished?.(
+        { ...session, strategyType: 'dualAccountVolume' } as any,
+        actions,
+        service as any,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      controller.rerun(strategyInstance, service as any),
+    ).resolves.toBeUndefined();
+
+    expect(service.buildDualAccountVolumeSessionActions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyType: 'dualAccountVolume',
+      }),
+      '2026-03-11T00:00:00.000Z',
+    );
+    expect(service.onDualAccountVolumeActionsPublished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyType: 'dualAccountVolume',
+      }),
+      actions,
+    );
+    expect(service.executeDualAccountVolumeStrategy).toHaveBeenCalledWith(
+      strategyInstance.parameters,
     );
   });
 

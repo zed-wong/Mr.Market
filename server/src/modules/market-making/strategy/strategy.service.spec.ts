@@ -124,7 +124,11 @@ describe('StrategyService', () => {
     runId,
   }: {
     strategyKey: string;
-    strategyType: 'pureMarketMaking' | 'volume' | 'timeIndicator';
+    strategyType:
+      | 'pureMarketMaking'
+      | 'dualAccountVolume'
+      | 'volume'
+      | 'timeIndicator';
     userId: string;
     clientId: string;
     cadenceMs: number;
@@ -1590,6 +1594,106 @@ describe('StrategyService', () => {
 
     expect(() => service.getCadenceMs({}, 'pureMarketMaking')).toThrow(
       'Strategy controller for type pureMarketMaking is not registered',
+    );
+  });
+
+  it('requires both dual-account labels to be ready before activation', () => {
+    exchangeInitService.isReady
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(true);
+
+    expect(
+      (service as any).canActivateStrategyImmediately({
+        strategyType: 'dualAccountVolume',
+        clientId: 'client-1',
+        parameters: {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+        },
+      }),
+    ).toBe(false);
+
+    expect(
+      (service as any).canActivateStrategyImmediately({
+        strategyType: 'dualAccountVolume',
+        clientId: 'client-1',
+        parameters: {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('publishes dual-account maker intents and persists published cycles', async () => {
+    const session = {
+      runId: 'run-dual',
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        publishedCycles: 0,
+        completedCycles: 0,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: session.params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getBestBidAsk.mockResolvedValue({
+      bestBid: 100,
+      bestAsk: 101,
+    });
+
+    const actions = await service.buildDualAccountVolumeSessionActions(
+      session as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        accountLabel: 'maker',
+        postOnly: true,
+        metadata: expect.objectContaining({
+          role: 'maker',
+          takerAccountLabel: 'taker',
+        }),
+      }),
+    ]);
+
+    (service as any).sessions.set(session.strategyKey, session);
+    await service.onDualAccountVolumeActionsPublished(session as any, actions);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({ publishedCycles: 1 }),
+      }),
     );
   });
 

@@ -16,7 +16,11 @@ type PauseWithdrawCommand = {
   operationId: string;
   userId: string;
   clientId: string;
-  strategyType: 'arbitrage' | 'pureMarketMaking' | 'volume';
+  strategyType:
+    | 'arbitrage'
+    | 'pureMarketMaking'
+    | 'volume'
+    | 'dualAccountVolume';
   assetId: string;
   amount: string;
   destination: string;

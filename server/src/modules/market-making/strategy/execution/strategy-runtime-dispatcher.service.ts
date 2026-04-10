@@ -3,6 +3,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
+  ExecuteDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
 } from '../config/strategy.dto';
 import type { StrategyType } from '../config/strategy-controller.types';
@@ -52,6 +53,9 @@ export class StrategyRuntimeDispatcherService {
     if (normalizedControllerType === 'pureMarketMaking') {
       return 'pureMarketMaking';
     }
+    if (normalizedControllerType === 'dualAccountVolume') {
+      return 'dualAccountVolume';
+    }
     if (normalizedControllerType === 'volume') {
       return 'volume';
     }
@@ -60,7 +64,7 @@ export class StrategyRuntimeDispatcherService {
     }
 
     throw new BadRequestException(
-      `Unsupported controllerType ${controllerType}. Allowed: arbitrage, pureMarketMaking, volume, timeIndicator`,
+      `Unsupported controllerType ${controllerType}. Allowed: arbitrage, pureMarketMaking, dualAccountVolume, volume, timeIndicator`,
     );
   }
 
@@ -89,6 +93,14 @@ export class StrategyRuntimeDispatcherService {
     if (strategyType === 'pureMarketMaking') {
       await this.strategyService.executePureMarketMakingStrategy(
         config as unknown as PureMarketMakingStrategyDto,
+      );
+
+      return;
+    }
+
+    if (strategyType === 'dualAccountVolume') {
+      await this.strategyService.executeDualAccountVolumeStrategy(
+        config as unknown as ExecuteDualAccountVolumeStrategyDto,
       );
 
       return;

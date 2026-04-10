@@ -80,6 +80,7 @@ Why this flow exists:
 
 - It separates decision logic from side effects.
 - It shares exchange:pair market data across sessions, while account-aware execution/tracking keeps REST order management and private-stream fill routing pinned to the correct exchange account during restart recovery and shutdown cleanup.
+- `dualAccountVolume` reuses the pooled executor on one exchange:pair but sequences maker placement on one account and taker IOC execution on a second account, with restart recovery cancelling dangling maker orders instead of replaying taker legs.
 
 Detailed reference:
 

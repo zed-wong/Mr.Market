@@ -265,7 +265,7 @@ export class StrategyIntentExecutionService {
             exchangeOrderId: String(result.id),
             clientOrderId,
             slotKey: intent.slotKey,
-            role: undefined,
+            role: this.resolveIntentRole(intent),
             side: intent.side,
             price: intent.price,
             qty: intent.qty,
@@ -274,6 +274,14 @@ export class StrategyIntentExecutionService {
             createdAt: getRFC3339Timestamp(),
             updatedAt: getRFC3339Timestamp(),
           });
+          if (this.isMakerIntent(intent)) {
+            await this.executeInlineDualAccountTaker(
+              intent,
+              String(result.id),
+              this.readMetadataString(intent, 'price') || intent.price,
+            );
+            await this.incrementCompletedCycles(intent.strategyKey);
+          }
         }
       }
 
@@ -477,6 +485,184 @@ export class StrategyIntentExecutionService {
       });
       throw error;
     }
+  }
+
+  private resolveIntentRole(
+    intent: StrategyOrderIntent,
+  ): 'maker' | 'taker' | undefined {
+    const role = this.readMetadataString(intent, 'role');
+
+    return role === 'maker' || role === 'taker' ? role : undefined;
+  }
+
+  private isMakerIntent(intent: StrategyOrderIntent): boolean {
+    return this.resolveIntentRole(intent) === 'maker';
+  }
+
+  private readMetadataString(
+    intent: StrategyOrderIntent,
+    key: string,
+  ): string | undefined {
+    if (!intent.metadata || typeof intent.metadata !== 'object') {
+      return undefined;
+    }
+
+    const value = (intent.metadata as Record<string, unknown>)[key];
+
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : undefined;
+  }
+
+  private readMetadataNumber(
+    intent: StrategyOrderIntent,
+    key: string,
+  ): number | undefined {
+    if (!intent.metadata || typeof intent.metadata !== 'object') {
+      return undefined;
+    }
+
+    const value = (intent.metadata as Record<string, unknown>)[key];
+    const parsed =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim().length > 0
+        ? Number(value)
+        : undefined;
+
+    return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  private oppositeSide(side: 'buy' | 'sell'): 'buy' | 'sell' {
+    return side === 'buy' ? 'sell' : 'buy';
+  }
+
+  private async executeInlineDualAccountTaker(
+    makerIntent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerPrice: string,
+  ): Promise<void> {
+    const takerAccountLabel = this.readMetadataString(
+      makerIntent,
+      'takerAccountLabel',
+    );
+
+    if (!takerAccountLabel) {
+      throw new Error('Maker intent missing takerAccountLabel metadata');
+    }
+
+    const makerDelayMs =
+      this.readMetadataNumber(makerIntent, 'makerDelayMs') || 0;
+
+    if (makerDelayMs > 0) {
+      await this.sleep(makerDelayMs);
+    }
+
+    const cycleId =
+      this.readMetadataString(makerIntent, 'cycleId') || makerIntent.intentId;
+    const takerIntent: StrategyOrderIntent = {
+      ...makerIntent,
+      intentId: `${makerIntent.intentId}:taker`,
+      accountLabel: takerAccountLabel,
+      side: this.oppositeSide(makerIntent.side),
+      price: makerPrice,
+      timeInForce: 'IOC',
+      postOnly: false,
+      metadata: {
+        ...(makerIntent.metadata || {}),
+        role: 'taker',
+        cycleId,
+        makerOrderId: makerExchangeOrderId,
+      },
+      status: 'NEW',
+      createdAt: getRFC3339Timestamp(),
+    };
+
+    try {
+      await this.consumeIntent(takerIntent);
+    } catch (error) {
+      await this.cancelMakerAfterTakerFailure(
+        makerIntent,
+        makerExchangeOrderId,
+        makerPrice,
+      );
+      throw error;
+    }
+  }
+
+  private async cancelMakerAfterTakerFailure(
+    makerIntent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerPrice: string,
+  ): Promise<void> {
+    try {
+      const result = await this.exchangeConnectorAdapterService.cancelOrder(
+        makerIntent.exchange,
+        makerIntent.pair,
+        makerExchangeOrderId,
+        makerIntent.accountLabel,
+      );
+      const status = String(result?.status || '').toLowerCase();
+
+      this.exchangeOrderTrackerService?.upsertOrder({
+        orderId: this.resolveOrderIdForClientOrderId(makerIntent),
+        strategyKey: makerIntent.strategyKey,
+        exchange: makerIntent.exchange,
+        accountLabel: makerIntent.accountLabel,
+        pair: makerIntent.pair,
+        exchangeOrderId: makerExchangeOrderId,
+        clientOrderId: undefined,
+        slotKey: makerIntent.slotKey,
+        role: 'maker',
+        side: makerIntent.side,
+        price: makerPrice,
+        qty: makerIntent.qty,
+        status:
+          status === 'canceled' || status === 'cancelled'
+            ? 'cancelled'
+            : 'pending_cancel',
+        createdAt: getRFC3339Timestamp(),
+        updatedAt: getRFC3339Timestamp(),
+      });
+    } catch (cancelError) {
+      this.logger.warn(
+        `Best-effort dual-account maker cancel failed for ${
+          makerIntent.strategyKey
+        }:${makerExchangeOrderId}: ${
+          cancelError instanceof Error
+            ? cancelError.message
+            : String(cancelError)
+        }`,
+      );
+    }
+  }
+
+  private async incrementCompletedCycles(strategyKey: string): Promise<void> {
+    if (!this.strategyInstanceRepository) {
+      return;
+    }
+
+    const strategyInstance = await this.strategyInstanceRepository.findOne({
+      where: { strategyKey },
+    });
+
+    if (!strategyInstance) {
+      return;
+    }
+
+    const parameters = {
+      ...(strategyInstance.parameters || {}),
+      completedCycles:
+        Number(strategyInstance.parameters?.completedCycles || 0) + 1,
+    };
+
+    await this.strategyInstanceRepository.update(
+      { strategyKey },
+      {
+        parameters: parameters as Record<string, any>,
+        updatedAt: new Date(),
+      },
+    );
   }
 
   private resolveOrderIdForClientOrderId(intent: StrategyOrderIntent): string {

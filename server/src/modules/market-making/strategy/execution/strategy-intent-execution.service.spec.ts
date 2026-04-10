@@ -61,7 +61,9 @@ describe('StrategyIntentExecutionService', () => {
     findOne: jest.fn().mockResolvedValue({
       strategyKey: 'u1-c1-pureMarketMaking',
       status: 'running',
+      parameters: {},
     }),
+    update: jest.fn().mockResolvedValue(undefined),
   };
 
   const createConfigService = (executeIntents: boolean) =>
@@ -128,7 +130,9 @@ describe('StrategyIntentExecutionService', () => {
     strategyInstanceRepository.findOne.mockResolvedValue({
       strategyKey: 'u1-c1-pureMarketMaking',
       status: 'running',
+      parameters: {},
     });
+    strategyInstanceRepository.update.mockResolvedValue(undefined);
   });
 
   it('executes CREATE_LIMIT_ORDER intents once (idempotent)', async () => {
@@ -204,6 +208,90 @@ describe('StrategyIntentExecutionService', () => {
       { postOnly: true, timeInForce: undefined },
       undefined,
     );
+  });
+
+  it('executes dual-account maker then taker and persists completed cycles', async () => {
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          makerDelayMs: 0,
+          cycleId: 'cycle-1',
+          orderId: 'dual-cycle-1',
+        },
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenNthCalledWith(
+      1,
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('dual-cycle-1', 0),
+      { postOnly: false, timeInForce: undefined },
+      'maker',
+    );
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenNthCalledWith(
+      2,
+      'binance',
+      'BTC/USDT',
+      'sell',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('dual-cycle-1', 1),
+      { postOnly: false, timeInForce: 'IOC' },
+      'taker',
+    );
+    expect(strategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'u1-c1-pureMarketMaking' },
+      expect.objectContaining({
+        parameters: expect.objectContaining({ completedCycles: 1 }),
+      }),
+    );
+  });
+
+  it('cancels maker on dual-account taker failure', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
+      .mockRejectedValue(new Error('taker failed'));
+    const service = createService(true);
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-fail',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            makerDelayMs: 0,
+            cycleId: 'cycle-2',
+            orderId: 'dual-cycle-2',
+          },
+        },
+      ]),
+    ).rejects.toThrow('taker failed');
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order',
+      'maker',
+    );
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
   });
 
   it('deduplicates create intents when the slot already has an active tracked order', async () => {

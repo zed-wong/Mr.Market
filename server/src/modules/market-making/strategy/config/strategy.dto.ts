@@ -401,6 +401,77 @@ export class ExecuteVolumeStrategyDto {
   postOnlySide?: Side;
 }
 
+export class ExecuteDualAccountVolumeStrategyDto {
+  @ApiProperty({ description: 'Name of the exchange used for both accounts' })
+  @IsString()
+  exchangeName: string;
+
+  @ApiProperty({ description: 'Trading pair to execute', example: 'BTC/USDT' })
+  @IsString()
+  symbol: string;
+
+  @ApiProperty({ description: 'Base amount to trade per cycle' })
+  @IsNumber()
+  @IsPositive()
+  baseTradeAmount: number;
+
+  @ApiProperty({ description: 'Cadence between cycles in seconds' })
+  @IsInt()
+  @IsPositive()
+  baseIntervalTime: number;
+
+  @ApiProperty({ description: 'Total number of successful cycles to execute' })
+  @IsInt()
+  @Min(0)
+  numTrades: number;
+
+  @ApiProperty({
+    description: 'Percentage increment for offsetting from midPrice',
+  })
+  @IsNumber()
+  baseIncrementPercentage: number;
+
+  @ApiProperty({
+    description: 'Rate at which to push pricing after each published cycle',
+  })
+  @IsNumber()
+  pricePushRate: number;
+
+  @ApiPropertyOptional({
+    description: 'The first maker order side',
+    example: 'buy',
+  })
+  @IsOptional()
+  @IsEnum(Side)
+  postOnlySide?: Side;
+
+  @ApiProperty({ description: 'Maker exchange account label' })
+  @IsString()
+  makerAccountLabel: string;
+
+  @ApiProperty({ description: 'Taker exchange account label' })
+  @IsString()
+  takerAccountLabel: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Delay in milliseconds between maker acceptance and taker IOC submission',
+    example: 250,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  makerDelayMs?: number;
+
+  @ApiProperty({ description: 'User ID' })
+  @IsString()
+  userId: string;
+
+  @ApiProperty({ description: 'Client ID' })
+  @IsString()
+  clientId: string;
+}
+
 export class StopVolumeStrategyDto {
   @ApiProperty({ description: 'User ID' })
   userId: string;

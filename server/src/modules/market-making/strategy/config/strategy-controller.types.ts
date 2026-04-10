@@ -6,6 +6,7 @@ import type { ExecutorAction } from './executor-action.types';
 export type StrategyType =
   | 'arbitrage'
   | 'pureMarketMaking'
+  | 'dualAccountVolume'
   | 'volume'
   | 'timeIndicator';
 
