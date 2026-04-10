@@ -97,6 +97,8 @@
   let startPair = "";
   let startStrategyDefinitionId = "";
   let startApiKeyId = "";
+  let startMakerApiKeyId = "";
+  let startTakerApiKeyId = "";
   let orderAmount = "";
   let orderSpread = "";
   let configRows: OverrideRow[] = [{ key: "", value: "" }];
@@ -150,11 +152,21 @@
         pair.exchange_id === startExchangeName && pair.symbol === startPair,
     ) || null;
   $: minOrderAmount = selectedPairConfig?.min_order_amount || "";
+  $: selectedStrategy =
+    strategies.find((strategy) => strategy.id === startStrategyDefinitionId) || null;
+  $: selectedControllerType = selectedStrategy?.controllerType || "";
+  $: isDualAccountStrategy = selectedControllerType === "dualAccountVolume";
   $: filteredApiKeys = apiKeys.filter(
-    (key) => key.permissions === "read-trade",
+    (key) =>
+      key.permissions === "read-trade" &&
+      (!startExchangeName || key.exchange === startExchangeName),
   );
   $: selectedApiKey =
-    apiKeys.find((key) => key.key_id === startApiKeyId) || null;
+    filteredApiKeys.find((key) => key.key_id === startApiKeyId) || null;
+  $: selectedMakerApiKey =
+    filteredApiKeys.find((key) => key.key_id === startMakerApiKeyId) || null;
+  $: selectedTakerApiKey =
+    filteredApiKeys.find((key) => key.key_id === startTakerApiKeyId) || null;
   $: walletStatusAddress = walletStatus.address || "";
   $: hasWalletConfigured = walletStatus.configured;
   $: walletStatusHint = hasWalletConfigured
@@ -180,19 +192,48 @@
     isRefreshing = false;
   }
 
+  function resetStartForm() {
+    showStartForm = false;
+    startExchangeName = "";
+    startPair = "";
+    startStrategyDefinitionId = "";
+    startApiKeyId = "";
+    startMakerApiKeyId = "";
+    startTakerApiKeyId = "";
+    configRows = [{ key: "", value: "" }];
+    orderAmount = "";
+    orderSpread = "";
+  }
+
   async function handleStartOrder() {
     if (isStarting || startCooldown) return;
     const token = getToken();
+    const missingSingleAccount = !isDualAccountStrategy && !selectedApiKey;
+    const missingDualAccount =
+      isDualAccountStrategy && (!selectedMakerApiKey || !selectedTakerApiKey);
 
     if (
       !token ||
       !startExchangeName ||
       !startPair ||
       !startStrategyDefinitionId ||
-      !selectedApiKey
+      missingSingleAccount ||
+      missingDualAccount
     ) {
       toast.error($_("admin_direct_mm_error_missing_fields"), {
         description: $_("admin_direct_mm_recovery_required_fields"),
+      });
+      return;
+    }
+
+    if (
+      isDualAccountStrategy &&
+      selectedMakerApiKey &&
+      selectedTakerApiKey &&
+      selectedMakerApiKey.exchange_index === selectedTakerApiKey.exchange_index
+    ) {
+      toast.error($_("admin_direct_mm_error_distinct_accounts"), {
+        description: $_("admin_direct_mm_recovery_distinct_accounts"),
       });
       return;
     }
@@ -218,30 +259,40 @@
     }, 2000);
 
     try {
-      const result = await startDirectOrder(
-        {
-          exchangeName: startExchangeName,
-          pair: startPair,
-          strategyDefinitionId: startStrategyDefinitionId,
-          apiKeyId: selectedApiKey.key_id,
-          accountLabel: selectedApiKey.exchange_index,
-          configOverrides: normalizeConfigOverrides(
-            configRows,
-            orderAmount,
-            orderSpread,
-          ),
-        },
-        token,
+      const configOverrides = normalizeConfigOverrides(
+        selectedControllerType,
+        configRows,
+        orderAmount,
+        orderSpread,
       );
+      const payload = isDualAccountStrategy
+        ? {
+            exchangeName: startExchangeName,
+            pair: startPair,
+            strategyDefinitionId: startStrategyDefinitionId,
+            makerApiKeyId: selectedMakerApiKey!.key_id,
+            takerApiKeyId: selectedTakerApiKey!.key_id,
+            makerAccountLabel: selectedMakerApiKey!.exchange_index,
+            takerAccountLabel: selectedTakerApiKey!.exchange_index,
+            configOverrides,
+          }
+        : {
+            exchangeName: startExchangeName,
+            pair: startPair,
+            strategyDefinitionId: startStrategyDefinitionId,
+            apiKeyId: selectedApiKey!.key_id,
+            accountLabel: selectedApiKey!.exchange_index,
+            configOverrides,
+          };
+      const result = await startDirectOrder(payload, token);
+      const successExchange = startExchangeName;
+      const successPair = startPair;
 
       await refreshPage();
-      showStartForm = false;
-      configRows = [{ key: "", value: "" }];
-      orderAmount = "";
-      orderSpread = "";
+      resetStartForm();
       toast.success(
         $_("admin_direct_mm_start_success", {
-          values: { exchange: startExchangeName, pair: startPair },
+          values: { exchange: successExchange, pair: successPair },
         }),
         {
           description:
@@ -611,12 +662,15 @@
   bind:startExchangeName
   bind:startPair
   bind:startStrategyDefinitionId
+  {selectedControllerType}
   bind:startApiKeyId
+  bind:startMakerApiKeyId
+  bind:startTakerApiKeyId
   bind:orderAmount
   {minOrderAmount}
   bind:orderSpread
   onSubmit={handleStartOrder}
-  onClose={() => (showStartForm = false)}
+  onClose={resetStartForm}
 />
 
 <StartAllModal

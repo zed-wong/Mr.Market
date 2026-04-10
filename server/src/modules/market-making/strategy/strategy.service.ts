@@ -1723,6 +1723,7 @@ export class StrategyService
         params.accountLabel,
         quote.side,
         quote.layer,
+        slotKey,
         new BigNumber(quote.qty),
         quotePrice,
         availableBalances,
@@ -1779,7 +1780,13 @@ export class StrategyService
     const activeOrderBySlot = new Map<string, TrackedOrder>();
 
     for (const order of activeOrders) {
-      if (!order.slotKey || activeOrderBySlot.has(order.slotKey)) {
+      if (!order.slotKey) {
+        continue;
+      }
+      if (activeOrderBySlot.has(order.slotKey)) {
+        this.logger.log(
+          `[${strategyKey}] reason=slot_occupied slotKey=${order.slotKey} exchangeOrderId=${order.exchangeOrderId}`,
+        );
         continue;
       }
       activeOrderBySlot.set(order.slotKey, order);
@@ -1823,10 +1830,16 @@ export class StrategyService
         currentOrder.status === 'pending_create' ||
         currentOrder.status === 'pending_cancel'
       ) {
+        this.logger.log(
+          `[${strategyKey}] reason=waiting_cancel slotKey=${slotKey} status=${currentOrder.status}`,
+        );
         continue;
       }
 
       if (this.isQuoteWithinTolerance(currentOrder, targetAction, tolerance)) {
+        this.logger.log(
+          `[${strategyKey}] reason=within_tolerance slotKey=${slotKey} exchangeOrderId=${currentOrder.exchangeOrderId}`,
+        );
         continue;
       }
 
@@ -3031,6 +3044,7 @@ export class StrategyService
     accountLabel: string | undefined,
     side: 'buy' | 'sell',
     layer: number,
+    slotKey: string,
     rawQty: BigNumber,
     rawPrice: BigNumber,
     availableBalances: {
@@ -3045,7 +3059,7 @@ export class StrategyService
 
     if (!availableBalances) {
       this.logger.warn(
-        `[${strategyKey}] Skipped layer-${layer} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: available balances unavailable for ${exchangeName} ${pair}`,
+        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: available balances unavailable for ${exchangeName} ${pair}`,
       );
       return null;
     }
@@ -3107,7 +3121,7 @@ export class StrategyService
         );
       }
       this.logger.warn(
-        `[${strategyKey}] Skipped layer-${layer} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${rejectionReasons.join(
+        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${rejectionReasons.join(
           '; ',
         )}`,
       );
@@ -3118,7 +3132,7 @@ export class StrategyService
 
     if (side === 'buy' && quote.isLessThan(notional)) {
       this.logger.warn(
-        `[${strategyKey}] Skipped layer-${layer} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient quote balance ${quote.toFixed()} ${
+        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient quote balance ${quote.toFixed()} ${
           availableBalances.assets.quote
         } < required ${notional.toFixed()}`,
       );
@@ -3126,7 +3140,7 @@ export class StrategyService
     }
     if (side === 'sell' && base.isLessThan(qty)) {
       this.logger.warn(
-        `[${strategyKey}] Skipped layer-${layer} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient base balance ${base.toFixed()} ${
+        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient base balance ${base.toFixed()} ${
           availableBalances.assets.base
         } < required ${qty.toFixed()}`,
       );

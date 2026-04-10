@@ -108,6 +108,7 @@ export function formatFundAmount(amount: unknown, decimals: unknown): string {
 }
 
 export function normalizeConfigOverrides(
+  controllerType: string,
   configRows: { key: string; value: string }[],
   orderAmount: string,
   orderSpread: string,
@@ -122,12 +123,24 @@ export function normalizeConfigOverrides(
   );
   if (orderAmount) {
     const num = Number(orderAmount);
-    accumulator["orderAmount"] = isNaN(num) ? orderAmount : num;
+    const value = isNaN(num) ? orderAmount : num;
+
+    if (controllerType === "dualAccountVolume") {
+      accumulator["baseTradeAmount"] = value;
+    } else {
+      accumulator["orderAmount"] = value;
+    }
   }
   if (orderSpread) {
     const num = Number(orderSpread);
-    accumulator["bidSpread"] = isNaN(num) ? orderSpread : num;
-    accumulator["askSpread"] = isNaN(num) ? orderSpread : num;
+    const value = isNaN(num) ? orderSpread : num;
+
+    if (controllerType === "dualAccountVolume") {
+      accumulator["baseIncrementPercentage"] = value;
+    } else {
+      accumulator["bidSpread"] = value;
+      accumulator["askSpread"] = value;
+    }
   }
   return accumulator;
 }

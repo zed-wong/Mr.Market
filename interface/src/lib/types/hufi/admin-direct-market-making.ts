@@ -1,3 +1,5 @@
+export type DirectOrderControllerType = 'pureMarketMaking' | 'dualAccountVolume';
+
 export type DirectOrderRuntimeState =
   | 'created'
   | 'running'
@@ -15,10 +17,15 @@ export interface DirectOrderSummary {
   runtimeState: DirectOrderRuntimeState;
   strategyDefinitionId?: string;
   strategyName: string;
+  controllerType: DirectOrderControllerType;
   createdAt: string;
   lastTickAt: string | null;
   accountLabel: string;
+  makerAccountLabel: string;
+  takerAccountLabel: string;
   apiKeyId: string | null;
+  makerApiKeyId: string | null;
+  takerApiKeyId: string | null;
   warnings: string[];
 }
 
@@ -26,6 +33,13 @@ export interface DirectOrderStatus {
   orderId: string;
   state: string;
   runtimeState: DirectOrderRuntimeState;
+  controllerType: DirectOrderControllerType;
+  accountLabel: string;
+  makerAccountLabel: string;
+  takerAccountLabel: string;
+  apiKeyId: string | null;
+  makerApiKeyId: string | null;
+  takerApiKeyId: string | null;
   executorHealth: 'active' | 'gone' | 'stale';
   lastTickAt: string | null;
   lastUpdatedAt: string | null;
@@ -63,6 +77,9 @@ export interface DirectOrderStatus {
     bidSpread: string | null;
     askSpread: string | null;
     numberOfLayers: string | null;
+    baseIncrementPercentage: string | null;
+    publishedCycles: number | null;
+    completedCycles: number | null;
   };
   spread: {
     bid: string;
@@ -83,14 +100,25 @@ export interface AdminCampaign {
   [key: string]: unknown;
 }
 
-export interface DirectStartPayload {
-  exchangeName: string;
-  pair: string;
-  strategyDefinitionId: string;
-  apiKeyId: string;
-  accountLabel: string;
-  configOverrides?: Record<string, unknown>;
-}
+export type DirectStartPayload =
+  | {
+      exchangeName: string;
+      pair: string;
+      strategyDefinitionId: string;
+      apiKeyId: string;
+      accountLabel: string;
+      configOverrides?: Record<string, unknown>;
+    }
+  | {
+      exchangeName: string;
+      pair: string;
+      strategyDefinitionId: string;
+      makerApiKeyId: string;
+      takerApiKeyId: string;
+      makerAccountLabel: string;
+      takerAccountLabel: string;
+      configOverrides?: Record<string, unknown>;
+    };
 
 export interface CampaignJoinPayload {
   evmAddress: string;

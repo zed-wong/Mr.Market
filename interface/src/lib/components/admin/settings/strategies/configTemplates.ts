@@ -205,6 +205,67 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
       },
     },
   },
+  dualAccountVolume: {
+    type: "object",
+    required: [
+      "exchangeName",
+      "symbol",
+      "baseTradeAmount",
+      "baseIntervalTime",
+      "numTrades",
+      "baseIncrementPercentage",
+      "pricePushRate",
+      "makerAccountLabel",
+      "takerAccountLabel",
+    ],
+    properties: {
+      exchangeName: {
+        type: "string",
+        description: "Exchange name shared by maker and taker accounts",
+      },
+      symbol: {
+        type: "string",
+        description: "Trading pair symbol (e.g. BTC/USDT)",
+      },
+      baseTradeAmount: {
+        type: "number",
+        description: "Base amount to trade per cycle",
+      },
+      baseIntervalTime: {
+        type: "number",
+        description: "Seconds between execution cycles",
+      },
+      numTrades: {
+        type: "number",
+        description: "Total successful cycles to execute",
+      },
+      baseIncrementPercentage: {
+        type: "number",
+        description: "Offset from mid price (percent)",
+      },
+      pricePushRate: {
+        type: "number",
+        description: "Per-cycle price push rate (percent)",
+      },
+      postOnlySide: {
+        type: "string",
+        enum: ["buy", "sell"],
+        description: "Maker side for the first cycle",
+      },
+      makerAccountLabel: {
+        type: "string",
+        description: "Maker account label",
+      },
+      takerAccountLabel: {
+        type: "string",
+        description: "Taker account label",
+      },
+      makerDelayMs: {
+        type: "number",
+        description: "Delay before the taker IOC leg submits",
+      },
+    },
+  },
   timeIndicator: {
     type: "object",
     required: [

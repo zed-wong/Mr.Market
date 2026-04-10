@@ -39,9 +39,9 @@ Detailed reference:
 Summary:
 
 1. Admin creates a direct market-making order without the payment flow.
-2. Service resolves a pinned strategy snapshot, writes `source=admin_direct`, and stores `apiKeyId` for account linkage.
+2. Service resolves a pinned strategy snapshot, writes `source=admin_direct`, and stores the maker `apiKeyId` plus resolved account labels for either single-account PMM or dual-account volume routing.
 3. Direct start reuses the same shared runtime start path as queue-driven `start_mm`.
-4. Runtime health reads executor registry state, tracker data, and exchange balances for the admin status endpoint.
+4. Runtime health reads executor registry state, tracker data, queue state, and exchange balances for the admin status endpoint, including dual-account maker/taker metadata and cycle counters.
 5. Optional HuFi campaign joins run asynchronously and may link or detach from the direct order lifecycle.
 
 Main modules:

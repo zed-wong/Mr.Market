@@ -90,6 +90,8 @@
     : "";
   $: isRunning =
     order?.runtimeState === "running" || order?.runtimeState === "active";
+  $: isDualAccountStrategy =
+    (data?.controllerType || order?.controllerType) === "dualAccountVolume";
   $: isStale = data?.stale ?? false;
   $: skewPercent = data ? computeSkewPercent(data.inventoryBalances) : null;
   $: fills1h = data?.fillCount1h ?? 0;
@@ -384,6 +386,55 @@
             </div>
           </div>
 
+          {#if data}
+            <div>
+              <div class="flex items-center justify-between mb-3 h-5">
+                <div class="flex items-center gap-1.5">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    class="w-3.5 h-3.5 text-primary"
+                  >
+                    <path
+                      d="M3 4.75A1.75 1.75 0 0 1 4.75 3h10.5A1.75 1.75 0 0 1 17 4.75v10.5A1.75 1.75 0 0 1 15.25 17H4.75A1.75 1.75 0 0 1 3 15.25V4.75Z"
+                    />
+                  </svg>
+                  <span class="text-xs font-bold text-base-content"
+                    >{$_("admin_direct_mm_account_routing")}</span
+                  >
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{isDualAccountStrategy
+                      ? $_("admin_direct_mm_maker_account")
+                      : $_("admin_direct_mm_account_label")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data.accountLabel || $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{isDualAccountStrategy
+                      ? $_("admin_direct_mm_taker_account")
+                      : $_("admin_direct_mm_api_key")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{isDualAccountStrategy
+                      ? data.takerAccountLabel || $_("admin_direct_mm_na")
+                      : data.apiKeyId || $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+              </div>
+            </div>
+          {/if}
+
           <!-- Order Config -->
           <div>
             <div class="flex items-center justify-between mb-3 h-5">
@@ -421,29 +472,44 @@
               <div class="border border-base-300 rounded-xl p-3">
                 <span
                   class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                  >{$_("admin_direct_mm_layers")}</span
+                  >{isDualAccountStrategy
+                    ? $_("admin_direct_mm_base_increment_percentage")
+                    : $_("admin_direct_mm_layers")}</span
                 >
                 <span class="text-sm font-bold text-base-content block"
-                  >{data?.orderConfig?.numberOfLayers ||
-                    $_("admin_direct_mm_na")}</span
+                  >{isDualAccountStrategy
+                    ? data?.orderConfig?.baseIncrementPercentage ||
+                      $_("admin_direct_mm_na")
+                    : data?.orderConfig?.numberOfLayers ||
+                      $_("admin_direct_mm_na")}</span
                 >
               </div>
               <div class="border border-base-300 rounded-xl p-3">
                 <span
                   class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                  >{$_("admin_direct_mm_bid_spread")}</span
+                  >{isDualAccountStrategy
+                    ? $_("admin_direct_mm_completed_cycles")
+                    : $_("admin_direct_mm_bid_spread")}</span
                 >
                 <span class="text-sm font-bold text-base-content block"
-                  >{formatSpread(data?.orderConfig?.bidSpread)}</span
+                  >{isDualAccountStrategy
+                    ? data?.orderConfig?.completedCycles ??
+                      $_("admin_direct_mm_na")
+                    : formatSpread(data?.orderConfig?.bidSpread)}</span
                 >
               </div>
               <div class="border border-base-300 rounded-xl p-3">
                 <span
                   class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                  >{$_("admin_direct_mm_ask_spread")}</span
+                  >{isDualAccountStrategy
+                    ? $_("admin_direct_mm_published_cycles")
+                    : $_("admin_direct_mm_ask_spread")}</span
                 >
                 <span class="text-sm font-bold text-base-content block"
-                  >{formatSpread(data?.orderConfig?.askSpread)}</span
+                  >{isDualAccountStrategy
+                    ? data?.orderConfig?.publishedCycles ??
+                      $_("admin_direct_mm_na")
+                    : formatSpread(data?.orderConfig?.askSpread)}</span
                 >
               </div>
             </div>
