@@ -129,25 +129,25 @@ Implementation rule for this plan:
 
 ### Checklist
 
-- [ ] connector adapter: all 7 methods accept accountLabel (including loadTradingRules, quantizeOrder)
-- [ ] TrackedOrder type + entity: accountLabel field
-- [ ] TrackedOrder type + entity: role field
-- [ ] tracker key: `exchange:accountLabel:exchangeOrderId`
-- [ ] `hydratePersistedOrders()` loads accountLabel + role
-- [ ] tracker `onTick()` passes accountLabel to fetchOrder
-- [ ] `upsertOrder()` / persistence writes accountLabel + role
-- [ ] `getAvailableBalancesForPair()` accepts accountLabel
-- [ ] `cancelTrackedOrdersForStrategy()` uses tracked order accountLabel
-- [ ] `waitForTrackedOrdersToSettle()` uses tracked order accountLabel
-- [ ] `restoreRuntimeStateForStrategy()` uses accountLabel for fetchOpenOrders/cancelOrder
-- [ ] `quantizeAndValidateQuote()` passes accountLabel
-- [ ] `StrategyOrderIntent` has `accountLabel` and `timeInForce`
-- [ ] `StrategyOrderIntentEntity` has `accountLabel`, `timeInForce`, `slotKey`, `postOnly` columns
-- [ ] `upsertIntent()` writes new fields to DB
-- [ ] `toIntent()` reads new fields from DB
-- [ ] database migration scripts for `tracked_order` and `strategy_order_intent`
-- [ ] intent execution passes accountLabel + timeInForce
-- [ ] regression tests: default-account PMM unchanged
+- [x] connector adapter: all 7 methods accept accountLabel (including loadTradingRules, quantizeOrder)
+- [x] TrackedOrder type + entity: accountLabel field
+- [x] TrackedOrder type + entity: role field
+- [x] tracker key: `exchange:accountLabel:exchangeOrderId`
+- [x] `hydratePersistedOrders()` loads accountLabel + role
+- [x] tracker `onTick()` passes accountLabel to fetchOrder
+- [x] `upsertOrder()` / persistence writes accountLabel + role
+- [x] `getAvailableBalancesForPair()` accepts accountLabel
+- [x] `cancelTrackedOrdersForStrategy()` uses tracked order accountLabel
+- [x] `waitForTrackedOrdersToSettle()` uses tracked order accountLabel
+- [x] `restoreRuntimeStateForStrategy()` uses accountLabel for fetchOpenOrders/cancelOrder
+- [x] `quantizeAndValidateQuote()` passes accountLabel
+- [x] `StrategyOrderIntent` has `accountLabel` and `timeInForce`
+- [x] `StrategyOrderIntentEntity` has `accountLabel`, `timeInForce`, `slotKey`, `postOnly` columns
+- [x] `upsertIntent()` writes new fields to DB
+- [x] `toIntent()` reads new fields from DB
+- [x] database migration scripts for `tracked_order` and `strategy_order_intent`
+- [x] intent execution passes accountLabel + timeInForce
+- [x] regression tests: default-account PMM unchanged
 
 ---
 
@@ -234,21 +234,21 @@ Existing tracked orders without `slotKey`:
 
 ### Checklist
 
-- [ ] `QuoteLevel` has `slotKey`, `shouldCreate`/`existingOpenOrdersBySide` removed
-- [ ] `StrategyOrderIntent` has optional `slotKey`
-- [ ] `TrackedOrder` + entity: `slotKey` field (nullable)
-- [ ] `getLiveOrders()` and `getActiveSlotOrders()` added
-- [ ] all `getOpenOrders()` callers migrated
-- [ ] PMM action generation rewritten as 3-step slot reconciliation
-- [ ] hanging order preservation expressed as reconciliation rule
-- [ ] `stoppingStrategyKeys` stop gate added
-- [ ] slot-aware execution dedup added
-- [ ] unit tests: no slot emits both cancel + create in same tick
-- [ ] unit tests: `pending_create` blocks duplicate creation
-- [ ] unit tests: stop gate blocks post-stop publishes
-- [ ] integration test: one-sided balance, no sell accumulation
-- [ ] integration test: price drift → cancel first, create on next tick
-- [ ] integration test: stop mid-tick → no late creates
+- [x] `QuoteLevel` has `slotKey`, `shouldCreate`/`existingOpenOrdersBySide` removed
+- [x] `StrategyOrderIntent` has optional `slotKey`
+- [x] `TrackedOrder` + entity: `slotKey` field (nullable)
+- [x] `getLiveOrders()` and `getActiveSlotOrders()` added
+- [x] all `getOpenOrders()` callers migrated
+- [x] PMM action generation rewritten as 3-step slot reconciliation
+- [x] hanging order preservation expressed as reconciliation rule
+- [x] `stoppingStrategyKeys` stop gate added
+- [x] slot-aware execution dedup added
+- [x] unit tests: no slot emits both cancel + create in same tick
+- [x] unit tests: `pending_create` blocks duplicate creation
+- [x] unit tests: stop gate blocks post-stop publishes
+- [x] integration test: one-sided balance, no sell accumulation
+- [x] integration test: price drift → cancel first, create on next tick
+- [x] integration test: stop mid-tick → no late creates
 
 ---
 
@@ -367,26 +367,26 @@ Implementation placement:
 
 ### Checklist
 
-- [ ] `StrategyType` union includes `'dualAccountVolume'`
-- [ ] dispatcher maps and starts `dualAccountVolume`
-- [ ] DTO with dual account labels and `makerDelayMs`
-- [ ] `publishedCycles` / `completedCycles` counter semantics
-- [ ] `publishedCycles` persisted to `strategy_instance.parameters`
-- [ ] `completedCycles` persisted to `strategy_instance.parameters`
-- [ ] `resolvePooledExecutorTarget()` handles `dualAccountVolume`
-- [ ] `resolveAccountLabel()` handles `dualAccountVolume`
-- [ ] `canActivateStrategyImmediately()` checks both labels
-- [ ] controller + action builder implemented
-- [ ] maker→taker sequencing in execution service
-- [ ] taker failure triggers maker cancel on correct label
-- [ ] tracked orders persist `accountLabel` + `role`
-- [ ] restart cancels dangling maker, does not replay taker
-- [ ] restart path for `dualAccountVolume` has explicit implementation location
-- [ ] unit tests: dispatcher routing
-- [ ] unit tests: dual-label readiness gating
-- [ ] unit tests: maker→taker sequencing + failure paths
-- [ ] unit tests: cycle counter semantics
-- [ ] regression: existing volume + PMM unchanged
+- [x] `StrategyType` union includes `'dualAccountVolume'`
+- [x] dispatcher maps and starts `dualAccountVolume`
+- [x] DTO with dual account labels and `makerDelayMs`
+- [x] `publishedCycles` / `completedCycles` counter semantics
+- [x] `publishedCycles` persisted to `strategy_instance.parameters`
+- [x] `completedCycles` persisted to `strategy_instance.parameters`
+- [x] `resolvePooledExecutorTarget()` handles `dualAccountVolume`
+- [x] `resolveAccountLabel()` handles `dualAccountVolume`
+- [x] `canActivateStrategyImmediately()` checks both labels
+- [x] controller + action builder implemented
+- [x] maker→taker sequencing in execution service
+- [x] taker failure triggers maker cancel on correct label
+- [x] tracked orders persist `accountLabel` + `role`
+- [x] restart cancels dangling maker, does not replay taker
+- [x] restart path for `dualAccountVolume` has explicit implementation location
+- [x] unit tests: dispatcher routing
+- [x] unit tests: dual-label readiness gating
+- [x] unit tests: maker→taker sequencing + failure paths
+- [x] unit tests: cycle counter semantics
+- [x] regression: existing volume + PMM unchanged
 
 ---
 
@@ -455,14 +455,14 @@ Future: key by `exchangeName:accountLabel` if latency becomes an issue.
 
 ### Checklist
 
-- [ ] `DirectStartMarketMakingDto` supports dual API keys and dual labels
-- [ ] `directStart()` validates dual-account config
-- [ ] `directStart()` controllerType check allows `dualAccountVolume`
-- [ ] `CONFIG_SCHEMA_TEMPLATES` has `dualAccountVolume` entry
-- [ ] direct-start form shows dual API key / account selectors for `dualAccountVolume`
-- [ ] form validates labels are different
-- [ ] order detail views show dual-account info
-- [ ] PMM logs include `slotKey` and decision reasons
+- [x] `DirectStartMarketMakingDto` supports dual API keys and dual labels
+- [x] `directStart()` validates dual-account config
+- [x] `directStart()` controllerType check allows `dualAccountVolume`
+- [x] `CONFIG_SCHEMA_TEMPLATES` has `dualAccountVolume` entry
+- [x] direct-start form shows dual API key / account selectors for `dualAccountVolume`
+- [x] form validates labels are different
+- [x] order detail views show dual-account info
+- [x] PMM logs include `slotKey` and decision reasons
 
 ---
 

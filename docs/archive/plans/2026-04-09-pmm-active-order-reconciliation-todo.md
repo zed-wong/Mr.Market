@@ -1,6 +1,6 @@
 # PMM Active Order Reconciliation — Todo List
 
-Source: `docs/planning/2026-04-09-pmm-active-order-reconciliation-plan.md`
+Source: `docs/archive/plans/2026-04-09-pmm-active-order-reconciliation-plan.md`
 
 ---
 

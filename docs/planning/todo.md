@@ -106,7 +106,7 @@ Admin page
 - [ ] 4. Merge manage exchange and api keys into one page, has consistent logic and don't make user confuse
 
 Admin exchanges management
-- [ ] Unified Exchange Account design — merge `admin_exchanges` + `api_keys_config` into single `ExchangeAccount` entity. See `docs/planning/2026-04-02-unified-exchange-account-design.md` for full design.
+- [ ] Unified Exchange Account design — merge `admin_exchanges` + `api_keys_config` into single `ExchangeAccount` entity. See `docs/archive/plans/2026-04-02-unified-exchange-account-design.md` for full design.
 
 # Hufi
 

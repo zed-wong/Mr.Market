@@ -30,11 +30,13 @@ Use dated files, but keep the document role clear.
 
 ## Current Files And Roles
 
+- **`2026-04-08-intent-worker-rate-limiting-improvements.md`**
+  Role: active implementation plan for the current intent-worker rate-limit follow-up
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**
   Role: rolling chronological implementation log
-  
+
 ## When To Update Vs Create
 
 - If work is continuing within the same phase and the same document role, update the existing dated doc.
