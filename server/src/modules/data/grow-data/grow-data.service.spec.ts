@@ -3,6 +3,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { Cache } from 'cache-manager';
 
+import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
 import { MixinClientService } from '../../mixin/client/mixin-client.service';
 import { GrowdataRepository } from './grow-data.repository';
@@ -27,6 +28,12 @@ describe('GrowdataService', () => {
               },
             },
             spendKey: 'test-spend-key',
+          },
+        },
+        {
+          provide: ExchangeInitService,
+          useValue: {
+            getCcxtExchangeMarkets: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -115,6 +122,81 @@ describe('GrowdataService', () => {
 
       expect(result.market_making.exchanges).toHaveLength(1);
       expect(result.market_making.exchanges[0].exchange_id).toBe('exchange-1');
+    });
+  });
+
+  describe('getAllMarketMakingPairs', () => {
+    it('hydrates missing exchange limits from live market metadata', async () => {
+      const exchangeInitService = module.get(ExchangeInitService) as any;
+
+      exchangeInitService.getCcxtExchangeMarkets.mockResolvedValue([
+        {
+          symbol: 'BTC/USDT',
+          limits: { amount: { min: 0.001, max: 10 } },
+          precision: { amount: 6, price: 2 },
+        },
+      ]);
+      jest.spyOn(repository, 'findAllMarketMakingPairs').mockResolvedValue([
+        {
+          id: 'pair-1',
+          exchange_id: 'binance',
+          symbol: 'BTC/USDT',
+          base_asset_id: 'base-1',
+          quote_asset_id: 'quote-1',
+          min_order_amount: '0',
+        },
+      ] as any);
+      jest.spyOn(cacheService, 'get').mockResolvedValue(undefined);
+      const mixinClientService = module.get(MixinClientService) as any;
+      mixinClientService.client.safe.fetchAssets.mockResolvedValue([]);
+
+      const result = await service.getAllMarketMakingPairs();
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          min_order_amount: '0.001',
+          max_order_amount: '10',
+          amount_significant_figures: '6',
+          price_significant_figures: '2',
+        }),
+      ]);
+    });
+
+    it('derives effective minimum order amounts from live cost limits and pair prices', async () => {
+      const exchangeInitService = module.get(ExchangeInitService) as any;
+      const mixinClientService = module.get(MixinClientService) as any;
+
+      exchangeInitService.getCcxtExchangeMarkets.mockResolvedValue([
+        {
+          symbol: 'BTC/USDT',
+          limits: { amount: { min: 0.001 }, cost: { min: 100 } },
+          precision: { amount: 6, price: 2 },
+        },
+      ]);
+      jest.spyOn(repository, 'findAllMarketMakingPairs').mockResolvedValue([
+        {
+          id: 'pair-1',
+          exchange_id: 'binance',
+          symbol: 'BTC/USDT',
+          base_asset_id: 'base-1',
+          quote_asset_id: 'quote-1',
+          min_order_amount: '0.001',
+        },
+      ] as any);
+      mixinClientService.client.safe.fetchAssets.mockResolvedValue([
+        { asset_id: 'base-1', price_usd: '20000' },
+        { asset_id: 'quote-1', price_usd: '1' },
+      ]);
+
+      const result = await service.getAllMarketMakingPairs();
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          base_price: '20000',
+          target_price: '1',
+          min_order_amount: '0.005',
+        }),
+      ]);
     });
   });
 

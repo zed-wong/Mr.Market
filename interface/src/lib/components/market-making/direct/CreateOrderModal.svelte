@@ -21,6 +21,7 @@
     export let startTakerApiKeyId = "";
     export let orderAmount = "";
     export let minOrderAmount = "";
+    export let displayMinOrderAmount = "";
     export let orderSpread = "";
     export let intervalTime = "";
     export let numTrades = "";
@@ -94,6 +95,12 @@
         startTakerApiKeyId = filteredApiKeys[0].key_id;
     }
     $: isDualAccountStrategy = selectedControllerType === "dualAccountVolume";
+    $: renderedMinOrderAmount = displayMinOrderAmount || minOrderAmount;
+    $: orderAmountPlaceholder = renderedMinOrderAmount
+        ? $_("admin_direct_mm_order_amount_placeholder_with_min", {
+              values: { amount: renderedMinOrderAmount },
+          })
+        : $_("admin_direct_mm_order_amount_placeholder");
     function openPairDropdown() {
         pairDropdownOpen = true;
         pairSearch = "";
@@ -449,7 +456,7 @@
                                     <input
                                         type="text"
                                         inputmode="decimal"
-                                        placeholder="e.g. 0.01"
+                                        placeholder={orderAmountPlaceholder}
                                         class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
                       {orderAmountError ? 'border-error' : ''}"
                                         class:pr-16={baseCoin}
@@ -474,7 +481,7 @@
                                             "admin_direct_mm_order_amount_minimum_hint",
                                             {
                                                 values: {
-                                                    amount: minOrderAmount,
+                                                    amount: renderedMinOrderAmount,
                                                 },
                                             },
                                         )}</span
@@ -482,12 +489,12 @@
                                 {:else}
                                     <span
                                         class="text-xs text-base-content/40 mt-1 block"
-                                        >{minOrderAmount
+                                        >{renderedMinOrderAmount
                                             ? $_(
                                                   "admin_direct_mm_order_amount_hint_with_min",
                                                   {
                                                       values: {
-                                                          amount: minOrderAmount,
+                                                          amount: renderedMinOrderAmount,
                                                       },
                                                   },
                                               )

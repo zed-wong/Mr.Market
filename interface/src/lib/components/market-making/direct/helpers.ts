@@ -2,6 +2,20 @@ import { _ } from "svelte-i18n";
 import { get } from "svelte/store";
 import BigNumber from "bignumber.js";
 
+export interface ExchangeMarketAmountLimits {
+  amount?: {
+    min?: number | string | null;
+  };
+  cost?: {
+    min?: number | string | null;
+  };
+}
+
+export interface ExchangeMarketMetadata {
+  symbol?: string;
+  limits?: ExchangeMarketAmountLimits;
+}
+
 const errorKeyMap: Record<string, string> = {
   "API key not found": "admin_direct_mm_error_api_key_not_found",
   "API key exchange does not match request":
@@ -117,6 +131,118 @@ export interface DualAccountVolumeFields {
   makerDelayMs: string;
 }
 
+function normalizeMarketSymbol(symbol: unknown): string {
+  return String(symbol || "")
+    .split(":")[0]
+    .trim()
+    .toUpperCase();
+}
+
+function readPositiveBigNumber(value: unknown): BigNumber | null {
+  const raw = String(value ?? "").trim();
+
+  if (!raw) return null;
+
+  const amount = new BigNumber(raw);
+
+  if (!amount.isFinite() || !amount.isGreaterThan(0)) {
+    return null;
+  }
+
+  return amount;
+}
+
+export function readPositiveOrderAmount(value: unknown): string {
+  return readPositiveBigNumber(value)?.toString() || "";
+}
+
+function trimTrailingZeros(value: string): string {
+  return value.includes(".") ? value.replace(/\.?0+$/, "") : value;
+}
+
+export function formatOrderAmountForDisplay(
+  value: unknown,
+  amountStep?: unknown,
+): string {
+  const amount = readPositiveBigNumber(value);
+
+  if (!amount) {
+    return "";
+  }
+
+  const step = readPositiveBigNumber(amountStep);
+
+  if (step) {
+    const rounded = amount
+      .dividedBy(step)
+      .integerValue(BigNumber.ROUND_CEIL)
+      .multipliedBy(step);
+    const decimals = step.decimalPlaces() ?? 0;
+
+    return trimTrailingZeros(rounded.toFixed(decimals));
+  }
+
+  const decimals = amount.isGreaterThanOrEqualTo(1)
+    ? Math.min(amount.decimalPlaces() ?? 0, 4)
+    : Math.min(amount.decimalPlaces() ?? 0, 8);
+
+  return trimTrailingZeros(amount.toFixed(decimals));
+}
+
+function resolveDerivedPairPrice(
+  basePrice: unknown,
+  quotePrice: unknown,
+): BigNumber | null {
+  const base = readPositiveBigNumber(basePrice);
+  const quote = readPositiveBigNumber(quotePrice);
+
+  if (!base || !quote) {
+    return null;
+  }
+
+  return base.dividedBy(quote);
+}
+
+export function resolveMinOrderAmount(
+  persistedMinimum: unknown,
+  exchangeMarkets: ExchangeMarketMetadata[],
+  pair: string,
+  basePrice?: unknown,
+  quotePrice?: unknown,
+): string {
+  const candidates = [readPositiveBigNumber(persistedMinimum)].filter(
+    (value): value is BigNumber => value !== null,
+  );
+  const normalizedPair = normalizeMarketSymbol(pair);
+
+  if (!normalizedPair || exchangeMarkets.length === 0) {
+    return candidates[0]?.toString() || "";
+  }
+
+  const market = exchangeMarkets.find(
+    (item) => normalizeMarketSymbol(item?.symbol) === normalizedPair,
+  );
+  const marketAmountMinimum = readPositiveBigNumber(market?.limits?.amount?.min);
+  const marketCostMinimum = readPositiveBigNumber(market?.limits?.cost?.min);
+  const derivedPairPrice = resolveDerivedPairPrice(basePrice, quotePrice);
+
+  if (marketAmountMinimum) {
+    candidates.push(marketAmountMinimum);
+  }
+
+  if (marketCostMinimum && derivedPairPrice) {
+    candidates.push(marketCostMinimum.dividedBy(derivedPairPrice));
+  }
+
+  if (candidates.length === 0) {
+    return "";
+  }
+
+  return candidates.reduce((maximum, candidate) =>
+    candidate.isGreaterThan(maximum) ? candidate : maximum,
+  ).toString();
+}
+
 export function normalizeConfigOverrides(
   controllerType: string,
   configRows: { key: string; value: string }[],
@@ -124,10 +250,20 @@ export function normalizeConfigOverrides(
   orderSpread: string,
   dualFields?: DualAccountVolumeFields,
 ): Record<string, unknown> {
+  const reservedFields = new Set([
+    "userId",
+    "clientId",
+    "marketMakingOrderId",
+    "pair",
+    "symbol",
+    "exchangeName",
+  ]);
   const accumulator = configRows.reduce<Record<string, unknown>>(
     (acc, row) => {
-      if (!row.key.trim()) return acc;
-      acc[row.key.trim()] = parseConfigValue(row.value);
+      const key = row.key.trim();
+
+      if (!key || reservedFields.has(key)) return acc;
+      acc[key] = parseConfigValue(row.value);
       return acc;
     },
     {},

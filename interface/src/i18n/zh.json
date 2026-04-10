@@ -860,6 +860,8 @@
   "admin_direct_mm_taker_account": "Taker 账户",
   "admin_direct_mm_order_amount": "订单数量",
   "admin_direct_mm_order_amount_hint": "在订单簿每侧放置的 base 资产数量",
+  "admin_direct_mm_order_amount_placeholder": "例如 0.01",
+  "admin_direct_mm_order_amount_placeholder_with_min": "最小值 {amount}",
   "admin_direct_mm_order_amount_hint_with_min": "在订单簿每侧放置的 base 资产数量。最小值：{amount}",
   "admin_direct_mm_order_amount_minimum_hint": "订单数量不能小于 {amount}",
   "admin_direct_mm_error_order_amount_too_low": "订单数量低于最小值",

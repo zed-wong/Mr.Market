@@ -1,10 +1,29 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import BigNumber from 'bignumber.js';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
+import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
+
+type ExchangeMarketSnapshot = {
+  symbol?: string;
+  limits?: {
+    amount?: {
+      min?: number | string | null;
+      max?: number | string | null;
+    };
+    cost?: {
+      min?: number | string | null;
+    };
+  };
+  precision?: {
+    amount?: number | string | null;
+    price?: number | string | null;
+  };
+};
 
 @Injectable()
 export class GrowdataService {
@@ -14,6 +33,7 @@ export class GrowdataService {
     @Inject(CACHE_MANAGER) private cacheService: Cache,
     private readonly growdataRepository: GrowdataRepository,
     private readonly mixinClientService: MixinClientService,
+    private readonly exchangeInitService: ExchangeInitService,
   ) {}
 
   private cachingTTL = 60; // 1 minute
@@ -51,6 +71,165 @@ export class GrowdataService {
         error: error.message,
       };
     }
+  }
+
+  private normalizeMarketSymbol(symbol?: string) {
+    return String(symbol || '')
+      .split(':')[0]
+      .trim()
+      .toUpperCase();
+  }
+
+  private readFiniteString(value: unknown): string | undefined {
+    const trimmed = String(value ?? '').trim();
+
+    return trimmed ? trimmed : undefined;
+  }
+
+  private readPositiveString(value: unknown): string | undefined {
+    const trimmed = String(value ?? '').trim();
+
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const amount = new BigNumber(trimmed);
+
+    if (!amount.isFinite() || !amount.isGreaterThan(0)) {
+      return undefined;
+    }
+
+    return amount.toString();
+  }
+
+  private readPositiveBigNumber(value: unknown): BigNumber | undefined {
+    const amount = this.readPositiveString(value);
+
+    return amount ? new BigNumber(amount) : undefined;
+  }
+
+  private resolveDerivedPairPrice(
+    pair: Pick<GrowdataMarketMakingPair, 'base_price' | 'target_price'>,
+  ): BigNumber | undefined {
+    const basePrice = this.readPositiveBigNumber(pair.base_price);
+    const quotePrice = this.readPositiveBigNumber(pair.target_price);
+
+    if (!basePrice || !quotePrice) {
+      return undefined;
+    }
+
+    return basePrice.dividedBy(quotePrice);
+  }
+
+  private async applyExchangeMarketMetadata(
+    pairs: GrowdataMarketMakingPair[],
+  ): Promise<GrowdataMarketMakingPair[]> {
+    const exchangeIds = [...new Set(pairs.map((pair) => pair.exchange_id).filter(Boolean))];
+    const marketsByExchange = new Map<string, ExchangeMarketSnapshot[]>();
+
+    await Promise.all(
+      exchangeIds.map(async (exchangeId) => {
+        try {
+          const markets = (await this.exchangeInitService.getCcxtExchangeMarkets(
+            exchangeId,
+          )) as ExchangeMarketSnapshot[];
+          marketsByExchange.set(
+            exchangeId,
+            Array.isArray(markets) ? markets : [],
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Failed to resolve exchange market metadata for ${exchangeId}`,
+            error,
+          );
+        }
+      }),
+    );
+
+    return pairs.map((pair) => {
+      const markets = marketsByExchange.get(pair.exchange_id) || [];
+      const normalizedSymbol = this.normalizeMarketSymbol(pair.symbol);
+      const market = markets.find(
+        (item) => this.normalizeMarketSymbol(item?.symbol) === normalizedSymbol,
+      );
+
+      if (!market) {
+        return pair;
+      }
+
+      return {
+        ...pair,
+        min_order_amount:
+          this.readPositiveString(pair.min_order_amount) ??
+          this.readPositiveString(market.limits?.amount?.min),
+        max_order_amount:
+          this.readPositiveString(pair.max_order_amount) ??
+          this.readPositiveString(market.limits?.amount?.max),
+        amount_significant_figures:
+          this.readFiniteString(pair.amount_significant_figures) ??
+          this.readFiniteString(market.precision?.amount),
+        price_significant_figures:
+          this.readFiniteString(pair.price_significant_figures) ??
+          this.readFiniteString(market.precision?.price),
+      };
+    });
+  }
+
+
+  private async applyEffectiveMinimumOrderAmounts(
+    pairs: GrowdataMarketMakingPair[],
+  ): Promise<GrowdataMarketMakingPair[]> {
+    const exchangeIds = [...new Set(pairs.map((pair) => pair.exchange_id).filter(Boolean))];
+    const marketsByExchange = new Map<string, ExchangeMarketSnapshot[]>();
+
+    await Promise.all(
+      exchangeIds.map(async (exchangeId) => {
+        try {
+          const markets = (await this.exchangeInitService.getCcxtExchangeMarkets(
+            exchangeId,
+          )) as ExchangeMarketSnapshot[];
+          marketsByExchange.set(
+            exchangeId,
+            Array.isArray(markets) ? markets : [],
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Failed to resolve cost minimums for ${exchangeId}`,
+            error,
+          );
+        }
+      }),
+    );
+
+    return pairs.map((pair) => {
+      const markets = marketsByExchange.get(pair.exchange_id) || [];
+      const normalizedSymbol = this.normalizeMarketSymbol(pair.symbol);
+      const market = markets.find(
+        (item) => this.normalizeMarketSymbol(item?.symbol) === normalizedSymbol,
+      );
+      const candidates = [this.readPositiveBigNumber(pair.min_order_amount)].filter(
+        (value): value is BigNumber => value !== undefined,
+      );
+      const costMinimum = this.readPositiveBigNumber(market?.limits?.cost?.min);
+      const derivedPairPrice = this.resolveDerivedPairPrice(pair);
+
+      if (costMinimum && derivedPairPrice) {
+        candidates.push(costMinimum.dividedBy(derivedPairPrice));
+      }
+
+      if (candidates.length === 0) {
+        return pair;
+      }
+
+      return {
+        ...pair,
+        min_order_amount: candidates
+          .reduce((maximum, candidate) =>
+            candidate.isGreaterThan(maximum) ? candidate : maximum,
+          )
+          .toString(),
+      };
+    });
   }
 
   // Exchange Methods
@@ -95,9 +274,8 @@ export class GrowdataService {
 
   // MarketMakingPair Methods
   async getAllMarketMakingPairs() {
-    const pairs = await this.growdataRepository.findAllMarketMakingPairs();
-
-    // this.logger.debug(`MarketMakingPairs: ${JSON.stringify(pairs)}`);
+    const storedPairs = await this.growdataRepository.findAllMarketMakingPairs();
+    const pairs = await this.applyExchangeMarketMetadata(storedPairs);
 
     const assetIds = pairs.flatMap((pair) => [
       pair.base_asset_id,
@@ -110,7 +288,7 @@ export class GrowdataService {
       pair.target_price = priceMap.get(pair.quote_asset_id) || '0';
     }
 
-    return pairs;
+    return this.applyEffectiveMinimumOrderAmounts(pairs);
   }
 
   async getMarketMakingPairById(id: string) {

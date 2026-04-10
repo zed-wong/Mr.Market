@@ -13,6 +13,7 @@
     startDirectOrder,
     stopDirectOrder,
   } from "$lib/helpers/mrm/admin/direct-market-making";
+  import { getCcxtExchangeMarkets } from "$lib/helpers/mrm/admin/growdata";
   import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
   import type { AdminSingleKey } from "$lib/types/hufi/admin";
   import type {
@@ -24,9 +25,12 @@
   import type { GrowInfo } from "$lib/types/hufi/grow";
 
   import {
+    formatOrderAmountForDisplay,
     getErrorMessage,
     getRecoveryHint,
     normalizeConfigOverrides,
+    resolveMinOrderAmount,
+    type ExchangeMarketMetadata,
   } from "$lib/components/market-making/direct/helpers";
   import ApiKeysPanel from "$lib/components/market-making/direct/ApiKeysPanel.svelte";
   import CampaignsPanel from "$lib/components/market-making/direct/CampaignsPanel.svelte";
@@ -109,6 +113,9 @@
   let targetQuoteVolume = "";
   let makerDelayMs = "250";
   let configRows: OverrideRow[] = [{ key: "", value: "" }];
+  let exchangeMarketsById: Record<string, ExchangeMarketMetadata[]> = {};
+  let loadingExchangeMarketIds: string[] = [];
+  let loadedExchangeMarketIds: string[] = [];
 
   let showStopAllConfirm = false;
   let isStoppingAll = false;
@@ -158,7 +165,20 @@
       (pair) =>
         pair.exchange_id === startExchangeName && pair.symbol === startPair,
     ) || null;
-  $: minOrderAmount = selectedPairConfig?.min_order_amount || "";
+  $: selectedExchangeMarkets = startExchangeName
+    ? exchangeMarketsById[startExchangeName] || []
+    : [];
+  $: minOrderAmount = resolveMinOrderAmount(
+    selectedPairConfig?.min_order_amount,
+    selectedExchangeMarkets,
+    startPair,
+    selectedPairConfig?.base_price,
+    selectedPairConfig?.target_price,
+  );
+  $: displayMinOrderAmount = formatOrderAmountForDisplay(
+    minOrderAmount,
+    selectedPairConfig?.amount_significant_figures,
+  );
   $: selectedStrategy =
     strategies.find((strategy) => strategy.id === startStrategyDefinitionId) || null;
   $: selectedControllerType = selectedStrategy?.controllerType || "";
@@ -197,6 +217,44 @@
     isRefreshing = true;
     await invalidate("admin:market-making:direct");
     isRefreshing = false;
+  }
+
+  async function ensureExchangeMarketsLoaded(exchangeId: string) {
+    if (
+      !exchangeId ||
+      loadedExchangeMarketIds.includes(exchangeId) ||
+      loadingExchangeMarketIds.includes(exchangeId)
+    ) {
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      return;
+    }
+
+    loadingExchangeMarketIds = [...loadingExchangeMarketIds, exchangeId];
+
+    try {
+      const markets = await getCcxtExchangeMarkets(exchangeId, token);
+      exchangeMarketsById = {
+        ...exchangeMarketsById,
+        [exchangeId]: Array.isArray(markets)
+          ? (markets as ExchangeMarketMetadata[])
+          : [],
+      };
+    } catch (error) {
+      console.error(`Failed to fetch markets for ${exchangeId}`, error);
+    } finally {
+      loadingExchangeMarketIds = loadingExchangeMarketIds.filter(
+        (id) => id !== exchangeId,
+      );
+      loadedExchangeMarketIds = [...new Set([...loadedExchangeMarketIds, exchangeId])];
+    }
+  }
+
+  $: if (showStartForm && startExchangeName) {
+    void ensureExchangeMarketsLoaded(startExchangeName);
   }
 
   function resetStartForm() {
@@ -260,7 +318,7 @@
     ) {
       toast.error($_("admin_direct_mm_error_order_amount_too_low"), {
         description: $_("admin_direct_mm_order_amount_minimum_hint", {
-          values: { amount: minOrderAmount },
+          values: { amount: displayMinOrderAmount || minOrderAmount },
         }),
       });
       return;
@@ -689,6 +747,7 @@
   {configRows}
   bind:orderAmount
   {minOrderAmount}
+  displayMinOrderAmount={displayMinOrderAmount || minOrderAmount}
   bind:orderSpread
   bind:intervalTime
   bind:numTrades

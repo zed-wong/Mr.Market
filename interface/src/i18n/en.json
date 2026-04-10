@@ -939,6 +939,8 @@
   "admin_direct_mm_taker_account": "Taker Account",
   "admin_direct_mm_order_amount": "Order Amount",
   "admin_direct_mm_order_amount_hint": "Base asset amount to place on each side of the book",
+  "admin_direct_mm_order_amount_placeholder": "e.g. 0.01",
+  "admin_direct_mm_order_amount_placeholder_with_min": "min {amount}",
   "admin_direct_mm_order_amount_hint_with_min": "Base asset amount to place on each side of the book. Minimum: {amount}",
   "admin_direct_mm_order_amount_minimum_hint": "Order amount must be at least {amount}",
   "admin_direct_mm_error_order_amount_too_low": "Order amount is below the minimum",
