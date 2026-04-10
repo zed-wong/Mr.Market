@@ -16,6 +16,9 @@ export class TrackedOrderEntity {
   @Column()
   exchange: string;
 
+  @Column({ nullable: true })
+  accountLabel?: string;
+
   @Column()
   pair: string;
 
@@ -24,6 +27,12 @@ export class TrackedOrderEntity {
 
   @Column({ nullable: true })
   clientOrderId?: string;
+
+  @Column({ nullable: true })
+  slotKey?: string;
+
+  @Column({ nullable: true })
+  role?: string;
 
   @Column()
   side: string;

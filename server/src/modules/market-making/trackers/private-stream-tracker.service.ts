@@ -138,6 +138,7 @@ export class PrivateStreamTrackerService
       ? this.exchangeOrderTrackerService?.getByExchangeOrderId(
           fill.exchange,
           fill.exchangeOrderId,
+          fill.accountLabel,
         )
       : undefined;
     const resolvedExecutor = resolution?.orderId

@@ -149,18 +149,19 @@ const createRepository = (rows: StrategyOrderIntentEntity[] = []) => ({
         status: { _value?: string } | string;
       };
     }) => {
-      const excludedStatus =
-        typeof where.status === 'string' ? undefined : where.status?._value;
-      const expectedStatus =
-        typeof where.status === 'string' ? where.status : undefined;
+      const expectedStatuses =
+        typeof where.status === 'string'
+          ? [where.status]
+          : Array.isArray(where.status?._value)
+          ? where.status._value
+          : undefined;
 
       return (
         rows
           .filter(
             (row) =>
               row.strategyKey === where.strategyKey &&
-              row.status !== excludedStatus &&
-              (!expectedStatus || row.status === expectedStatus),
+              (!expectedStatuses || expectedStatuses.includes(row.status)),
           )
           .sort((a, b) => {
             if (a.createdAt !== b.createdAt) {

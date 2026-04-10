@@ -43,7 +43,10 @@ class ExchangeInitServiceMock {
   }
 
   onExchangeReady(
-    listener: (exchangeName: string, accountLabel: string) => void | Promise<void>,
+    listener: (
+      exchangeName: string,
+      accountLabel: string,
+    ) => void | Promise<void>,
   ): () => void {
     this.readyListeners.push(listener);
 
@@ -176,10 +179,12 @@ describe('StrategyService', () => {
         costMin: 10,
         makerFee: 0.001,
       }),
-      quantizeOrder: jest.fn((_: string, __: string, qty: string, price: string) => ({
-        qty,
-        price,
-      })),
+      quantizeOrder: jest.fn(
+        (_: string, __: string, qty: string, price: string) => ({
+          qty,
+          price,
+        }),
+      ),
       fetchBalance: jest.fn().mockResolvedValue({
         free: { BTC: 10, USDT: 1000 },
       }),
@@ -352,14 +357,14 @@ describe('StrategyService', () => {
 
     await service.start();
 
-    expect(exchangeConnectorAdapterService.fetchOpenOrders).toHaveBeenCalledWith(
-      'binance',
-      'BTC/USDT',
-    );
+    expect(
+      exchangeConnectorAdapterService.fetchOpenOrders,
+    ).toHaveBeenCalledWith('binance', 'BTC/USDT', undefined);
     expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
       'binance',
       'BTC/USDT',
       'ex-orphan',
+      undefined,
     );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -850,8 +855,11 @@ describe('StrategyService', () => {
       'binance',
       'BTC/USDT',
       'ex-open',
+      undefined,
     );
-    expect(strategyIntentStoreService.cancelPendingIntents).toHaveBeenCalledWith(
+    expect(
+      strategyIntentStoreService.cancelPendingIntents,
+    ).toHaveBeenCalledWith(
       'order-1-pureMarketMaking',
       expect.stringContaining('SIGTERM'),
     );
@@ -908,6 +916,7 @@ describe('StrategyService', () => {
       'bitfinex',
       'BTC/USDT',
       'ex-1',
+      undefined,
     );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1460,7 +1469,9 @@ describe('StrategyService', () => {
     await service.start();
 
     expect(
-      executorRegistry.getExecutor('binance', 'BTC/USDT')?.getSession('order-1'),
+      executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getSession('order-1'),
     ).toBeUndefined();
 
     exchangeInitService.isReady.mockReturnValue(true);
@@ -2126,7 +2137,9 @@ describe('StrategyService', () => {
       { strategyKey: 'order-1-pureMarketMaking' },
       expect.objectContaining({ status: 'stopped' }),
     );
-    expect(strategyIntentStoreService.cancelPendingIntents).toHaveBeenCalledWith(
+    expect(
+      strategyIntentStoreService.cancelPendingIntents,
+    ).toHaveBeenCalledWith(
       'order-1-pureMarketMaking',
       'strategy stopped before intent execution',
     );

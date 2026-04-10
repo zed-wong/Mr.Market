@@ -169,8 +169,9 @@ export class StrategyIntentExecutionService {
     try {
       if (intent.type === 'CREATE_LIMIT_ORDER') {
         const trackedOrders =
-          this.exchangeOrderTrackerService?.getTrackedOrders(intent.strategyKey) ||
-          [];
+          this.exchangeOrderTrackerService?.getTrackedOrders(
+            intent.strategyKey,
+          ) || [];
         if (
           trackedOrders.some(
             (order) =>
@@ -198,7 +199,11 @@ export class StrategyIntentExecutionService {
             intent.qty,
             intent.price,
             clientOrderId,
-            { postOnly: Boolean(intent.postOnly) },
+            {
+              postOnly: Boolean(intent.postOnly),
+              timeInForce: intent.timeInForce,
+            },
+            intent.accountLabel,
           ),
         );
 
@@ -236,9 +241,12 @@ export class StrategyIntentExecutionService {
             orderId,
             strategyKey: intent.strategyKey,
             exchange: intent.exchange,
+            accountLabel: intent.accountLabel,
             pair: intent.pair,
             exchangeOrderId: String(result.id),
             clientOrderId,
+            slotKey: intent.slotKey,
+            role: undefined,
             side: intent.side,
             price: intent.price,
             qty: intent.qty,
@@ -255,10 +263,12 @@ export class StrategyIntentExecutionService {
           throw new Error('CANCEL_ORDER intent missing mixinOrderId');
         }
 
-        const trackedOrder = this.exchangeOrderTrackerService?.getByExchangeOrderId(
-          intent.exchange,
-          intent.mixinOrderId,
-        );
+        const trackedOrder =
+          this.exchangeOrderTrackerService?.getByExchangeOrderId(
+            intent.exchange,
+            intent.mixinOrderId,
+            intent.accountLabel,
+          );
 
         if (
           trackedOrder &&
@@ -279,6 +289,7 @@ export class StrategyIntentExecutionService {
             intent.exchange,
             intent.pair,
             intent.mixinOrderId,
+            trackedOrder?.accountLabel || intent.accountLabel,
           ),
         );
 
@@ -288,8 +299,12 @@ export class StrategyIntentExecutionService {
           orderId,
           strategyKey: intent.strategyKey,
           exchange: intent.exchange,
+          accountLabel: trackedOrder?.accountLabel || intent.accountLabel,
           pair: intent.pair,
           exchangeOrderId: intent.mixinOrderId,
+          clientOrderId: trackedOrder?.clientOrderId,
+          slotKey: trackedOrder?.slotKey || intent.slotKey,
+          role: trackedOrder?.role,
           side: intent.side,
           price: intent.price,
           qty: intent.qty,

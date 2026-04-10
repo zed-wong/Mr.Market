@@ -37,13 +37,18 @@ export class ExchangeConnectorAdapterService {
     qty: string,
     price: string,
     clientOrderId?: string,
-    options?: { postOnly?: boolean },
+    options?: { postOnly?: boolean; timeInForce?: 'GTC' | 'IOC' },
+    accountLabel?: string,
   ): Promise<any> {
     return await this.withRateLimit(exchangeName, async () => {
-      const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const exchange = this.exchangeInitService.getExchange(
+        exchangeName,
+        accountLabel,
+      );
       const params = {
         ...(clientOrderId ? { clientOrderId } : {}),
         ...(options?.postOnly ? { postOnly: true } : {}),
+        ...(options?.timeInForce ? { timeInForce: options.timeInForce } : {}),
       };
 
       return await exchange.createOrder(
@@ -61,9 +66,13 @@ export class ExchangeConnectorAdapterService {
     exchangeName: string,
     pair: string,
     exchangeOrderId: string,
+    accountLabel?: string,
   ): Promise<any> {
     return await this.withRateLimit(exchangeName, async () => {
-      const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const exchange = this.exchangeInitService.getExchange(
+        exchangeName,
+        accountLabel,
+      );
 
       return await exchange.cancelOrder(exchangeOrderId, pair);
     });
@@ -73,17 +82,28 @@ export class ExchangeConnectorAdapterService {
     exchangeName: string,
     pair: string,
     exchangeOrderId: string,
+    accountLabel?: string,
   ): Promise<any> {
     return await this.withRateLimit(exchangeName, async () => {
-      const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const exchange = this.exchangeInitService.getExchange(
+        exchangeName,
+        accountLabel,
+      );
 
       return await exchange.fetchOrder(exchangeOrderId, pair);
     });
   }
 
-  async fetchOpenOrders(exchangeName: string, pair?: string): Promise<any[]> {
+  async fetchOpenOrders(
+    exchangeName: string,
+    pair?: string,
+    accountLabel?: string,
+  ): Promise<any[]> {
     return await this.withRateLimit(exchangeName, async () => {
-      const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const exchange = this.exchangeInitService.getExchange(
+        exchangeName,
+        accountLabel,
+      );
 
       return await exchange.fetchOpenOrders(pair);
     });
@@ -137,6 +157,7 @@ export class ExchangeConnectorAdapterService {
   async loadTradingRules(
     exchangeName: string,
     pair: string,
+    accountLabel?: string,
   ): Promise<{
     amountMin?: number;
     costMin?: number;
@@ -150,7 +171,10 @@ export class ExchangeConnectorAdapterService {
     }
 
     return await this.withRateLimit(exchangeName, async () => {
-      const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const exchange = this.exchangeInitService.getExchange(
+        exchangeName,
+        accountLabel,
+      );
 
       if (!exchange?.markets || !exchange.markets[pair]) {
         await exchange.loadMarkets();
@@ -176,8 +200,12 @@ export class ExchangeConnectorAdapterService {
     pair: string,
     qty: string,
     price: string,
+    accountLabel?: string,
   ): { qty: string; price: string } {
-    const exchange = this.exchangeInitService.getExchange(exchangeName);
+    const exchange = this.exchangeInitService.getExchange(
+      exchangeName,
+      accountLabel,
+    );
     const quantizedQty =
       typeof exchange.amountToPrecision === 'function'
         ? exchange.amountToPrecision(pair, Number(qty))
@@ -193,9 +221,15 @@ export class ExchangeConnectorAdapterService {
     };
   }
 
-  async fetchBalance(exchangeName: string): Promise<any> {
+  async fetchBalance(
+    exchangeName: string,
+    accountLabel?: string,
+  ): Promise<any> {
     return await this.withRateLimit(exchangeName, async () => {
-      const exchange = this.exchangeInitService.getExchange(exchangeName);
+      const exchange = this.exchangeInitService.getExchange(
+        exchangeName,
+        accountLabel,
+      );
 
       return await exchange.fetchBalance();
     });

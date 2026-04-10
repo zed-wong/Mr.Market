@@ -1,10 +1,16 @@
 # Execution Flow Changelog
 
+## 2026-04-10
+
+- Start Phase 0 of `docs/planning/2026-04-09-unified-execution-plan.md`: make exchange execution account-aware by threading `accountLabel` through the connector adapter, PMM runtime balance/rule/restore/cancel paths, tracked-order persistence, and intent execution
+- Persist restart-critical strategy intent fields (`accountLabel`, `timeInForce`, `slotKey`, `postOnly`) plus tracked-order account metadata (`accountLabel`, `slotKey`, `role`) with a new nullable migration and unit coverage for adapter, tracker, intent execution/store/worker, and strategy runtime regression paths
+
 ## 2026-04-09
 
-- Add a dated PMM minimum-safe-stability close-gap plan in `docs/planning/2026-04-09-pmm-minimum-safe-stability-gap-plan.md`, narrowing the Hummingbot gap list into phased must-have/should-have/recommended work for single-venue PMM safe operation
+- Add a dated PMM minimum-safe-stability close-gap plan in `docs/archive/plans/2026-04-09-pmm-minimum-safe-stability-gap-plan.md`, narrowing the Hummingbot gap list into phased must-have/should-have/recommended work for single-venue PMM safe operation
 - Harden PMM runtime recovery and shutdown paths: restore tracked exchange orders on startup via REST open-order reconciliation, cancel orphaned exchange orders, add process-shutdown cancel-all with bounded wait, and add a realized-PnL kill switch with unit coverage
 - Route REST-recovered fill deltas back through the executor/ledger path, add mock-system PMM safety coverage for restart/shutdown/disconnect/kill-switch behavior, add mock-system WS/REST fill-recovery dedup coverage, and close the April 9 PMM minimum-safe-stability todo checklist
+- Add a new PMM active-order reconciliation design plan plus a follow-up todo checklist to fix remaining Hummingbot-gap behavior around `pending_create` slot occupancy, phased cancel-then-recreate refresh, and stop-path tail-intent races
 
 ## 2026-04-08
 

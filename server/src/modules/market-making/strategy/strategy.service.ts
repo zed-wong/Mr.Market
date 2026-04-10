@@ -108,7 +108,10 @@ export class StrategyService
 {
   private readonly logger = new CustomLogger(StrategyService.name);
   private readonly sessions = new Map<string, StrategyRuntimeSession>();
-  private readonly pendingActivationStrategies = new Map<string, StrategyInstance>();
+  private readonly pendingActivationStrategies = new Map<
+    string,
+    StrategyInstance
+  >();
   private readonly latestIntentsByStrategy = new Map<
     string,
     StrategyOrderIntent[]
@@ -1381,6 +1384,7 @@ export class StrategyService
     const availableBalances = await this.getAvailableBalancesForPair(
       params.exchangeName,
       params.pair,
+      params.accountLabel,
     );
     const nextActionsBySide = new Map<'buy' | 'sell', ExecutorAction[]>();
 
@@ -1452,6 +1456,7 @@ export class StrategyService
         strategyKey,
         params.exchangeName,
         params.pair,
+        params.accountLabel,
         quote.side,
         quote.layer,
         new BigNumber(quote.qty),
@@ -1478,6 +1483,7 @@ export class StrategyService
         'clob_cex',
         undefined,
         true,
+        params.accountLabel,
       );
       const actionsForSide = nextActionsBySide.get(quote.side) || [];
 
@@ -1523,6 +1529,7 @@ export class StrategyService
             userId: params.userId,
             clientId: params.clientId,
             exchange: params.exchangeName,
+            accountLabel: params.accountLabel,
             pair: params.pair,
             side: order.side,
             price: order.price,
@@ -1622,6 +1629,8 @@ export class StrategyService
     executionCategory?: StrategyExecutionCategory,
     metadata?: Record<string, unknown>,
     postOnly?: boolean,
+    accountLabel?: string,
+    timeInForce?: 'GTC' | 'IOC',
   ): StrategyOrderIntent {
     return {
       type: 'CREATE_LIMIT_ORDER',
@@ -1631,12 +1640,14 @@ export class StrategyService
       userId,
       clientId,
       exchange,
+      accountLabel,
       pair,
       side,
       price: price.toFixed(),
       qty: qty.toFixed(),
       executionCategory,
       postOnly,
+      timeInForce,
       metadata,
       createdAt: ts,
       status: 'NEW',
@@ -2185,11 +2196,13 @@ export class StrategyService
     await Promise.all(
       openOrders.map(async (order) => {
         try {
-          const result = await this.exchangeConnectorAdapterService?.cancelOrder(
-            order.exchange,
-            order.pair,
-            order.exchangeOrderId,
-          );
+          const result =
+            await this.exchangeConnectorAdapterService?.cancelOrder(
+              order.exchange,
+              order.pair,
+              order.exchangeOrderId,
+              order.accountLabel,
+            );
           const status = String(result?.status || '').toLowerCase();
 
           this.exchangeOrderTrackerService?.upsertOrder(
@@ -2575,6 +2588,7 @@ export class StrategyService
   private async getAvailableBalancesForPair(
     exchangeName: string,
     pair: string,
+    accountLabel?: string,
   ): Promise<{
     base: BigNumber;
     quote: BigNumber;
@@ -2588,6 +2602,7 @@ export class StrategyService
 
     const balance = await this.exchangeConnectorAdapterService?.fetchBalance(
       exchangeName,
+      accountLabel,
     );
 
     return {
@@ -2601,6 +2616,7 @@ export class StrategyService
     strategyKey: string,
     exchangeName: string,
     pair: string,
+    accountLabel: string | undefined,
     side: 'buy' | 'sell',
     layer: number,
     rawQty: BigNumber,
@@ -2626,12 +2642,14 @@ export class StrategyService
     const rules = await this.exchangeConnectorAdapterService.loadTradingRules(
       exchangeName,
       pair,
+      accountLabel,
     );
     const quantized = this.exchangeConnectorAdapterService.quantizeOrder(
       exchangeName,
       pair,
       rawQty.toFixed(),
       rawPrice.toFixed(),
+      accountLabel,
     );
     const price = new BigNumber(quantized.price);
     const qty = new BigNumber(quantized.qty);
@@ -2656,16 +2674,18 @@ export class StrategyService
       }
       if (rules.amountMin && qty.isLessThan(rules.amountMin)) {
         rejectionReasons.push(
-          `qty ${qty.toFixed()} ${availableBalances.assets.base} < amountMin ${new BigNumber(
-            rules.amountMin,
-          ).toFixed()} ${availableBalances.assets.base}`,
+          `qty ${qty.toFixed()} ${
+            availableBalances.assets.base
+          } < amountMin ${new BigNumber(rules.amountMin).toFixed()} ${
+            availableBalances.assets.base
+          }`,
         );
       }
       if (rules.costMin && qty.multipliedBy(price).isLessThan(rules.costMin)) {
         rejectionReasons.push(
-          `notional ${qty
-            .multipliedBy(price)
-            .toFixed()} ${availableBalances.assets.quote} (${qty.toFixed()} ${
+          `notional ${qty.multipliedBy(price).toFixed()} ${
+            availableBalances.assets.quote
+          } (${qty.toFixed()} ${
             availableBalances.assets.base
           } * ${price.toFixed()} ${availableBalances.assets.quote}/${
             availableBalances.assets.base
@@ -2686,13 +2706,17 @@ export class StrategyService
 
     if (side === 'buy' && quote.isLessThan(notional)) {
       this.logger.warn(
-        `[${strategyKey}] Skipped layer-${layer} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient quote balance ${quote.toFixed()} ${availableBalances.assets.quote} < required ${notional.toFixed()}`,
+        `[${strategyKey}] Skipped layer-${layer} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient quote balance ${quote.toFixed()} ${
+          availableBalances.assets.quote
+        } < required ${notional.toFixed()}`,
       );
       return null;
     }
     if (side === 'sell' && base.isLessThan(qty)) {
       this.logger.warn(
-        `[${strategyKey}] Skipped layer-${layer} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient base balance ${base.toFixed()} ${availableBalances.assets.base} < required ${qty.toFixed()}`,
+        `[${strategyKey}] Skipped layer-${layer} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient base balance ${base.toFixed()} ${
+          availableBalances.assets.base
+        } < required ${qty.toFixed()}`,
       );
       return null;
     }
@@ -2748,6 +2772,7 @@ export class StrategyService
         userId: params.userId,
         clientId: params.clientId,
         exchange: params.exchangeName,
+        accountLabel: params.accountLabel,
         pair: params.pair,
         side: order.side,
         price: order.price,
@@ -2781,6 +2806,7 @@ export class StrategyService
       openOrders = await this.exchangeConnectorAdapterService.fetchOpenOrders(
         exchange,
         pair,
+        params.accountLabel,
       );
     } catch (error) {
       const { message } = this.toErrorDetails(error);
@@ -2792,11 +2818,10 @@ export class StrategyService
       return;
     }
 
-    const trackedOrders =
-      (((this.exchangeOrderTrackerService as any)?.getTrackedOrders?.(
-        strategy.strategyKey,
-      ) as TrackedOrder[]) ||
-        []) as TrackedOrder[];
+    const trackedOrders = (((
+      this.exchangeOrderTrackerService as any
+    )?.getTrackedOrders?.(strategy.strategyKey) as TrackedOrder[]) ||
+      []) as TrackedOrder[];
     const trackedByExchangeOrderId = new Map(
       trackedOrders.map((order) => [order.exchangeOrderId, order]),
     );
@@ -2854,6 +2879,7 @@ export class StrategyService
         exchangeOrderId,
         clientOrderId,
         openOrder,
+        params.accountLabel,
       );
     }
 
@@ -2870,6 +2896,7 @@ export class StrategyService
           trackedOrder.exchange,
           trackedOrder.pair,
           trackedOrder.exchangeOrderId,
+          trackedOrder.accountLabel,
         );
 
         if (!latest) {
@@ -2882,10 +2909,7 @@ export class StrategyService
             this.readString(latest?.clientOrderId || latest?.clientOid) ||
             trackedOrder.clientOrderId,
           price: this.readString(latest?.price, trackedOrder.price),
-          qty: this.readString(
-            latest?.amount || latest?.qty,
-            trackedOrder.qty,
-          ),
+          qty: this.readString(latest?.amount || latest?.qty, trackedOrder.qty),
           cumulativeFilledQty: this.readString(
             latest?.filled,
             trackedOrder.cumulativeFilledQty || '0',
@@ -2963,11 +2987,13 @@ export class StrategyService
       await Promise.all(
         pendingOrders.map(async (order) => {
           try {
-            const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
-              order.exchange,
-              order.pair,
-              order.exchangeOrderId,
-            );
+            const latest =
+              await this.exchangeConnectorAdapterService?.fetchOrder(
+                order.exchange,
+                order.pair,
+                order.exchangeOrderId,
+                order.accountLabel,
+              );
 
             if (!latest) {
               return;
@@ -3018,7 +3044,8 @@ export class StrategyService
     const parsedPercent = this.parseKillSwitchPercentThreshold(threshold);
 
     const hitAbsolute =
-      parsedAbsolute !== null && realizedPnl <= parsedAbsolute.negated().toNumber();
+      parsedAbsolute !== null &&
+      realizedPnl <= parsedAbsolute.negated().toNumber();
     const hitPercent =
       parsedPercent !== null &&
       Number(session.tradedQuoteVolume || 0) > 0 &&
@@ -3089,7 +3116,9 @@ export class StrategyService
         const matchedCost = averageCost.multipliedBy(matchedQty);
         const matchedProceeds = price.multipliedBy(matchedQty);
 
-        nextRealizedPnl = nextRealizedPnl.plus(matchedProceeds.minus(matchedCost));
+        nextRealizedPnl = nextRealizedPnl.plus(
+          matchedProceeds.minus(matchedCost),
+        );
         nextInventoryQty = currentInventoryQty.minus(matchedQty);
         nextInventoryCost = BigNumber.max(
           currentInventoryCost.minus(matchedCost),
@@ -3101,7 +3130,9 @@ export class StrategyService
     session.inventoryBaseQty = nextInventoryQty.toNumber();
     session.inventoryCostQuote = nextInventoryCost.toNumber();
     session.realizedPnlQuote = nextRealizedPnl.toNumber();
-    session.tradedQuoteVolume = currentTradedVolume.plus(fillNotional).toNumber();
+    session.tradedQuoteVolume = currentTradedVolume
+      .plus(fillNotional)
+      .toNumber();
     session.params = {
       ...session.params,
       inventoryBaseQty: session.inventoryBaseQty,
@@ -3157,20 +3188,26 @@ export class StrategyService
     exchangeOrderId: string,
     clientOrderId: string,
     openOrder: Record<string, any>,
+    accountLabel?: string,
   ): Promise<void> {
     try {
       const result = await this.exchangeConnectorAdapterService?.cancelOrder(
         exchange,
         pair,
         exchangeOrderId,
+        accountLabel,
       );
       const nextStatus =
         this.normalizeExchangeOrderStatus(result?.status) || 'pending_cancel';
 
       this.exchangeOrderTrackerService?.upsertOrder({
-        orderId: this.readString(strategy.marketMakingOrderId, strategy.clientId),
+        orderId: this.readString(
+          strategy.marketMakingOrderId,
+          strategy.clientId,
+        ),
         strategyKey: strategy.strategyKey,
         exchange,
+        accountLabel,
         pair,
         exchangeOrderId,
         clientOrderId: clientOrderId || undefined,
@@ -3200,7 +3237,9 @@ export class StrategyService
   private normalizeExchangeOrderStatus(
     status: unknown,
   ): TrackedOrder['status'] | null {
-    const normalized = String(status || '').trim().toLowerCase();
+    const normalized = String(status || '')
+      .trim()
+      .toLowerCase();
 
     if (!normalized) {
       return null;

@@ -218,4 +218,44 @@ describe('ExchangeOrderTrackerService', () => {
       'mexc',
     );
   });
+
+  it('keeps same exchange order id from different accounts isolated', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    service.upsertOrder({
+      orderId: 'client-1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      accountLabel: 'default',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'same-id',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'client-2',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      accountLabel: 'account2',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'same-id',
+      side: 'sell',
+      price: '101',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    expect(
+      service.getByExchangeOrderId('binance', 'same-id', 'default')?.side,
+    ).toBe('buy');
+    expect(
+      service.getByExchangeOrderId('binance', 'same-id', 'account2')?.side,
+    ).toBe('sell');
+  });
 });

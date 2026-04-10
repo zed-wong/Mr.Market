@@ -240,6 +240,7 @@ export class StrategyIntentWorkerService
       userId: intentEntity.userId,
       clientId: intentEntity.clientId,
       exchange: intentEntity.exchange,
+      accountLabel: intentEntity.accountLabel || undefined,
       pair: intentEntity.pair,
       side: intentEntity.side as StrategyOrderIntent['side'],
       price: intentEntity.price,
@@ -248,6 +249,14 @@ export class StrategyIntentWorkerService
       executionCategory: intentEntity.executionCategory as
         | StrategyOrderIntent['executionCategory']
         | undefined,
+      postOnly:
+        typeof intentEntity.postOnly === 'boolean'
+          ? intentEntity.postOnly
+          : undefined,
+      timeInForce: intentEntity.timeInForce as
+        | StrategyOrderIntent['timeInForce']
+        | undefined,
+      slotKey: intentEntity.slotKey || undefined,
       metadata:
         (intentEntity.metadata as StrategyOrderIntent['metadata']) || undefined,
       createdAt: intentEntity.createdAt,

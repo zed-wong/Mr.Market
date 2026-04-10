@@ -24,6 +24,7 @@ export type StrategyOrderIntent = {
   userId: string;
   clientId: string;
   exchange: string;
+  accountLabel?: string;
   pair: string;
   side: 'buy' | 'sell';
   price: string;
@@ -31,6 +32,8 @@ export type StrategyOrderIntent = {
   mixinOrderId?: string;
   executionCategory?: StrategyExecutionCategory;
   postOnly?: boolean;
+  timeInForce?: 'GTC' | 'IOC';
+  slotKey?: string;
   metadata?: Record<string, unknown>;
   createdAt: string;
   status: StrategyIntentStatus;

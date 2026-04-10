@@ -147,7 +147,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('c1', 0),
-      { postOnly: false },
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       baseIntent.intentId,
@@ -199,7 +200,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('c1', 0),
-      { postOnly: true },
+      { postOnly: true, timeInForce: undefined },
+      undefined,
     );
   });
 
@@ -328,6 +330,7 @@ describe('StrategyIntentExecutionService', () => {
       'binance',
       'BTC/USDT',
       'exchange-order-1',
+      undefined,
     );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -581,7 +584,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-1', 0),
-      { postOnly: false },
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
@@ -593,7 +597,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-1', 1),
-      { postOnly: false },
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
   });
 
@@ -637,7 +642,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-restart', 2),
-      { postOnly: false },
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
 
     jest.clearAllMocks();
@@ -670,7 +676,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-restart', 3),
-      { postOnly: false },
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
   });
 });

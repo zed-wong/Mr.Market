@@ -79,7 +79,7 @@ Main modules:
 Why this flow exists:
 
 - It separates decision logic from side effects.
-- It shares exchange:pair market data across sessions and keeps fill routing deterministic per owning order/session, even when private streams replay cumulative order updates.
+- It shares exchange:pair market data across sessions, while account-aware execution/tracking keeps REST order management and private-stream fill routing pinned to the correct exchange account during restart recovery and shutdown cleanup.
 
 Detailed reference:
 

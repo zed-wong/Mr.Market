@@ -28,9 +28,12 @@ export type TrackedOrder = {
   orderId: string;
   strategyKey: string;
   exchange: string;
+  accountLabel?: string;
   pair: string;
   exchangeOrderId: string;
   clientOrderId?: string;
+  slotKey?: string;
+  role?: 'maker' | 'taker';
   side: 'buy' | 'sell';
   price: string;
   qty: string;
@@ -119,7 +122,11 @@ export class ExchangeOrderTrackerService
   }
 
   upsertOrder(order: TrackedOrder): void {
-    const key = this.toKey(order.exchange, order.exchangeOrderId);
+    const key = this.toKey(
+      order.exchange,
+      order.accountLabel,
+      order.exchangeOrderId,
+    );
     const existingOrder = this.orders.get(key);
 
     if (existingOrder) {
@@ -168,8 +175,9 @@ export class ExchangeOrderTrackerService
   getByExchangeOrderId(
     exchange: string,
     exchangeOrderId: string,
+    accountLabel?: string,
   ): TrackedOrder | undefined {
-    return this.orders.get(this.toKey(exchange, exchangeOrderId));
+    return this.orders.get(this.toKey(exchange, accountLabel, exchangeOrderId));
   }
 
   getFillCount(strategyKey: string, windowMs: number): number {
@@ -195,6 +203,7 @@ export class ExchangeOrderTrackerService
           order.exchange,
           order.pair,
           order.exchangeOrderId,
+          order.accountLabel,
         );
 
         if (!latest) {
@@ -321,8 +330,12 @@ export class ExchangeOrderTrackerService
     return 'failed';
   }
 
-  private toKey(exchange: string, exchangeOrderId: string): string {
-    return `${exchange}:${exchangeOrderId}`;
+  private toKey(
+    exchange: string,
+    accountLabel: string | undefined,
+    exchangeOrderId: string,
+  ): string {
+    return `${exchange}:${accountLabel || 'default'}:${exchangeOrderId}`;
   }
 
   private normalizeFilledValue(value: unknown): string | undefined {
@@ -406,21 +419,31 @@ export class ExchangeOrderTrackerService
     const rows = await this.trackedOrderRepository.find();
 
     for (const row of rows) {
-      this.orders.set(row.trackingKey, {
-        orderId: row.orderId,
-        strategyKey: row.strategyKey,
-        exchange: row.exchange,
-        pair: row.pair,
-        exchangeOrderId: row.exchangeOrderId,
-        clientOrderId: row.clientOrderId,
-        side: row.side as 'buy' | 'sell',
-        price: row.price,
-        qty: row.qty,
-        cumulativeFilledQty: row.cumulativeFilledQty,
-        status: row.status as TrackedOrderState,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      });
+      this.orders.set(
+        this.toKey(
+          row.exchange,
+          row.accountLabel || undefined,
+          row.exchangeOrderId,
+        ),
+        {
+          orderId: row.orderId,
+          strategyKey: row.strategyKey,
+          exchange: row.exchange,
+          accountLabel: row.accountLabel || undefined,
+          pair: row.pair,
+          exchangeOrderId: row.exchangeOrderId,
+          clientOrderId: row.clientOrderId,
+          slotKey: row.slotKey || undefined,
+          role: (row.role as TrackedOrder['role']) || undefined,
+          side: row.side as 'buy' | 'sell',
+          price: row.price,
+          qty: row.qty,
+          cumulativeFilledQty: row.cumulativeFilledQty,
+          status: row.status as TrackedOrderState,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        },
+      );
     }
   }
 
@@ -438,9 +461,12 @@ export class ExchangeOrderTrackerService
         orderId: order.orderId,
         strategyKey: order.strategyKey,
         exchange: order.exchange,
+        accountLabel: order.accountLabel,
         pair: order.pair,
         exchangeOrderId: order.exchangeOrderId,
         clientOrderId: order.clientOrderId,
+        slotKey: order.slotKey,
+        role: order.role,
         side: order.side,
         price: order.price,
         qty: order.qty,
