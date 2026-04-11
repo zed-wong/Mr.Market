@@ -399,6 +399,7 @@ export class AdminDirectMarketMakingService {
 
     const controllerType = this.readControllerType(order);
     const strategyKey = this.buildStrategyKey(order);
+    const resolvedConfig = await this.resolveLiveOrderConfig(order, strategyKey);
     const primaryAccountLabel = this.readPrimaryAccountLabel(order);
     const session = this.getRuntimeSession(orderId);
     const lastTickAt = this.getEstimatedLastTickAt(session);
@@ -519,7 +520,6 @@ export class AdminDirectMarketMakingService {
       });
     }
 
-    const resolvedConfig = order.strategySnapshot?.resolvedConfig || {};
     const orderConfig = {
       orderAmount: this.readConfigString(
         resolvedConfig.orderAmount ?? resolvedConfig.baseTradeAmount,
@@ -577,6 +577,39 @@ export class AdminDirectMarketMakingService {
       inventoryBalances,
       stale: executorHealth === 'stale',
     };
+  }
+
+  private async resolveLiveOrderConfig(
+    order: MarketMakingOrder,
+    strategyKey: string,
+  ): Promise<Record<string, unknown>> {
+    const snapshotConfig = order.strategySnapshot?.resolvedConfig || {};
+
+    if (typeof this.strategyService.getStrategyInstanceKey !== 'function') {
+      return snapshotConfig;
+    }
+
+    try {
+      const strategyInstance =
+        await this.strategyService.getStrategyInstanceKey(strategyKey);
+
+      if (!strategyInstance?.parameters) {
+        return snapshotConfig;
+      }
+
+      return {
+        ...snapshotConfig,
+        ...strategyInstance.parameters,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to read live strategy params for direct order ${order.orderId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return snapshotConfig;
+    }
   }
 
   async listCampaigns(): Promise<AdminCampaign[]> {

@@ -1701,6 +1701,64 @@ describe('StrategyService', () => {
     );
   });
 
+  it('preserves live dual-account completion counters when persisting published cycles', async () => {
+    const session = {
+      runId: 'run-dual-merge',
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: 0,
+        publishedCycles: 0,
+        completedCycles: 0,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: {
+        ...session.params,
+        publishedCycles: 0,
+        completedCycles: 1,
+        tradedQuoteVolume: 100,
+      },
+    });
+
+    (service as any).sessions.set(session.strategyKey, session);
+    await service.onDualAccountVolumeActionsPublished(session as any, [
+      { type: 'CREATE_LIMIT_ORDER' } as any,
+    ]);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          publishedCycles: 1,
+          completedCycles: 1,
+          tradedQuoteVolume: 100,
+        }),
+      }),
+    );
+  });
+
   it('switches dual-account maker/taker roles when dynamic switching finds higher capacity on the taker side', async () => {
     strategyMarketDataProviderService.getBestBidAsk.mockResolvedValue({
       bestBid: 100,
@@ -1748,6 +1806,53 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
+  });
+
+  it('cancels dangling dual-account maker orders during runtime restore', async () => {
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'dual-cycle-1',
+        strategyKey: 'user1-client1-dualAccountVolume',
+        exchange: 'binance',
+        accountLabel: 'maker',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'maker-order-1',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'open',
+        role: 'maker',
+        createdAt: '2026-04-11T00:00:00.000Z',
+        updatedAt: '2026-04-11T00:00:00.000Z',
+      },
+    ]);
+    jest
+      .spyOn(service as any, 'waitForTrackedOrdersToSettle')
+      .mockResolvedValue(undefined);
+
+    await (service as any).restoreRuntimeStateForStrategy({
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+    });
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order-1',
+      'maker',
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'maker-order-1',
+        accountLabel: 'maker',
+        role: 'maker',
+        status: 'cancelled',
+      }),
+    );
+    expect((service as any).waitForTrackedOrdersToSettle).toHaveBeenCalledWith(
+      'user1-client1-dualAccountVolume',
+      10_000,
+    );
   });
 
   it('stops dual-account volume when target quote volume is reached', async () => {

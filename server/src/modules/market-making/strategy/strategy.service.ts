@@ -1479,9 +1479,19 @@ export class StrategyService
 
     const params =
       activeBeforePersist.params as DualAccountVolumeStrategyParams;
-    const nextParams: DualAccountVolumeStrategyParams = {
+    const persistedStrategy = await this.strategyInstanceRepository.findOne({
+      where: { strategyKey: session.strategyKey },
+    });
+    const persistedParams = persistedStrategy?.parameters as
+      | Partial<DualAccountVolumeStrategyParams>
+      | undefined;
+    const mergedParams: DualAccountVolumeStrategyParams = {
       ...params,
-      publishedCycles: Number(params.publishedCycles || 0) + 1,
+      ...persistedParams,
+    };
+    const nextParams: DualAccountVolumeStrategyParams = {
+      ...mergedParams,
+      publishedCycles: Number(mergedParams.publishedCycles || 0) + 1,
     };
 
     await this.persistStrategyParams(session.strategyKey, nextParams);

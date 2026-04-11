@@ -3,6 +3,7 @@
 ## 2026-04-11
 
 - Realign the admin direct market-making sandbox system spec with the `key_id`-based API key identity cutover by removing the obsolete direct-start `accountLabel` payload field, replacing legacy `exchange_index` fixtures with `key_id`, and documenting a dated dual-account volume release gate checklist
+- Add `dualAccountVolume` controller registration to the single-tick system-test helper, add a dedicated dual-account admin-direct sandbox system spec, make admin direct status merge live `strategy_instance.parameters` over the stored snapshot, and fix dual-account published-cycle persistence to preserve execution-written completion counters
 
 ## 2026-04-10
 

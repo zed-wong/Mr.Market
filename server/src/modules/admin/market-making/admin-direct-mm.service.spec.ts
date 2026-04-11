@@ -103,6 +103,7 @@ describe('AdminDirectMarketMakingService', () => {
     };
     const strategyService = {
       getLatestIntentsForStrategy: jest.fn().mockReturnValue([]),
+      getStrategyInstanceKey: jest.fn().mockResolvedValue(null),
     };
     const strategyIntentStoreService = {
       getQueueState: jest.fn().mockResolvedValue({
@@ -914,6 +915,68 @@ describe('AdminDirectMarketMakingService', () => {
       tradedQuoteVolume: '3456.78',
       realizedPnlQuote: '12.34',
     });
+  });
+
+  it('prefers live strategy instance params over the stored order snapshot in status responses', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      strategyIntentStoreService,
+      exchangeOrderTrackerService,
+      strategyService,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-2',
+      userId: 'admin-user',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      apiKeyId: 'api-key-1',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      strategySnapshot: {
+        controllerType: 'dualAccountVolume',
+        resolvedConfig: {
+          clientId: 'order-2',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          takerApiKeyId: 'api-key-2',
+          baseTradeAmount: 5,
+          publishedCycles: 0,
+          completedCycles: 0,
+          tradedQuoteVolume: 0,
+        },
+      },
+    });
+    strategyService.getStrategyInstanceKey.mockResolvedValue({
+      strategyKey: 'admin-user-order-2-dualAccountVolume',
+      parameters: {
+        baseTradeAmount: 7,
+        publishedCycles: 3,
+        completedCycles: 2,
+        tradedQuoteVolume: 420,
+      },
+    });
+    exchangeOrderTrackerService.getLiveOrders.mockReturnValue([]);
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([]);
+
+    const result = await service.getDirectOrderStatus('order-2');
+
+    expect(strategyIntentStoreService.getQueueState).toHaveBeenCalledWith(
+      'admin-user-order-2-dualAccountVolume',
+    );
+    expect(strategyService.getStrategyInstanceKey).toHaveBeenCalledWith(
+      'admin-user-order-2-dualAccountVolume',
+    );
+    expect(result.orderConfig).toEqual(
+      expect.objectContaining({
+        orderAmount: '7',
+        publishedCycles: 3,
+        completedCycles: 2,
+        tradedQuoteVolume: '420',
+      }),
+    );
   });
 
   it('resolves taker api key names when snapshot stores numeric api key ids', async () => {

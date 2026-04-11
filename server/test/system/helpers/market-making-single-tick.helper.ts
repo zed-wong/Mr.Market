@@ -34,6 +34,7 @@ import { FillRoutingService } from 'src/modules/market-making/execution/fill-rou
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
+import { DualAccountVolumeStrategyController } from 'src/modules/market-making/strategy/controllers/dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from 'src/modules/market-making/strategy/controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from 'src/modules/market-making/strategy/data/strategy-market-data-provider.service';
@@ -265,6 +266,7 @@ export class MarketMakingSingleTickHelper {
         OrderBookTrackerService,
         PrivateStreamIngestionService,
         PrivateStreamTrackerService,
+        DualAccountVolumeStrategyController,
         PureMarketMakingStrategyController,
         QuoteExecutorManagerService,
         StrategyIntentExecutionService,
@@ -322,9 +324,17 @@ export class MarketMakingSingleTickHelper {
         {
           provide: StrategyControllerRegistry,
           useFactory: (
+            dualAccountVolumeController: DualAccountVolumeStrategyController,
             pureMarketMakingController: PureMarketMakingStrategyController,
-          ) => new StrategyControllerRegistry([pureMarketMakingController]),
-          inject: [PureMarketMakingStrategyController],
+          ) =>
+            new StrategyControllerRegistry([
+              pureMarketMakingController,
+              dualAccountVolumeController,
+            ]),
+          inject: [
+            DualAccountVolumeStrategyController,
+            PureMarketMakingStrategyController,
+          ],
         },
         {
           provide: TransactionService,
