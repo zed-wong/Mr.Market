@@ -95,7 +95,6 @@
   let showStartAllModal = false;
   let isStartingAll = false;
   let isStarting = false;
-  let isRefreshing = false;
   let startCooldown = false;
   let startExchangeName = "";
   let startPair = "";
@@ -214,9 +213,7 @@
   }
 
   async function refreshPage() {
-    isRefreshing = true;
     await invalidate("admin:market-making:direct");
-    isRefreshing = false;
   }
 
   async function ensureExchangeMarketsLoaded(exchangeId: string) {
@@ -744,7 +741,6 @@
   bind:startApiKeyId
   bind:startMakerApiKeyId
   bind:startTakerApiKeyId
-  {configRows}
   bind:orderAmount
   {minOrderAmount}
   displayMinOrderAmount={displayMinOrderAmount || minOrderAmount}

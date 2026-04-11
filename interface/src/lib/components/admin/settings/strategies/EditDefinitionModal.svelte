@@ -3,7 +3,10 @@
     import { toast } from "svelte-sonner";
     import { updateStrategyDefinition } from "$lib/helpers/mrm/admin/strategy";
     import SchemaConfigForm from "./SchemaConfigForm.svelte";
-    import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
+    import type {
+        StrategyDefinition,
+        StrategyDefinitionVisibility,
+    } from "$lib/types/hufi/strategy-definition";
 
     export let show = false;
     export let definition: StrategyDefinition | null = null;
@@ -15,7 +18,7 @@
     let description = "";
     let configSchema: Record<string, unknown> = {};
     let defaultConfig: Record<string, unknown> = {};
-    let visibility = "public";
+    let visibility: StrategyDefinitionVisibility = "public";
     let createdBy = "";
 
     let schemaOpen = false;

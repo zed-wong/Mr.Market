@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-04-11
+
+- Realign the admin direct market-making sandbox system spec with the `key_id`-based API key identity cutover by removing the obsolete direct-start `accountLabel` payload field, replacing legacy `exchange_index` fixtures with `key_id`, and documenting a dated dual-account volume release gate checklist
+
 ## 2026-04-10
 
 - Add short-lived in-memory HuFi access-token caching in `CampaignService` and route admin campaign joined-status reads through the shared token helper to avoid nonce/sign/auth on every admin page refresh

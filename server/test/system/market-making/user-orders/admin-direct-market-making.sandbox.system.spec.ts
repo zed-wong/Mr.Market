@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
+import { StrategyIntentStoreService } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
@@ -42,9 +42,6 @@ describe('Admin direct market making runtime (system)', () => {
     const marketMakingRepository = moduleRef.get(
       getRepositoryToken(MarketMakingOrder),
     );
-    const growdataMarketMakingPairRepository = moduleRef.get(
-      getRepositoryToken(GrowdataMarketMakingPair),
-    );
     const strategyDefinitionRepository = moduleRef.get(
       getRepositoryToken(StrategyDefinition),
     );
@@ -66,6 +63,7 @@ describe('Admin direct market making runtime (system)', () => {
     const exchangeInitService = moduleRef.get(ExchangeInitService);
     const executorRegistry = moduleRef.get(ExecutorRegistry);
     const strategyService = moduleRef.get(StrategyService);
+    const strategyIntentStoreService = moduleRef.get(StrategyIntentStoreService);
     const exchangeOrderTrackerService = moduleRef.get(
       ExchangeOrderTrackerService,
     );
@@ -74,18 +72,14 @@ describe('Admin direct market making runtime (system)', () => {
     );
     const orderBookTrackerService = moduleRef.get(OrderBookTrackerService);
     const campaignService = moduleRef.get(CampaignService, { strict: false });
+    const growdataMarketMakingPairRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
 
     const adminDirectService = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
       growdataMarketMakingPairRepository as any,
       strategyDefinitionRepository as any,
-      {
-        create: jest.fn((payload) => payload),
-        find: jest.fn().mockResolvedValue([]),
-        findOne: jest.fn().mockResolvedValue(null),
-        save: jest.fn(async (payload) => ({ id: 'join-1', ...payload })),
-        update: jest.fn().mockResolvedValue(undefined),
-      } as any,
       userOrdersService as any,
       marketMakingRuntimeService as any,
       {
@@ -102,8 +96,8 @@ describe('Admin direct market making runtime (system)', () => {
               controllerType: 'pureMarketMaking',
               resolvedConfig: {
                 ...overrides,
-                bidSpread: 0.001,
-                askSpread: 0.001,
+                bidSpread: 0.003,
+                askSpread: 0.003,
                 orderAmount: 0.0002,
                 orderRefreshTime: 60000,
                 numberOfLayers: 1,
@@ -119,12 +113,14 @@ describe('Admin direct market making runtime (system)', () => {
       {
         readAPIKey: jest.fn().mockResolvedValue({
           exchange: config.exchangeId,
-          exchange_index: config.accountLabel,
+          key_id: config.accountLabel,
+          name: 'Sandbox API Key',
         }),
       } as any,
       exchangeInitService as any,
       executorRegistry as any,
       strategyService as any,
+      strategyIntentStoreService as any,
       exchangeOrderTrackerService as any,
       privateStreamTrackerService as any,
       orderBookTrackerService as any,
@@ -144,7 +140,6 @@ describe('Admin direct market making runtime (system)', () => {
         pair: config.symbol,
         strategyDefinitionId: strategyDefinition.id,
         apiKeyId: 'sandbox-api-key',
-        accountLabel: config.accountLabel,
         configOverrides: {},
       },
       'admin-user',
@@ -152,9 +147,9 @@ describe('Admin direct market making runtime (system)', () => {
 
     expect(started.state).toBe('running');
 
-    log.step('forcing runtime ready and executing a coordinator tick');
+    log.step('forcing runtime ready and executing a direct executor tick');
     await helper.forceSessionReadyForNextTick(started.orderId);
-    await helper.runCoordinatorTick();
+    await helper.runSingleTick(started.orderId);
 
     log.step('reading runtime status after start');
     const runningStatus = await adminDirectService.getDirectOrderStatus(

@@ -12,6 +12,7 @@
 
     let password = "";
     let showPassword = false;
+    let shakeError = false;
 
     // Market depth visualization state
     let canvas: HTMLCanvasElement;
@@ -271,7 +272,7 @@
         </div>
 
         <!-- Login card -->
-        <div class="w-full max-w-sm">
+        <div class="w-full max-w-sm" class:animate-[shake_0.5s_ease-in-out]={shakeError}>
             <div class="mb-8 flex flex-col">
                 <span
                     class="text-left text-3xl font-semibold text-base-content mb-2 tracking-tight"

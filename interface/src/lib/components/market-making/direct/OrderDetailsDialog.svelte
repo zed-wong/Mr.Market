@@ -93,9 +93,31 @@
   $: isDualAccountStrategy =
     (data?.controllerType || order?.controllerType) === "dualAccountVolume";
   $: isStale = data?.stale ?? false;
-  $: skewPercent = data ? computeSkewPercent(data.inventoryBalances) : null;
+  $: skewPercent = data ? computeSkewPercent(
+    isDualAccountStrategy
+      ? data.inventoryBalances.filter((b) => !b.accountLabel || b.accountLabel === "maker")
+      : data.inventoryBalances
+  ) : null;
   $: fills1h = data?.fillCount1h ?? 0;
+
+  $: makerBalances = data?.inventoryBalances.filter((b) => b.accountLabel === "maker") ?? [];
+  $: takerBalances = data?.inventoryBalances.filter((b) => b.accountLabel === "taker") ?? [];
   $: recentErrors = data?.recentErrors ?? [];
+
+  $: volumePercent = (() => {
+    if (!data?.orderConfig?.tradedQuoteVolume || !data?.orderConfig?.targetQuoteVolume) return null;
+    const traded = new BigNumber(data.orderConfig.tradedQuoteVolume);
+    const target = new BigNumber(data.orderConfig.targetQuoteVolume);
+    if (target.isZero() || !target.isFinite()) return null;
+    return traded.dividedBy(target).multipliedBy(100).decimalPlaces(1, BigNumber.ROUND_HALF_UP).toNumber();
+  })();
+
+  $: cyclePercent = (() => {
+    const completed = data?.orderConfig?.completedCycles;
+    const published = data?.orderConfig?.publishedCycles;
+    if (completed == null || published == null || published === 0) return null;
+    return Math.min(Math.round((completed / published) * 100), 100);
+  })();
 </script>
 
 <svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
@@ -406,32 +428,61 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-2 gap-3">
-                <div class="border border-base-300 rounded-xl p-3">
-                  <span
-                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                    >{isDualAccountStrategy
-                      ? $_("admin_direct_mm_maker_account")
-                      : $_("admin_direct_mm_account_label")}</span
-                  >
-                  <span class="text-sm font-bold text-base-content block"
-                    >{data.accountLabel || $_("admin_direct_mm_na")}</span
-                  >
+              {#if isDualAccountStrategy}
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 border border-base-300 rounded-xl p-3 text-center">
+                    <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                      >{$_("admin_direct_mm_maker_account")}</span
+                    >
+                    <span class="text-sm font-bold text-base-content block truncate"
+                      >{data.makerAccountName || $_("admin_direct_mm_na")}</span
+                    >
+                  </div>
+                  <div class="flex flex-col items-center gap-0.5 shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-base-content/30">
+                      <path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd" />
+                    </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-base-content/30 rotate-180">
+                      <path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd" />
+                    </svg>
+                  </div>
+                  <div class="flex-1 border border-base-300 rounded-xl p-3 text-center">
+                    <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                      >{$_("admin_direct_mm_taker_account")}</span
+                    >
+                    <span class="text-sm font-bold text-base-content block truncate"
+                      >{data.takerAccountName || $_("admin_direct_mm_na")}</span
+                    >
+                  </div>
                 </div>
-                <div class="border border-base-300 rounded-xl p-3">
-                  <span
-                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                    >{isDualAccountStrategy
-                      ? $_("admin_direct_mm_taker_account")
-                      : $_("admin_direct_mm_api_key")}</span
-                  >
-                  <span class="text-sm font-bold text-base-content block"
-                    >{isDualAccountStrategy
-                      ? data.takerAccountLabel || $_("admin_direct_mm_na")
-                      : data.apiKeyId || $_("admin_direct_mm_na")}</span
-                  >
+                {#if data.orderConfig?.dynamicRoleSwitching}
+                  <div class="flex items-center gap-1.5 mt-2 px-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
+                    <span class="text-[10px] text-base-content/50">{$_("admin_direct_mm_dynamic_role_switching")}</span>
+                  </div>
+                {/if}
+              {:else}
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="border border-base-300 rounded-xl p-3">
+                    <span
+                      class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                      >{$_("admin_direct_mm_account_label")}</span
+                    >
+                    <span class="text-sm font-bold text-base-content block"
+                      >{data.accountLabel || $_("admin_direct_mm_na")}</span
+                    >
+                  </div>
+                  <div class="border border-base-300 rounded-xl p-3">
+                    <span
+                      class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                      >{$_("admin_direct_mm_api_key")}</span
+                    >
+                    <span class="text-sm font-bold text-base-content block"
+                      >{data.apiKeyId || $_("admin_direct_mm_na")}</span
+                    >
+                  </div>
                 </div>
-              </div>
+              {/if}
             </div>
           {/if}
 
@@ -458,106 +509,128 @@
               >
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
-              <div class="border border-base-300 rounded-xl p-3">
-                <span
-                  class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                  >{$_("admin_direct_mm_order_amount")}</span
-                >
-                <span class="text-sm font-bold text-base-content block"
-                  >{data?.orderConfig?.orderAmount ||
-                    $_("admin_direct_mm_na")}</span
-                >
-              </div>
-              <div class="border border-base-300 rounded-xl p-3">
-                <span
-                  class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                  >{isDualAccountStrategy
-                    ? $_("admin_direct_mm_base_increment_percentage")
-                    : $_("admin_direct_mm_layers")}</span
-                >
-                <span class="text-sm font-bold text-base-content block"
-                  >{isDualAccountStrategy
-                    ? data?.orderConfig?.baseIncrementPercentage ||
-                      $_("admin_direct_mm_na")
-                    : data?.orderConfig?.numberOfLayers ||
-                      $_("admin_direct_mm_na")}</span
-                >
-              </div>
-              <div class="border border-base-300 rounded-xl p-3">
-                <span
-                  class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                  >{isDualAccountStrategy
-                    ? $_("admin_direct_mm_completed_cycles")
-                    : $_("admin_direct_mm_bid_spread")}</span
-                >
-                <span class="text-sm font-bold text-base-content block"
-                  >{isDualAccountStrategy
-                    ? data?.orderConfig?.completedCycles ??
-                      $_("admin_direct_mm_na")
-                    : formatSpread(data?.orderConfig?.bidSpread)}</span
-                >
-              </div>
-              <div class="border border-base-300 rounded-xl p-3">
-                <span
-                  class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                  >{isDualAccountStrategy
-                    ? $_("admin_direct_mm_published_cycles")
-                    : $_("admin_direct_mm_ask_spread")}</span
-                >
-                <span class="text-sm font-bold text-base-content block"
-                  >{isDualAccountStrategy
-                    ? data?.orderConfig?.publishedCycles ??
-                      $_("admin_direct_mm_na")
-                    : formatSpread(data?.orderConfig?.askSpread)}</span
-                >
-              </div>
-              {#if isDualAccountStrategy}
+            {#if isDualAccountStrategy}
+              <!-- Volume & Cycle Progress -->
+              <div class="grid grid-cols-2 gap-3 mb-3">
                 <div class="border border-base-300 rounded-xl p-3">
-                  <span
-                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                    >{$_("admin_direct_mm_dynamic_role_switching")}</span
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-[10px] text-base-content/40 font-semibold"
+                      >{$_("admin_direct_mm_volume_progress")}</span
+                    >
+                    {#if volumePercent !== null}
+                      <span class="text-[10px] font-bold text-primary">{volumePercent}%</span>
+                    {/if}
+                  </div>
+                  <span class="text-lg font-bold text-base-content block"
+                    >{data?.orderConfig?.tradedQuoteVolume || "0"}</span
                   >
-                  <span class="text-sm font-bold text-base-content block"
-                    >{data?.orderConfig?.dynamicRoleSwitching === null
-                      ? $_("admin_direct_mm_na")
-                      : data?.orderConfig?.dynamicRoleSwitching
-                        ? "On"
-                        : "Off"}</span
+                  <span class="text-[10px] text-base-content/40"
+                    >{$_("admin_direct_mm_of_target", { values: { target: data?.orderConfig?.targetQuoteVolume || $_("admin_direct_mm_na") } })}</span
                   >
+                  {#if volumePercent !== null}
+                    <div class="w-full h-1.5 rounded-full bg-base-200 overflow-hidden mt-2">
+                      <div
+                        class="h-full bg-primary rounded-full transition-all"
+                        style="width: {Math.min(volumePercent, 100)}%"
+                      ></div>
+                    </div>
+                  {/if}
                 </div>
                 <div class="border border-base-300 rounded-xl p-3">
-                  <span
-                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                    >{$_("admin_direct_mm_target_quote_volume")}</span
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-[10px] text-base-content/40 font-semibold"
+                      >{$_("admin_direct_mm_cycle_progress")}</span
+                    >
+                    {#if cyclePercent !== null}
+                      <span class="text-[10px] font-bold text-secondary">{cyclePercent}%</span>
+                    {/if}
+                  </div>
+                  <span class="text-lg font-bold text-base-content block"
+                    >{data?.orderConfig?.completedCycles ?? "0"}</span
+                  >
+                  <span class="text-[10px] text-base-content/40"
+                    >{$_("admin_direct_mm_cycles_completed", { values: { completed: data?.orderConfig?.completedCycles ?? 0, published: data?.orderConfig?.publishedCycles ?? $_("admin_direct_mm_na") } })}</span
+                  >
+                  {#if cyclePercent !== null}
+                    <div class="w-full h-1.5 rounded-full bg-base-200 overflow-hidden mt-2">
+                      <div
+                        class="h-full bg-secondary rounded-full transition-all"
+                        style="width: {cyclePercent}%"
+                      ></div>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Dual Account Config Grid -->
+              <div class="grid grid-cols-3 gap-3 mb-3">
+                <div class="border border-base-300 rounded-xl p-3 text-center">
+                  <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_order_amount")}</span
                   >
                   <span class="text-sm font-bold text-base-content block"
-                    >{data?.orderConfig?.targetQuoteVolume ||
-                      $_("admin_direct_mm_na")}</span
+                    >{data?.orderConfig?.orderAmount || $_("admin_direct_mm_na")}</span
                   >
                 </div>
-                <div class="border border-base-300 rounded-xl p-3">
-                  <span
-                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                    >{$_("admin_direct_mm_traded_quote_volume")}</span
+                <div class="border border-base-300 rounded-xl p-3 text-center">
+                  <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_base_increment_percentage")}</span
                   >
                   <span class="text-sm font-bold text-base-content block"
-                    >{data?.orderConfig?.tradedQuoteVolume ||
-                      $_("admin_direct_mm_na")}</span
+                    >{data?.orderConfig?.baseIncrementPercentage || $_("admin_direct_mm_na")}</span
                   >
                 </div>
-                <div class="border border-base-300 rounded-xl p-3">
-                  <span
-                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                <div class="border border-base-300 rounded-xl p-3 text-center">
+                  <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
                     >{$_("admin_direct_mm_realized_pnl_quote")}</span
                   >
                   <span class="text-sm font-bold text-base-content block"
-                    >{data?.orderConfig?.realizedPnlQuote ||
+                    >{data?.orderConfig?.realizedPnlQuote || $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+              </div>
+            {:else}
+              <div class="grid grid-cols-2 gap-3">
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_order_amount")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.orderAmount ||
                       $_("admin_direct_mm_na")}</span
                   >
                 </div>
-              {/if}
-            </div>
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_layers")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.numberOfLayers ||
+                      $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_bid_spread")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{formatSpread(data?.orderConfig?.bidSpread)}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3">
+                  <span
+                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_ask_spread")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{formatSpread(data?.orderConfig?.askSpread)}</span
+                  >
+                </div>
+              </div>
+            {/if}
           </div>
 
           <!-- Inventory Balances -->
@@ -583,82 +656,113 @@
               >
             </div>
 
-            <div class="overflow-x-auto">
-              <table class="w-full text-left">
-                <thead>
-                  <tr>
-                    <th
-                      class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
-                      >{$_("admin_direct_mm_asset")}</th
-                    >
-                    <th
-                      class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
-                      >{$_("admin_direct_mm_free_balance")}</th
-                    >
-                    <th
-                      class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
-                      >{$_("admin_direct_mm_used_balance")}</th
-                    >
-                    <th
-                      class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize text-right border-b border-base-300"
-                      >{$_("admin_direct_mm_total")}</th
-                    >
-                  </tr>
-                </thead>
-                <tbody>
-                  {#if data && data.inventoryBalances.length > 0}
-                    {#each data.inventoryBalances as balance}
-                      <tr class="border-b border-base-300/50 last:border-0">
-                        <td class="py-3 px-3">
-                          <div class="flex items-center gap-2">
-                            <div
-                              class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center"
-                            >
-                              <span class="text-[8px] font-bold text-primary"
-                                >{balance.asset.slice(0, 4)}</span
-                              >
+            {#if isDualAccountStrategy && makerBalances.length > 0}
+              <!-- Dual account: side-by-side tables -->
+              <div class="grid grid-cols-2 gap-3">
+                {#each [{ label: $_("admin_direct_mm_maker_balances"), balances: makerBalances }, { label: $_("admin_direct_mm_taker_balances"), balances: takerBalances }] as group}
+                  <div class="border border-base-300 rounded-xl overflow-hidden">
+                    <div class="px-3 py-2 bg-base-200/50 border-b border-base-300">
+                      <span class="text-[10px] font-bold text-base-content/50 capitalize">{group.label}</span>
+                    </div>
+                    {#if group.balances.length > 0}
+                      {#each group.balances as balance}
+                        <div class="flex items-center justify-between px-3 py-2.5 border-b border-base-300/50 last:border-0">
+                          <div class="flex items-center gap-1.5">
+                            <div class="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span class="text-[7px] font-bold text-primary">{balance.asset.slice(0, 3)}</span>
                             </div>
-                            <span
-                              class="text-sm font-semibold text-base-content"
-                              >{balance.asset}</span
-                            >
+                            <span class="text-xs font-semibold text-base-content">{balance.asset}</span>
                           </div>
-                        </td>
-                        <td class="py-3 px-3 text-sm text-base-content/70"
-                          >{balance.free}</td
-                        >
-                        <td class="py-3 px-3 text-sm text-base-content/70"
-                          >{balance.used}</td
-                        >
-                        <td
-                          class="py-3 px-3 text-sm font-bold text-base-content text-right"
-                          >{balance.total}</td
-                        >
-                      </tr>
-                    {/each}
-                  {:else}
+                          <span class="text-xs font-bold text-base-content">{balance.total}</span>
+                        </div>
+                      {/each}
+                    {:else}
+                      <div class="px-3 py-4 text-center">
+                        <span class="text-xs text-base-content/40">{$_("admin_direct_mm_no_balances")}</span>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
                     <tr>
-                      <td
-                        colspan="4"
-                        class="py-6 text-center text-sm text-base-content/40"
-                        >{$_("admin_direct_mm_no_balances")}</td
+                      <th
+                        class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
+                        >{$_("admin_direct_mm_asset")}</th
+                      >
+                      <th
+                        class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
+                        >{$_("admin_direct_mm_free_balance")}</th
+                      >
+                      <th
+                        class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize border-b border-base-300"
+                        >{$_("admin_direct_mm_used_balance")}</th
+                      >
+                      <th
+                        class="py-2.5 px-3 text-[10px] font-bold text-base-content/40 tracking-wider capitalize text-right border-b border-base-300"
+                        >{$_("admin_direct_mm_total")}</th
                       >
                     </tr>
-                  {/if}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {#if data && data.inventoryBalances.length > 0}
+                      {#each data.inventoryBalances as balance}
+                        <tr class="border-b border-base-300/50 last:border-0">
+                          <td class="py-3 px-3">
+                            <div class="flex items-center gap-2">
+                              <div
+                                class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center"
+                              >
+                                <span class="text-[8px] font-bold text-primary"
+                                  >{balance.asset.slice(0, 4)}</span
+                                >
+                              </div>
+                              <span
+                                class="text-sm font-semibold text-base-content"
+                                >{balance.asset}</span
+                              >
+                            </div>
+                          </td>
+                          <td class="py-3 px-3 text-sm text-base-content/70"
+                            >{balance.free}</td
+                          >
+                          <td class="py-3 px-3 text-sm text-base-content/70"
+                            >{balance.used}</td
+                          >
+                          <td
+                            class="py-3 px-3 text-sm font-bold text-base-content text-right"
+                            >{balance.total}</td
+                          >
+                        </tr>
+                      {/each}
+                    {:else}
+                      <tr>
+                        <td
+                          colspan="4"
+                          class="py-6 text-center text-sm text-base-content/40"
+                          >{$_("admin_direct_mm_no_balances")}</td
+                        >
+                      </tr>
+                    {/if}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
 
-            <!-- Inventory Skew Bar -->
+            <!-- Inventory Skew Bar (maker balances for dual, all for single) -->
             {#if skewPercent !== null && data && data.inventoryBalances.length >= 2}
+              {@const skewBalances = isDualAccountStrategy && makerBalances.length >= 2 ? makerBalances : data.inventoryBalances}
               <div class="mt-3">
                 <div class="flex items-center justify-between mb-1">
                   <span class="text-[10px] text-base-content/40 font-semibold"
                     >{$_("admin_direct_mm_inventory_skew")}</span
                   >
                   <span class="text-[10px] text-base-content/50"
-                    >{data.inventoryBalances[0].asset}
-                    {skewPercent}% / {data.inventoryBalances[1].asset}
+                    >{skewBalances[0].asset}
+                    {skewPercent}% / {skewBalances[1].asset}
                     {100 - skewPercent}%</span
                   >
                 </div>

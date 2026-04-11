@@ -23,6 +23,8 @@ export interface DirectOrderSummary {
   accountLabel: string;
   makerAccountLabel: string;
   takerAccountLabel: string;
+  makerAccountName?: string;
+  takerAccountName?: string;
   apiKeyId: string | null;
   makerApiKeyId: string | null;
   takerApiKeyId: string | null;
@@ -37,6 +39,8 @@ export interface DirectOrderStatus {
   accountLabel: string;
   makerAccountLabel: string;
   takerAccountLabel: string;
+  makerAccountName?: string;
+  takerAccountName?: string;
   apiKeyId: string | null;
   makerApiKeyId: string | null;
   takerApiKeyId: string | null;
@@ -95,6 +99,7 @@ export interface DirectOrderStatus {
     free: string;
     used: string;
     total: string;
+    accountLabel?: string;
   }>;
   stale: boolean;
 }

@@ -327,6 +327,14 @@ export class AdminDirectMarketMakingService {
 
     return await Promise.all(
       orders.map(async (order) => {
+        const makerAccountName = await this.readApiKeyName(
+          order.apiKeyId,
+          this.readMakerAccountLabel(order),
+        );
+        const takerAccountName = await this.readApiKeyName(
+          this.readTakerApiKeyId(order),
+          this.readTakerAccountLabel(order),
+        );
         const session = this.getRuntimeSession(order.orderId);
         const strategyKey = this.buildStrategyKey(order);
         const queueState =
@@ -366,9 +374,11 @@ export class AdminDirectMarketMakingService {
           controllerType: this.readControllerType(order),
           createdAt: order.createdAt,
           lastTickAt,
-          accountLabel: await this.readPrimaryDisplayLabel(order),
+          accountLabel: makerAccountName,
           makerAccountLabel: this.readMakerAccountLabel(order),
           takerAccountLabel: this.readTakerAccountLabel(order),
+          makerAccountName,
+          takerAccountName,
           apiKeyId: order.apiKeyId || null,
           makerApiKeyId: order.apiKeyId || null,
           takerApiKeyId: this.readTakerApiKeyId(order) || null,
@@ -414,35 +424,60 @@ export class AdminDirectMarketMakingService {
       order.pair,
     );
 
-    let inventoryBalances: Array<{
+    const inventoryBalances: Array<{
       asset: string;
       free: string;
       used: string;
       total: string;
+      accountLabel?: string;
     }> = [];
 
-    try {
-      const exchange = this.exchangeInitService.getExchange(
-        order.exchangeName,
-        primaryAccountLabel,
-      );
-      const balance = await exchange.fetchBalance();
-      const [baseAsset, quoteAsset] = this.parsePair(order.pair);
+    const [baseAsset, quoteAsset] = this.parsePair(order.pair);
+    const assets = [baseAsset, quoteAsset].filter(Boolean);
+    const makerAccountName = await this.readApiKeyName(
+      order.apiKeyId,
+      this.readMakerAccountLabel(order),
+    );
+    const takerAccountName = await this.readApiKeyName(
+      this.readTakerApiKeyId(order),
+      this.readTakerAccountLabel(order),
+    );
+    const takerAccountLabel =
+      controllerType === 'dualAccountVolume'
+        ? this.readTakerAccountLabel(order)
+        : '';
+    const accountsToFetch: Array<{ label: string; tag: string }> = [
+      { label: primaryAccountLabel, tag: takerAccountLabel ? 'maker' : '' },
+    ];
 
-      inventoryBalances = [baseAsset, quoteAsset]
-        .filter(Boolean)
-        .map((asset) => ({
-          asset,
-          free: String(balance?.free?.[asset] ?? 0),
-          used: String(balance?.used?.[asset] ?? 0),
-          total: String(balance?.total?.[asset] ?? 0),
-        }));
-    } catch (error) {
-      this.logger.warn(
-        `Failed to fetch inventory for direct order ${orderId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+    if (takerAccountLabel) {
+      accountsToFetch.push({ label: takerAccountLabel, tag: 'taker' });
+    }
+
+    for (const { label, tag } of accountsToFetch) {
+      try {
+        const exchange = this.exchangeInitService.getExchange(
+          order.exchangeName,
+          label,
+        );
+        const balance = await exchange.fetchBalance();
+
+        for (const asset of assets) {
+          inventoryBalances.push({
+            asset,
+            free: String(balance?.free?.[asset] ?? 0),
+            used: String(balance?.used?.[asset] ?? 0),
+            total: String(balance?.total?.[asset] ?? 0),
+            ...(tag ? { accountLabel: tag } : {}),
+          });
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch inventory for direct order ${orderId} (${label}): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
 
     const spread =
@@ -515,9 +550,11 @@ export class AdminDirectMarketMakingService {
       state: order.state,
       runtimeState,
       controllerType,
-      accountLabel: await this.readPrimaryDisplayLabel(order),
+      accountLabel: makerAccountName,
       makerAccountLabel: this.readMakerAccountLabel(order),
       takerAccountLabel: this.readTakerAccountLabel(order),
+      makerAccountName,
+      takerAccountName,
       apiKeyId: order.apiKeyId || null,
       makerApiKeyId: order.apiKeyId || null,
       takerApiKeyId: this.readTakerApiKeyId(order) || null,
@@ -1226,6 +1263,24 @@ export class AdminDirectMarketMakingService {
     }
   }
 
+  private async readApiKeyName(
+    apiKeyId: string | null | undefined,
+    fallback: string,
+  ): Promise<string> {
+    if (!apiKeyId) {
+      return fallback;
+    }
+
+    try {
+      const apiKey = await this.exchangeApiKeyService.readAPIKey(apiKeyId);
+      const apiKeyName = String(apiKey?.name || '').trim();
+
+      return apiKeyName || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   private readMakerAccountLabel(order: MarketMakingOrder): string {
     const accountLabel =
       order.strategySnapshot?.resolvedConfig?.makerAccountLabel ||
@@ -1248,9 +1303,13 @@ export class AdminDirectMarketMakingService {
   private readTakerApiKeyId(order: MarketMakingOrder): string {
     const apiKeyId = order.strategySnapshot?.resolvedConfig?.takerApiKeyId;
 
-    return typeof apiKeyId === 'string' && apiKeyId.trim().length > 0
-      ? apiKeyId.trim()
-      : '';
+    if (apiKeyId === undefined || apiKeyId === null) {
+      return '';
+    }
+
+    const normalizedApiKeyId = String(apiKeyId).trim();
+
+    return normalizedApiKeyId.length > 0 ? normalizedApiKeyId : '';
   }
 
   private readConfigString(value: unknown): string | null {

@@ -10,6 +10,7 @@
     import { darkTheme } from "$lib/stores/theme";
     import { toAdminTheme } from "$lib/theme/themes";
     let sidebarOpen = false;
+    /** @type {HTMLDialogElement | undefined} */
     let tokenExpiredDialogEl;
 
     $: if ($showTokenExpired && tokenExpiredDialogEl) {

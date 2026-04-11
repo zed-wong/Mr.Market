@@ -11,7 +11,6 @@
     export let filteredApiKeys: AdminSingleKey[] = [];
     export let strategies: MarketMakingStrategy[] = [];
     export let selectedControllerType = "";
-    export let configRows: Array<{ key: string; value: string }> = [];
 
     export let startExchangeName = "";
     export let startPair = "";

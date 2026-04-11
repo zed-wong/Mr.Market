@@ -4,6 +4,7 @@
     import { createStrategyDefinition } from "$lib/helpers/mrm/admin/strategy";
     import { CONFIG_SCHEMA_TEMPLATES } from "./configTemplates";
     import SchemaConfigForm from "./SchemaConfigForm.svelte";
+    import type { StrategyDefinitionVisibility } from "$lib/types/hufi/strategy-definition";
 
     export let show = false;
     export let isSubmitting = false;
@@ -16,7 +17,7 @@
     let controllerType = "pureMarketMaking";
     let configSchema: Record<string, unknown> = {};
     let defaultConfig: Record<string, unknown> = {};
-    let visibility = "public";
+    let visibility: StrategyDefinitionVisibility = "public";
     let createdBy = "";
 
     let schemaError = false;

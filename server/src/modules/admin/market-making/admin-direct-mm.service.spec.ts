@@ -802,9 +802,11 @@ describe('AdminDirectMarketMakingService', () => {
     expect(await Promise.resolve(result)).toEqual([
       expect.objectContaining({
         controllerType: 'dualAccountVolume',
-        accountLabel: 'api-key-1',
+        accountLabel: 'desk-1',
         makerAccountLabel: 'api-key-1',
         takerAccountLabel: 'api-key-2',
+        makerAccountName: 'desk-1',
+        takerAccountName: 'desk-2',
         makerApiKeyId: 'api-key-1',
         takerApiKeyId: 'api-key-2',
       }),
@@ -912,6 +914,61 @@ describe('AdminDirectMarketMakingService', () => {
       tradedQuoteVolume: '3456.78',
       realizedPnlQuote: '12.34',
     });
+  });
+
+  it('resolves taker api key names when snapshot stores numeric api key ids', async () => {
+    const { service, marketMakingRepository, exchangeApiKeyService } =
+      buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-2',
+      userId: 'admin-user',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'stopped',
+      source: 'admin_direct',
+      apiKeyId: '2',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      strategySnapshot: {
+        controllerType: 'dualAccountVolume',
+        resolvedConfig: {
+          makerAccountLabel: '2',
+          takerAccountLabel: '3',
+          takerApiKeyId: 3,
+          clientId: 'order-2',
+          baseTradeAmount: 5,
+          baseIntervalTime: 10,
+          numTrades: 20,
+          baseIncrementPercentage: 0.2,
+          pricePushRate: 0,
+        },
+      },
+    });
+    exchangeApiKeyService.readAPIKey.mockImplementation(async (apiKeyId) => {
+      if (String(apiKeyId) === '3') {
+        return {
+          exchange: 'binance',
+          key_id: '3',
+          name: 'desk-3',
+          api_key: 'api-key-3',
+          api_secret: 'api-secret-3',
+        };
+      }
+
+      return {
+        exchange: 'binance',
+        key_id: '2',
+        name: 'desk-2',
+        api_key: 'api-key-2',
+        api_secret: 'api-secret-2',
+      };
+    });
+
+    const result = await service.getDirectOrderStatus('order-2');
+
+    expect(result.makerAccountName).toBe('desk-2');
+    expect(result.takerApiKeyId).toBe('3');
+    expect(result.takerAccountName).toBe('desk-3');
   });
 
   it('reports active executor health in the status endpoint', async () => {

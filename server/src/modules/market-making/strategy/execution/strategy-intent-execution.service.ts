@@ -468,6 +468,33 @@ export class StrategyIntentExecutionService {
         return;
       }
 
+      const role = this.resolveIntentRole(intent) || 'unknown';
+      const cycleId = this.readMetadataString(intent, 'cycleId') || 'n/a';
+      const makerAccountLabel =
+        this.readMetadataString(intent, 'makerAccountLabel') || 'n/a';
+      const takerAccountLabel =
+        this.readMetadataString(intent, 'takerAccountLabel') || 'n/a';
+
+      this.logger.error(
+        [
+          'Intent execution failed',
+          `strategy=${intent.strategyKey}`,
+          `intent=${intent.intentId}`,
+          `cycle=${cycleId}`,
+          `exchange=${intent.exchange}`,
+          `pair=${intent.pair}`,
+          `role=${role}`,
+          `account=${intent.accountLabel || 'default'}`,
+          `maker=${makerAccountLabel}`,
+          `taker=${takerAccountLabel}`,
+          `side=${intent.side}`,
+          `qty=${intent.qty}`,
+          `price=${intent.price}`,
+          `clientId=${intent.clientId}`,
+          `error=${error instanceof Error ? error.message : String(error)}`,
+        ].join(' | '),
+      );
+
       await this.strategyIntentStoreService?.updateIntentStatus(
         intent.intentId,
         'FAILED',
