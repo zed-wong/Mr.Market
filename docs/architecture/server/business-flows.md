@@ -182,3 +182,5 @@ Why this flow exists:
 
 - Some branches are conditional, especially around withdrawal queueing and campaign join behavior, so docs should describe intended flow without overstating currently enabled runtime paths.
 - Legacy strategy aliases still exist for compatibility and should not be treated as the preferred new design.
+- Order-bound market-making runtime rows are only eligible for startup restore and tracked-order polling while the bound `MarketMakingOrder.state` is still `running`; stopped orders should now self-heal their tracked exchange rows instead of being treated as active forever after a restart.
+- Exchange execution now applies a bounded adapter timeout before releasing the shared per-exchange queue; without that guard, a hung CCXT call could block tracked-order polling inside the tick coordinator and leave the runtime spamming `Skipping tick because previous tick is still in progress`.

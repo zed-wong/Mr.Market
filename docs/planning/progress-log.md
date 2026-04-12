@@ -1,5 +1,11 @@
 # Execution Flow Changelog
 
+## 2026-04-12
+
+- Fix stale market-making runtime recovery after stop/restart: tracker modules now receive `StrategyInstance` and `MarketMakingOrder` repositories, orphan tracked orders can transition from `pending_create` to `cancelled`, and startup restore now refuses order-bound strategy rows whose bound market-making order is no longer `running`
+- Fix admin direct order-details inventory skew math: normalize base balances into quote value using the live bid/ask midpoint before rendering the allocation bar, so dual-account XIN/USDT balances no longer compare raw token counts against USDT totals
+- Bound market-making exchange adapter calls with a timeout so a hung CCXT request cannot hold the per-exchange queue forever, which previously let one stuck dual-account intent block tracker polling and keep the global tick coordinator in `previous tick is still in progress`
+
 ## 2026-04-11
 
 - Realign the admin direct market-making sandbox system spec with the `key_id`-based API key identity cutover by removing the obsolete direct-start `accountLabel` payload field, replacing legacy `exchange_index` fixtures with `key_id`, and documenting a dated dual-account volume release gate checklist
