@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-04-13
+
+- Add a `750ms` dual-account maker settlement window after the IOC leg: if the maker still looks live after the confirmation check, the runtime now cancels it instead of leaving a stale post-only order blocking later cycles
+
 ## 2026-04-12
 
 - Fix stale market-making runtime recovery after stop/restart: tracker modules now receive `StrategyInstance` and `MarketMakingOrder` repositories, orphan tracked orders can transition from `pending_create` to `cancelled`, and startup restore now refuses order-bound strategy rows whose bound market-making order is no longer `running`

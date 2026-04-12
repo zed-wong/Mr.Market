@@ -16,6 +16,9 @@ describe('StrategyIntentExecutionService', () => {
     placeLimitOrder: jest
       .fn()
       .mockResolvedValue({ id: 'order-1', status: 'open' }),
+    fetchOrder: jest
+      .fn()
+      .mockResolvedValue({ id: 'order-1', status: 'closed', filled: '1' }),
     quantizeOrder: jest.fn(
       (_exchange: string, _pair: string, qty: string, price: string) => ({
         qty,
@@ -75,20 +78,21 @@ describe('StrategyIntentExecutionService', () => {
     update: jest.fn().mockResolvedValue(undefined),
   };
 
-  const createConfigService = (executeIntents: boolean) =>
+  const createConfigService = (
+    executeIntents: boolean,
+    overrides?: Record<string, unknown>,
+  ) =>
     ({
-      get: jest.fn((key: string, defaultValue?: boolean) => {
-        if (key === 'strategy.execute_intents') {
-          return executeIntents;
-        }
-        if (key === 'strategy.intent_max_retries') {
-          return 2;
-        }
-        if (key === 'strategy.intent_retry_base_delay_ms') {
-          return 1;
-        }
+      get: jest.fn((key: string, defaultValue?: unknown) => {
+        const values: Record<string, unknown> = {
+          'strategy.execute_intents': executeIntents,
+          'strategy.intent_max_retries': 2,
+          'strategy.intent_retry_base_delay_ms': 1,
+          'strategy.dual_account_maker_settlement_timeout_ms': 0,
+          ...(overrides || {}),
+        };
 
-        return defaultValue;
+        return values[key] ?? defaultValue;
       }),
     } as unknown as ConfigService);
 
@@ -135,6 +139,11 @@ describe('StrategyIntentExecutionService', () => {
       id: 'exchange-order-1',
       status: 'canceled',
     });
+    exchangeConnectorAdapterService.fetchOrder.mockResolvedValue({
+      id: 'order-1',
+      status: 'closed',
+      filled: '1',
+    });
     exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
       (_exchange: string, _pair: string, qty: string, price: string) => ({
         qty,
@@ -142,6 +151,7 @@ describe('StrategyIntentExecutionService', () => {
       }),
     );
     exchangeOrderMappingService.countMappingsForOrder.mockResolvedValue(0);
+    exchangeOrderTrackerService.getByExchangeOrderId.mockReturnValue(undefined);
     strategyInstanceRepository.findOne.mockResolvedValue({
       strategyKey: 'u1-c1-pureMarketMaking',
       status: 'running',
@@ -270,6 +280,57 @@ describe('StrategyIntentExecutionService', () => {
       'taker',
     );
     expect(strategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'u1-c1-pureMarketMaking' },
+      expect.objectContaining({
+        parameters: expect.objectContaining({ completedCycles: 1 }),
+      }),
+    );
+  });
+
+  it('cancels a dual-account maker that remains live after the settlement window', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
+      .mockResolvedValueOnce({ id: 'taker-order', status: 'closed' });
+    exchangeConnectorAdapterService.fetchOrder.mockResolvedValueOnce({
+      id: 'maker-order',
+      status: 'open',
+      filled: '0',
+    });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_maker_settlement_timeout_ms': 1,
+      }),
+    );
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-live',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          makerDelayMs: 0,
+          cycleId: 'cycle-live',
+          orderId: 'dual-cycle-live',
+        },
+      },
+    ]);
+
+    expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order',
+      'maker',
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order',
+      'maker',
+    );
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalledWith(
       { strategyKey: 'u1-c1-pureMarketMaking' },
       expect.objectContaining({
         parameters: expect.objectContaining({ completedCycles: 1 }),

@@ -34,6 +34,7 @@ export class StrategyIntentExecutionService {
   private readonly executeIntents: boolean;
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
+  private readonly dualAccountMakerSettlementTimeoutMs: number;
   private readonly nextClientOrderSeqByOrderId = new Map<string, number>();
   private readonly stoppedExecutionReason =
     'strategy stopped before intent execution';
@@ -87,6 +88,27 @@ export class StrategyIntentExecutionService {
     if (this.retryBaseDelayMs !== parsedRetryBaseDelayMs) {
       this.logger.warn(
         `Invalid strategy.intent_retry_base_delay_ms value: ${parsedRetryBaseDelayMs}. Falling back to ${this.retryBaseDelayMs}`,
+      );
+    }
+
+    const parsedDualAccountMakerSettlementTimeoutMs = Number(
+      this.configService.get(
+        'strategy.dual_account_maker_settlement_timeout_ms',
+        750,
+      ),
+    );
+
+    this.dualAccountMakerSettlementTimeoutMs =
+      Number.isFinite(parsedDualAccountMakerSettlementTimeoutMs) &&
+      parsedDualAccountMakerSettlementTimeoutMs >= 0
+        ? Math.floor(parsedDualAccountMakerSettlementTimeoutMs)
+        : 750;
+    if (
+      this.dualAccountMakerSettlementTimeoutMs !==
+      parsedDualAccountMakerSettlementTimeoutMs
+    ) {
+      this.logger.warn(
+        `Invalid strategy.dual_account_maker_settlement_timeout_ms value: ${parsedDualAccountMakerSettlementTimeoutMs}. Falling back to ${this.dualAccountMakerSettlementTimeoutMs}`,
       );
     }
   }
@@ -277,12 +299,14 @@ export class StrategyIntentExecutionService {
             updatedAt: getRFC3339Timestamp(),
           });
           if (this.isMakerIntent(intent)) {
-            await this.executeInlineDualAccountTaker(
+            const makerSettled = await this.executeInlineDualAccountTaker(
               intent,
               String(result.id),
               this.readMetadataString(intent, 'price') || intent.price,
             );
-            await this.incrementCompletedCycles(intent.strategyKey);
+            if (makerSettled) {
+              await this.incrementCompletedCycles(intent.strategyKey);
+            }
           }
         } else {
           this.logger.warn(
@@ -578,7 +602,7 @@ export class StrategyIntentExecutionService {
     makerIntent: StrategyOrderIntent,
     makerExchangeOrderId: string,
     makerPrice: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const takerAccountLabel = this.readMetadataString(
       makerIntent,
       'takerAccountLabel',
@@ -621,7 +645,7 @@ export class StrategyIntentExecutionService {
         quantizedMaker.price,
       );
 
-      return;
+      return false;
     }
 
     const cycleId =
@@ -651,9 +675,21 @@ export class StrategyIntentExecutionService {
 
     try {
       await this.consumeIntent(takerIntent);
-      this.logger.log(
-        `Dual-account taker completed for ${makerIntent.strategyKey}`,
+      const makerSettled = await this.confirmDualAccountMakerSettlement(
+        makerIntent,
+        makerExchangeOrderId,
+        quantizedMaker.price,
       );
+
+      if (makerSettled) {
+        this.logger.log(
+          `Dual-account taker completed for ${makerIntent.strategyKey}`,
+        );
+
+        return true;
+      }
+
+      return false;
     } catch (error) {
       this.logger.warn(
         `Dual-account taker failed for ${makerIntent.strategyKey}: ${
@@ -667,6 +703,83 @@ export class StrategyIntentExecutionService {
       );
       throw error;
     }
+  }
+
+  private async confirmDualAccountMakerSettlement(
+    makerIntent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerPrice: string,
+  ): Promise<boolean> {
+    if (this.dualAccountMakerSettlementTimeoutMs > 0) {
+      await this.sleep(this.dualAccountMakerSettlementTimeoutMs);
+    }
+
+    const trackedMaker = this.exchangeOrderTrackerService?.getByExchangeOrderId(
+      makerIntent.exchange,
+      makerExchangeOrderId,
+      makerIntent.accountLabel,
+    );
+
+    if (this.isTrackedOrderTerminal(trackedMaker?.status)) {
+      return trackedMaker?.status === 'filled';
+    }
+
+    try {
+      const latest = await this.exchangeConnectorAdapterService.fetchOrder(
+        makerIntent.exchange,
+        makerIntent.pair,
+        makerExchangeOrderId,
+        makerIntent.accountLabel,
+      );
+      const normalizedStatus = this.normalizeTrackedOrderStatus(latest?.status);
+
+      if (normalizedStatus) {
+        this.exchangeOrderTrackerService?.upsertOrder({
+          orderId: this.resolveOrderIdForClientOrderId(makerIntent),
+          strategyKey: makerIntent.strategyKey,
+          exchange: makerIntent.exchange,
+          accountLabel: makerIntent.accountLabel,
+          pair: makerIntent.pair,
+          exchangeOrderId: makerExchangeOrderId,
+          clientOrderId: trackedMaker?.clientOrderId,
+          slotKey: makerIntent.slotKey,
+          role: trackedMaker?.role || 'maker',
+          side: makerIntent.side,
+          price: makerPrice,
+          qty: makerIntent.qty,
+          cumulativeFilledQty:
+            this.normalizeFilledValue(latest?.filled) ||
+            trackedMaker?.cumulativeFilledQty,
+          status: normalizedStatus,
+          createdAt: trackedMaker?.createdAt || getRFC3339Timestamp(),
+          updatedAt: getRFC3339Timestamp(),
+        });
+
+        if (normalizedStatus === 'filled') {
+          return true;
+        }
+        if (this.isTrackedOrderTerminal(normalizedStatus)) {
+          return false;
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Dual-account maker settlement refresh failed for ${makerIntent.strategyKey}:${makerExchangeOrderId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    this.logger.warn(
+      `Dual-account maker remained live after ${this.dualAccountMakerSettlementTimeoutMs}ms settlement window for ${makerIntent.strategyKey}; cancelling maker ${makerExchangeOrderId}`,
+    );
+    await this.cancelMakerAfterTakerFailure(
+      makerIntent,
+      makerExchangeOrderId,
+      makerPrice,
+    );
+
+    return false;
   }
 
   private async verifyMakerIsBest(
@@ -905,6 +1018,63 @@ export class StrategyIntentExecutionService {
     this.processedIntentIds.add(intent.intentId);
 
     return false;
+  }
+
+  private normalizeTrackedOrderStatus(
+    status: unknown,
+  ):
+    | 'open'
+    | 'partially_filled'
+    | 'pending_cancel'
+    | 'filled'
+    | 'cancelled'
+    | 'failed'
+    | null {
+    const normalized = String(status || '')
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) {
+      return null;
+    }
+    if (normalized === 'open' || normalized === 'new') {
+      return 'open';
+    }
+    if (
+      normalized === 'partially_filled' ||
+      normalized === 'partially-filled'
+    ) {
+      return 'partially_filled';
+    }
+    if (normalized === 'pending_cancel') {
+      return 'pending_cancel';
+    }
+    if (normalized === 'closed' || normalized === 'filled') {
+      return 'filled';
+    }
+    if (normalized === 'canceled' || normalized === 'cancelled') {
+      return 'cancelled';
+    }
+
+    return 'failed';
+  }
+
+  private isTrackedOrderTerminal(status: unknown): boolean {
+    return ['filled', 'cancelled', 'failed'].includes(
+      String(status || '').toLowerCase(),
+    );
+  }
+
+  private normalizeFilledValue(value: unknown): string | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+
+    return undefined;
   }
 
   private toBoolean(value: unknown, defaultValue: boolean): boolean {
