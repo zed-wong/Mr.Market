@@ -196,6 +196,30 @@ export class CampaignService {
     );
   }
 
+  async getJoinedCampaignBindings(accessToken: string): Promise<
+    Array<{
+      chainId: number;
+      campaignAddress: string;
+      exchangeName: string | null;
+    }>
+  > {
+    const { data } = await this.hufiRecordingOracleAPI.get<{
+      results: Array<Record<string, unknown>>;
+    }>('/campaigns', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    return (data.results ?? []).map((campaign) => ({
+      chainId: Number(campaign.chain_id ?? 0),
+      campaignAddress: String(
+        campaign.escrow_address ?? campaign.address ?? '',
+      ).toLowerCase(),
+      exchangeName: campaign.exchange_name
+        ? String(campaign.exchange_name).toLowerCase()
+        : null,
+    }));
+  }
+
   /**
    * Function 3: Join Campaign
    * Enroll the authenticated user into a specific HuFi campaign.

@@ -12,8 +12,8 @@ import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 
 import { AppController } from './app.controller';
 import { APIKeysConfig } from './common/entities/admin/api-keys.entity';
-import { CampaignJoin } from './common/entities/campaign/campaign-join.entity';
 import { CustomConfigEntity } from './common/entities/admin/custom-config.entity';
+import { CampaignJoin } from './common/entities/campaign/campaign-join.entity';
 import { Contribution } from './common/entities/campaign/contribution.entity';
 import { HufiScoreSnapshot } from './common/entities/campaign/hufi-score-snapshot.entity';
 import {

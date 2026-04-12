@@ -1370,8 +1370,7 @@ describe('AdminDirectMarketMakingService', () => {
       configService,
       campaignService,
       campaignJoinRepository,
-    } =
-      buildService();
+    } = buildService();
 
     configService.get.mockReturnValue('secret-key');
     exchangeApiKeyService.readDecryptedAPIKey.mockResolvedValue({
@@ -1519,7 +1518,9 @@ describe('AdminDirectMarketMakingService', () => {
     campaignService.getCampaigns.mockResolvedValue([
       { address: '0xabc', chain_id: 137 },
     ]);
-    campaignService.getJoinedCampaignKeys.mockResolvedValue(new Set(['137:0xabc']));
+    campaignService.getJoinedCampaignKeys.mockResolvedValue(
+      new Set(['137:0xabc']),
+    );
     campaignJoinRepository.find.mockResolvedValue([
       {
         id: 'binding-1',
