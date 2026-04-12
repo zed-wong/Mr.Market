@@ -1388,14 +1388,18 @@ export class StrategyService
     ts: string,
   ): Promise<ExecutorAction[]> {
     const activeSession = this.sessions.get(session.strategyKey);
-    const latestParams =
-      ((
-        await this.strategyInstanceRepository.findOne({
-          where: { strategyKey: session.strategyKey },
-        })
-      )?.parameters as DualAccountVolumeStrategyParams | undefined) ||
+    const persistedParams = (
+      await this.strategyInstanceRepository.findOne({
+        where: { strategyKey: session.strategyKey },
+      })
+    )?.parameters as Partial<DualAccountVolumeStrategyParams> | undefined;
+    const runtimeParams =
       (activeSession?.params as DualAccountVolumeStrategyParams) ||
       (session.params as DualAccountVolumeStrategyParams);
+    const latestParams = this.mergeDualAccountConfigIntoRuntime(
+      runtimeParams,
+      persistedParams,
+    );
 
     if (this.isSameActiveSession(activeSession, session) && activeSession) {
       activeSession.params = latestParams;
@@ -1485,10 +1489,10 @@ export class StrategyService
     const persistedParams = persistedStrategy?.parameters as
       | Partial<DualAccountVolumeStrategyParams>
       | undefined;
-    const mergedParams: DualAccountVolumeStrategyParams = {
-      ...params,
-      ...persistedParams,
-    };
+    const mergedParams = this.mergeDualAccountConfigIntoRuntime(
+      params,
+      persistedParams,
+    );
     const nextParams: DualAccountVolumeStrategyParams = {
       ...mergedParams,
       publishedCycles: Number(mergedParams.publishedCycles || 0) + 1,
@@ -1519,11 +1523,21 @@ export class StrategyService
       throw new Error('strategy market data provider is not available');
     }
 
-    const { bestBid, bestAsk } =
-      await this.strategyMarketDataProviderService.getBestBidAsk(
+    const trackedBestBidAsk =
+      this.strategyMarketDataProviderService.getTrackedBestBidAsk(
         params.exchangeName,
         params.symbol,
       );
+
+    if (!trackedBestBidAsk) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: tracked order book unavailable`,
+      );
+
+      return [];
+    }
+
+    const { bestBid, bestAsk } = trackedBestBidAsk;
 
     const publishedCycles = Number(params.publishedCycles || 0);
     const mid = new BigNumber(bestBid).plus(bestAsk).dividedBy(2);
@@ -4041,6 +4055,70 @@ export class StrategyService
     }
 
     return fallback;
+  }
+
+  private mergeDualAccountConfigIntoRuntime(
+    runtime: DualAccountVolumeStrategyParams,
+    persisted?: Partial<DualAccountVolumeStrategyParams>,
+  ): DualAccountVolumeStrategyParams {
+    if (!persisted) {
+      return runtime;
+    }
+
+    const merged: DualAccountVolumeStrategyParams = {
+      ...runtime,
+    };
+
+    if (typeof persisted.exchangeName === 'string') {
+      merged.exchangeName = this.readString(
+        persisted.exchangeName,
+        runtime.exchangeName,
+      );
+    }
+
+    if (typeof persisted.symbol === 'string') {
+      merged.symbol = this.readString(persisted.symbol, runtime.symbol);
+    }
+
+    if (Number.isFinite(Number(persisted.baseIncrementPercentage))) {
+      merged.baseIncrementPercentage = Number(persisted.baseIncrementPercentage);
+    }
+
+    if (Number.isFinite(Number(persisted.baseIntervalTime))) {
+      merged.baseIntervalTime = Number(persisted.baseIntervalTime);
+    }
+
+    if (Number.isFinite(Number(persisted.baseTradeAmount))) {
+      merged.baseTradeAmount = Number(persisted.baseTradeAmount);
+    }
+
+    if (Number.isFinite(Number(persisted.numTrades))) {
+      merged.numTrades = Number(persisted.numTrades);
+    }
+
+    if (Number.isFinite(Number(persisted.pricePushRate))) {
+      merged.pricePushRate = Number(persisted.pricePushRate);
+    }
+
+    if (
+      persisted.postOnlySide === 'buy' ||
+      persisted.postOnlySide === 'sell' ||
+      persisted.postOnlySide === undefined
+    ) {
+      merged.postOnlySide = persisted.postOnlySide;
+    }
+
+    if (typeof persisted.dynamicRoleSwitching === 'boolean') {
+      merged.dynamicRoleSwitching = persisted.dynamicRoleSwitching;
+    }
+
+    if (persisted.targetQuoteVolume === undefined) {
+      merged.targetQuoteVolume = undefined;
+    } else if (Number.isFinite(Number(persisted.targetQuoteVolume))) {
+      merged.targetQuoteVolume = Number(persisted.targetQuoteVolume);
+    }
+
+    return merged;
   }
 
   private toErrorDetails(error: unknown): { message: string; stack?: string } {

@@ -133,6 +133,29 @@ describe('StrategyMarketDataProviderService', () => {
     ).not.toHaveBeenCalled();
   });
 
+  it('returns tracked best bid/ask without connector fallback', () => {
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[30000, 1]],
+      asks: [[30001, 1]],
+      sequence: 2,
+    });
+
+    const result = service.getTrackedBestBidAsk('binance', 'BTC/USDT');
+
+    expect(result).toEqual({ bestBid: 30000, bestAsk: 30001 });
+    expect(
+      exchangeConnectorAdapterService.fetchOrderBook,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('returns null when tracked best bid/ask is unavailable', () => {
+    orderBookTrackerService.getOrderBook.mockReturnValue(undefined);
+
+    const result = service.getTrackedBestBidAsk('binance', 'BTC/USDT');
+
+    expect(result).toBeNull();
+  });
+
   it('loads full order book from connector fallback', async () => {
     orderBookTrackerService.getOrderBook.mockReturnValue(undefined);
     exchangeConnectorAdapterService.fetchOrderBook.mockResolvedValue({

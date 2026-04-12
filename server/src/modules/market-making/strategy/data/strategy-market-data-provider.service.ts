@@ -146,18 +146,10 @@ export class StrategyMarketDataProviderService {
     exchangeName: string,
     pair: string,
   ): Promise<{ bestBid: number; bestAsk: number }> {
-    const tracked = this.orderBookTrackerService.getOrderBook(
-      exchangeName,
-      pair,
-    );
+    const tracked = this.getTrackedBestBidAsk(exchangeName, pair);
 
     if (tracked) {
-      const trackedBestBid = this.toPositiveNumber(tracked.bids?.[0]?.[0]);
-      const trackedBestAsk = this.toPositiveNumber(tracked.asks?.[0]?.[0]);
-
-      if (trackedBestBid !== undefined && trackedBestAsk !== undefined) {
-        return { bestBid: trackedBestBid, bestAsk: trackedBestAsk };
-      }
+      return tracked;
     }
 
     try {
@@ -194,6 +186,27 @@ export class StrategyMarketDataProviderService {
     }
 
     throw new Error('no usable bid/ask from tracker, order book, or ticker');
+  }
+
+  getTrackedBestBidAsk(
+    exchangeName: string,
+    pair: string,
+  ): { bestBid: number; bestAsk: number } | null {
+    const tracked = this.orderBookTrackerService.getOrderBook(
+      exchangeName,
+      pair,
+    );
+
+    if (tracked) {
+      const trackedBestBid = this.toPositiveNumber(tracked.bids?.[0]?.[0]);
+      const trackedBestAsk = this.toPositiveNumber(tracked.asks?.[0]?.[0]);
+
+      if (trackedBestBid !== undefined && trackedBestAsk !== undefined) {
+        return { bestBid: trackedBestBid, bestAsk: trackedBestAsk };
+      }
+    }
+
+    return null;
   }
 
   async getOrderBook(

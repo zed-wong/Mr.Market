@@ -88,6 +88,7 @@ describe('StrategyService', () => {
   };
   let strategyMarketDataProviderService: {
     getReferencePrice: jest.Mock;
+    getTrackedBestBidAsk: jest.Mock;
     getBestBidAsk: jest.Mock;
     getOrderBook: jest.Mock;
   };
@@ -173,6 +174,9 @@ describe('StrategyService', () => {
     };
     strategyMarketDataProviderService = {
       getReferencePrice: jest.fn().mockResolvedValue(100.5),
+      getTrackedBestBidAsk: jest
+        .fn()
+        .mockReturnValue({ bestBid: 100, bestAsk: 101 }),
       getBestBidAsk: jest
         .fn()
         .mockResolvedValue({ bestBid: 100, bestAsk: 101 }),
@@ -1701,7 +1705,7 @@ describe('StrategyService', () => {
     );
   });
 
-  it('preserves live dual-account completion counters when persisting published cycles', async () => {
+  it('preserves only hot-config fields while keeping runtime dual-account counters', async () => {
     const session = {
       runId: 'run-dual-merge',
       strategyKey: 'user1-client1-dualAccountVolume',
@@ -1739,6 +1743,7 @@ describe('StrategyService', () => {
         publishedCycles: 0,
         completedCycles: 1,
         tradedQuoteVolume: 100,
+        baseIntervalTime: 15,
       },
     });
 
@@ -1752,11 +1757,104 @@ describe('StrategyService', () => {
       expect.objectContaining({
         parameters: expect.objectContaining({
           publishedCycles: 1,
-          completedCycles: 1,
-          tradedQuoteVolume: 100,
+          completedCycles: 0,
+          baseIntervalTime: 15,
         }),
       }),
     );
+  });
+
+  it('does not let persisted dual-account counters overwrite runtime counters', async () => {
+    const session = {
+      runId: 'run-dual-runtime-wins',
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 5,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: 0,
+        publishedCycles: 3,
+        completedCycles: 2,
+        tradedQuoteVolume: 250,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: {
+        ...session.params,
+        publishedCycles: 1,
+        completedCycles: 0,
+        tradedQuoteVolume: 100,
+        baseIntervalTime: 30,
+      },
+    });
+
+    (service as any).sessions.set(session.strategyKey, session);
+    await service.onDualAccountVolumeActionsPublished(session as any, [
+      { type: 'CREATE_LIMIT_ORDER' } as any,
+    ]);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          publishedCycles: 4,
+          completedCycles: 2,
+          tradedQuoteVolume: 250,
+          baseIntervalTime: 30,
+        }),
+      }),
+    );
+  });
+
+  it('skips dual-account volume actions when tracked order book is unavailable', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue(null);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
   });
 
   it('switches dual-account maker/taker roles when dynamic switching finds higher capacity on the taker side', async () => {
