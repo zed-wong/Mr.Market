@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
@@ -54,6 +56,7 @@ type FillLogEntry = {
 export class ExchangeOrderTrackerService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new CustomLogger(ExchangeOrderTrackerService.name);
   private static readonly terminalStates = new Set<TrackedOrderState>([
     'filled',
     'cancelled',
@@ -102,6 +105,9 @@ export class ExchangeOrderTrackerService
     @Optional()
     @InjectRepository(TrackedOrderEntity)
     private readonly trackedOrderRepository?: Repository<TrackedOrderEntity>,
+    @Optional()
+    @InjectRepository(StrategyInstance)
+    private readonly strategyInstanceRepository?: Repository<StrategyInstance>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -259,6 +265,20 @@ export class ExchangeOrderTrackerService
         order.accountLabel,
         order.exchangeOrderId,
       );
+
+      if (!(await this.isStrategyOrderStillActive(order.strategyKey))) {
+        this.upsertOrder({
+          ...order,
+          status: 'cancelled',
+          updatedAt: getRFC3339Timestamp(),
+        });
+        this.lastPolledAtByOrderKey.delete(orderKey);
+        this.logger.warn(
+          `Self-healed orphan tracked order ${order.strategyKey}:${order.exchangeOrderId} by marking it cancelled because the strategy is no longer running`,
+        );
+        continue;
+      }
+
       let latest: Awaited<
         ReturnType<ExchangeConnectorAdapterService['fetchOrder']>
       >;
@@ -439,6 +459,20 @@ export class ExchangeOrderTrackerService
     }
 
     return 'failed';
+  }
+
+  private async isStrategyOrderStillActive(
+    strategyKey: string,
+  ): Promise<boolean> {
+    if (!this.strategyInstanceRepository) {
+      return true;
+    }
+
+    const strategyInstance = await this.strategyInstanceRepository.findOne({
+      where: { strategyKey },
+    });
+
+    return strategyInstance?.status === 'running';
   }
 
   private toKey(

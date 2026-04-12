@@ -181,7 +181,10 @@
     $: orders = initialOrders;
     $: campaigns = initialCampaigns;
     $: activeOrdersCount = orders.filter(
-        (o) => o.runtimeState === "running" || o.runtimeState === "active",
+        (o) =>
+            o.runtimeState === "running" ||
+            o.runtimeState === "active" ||
+            o.runtimeState === "stale",
     ).length;
     $: stoppedOrdersCount = orders.filter(
         (o) => o.runtimeState === "stopped",
@@ -487,7 +490,9 @@
         try {
             const activeOrders = orders.filter(
                 (o) =>
-                    o.runtimeState === "running" || o.runtimeState === "active",
+                    o.runtimeState === "running" ||
+                    o.runtimeState === "active" ||
+                    o.runtimeState === "stale",
             );
             const activeIds = new Set(activeOrders.map((o) => o.orderId));
             await Promise.all(
@@ -495,7 +500,11 @@
             );
             orders = orders.map((o) =>
                 activeIds.has(o.orderId)
-                    ? { ...o, runtimeState: "stopped" as const }
+                    ? {
+                          ...o,
+                          runtimeState: "stopped" as const,
+                          state: "stopped",
+                      }
                     : o,
             );
             toast.success($_("admin_direct_mm_stop_all_success"), {
@@ -524,7 +533,11 @@
             await stopDirectOrder(stoppedOrderId, token);
             orders = orders.map((o) =>
                 o.orderId === stoppedOrderId
-                    ? { ...o, runtimeState: "stopped" as const }
+                    ? {
+                          ...o,
+                          runtimeState: "stopped" as const,
+                          state: "stopped",
+                      }
                     : o,
             );
             toast.success($_("admin_direct_mm_stop_success"), {
@@ -561,7 +574,11 @@
             const result = await resumeDirectOrder(order.orderId, token);
             orders = orders.map((o) =>
                 o.orderId === order.orderId
-                    ? { ...o, runtimeState: "running" as const }
+                    ? {
+                          ...o,
+                          runtimeState: "running" as const,
+                          state: "running",
+                      }
                     : o,
             );
             toast.success(

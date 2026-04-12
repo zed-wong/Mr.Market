@@ -3712,6 +3712,7 @@ export class StrategyService
           session.strategyType === 'dualAccountVolume'
         ) {
           await this.cancelTrackedOrdersForStrategy(session.strategyKey);
+          await this.forceTrackedOrdersTerminal(session.strategyKey);
         }
 
         await this.strategyIntentStoreService?.cancelPendingIntents(
@@ -3797,6 +3798,21 @@ export class StrategyService
       );
 
       await this.sleep(200);
+    }
+  }
+
+  private async forceTrackedOrdersTerminal(
+    strategyKey: string,
+    status: TrackedOrder['status'] = 'cancelled',
+  ): Promise<void> {
+    const trackedOrders = this.getCancelableTrackedOrders(strategyKey);
+
+    for (const order of trackedOrders) {
+      this.exchangeOrderTrackerService?.upsertOrder({
+        ...order,
+        status,
+        updatedAt: getRFC3339Timestamp(),
+      });
     }
   }
 

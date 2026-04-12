@@ -16,6 +16,12 @@ describe('StrategyIntentExecutionService', () => {
     placeLimitOrder: jest
       .fn()
       .mockResolvedValue({ id: 'order-1', status: 'open' }),
+    quantizeOrder: jest.fn(
+      (_exchange: string, _pair: string, qty: string, price: string) => ({
+        qty,
+        price,
+      }),
+    ),
     cancelOrder: jest
       .fn()
       .mockResolvedValue({ id: 'exchange-order-1', status: 'canceled' }),
@@ -129,6 +135,12 @@ describe('StrategyIntentExecutionService', () => {
       id: 'exchange-order-1',
       status: 'canceled',
     });
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+      (_exchange: string, _pair: string, qty: string, price: string) => ({
+        qty,
+        price,
+      }),
+    );
     exchangeOrderMappingService.countMappingsForOrder.mockResolvedValue(0);
     strategyInstanceRepository.findOne.mockResolvedValue({
       strategyKey: 'u1-c1-pureMarketMaking',

@@ -598,7 +598,14 @@ export class StrategyIntentExecutionService {
       await this.sleep(makerDelayMs);
     }
 
-    const makerPriceBn = new BigNumber(makerPrice);
+    const quantizedMaker = this.exchangeConnectorAdapterService.quantizeOrder(
+      makerIntent.exchange,
+      makerIntent.pair,
+      makerIntent.qty,
+      makerPrice,
+      makerIntent.accountLabel,
+    );
+    const makerPriceBn = new BigNumber(quantizedMaker.price);
     const isMakerStillBest = await this.verifyMakerIsBest(
       makerIntent,
       makerPriceBn,
@@ -606,12 +613,12 @@ export class StrategyIntentExecutionService {
 
     if (!isMakerStillBest) {
       this.logger.warn(
-        `Dual-account taker skipped: maker ${makerIntent.side} @${makerPrice} is no longer best for ${makerIntent.strategyKey}, cancelling maker`,
+        `Dual-account taker skipped: maker ${makerIntent.side} @${quantizedMaker.price} is no longer best for ${makerIntent.strategyKey}, cancelling maker`,
       );
       await this.cancelMakerAfterTakerFailure(
         makerIntent,
         makerExchangeOrderId,
-        makerPrice,
+        quantizedMaker.price,
       );
 
       return;
@@ -625,7 +632,7 @@ export class StrategyIntentExecutionService {
       intentId: `${makerIntent.intentId}:taker`,
       accountLabel: takerAccountLabel,
       side: takerSide,
-      price: makerPrice,
+      price: quantizedMaker.price,
       timeInForce: 'IOC',
       postOnly: false,
       metadata: {
@@ -639,7 +646,7 @@ export class StrategyIntentExecutionService {
     };
 
     this.logger.log(
-      `Dual-account taker executing ${takerSide} ${takerIntent.qty}@${makerPrice} IOC account=${takerAccountLabel} for ${makerIntent.strategyKey}`,
+      `Dual-account taker executing ${takerSide} ${takerIntent.qty}@${quantizedMaker.price} IOC account=${takerAccountLabel} for ${makerIntent.strategyKey}`,
     );
 
     try {
@@ -656,7 +663,7 @@ export class StrategyIntentExecutionService {
       await this.cancelMakerAfterTakerFailure(
         makerIntent,
         makerExchangeOrderId,
-        makerPrice,
+        quantizedMaker.price,
       );
       throw error;
     }
@@ -752,14 +759,40 @@ export class StrategyIntentExecutionService {
         updatedAt: getRFC3339Timestamp(),
       });
     } catch (cancelError) {
+      const cancelMessage =
+        cancelError instanceof Error
+          ? cancelError.message
+          : String(cancelError);
+      const normalizedCancelMessage = cancelMessage.toLowerCase();
+
+      if (
+        normalizedCancelMessage.includes('code":-2011') ||
+        normalizedCancelMessage.includes("code':-2011") ||
+        normalizedCancelMessage.includes('order cancelled')
+      ) {
+        this.exchangeOrderTrackerService?.upsertOrder({
+          orderId: this.resolveOrderIdForClientOrderId(makerIntent),
+          strategyKey: makerIntent.strategyKey,
+          exchange: makerIntent.exchange,
+          accountLabel: makerIntent.accountLabel,
+          pair: makerIntent.pair,
+          exchangeOrderId: makerExchangeOrderId,
+          clientOrderId: undefined,
+          slotKey: makerIntent.slotKey,
+          role: 'maker',
+          side: makerIntent.side,
+          price: makerPrice,
+          qty: makerIntent.qty,
+          status: 'cancelled',
+          createdAt: getRFC3339Timestamp(),
+          updatedAt: getRFC3339Timestamp(),
+        });
+
+        return;
+      }
+
       this.logger.warn(
-        `Best-effort dual-account maker cancel failed for ${
-          makerIntent.strategyKey
-        }:${makerExchangeOrderId}: ${
-          cancelError instanceof Error
-            ? cancelError.message
-            : String(cancelError)
-        }`,
+        `Best-effort dual-account maker cancel failed for ${makerIntent.strategyKey}:${makerExchangeOrderId}: ${cancelMessage}`,
       );
     }
   }

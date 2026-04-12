@@ -44,15 +44,11 @@ export class CampaignService {
   }
 
   async getCampaigns(): Promise<CampaignDataDto[]> {
-    this.logger.log('Getting HuFi campaigns');
-
     try {
       const { data } =
         await this.hufiCampaignLauncherAPI.get<CampaignListResponseDto>(
           '/campaigns?chain_id=137&status=active&limit=100&page=1',
         );
-
-      this.logger.log('Finished getting HuFi campaigns');
 
       return data.results;
     } catch (error) {

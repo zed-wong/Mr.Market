@@ -137,7 +137,13 @@
                             </span>
                             <span class="text-xs text-base-content/50">
                                 {$_("admin_direct_mm_api_key")}:
-                                <span>{String(campaign.apiKeyName || campaign.apiKeyId || "Deleted")}</span>
+                                <span
+                                    >{String(
+                                        campaign.apiKeyName ||
+                                            campaign.apiKeyId ||
+                                            "Deleted",
+                                    )}</span
+                                >
                             </span>
                         </div>
                         <span
