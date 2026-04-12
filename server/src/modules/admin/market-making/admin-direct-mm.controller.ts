@@ -60,7 +60,8 @@ export class AdminDirectMarketMakingController {
 
   @Get('direct-strategies')
   @ApiOperation({
-    summary: 'List admin direct strategy definitions (public + admin visibility)',
+    summary:
+      'List admin direct strategy definitions (public + admin visibility)',
   })
   async listDirectStrategies() {
     return this.adminDirectMarketMakingService.listDirectStrategyDefinitions();

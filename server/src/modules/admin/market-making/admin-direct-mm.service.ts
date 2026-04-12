@@ -399,7 +399,10 @@ export class AdminDirectMarketMakingService {
 
     const controllerType = this.readControllerType(order);
     const strategyKey = this.buildStrategyKey(order);
-    const resolvedConfig = await this.resolveLiveOrderConfig(order, strategyKey);
+    const resolvedConfig = await this.resolveLiveOrderConfig(
+      order,
+      strategyKey,
+    );
     const primaryAccountLabel = this.readPrimaryAccountLabel(order);
     const session = this.getRuntimeSession(orderId);
     const lastTickAt = this.getEstimatedLastTickAt(session);
@@ -603,9 +606,9 @@ export class AdminDirectMarketMakingService {
       };
     } catch (error) {
       this.logger.warn(
-        `Failed to read live strategy params for direct order ${order.orderId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to read live strategy params for direct order ${
+          order.orderId
+        }: ${error instanceof Error ? error.message : String(error)}`,
       );
 
       return snapshotConfig;

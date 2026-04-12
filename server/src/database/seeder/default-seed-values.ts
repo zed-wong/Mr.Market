@@ -88,7 +88,8 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
   {
     key: 'dual_account_volume',
     name: 'Dual Account Volume',
-    description: 'Generate paired maker/taker volume for admin direct market making',
+    description:
+      'Generate paired maker/taker volume for admin direct market making',
     controllerType: 'dualAccountVolume',
     configSchema: (
       dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig

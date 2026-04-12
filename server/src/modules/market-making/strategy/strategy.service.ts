@@ -4081,7 +4081,9 @@ export class StrategyService
     }
 
     if (Number.isFinite(Number(persisted.baseIncrementPercentage))) {
-      merged.baseIncrementPercentage = Number(persisted.baseIncrementPercentage);
+      merged.baseIncrementPercentage = Number(
+        persisted.baseIncrementPercentage,
+      );
     }
 
     if (Number.isFinite(Number(persisted.baseIntervalTime))) {

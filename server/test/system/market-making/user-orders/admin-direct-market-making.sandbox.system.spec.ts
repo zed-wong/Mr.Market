@@ -63,7 +63,9 @@ describe('Admin direct market making runtime (system)', () => {
     const exchangeInitService = moduleRef.get(ExchangeInitService);
     const executorRegistry = moduleRef.get(ExecutorRegistry);
     const strategyService = moduleRef.get(StrategyService);
-    const strategyIntentStoreService = moduleRef.get(StrategyIntentStoreService);
+    const strategyIntentStoreService = moduleRef.get(
+      StrategyIntentStoreService,
+    );
     const exchangeOrderTrackerService = moduleRef.get(
       ExchangeOrderTrackerService,
     );

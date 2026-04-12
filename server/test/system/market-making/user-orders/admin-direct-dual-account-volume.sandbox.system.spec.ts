@@ -84,7 +84,9 @@ describeSandbox('Admin direct dual-account volume runtime (system)', () => {
     const exchangeInitService = moduleRef.get(ExchangeInitService);
     const executorRegistry = moduleRef.get(ExecutorRegistry);
     const strategyService = moduleRef.get(StrategyService);
-    const strategyIntentStoreService = moduleRef.get(StrategyIntentStoreService);
+    const strategyIntentStoreService = moduleRef.get(
+      StrategyIntentStoreService,
+    );
     const exchangeOrderTrackerService = moduleRef.get(
       ExchangeOrderTrackerService,
     );
@@ -124,24 +126,26 @@ describeSandbox('Admin direct dual-account volume runtime (system)', () => {
         getDefinitionControllerType: jest
           .fn()
           .mockReturnValue('dualAccountVolume'),
-        resolveForOrderSnapshot: jest.fn().mockImplementation(
-          async (
-            _strategyDefinitionId: string,
-            overrides: Record<string, unknown>,
-          ) => ({
-            controllerType: 'dualAccountVolume',
-            resolvedConfig: {
-              ...overrides,
-              baseTradeAmount: 0.001,
-              baseIntervalTime: 10,
-              numTrades: 2,
-              baseIncrementPercentage: 0.1,
-              pricePushRate: 0,
-              makerDelayMs: 1000,
-              dynamicRoleSwitching: false,
-            },
-          }),
-        ),
+        resolveForOrderSnapshot: jest
+          .fn()
+          .mockImplementation(
+            async (
+              _strategyDefinitionId: string,
+              overrides: Record<string, unknown>,
+            ) => ({
+              controllerType: 'dualAccountVolume',
+              resolvedConfig: {
+                ...overrides,
+                baseTradeAmount: 0.001,
+                baseIntervalTime: 10,
+                numTrades: 2,
+                baseIncrementPercentage: 0.1,
+                pricePushRate: 0,
+                makerDelayMs: 1000,
+                dynamicRoleSwitching: false,
+              },
+            }),
+          ),
       } as any,
       {
         readAPIKey: jest.fn().mockImplementation(async (apiKeyId: string) => {
@@ -206,6 +210,7 @@ describeSandbox('Admin direct dual-account volume runtime (system)', () => {
         strategyType: 'dualAccountVolume',
       },
     });
+
     log.result('post-start runtime snapshot', {
       hasSession: Boolean(initialSession),
       sessionCadenceMs: initialSession?.cadenceMs,
@@ -229,18 +234,17 @@ describeSandbox('Admin direct dual-account volume runtime (system)', () => {
       started.orderId,
     );
     const postTickErrors =
-      postTickExecutor &&
-      typeof postTickExecutor.getRecentErrors === 'function'
+      postTickExecutor && typeof postTickExecutor.getRecentErrors === 'function'
         ? postTickExecutor.getRecentErrors(started.orderId)
         : [];
+
     log.result('post-tick strategy snapshot', {
       strategyKey: afterTickStrategy?.strategyKey,
       publishedCycles: afterTickStrategy?.parameters?.publishedCycles,
       completedCycles: afterTickStrategy?.parameters?.completedCycles,
-      latestIntents:
-        strategyService.getLatestIntentsForStrategy(
-          afterTickStrategy?.strategyKey || '',
-        ).length,
+      latestIntents: strategyService.getLatestIntentsForStrategy(
+        afterTickStrategy?.strategyKey || '',
+      ).length,
       recentErrors: postTickErrors,
     });
 
@@ -260,7 +264,9 @@ describeSandbox('Admin direct dual-account volume runtime (system)', () => {
         timeoutMs: 30000,
       },
     );
-    const status = await adminDirectService.getDirectOrderStatus(started.orderId);
+    const status = await adminDirectService.getDirectOrderStatus(
+      started.orderId,
+    );
 
     const strategyKey = createStrategyKey({
       type: 'dualAccountVolume',
@@ -299,9 +305,9 @@ describeSandbox('Admin direct dual-account volume runtime (system)', () => {
     expect(status.makerAccountName).toBe('Sandbox Maker');
     expect(status.takerAccountName).toBe('Sandbox Taker');
     expect(status.orderConfig.publishedCycles).toBeGreaterThanOrEqual(1);
-    expect(Number(liveStrategy?.parameters?.publishedCycles || 0)).toBeGreaterThanOrEqual(
-      1,
-    );
+    expect(
+      Number(liveStrategy?.parameters?.publishedCycles || 0),
+    ).toBeGreaterThanOrEqual(1);
     expect(status.inventoryBalances).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ accountLabel: 'maker' }),
@@ -324,9 +330,9 @@ describeSandbox('Admin direct dual-account volume runtime (system)', () => {
     expect(new Set(executionHistory.map((entry) => entry.side))).toEqual(
       new Set(['buy', 'sell']),
     );
-    expect(Number(finalLiveStrategy?.parameters?.completedCycles || 0)).toBeGreaterThanOrEqual(
-      1,
-    );
+    expect(
+      Number(finalLiveStrategy?.parameters?.completedCycles || 0),
+    ).toBeGreaterThanOrEqual(1);
     expect(finalStatus.orderConfig.completedCycles).toBeGreaterThanOrEqual(1);
 
     log.step('stopping dual-account direct order');
