@@ -19,6 +19,13 @@ describe('AdminDirectMarketMakingService', () => {
       findOne: jest.fn(),
       find: jest.fn(),
     };
+    const campaignJoinRepository = {
+      create: jest.fn((payload) => payload),
+      save: jest.fn(async (payload) => payload),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
+    };
     const userOrdersService = {
       createMarketMaking: jest.fn(async (payload) => payload),
       updateMarketMakingOrderState: jest.fn().mockResolvedValue(undefined),
@@ -141,6 +148,7 @@ describe('AdminDirectMarketMakingService', () => {
       marketMakingRepository as any,
       growdataMarketMakingPairRepository as any,
       strategyDefinitionRepository as any,
+      campaignJoinRepository as any,
       userOrdersService as any,
       marketMakingRuntimeService as any,
       strategyConfigResolver as any,
@@ -161,6 +169,7 @@ describe('AdminDirectMarketMakingService', () => {
       marketMakingRepository,
       growdataMarketMakingPairRepository,
       strategyDefinitionRepository,
+      campaignJoinRepository,
       userOrdersService,
       marketMakingRuntimeService,
       strategyConfigResolver,
@@ -1337,13 +1346,31 @@ describe('AdminDirectMarketMakingService', () => {
     );
 
     await expect(service.listCampaigns()).resolves.toEqual([
-      { address: '0xabc', chain_id: 1, joined: true },
-      { address: '0xdef', chain_id: 137, joined: false },
+      {
+        address: '0xabc',
+        chain_id: 1,
+        joined: true,
+        apiKeyId: null,
+        apiKeyName: null,
+      },
+      {
+        address: '0xdef',
+        chain_id: 137,
+        joined: false,
+        apiKeyId: null,
+        apiKeyName: null,
+      },
     ]);
   });
 
   it('joins campaign synchronously through HuFi proxy', async () => {
-    const { service, exchangeApiKeyService, configService, campaignService } =
+    const {
+      service,
+      exchangeApiKeyService,
+      configService,
+      campaignService,
+      campaignJoinRepository,
+    } =
       buildService();
 
     configService.get.mockReturnValue('secret-key');
@@ -1377,6 +1404,7 @@ describe('AdminDirectMarketMakingService', () => {
       1,
       '0x0000000000000000000000000000000000000002',
     );
+    expect(campaignJoinRepository.save).toHaveBeenCalled();
   });
 
   it('defaults campaign join chain id to 137 when request chainId is invalid', async () => {
@@ -1427,7 +1455,13 @@ describe('AdminDirectMarketMakingService', () => {
   it('fails synchronously when exchange api key is incomplete', async () => {
     const { service, exchangeApiKeyService, configService } = buildService();
 
-    configService.get.mockReturnValue('secret-key');
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'WEB3_PRIVATE_KEY' || key === 'web3.private_key') {
+        return '0x59c6995e998f97a5a0044966f094538e0d7d4e1b3f43b4374c1c1ff717a8ba4c';
+      }
+
+      return undefined;
+    });
     exchangeApiKeyService.readDecryptedAPIKey.mockResolvedValue({
       exchange: 'binance',
       api_key: 'api-key',
@@ -1469,5 +1503,44 @@ describe('AdminDirectMarketMakingService', () => {
       configured: false,
       address: null,
     });
+  });
+
+  it('returns joined campaign api key name from stored binding', async () => {
+    const { service, campaignService, campaignJoinRepository, configService } =
+      buildService();
+
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'WEB3_PRIVATE_KEY' || key === 'web3.private_key') {
+        return '0x59c6995e998f97a5a0044966f094538e0d7d4e1b3f43b4374c1c1ff717a8ba4c';
+      }
+
+      return undefined;
+    });
+    campaignService.getCampaigns.mockResolvedValue([
+      { address: '0xabc', chain_id: 137 },
+    ]);
+    campaignService.getJoinedCampaignKeys.mockResolvedValue(new Set(['137:0xabc']));
+    campaignJoinRepository.find.mockResolvedValue([
+      {
+        id: 'binding-1',
+        evmAddress: '0x18010af8cdbc0aa92f0d3d38bbde742ef6d265ad',
+        apiKeyId: 'api-key-1',
+        chainId: 137,
+        campaignAddress: '0xabc',
+        status: 'joined',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+    ]);
+
+    await expect(service.listCampaigns()).resolves.toEqual([
+      {
+        address: '0xabc',
+        chain_id: 137,
+        joined: true,
+        apiKeyId: 'api-key-1',
+        apiKeyName: 'desk-1',
+      },
+    ]);
   });
 });

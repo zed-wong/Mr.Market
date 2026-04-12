@@ -10,6 +10,8 @@ import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
 import { randomUUID } from 'crypto';
 import { Wallet } from 'ethers';
+import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
+import { CampaignJoin } from 'src/common/entities/campaign/campaign-join.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
@@ -81,6 +83,8 @@ export class AdminDirectMarketMakingService {
     private readonly growdataMarketMakingPairRepository: Repository<GrowdataMarketMakingPair>,
     @InjectRepository(StrategyDefinition)
     private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
+    @InjectRepository(CampaignJoin)
+    private readonly campaignJoinRepository: Repository<CampaignJoin>,
     private readonly userOrdersService: UserOrdersService,
     private readonly marketMakingRuntimeService: MarketMakingRuntimeService,
     private readonly strategyConfigResolver: StrategyConfigResolverService,
@@ -658,7 +662,12 @@ export class AdminDirectMarketMakingService {
     const walletStatus = await this.getWalletStatus();
 
     if (!walletStatus.address) {
-      return campaigns.map((campaign) => ({ ...campaign, joined: false }));
+      return campaigns.map((campaign) => ({
+        ...campaign,
+        joined: false,
+        apiKeyId: null,
+        apiKeyName: null,
+      }));
     }
 
     let joinedKeys: Set<string>;
@@ -686,10 +695,35 @@ export class AdminDirectMarketMakingService {
       joinedKeys = new Set();
     }
 
+    const joinedBindings = await this.campaignJoinRepository.find({
+      where: {
+        evmAddress: walletStatus.address.toLowerCase(),
+        status: 'joined',
+      },
+    });
+    const apiKeyNamesById = await this.readApiKeyNamesById(joinedBindings);
+    const bindingsByCampaignKey = new Map<string, CampaignJoin>();
+
+    for (const binding of joinedBindings) {
+      bindingsByCampaignKey.set(
+        `${binding.chainId}:${binding.campaignAddress.toLowerCase()}`,
+        binding,
+      );
+    }
+
     return campaigns.map((campaign) => {
       const key = `${campaign.chain_id}:${campaign.address.toLowerCase()}`;
+      const binding = bindingsByCampaignKey.get(key);
+      const apiKeyId = binding?.apiKeyId || null;
+      const apiKeyName =
+        apiKeyId === null ? null : apiKeyNamesById.get(apiKeyId) || 'Deleted';
 
-      return { ...campaign, joined: joinedKeys.has(key) };
+      return {
+        ...campaign,
+        joined: joinedKeys.has(key),
+        apiKeyId,
+        apiKeyName,
+      };
     });
   }
 
@@ -733,12 +767,73 @@ export class AdminDirectMarketMakingService {
       dto.campaignAddress.toLowerCase(),
     );
 
+    const timestamp = getRFC3339Timestamp();
+    const existingBinding = await this.campaignJoinRepository.findOne({
+      where: {
+        evmAddress: dto.evmAddress.toLowerCase(),
+        apiKeyId: dto.apiKeyId,
+        chainId: normalizedChainId,
+        campaignAddress: dto.campaignAddress.toLowerCase(),
+      },
+    });
+
+    if (existingBinding) {
+      await this.campaignJoinRepository.update(
+        { id: existingBinding.id },
+        {
+          status: 'joined',
+          updatedAt: timestamp,
+        },
+      );
+    } else {
+      await this.campaignJoinRepository.save(
+        this.campaignJoinRepository.create({
+          id: randomUUID(),
+          evmAddress: dto.evmAddress.toLowerCase(),
+          apiKeyId: dto.apiKeyId,
+          chainId: normalizedChainId,
+          campaignAddress: dto.campaignAddress.toLowerCase(),
+          status: 'joined',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }),
+      );
+    }
+
     return {
       status: 'joined',
       apiKeyId: dto.apiKeyId,
       campaignAddress: dto.campaignAddress.toLowerCase(),
       chainId: normalizedChainId,
     };
+  }
+
+  private async readApiKeyNamesById(
+    bindings: CampaignJoin[],
+  ): Promise<Map<string, string>> {
+    const apiKeyIds = Array.from(
+      new Set(bindings.map((binding) => binding.apiKeyId).filter(Boolean)),
+    );
+
+    if (apiKeyIds.length === 0) {
+      return new Map();
+    }
+
+    const apiKeys = await Promise.all(
+      apiKeyIds.map(async (apiKeyId) => {
+        const apiKey = await this.exchangeApiKeyService.readAPIKey(apiKeyId);
+
+        return apiKey ? ({ apiKeyId, apiKey } as const) : null;
+      }),
+    );
+
+    return new Map(
+      apiKeys
+        .filter((entry): entry is { apiKeyId: string; apiKey: APIKeysConfig } =>
+          Boolean(entry),
+        )
+        .map(({ apiKeyId, apiKey }) => [apiKeyId, apiKey.name]),
+    );
   }
 
   async getWalletStatus(): Promise<{

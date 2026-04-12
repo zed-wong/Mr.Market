@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CustomConfigEntity } from 'src/common/entities/admin/custom-config.entity';
+import { CampaignJoin } from 'src/common/entities/campaign/campaign-join.entity';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
@@ -52,6 +53,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
       StrategyDefinition,
       MarketMakingOrder,
       MixinUser,
+      CampaignJoin,
       Contribution,
       Performance,
       CustomConfigEntity,

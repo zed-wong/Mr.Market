@@ -111,6 +111,8 @@ export interface DirectOrderStatus {
 
 export interface AdminCampaign {
   joined: boolean;
+  apiKeyId?: string | null;
+  apiKeyName?: string | null;
   [key: string]: unknown;
 }
 
