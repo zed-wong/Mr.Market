@@ -523,6 +523,35 @@ describe('AdminDirectMarketMakingService', () => {
     expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
   });
 
+  it('surfaces missing exchange configuration details during direct resume', async () => {
+    const { service, marketMakingRepository, exchangeInitService } =
+      buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'stopped',
+      exchangeName: 'mexc',
+      pair: 'BTC/USDT',
+      strategySnapshot: {
+        resolvedConfig: {
+          accountLabel: '3',
+          bidSpread: 0.001,
+          askSpread: 0.001,
+          orderAmount: 10,
+        },
+      },
+    });
+    exchangeInitService.getExchange.mockImplementation(() => {
+      throw new Error('Exchange mexc with label 3 is not configured.');
+    });
+
+    await expect(service.directResume('order-1')).rejects.toThrow(
+      'Exchange mexc with label 3 is not configured.',
+    );
+  });
+
   it('lists only admin direct orders', async () => {
     const {
       service,

@@ -889,10 +889,9 @@ export class ExchangeInitService {
         );
       }
 
-      this.logger.warn(
-        `Exchange ${exchangeName} with label ${label} is not configured.`,
-      );
-      throw new InternalServerErrorException('Exchange configuration error.');
+      const message = `Exchange ${exchangeName} with label ${label} is not configured.`;
+      this.logger.warn(message);
+      throw new InternalServerErrorException(message);
     }
 
     return exchange;
