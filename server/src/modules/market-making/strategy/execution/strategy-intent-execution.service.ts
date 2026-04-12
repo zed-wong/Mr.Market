@@ -1,6 +1,7 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import BigNumber from 'bignumber.js';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
@@ -283,6 +284,14 @@ export class StrategyIntentExecutionService {
             );
             await this.incrementCompletedCycles(intent.strategyKey);
           }
+        } else {
+          this.logger.warn(
+            `CREATE_LIMIT_ORDER returned no id for ${intent.strategyKey}: ${
+              intent.side
+            } ${intent.qty}@${intent.price} ${intent.exchange} ${
+              intent.pair
+            } result=${JSON.stringify(result)}`,
+          );
         }
       }
 
@@ -583,16 +592,39 @@ export class StrategyIntentExecutionService {
       this.readMetadataNumber(makerIntent, 'makerDelayMs') || 0;
 
     if (makerDelayMs > 0) {
+      this.logger.log(
+        `Dual-account taker waiting makerDelayMs=${makerDelayMs} for ${makerIntent.strategyKey}`,
+      );
       await this.sleep(makerDelayMs);
+    }
+
+    const makerPriceBn = new BigNumber(makerPrice);
+    const isMakerStillBest = await this.verifyMakerIsBest(
+      makerIntent,
+      makerPriceBn,
+    );
+
+    if (!isMakerStillBest) {
+      this.logger.warn(
+        `Dual-account taker skipped: maker ${makerIntent.side} @${makerPrice} is no longer best for ${makerIntent.strategyKey}, cancelling maker`,
+      );
+      await this.cancelMakerAfterTakerFailure(
+        makerIntent,
+        makerExchangeOrderId,
+        makerPrice,
+      );
+
+      return;
     }
 
     const cycleId =
       this.readMetadataString(makerIntent, 'cycleId') || makerIntent.intentId;
+    const takerSide = this.oppositeSide(makerIntent.side);
     const takerIntent: StrategyOrderIntent = {
       ...makerIntent,
       intentId: `${makerIntent.intentId}:taker`,
       accountLabel: takerAccountLabel,
-      side: this.oppositeSide(makerIntent.side),
+      side: takerSide,
       price: makerPrice,
       timeInForce: 'IOC',
       postOnly: false,
@@ -606,15 +638,82 @@ export class StrategyIntentExecutionService {
       createdAt: getRFC3339Timestamp(),
     };
 
+    this.logger.log(
+      `Dual-account taker executing ${takerSide} ${takerIntent.qty}@${makerPrice} IOC account=${takerAccountLabel} for ${makerIntent.strategyKey}`,
+    );
+
     try {
       await this.consumeIntent(takerIntent);
+      this.logger.log(
+        `Dual-account taker completed for ${makerIntent.strategyKey}`,
+      );
     } catch (error) {
+      this.logger.warn(
+        `Dual-account taker failed for ${makerIntent.strategyKey}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
       await this.cancelMakerAfterTakerFailure(
         makerIntent,
         makerExchangeOrderId,
         makerPrice,
       );
       throw error;
+    }
+  }
+
+  private async verifyMakerIsBest(
+    makerIntent: StrategyOrderIntent,
+    makerPrice: BigNumber,
+  ): Promise<boolean> {
+    try {
+      const orderBook =
+        await this.exchangeConnectorAdapterService.fetchOrderBook(
+          makerIntent.exchange,
+          makerIntent.pair,
+        );
+
+      if (makerIntent.side === 'buy') {
+        const bestBid =
+          Array.isArray(orderBook?.bids) && orderBook.bids.length > 0
+            ? new BigNumber(orderBook.bids[0][0])
+            : null;
+
+        if (!bestBid || !makerPrice.isEqualTo(bestBid)) {
+          this.logger.warn(
+            `Maker buy @${makerPrice.toFixed()} is not best bid (bestBid=${
+              bestBid?.toFixed() ?? 'none'
+            }) for ${makerIntent.strategyKey}`,
+          );
+
+          return false;
+        }
+      } else {
+        const bestAsk =
+          Array.isArray(orderBook?.asks) && orderBook.asks.length > 0
+            ? new BigNumber(orderBook.asks[0][0])
+            : null;
+
+        if (!bestAsk || !makerPrice.isEqualTo(bestAsk)) {
+          this.logger.warn(
+            `Maker sell @${makerPrice.toFixed()} is not best ask (bestAsk=${
+              bestAsk?.toFixed() ?? 'none'
+            }) for ${makerIntent.strategyKey}`,
+          );
+
+          return false;
+        }
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to verify maker best for ${makerIntent.strategyKey}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return false;
     }
   }
 

@@ -209,6 +209,10 @@ export class StrategyMarketDataProviderService {
     return null;
   }
 
+  hasTrackedOrderBook(exchangeName: string, pair: string): boolean {
+    return this.getTrackedBestBidAsk(exchangeName, pair) !== null;
+  }
+
   async getOrderBook(
     exchangeName: string,
     pair: string,

@@ -19,6 +19,9 @@ describe('StrategyIntentExecutionService', () => {
     cancelOrder: jest
       .fn()
       .mockResolvedValue({ id: 'exchange-order-1', status: 'canceled' }),
+    fetchOrderBook: jest
+      .fn()
+      .mockResolvedValue({ bids: [[100, 1]], asks: [[101, 1]] }),
   };
 
   const exchangeOrderTrackerService = {

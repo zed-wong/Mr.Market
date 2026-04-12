@@ -91,6 +91,7 @@ describe('StrategyService', () => {
     getTrackedBestBidAsk: jest.Mock;
     getBestBidAsk: jest.Mock;
     getOrderBook: jest.Mock;
+    hasTrackedOrderBook: jest.Mock;
   };
   let exchangeConnectorAdapterService: {
     loadTradingRules: jest.Mock;
@@ -184,6 +185,7 @@ describe('StrategyService', () => {
         bids: [[100, 10]],
         asks: [[101, 10]],
       }),
+      hasTrackedOrderBook: jest.fn().mockReturnValue(true),
     };
     exchangeConnectorAdapterService = {
       loadTradingRules: jest.fn().mockResolvedValue({
@@ -1918,8 +1920,7 @@ describe('StrategyService', () => {
       .mockReturnValueOnce(0.8)
       .mockReturnValueOnce(0.25)
       .mockReturnValueOnce(0.75)
-      .mockReturnValueOnce(0.1)
-      .mockReturnValueOnce(0.9);
+      .mockReturnValueOnce(0.1);
 
     const actions = await service.buildDualAccountVolumeActions(
       'dual-key',
@@ -1959,7 +1960,7 @@ describe('StrategyService', () => {
     expect(actions).toEqual([
       expect.objectContaining({
         side: 'sell',
-        price: '101.7575',
+        price: '100.5',
         qty: '7.5',
         metadata: expect.objectContaining({
           activeHours: undefined,

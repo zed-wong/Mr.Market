@@ -3,6 +3,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
@@ -258,13 +259,24 @@ export class ExchangeOrderTrackerService
         order.accountLabel,
         order.exchangeOrderId,
       );
+      let latest: Awaited<
+        ReturnType<ExchangeConnectorAdapterService['fetchOrder']>
+      >;
 
-      const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
-        order.exchange,
-        order.pair,
-        order.exchangeOrderId,
-        order.accountLabel,
-      );
+      try {
+        latest = await this.exchangeConnectorAdapterService?.fetchOrder(
+          order.exchange,
+          order.pair,
+          order.exchangeOrderId,
+          order.accountLabel,
+        );
+      } catch (error) {
+        if (error instanceof ServiceUnavailableException) {
+          continue;
+        }
+
+        throw error;
+      }
 
       this.lastPolledAtByOrderKey.set(orderKey, Date.now());
 

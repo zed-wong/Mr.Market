@@ -156,6 +156,19 @@ describe('StrategyMarketDataProviderService', () => {
     expect(result).toBeNull();
   });
 
+  it('reports tracked order book readiness from tracked best bid/ask availability', () => {
+    orderBookTrackerService.getOrderBook
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce({
+        bids: [[30000, 1]],
+        asks: [[30001, 1]],
+        sequence: 2,
+      });
+
+    expect(service.hasTrackedOrderBook('binance', 'BTC/USDT')).toBe(false);
+    expect(service.hasTrackedOrderBook('binance', 'BTC/USDT')).toBe(true);
+  });
+
   it('loads full order book from connector fallback', async () => {
     orderBookTrackerService.getOrderBook.mockReturnValue(undefined);
     exchangeConnectorAdapterService.fetchOrderBook.mockResolvedValue({

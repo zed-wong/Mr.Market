@@ -17,23 +17,6 @@ import { StrategyIntentWorkerService } from './execution/strategy-intent-worker.
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { StrategyService } from './strategy.service';
 
-const wait = async (ms: number) =>
-  await new Promise((resolve) => setTimeout(resolve, ms));
-
-const waitFor = async (
-  condition: () => boolean,
-  timeoutMs = 1500,
-): Promise<void> => {
-  const startedAt = new Date().getTime();
-
-  while (!condition()) {
-    if (new Date().getTime() - startedAt > timeoutMs) {
-      throw new Error('Condition wait timed out');
-    }
-    await wait(5);
-  }
-};
-
 const createConfigService = () =>
   ({
     get: jest.fn((key: string, defaultValue?: string | number | boolean) => {
@@ -291,6 +274,12 @@ const createFixture = () => {
   const strategyIntentStoreService = new StrategyIntentStoreService(
     createIntentRepository(intentRows) as any,
   );
+  const durabilityService = {
+    appendOutboxEvent: jest.fn().mockResolvedValue(undefined),
+    markProcessed: jest.fn().mockResolvedValue(true),
+    hasProcessed: jest.fn().mockResolvedValue(false),
+    isProcessed: jest.fn().mockResolvedValue(false),
+  };
   const exchangeOrderMappingService = new ExchangeOrderMappingService(
     createMappingRepository(mappingRows) as any,
   );
@@ -299,6 +288,7 @@ const createFixture = () => {
     exchangeConnectorAdapterService as any,
     createHistoryRepository(historyRows) as any,
     undefined,
+    durabilityService as any,
     strategyIntentStoreService,
     exchangeOrderTrackerService,
     exchangeOrderMappingService,
@@ -325,8 +315,15 @@ const createFixture = () => {
     executorOrchestratorService,
     {
       getReferencePrice: jest.fn().mockResolvedValue(100),
+      hasTrackedOrderBook: jest.fn().mockReturnValue(true),
     } as any,
     executorRegistry,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
   );
   const privateStreamTrackerService = new PrivateStreamTrackerService(
     undefined,
@@ -336,6 +333,7 @@ const createFixture = () => {
   );
   const strategyIntentWorkerService = new StrategyIntentWorkerService(
     configService,
+    createStrategyInstanceRepository(strategyInstanceRows) as any,
     strategyIntentStoreService,
     strategyIntentExecutionService,
   );
@@ -372,16 +370,17 @@ describe('Strategy runtime architecture', () => {
       createPureParams('order-1'),
     );
     await fixture.strategyService.onTick('2026-03-11T00:00:00.000Z');
+    await fixture.strategyIntentExecutionService.consumeIntents(
+      fixture.intentRows.map((row) => ({
+        ...row,
+        accountLabel: row.accountLabel || undefined,
+        metadata: row.metadata || undefined,
+      })),
+    );
 
     expect(fixture.intentRows).toHaveLength(2);
-    expect(fixture.intentRows.map((row) => row.status)).toEqual(['NEW', 'NEW']);
-
-    await fixture.strategyIntentWorkerService.onModuleInit();
-    await waitFor(
-      () =>
-        fixture.mappingRows.length === 2 && fixture.historyRows.length === 2,
-    );
-    await fixture.strategyIntentWorkerService.onModuleDestroy();
+    expect(fixture.mappingRows.length).toBe(2);
+    expect(fixture.historyRows.length).toBe(2);
 
     expect(
       fixture.exchangeConnectorAdapterService.placeLimitOrder,
@@ -412,7 +411,7 @@ describe('Strategy runtime architecture', () => {
       ]),
     );
     expect(
-      fixture.exchangeOrderTrackerService.getOpenOrders(
+      fixture.exchangeOrderTrackerService.getTrackedOrders(
         'order-1-pureMarketMaking',
       ),
     ).toHaveLength(2);

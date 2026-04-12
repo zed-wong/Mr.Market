@@ -113,6 +113,7 @@ type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   inventoryCostQuote?: number;
   publishedCycles?: number;
   completedCycles?: number;
+  orderBookReady?: boolean;
 };
 
 type DualAccountBehaviorProfile = {
@@ -585,6 +586,7 @@ export class StrategyService
           : undefined,
       publishedCycles: 0,
       completedCycles: 0,
+      orderBookReady: false,
       tradedQuoteVolume: 0,
       realizedPnlQuote: 0,
       inventoryBaseQty: 0,
@@ -1343,11 +1345,21 @@ export class StrategyService
       throw new Error('strategy market data provider is not available');
     }
 
-    const { bestBid, bestAsk } =
-      await this.strategyMarketDataProviderService.getBestBidAsk(
+    const trackedBestBidAsk =
+      this.strategyMarketDataProviderService.getTrackedBestBidAsk(
         params.exchangeName,
         params.symbol,
       );
+
+    if (!trackedBestBidAsk) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: tracked order book unavailable`,
+      );
+
+      return [];
+    }
+
+    const { bestBid, bestAsk } = trackedBestBidAsk;
 
     const mid = new BigNumber(bestBid).plus(bestAsk).dividedBy(2);
     const pushMultiplier = new BigNumber(1).plus(
@@ -1526,6 +1538,11 @@ export class StrategyService
     const nextParams: DualAccountVolumeStrategyParams = {
       ...mergedParams,
       publishedCycles: Number(mergedParams.publishedCycles || 0) + 1,
+      orderBookReady:
+        this.strategyMarketDataProviderService?.hasTrackedOrderBook(
+          mergedParams.exchangeName,
+          mergedParams.symbol,
+        ) || false,
     };
 
     await this.persistStrategyParams(session.strategyKey, nextParams);
@@ -1562,8 +1579,14 @@ export class StrategyService
       );
 
     if (!trackedBestBidAsk) {
+      if (params.orderBookReady) {
+        this.logger.warn(
+          `Skipping dual-account volume cycle for ${strategyKey}: tracked order book unavailable`,
+        );
+      }
+
       this.logger.warn(
-        `Skipping dual-account volume cycle for ${strategyKey}: tracked order book unavailable`,
+        `Deferring dual-account volume cycle for ${strategyKey}: waiting for tracked order book`,
       );
 
       return [];
@@ -1572,22 +1595,36 @@ export class StrategyService
     const { bestBid, bestAsk } = trackedBestBidAsk;
 
     const publishedCycles = Number(params.publishedCycles || 0);
-    const mid = new BigNumber(bestBid).plus(bestAsk).dividedBy(2);
-    const pushMultiplier = new BigNumber(1).plus(
-      new BigNumber(params.pricePushRate || 0)
-        .dividedBy(100)
-        .multipliedBy(publishedCycles),
-    );
-    const basePrice = mid.multipliedBy(pushMultiplier);
     const side = this.resolveVolumeSide(
       params.postOnlySide,
       publishedCycles,
       params.buyBias,
     );
+    const bestBidBn = new BigNumber(bestBid);
+    const bestAskBn = new BigNumber(bestAsk);
+    const spread = bestAskBn.minus(bestBidBn);
+
+    if (spread.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: no spread bestBid=${bestBid} bestAsk=${bestAsk}`,
+      );
+
+      return [];
+    }
+
+    const spreadPosition = new BigNumber(Math.random());
+    const price = bestBidBn.plus(spread.multipliedBy(spreadPosition));
+
+    this.logger.log(
+      `Dual-account volume ${strategyKey}: side=${side} bestBid=${bestBid} bestAsk=${bestAsk} spread=${spread.toFixed()} position=${spreadPosition.toFixed(
+        4,
+      )} price=${price.toFixed()}`,
+    );
+
     const resolvedAccounts = await this.resolveDualAccountCycleAccounts(
       params,
       side,
-      basePrice,
+      price,
     );
 
     if (!resolvedAccounts) {
@@ -1610,18 +1647,6 @@ export class StrategyService
 
       return [];
     }
-
-    const offsetMultiplier = new BigNumber(
-      this.applyVariance(
-        params.baseIncrementPercentage || 0,
-        profile.priceOffsetVariance ?? params.priceOffsetVariance,
-        profile.priceOffsetMultiplier,
-      ),
-    ).dividedBy(100);
-    const price =
-      side === 'buy'
-        ? basePrice.multipliedBy(new BigNumber(1).minus(offsetMultiplier))
-        : basePrice.multipliedBy(new BigNumber(1).plus(offsetMultiplier));
     const qty = new BigNumber(
       this.applyVariance(
         params.baseTradeAmount,
@@ -1735,12 +1760,22 @@ export class StrategyService
       price,
     );
 
-    return capacity2.isGreaterThan(capacity1)
-      ? {
-          makerAccountLabel: params.takerAccountLabel,
-          takerAccountLabel: params.makerAccountLabel,
-        }
-      : configured;
+    if (capacity2.isGreaterThan(capacity1)) {
+      this.logger.log(
+        `Dynamic role switching: swapping maker=${params.makerAccountLabel}→${
+          params.takerAccountLabel
+        } taker=${params.takerAccountLabel}→${
+          params.makerAccountLabel
+        } for side=${side} (capacity configured=${capacity1.toFixed()} swapped=${capacity2.toFixed()})`,
+      );
+
+      return {
+        makerAccountLabel: params.takerAccountLabel,
+        takerAccountLabel: params.makerAccountLabel,
+      };
+    }
+
+    return configured;
   }
 
   private computeDualAccountCapacity(
