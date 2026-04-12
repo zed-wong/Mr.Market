@@ -776,7 +776,7 @@
   "admin_direct_mm_select_pair": "Select pair",
   "admin_direct_mm_strategy": "Strategy",
   "admin_direct_mm_select_strategy": "Select strategy",
-  "admin_direct_mm_api_key": "API Key ID",
+  "admin_direct_mm_api_key": "API Key",
   "admin_direct_mm_select_api_key": "Select API key",
   "admin_direct_mm_maker_api_key": "Maker API key",
   "admin_direct_mm_taker_api_key": "Taker API key",
