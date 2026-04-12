@@ -6,12 +6,27 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 @Injectable()
 export class ExchangeConnectorAdapterService {
+  private static readonly REQUEST_PRIORITY_BY_KIND = {
+    write: 0,
+    stateRead: 1,
+    marketRead: 2,
+  } as const;
+
   private readonly logger = new CustomLogger(
     ExchangeConnectorAdapterService.name,
   );
   private readonly lastRequestAtMsByExchange = new Map<string, number>();
-  private readonly requestChainByExchange = new Map<string, Promise<void>>();
   private readonly minRequestIntervalMs: number;
+  private readonly queueByExchange = new Map<
+    string,
+    Array<{
+      priority: number;
+      work: () => Promise<unknown>;
+      resolve: (value: unknown) => void;
+      reject: (reason?: unknown) => void;
+    }>
+  >();
+  private readonly drainingExchanges = new Set<string>();
   private readonly marketRulesByKey = new Map<
     string,
     {
@@ -40,7 +55,7 @@ export class ExchangeConnectorAdapterService {
     options?: { postOnly?: boolean; timeInForce?: 'GTC' | 'IOC' },
     accountLabel?: string,
   ): Promise<any> {
-    return await this.withRateLimit(exchangeName, async () => {
+    return await this.withRateLimit(exchangeName, 'write', async () => {
       const exchange = this.exchangeInitService.getExchange(
         exchangeName,
         accountLabel,
@@ -68,7 +83,7 @@ export class ExchangeConnectorAdapterService {
     exchangeOrderId: string,
     accountLabel?: string,
   ): Promise<any> {
-    return await this.withRateLimit(exchangeName, async () => {
+    return await this.withRateLimit(exchangeName, 'write', async () => {
       const exchange = this.exchangeInitService.getExchange(
         exchangeName,
         accountLabel,
@@ -84,7 +99,7 @@ export class ExchangeConnectorAdapterService {
     exchangeOrderId: string,
     accountLabel?: string,
   ): Promise<any> {
-    return await this.withRateLimit(exchangeName, async () => {
+    return await this.withRateLimit(exchangeName, 'stateRead', async () => {
       const exchange = this.exchangeInitService.getExchange(
         exchangeName,
         accountLabel,
@@ -99,7 +114,7 @@ export class ExchangeConnectorAdapterService {
     pair?: string,
     accountLabel?: string,
   ): Promise<any[]> {
-    return await this.withRateLimit(exchangeName, async () => {
+    return await this.withRateLimit(exchangeName, 'stateRead', async () => {
       const exchange = this.exchangeInitService.getExchange(
         exchangeName,
         accountLabel,
@@ -110,7 +125,7 @@ export class ExchangeConnectorAdapterService {
   }
 
   async fetchOrderBook(exchangeName: string, pair: string): Promise<any> {
-    return await this.withRateLimit(exchangeName, async () => {
+    return await this.withRateLimit(exchangeName, 'marketRead', async () => {
       const exchange = this.exchangeInitService.getExchange(exchangeName);
       const orderBook = await exchange.fetchOrderBook(pair);
 
@@ -170,7 +185,7 @@ export class ExchangeConnectorAdapterService {
       return cached;
     }
 
-    return await this.withRateLimit(exchangeName, async () => {
+    return await this.withRateLimit(exchangeName, 'marketRead', async () => {
       const exchange = this.exchangeInitService.getExchange(
         exchangeName,
         accountLabel,
@@ -225,7 +240,7 @@ export class ExchangeConnectorAdapterService {
     exchangeName: string,
     accountLabel?: string,
   ): Promise<any> {
-    return await this.withRateLimit(exchangeName, async () => {
+    return await this.withRateLimit(exchangeName, 'stateRead', async () => {
       const exchange = this.exchangeInitService.getExchange(
         exchangeName,
         accountLabel,
@@ -237,40 +252,63 @@ export class ExchangeConnectorAdapterService {
 
   private async withRateLimit<T>(
     exchangeName: string,
+    requestKind: keyof typeof ExchangeConnectorAdapterService.REQUEST_PRIORITY_BY_KIND,
     work: () => Promise<T>,
   ): Promise<T> {
-    const previousChain =
-      this.requestChainByExchange.get(exchangeName) || Promise.resolve();
-    let releaseCurrentChain!: () => void;
-    const currentChain = new Promise<void>((resolve) => {
-      releaseCurrentChain = resolve;
+    return await new Promise<T>((resolve, reject) => {
+      const queue = this.queueByExchange.get(exchangeName) || [];
+
+      queue.push({
+        priority:
+          ExchangeConnectorAdapterService.REQUEST_PRIORITY_BY_KIND[requestKind],
+        work: work as () => Promise<unknown>,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+      });
+      queue.sort((a, b) => a.priority - b.priority);
+      this.queueByExchange.set(exchangeName, queue);
+      void this.drainQueue(exchangeName);
     });
-    const chainedRequests = previousChain.then(async () => await currentChain);
+  }
 
-    this.requestChainByExchange.set(exchangeName, chainedRequests);
+  private async drainQueue(exchangeName: string): Promise<void> {
+    if (this.drainingExchanges.has(exchangeName)) {
+      return;
+    }
 
-    await previousChain;
+    this.drainingExchanges.add(exchangeName);
 
     try {
-      const lastAt = this.lastRequestAtMsByExchange.get(exchangeName) || 0;
-      const now = Date.now();
-      const waitMs = Math.max(0, this.minRequestIntervalMs - (now - lastAt));
+      while (true) {
+        const queue = this.queueByExchange.get(exchangeName) || [];
+        const next = queue.shift();
 
-      if (waitMs > 0) {
-        await this.sleep(waitMs);
+        if (!next) {
+          this.queueByExchange.delete(exchangeName);
+          return;
+        }
+
+        this.queueByExchange.set(exchangeName, queue);
+
+        try {
+          const lastAt = this.lastRequestAtMsByExchange.get(exchangeName) || 0;
+          const now = Date.now();
+          const waitMs = Math.max(0, this.minRequestIntervalMs - (now - lastAt));
+
+          if (waitMs > 0) {
+            await this.sleep(waitMs);
+          }
+
+          const result = await next.work();
+          this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
+          next.resolve(result);
+        } catch (error) {
+          this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
+          next.reject(error);
+        }
       }
-
-      const result = await work();
-
-      this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
-
-      return result;
     } finally {
-      releaseCurrentChain();
-
-      if (this.requestChainByExchange.get(exchangeName) === chainedRequests) {
-        this.requestChainByExchange.delete(exchangeName);
-      }
+      this.drainingExchanges.delete(exchangeName);
     }
   }
 

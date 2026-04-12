@@ -199,4 +199,46 @@ describe('ExchangeConnectorAdapterService', () => {
       minIntervalMs,
     );
   });
+
+  it('prioritizes writes ahead of queued market reads on the same exchange', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(0),
+    );
+    const callOrder: string[] = [];
+    let resolveFetchOrder!: (value: any) => void;
+
+    exchange.fetchOrder.mockImplementationOnce(
+      async () =>
+        await new Promise((resolve) => {
+          resolveFetchOrder = resolve;
+        }),
+    );
+    exchange.fetchOrderBook.mockImplementation(async () => {
+      callOrder.push('fetchOrderBook');
+
+      return { bids: [], asks: [] };
+    });
+    exchange.createOrder.mockImplementation(async () => {
+      callOrder.push('createOrder');
+
+      return { id: 'ex-order-2' };
+    });
+
+    const stateRead = service.fetchOrder('binance', 'BTC/USDT', 'ex-order-1');
+    await Promise.resolve();
+    const marketRead = service.fetchOrderBook('binance', 'BTC/USDT');
+    const write = service.placeLimitOrder(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+    );
+
+    resolveFetchOrder({ id: 'ex-order-1', status: 'open' });
+    await Promise.all([stateRead, marketRead, write]);
+
+    expect(callOrder).toEqual(['createOrder', 'fetchOrderBook']);
+  });
 });
