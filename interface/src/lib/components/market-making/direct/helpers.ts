@@ -22,15 +22,15 @@ const errorKeyMap: Record<string, string> = {
     "admin_direct_mm_error_api_key_exchange_mismatch",
   "API key account label does not match request":
     "admin_direct_mm_error_api_key_account_mismatch",
-  "Strategy definition not found":
-    "admin_direct_mm_error_definition_not_found",
+  "Strategy definition not found": "admin_direct_mm_error_definition_not_found",
   "Order not found": "admin_direct_mm_error_order_not_found",
   "Order already stopped": "admin_direct_mm_error_already_stopped",
+  "Only stopped or failed orders can be removed":
+    "admin_direct_mm_error_remove_requires_stopped",
   "API key authentication failed": "admin_direct_mm_error_authentication",
   "Rate limited, try again": "admin_direct_mm_error_rate_limit",
   "Exchange timeout": "admin_direct_mm_error_timeout",
-  "Campaign join already exists":
-    "admin_direct_mm_error_campaign_join_exists",
+  "Campaign join already exists": "admin_direct_mm_error_campaign_join_exists",
 };
 
 export function getErrorMessage(error: unknown): string {
@@ -222,7 +222,9 @@ export function resolveMinOrderAmount(
   const market = exchangeMarkets.find(
     (item) => normalizeMarketSymbol(item?.symbol) === normalizedPair,
   );
-  const marketAmountMinimum = readPositiveBigNumber(market?.limits?.amount?.min);
+  const marketAmountMinimum = readPositiveBigNumber(
+    market?.limits?.amount?.min,
+  );
   const marketCostMinimum = readPositiveBigNumber(market?.limits?.cost?.min);
   const derivedPairPrice = resolveDerivedPairPrice(basePrice, quotePrice);
 
@@ -238,9 +240,11 @@ export function resolveMinOrderAmount(
     return "";
   }
 
-  return candidates.reduce((maximum, candidate) =>
-    candidate.isGreaterThan(maximum) ? candidate : maximum,
-  ).toString();
+  return candidates
+    .reduce((maximum, candidate) =>
+      candidate.isGreaterThan(maximum) ? candidate : maximum,
+    )
+    .toString();
 }
 
 export function normalizeConfigOverrides(
@@ -258,16 +262,13 @@ export function normalizeConfigOverrides(
     "symbol",
     "exchangeName",
   ]);
-  const accumulator = configRows.reduce<Record<string, unknown>>(
-    (acc, row) => {
-      const key = row.key.trim();
+  const accumulator = configRows.reduce<Record<string, unknown>>((acc, row) => {
+    const key = row.key.trim();
 
-      if (!key || reservedFields.has(key)) return acc;
-      acc[key] = parseConfigValue(row.value);
-      return acc;
-    },
-    {},
-  );
+    if (!key || reservedFields.has(key)) return acc;
+    acc[key] = parseConfigValue(row.value);
+    return acc;
+  }, {});
   if (orderAmount) {
     const num = Number(orderAmount);
     const value = isNaN(num) ? orderAmount : num;

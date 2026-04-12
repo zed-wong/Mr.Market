@@ -14,7 +14,9 @@
   export let loading = false;
   export let onClose: () => void;
   export let onStartOrder: () => void;
+  export let onDuplicateOrder: () => void;
   export let onStopOrder: () => void;
+  export let onRemoveOrder: () => void;
 
   function copyOrderId() {
     if (!order) return;
@@ -589,6 +591,48 @@
                   >
                 </div>
               </div>
+              <div class="grid grid-cols-2 gap-3 mb-3">
+                <div class="border border-base-300 rounded-xl p-3 text-center">
+                  <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_interval_time")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.baseIntervalTime ?? $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3 text-center">
+                  <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_num_trades")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.numTrades ?? $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3 text-center">
+                  <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_price_push_rate")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.pricePushRate || $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3 text-center">
+                  <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_post_only_side")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block capitalize"
+                    >{data?.orderConfig?.postOnlySide || $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+                <div class="border border-base-300 rounded-xl p-3 text-center col-span-2">
+                  <span class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                    >{$_("admin_direct_mm_maker_delay")}</span
+                  >
+                  <span class="text-sm font-bold text-base-content block"
+                    >{data?.orderConfig?.makerDelayMs ?? $_("admin_direct_mm_na")}</span
+                  >
+                </div>
+              </div>
             {:else}
               <div class="grid grid-cols-2 gap-3">
                 <div class="border border-base-300 rounded-xl p-3">
@@ -849,25 +893,39 @@
                 </svg>
               </button>
             {:else}
-              <button
-                class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
-                on:click={onStartOrder}
-              >
-                {$_("admin_direct_mm_resume_order")}
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+              <div class="flex flex-1 gap-3">
+                <button
+                  class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
+                  on:click={onStartOrder}
                 >
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-              </button>
+                  {$_("admin_direct_mm_resume_order")}
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+                <button
+                  class="btn bg-base-200 hover:bg-base-300 border border-base-300 text-base-content h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+                  on:click={onDuplicateOrder}
+                >
+                  {$_("admin_direct_mm_duplicate_order")}
+                </button>
+                <button
+                  class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+                  on:click={onRemoveOrder}
+                >
+                  {$_("admin_direct_mm_remove")}
+                </button>
+              </div>
             {/if}
           </div>
         </div>

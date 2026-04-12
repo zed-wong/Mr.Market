@@ -86,6 +86,21 @@ export const resumeDirectOrder = async (
   return handleApiResponse(response);
 };
 
+export const removeDirectOrder = async (
+  orderId: string,
+  token: string,
+): Promise<{ orderId: string; state: string }> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-orders/${orderId}`,
+    {
+      method: "DELETE",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
 export const getDirectOrderStatus = async (
   orderId: string,
   token: string,
@@ -118,7 +133,12 @@ export const listAdminCampaigns = async (
 export const joinAdminCampaign = async (
   payload: CampaignJoinPayload,
   token: string,
-): Promise<{ status: string; apiKeyId: string; campaignAddress: string; chainId: number }> => {
+): Promise<{
+  status: string;
+  apiKeyId: string;
+  campaignAddress: string;
+  chainId: number;
+}> => {
   const response = await fetch(
     `${MRM_BACKEND_URL}/admin/market-making/campaign-join`,
     {

@@ -9,6 +9,9 @@
   import {
     getDirectOrderStatus,
     joinAdminCampaign,
+    listAdminCampaigns,
+    listDirectOrders,
+    removeDirectOrder,
     resumeDirectOrder,
     startDirectOrder,
     stopDirectOrder,
@@ -41,6 +44,7 @@
   import StopAllModal from "$lib/components/market-making/direct/StopAllModal.svelte";
   import StopOrderModal from "$lib/components/market-making/direct/StopOrderModal.svelte";
   import ResumeOrderModal from "$lib/components/market-making/direct/ResumeOrderModal.svelte";
+  import RemoveOrderModal from "$lib/components/market-making/direct/RemoveOrderModal.svelte";
   import AllCampaignsModal from "$lib/components/market-making/direct/AllCampaignsModal.svelte";
   import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
   import OrderDetailsDialog from "$lib/components/market-making/direct/OrderDetailsDialog.svelte";
@@ -48,6 +52,7 @@
   type OverrideRow = { key: string; value: string };
 
   const ORDER_DETAILS_REFRESH_INTERVAL_MS = 5000;
+  const PAGE_AUTO_REFRESH_INTERVAL_MS = 30000;
 
   let growInfo: GrowInfo | null = null;
   let strategies: MarketMakingStrategy[] = [];
@@ -82,8 +87,27 @@
     }
   }
 
+  let pageRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function silentRefresh() {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+      const [newOrders, newCampaigns] = await Promise.all([
+        listDirectOrders(token).catch(() => null),
+        listAdminCampaigns(token).catch(() => null),
+      ]);
+      if (newOrders) initialOrders = newOrders;
+      if (newCampaigns) initialCampaigns = newCampaigns;
+    } catch {
+      // silent — don't disrupt UI
+    }
+  }
+
   onMount(() => {
     resolvePageData();
+    pageRefreshTimer = setInterval(silentRefresh, PAGE_AUTO_REFRESH_INTERVAL_MS);
   });
 
   $: if ($page.data) resolvePageData();
@@ -124,6 +148,8 @@
 
   let resumeOrderCandidate: DirectOrderSummary | null = null;
   let isResuming = false;
+  let removeOrderCandidate: DirectOrderSummary | null = null;
+  let isRemoving = false;
 
   let showOrderDetails = false;
   let detailsOrder: DirectOrderSummary | null = null;
@@ -137,6 +163,7 @@
     orderId: string;
     options: { silent?: boolean };
   } | null = null;
+  let prefillingFromOrderId: string | null = null;
 
   let showAllCampaigns = false;
   let showJoinModal = false;
@@ -256,6 +283,7 @@
 
   function resetStartForm() {
     showStartForm = false;
+    prefillingFromOrderId = null;
     startExchangeName = "";
     startPair = "";
     startStrategyDefinitionId = "";
@@ -272,6 +300,55 @@
     dynamicRoleSwitching = false;
     targetQuoteVolume = "";
     makerDelayMs = "250";
+  }
+
+  function applyOrderStatusToStartForm(
+    order: DirectOrderSummary,
+    status: DirectOrderStatus,
+  ) {
+    startExchangeName = order.exchangeName;
+    startPair = order.pair;
+    startStrategyDefinitionId = order.strategyDefinitionId || "";
+    startApiKeyId = order.apiKeyId || "";
+    startMakerApiKeyId = order.makerApiKeyId || "";
+    startTakerApiKeyId = order.takerApiKeyId || "";
+    orderAmount = status.orderConfig.orderAmount || "";
+    orderSpread = status.orderConfig.baseIncrementPercentage || "";
+    intervalTime =
+      status.orderConfig.baseIntervalTime !== null
+        ? String(status.orderConfig.baseIntervalTime)
+        : "30";
+    numTrades =
+      status.orderConfig.numTrades !== null
+        ? String(status.orderConfig.numTrades)
+        : "100";
+    pricePushRate = status.orderConfig.pricePushRate || "0";
+    postOnlySide = status.orderConfig.postOnlySide || "buy";
+    dynamicRoleSwitching = status.orderConfig.dynamicRoleSwitching ?? false;
+    targetQuoteVolume = status.orderConfig.targetQuoteVolume || "";
+    makerDelayMs =
+      status.orderConfig.makerDelayMs !== null
+        ? String(status.orderConfig.makerDelayMs)
+        : "250";
+    configRows = [{ key: "", value: "" }];
+    showStartForm = true;
+    prefillingFromOrderId = order.orderId;
+  }
+
+  async function duplicateOrderConfig(order: DirectOrderSummary) {
+    const token = getToken();
+
+    if (!token) return;
+
+    try {
+      const status = await getDirectOrderStatus(order.orderId, token);
+      applyOrderStatusToStartForm(order, status);
+      closeOrderDetails();
+    } catch (error) {
+      toast.error(getErrorMessage(error), {
+        description: getRecoveryHint(error),
+      });
+    }
   }
 
   async function handleStartOrder() {
@@ -452,6 +529,10 @@
     resumeOrderCandidate = order;
   }
 
+  function handleRemoveOrder(order: DirectOrderSummary) {
+    removeOrderCandidate = order;
+  }
+
   async function confirmResumeOrder() {
     if (!resumeOrderCandidate || isResuming) return;
     const token = getToken();
@@ -490,6 +571,38 @@
       });
     } finally {
       isResuming = false;
+    }
+  }
+
+  async function confirmRemoveOrder() {
+    if (!removeOrderCandidate || isRemoving) return;
+    const token = getToken();
+
+    if (!token) return;
+
+    isRemoving = true;
+    const order = removeOrderCandidate;
+
+    try {
+      await removeDirectOrder(order.orderId, token);
+      initialOrders = initialOrders.filter((o) => o.orderId !== order.orderId);
+      orders = orders.filter((o) => o.orderId !== order.orderId);
+      toast.success($_("admin_direct_mm_remove_success"), {
+        description: $_("admin_direct_mm_remove_success_hint", {
+          values: { pair: order.pair },
+        }),
+      });
+      removeOrderCandidate = null;
+
+      if (showOrderDetails && detailsOrder?.orderId === order.orderId) {
+        closeOrderDetails();
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error), {
+        description: getRecoveryHint(error),
+      });
+    } finally {
+      isRemoving = false;
     }
   }
 
@@ -586,6 +699,10 @@
 
   onDestroy(() => {
     stopOrderDetailsPolling();
+    if (pageRefreshTimer) {
+      clearInterval(pageRefreshTimer);
+      pageRefreshTimer = null;
+    }
   });
 
   async function submitCampaignJoin() {
@@ -721,6 +838,7 @@
         onStopAllClick={() => (showStopAllConfirm = true)}
         onStopOrder={(order) => (stopOrderCandidate = order)}
         onResumeOrder={handleResumeOrder}
+        onRemoveOrder={handleRemoveOrder}
         onOrderClick={openOrderDetails}
       />
     {/if}
@@ -734,6 +852,7 @@
   {filteredPairs}
   {filteredApiKeys}
   {strategies}
+  {prefillingFromOrderId}
   bind:startExchangeName
   bind:startPair
   bind:startStrategyDefinitionId
@@ -817,6 +936,11 @@
       handleResumeOrder(order);
     }
   }}
+  onDuplicateOrder={() => {
+    if (detailsOrder) {
+      void duplicateOrderConfig(detailsOrder);
+    }
+  }}
   onStopOrder={() => {
     if (detailsOrder) {
       const order = detailsOrder;
@@ -824,4 +948,18 @@
       stopOrderCandidate = order;
     }
   }}
+  onRemoveOrder={() => {
+    if (detailsOrder) {
+      const order = detailsOrder;
+      closeOrderDetails();
+      handleRemoveOrder(order);
+    }
+  }}
+/>
+
+<RemoveOrderModal
+  order={removeOrderCandidate}
+  {isRemoving}
+  onConfirm={confirmRemoveOrder}
+  onCancel={() => (removeOrderCandidate = null)}
 />

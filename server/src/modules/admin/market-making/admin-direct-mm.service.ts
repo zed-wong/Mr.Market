@@ -35,7 +35,7 @@ import { PrivateStreamTrackerService } from 'src/modules/market-making/trackers/
 import { mapStrategySnapshotToMarketMakingOrderFields } from 'src/modules/market-making/user-orders/market-making-order-snapshot.utils';
 import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 
 import {
   CampaignJoinRequestDto,
@@ -308,9 +308,42 @@ export class AdminDirectMarketMakingService {
     }
   }
 
+  async removeDirectOrder(
+    orderId: string,
+  ): Promise<{ orderId: string; state: string }> {
+    const order = await this.marketMakingRepository.findOne({
+      where: { orderId, source: 'admin_direct' },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.state !== 'stopped' && order.state !== 'failed') {
+      throw new BadRequestException(
+        'Only stopped or failed orders can be removed',
+      );
+    }
+
+    await this.marketMakingRepository.update(
+      {
+        orderId,
+        source: 'admin_direct',
+      },
+      {
+        state: 'deleted',
+      },
+    );
+
+    return {
+      orderId,
+      state: 'removed',
+    };
+  }
+
   async listDirectOrders() {
     const orders = await this.marketMakingRepository.find({
-      where: { source: 'admin_direct' },
+      where: { source: 'admin_direct', state: Not('deleted') },
       order: { createdAt: 'DESC' },
     });
     const definitionIds = orders
@@ -530,9 +563,13 @@ export class AdminDirectMarketMakingService {
       bidSpread: this.readConfigString(resolvedConfig.bidSpread),
       askSpread: this.readConfigString(resolvedConfig.askSpread),
       numberOfLayers: this.readConfigString(resolvedConfig.numberOfLayers),
+      baseIntervalTime: this.readConfigNumber(resolvedConfig.baseIntervalTime),
+      numTrades: this.readConfigNumber(resolvedConfig.numTrades),
       baseIncrementPercentage: this.readConfigString(
         resolvedConfig.baseIncrementPercentage,
       ),
+      pricePushRate: this.readConfigString(resolvedConfig.pricePushRate),
+      postOnlySide: this.readConfigString(resolvedConfig.postOnlySide),
       dynamicRoleSwitching:
         typeof resolvedConfig.dynamicRoleSwitching === 'boolean'
           ? resolvedConfig.dynamicRoleSwitching
@@ -540,6 +577,7 @@ export class AdminDirectMarketMakingService {
       targetQuoteVolume: this.readConfigString(
         resolvedConfig.targetQuoteVolume,
       ),
+      makerDelayMs: this.readConfigNumber(resolvedConfig.makerDelayMs),
       publishedCycles: this.readConfigNumber(resolvedConfig.publishedCycles),
       completedCycles: this.readConfigNumber(resolvedConfig.completedCycles),
       tradedQuoteVolume: this.readConfigString(

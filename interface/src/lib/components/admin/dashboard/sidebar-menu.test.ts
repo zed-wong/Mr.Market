@@ -14,10 +14,10 @@ describe("buildAdminSidebarMenu", () => {
       "exchanges",
       "spot-trading",
       "market-making",
-      "direct-market-making",
       "fees",
-      "strategies",
       "api-keys",
+      "strategies",
+      "direct-market-making",
     ]);
   });
 });

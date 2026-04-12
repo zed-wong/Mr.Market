@@ -10,6 +10,7 @@
   export let onStopAllClick: () => void;
   export let onStopOrder: (order: DirectOrderSummary) => void;
   export let onResumeOrder: (order: DirectOrderSummary) => void;
+  export let onRemoveOrder: (order: DirectOrderSummary) => void;
   export let onOrderClick: (order: DirectOrderSummary) => void;
 
   function formatPair(pair: string): string {
@@ -245,24 +246,49 @@
                   >
                 </button>
               {:else}
-                <button
-                  class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-blue-600 hover:bg-blue-50 transition-colors"
-                  aria-label={$_("admin_direct_mm_play")}
-                  on:click|stopPropagation={() => onResumeOrder(order)}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="10"
-                    height="10"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    ><polygon points="6 3 20 12 6 21 6 3" /></svg
+                <div class="flex items-center gap-2">
+                  <button
+                    class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-blue-600 hover:bg-blue-50 transition-colors"
+                    aria-label={$_("admin_direct_mm_play")}
+                    on:click|stopPropagation={() => onResumeOrder(order)}
                   >
-                </button>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      ><polygon points="6 3 20 12 6 21 6 3" /></svg
+                    >
+                  </button>
+                  <button
+                    class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-red-600 hover:bg-red-50 transition-colors"
+                    aria-label={$_("admin_direct_mm_remove")}
+                    on:click|stopPropagation={() => onRemoveOrder(order)}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4h8v2" />
+                      <path d="M19 6l-1 14H6L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                    </svg>
+                  </button>
+                </div>
               {/if}
               <button
                 class="bg-indigo-50 text-blue-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-colors whitespace-nowrap"

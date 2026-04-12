@@ -81,9 +81,14 @@ export interface DirectOrderStatus {
     bidSpread: string | null;
     askSpread: string | null;
     numberOfLayers: string | null;
+    baseIntervalTime: number | null;
+    numTrades: number | null;
     baseIncrementPercentage: string | null;
+    pricePushRate: string | null;
+    postOnlySide: string | null;
     dynamicRoleSwitching: boolean | null;
     targetQuoteVolume: string | null;
+    makerDelayMs: number | null;
     publishedCycles: number | null;
     completedCycles: number | null;
     tradedQuoteVolume: string | null;

@@ -7,6 +7,8 @@ describe('AdminDirectMarketMakingService', () => {
   const buildService = () => {
     const marketMakingRepository = {
       create: jest.fn((payload) => payload),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       findOne: jest.fn(),
       find: jest.fn(),
     };
@@ -523,6 +525,44 @@ describe('AdminDirectMarketMakingService', () => {
     expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
   });
 
+  it('removes a stopped direct order', async () => {
+    const { service, marketMakingRepository } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      state: 'stopped',
+      source: 'admin_direct',
+    });
+
+    await expect(service.removeDirectOrder('order-1')).resolves.toEqual({
+      orderId: 'order-1',
+      state: 'removed',
+    });
+    expect(marketMakingRepository.update).toHaveBeenCalledWith(
+      {
+        orderId: 'order-1',
+        source: 'admin_direct',
+      },
+      {
+        state: 'deleted',
+      },
+    );
+  });
+
+  it('rejects removing a running direct order', async () => {
+    const { service, marketMakingRepository } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      state: 'running',
+      source: 'admin_direct',
+    });
+
+    await expect(service.removeDirectOrder('order-1')).rejects.toThrow(
+      'Only stopped or failed orders can be removed',
+    );
+  });
+
   it('surfaces missing exchange configuration details during direct resume', async () => {
     const { service, marketMakingRepository, exchangeInitService } =
       buildService();
@@ -594,10 +634,12 @@ describe('AdminDirectMarketMakingService', () => {
 
     const result = await service.listDirectOrders();
 
-    expect(marketMakingRepository.find).toHaveBeenCalledWith({
-      where: { source: 'admin_direct' },
-      order: { createdAt: 'DESC' },
-    });
+    expect(marketMakingRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ source: 'admin_direct' }),
+        order: { createdAt: 'DESC' },
+      }),
+    );
     expect(await Promise.resolve(result)).toEqual([
       expect.objectContaining({
         orderId: 'order-1',
@@ -910,7 +952,10 @@ describe('AdminDirectMarketMakingService', () => {
           takerAccountLabel: 'api-key-2',
           takerApiKeyId: 'api-key-2',
           baseTradeAmount: 5,
+          baseIntervalTime: 10,
+          numTrades: 20,
           baseIncrementPercentage: 0.2,
+          pricePushRate: 0,
           dynamicRoleSwitching: true,
           targetQuoteVolume: 5000,
           publishedCycles: 7,
@@ -936,9 +981,14 @@ describe('AdminDirectMarketMakingService', () => {
       bidSpread: null,
       askSpread: null,
       numberOfLayers: null,
+      baseIntervalTime: 10,
+      numTrades: 20,
       baseIncrementPercentage: '0.2',
+      pricePushRate: '0',
+      postOnlySide: null,
       dynamicRoleSwitching: true,
       targetQuoteVolume: '5000',
+      makerDelayMs: null,
       publishedCycles: 7,
       completedCycles: 6,
       tradedQuoteVolume: '3456.78',
@@ -972,6 +1022,9 @@ describe('AdminDirectMarketMakingService', () => {
           takerAccountLabel: 'api-key-2',
           takerApiKeyId: 'api-key-2',
           baseTradeAmount: 5,
+          baseIntervalTime: 10,
+          numTrades: 20,
+          pricePushRate: 0,
           publishedCycles: 0,
           completedCycles: 0,
           tradedQuoteVolume: 0,
@@ -1001,6 +1054,9 @@ describe('AdminDirectMarketMakingService', () => {
     expect(result.orderConfig).toEqual(
       expect.objectContaining({
         orderAmount: '7',
+        baseIntervalTime: 10,
+        numTrades: 20,
+        pricePushRate: '0',
         publishedCycles: 3,
         completedCycles: 2,
         tradedQuoteVolume: '420',
@@ -1123,9 +1179,14 @@ describe('AdminDirectMarketMakingService', () => {
       bidSpread: null,
       askSpread: null,
       numberOfLayers: null,
+      baseIntervalTime: null,
+      numTrades: null,
       baseIncrementPercentage: null,
+      pricePushRate: null,
+      postOnlySide: null,
       dynamicRoleSwitching: null,
       targetQuoteVolume: null,
+      makerDelayMs: null,
       publishedCycles: null,
       completedCycles: null,
       tradedQuoteVolume: null,

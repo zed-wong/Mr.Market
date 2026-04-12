@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -50,6 +51,12 @@ export class AdminDirectMarketMakingController {
   @ApiOperation({ summary: 'Resume a direct admin market-making order' })
   async directResume(@Body() body: DirectResumeMarketMakingDto) {
     return this.adminDirectMarketMakingService.directResume(body.orderId);
+  }
+
+  @Delete('direct-orders/:id')
+  @ApiOperation({ summary: 'Remove a direct admin market-making order' })
+  async removeDirectOrder(@Param('id') id: string) {
+    return this.adminDirectMarketMakingService.removeDirectOrder(id);
   }
 
   @Get('direct-orders')

@@ -11,6 +11,7 @@
     export let filteredApiKeys: AdminSingleKey[] = [];
     export let strategies: MarketMakingStrategy[] = [];
     export let selectedControllerType = "";
+    export let prefillingFromOrderId: string | null = null;
 
     export let startExchangeName = "";
     export let startPair = "";
@@ -32,6 +33,7 @@
 
     export let onSubmit: () => void;
     export let onClose: () => void;
+    export let onDuplicateOrder: (() => void) | undefined = undefined;
 
     let pairSearch = "";
     let pairDropdownOpen = false;
@@ -177,10 +179,14 @@
                     </button>
                 </div>
                 <span class="text-xl font-bold text-base-content block mt-3"
-                    >{$_("admin_direct_mm_create_new_order")}</span
+                    >{prefillingFromOrderId
+                        ? $_("admin_direct_mm_duplicate_order")
+                        : $_("admin_direct_mm_create_new_order")}</span
                 >
                 <span class="text-sm text-base-content/50 block mt-1"
-                    >{$_("admin_direct_mm_configure_deploy")}</span
+                    >{prefillingFromOrderId
+                        ? $_("admin_direct_mm_configure_duplicate")
+                        : $_("admin_direct_mm_configure_deploy")}</span
                 >
             </div>
 
@@ -853,6 +859,15 @@
 
                 <!-- Actions -->
                 <div class="flex gap-3 justify-end mt-2">
+                    {#if onDuplicateOrder && !prefillingFromOrderId}
+                        <button
+                            class="btn btn-ghost text-base-content font-semibold px-6"
+                            on:click={onDuplicateOrder}
+                            type="button"
+                        >
+                            {$_("admin_direct_mm_duplicate_order")}
+                        </button>
+                    {/if}
                     <button
                         class="btn btn-ghost text-base-content font-semibold px-6"
                         on:click={onClose}
