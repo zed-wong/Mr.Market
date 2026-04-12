@@ -97,6 +97,12 @@ type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   makerAccountLabel: string;
   takerAccountLabel: string;
   makerDelayMs: number;
+  tradeAmountVariance?: number;
+  priceOffsetVariance?: number;
+  cadenceVariance?: number;
+  makerDelayVariance?: number;
+  buyBias?: number;
+  accountProfiles?: Record<string, unknown>;
   dynamicRoleSwitching?: boolean;
   targetQuoteVolume?: number;
   tradedQuoteVolume?: number;
@@ -105,6 +111,19 @@ type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   inventoryCostQuote?: number;
   publishedCycles?: number;
   completedCycles?: number;
+};
+
+type DualAccountBehaviorProfile = {
+  tradeAmountMultiplier?: number;
+  tradeAmountVariance?: number;
+  priceOffsetMultiplier?: number;
+  priceOffsetVariance?: number;
+  cadenceMultiplier?: number;
+  cadenceVariance?: number;
+  makerDelayMultiplier?: number;
+  makerDelayVariance?: number;
+  buyBias?: number;
+  activeHours?: number[];
 };
 
 type PooledExecutorTarget = {
@@ -547,6 +566,16 @@ export class StrategyService
       makerAccountLabel,
       takerAccountLabel,
       makerDelayMs: Number(params.makerDelayMs || 0),
+      tradeAmountVariance: this.readNonNegativeNumber(
+        params.tradeAmountVariance,
+      ),
+      priceOffsetVariance: this.readNonNegativeNumber(
+        params.priceOffsetVariance,
+      ),
+      cadenceVariance: this.readNonNegativeNumber(params.cadenceVariance),
+      makerDelayVariance: this.readNonNegativeNumber(params.makerDelayVariance),
+      buyBias: this.readUnitIntervalNumber(params.buyBias),
+      accountProfiles: this.normalizeAccountProfiles(params.accountProfiles),
       dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
       targetQuoteVolume:
         params.targetQuoteVolume !== undefined
@@ -560,10 +589,7 @@ export class StrategyService
       inventoryCostQuote: 0,
     };
 
-    const cadenceMs = Math.max(
-      1000,
-      Number(normalizedParams.baseIntervalTime || 10) * 1000,
-    );
+    const cadenceMs = this.resolveNextDualAccountCadenceMs(normalizedParams);
 
     await this.upsertStrategyInstance(
       strategyKey,
@@ -1403,6 +1429,8 @@ export class StrategyService
 
     if (this.isSameActiveSession(activeSession, session) && activeSession) {
       activeSession.params = latestParams;
+      activeSession.cadenceMs =
+        this.resolveNextDualAccountCadenceMs(latestParams);
       this.sessions.set(session.strategyKey, activeSession);
     }
 
@@ -1504,6 +1532,8 @@ export class StrategyService
 
     if (this.isSameActiveSession(currentSession, session)) {
       currentSession.params = nextParams;
+      currentSession.cadenceMs =
+        this.resolveNextDualAccountCadenceMs(nextParams);
       this.sessions.set(session.strategyKey, currentSession);
 
       return;
@@ -1547,15 +1577,56 @@ export class StrategyService
         .multipliedBy(publishedCycles),
     );
     const basePrice = mid.multipliedBy(pushMultiplier);
+    const side = this.resolveVolumeSide(
+      params.postOnlySide,
+      publishedCycles,
+      params.buyBias,
+    );
+    const resolvedAccounts = await this.resolveDualAccountCycleAccounts(
+      params,
+      side,
+      basePrice,
+    );
+
+    if (!resolvedAccounts) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: unable to resolve maker/taker accounts for side=${side}`,
+      );
+
+      return [];
+    }
+
+    const profile = this.resolveDualAccountBehaviorProfile(
+      params,
+      resolvedAccounts.makerAccountLabel,
+    );
+
+    if (!this.isWithinDualAccountProfileWindow(profile)) {
+      this.logger.log(
+        `Skipping dual-account volume cycle for ${strategyKey}: maker account ${resolvedAccounts.makerAccountLabel} is outside active hours`,
+      );
+
+      return [];
+    }
+
     const offsetMultiplier = new BigNumber(
-      params.baseIncrementPercentage || 0,
+      this.applyVariance(
+        params.baseIncrementPercentage || 0,
+        profile.priceOffsetVariance ?? params.priceOffsetVariance,
+        profile.priceOffsetMultiplier,
+      ),
     ).dividedBy(100);
-    const side = this.resolveVolumeSide(params.postOnlySide, publishedCycles);
     const price =
       side === 'buy'
         ? basePrice.multipliedBy(new BigNumber(1).minus(offsetMultiplier))
         : basePrice.multipliedBy(new BigNumber(1).plus(offsetMultiplier));
-    const qty = new BigNumber(params.baseTradeAmount);
+    const qty = new BigNumber(
+      this.applyVariance(
+        params.baseTradeAmount,
+        profile.tradeAmountVariance ?? params.tradeAmountVariance,
+        profile.tradeAmountMultiplier,
+      ),
+    );
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
       this.logger.error(
@@ -1574,19 +1645,11 @@ export class StrategyService
     }
 
     const cycleId = `${strategyKey}:cycle:${publishedCycles}`;
-    const resolvedAccounts = await this.resolveDualAccountCycleAccounts(
+    const makerDelayMs = this.resolveDualAccountMakerDelayMs(
       params,
-      side,
-      price,
+      resolvedAccounts.makerAccountLabel,
     );
-
-    if (!resolvedAccounts) {
-      this.logger.warn(
-        `Skipping dual-account volume cycle for ${strategyKey}: unable to resolve maker/taker accounts for side=${side}`,
-      );
-
-      return [];
-    }
+    const accountBuyBias = profile.buyBias ?? params.buyBias;
 
     return [
       this.createIntent(
@@ -1611,7 +1674,9 @@ export class StrategyService
           configuredMakerAccountLabel: params.makerAccountLabel,
           configuredTakerAccountLabel: params.takerAccountLabel,
           dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
-          makerDelayMs: Number(params.makerDelayMs || 0),
+          makerDelayMs,
+          activeHours: profile.activeHours,
+          buyBias: accountBuyBias,
         },
         true,
         resolvedAccounts.makerAccountLabel,
@@ -2297,9 +2362,16 @@ export class StrategyService
   private resolveVolumeSide(
     postOnlySide: 'buy' | 'sell' | undefined,
     executedTrades: number,
+    buyBias?: number,
   ): 'buy' | 'sell' {
     if (postOnlySide) {
       return postOnlySide;
+    }
+
+    const normalizedBuyBias = this.readUnitIntervalNumber(buyBias);
+
+    if (normalizedBuyBias !== undefined) {
+      return Math.random() < normalizedBuyBias ? 'buy' : 'sell';
     }
 
     return executedTrades % 2 === 0 ? 'buy' : 'sell';
@@ -4102,6 +4174,44 @@ export class StrategyService
       merged.pricePushRate = Number(persisted.pricePushRate);
     }
 
+    if (Number.isFinite(Number(persisted.tradeAmountVariance))) {
+      merged.tradeAmountVariance = this.readNonNegativeNumber(
+        persisted.tradeAmountVariance,
+      );
+    }
+
+    if (Number.isFinite(Number(persisted.priceOffsetVariance))) {
+      merged.priceOffsetVariance = this.readNonNegativeNumber(
+        persisted.priceOffsetVariance,
+      );
+    }
+
+    if (Number.isFinite(Number(persisted.cadenceVariance))) {
+      merged.cadenceVariance = this.readNonNegativeNumber(
+        persisted.cadenceVariance,
+      );
+    }
+
+    if (Number.isFinite(Number(persisted.makerDelayVariance))) {
+      merged.makerDelayVariance = this.readNonNegativeNumber(
+        persisted.makerDelayVariance,
+      );
+    }
+
+    if (Number.isFinite(Number(persisted.buyBias))) {
+      merged.buyBias = this.readUnitIntervalNumber(persisted.buyBias);
+    }
+
+    if (
+      persisted.accountProfiles &&
+      typeof persisted.accountProfiles === 'object' &&
+      !Array.isArray(persisted.accountProfiles)
+    ) {
+      merged.accountProfiles = this.normalizeAccountProfiles(
+        persisted.accountProfiles as Record<string, unknown>,
+      );
+    }
+
     if (
       persisted.postOnlySide === 'buy' ||
       persisted.postOnlySide === 'sell' ||
@@ -4121,6 +4231,190 @@ export class StrategyService
     }
 
     return merged;
+  }
+
+  private resolveNextDualAccountCadenceMs(
+    params: DualAccountVolumeStrategyParams,
+  ): number {
+    const cadenceSeconds = this.applyVariance(
+      params.baseIntervalTime || 10,
+      params.cadenceVariance,
+    );
+
+    return Math.max(1000, cadenceSeconds * 1000);
+  }
+
+  private resolveDualAccountMakerDelayMs(
+    params: DualAccountVolumeStrategyParams,
+    accountLabel: string,
+  ): number {
+    const profile = this.resolveDualAccountBehaviorProfile(
+      params,
+      accountLabel,
+    );
+    const delayMs = this.applyVariance(
+      params.makerDelayMs || 0,
+      profile.makerDelayVariance ?? params.makerDelayVariance,
+      profile.makerDelayMultiplier,
+    );
+
+    return Math.max(0, Math.round(delayMs));
+  }
+
+  private resolveDualAccountBehaviorProfile(
+    params: DualAccountVolumeStrategyParams,
+    accountLabel: string,
+  ): DualAccountBehaviorProfile {
+    const profiles = params.accountProfiles;
+
+    if (!profiles || typeof profiles !== 'object') {
+      return {};
+    }
+
+    const candidate = profiles[accountLabel];
+
+    if (
+      !candidate ||
+      typeof candidate !== 'object' ||
+      Array.isArray(candidate)
+    ) {
+      return {};
+    }
+
+    return this.normalizeBehaviorProfile(candidate as Record<string, unknown>);
+  }
+
+  private normalizeAccountProfiles(
+    value: unknown,
+  ): Record<string, DualAccountBehaviorProfile> | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+
+    const entries = Object.entries(value as Record<string, unknown>)
+      .map(([accountLabel, profile]) => {
+        if (
+          typeof accountLabel !== 'string' ||
+          !profile ||
+          typeof profile !== 'object' ||
+          Array.isArray(profile)
+        ) {
+          return null;
+        }
+
+        const normalized = this.normalizeBehaviorProfile(
+          profile as Record<string, unknown>,
+        );
+
+        return [accountLabel, normalized] as const;
+      })
+      .filter((entry): entry is readonly [string, DualAccountBehaviorProfile] =>
+        Boolean(entry),
+      );
+
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  }
+
+  private normalizeBehaviorProfile(
+    profile: Record<string, unknown>,
+  ): DualAccountBehaviorProfile {
+    return {
+      tradeAmountMultiplier: this.readPositiveNumber(
+        profile.tradeAmountMultiplier,
+      ),
+      tradeAmountVariance: this.readNonNegativeNumber(
+        profile.tradeAmountVariance,
+      ),
+      priceOffsetMultiplier: this.readPositiveNumber(
+        profile.priceOffsetMultiplier,
+      ),
+      priceOffsetVariance: this.readNonNegativeNumber(
+        profile.priceOffsetVariance,
+      ),
+      cadenceMultiplier: this.readPositiveNumber(profile.cadenceMultiplier),
+      cadenceVariance: this.readNonNegativeNumber(profile.cadenceVariance),
+      makerDelayMultiplier: this.readPositiveNumber(
+        profile.makerDelayMultiplier,
+      ),
+      makerDelayVariance: this.readNonNegativeNumber(
+        profile.makerDelayVariance,
+      ),
+      buyBias: this.readUnitIntervalNumber(profile.buyBias),
+      activeHours: this.readHourList(profile.activeHours),
+    };
+  }
+
+  private applyVariance(
+    baseValue: number,
+    variance?: number,
+    multiplier?: number,
+  ): number {
+    const normalizedBase = Number(baseValue);
+
+    if (!Number.isFinite(normalizedBase)) {
+      return normalizedBase;
+    }
+
+    const normalizedMultiplier =
+      multiplier !== undefined ? this.readPositiveNumber(multiplier) ?? 1 : 1;
+    const effectiveBase = normalizedBase * normalizedMultiplier;
+    const normalizedVariance = this.readNonNegativeNumber(variance);
+
+    if (!normalizedVariance || normalizedVariance <= 0) {
+      return effectiveBase;
+    }
+
+    const swing = (Math.random() * 2 - 1) * normalizedVariance;
+
+    return effectiveBase * (1 + swing);
+  }
+
+  private readPositiveNumber(value: unknown): number | undefined {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }
+
+  private readNonNegativeNumber(value: unknown): number | undefined {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  }
+
+  private readUnitIntervalNumber(value: unknown): number | undefined {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
+      ? parsed
+      : undefined;
+  }
+
+  private readHourList(value: unknown): number[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+
+    const hours = value
+      .map((entry) => Number(entry))
+      .filter(
+        (entry, index, list) =>
+          Number.isInteger(entry) &&
+          entry >= 0 &&
+          entry <= 23 &&
+          list.indexOf(entry) === index,
+      );
+
+    return hours.length > 0 ? hours : undefined;
+  }
+
+  private isWithinDualAccountProfileWindow(
+    profile: DualAccountBehaviorProfile,
+  ): boolean {
+    if (!profile.activeHours?.length) {
+      return true;
+    }
+
+    return profile.activeHours.includes(new Date().getHours());
   }
 
   private toErrorDetails(error: unknown): { message: string; stack?: string } {

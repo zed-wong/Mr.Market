@@ -26,9 +26,13 @@ export function buildSubmittedClientOrderId(
     .update(orderId.trim())
     .digest('hex')
     .slice(0, 12);
+  const nonce = createHash('sha1')
+    .update(`${orderId.trim()}:${seq}:submitted`)
+    .digest('hex')
+    .slice(0, 4);
   const seqToken = seq.toString(36);
 
-  return `mm-${orderHash}-${seqToken}`;
+  return `cid-${orderHash}-${nonce}-${seqToken}`;
 }
 
 export function parseClientOrderId(

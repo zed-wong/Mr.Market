@@ -1906,6 +1906,114 @@ describe('StrategyService', () => {
     ]);
   });
 
+  it('applies dual-account randomness and account profiles when building actions', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 102,
+      });
+    jest
+      .spyOn(Math, 'random')
+      .mockReturnValueOnce(0.8)
+      .mockReturnValueOnce(0.25)
+      .mockReturnValueOnce(0.75)
+      .mockReturnValueOnce(0.1);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 2,
+        baseIntervalTime: 10,
+        baseTradeAmount: 4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        tradeAmountVariance: 0.5,
+        priceOffsetVariance: 0.5,
+        makerDelayVariance: 0.5,
+        buyBias: 0.7,
+        accountProfiles: {
+          maker: {
+            tradeAmountMultiplier: 1.5,
+            priceOffsetMultiplier: 0.5,
+            makerDelayMultiplier: 2,
+          },
+        },
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        price: '101.7575',
+        qty: '7.5',
+        metadata: expect.objectContaining({
+          activeHours: undefined,
+          buyBias: 0.7,
+          makerDelayMs: 300,
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
+  });
+
+  it('skips dual-account volume actions when maker profile is outside active hours', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 102,
+      });
+    const serviceDateSpy = jest
+      .spyOn(Date.prototype, 'getHours')
+      .mockReturnValue(8);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 2,
+        baseIntervalTime: 10,
+        baseTradeAmount: 4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        accountProfiles: {
+          maker: {
+            activeHours: [10, 11],
+          },
+        },
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
+    serviceDateSpy.mockRestore();
+  });
+
   it('cancels dangling dual-account maker orders during runtime restore', async () => {
     exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
       {

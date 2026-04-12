@@ -8,9 +8,11 @@ import {
   IsIn,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsPositive,
   IsString,
+  Max,
   Min,
   ValidateIf,
 } from 'class-validator';
@@ -482,6 +484,74 @@ export class ExecuteDualAccountVolumeStrategyDto {
   @IsInt()
   @Min(0)
   makerDelayMs?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Trade-size variance percentage applied around baseTradeAmount',
+    example: 0.15,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  tradeAmountVariance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Price-offset variance percentage applied around baseIncrementPercentage',
+    example: 0.2,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  priceOffsetVariance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cadence variance percentage applied around baseIntervalTime for each cycle',
+    example: 0.25,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cadenceVariance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Maker delay variance percentage applied around makerDelayMs for each cycle',
+    example: 0.5,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  makerDelayVariance?: number;
+
+  @ApiPropertyOptional({
+    description: 'Probability of placing a buy when postOnlySide is not fixed',
+    example: 0.55,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  buyBias?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Per-account behavior profiles keyed by exchange account label',
+    example: {
+      maker: {
+        tradeAmountMultiplier: 0.95,
+        buyBias: 0.6,
+      },
+      taker: {
+        tradeAmountMultiplier: 1.05,
+        cadenceMultiplier: 1.1,
+      },
+    },
+  })
+  @IsOptional()
+  @IsObject()
+  accountProfiles?: Record<string, unknown>;
 
   @ApiProperty({ description: 'User ID' })
   @IsString()

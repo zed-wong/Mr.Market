@@ -24,6 +24,13 @@ type NormalizedVolumeRerunConfig = {
   slippageBps?: number;
   recipient?: string;
   executionCategory?: string;
+  tradeAmountVariance?: number;
+  priceOffsetVariance?: number;
+  cadenceVariance?: number;
+  makerDelayMs?: number;
+  makerDelayVariance?: number;
+  buyBias?: number;
+  accountProfiles?: Record<string, unknown>;
 };
 
 export function sanitizeVolumeCadenceMs(value: unknown): number {
@@ -70,6 +77,13 @@ export function normalizeVolumeRerunConfig(
     slippageBps: readFiniteNumber(parameters.slippageBps),
     recipient: readString(parameters.recipient),
     executionCategory: readString(parameters.executionCategory),
+    tradeAmountVariance: readFiniteNumber(parameters.tradeAmountVariance),
+    priceOffsetVariance: readFiniteNumber(parameters.priceOffsetVariance),
+    cadenceVariance: readFiniteNumber(parameters.cadenceVariance),
+    makerDelayMs: readFiniteNumber(parameters.makerDelayMs),
+    makerDelayVariance: readFiniteNumber(parameters.makerDelayVariance),
+    buyBias: readFiniteNumber(parameters.buyBias),
+    accountProfiles: readRecord(parameters.accountProfiles),
   };
 }
 
@@ -92,4 +106,12 @@ function readFiniteNumber(value: unknown): number | undefined {
 
 function readSide(value: unknown): Side | undefined {
   return value === 'buy' || value === 'sell' ? value : undefined;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
 }
