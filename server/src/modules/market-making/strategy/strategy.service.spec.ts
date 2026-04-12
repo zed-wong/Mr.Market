@@ -1918,7 +1918,8 @@ describe('StrategyService', () => {
       .mockReturnValueOnce(0.8)
       .mockReturnValueOnce(0.25)
       .mockReturnValueOnce(0.75)
-      .mockReturnValueOnce(0.1);
+      .mockReturnValueOnce(0.1)
+      .mockReturnValueOnce(0.9);
 
     const actions = await service.buildDualAccountVolumeActions(
       'dual-key',
@@ -1967,6 +1968,58 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
+    jest.restoreAllMocks();
+  });
+
+  it('recalculates dual-account cadence jitter across ticks', async () => {
+    const activeSession = {
+      runId: 'run-cadence',
+      strategyKey: 'dual-cadence',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 10000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 10,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        cadenceVariance: 0.2,
+        publishedCycles: 1,
+        completedCycles: 0,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: activeSession.strategyKey,
+      parameters: activeSession.params,
+    });
+    (service as any).sessions.set(activeSession.strategyKey, activeSession);
+    jest
+      .spyOn(Math, 'random')
+      .mockReturnValueOnce(0.25)
+      .mockReturnValueOnce(0.75);
+
+    await service.onDualAccountVolumeActionsPublished(activeSession as any, [
+      { type: 'CREATE_LIMIT_ORDER' } as any,
+    ]);
+
+    const updatedSession = (service as any).sessions.get(
+      activeSession.strategyKey,
+    );
+
+    expect(updatedSession.cadenceMs).toBe(9000);
     jest.restoreAllMocks();
   });
 

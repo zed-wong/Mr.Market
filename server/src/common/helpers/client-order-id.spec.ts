@@ -20,10 +20,10 @@ describe('client-order-id helpers', () => {
 
   it('builds exchange-safe submitted clientOrderId values deterministically', () => {
     expect(buildSubmittedClientOrderId('order-1', 42)).toBe(
-      'cid-ea37b42b1c3b-78b0-16',
+      '78b03881f575d18f8a3c',
     );
     expect(buildSubmittedClientOrderId('order-1', 42)).toMatch(
-      /^cid-[a-f0-9]{12}-[a-f0-9]{4}-[a-z0-9]+$/,
+      /^[a-f0-9]{20}$/,
     );
   });
 

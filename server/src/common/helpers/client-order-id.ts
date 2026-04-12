@@ -22,17 +22,10 @@ export function buildSubmittedClientOrderId(
     throw new Error('seq must be a non-negative integer');
   }
 
-  const orderHash = createHash('sha1')
-    .update(orderId.trim())
-    .digest('hex')
-    .slice(0, 12);
-  const nonce = createHash('sha1')
+  return createHash('sha1')
     .update(`${orderId.trim()}:${seq}:submitted`)
     .digest('hex')
-    .slice(0, 4);
-  const seqToken = seq.toString(36);
-
-  return `cid-${orderHash}-${nonce}-${seqToken}`;
+    .slice(0, 20);
 }
 
 export function parseClientOrderId(

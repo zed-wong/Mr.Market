@@ -34,6 +34,8 @@ import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
+  DualAccountBehaviorProfileDto,
+  DualAccountBehaviorProfilesDto,
   ExecuteDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
@@ -102,7 +104,7 @@ type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   cadenceVariance?: number;
   makerDelayVariance?: number;
   buyBias?: number;
-  accountProfiles?: Record<string, unknown>;
+  accountProfiles?: DualAccountBehaviorProfilesDto;
   dynamicRoleSwitching?: boolean;
   targetQuoteVolume?: number;
   tradedQuoteVolume?: number;
@@ -575,7 +577,7 @@ export class StrategyService
       cadenceVariance: this.readNonNegativeNumber(params.cadenceVariance),
       makerDelayVariance: this.readNonNegativeNumber(params.makerDelayVariance),
       buyBias: this.readUnitIntervalNumber(params.buyBias),
-      accountProfiles: this.normalizeAccountProfiles(params.accountProfiles),
+      accountProfiles: params.accountProfiles,
       dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
       targetQuoteVolume:
         params.targetQuoteVolume !== undefined
@@ -2368,13 +2370,15 @@ export class StrategyService
       return postOnlySide;
     }
 
-    const normalizedBuyBias = this.readUnitIntervalNumber(buyBias);
+    const normalizedBuyBias =
+      this.readUnitIntervalNumber(buyBias) ??
+      (executedTrades > 0 ? 0.5 : undefined);
 
-    if (normalizedBuyBias !== undefined) {
-      return Math.random() < normalizedBuyBias ? 'buy' : 'sell';
+    if (normalizedBuyBias === undefined) {
+      return executedTrades % 2 === 0 ? 'buy' : 'sell';
     }
 
-    return executedTrades % 2 === 0 ? 'buy' : 'sell';
+    return Math.random() < normalizedBuyBias ? 'buy' : 'sell';
   }
 
   private computeAmmAmountIn(
@@ -4207,9 +4211,8 @@ export class StrategyService
       typeof persisted.accountProfiles === 'object' &&
       !Array.isArray(persisted.accountProfiles)
     ) {
-      merged.accountProfiles = this.normalizeAccountProfiles(
-        persisted.accountProfiles as Record<string, unknown>,
-      );
+      merged.accountProfiles =
+        persisted.accountProfiles as DualAccountBehaviorProfilesDto;
     }
 
     if (
@@ -4267,80 +4270,34 @@ export class StrategyService
   ): DualAccountBehaviorProfile {
     const profiles = params.accountProfiles;
 
-    if (!profiles || typeof profiles !== 'object') {
+    if (!profiles) {
       return {};
     }
 
-    const candidate = profiles[accountLabel];
+    const candidate =
+      accountLabel === params.makerAccountLabel
+        ? profiles.maker
+        : accountLabel === params.takerAccountLabel
+        ? profiles.taker
+        : undefined;
 
-    if (
-      !candidate ||
-      typeof candidate !== 'object' ||
-      Array.isArray(candidate)
-    ) {
-      return {};
-    }
-
-    return this.normalizeBehaviorProfile(candidate as Record<string, unknown>);
-  }
-
-  private normalizeAccountProfiles(
-    value: unknown,
-  ): Record<string, DualAccountBehaviorProfile> | undefined {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return undefined;
-    }
-
-    const entries = Object.entries(value as Record<string, unknown>)
-      .map(([accountLabel, profile]) => {
-        if (
-          typeof accountLabel !== 'string' ||
-          !profile ||
-          typeof profile !== 'object' ||
-          Array.isArray(profile)
-        ) {
-          return null;
-        }
-
-        const normalized = this.normalizeBehaviorProfile(
-          profile as Record<string, unknown>,
-        );
-
-        return [accountLabel, normalized] as const;
-      })
-      .filter((entry): entry is readonly [string, DualAccountBehaviorProfile] =>
-        Boolean(entry),
-      );
-
-    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+    return candidate ? this.normalizeBehaviorProfile(candidate) : {};
   }
 
   private normalizeBehaviorProfile(
-    profile: Record<string, unknown>,
+    profile: Partial<DualAccountBehaviorProfileDto>,
   ): DualAccountBehaviorProfile {
     return {
-      tradeAmountMultiplier: this.readPositiveNumber(
-        profile.tradeAmountMultiplier,
-      ),
-      tradeAmountVariance: this.readNonNegativeNumber(
-        profile.tradeAmountVariance,
-      ),
-      priceOffsetMultiplier: this.readPositiveNumber(
-        profile.priceOffsetMultiplier,
-      ),
-      priceOffsetVariance: this.readNonNegativeNumber(
-        profile.priceOffsetVariance,
-      ),
-      cadenceMultiplier: this.readPositiveNumber(profile.cadenceMultiplier),
-      cadenceVariance: this.readNonNegativeNumber(profile.cadenceVariance),
-      makerDelayMultiplier: this.readPositiveNumber(
-        profile.makerDelayMultiplier,
-      ),
-      makerDelayVariance: this.readNonNegativeNumber(
-        profile.makerDelayVariance,
-      ),
-      buyBias: this.readUnitIntervalNumber(profile.buyBias),
-      activeHours: this.readHourList(profile.activeHours),
+      tradeAmountMultiplier: profile.tradeAmountMultiplier,
+      tradeAmountVariance: profile.tradeAmountVariance,
+      priceOffsetMultiplier: profile.priceOffsetMultiplier,
+      priceOffsetVariance: profile.priceOffsetVariance,
+      cadenceMultiplier: profile.cadenceMultiplier,
+      cadenceVariance: profile.cadenceVariance,
+      makerDelayMultiplier: profile.makerDelayMultiplier,
+      makerDelayVariance: profile.makerDelayVariance,
+      buyBias: profile.buyBias,
+      activeHours: profile.activeHours,
     };
   }
 
@@ -4349,24 +4306,26 @@ export class StrategyService
     variance?: number,
     multiplier?: number,
   ): number {
-    const normalizedBase = Number(baseValue);
+    const normalizedBase = new BigNumber(baseValue);
 
-    if (!Number.isFinite(normalizedBase)) {
-      return normalizedBase;
+    if (!normalizedBase.isFinite()) {
+      return normalizedBase.toNumber();
     }
 
     const normalizedMultiplier =
       multiplier !== undefined ? this.readPositiveNumber(multiplier) ?? 1 : 1;
-    const effectiveBase = normalizedBase * normalizedMultiplier;
+    const effectiveBase = normalizedBase.multipliedBy(normalizedMultiplier);
     const normalizedVariance = this.readNonNegativeNumber(variance);
 
     if (!normalizedVariance || normalizedVariance <= 0) {
-      return effectiveBase;
+      return effectiveBase.toNumber();
     }
 
-    const swing = (Math.random() * 2 - 1) * normalizedVariance;
+    const swing = new BigNumber(Math.random() * 2 - 1).multipliedBy(
+      normalizedVariance,
+    );
 
-    return effectiveBase * (1 + swing);
+    return effectiveBase.multipliedBy(new BigNumber(1).plus(swing)).toNumber();
   }
 
   private readPositiveNumber(value: unknown): number | undefined {
@@ -4387,24 +4346,6 @@ export class StrategyService
     return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
       ? parsed
       : undefined;
-  }
-
-  private readHourList(value: unknown): number[] | undefined {
-    if (!Array.isArray(value)) {
-      return undefined;
-    }
-
-    const hours = value
-      .map((entry) => Number(entry))
-      .filter(
-        (entry, index, list) =>
-          Number.isInteger(entry) &&
-          entry >= 0 &&
-          entry <= 23 &&
-          list.indexOf(entry) === index,
-      );
-
-    return hours.length > 0 ? hours : undefined;
   }
 
   private isWithinDualAccountProfileWindow(

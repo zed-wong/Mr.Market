@@ -1,20 +1,22 @@
 // strategy.dto.ts
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsBoolean,
   IsEnum,
   IsEthereumAddress,
   IsIn,
   IsInt,
   IsNumber,
-  IsObject,
   IsOptional,
   IsPositive,
   IsString,
   Max,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
@@ -23,6 +25,86 @@ import { STRATEGY_EXECUTION_CATEGORIES } from './strategy-execution-category';
 
 export type VolumeExecutionVenue = 'cex' | 'dex';
 export type DexAdapterId = 'uniswapV3' | 'pancakeV3';
+
+export class DualAccountBehaviorProfileDto {
+  @ApiPropertyOptional({ example: 0.95 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  tradeAmountMultiplier?: number;
+
+  @ApiPropertyOptional({ example: 0.15 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  tradeAmountVariance?: number;
+
+  @ApiPropertyOptional({ example: 0.9 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  priceOffsetMultiplier?: number;
+
+  @ApiPropertyOptional({ example: 0.2 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  priceOffsetVariance?: number;
+
+  @ApiPropertyOptional({ example: 1.1 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  cadenceMultiplier?: number;
+
+  @ApiPropertyOptional({ example: 0.25 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cadenceVariance?: number;
+
+  @ApiPropertyOptional({ example: 1.2 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  makerDelayMultiplier?: number;
+
+  @ApiPropertyOptional({ example: 0.5 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  makerDelayVariance?: number;
+
+  @ApiPropertyOptional({ example: 0.6 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  buyBias?: number;
+
+  @ApiPropertyOptional({ example: [8, 9, 10, 11] })
+  @IsOptional()
+  @Type(() => Number)
+  @ArrayMaxSize(24)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(23, { each: true })
+  activeHours?: number[];
+}
+
+export class DualAccountBehaviorProfilesDto {
+  @ApiPropertyOptional({ type: DualAccountBehaviorProfileDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DualAccountBehaviorProfileDto)
+  maker?: DualAccountBehaviorProfileDto;
+
+  @ApiPropertyOptional({ type: DualAccountBehaviorProfileDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DualAccountBehaviorProfileDto)
+  taker?: DualAccountBehaviorProfileDto;
+}
 
 export class ArbitrageStrategyDto {
   @ApiProperty({
@@ -550,8 +632,9 @@ export class ExecuteDualAccountVolumeStrategyDto {
     },
   })
   @IsOptional()
-  @IsObject()
-  accountProfiles?: Record<string, unknown>;
+  @ValidateNested()
+  @Type(() => DualAccountBehaviorProfilesDto)
+  accountProfiles?: DualAccountBehaviorProfilesDto;
 
   @ApiProperty({ description: 'User ID' })
   @IsString()
