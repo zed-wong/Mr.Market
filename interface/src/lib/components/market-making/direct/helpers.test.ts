@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatOrderAmountForDisplay, normalizeConfigOverrides, readPositiveOrderAmount, resolveMinOrderAmount } from './helpers';
+import {
+  formatOrderAmountForDisplay,
+  normalizeConfigOverrides,
+  readPositiveOrderAmount,
+  resolveInventorySkewAllocation,
+  resolveMinOrderAmount,
+} from './helpers';
 
 describe('normalizeConfigOverrides', () => {
   it('maps PMM quick fields to order amount and symmetric spreads', () => {
@@ -118,5 +124,58 @@ describe('formatOrderAmountForDisplay', () => {
 
   it('trims fallback display decimals when no amount step is available', () => {
     expect(formatOrderAmountForDisplay('1.230000')).toBe('1.23');
+  });
+});
+
+describe('resolveInventorySkewAllocation', () => {
+  it('normalizes base inventory into quote value before calculating skew', () => {
+    expect(
+      resolveInventorySkewAllocation(
+        [
+          {
+            asset: 'XIN',
+            free: '0.34',
+            used: '0',
+            total: '0.34',
+          },
+          {
+            asset: 'USDT',
+            free: '10.4381106',
+            used: '0',
+            total: '10.4381106',
+          },
+        ],
+        'XIN/USDT',
+        '59.05',
+        '59.35',
+      ),
+    ).toEqual({
+      baseAsset: 'XIN',
+      quoteAsset: 'USDT',
+      basePercent: 66,
+      quotePercent: 34,
+    });
+  });
+
+  it('returns null when pair pricing is unavailable', () => {
+    expect(
+      resolveInventorySkewAllocation(
+        [
+          {
+            asset: 'XIN',
+            free: '0.34',
+            used: '0',
+            total: '0.34',
+          },
+          {
+            asset: 'USDT',
+            free: '10.4381106',
+            used: '0',
+            total: '10.4381106',
+          },
+        ],
+        'XIN/USDT',
+      ),
+    ).toBeNull();
   });
 });

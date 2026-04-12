@@ -6,7 +6,10 @@
     DirectOrderSummary,
     DirectOrderStatus,
   } from "$lib/types/hufi/admin-direct-market-making";
-  import { formatTimestamp } from "$lib/components/market-making/direct/helpers";
+  import {
+    formatTimestamp,
+    resolveInventorySkewAllocation,
+  } from "$lib/components/market-making/direct/helpers";
 
   export let show = false;
   export let order: DirectOrderSummary | null = null;
@@ -60,21 +63,6 @@
     return $_("admin_direct_mm_hours_ago", { values: { h: hours } });
   }
 
-  function computeSkewPercent(
-    balances: DirectOrderStatus["inventoryBalances"],
-  ): number | null {
-    if (!balances || balances.length < 2) return null;
-    const a = new BigNumber(balances[0].total || 0);
-    const b = new BigNumber(balances[1].total || 0);
-    const sum = a.plus(b);
-    if (sum.isZero()) return null;
-    return a
-      .dividedBy(sum)
-      .multipliedBy(100)
-      .decimalPlaces(0, BigNumber.ROUND_HALF_UP)
-      .toNumber();
-  }
-
   function formatSpread(val: string | null | undefined): string {
     if (val === null || val === undefined || val === "")
       return $_("admin_direct_mm_na");
@@ -95,11 +83,19 @@
   $: isDualAccountStrategy =
     (data?.controllerType || order?.controllerType) === "dualAccountVolume";
   $: isStale = data?.stale ?? false;
-  $: skewPercent = data ? computeSkewPercent(
-    isDualAccountStrategy
+  $: skewBalances = data
+    ? isDualAccountStrategy
       ? data.inventoryBalances.filter((b) => !b.accountLabel || b.accountLabel === "maker")
       : data.inventoryBalances
-  ) : null;
+    : [];
+  $: inventorySkew = data && order
+    ? resolveInventorySkewAllocation(
+        skewBalances,
+        order.pair,
+        data.spread?.bid,
+        data.spread?.ask,
+      )
+    : null;
   $: fills1h = data?.fillCount1h ?? 0;
 
   $: makerBalances = data?.inventoryBalances.filter((b) => b.accountLabel === "maker") ?? [];
@@ -797,17 +793,16 @@
             {/if}
 
             <!-- Inventory Skew Bar (maker balances for dual, all for single) -->
-            {#if skewPercent !== null && data && data.inventoryBalances.length >= 2}
-              {@const skewBalances = isDualAccountStrategy && makerBalances.length >= 2 ? makerBalances : data.inventoryBalances}
+            {#if inventorySkew !== null}
               <div class="mt-3">
                 <div class="flex items-center justify-between mb-1">
                   <span class="text-[10px] text-base-content/40 font-semibold"
                     >{$_("admin_direct_mm_inventory_skew")}</span
                   >
                   <span class="text-[10px] text-base-content/50"
-                    >{skewBalances[0].asset}
-                    {skewPercent}% / {skewBalances[1].asset}
-                    {100 - skewPercent}%</span
+                    >{inventorySkew.baseAsset}
+                    {inventorySkew.basePercent}% / {inventorySkew.quoteAsset}
+                    {inventorySkew.quotePercent}%</span
                   >
                 </div>
                 <div
@@ -815,11 +810,11 @@
                 >
                   <div
                     class="h-full bg-primary/70 rounded-l-full transition-all"
-                    style="width: {skewPercent}%"
+                    style="width: {inventorySkew.basePercent}%"
                   ></div>
                   <div
                     class="h-full bg-secondary/50 rounded-r-full transition-all"
-                    style="width: {100 - skewPercent}%"
+                    style="width: {inventorySkew.quotePercent}%"
                   ></div>
                 </div>
               </div>

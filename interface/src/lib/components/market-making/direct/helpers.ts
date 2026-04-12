@@ -16,6 +16,21 @@ export interface ExchangeMarketMetadata {
   limits?: ExchangeMarketAmountLimits;
 }
 
+export interface InventoryBalanceSummary {
+  asset: string;
+  free: string;
+  used: string;
+  total: string;
+  accountLabel?: string;
+}
+
+export interface InventorySkewAllocation {
+  baseAsset: string;
+  quoteAsset: string;
+  basePercent: number;
+  quotePercent: number;
+}
+
 const errorKeyMap: Record<string, string> = {
   "API key not found": "admin_direct_mm_error_api_key_not_found",
   "API key exchange does not match request":
@@ -152,6 +167,16 @@ function readPositiveBigNumber(value: unknown): BigNumber | null {
   return amount;
 }
 
+function readNonNegativeBigNumber(value: unknown): BigNumber {
+  const amount = new BigNumber(String(value ?? "").trim() || 0);
+
+  if (!amount.isFinite() || amount.isNegative()) {
+    return new BigNumber(0);
+  }
+
+  return amount;
+}
+
 export function readPositiveOrderAmount(value: unknown): string {
   return readPositiveBigNumber(value)?.toString() || "";
 }
@@ -245,6 +270,68 @@ export function resolveMinOrderAmount(
       candidate.isGreaterThan(maximum) ? candidate : maximum,
     )
     .toString();
+}
+
+export function resolveInventorySkewAllocation(
+  balances: InventoryBalanceSummary[],
+  pair: string,
+  bid?: unknown,
+  ask?: unknown,
+): InventorySkewAllocation | null {
+  if (!balances || balances.length < 2) {
+    return null;
+  }
+
+  const [baseAsset, quoteAsset] = String(pair || "")
+    .split("/")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!baseAsset || !quoteAsset) {
+    return null;
+  }
+
+  const baseBalance = balances.find(
+    (balance) => String(balance.asset || "").trim().toUpperCase() === baseAsset.toUpperCase(),
+  );
+  const quoteBalance = balances.find(
+    (balance) => String(balance.asset || "").trim().toUpperCase() === quoteAsset.toUpperCase(),
+  );
+
+  if (!baseBalance || !quoteBalance) {
+    return null;
+  }
+
+  const bidPrice = readPositiveBigNumber(bid);
+  const askPrice = readPositiveBigNumber(ask);
+  const pairPrice = bidPrice && askPrice
+    ? bidPrice.plus(askPrice).dividedBy(2)
+    : bidPrice || askPrice;
+
+  if (!pairPrice || !pairPrice.isFinite() || !pairPrice.isGreaterThan(0)) {
+    return null;
+  }
+
+  const baseValueInQuote = readNonNegativeBigNumber(baseBalance.total).multipliedBy(pairPrice);
+  const quoteValue = readNonNegativeBigNumber(quoteBalance.total);
+  const portfolioValue = baseValueInQuote.plus(quoteValue);
+
+  if (!portfolioValue.isGreaterThan(0)) {
+    return null;
+  }
+
+  const basePercent = baseValueInQuote
+    .dividedBy(portfolioValue)
+    .multipliedBy(100)
+    .decimalPlaces(0, BigNumber.ROUND_HALF_UP)
+    .toNumber();
+
+  return {
+    baseAsset: baseBalance.asset,
+    quoteAsset: quoteBalance.asset,
+    basePercent,
+    quotePercent: 100 - basePercent,
+  };
 }
 
 export function normalizeConfigOverrides(
