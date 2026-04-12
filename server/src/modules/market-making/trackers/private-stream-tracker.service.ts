@@ -54,6 +54,9 @@ export class PrivateStreamTrackerService
   private readonly queue: PrivateStreamEvent[] = [];
   private readonly latestByKey = new Map<string, PrivateStreamEvent>();
   private readonly orphanedFills: OrphanedFillEvent[] = [];
+  private readonly lastRecvTimeByKey = new Map<string, number>();
+  private drainScheduled = false;
+  private drainInProgress = false;
 
   constructor(
     @Optional()
@@ -85,6 +88,7 @@ export class PrivateStreamTrackerService
   async stop(): Promise<void> {
     this.queue.length = 0;
     this.orphanedFills.length = 0;
+    this.lastRecvTimeByKey.clear();
   }
 
   async health(): Promise<boolean> {
@@ -93,6 +97,15 @@ export class PrivateStreamTrackerService
 
   queueAccountEvent(event: PrivateStreamEvent): void {
     this.queue.push(event);
+    this.lastRecvTimeByKey.set(
+      this.toKey(event.exchange, event.accountLabel),
+      Date.now(),
+    );
+    this.exchangeOrderTrackerService?.markPrivateStreamActivity(
+      event.exchange,
+      event.accountLabel,
+    );
+    this.scheduleDrain();
   }
 
   getLatestEvent(
@@ -102,31 +115,76 @@ export class PrivateStreamTrackerService
     return this.latestByKey.get(this.toKey(exchange, accountLabel));
   }
 
+  getLastRecvTime(
+    exchange: string,
+    accountLabel: string,
+  ): number | undefined {
+    return this.lastRecvTimeByKey.get(this.toKey(exchange, accountLabel));
+  }
+
+  isSilent(
+    exchange: string,
+    accountLabel: string,
+    maxSilentMs: number,
+  ): boolean {
+    const lastRecvTime = this.getLastRecvTime(exchange, accountLabel);
+
+    return lastRecvTime === undefined || Date.now() - lastRecvTime > maxSilentMs;
+  }
+
   getOrphanedFills(): OrphanedFillEvent[] {
     return [...this.orphanedFills];
   }
 
   async onTick(_: string): Promise<void> {
-    while (this.queue.length > 0) {
-      const event = this.queue.shift();
+    await this.flushPendingEvents();
+  }
 
-      if (!event) {
-        continue;
-      }
-
-      this.latestByKey.set(
-        this.toKey(event.exchange, event.accountLabel),
-        event,
-      );
-
-      const fill = this.extractFillCandidate(event);
-
-      if (!fill) {
-        continue;
-      }
-
-      await this.routeFillCandidate(fill);
+  private async flushPendingEvents(): Promise<void> {
+    if (this.drainInProgress) {
+      return;
     }
+
+    this.drainInProgress = true;
+
+    try {
+      while (this.queue.length > 0) {
+        const event = this.queue.shift();
+
+        if (!event) {
+          continue;
+        }
+
+        this.latestByKey.set(
+          this.toKey(event.exchange, event.accountLabel),
+          event,
+        );
+
+        const fill = this.extractFillCandidate(event);
+
+        if (!fill) {
+          continue;
+        }
+
+        await this.routeFillCandidate(fill);
+      }
+    } finally {
+      this.drainInProgress = false;
+    }
+  }
+
+  private scheduleDrain(): void {
+    if (this.drainScheduled) {
+      return;
+    }
+
+    this.drainScheduled = true;
+    setImmediate(() => {
+      this.drainScheduled = false;
+      this.flushPendingEvents().catch((error) => {
+        this.logger.error(`Drain failed: ${error}`);
+      });
+    });
   }
 
   private async routeFillCandidate(fill: RoutedFillCandidate): Promise<void> {

@@ -314,4 +314,167 @@ describe('ExchangeOrderTrackerService', () => {
       service.getByExchangeOrderId('binance', 'same-id', 'account2')?.side,
     ).toBe('sell');
   });
+
+  it('marks private stream activity and uses slow poll interval', async () => {
+    const adapter = {
+      fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined as any,
+      adapter as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'o1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      accountLabel: 'default',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    service.markPrivateStreamActivity('binance', 'default');
+
+    await service.onTick('2026-02-11T00:00:01.000Z');
+
+    expect(adapter.fetchOrder).toHaveBeenCalledTimes(1);
+
+    adapter.fetchOrder.mockClear();
+
+    await service.onTick('2026-02-11T00:00:02.000Z');
+
+    expect(adapter.fetchOrder).toHaveBeenCalledTimes(0);
+  });
+
+  it('uses fast poll interval when private stream is silent', async () => {
+    const adapter = {
+      fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined as any,
+      adapter as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'o1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    await service.onTick('2026-02-11T00:00:01.000Z');
+
+    expect(adapter.fetchOrder).toHaveBeenCalledTimes(1);
+
+    adapter.fetchOrder.mockClear();
+
+    jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 6_000);
+
+    await service.onTick('2026-02-11T00:00:07.000Z');
+
+    expect(adapter.fetchOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('polls at most MAX_ORDERS_PER_TICK orders per tick', async () => {
+    const adapter = {
+      fetchOrder: jest.fn().mockResolvedValue({ id: 'x', status: 'open' }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined as any,
+      adapter as any,
+    );
+
+    for (let i = 0; i < 5; i++) {
+      service.upsertOrder({
+        orderId: `o${i}`,
+        strategyKey: 'strategy-1',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: `ex-${i}`,
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'open',
+        createdAt: '2026-02-11T00:00:00.000Z',
+        updatedAt: '2026-02-11T00:00:00.000Z',
+      });
+    }
+
+    await service.onTick('2026-02-11T00:00:01.000Z');
+
+    expect(adapter.fetchOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it('prioritizes pending_create and pending_cancel orders', async () => {
+    const fetchedIds: string[] = [];
+    const adapter = {
+      fetchOrder: jest.fn().mockImplementation(
+        (_exchange: string, _pair: string, exchangeOrderId: string) => {
+          fetchedIds.push(exchangeOrderId);
+          return Promise.resolve({ id: exchangeOrderId, status: 'open' });
+        },
+      ),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined as any,
+      adapter as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'o1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'open-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'o2',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'pending-1',
+      side: 'sell',
+      price: '101',
+      qty: '1',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'o3',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'open-2',
+      side: 'buy',
+      price: '99',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    await service.onTick('2026-02-11T00:00:01.000Z');
+
+    expect(fetchedIds[0]).toBe('pending-1');
+  });
 });

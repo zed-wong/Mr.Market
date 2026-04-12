@@ -76,6 +76,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest.fn().mockReturnValue({
@@ -130,6 +131,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -172,6 +174,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue(undefined),
@@ -225,6 +228,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest.fn().mockReturnValue(undefined),
@@ -262,6 +266,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue(undefined),
@@ -309,6 +314,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest.fn().mockReturnValue({
@@ -373,6 +379,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder,
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -420,6 +427,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest
@@ -488,6 +496,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -543,6 +552,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -596,6 +606,7 @@ describe('PrivateStreamTrackerService', () => {
           cumulativeFilledQty =
             order.cumulativeFilledQty || cumulativeFilledQty;
         }),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -658,6 +669,95 @@ describe('PrivateStreamTrackerService', () => {
     );
   });
 
+  it('tracks lastRecvTime when account events are queued', () => {
+    const service = new PrivateStreamTrackerService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'balance_update',
+      payload: { asset: 'USDT', free: '100' },
+      receivedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    const lastRecvTime = service.getLastRecvTime('binance', 'default');
+
+    expect(typeof lastRecvTime).toBe('number');
+    expect(lastRecvTime).toBeGreaterThan(0);
+  });
+
+  it('reports silent when no events received within threshold', () => {
+    const service = new PrivateStreamTrackerService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(service.isSilent('binance', 'unknown', 5000)).toBe(true);
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'balance_update',
+      payload: { asset: 'USDT', free: '100' },
+      receivedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    expect(service.isSilent('binance', 'default', 5000)).toBe(false);
+  });
+
+  it('processes events immediately without waiting for tick', async () => {
+    const onFill = jest.fn();
+    const service = new PrivateStreamTrackerService(
+      undefined,
+      {
+        resolveOrderForFill: jest.fn().mockResolvedValue({
+          orderId: 'order-1',
+          seq: 0,
+          source: 'clientOrderId',
+        }),
+      } as unknown as FillRoutingService,
+      {
+        getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
+        upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      {
+        findExecutorByOrderId: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
+          onFill,
+        }),
+      } as unknown as ExecutorRegistry,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      eventType: 'trade',
+      payload: {
+        clientOrderId: 'order-1:0',
+        amount: '1',
+        status: 'filled',
+      },
+      receivedAt: '2026-03-11T00:00:00.000Z',
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(onFill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        clientOrderId: 'order-1:0',
+      }),
+    );
+  });
+
   it('ignores cumulative filled updates that move backwards', async () => {
     const onFill = jest.fn();
     const service = new PrivateStreamTrackerService(
@@ -681,6 +781,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder: jest.fn(),
+        markPrivateStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({

@@ -17,6 +17,7 @@ describe('OrderBookIngestionService', () => {
     };
     const orderBookTrackerService = {
       queueSnapshot: jest.fn(),
+      getOrderBook: jest.fn().mockReturnValue(undefined),
     };
     const service = new OrderBookIngestionService(
       marketdataService as unknown as MarketdataService,
@@ -68,6 +69,7 @@ describe('OrderBookIngestionService', () => {
     };
     const orderBookTrackerService = {
       queueSnapshot: jest.fn(),
+      getOrderBook: jest.fn().mockReturnValue(undefined),
     };
     const service = new OrderBookIngestionService(
       marketdataService as unknown as MarketdataService,
@@ -110,6 +112,7 @@ describe('OrderBookIngestionService', () => {
     };
     const orderBookTrackerService = {
       queueSnapshot: jest.fn(),
+      getOrderBook: jest.fn().mockReturnValue(undefined),
     };
     const service = new OrderBookIngestionService(
       marketdataService as unknown as MarketdataService,
@@ -132,6 +135,60 @@ describe('OrderBookIngestionService', () => {
         bids: [[59.8, 1.2]],
         asks: [[60.1, 0.8]],
         sequence: 11,
+      },
+    );
+  });
+
+  it('skips REST seed when a live book already exists in the tracker', async () => {
+    const marketdataService = {
+      subscribeOrderBook: jest.fn(),
+      unsubscribeOrderBook: jest.fn(),
+    };
+    const exchangeConnectorAdapterService = {
+      fetchOrderBook: jest.fn().mockResolvedValue({
+        bids: [[59.8, 1.2]],
+        asks: [[60.1, 0.8]],
+        nonce: 11,
+      }),
+    };
+    const orderBookTrackerService = {
+      queueSnapshot: jest.fn(),
+      getOrderBook: jest.fn().mockReturnValue({
+        bids: [[60, 1]],
+        asks: [[61, 2]],
+        sequence: 20,
+      }),
+    };
+    const service = new OrderBookIngestionService(
+      marketdataService as unknown as MarketdataService,
+      exchangeConnectorAdapterService as any,
+      orderBookTrackerService as unknown as OrderBookTrackerService,
+    );
+
+    service.ensureSubscribed('mexc', 'XIN/USDT');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(exchangeConnectorAdapterService.fetchOrderBook).toHaveBeenCalledWith(
+      'mexc',
+      'XIN/USDT',
+    );
+    expect(orderBookTrackerService.queueSnapshot).not.toHaveBeenCalled();
+
+    const onData = marketdataService.subscribeOrderBook.mock.calls[0][3];
+    onData({
+      bids: [[62, 3]],
+      asks: [[63, 4]],
+      nonce: 30,
+    });
+
+    expect(orderBookTrackerService.queueSnapshot).toHaveBeenCalledWith(
+      'mexc',
+      'XIN/USDT',
+      {
+        bids: [[62, 3]],
+        asks: [[63, 4]],
+        sequence: 30,
       },
     );
   });

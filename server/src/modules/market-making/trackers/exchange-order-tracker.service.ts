@@ -81,8 +81,15 @@ export class ExchangeOrderTrackerService
     cancelled: [],
     failed: [],
   };
+  private static readonly STREAM_HEALTHY_THRESHOLD_MS = 30_000;
+  private static readonly SLOW_POLL_INTERVAL_MS = 120_000;
+  private static readonly FAST_POLL_INTERVAL_MS = 5_000;
+  private static readonly MAX_ORDERS_PER_TICK = 2;
+
   private readonly orders = new Map<string, TrackedOrder>();
   private readonly fillLog = new Map<string, FillLogEntry[]>();
+  private readonly lastPrivateStreamActivityByKey = new Map<string, number>();
+  private readonly lastPolledAtByOrderKey = new Map<string, number>();
 
   constructor(
     @Optional()
@@ -201,8 +208,17 @@ export class ExchangeOrderTrackerService
     return this.getPrunedFillLog(strategyKey, Date.now() - windowMs).length;
   }
 
+  markPrivateStreamActivity(exchange: string, accountLabel: string): void {
+    this.lastPrivateStreamActivityByKey.set(
+      `${exchange}:${accountLabel}`,
+      Date.now(),
+    );
+  }
+
   async onTick(ts: string): Promise<void> {
-    const openOrders = [...this.orders.values()].filter(
+    const now = Date.now();
+
+    const activeOrders = [...this.orders.values()].filter(
       (order) =>
         order.status === 'pending_create' ||
         order.status === 'open' ||
@@ -210,40 +226,109 @@ export class ExchangeOrderTrackerService
         order.status === 'pending_cancel',
     );
 
-    await Promise.allSettled(
-      openOrders.map(async (order) => {
-        const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
-          order.exchange,
-          order.pair,
-          order.exchangeOrderId,
-          order.accountLabel,
+    const dueOrders = activeOrders
+      .filter((order) => this.isPollDue(order, now))
+      .sort((a, b) => {
+        const aPriority =
+          a.status === 'pending_create' || a.status === 'pending_cancel'
+            ? 0
+            : 1;
+        const bPriority =
+          b.status === 'pending_create' || b.status === 'pending_cancel'
+            ? 0
+            : 1;
+
+        if (aPriority !== bPriority) {
+          return aPriority - bPriority;
+        }
+
+        const aKey = this.toKey(a.exchange, a.accountLabel, a.exchangeOrderId);
+        const bKey = this.toKey(b.exchange, b.accountLabel, b.exchangeOrderId);
+
+        return (
+          (this.lastPolledAtByOrderKey.get(aKey) ?? 0) -
+          (this.lastPolledAtByOrderKey.get(bKey) ?? 0)
         );
+      })
+      .slice(0, ExchangeOrderTrackerService.MAX_ORDERS_PER_TICK);
 
-        if (!latest) {
-          return;
-        }
+    for (const order of dueOrders) {
+      const orderKey = this.toKey(
+        order.exchange,
+        order.accountLabel,
+        order.exchangeOrderId,
+      );
 
-        const normalizedStatus = this.normalizeStatus(latest.status);
+      const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
+        order.exchange,
+        order.pair,
+        order.exchangeOrderId,
+        order.accountLabel,
+      );
 
-        const nextFilledQty =
-          this.normalizeFilledValue(latest?.filled) ||
-          order.cumulativeFilledQty;
-        const nextOrder: TrackedOrder = {
-          ...order,
-          cumulativeFilledQty: nextFilledQty,
-          status: normalizedStatus,
-          updatedAt: getRFC3339Timestamp(),
-        };
+      this.lastPolledAtByOrderKey.set(orderKey, Date.now());
 
-        const fillDelta = this.recordFill(order, nextOrder, ts);
+      if (!latest) {
+        continue;
+      }
 
-        this.upsertOrder(nextOrder);
+      const normalizedStatus = this.normalizeStatus(latest.status);
 
-        if (fillDelta) {
-          await this.routeRecoveredFill(order, nextOrder, fillDelta, ts);
-        }
-      }),
+      const nextFilledQty =
+        this.normalizeFilledValue(latest?.filled) || order.cumulativeFilledQty;
+      const nextOrder: TrackedOrder = {
+        ...order,
+        cumulativeFilledQty: nextFilledQty,
+        status: normalizedStatus,
+        updatedAt: getRFC3339Timestamp(),
+      };
+
+      const fillDelta = this.recordFill(order, nextOrder, ts);
+
+      this.upsertOrder(nextOrder);
+
+      if (ExchangeOrderTrackerService.terminalStates.has(normalizedStatus)) {
+        this.lastPolledAtByOrderKey.delete(orderKey);
+      }
+
+      if (fillDelta) {
+        await this.routeRecoveredFill(order, nextOrder, fillDelta, ts);
+      }
+    }
+  }
+
+  private isPrivateStreamHealthy(
+    exchange: string,
+    accountLabel?: string,
+  ): boolean {
+    const key = `${exchange}:${accountLabel || 'default'}`;
+    const lastActivity = this.lastPrivateStreamActivityByKey.get(key);
+
+    if (lastActivity === undefined) {
+      return false;
+    }
+
+    return (
+      Date.now() - lastActivity <
+      ExchangeOrderTrackerService.STREAM_HEALTHY_THRESHOLD_MS
     );
+  }
+
+  private isPollDue(order: TrackedOrder, now: number): boolean {
+    const key = this.toKey(
+      order.exchange,
+      order.accountLabel,
+      order.exchangeOrderId,
+    );
+    const lastPolled = this.lastPolledAtByOrderKey.get(key);
+    const interval = this.isPrivateStreamHealthy(
+      order.exchange,
+      order.accountLabel,
+    )
+      ? ExchangeOrderTrackerService.SLOW_POLL_INTERVAL_MS
+      : ExchangeOrderTrackerService.FAST_POLL_INTERVAL_MS;
+
+    return lastPolled === undefined || now - lastPolled >= interval;
   }
 
   private recordFill(
