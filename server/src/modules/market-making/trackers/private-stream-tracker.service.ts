@@ -115,10 +115,7 @@ export class PrivateStreamTrackerService
     return this.latestByKey.get(this.toKey(exchange, accountLabel));
   }
 
-  getLastRecvTime(
-    exchange: string,
-    accountLabel: string,
-  ): number | undefined {
+  getLastRecvTime(exchange: string, accountLabel: string): number | undefined {
     return this.lastRecvTimeByKey.get(this.toKey(exchange, accountLabel));
   }
 
@@ -129,7 +126,9 @@ export class PrivateStreamTrackerService
   ): boolean {
     const lastRecvTime = this.getLastRecvTime(exchange, accountLabel);
 
-    return lastRecvTime === undefined || Date.now() - lastRecvTime > maxSilentMs;
+    return (
+      lastRecvTime === undefined || Date.now() - lastRecvTime > maxSilentMs
+    );
   }
 
   getOrphanedFills(): OrphanedFillEvent[] {

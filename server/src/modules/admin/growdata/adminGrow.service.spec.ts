@@ -44,6 +44,7 @@ describe('AdminGrowService', () => {
             if (assetId === 'quote-chain') {
               return { icon_url: 'quote-chain-icon' };
             }
+
             return {};
           }),
         },

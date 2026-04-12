@@ -88,6 +88,7 @@ describe('OrderBookTrackerService', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     const validBook = service.getOrderBook('binance', 'BTC/USDT');
+
     expect(validBook).toBeDefined();
     expect(validBook?.bids[0][0]).toBe(100);
 
@@ -100,6 +101,7 @@ describe('OrderBookTrackerService', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     const afterCrossed = service.getOrderBook('binance', 'BTC/USDT');
+
     expect(afterCrossed?.bids[0][0]).toBe(100);
     expect(afterCrossed?.asks[0][0]).toBe(101);
     expect(afterCrossed?.sequence).toBe(1);
@@ -138,6 +140,7 @@ describe('OrderBookTrackerService', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     const orderBook = service.getOrderBook('binance', 'BTC/USDT');
+
     expect(orderBook).toBeUndefined();
   });
 });

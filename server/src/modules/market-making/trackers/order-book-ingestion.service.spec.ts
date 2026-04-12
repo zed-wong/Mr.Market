@@ -176,6 +176,7 @@ describe('OrderBookIngestionService', () => {
     expect(orderBookTrackerService.queueSnapshot).not.toHaveBeenCalled();
 
     const onData = marketdataService.subscribeOrderBook.mock.calls[0][3];
+
     onData({
       bids: [[62, 3]],
       asks: [[63, 4]],

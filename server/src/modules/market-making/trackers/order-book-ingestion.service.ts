@@ -101,10 +101,12 @@ export class OrderBookIngestionService implements OnModuleDestroy {
           exchange,
           pair,
         );
+
       if (this.orderBookTrackerService.getOrderBook(exchange, pair)) {
         this.logger.log(
           `Skipping REST seed for ${exchange}:${pair} because live book already exists`,
         );
+
         return;
       }
 

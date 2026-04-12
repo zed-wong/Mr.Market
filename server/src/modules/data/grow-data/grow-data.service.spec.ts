@@ -148,6 +148,7 @@ describe('GrowdataService', () => {
       ] as any);
       jest.spyOn(cacheService, 'get').mockResolvedValue(undefined);
       const mixinClientService = module.get(MixinClientService) as any;
+
       mixinClientService.client.safe.fetchAssets.mockResolvedValue([]);
 
       const result = await service.getAllMarketMakingPairs();

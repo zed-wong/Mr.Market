@@ -1,6 +1,6 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import BigNumber from 'bignumber.js';
 import { Inject, Injectable } from '@nestjs/common';
+import BigNumber from 'bignumber.js';
 import type { Cache } from 'cache-manager';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
@@ -124,15 +124,19 @@ export class GrowdataService {
   private async applyExchangeMarketMetadata(
     pairs: GrowdataMarketMakingPair[],
   ): Promise<GrowdataMarketMakingPair[]> {
-    const exchangeIds = [...new Set(pairs.map((pair) => pair.exchange_id).filter(Boolean))];
+    const exchangeIds = [
+      ...new Set(pairs.map((pair) => pair.exchange_id).filter(Boolean)),
+    ];
     const marketsByExchange = new Map<string, ExchangeMarketSnapshot[]>();
 
     await Promise.all(
       exchangeIds.map(async (exchangeId) => {
         try {
-          const markets = (await this.exchangeInitService.getCcxtExchangeMarkets(
-            exchangeId,
-          )) as ExchangeMarketSnapshot[];
+          const markets =
+            (await this.exchangeInitService.getCcxtExchangeMarkets(
+              exchangeId,
+            )) as ExchangeMarketSnapshot[];
+
           marketsByExchange.set(
             exchangeId,
             Array.isArray(markets) ? markets : [],
@@ -175,19 +179,22 @@ export class GrowdataService {
     });
   }
 
-
   private async applyEffectiveMinimumOrderAmounts(
     pairs: GrowdataMarketMakingPair[],
   ): Promise<GrowdataMarketMakingPair[]> {
-    const exchangeIds = [...new Set(pairs.map((pair) => pair.exchange_id).filter(Boolean))];
+    const exchangeIds = [
+      ...new Set(pairs.map((pair) => pair.exchange_id).filter(Boolean)),
+    ];
     const marketsByExchange = new Map<string, ExchangeMarketSnapshot[]>();
 
     await Promise.all(
       exchangeIds.map(async (exchangeId) => {
         try {
-          const markets = (await this.exchangeInitService.getCcxtExchangeMarkets(
-            exchangeId,
-          )) as ExchangeMarketSnapshot[];
+          const markets =
+            (await this.exchangeInitService.getCcxtExchangeMarkets(
+              exchangeId,
+            )) as ExchangeMarketSnapshot[];
+
           marketsByExchange.set(
             exchangeId,
             Array.isArray(markets) ? markets : [],
@@ -207,9 +214,9 @@ export class GrowdataService {
       const market = markets.find(
         (item) => this.normalizeMarketSymbol(item?.symbol) === normalizedSymbol,
       );
-      const candidates = [this.readPositiveBigNumber(pair.min_order_amount)].filter(
-        (value): value is BigNumber => value !== undefined,
-      );
+      const candidates = [
+        this.readPositiveBigNumber(pair.min_order_amount),
+      ].filter((value): value is BigNumber => value !== undefined);
       const costMinimum = this.readPositiveBigNumber(market?.limits?.cost?.min);
       const derivedPairPrice = this.resolveDerivedPairPrice(pair);
 
@@ -274,7 +281,8 @@ export class GrowdataService {
 
   // MarketMakingPair Methods
   async getAllMarketMakingPairs() {
-    const storedPairs = await this.growdataRepository.findAllMarketMakingPairs();
+    const storedPairs =
+      await this.growdataRepository.findAllMarketMakingPairs();
     const pairs = await this.applyExchangeMarketMetadata(storedPairs);
 
     const assetIds = pairs.flatMap((pair) => [

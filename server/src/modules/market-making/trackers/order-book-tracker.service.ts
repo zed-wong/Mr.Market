@@ -88,12 +88,12 @@ export class OrderBookTrackerService
   }
 
   isStale(exchange: string, pair: string, maxAgeMs: number): boolean {
-    const lastUpdate = this.lastUpdateAtByKey.get(
-      this.toKey(exchange, pair),
-    );
+    const lastUpdate = this.lastUpdateAtByKey.get(this.toKey(exchange, pair));
+
     if (lastUpdate === undefined) {
       return true;
     }
+
     return Date.now() - lastUpdate > maxAgeMs;
   }
 
@@ -150,6 +150,7 @@ export class OrderBookTrackerService
     }
     const bestBid = bids[0][0];
     const bestAsk = asks[0][0];
+
     return bestBid >= bestAsk;
   }
 

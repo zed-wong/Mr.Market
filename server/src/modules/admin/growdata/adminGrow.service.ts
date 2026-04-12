@@ -1,5 +1,5 @@
-import BigNumber from 'bignumber.js';
 import { Injectable } from '@nestjs/common';
+import BigNumber from 'bignumber.js';
 import {
   GrowdataArbitragePair,
   GrowdataExchange,
@@ -107,10 +107,9 @@ export class AdminGrowService {
     }
 
     try {
-      const markets =
-        (await this.exchangeInitService.getCcxtExchangeMarkets(
-          pair.exchange_id,
-        )) as ExchangeMarketSnapshot[];
+      const markets = (await this.exchangeInitService.getCcxtExchangeMarkets(
+        pair.exchange_id,
+      )) as ExchangeMarketSnapshot[];
       const normalizedSymbol = this.normalizeMarketSymbol(pair.symbol);
       const market = Array.isArray(markets)
         ? markets.find(

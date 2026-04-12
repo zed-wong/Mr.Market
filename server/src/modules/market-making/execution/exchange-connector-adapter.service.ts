@@ -285,6 +285,7 @@ export class ExchangeConnectorAdapterService {
 
         if (!next) {
           this.queueByExchange.delete(exchangeName);
+
           return;
         }
 
@@ -293,13 +294,17 @@ export class ExchangeConnectorAdapterService {
         try {
           const lastAt = this.lastRequestAtMsByExchange.get(exchangeName) || 0;
           const now = Date.now();
-          const waitMs = Math.max(0, this.minRequestIntervalMs - (now - lastAt));
+          const waitMs = Math.max(
+            0,
+            this.minRequestIntervalMs - (now - lastAt),
+          );
 
           if (waitMs > 0) {
             await this.sleep(waitMs);
           }
 
           const result = await next.work();
+
           this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
           next.resolve(result);
         } catch (error) {

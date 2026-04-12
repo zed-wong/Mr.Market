@@ -421,12 +421,15 @@ describe('ExchangeOrderTrackerService', () => {
   it('prioritizes pending_create and pending_cancel orders', async () => {
     const fetchedIds: string[] = [];
     const adapter = {
-      fetchOrder: jest.fn().mockImplementation(
-        (_exchange: string, _pair: string, exchangeOrderId: string) => {
-          fetchedIds.push(exchangeOrderId);
-          return Promise.resolve({ id: exchangeOrderId, status: 'open' });
-        },
-      ),
+      fetchOrder: jest
+        .fn()
+        .mockImplementation(
+          (_exchange: string, _pair: string, exchangeOrderId: string) => {
+            fetchedIds.push(exchangeOrderId);
+
+            return Promise.resolve({ id: exchangeOrderId, status: 'open' });
+          },
+        ),
     };
     const service = new ExchangeOrderTrackerService(
       undefined as any,
