@@ -37,11 +37,17 @@ describe('ExchangeConnectorAdapterService', () => {
     getExchange: jest.fn().mockReturnValue(exchange),
   };
 
-  const createConfigService = (minRequestIntervalMs = 1) =>
+  const createConfigService = (
+    minRequestIntervalMs = 1,
+    requestTimeoutMs = 15_000,
+  ) =>
     ({
       get: jest.fn((key: string, defaultValue?: number) => {
         if (key === 'strategy.exchange_min_request_interval_ms') {
           return minRequestIntervalMs;
+        }
+        if (key === 'strategy.exchange_request_timeout_ms') {
+          return requestTimeoutMs;
         }
 
         return defaultValue;
@@ -241,5 +247,35 @@ describe('ExchangeConnectorAdapterService', () => {
     await Promise.all([stateRead, marketRead, write]);
 
     expect(callOrder).toEqual(['createOrder', 'fetchOrderBook']);
+  });
+
+  it('times out a hung request and releases the exchange queue for later work', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(0, 20),
+    );
+
+    exchange.createOrder.mockImplementationOnce(
+      async () => await new Promise(() => undefined),
+    );
+    exchange.fetchOrderBook.mockResolvedValueOnce({ bids: [], asks: [] });
+
+    const stuckWrite = service.placeLimitOrder(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+    );
+
+    await Promise.resolve();
+
+    const queuedRead = service.fetchOrderBook('binance', 'BTC/USDT');
+
+    await expect(stuckWrite).rejects.toThrow(
+      'Exchange request timed out after 20ms',
+    );
+    await expect(queuedRead).resolves.toEqual({ bids: [], asks: [] });
+    expect(exchange.fetchOrderBook).toHaveBeenCalledTimes(1);
   });
 });

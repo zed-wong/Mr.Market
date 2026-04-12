@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
@@ -17,10 +17,12 @@ export class ExchangeConnectorAdapterService {
   );
   private readonly lastRequestAtMsByExchange = new Map<string, number>();
   private readonly minRequestIntervalMs: number;
+  private readonly requestTimeoutMs: number;
   private readonly queueByExchange = new Map<
     string,
     Array<{
       priority: number;
+      label: string;
       work: () => Promise<unknown>;
       resolve: (value: unknown) => void;
       reject: (reason?: unknown) => void;
@@ -43,6 +45,19 @@ export class ExchangeConnectorAdapterService {
     this.minRequestIntervalMs = Number(
       this.configService.get('strategy.exchange_min_request_interval_ms', 200),
     );
+    const parsedRequestTimeoutMs = Number(
+      this.configService.get('strategy.exchange_request_timeout_ms', 15_000),
+    );
+
+    this.requestTimeoutMs =
+      Number.isFinite(parsedRequestTimeoutMs) && parsedRequestTimeoutMs > 0
+        ? parsedRequestTimeoutMs
+        : 15_000;
+    if (this.requestTimeoutMs !== parsedRequestTimeoutMs) {
+      this.logger.warn(
+        `Invalid strategy.exchange_request_timeout_ms value: ${parsedRequestTimeoutMs}. Falling back to ${this.requestTimeoutMs}`,
+      );
+    }
   }
 
   async placeLimitOrder(
@@ -55,26 +70,33 @@ export class ExchangeConnectorAdapterService {
     options?: { postOnly?: boolean; timeInForce?: 'GTC' | 'IOC' },
     accountLabel?: string,
   ): Promise<any> {
-    return await this.withRateLimit(exchangeName, 'write', async () => {
-      const exchange = this.exchangeInitService.getExchange(
-        exchangeName,
-        accountLabel,
-      );
-      const params = {
-        ...(clientOrderId ? { clientOrderId } : {}),
-        ...(options?.postOnly ? { postOnly: true } : {}),
-        ...(options?.timeInForce ? { timeInForce: options.timeInForce } : {}),
-      };
+    return await this.withRateLimit(
+      exchangeName,
+      'write',
+      `placeLimitOrder ${pair} ${side}`,
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(
+          exchangeName,
+          accountLabel,
+        );
+        const params = {
+          ...(clientOrderId ? { clientOrderId } : {}),
+          ...(options?.postOnly ? { postOnly: true } : {}),
+          ...(options?.timeInForce
+            ? { timeInForce: options.timeInForce }
+            : {}),
+        };
 
-      return await exchange.createOrder(
-        pair,
-        'limit',
-        side,
-        Number(qty),
-        Number(price),
-        Object.keys(params).length > 0 ? params : undefined,
-      );
-    });
+        return await exchange.createOrder(
+          pair,
+          'limit',
+          side,
+          Number(qty),
+          Number(price),
+          Object.keys(params).length > 0 ? params : undefined,
+        );
+      },
+    );
   }
 
   async cancelOrder(
@@ -83,14 +105,19 @@ export class ExchangeConnectorAdapterService {
     exchangeOrderId: string,
     accountLabel?: string,
   ): Promise<any> {
-    return await this.withRateLimit(exchangeName, 'write', async () => {
-      const exchange = this.exchangeInitService.getExchange(
-        exchangeName,
-        accountLabel,
-      );
+    return await this.withRateLimit(
+      exchangeName,
+      'write',
+      `cancelOrder ${pair}`,
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(
+          exchangeName,
+          accountLabel,
+        );
 
-      return await exchange.cancelOrder(exchangeOrderId, pair);
-    });
+        return await exchange.cancelOrder(exchangeOrderId, pair);
+      },
+    );
   }
 
   async fetchOrder(
@@ -99,14 +126,19 @@ export class ExchangeConnectorAdapterService {
     exchangeOrderId: string,
     accountLabel?: string,
   ): Promise<any> {
-    return await this.withRateLimit(exchangeName, 'stateRead', async () => {
-      const exchange = this.exchangeInitService.getExchange(
-        exchangeName,
-        accountLabel,
-      );
+    return await this.withRateLimit(
+      exchangeName,
+      'stateRead',
+      `fetchOrder ${pair}`,
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(
+          exchangeName,
+          accountLabel,
+        );
 
-      return await exchange.fetchOrder(exchangeOrderId, pair);
-    });
+        return await exchange.fetchOrder(exchangeOrderId, pair);
+      },
+    );
   }
 
   async fetchOpenOrders(
@@ -114,39 +146,49 @@ export class ExchangeConnectorAdapterService {
     pair?: string,
     accountLabel?: string,
   ): Promise<any[]> {
-    return await this.withRateLimit(exchangeName, 'stateRead', async () => {
-      const exchange = this.exchangeInitService.getExchange(
-        exchangeName,
-        accountLabel,
-      );
+    return await this.withRateLimit(
+      exchangeName,
+      'stateRead',
+      `fetchOpenOrders ${pair || 'all'}`,
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(
+          exchangeName,
+          accountLabel,
+        );
 
-      return await exchange.fetchOpenOrders(pair);
-    });
+        return await exchange.fetchOpenOrders(pair);
+      },
+    );
   }
 
   async fetchOrderBook(exchangeName: string, pair: string): Promise<any> {
-    return await this.withRateLimit(exchangeName, 'marketRead', async () => {
-      const exchange = this.exchangeInitService.getExchange(exchangeName);
-      const orderBook = await exchange.fetchOrderBook(pair);
+    return await this.withRateLimit(
+      exchangeName,
+      'marketRead',
+      `fetchOrderBook ${pair}`,
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(exchangeName);
+        const orderBook = await exchange.fetchOrderBook(pair);
 
-      this.logger.log(
-        `fetchOrderBook ${exchange.id || exchangeName} ${pair} bids=${
-          Array.isArray(orderBook?.bids) ? orderBook.bids.length : 0
-        } asks=${
-          Array.isArray(orderBook?.asks) ? orderBook.asks.length : 0
-        } topBid=${
-          Array.isArray(orderBook?.bids) && orderBook.bids.length > 0
-            ? JSON.stringify(orderBook.bids[0])
-            : 'null'
-        } topAsk=${
-          Array.isArray(orderBook?.asks) && orderBook.asks.length > 0
-            ? JSON.stringify(orderBook.asks[0])
-            : 'null'
-        }`,
-      );
+        this.logger.log(
+          `fetchOrderBook ${exchange.id || exchangeName} ${pair} bids=${
+            Array.isArray(orderBook?.bids) ? orderBook.bids.length : 0
+          } asks=${
+            Array.isArray(orderBook?.asks) ? orderBook.asks.length : 0
+          } topBid=${
+            Array.isArray(orderBook?.bids) && orderBook.bids.length > 0
+              ? JSON.stringify(orderBook.bids[0])
+              : 'null'
+          } topAsk=${
+            Array.isArray(orderBook?.asks) && orderBook.asks.length > 0
+              ? JSON.stringify(orderBook.asks[0])
+              : 'null'
+          }`,
+        );
 
-      return orderBook;
-    });
+        return orderBook;
+      },
+    );
   }
 
   async watchOrderBook(exchangeName: string, pair: string): Promise<any> {
@@ -185,29 +227,34 @@ export class ExchangeConnectorAdapterService {
       return cached;
     }
 
-    return await this.withRateLimit(exchangeName, 'marketRead', async () => {
-      const exchange = this.exchangeInitService.getExchange(
-        exchangeName,
-        accountLabel,
-      );
+    return await this.withRateLimit(
+      exchangeName,
+      'marketRead',
+      `loadTradingRules ${pair}`,
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(
+          exchangeName,
+          accountLabel,
+        );
 
-      if (!exchange?.markets || !exchange.markets[pair]) {
-        await exchange.loadMarkets();
-      }
+        if (!exchange?.markets || !exchange.markets[pair]) {
+          await exchange.loadMarkets();
+        }
 
-      const market = exchange?.markets?.[pair] || {};
-      const rules = {
-        amountMin: this.toFiniteNumber(market?.limits?.amount?.min),
-        costMin: this.toFiniteNumber(market?.limits?.cost?.min),
-        makerFee: this.toFiniteNumber(
-          market?.maker || exchange?.fees?.trading?.maker,
-        ),
-      };
+        const market = exchange?.markets?.[pair] || {};
+        const rules = {
+          amountMin: this.toFiniteNumber(market?.limits?.amount?.min),
+          costMin: this.toFiniteNumber(market?.limits?.cost?.min),
+          makerFee: this.toFiniteNumber(
+            market?.maker || exchange?.fees?.trading?.maker,
+          ),
+        };
 
-      this.marketRulesByKey.set(key, rules);
+        this.marketRulesByKey.set(key, rules);
 
-      return rules;
-    });
+        return rules;
+      },
+    );
   }
 
   quantizeOrder(
@@ -240,19 +287,25 @@ export class ExchangeConnectorAdapterService {
     exchangeName: string,
     accountLabel?: string,
   ): Promise<any> {
-    return await this.withRateLimit(exchangeName, 'stateRead', async () => {
-      const exchange = this.exchangeInitService.getExchange(
-        exchangeName,
-        accountLabel,
-      );
+    return await this.withRateLimit(
+      exchangeName,
+      'stateRead',
+      'fetchBalance',
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(
+          exchangeName,
+          accountLabel,
+        );
 
-      return await exchange.fetchBalance();
-    });
+        return await exchange.fetchBalance();
+      },
+    );
   }
 
   private async withRateLimit<T>(
     exchangeName: string,
     requestKind: keyof typeof ExchangeConnectorAdapterService.REQUEST_PRIORITY_BY_KIND,
+    label: string,
     work: () => Promise<T>,
   ): Promise<T> {
     return await new Promise<T>((resolve, reject) => {
@@ -261,6 +314,7 @@ export class ExchangeConnectorAdapterService {
       queue.push({
         priority:
           ExchangeConnectorAdapterService.REQUEST_PRIORITY_BY_KIND[requestKind],
+        label,
         work: work as () => Promise<unknown>,
         resolve: resolve as (value: unknown) => void,
         reject,
@@ -303,7 +357,11 @@ export class ExchangeConnectorAdapterService {
             await this.sleep(waitMs);
           }
 
-          const result = await next.work();
+          const result = await this.withRequestTimeout(
+            exchangeName,
+            next.label,
+            next.work,
+          );
 
           this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
           next.resolve(result);
@@ -322,6 +380,36 @@ export class ExchangeConnectorAdapterService {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async withRequestTimeout<T>(
+    exchangeName: string,
+    label: string,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    let timeoutId: NodeJS.Timeout | undefined;
+
+    try {
+      return await Promise.race([
+        work(),
+        new Promise<T>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            const message = [
+              `Exchange request timed out after ${this.requestTimeoutMs}ms`,
+              `exchange=${exchangeName}`,
+              `request=${label}`,
+            ].join(' ');
+
+            this.logger.warn(message);
+            reject(new ServiceUnavailableException(message));
+          }, this.requestTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
   }
 
   private toMarketKey(exchangeName: string, pair: string): string {
