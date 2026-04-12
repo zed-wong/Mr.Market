@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import axios, { AxiosInstance } from 'axios';
 
 import { ExchangeInitService } from '../infrastructure/exchange-init/exchange-init.service';
@@ -373,7 +372,7 @@ export class CampaignService {
   /**
    * Every hour, check if there are any new campaigns to join
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  // Auto-join disabled intentionally.
   async joinCampaigns() {
     if (!this.campaignLauncherBaseUrl) {
       this.logger.warn(
