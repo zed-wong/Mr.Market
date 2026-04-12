@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
@@ -66,7 +67,13 @@ export class ExchangeOrderTrackerService
     TrackedOrderState,
     TrackedOrderState[]
   > = {
-    pending_create: ['open', 'partially_filled', 'filled', 'failed'],
+    pending_create: [
+      'open',
+      'partially_filled',
+      'filled',
+      'cancelled',
+      'failed',
+    ],
     open: [
       'partially_filled',
       'pending_cancel',
@@ -108,6 +115,9 @@ export class ExchangeOrderTrackerService
     @Optional()
     @InjectRepository(StrategyInstance)
     private readonly strategyInstanceRepository?: Repository<StrategyInstance>,
+    @Optional()
+    @InjectRepository(MarketMakingOrder)
+    private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -472,7 +482,21 @@ export class ExchangeOrderTrackerService
       where: { strategyKey },
     });
 
-    return strategyInstance?.status === 'running';
+    if (strategyInstance?.status !== 'running') {
+      return false;
+    }
+
+    const orderId = String(strategyInstance.marketMakingOrderId || '').trim();
+
+    if (!orderId || !this.marketMakingOrderRepository) {
+      return true;
+    }
+
+    const marketMakingOrder = await this.marketMakingOrderRepository.findOne({
+      where: { orderId },
+    });
+
+    return marketMakingOrder?.state === 'running';
   }
 
   private toKey(

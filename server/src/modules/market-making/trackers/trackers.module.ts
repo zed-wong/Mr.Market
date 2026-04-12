@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 
 import { MarketdataModule } from '../../data/market-data/market-data.module';
 import { ExchangeInitModule } from '../../infrastructure/exchange-init/exchange-init.module';
@@ -18,7 +20,11 @@ import { PrivateStreamTrackerService } from './private-stream-tracker.service';
     ExecutionModule,
     ExchangeInitModule,
     MarketdataModule,
-    TypeOrmModule.forFeature([TrackedOrderEntity]),
+    TypeOrmModule.forFeature([
+      TrackedOrderEntity,
+      StrategyInstance,
+      MarketMakingOrder,
+    ]),
   ],
   providers: [
     OrderBookTrackerService,

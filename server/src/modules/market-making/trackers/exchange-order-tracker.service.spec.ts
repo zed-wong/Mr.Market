@@ -142,6 +142,55 @@ describe('ExchangeOrderTrackerService', () => {
     expect(tracked?.status).toBe('filled');
   });
 
+  it('self-heals stopped market-making orders without re-polling them on later ticks', async () => {
+    const adapter = {
+      fetchOrder: jest.fn(),
+    };
+    const strategyInstanceRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        strategyKey: 'u1-c1-pureMarketMaking',
+        status: 'running',
+        marketMakingOrderId: 'order-1',
+      }),
+    };
+    const marketMakingOrderRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        orderId: 'order-1',
+        state: 'stopped',
+      }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined as any,
+      adapter as any,
+      undefined as any,
+      undefined as any,
+      strategyInstanceRepository as any,
+      marketMakingOrderRepository as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'u1-c1',
+      strategyKey: 'u1-c1-pureMarketMaking',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    await service.onTick('2026-02-11T00:00:01.000Z');
+    await service.onTick('2026-02-11T00:00:02.000Z');
+
+    expect(adapter.fetchOrder).not.toHaveBeenCalled();
+    expect(
+      service.getByExchangeOrderId('binance', 'ex-1')?.status,
+    ).toBe('cancelled');
+  });
+
   it('routes recovered REST fill deltas through the executor exactly once', async () => {
     const onFill = jest.fn();
     const adapter = {

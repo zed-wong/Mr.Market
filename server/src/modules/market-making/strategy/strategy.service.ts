@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import {
   createPureMarketMakingStrategyKey,
@@ -171,6 +172,9 @@ export class StrategyService
     @InjectRepository(StrategyInstance)
     private readonly strategyInstanceRepository: Repository<StrategyInstance>,
     @Optional()
+    @InjectRepository(MarketMakingOrder)
+    private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
+    @Optional()
     private readonly clockTickCoordinatorService?: ClockTickCoordinatorService,
     @Optional()
     private readonly quoteExecutorManagerService?: QuoteExecutorManagerService,
@@ -294,9 +298,28 @@ export class StrategyService
   }
 
   async getRunningStrategies(): Promise<StrategyInstance[]> {
-    return await this.strategyInstanceRepository.find({
+    const runningStrategies = await this.strategyInstanceRepository.find({
       where: { status: 'running' },
     });
+
+    const eligibleStrategies: StrategyInstance[] = [];
+
+    for (const strategy of runningStrategies) {
+      if (await this.isStrategyRuntimeEligible(strategy)) {
+        eligibleStrategies.push(strategy);
+        continue;
+      }
+
+      await this.strategyInstanceRepository.update(
+        { strategyKey: strategy.strategyKey },
+        { status: 'stopped', updatedAt: new Date() },
+      );
+      this.logger.warn(
+        `Skipping stale strategy restore for ${strategy.strategyKey}: bound market-making order is not running`,
+      );
+    }
+
+    return eligibleStrategies;
   }
 
   async getAllStrategies(): Promise<StrategyInstance[]> {
@@ -317,6 +340,26 @@ export class StrategyService
     return await this.strategyInstanceRepository.findOne({
       where: { strategyKey },
     });
+  }
+
+  private async isStrategyRuntimeEligible(
+    strategy: StrategyInstance,
+  ): Promise<boolean> {
+    if (strategy.status !== 'running') {
+      return false;
+    }
+
+    const orderId = String(strategy.marketMakingOrderId || '').trim();
+
+    if (!orderId || !this.marketMakingOrderRepository) {
+      return true;
+    }
+
+    const marketMakingOrder = await this.marketMakingOrderRepository.findOne({
+      where: { orderId },
+    });
+
+    return marketMakingOrder?.state === 'running';
   }
 
   async rerunStrategy(strategyKey: string): Promise<void> {

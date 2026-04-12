@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
@@ -113,6 +114,9 @@ describe('StrategyService', () => {
     create: jest.fn(),
     update: jest.fn(),
   };
+  const mockMarketMakingOrderRepository = {
+    findOne: jest.fn(),
+  };
 
   const registerPooledSession = async ({
     strategyKey,
@@ -210,6 +214,10 @@ describe('StrategyService', () => {
       findByClientOrderId: jest.fn().mockResolvedValue(null),
       findByExchangeOrderId: jest.fn().mockResolvedValue(null),
     };
+    mockMarketMakingOrderRepository.findOne.mockResolvedValue({
+      orderId: 'default-order',
+      state: 'running',
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -259,6 +267,10 @@ describe('StrategyService', () => {
           provide: getRepositoryToken(StrategyInstance),
           useValue: mockStrategyInstanceRepository,
         },
+        {
+          provide: getRepositoryToken(MarketMakingOrder),
+          useValue: mockMarketMakingOrderRepository,
+        },
       ],
     }).compile();
 
@@ -305,6 +317,7 @@ describe('StrategyService', () => {
       userId: 'user-1',
       clientId: 'order-1',
       marketMakingOrderId: 'order-1',
+      status: 'running',
       parameters: {
         userId: 'user-1',
         clientId: 'order-1',
@@ -1408,6 +1421,7 @@ describe('StrategyService', () => {
         userId: 'user-1',
         clientId: 'order-1',
         marketMakingOrderId: null,
+        status: 'running',
         parameters: {
           userId: 'user-1',
           clientId: 'order-1',
@@ -1446,6 +1460,54 @@ describe('StrategyService', () => {
     dateNowSpy.mockRestore();
   });
 
+  it('stops stale order-bound strategies during startup when the bound order is not running', async () => {
+    mockStrategyInstanceRepository.find.mockResolvedValue([
+      {
+        strategyKey: 'order-1-pureMarketMaking',
+        strategyType: 'pureMarketMaking',
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        status: 'running',
+        parameters: {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          orderRefreshTime: 1500,
+        },
+      },
+    ]);
+    mockMarketMakingOrderRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      state: 'stopped',
+    });
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockImplementation((strategyType: string) => {
+        if (strategyType === 'pureMarketMaking') {
+          return {
+            getCadenceMs: jest.fn(() => 1500),
+          };
+        }
+
+        return undefined;
+      }),
+      listControllerTypes: jest.fn(),
+    };
+
+    await service.start();
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'order-1-pureMarketMaking' },
+      expect.objectContaining({ status: 'stopped' }),
+    );
+    expect(
+      executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getSession('order-1'),
+    ).toBeUndefined();
+  });
+
   it('queues pooled strategies from persistence until the exchange account is ready', async () => {
     const nowMs = 1_700_000_000_000;
     const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
@@ -1458,6 +1520,7 @@ describe('StrategyService', () => {
         userId: 'user-1',
         clientId: 'order-1',
         marketMakingOrderId: null,
+        status: 'running',
         parameters: {
           userId: 'user-1',
           clientId: 'order-1',
@@ -1513,6 +1576,7 @@ describe('StrategyService', () => {
         strategyType: 'arbitrage',
         userId: 'user-2',
         clientId: 'client-2',
+        status: 'running',
         parameters: {
           userId: 'user-2',
           clientId: 'client-2',
