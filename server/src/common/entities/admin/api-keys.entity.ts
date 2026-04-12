@@ -24,6 +24,15 @@ export class APIKeysConfig {
   @Column({ default: 'read' })
   permissions: string; // 'read' or 'read-trade'
 
+  @Column({ default: 'pending' })
+  validation_status: string; // pending, valid, invalid
+
+  @Column({ nullable: true })
+  validation_error?: string | null;
+
+  @Column({ nullable: true })
+  validated_at?: string | null;
+
   @Column()
   created_at: string; // RFC3339 creation timestamp
 }

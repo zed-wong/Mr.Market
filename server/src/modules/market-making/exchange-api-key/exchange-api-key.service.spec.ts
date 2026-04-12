@@ -18,12 +18,15 @@ describe('ExchangeApiKeyService', () => {
   const makeService = (overrides?: {
     readAllAPIKeys?: jest.Mock;
     addAPIKey?: jest.Mock;
+    updateAPIKey?: jest.Mock;
     getConfig?: jest.Mock;
   }) => {
     const exchangeRepository = {
       readAllAPIKeys:
         overrides?.readAllAPIKeys || jest.fn().mockResolvedValue([]),
       addAPIKey: overrides?.addAPIKey || jest.fn().mockResolvedValue(undefined),
+      updateAPIKey:
+        overrides?.updateAPIKey || jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const configService = {
@@ -99,6 +102,7 @@ describe('ExchangeApiKeyService', () => {
           name: 'default',
           api_key: 'key',
           api_secret: 'secret',
+          validation_status: 'pending',
           created_at: '2026-04-02T00:00:00.000Z',
         } as APIKeysConfig,
       ]);
@@ -108,7 +112,7 @@ describe('ExchangeApiKeyService', () => {
     const result = await service.readAllAPIKeys();
 
     expect(result[0].api_secret).toBe('********');
-    expect(result[0].state).toBe('alive');
+    expect(result[0].state).toBe('pending');
   });
 
   it('seeds API keys from env configs when DB is empty', async () => {
@@ -138,30 +142,23 @@ describe('ExchangeApiKeyService', () => {
   it('trims name when adding an api key', async () => {
     const addAPIKey = jest.fn().mockImplementation(async (value) => value);
     const { service } = makeService({ addAPIKey });
-    const fetchBalanceSpy = jest
-      .spyOn((ccxt as any).binance.prototype, 'fetchBalance')
-      .mockResolvedValue({ free: {} } as any);
 
-    try {
-      const result = await service.addApiKey({
-        key_id: '1',
-        exchange: 'binance',
-        name: '  desk-1  ',
-        api_key: 'key',
-        api_secret: 'transport-secret',
-      } as APIKeysConfig);
+    const result = await service.addApiKey({
+      key_id: '1',
+      exchange: 'binance',
+      name: '  desk-1  ',
+      api_key: 'key',
+      api_secret: 'transport-secret',
+    } as APIKeysConfig);
 
-      expect(result).toEqual(
-        expect.objectContaining({
-          name: 'desk-1',
-        }),
-      );
-      expect(addAPIKey).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'desk-1' }),
-      );
-    } finally {
-      fetchBalanceSpy.mockRestore();
-    }
+    expect(result).toEqual(
+      expect.objectContaining({
+        name: 'desk-1',
+      }),
+    );
+    expect(addAPIKey).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'desk-1', validation_status: 'pending' }),
+    );
   });
 
   it('rejects blank api key names after trim', async () => {
@@ -181,26 +178,19 @@ describe('ExchangeApiKeyService', () => {
   it('sets created_at when adding an api key', async () => {
     const addAPIKey = jest.fn().mockImplementation(async (value) => value);
     const { service } = makeService({ addAPIKey });
-    const fetchBalanceSpy = jest
-      .spyOn((ccxt as any).binance.prototype, 'fetchBalance')
-      .mockResolvedValue({ free: {} } as any);
 
-    try {
-      const result = await service.addApiKey({
-        key_id: '1',
-        exchange: 'binance',
-        name: 'default',
-        api_key: 'key',
-        api_secret: 'transport-secret',
-      } as APIKeysConfig);
+    const result = await service.addApiKey({
+      key_id: '1',
+      exchange: 'binance',
+      name: 'default',
+      api_key: 'key',
+      api_secret: 'transport-secret',
+    } as APIKeysConfig);
 
-      expect(result).toEqual(
-        expect.objectContaining({
-          created_at: expect.any(String),
-        }),
-      );
-    } finally {
-      fetchBalanceSpy.mockRestore();
-    }
+    expect(result).toEqual(
+      expect.objectContaining({
+        created_at: expect.any(String),
+      }),
+    );
   });
 });

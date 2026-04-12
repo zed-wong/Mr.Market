@@ -41,6 +41,7 @@ import { ExchangeApiKeyRepository } from './exchange-api-key.repository';
 export class ExchangeApiKeyService {
   private exchangeInstances: { [key: string]: ccxt.Exchange } = {};
   private readonly logger = new CustomLogger(ExchangeApiKeyService.name);
+  private readonly validationTimeoutMs = 5000;
 
   constructor(
     private exchangeRepository: ExchangeApiKeyRepository,
@@ -127,6 +128,14 @@ export class ExchangeApiKeyService {
   }
 
   private resolveApiKeyState(key: APIKeysConfig): string {
+    if (key.validation_status === 'valid') {
+      return 'alive';
+    }
+
+    if (key.validation_status === 'pending') {
+      return 'pending';
+    }
+
     const exchangeClass = ccxt[key.exchange];
 
     if (!exchangeClass) {
@@ -676,43 +685,104 @@ export class ExchangeApiKeyService {
       throw new BadRequestException('API key name is required');
     }
 
-    // 2. Validate with CCXT
-    try {
-      const exchangeClass = ccxt[key.exchange];
+    const exchangeClass = ccxt[key.exchange];
 
-      if (!exchangeClass) {
-        throw new BadRequestException(`Exchange ${key.exchange} not supported`);
-      }
-      const exchangeInstance = new exchangeClass({
-        apiKey: key.api_key,
-        secret: rawSecret,
-      });
-
-      // Try to fetch balance to validate keys
-      await exchangeInstance.fetchBalance();
-    } catch (e) {
-      this.logger.error(
-        `Failed to validate API Key for ${key.exchange}: ${e.message}`,
-      );
-      throw new BadRequestException(
-        `Invalid API Key or Secret for ${key.exchange}. Verification failed: ${e.message}`,
-      );
+    if (!exchangeClass) {
+      throw new BadRequestException(`Exchange ${key.exchange} not supported`);
     }
 
-    // 3. Encrypt for storage
+    // 2. Encrypt for storage
     const storageEncryptedSecret = encrypt(
       rawSecret,
       getPublicKeyFromPrivate(privateKey),
     );
 
     key.api_secret = storageEncryptedSecret;
+    key.validation_status = 'pending';
+    key.validation_error = null;
+    key.validated_at = null;
     key.created_at = key.created_at || getRFC3339Timestamp();
     const savedKey = await this.exchangeRepository.addAPIKey(key);
 
-    // reload keys to update memory
-    await this.loadAPIKeys();
+    await this.registerExchangeInstance(savedKey.key_id, {
+      ...savedKey,
+      api_secret: rawSecret,
+    });
+    void this.validateApiKeyInBackground(savedKey.key_id);
 
     return savedKey;
+  }
+
+  private async registerExchangeInstance(
+    keyId: string,
+    key: Pick<APIKeysConfig, 'exchange' | 'api_key' | 'api_secret'>,
+  ): Promise<void> {
+    const exchangeClass = ccxt[key.exchange];
+
+    if (!exchangeClass) {
+      return;
+    }
+
+    this.exchangeInstances[keyId] = new exchangeClass({
+      apiKey: key.api_key,
+      secret: key.api_secret,
+    });
+  }
+
+  private async validateApiKeyInBackground(keyId: string): Promise<void> {
+    try {
+      const key = await this.readDecryptedAPIKey(keyId);
+
+      if (!key) {
+        return;
+      }
+
+      const exchangeClass = ccxt[key.exchange];
+
+      if (!exchangeClass) {
+        await this.exchangeRepository.updateAPIKey(keyId, {
+          validation_status: 'invalid',
+          validation_error: `Exchange ${key.exchange} not supported`,
+          validated_at: getRFC3339Timestamp(),
+        });
+
+        return;
+      }
+
+      const exchangeInstance =
+        this.exchangeInstances[keyId] ||
+        new exchangeClass({
+          apiKey: key.api_key,
+          secret: key.api_secret,
+        });
+
+      this.exchangeInstances[keyId] = exchangeInstance;
+
+      await Promise.race([
+        exchangeInstance.fetchBalance(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Validation timeout')),
+            this.validationTimeoutMs,
+          ),
+        ),
+      ]);
+
+      await this.exchangeRepository.updateAPIKey(keyId, {
+        validation_status: 'valid',
+        validation_error: null,
+        validated_at: getRFC3339Timestamp(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      this.logger.warn(`API key validation failed for ${keyId}: ${message}`);
+      await this.exchangeRepository.updateAPIKey(keyId, {
+        validation_status: 'invalid',
+        validation_error: message,
+        validated_at: getRFC3339Timestamp(),
+      });
+    }
   }
 
   async readAPIKey(keyId: string) {

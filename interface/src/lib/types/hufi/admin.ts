@@ -29,6 +29,9 @@ export interface AdminSingleKey {
   api_secret: string;
   permissions?: string;
   state?: string;
+  validation_status?: string;
+  validation_error?: string | null;
+  validated_at?: string | null;
   created_at?: string;
   last_update?: string;
 }

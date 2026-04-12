@@ -27,6 +27,13 @@ export class ExchangeApiKeyRepository {
     return this.apiKeysRepository.save(apiKey);
   }
 
+  async updateAPIKey(
+    key_id: string,
+    updates: Partial<APIKeysConfig>,
+  ): Promise<void> {
+    await this.apiKeysRepository.update({ key_id }, updates);
+  }
+
   async readAPIKey(key_id: string) {
     return await this.apiKeysRepository.findOne({
       where: { key_id },
