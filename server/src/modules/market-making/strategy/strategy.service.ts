@@ -130,6 +130,42 @@ type DualAccountBehaviorProfile = {
   activeHours?: number[];
 };
 
+type DualAccountPairBalances = {
+  base: BigNumber;
+  quote: BigNumber;
+  assets: { base: string; quote: string };
+};
+
+type DualAccountResolvedAccounts = {
+  makerAccountLabel: string;
+  takerAccountLabel: string;
+  makerBalances?: DualAccountPairBalances;
+  takerBalances?: DualAccountPairBalances;
+  capacity?: BigNumber;
+};
+
+type DualAccountExecutionPlan = {
+  side: 'buy' | 'sell';
+  resolvedAccounts: DualAccountResolvedAccounts;
+  profile: DualAccountBehaviorProfile;
+  requestedQty: BigNumber;
+  adjustedQuote: { price: BigNumber; qty: BigNumber };
+};
+
+type DualAccountTradeabilityPlan = {
+  side: 'buy' | 'sell';
+  resolvedAccounts: DualAccountResolvedAccounts;
+  profile: DualAccountBehaviorProfile;
+  capacity: BigNumber;
+};
+
+type DualAccountRebalanceCandidate = {
+  action: ExecutorAction;
+  futureExecution: DualAccountTradeabilityPlan;
+  accountLabel: string;
+  side: 'buy' | 'sell';
+};
+
 type PooledExecutorTarget = {
   exchange: string;
   pair: string;
@@ -1578,9 +1614,14 @@ export class StrategyService
       params,
       persistedParams,
     );
+    const shouldIncrementPublishedCycles = actions.some(
+      (action) => !this.isDualAccountRebalanceAction(action),
+    );
     const nextParams: DualAccountVolumeStrategyParams = {
       ...mergedParams,
-      publishedCycles: Number(mergedParams.publishedCycles || 0) + 1,
+      publishedCycles:
+        Number(mergedParams.publishedCycles || 0) +
+        (shouldIncrementPublishedCycles ? 1 : 0),
       orderBookReady:
         this.strategyMarketDataProviderService?.hasTrackedOrderBook(
           mergedParams.exchangeName,
@@ -1604,6 +1645,16 @@ export class StrategyService
     this.logger.warn(
       `Skipping stale dual-account volume tick write-back for ${session.strategyKey}: active session changed`,
     );
+  }
+
+  private isDualAccountRebalanceAction(action: ExecutorAction): boolean {
+    if (!action.metadata || typeof action.metadata !== 'object') {
+      return false;
+    }
+
+    const metadata = action.metadata as Record<string, unknown>;
+
+    return metadata.role === 'rebalance' || metadata.rebalance === true;
   }
 
   async buildDualAccountVolumeActions(
@@ -1638,7 +1689,7 @@ export class StrategyService
     const { bestBid, bestAsk } = trackedBestBidAsk;
 
     const publishedCycles = Number(params.publishedCycles || 0);
-    const side = this.resolveVolumeSide(
+    const preferredSide = this.resolveVolumeSide(
       params.postOnlySide,
       publishedCycles,
       params.buyBias,
@@ -1659,43 +1710,9 @@ export class StrategyService
     const price = bestBidBn.plus(spread.multipliedBy(spreadPosition));
 
     this.logger.log(
-      `Dual-account volume ${strategyKey}: side=${side} bestBid=${bestBid} bestAsk=${bestAsk} spread=${spread.toFixed()} position=${spreadPosition.toFixed(
+      `Dual-account volume ${strategyKey}: preferredSide=${preferredSide} bestBid=${bestBid} bestAsk=${bestAsk} spread=${spread.toFixed()} position=${spreadPosition.toFixed(
         4,
       )} price=${price.toFixed()}`,
-    );
-
-    const resolvedAccounts = await this.resolveDualAccountCycleAccounts(
-      params,
-      side,
-      price,
-    );
-
-    if (!resolvedAccounts) {
-      this.logger.warn(
-        `Skipping dual-account volume cycle for ${strategyKey}: unable to resolve maker/taker accounts for side=${side}`,
-      );
-
-      return [];
-    }
-
-    const profile = this.resolveDualAccountBehaviorProfile(
-      params,
-      resolvedAccounts.makerAccountLabel,
-    );
-
-    if (!this.isWithinDualAccountProfileWindow(profile)) {
-      this.logger.log(
-        `Skipping dual-account volume cycle for ${strategyKey}: maker account ${resolvedAccounts.makerAccountLabel} is outside active hours`,
-      );
-
-      return [];
-    }
-    const qty = new BigNumber(
-      this.applyVariance(
-        params.baseTradeAmount,
-        profile.tradeAmountVariance ?? params.tradeAmountVariance,
-        profile.tradeAmountMultiplier,
-      ),
     );
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
@@ -1706,13 +1723,38 @@ export class StrategyService
       return [];
     }
 
-    if (!qty.isFinite() || qty.isLessThanOrEqualTo(0)) {
+    const resolvedExecution = await this.resolveDualAccountExecutionPlan(
+      strategyKey,
+      params,
+      preferredSide,
+      price,
+    );
+
+    if (!resolvedExecution) {
+      const rebalanceAction = await this.maybeBuildDualAccountRebalanceAction(
+        strategyKey,
+        params,
+        preferredSide,
+        bestBidBn,
+        bestAskBn,
+        price,
+        publishedCycles,
+        ts,
+      );
+
+      if (rebalanceAction) {
+        return [rebalanceAction];
+      }
+
       this.logger.warn(
-        `Skipping dual-account volume cycle for ${strategyKey}: invalid qty ${params.baseTradeAmount}`,
+        `Skipping dual-account volume cycle for ${strategyKey}: no tradable side found`,
       );
 
       return [];
     }
+
+    const { side, resolvedAccounts, profile, requestedQty, adjustedQuote } =
+      resolvedExecution;
 
     const cycleId = `${strategyKey}:cycle:${publishedCycles}`;
     const makerDelayMs = this.resolveDualAccountMakerDelayMs(
@@ -1730,8 +1772,8 @@ export class StrategyService
         params.exchangeName,
         params.symbol,
         side,
-        price,
-        qty,
+        adjustedQuote.price,
+        adjustedQuote.qty,
         ts,
         `dual-account-volume-maker-${publishedCycles}`,
         params.executionCategory,
@@ -1747,6 +1789,8 @@ export class StrategyService
           makerDelayMs,
           activeHours: profile.activeHours,
           buyBias: accountBuyBias,
+          requestedQty: requestedQty.toFixed(),
+          effectiveQty: adjustedQuote.qty.toFixed(),
         },
         true,
         resolvedAccounts.makerAccountLabel,
@@ -1758,38 +1802,64 @@ export class StrategyService
     params: DualAccountVolumeStrategyParams,
     side: 'buy' | 'sell',
     price: BigNumber,
-  ): Promise<{
-    makerAccountLabel: string;
-    takerAccountLabel: string;
-  } | null> {
-    const configured = {
+  ): Promise<DualAccountResolvedAccounts | null> {
+    const configured: DualAccountResolvedAccounts = {
       makerAccountLabel: params.makerAccountLabel,
       takerAccountLabel: params.takerAccountLabel,
     };
-
-    if (!params.dynamicRoleSwitching) {
-      return configured;
-    }
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
       return configured;
     }
 
-    const makerBalances = await this.getAvailableBalancesForPair(
-      params.exchangeName,
-      params.symbol,
-      params.makerAccountLabel,
-    );
-    const takerBalances = await this.getAvailableBalancesForPair(
-      params.exchangeName,
-      params.symbol,
-      params.takerAccountLabel,
-    );
+    let makerBalances: DualAccountPairBalances | null = null;
+    let takerBalances: DualAccountPairBalances | null = null;
+
+    try {
+      makerBalances = await this.getAvailableBalancesForPair(
+        params.exchangeName,
+        params.symbol,
+        params.makerAccountLabel,
+      );
+      takerBalances = await this.getAvailableBalancesForPair(
+        params.exchangeName,
+        params.symbol,
+        params.takerAccountLabel,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load dual-account balances for ${params.exchangeName} ${params.symbol}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return configured;
+    }
 
     if (!makerBalances || !takerBalances) {
       return configured;
     }
 
+    return this.resolveDualAccountCycleAccountsFromBalances(
+      params,
+      side,
+      price,
+      makerBalances,
+      takerBalances,
+    );
+  }
+
+  private resolveDualAccountCycleAccountsFromBalances(
+    params: DualAccountVolumeStrategyParams,
+    side: 'buy' | 'sell',
+    price: BigNumber,
+    makerBalances: DualAccountPairBalances,
+    takerBalances: DualAccountPairBalances,
+  ): DualAccountResolvedAccounts {
+    const configured: DualAccountResolvedAccounts = {
+      makerAccountLabel: params.makerAccountLabel,
+      takerAccountLabel: params.takerAccountLabel,
+    };
     const capacity1 = this.computeDualAccountCapacity(
       makerBalances,
       takerBalances,
@@ -1803,7 +1873,7 @@ export class StrategyService
       price,
     );
 
-    if (capacity2.isGreaterThan(capacity1)) {
+    if (params.dynamicRoleSwitching && capacity2.isGreaterThan(capacity1)) {
       this.logger.log(
         `Dynamic role switching: swapping maker=${params.makerAccountLabel}→${
           params.takerAccountLabel
@@ -1815,10 +1885,18 @@ export class StrategyService
       return {
         makerAccountLabel: params.takerAccountLabel,
         takerAccountLabel: params.makerAccountLabel,
+        makerBalances: takerBalances,
+        takerBalances: makerBalances,
+        capacity: capacity2,
       };
     }
 
-    return configured;
+    return {
+      ...configured,
+      makerBalances,
+      takerBalances,
+      capacity: capacity1,
+    };
   }
 
   private computeDualAccountCapacity(
@@ -1840,6 +1918,562 @@ export class StrategyService
     return side === 'buy'
       ? BigNumber.min(makerBalances.quote.dividedBy(price), takerBalances.base)
       : BigNumber.min(makerBalances.base, takerBalances.quote.dividedBy(price));
+  }
+
+  private async resolveDualAccountExecutionPlan(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    preferredSide: 'buy' | 'sell',
+    price: BigNumber,
+  ): Promise<DualAccountExecutionPlan | null> {
+    const fallbackSide = preferredSide === 'buy' ? 'sell' : 'buy';
+    const tradeAmountVarianceSample = Math.random();
+
+    const preferredExecution = await this.evaluateDualAccountExecutionForSide(
+      strategyKey,
+      params,
+      preferredSide,
+      price,
+      tradeAmountVarianceSample,
+    );
+
+    if (preferredExecution) {
+      return preferredExecution;
+    }
+
+    this.logger.log(
+      `Dual-account volume ${strategyKey}: preferredSide=${preferredSide} is not tradable, trying fallbackSide=${fallbackSide}`,
+    );
+
+    const fallbackExecution = await this.evaluateDualAccountExecutionForSide(
+      strategyKey,
+      params,
+      fallbackSide,
+      price,
+      tradeAmountVarianceSample,
+    );
+
+    if (fallbackExecution) {
+      this.logger.log(
+        `Dual-account volume ${strategyKey}: switched side preferred=${preferredSide} selected=${fallbackExecution.side} maker=${fallbackExecution.resolvedAccounts.makerAccountLabel} taker=${fallbackExecution.resolvedAccounts.takerAccountLabel} capacity=${
+          fallbackExecution.resolvedAccounts.capacity?.toFixed() ?? 'unknown'
+        }`,
+      );
+    }
+
+    return fallbackExecution;
+  }
+
+
+  private async maybeBuildDualAccountRebalanceAction(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    preferredSide: 'buy' | 'sell',
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+    price: BigNumber,
+    publishedCycles: number,
+    ts: string,
+  ): Promise<ExecutorAction | null> {
+    let makerBalances: DualAccountPairBalances | null = null;
+    let takerBalances: DualAccountPairBalances | null = null;
+
+    try {
+      makerBalances = await this.getAvailableBalancesForPair(
+        params.exchangeName,
+        params.symbol,
+        params.makerAccountLabel,
+      );
+      takerBalances = await this.getAvailableBalancesForPair(
+        params.exchangeName,
+        params.symbol,
+        params.takerAccountLabel,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load dual-account rebalance balances for ${params.exchangeName} ${params.symbol}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return null;
+    }
+
+    if (!makerBalances || !takerBalances) {
+      return null;
+    }
+
+    const candidates = (
+      await Promise.all([
+        this.buildDualAccountRebalanceCandidate(
+          strategyKey,
+          params,
+          preferredSide,
+          price,
+          bestAsk,
+          params.makerAccountLabel,
+          'buy',
+          makerBalances,
+          takerBalances,
+          publishedCycles,
+          ts,
+        ),
+        this.buildDualAccountRebalanceCandidate(
+          strategyKey,
+          params,
+          preferredSide,
+          price,
+          bestAsk,
+          params.takerAccountLabel,
+          'buy',
+          makerBalances,
+          takerBalances,
+          publishedCycles,
+          ts,
+        ),
+        this.buildDualAccountRebalanceCandidate(
+          strategyKey,
+          params,
+          preferredSide,
+          price,
+          bestBid,
+          params.makerAccountLabel,
+          'sell',
+          makerBalances,
+          takerBalances,
+          publishedCycles,
+          ts,
+        ),
+        this.buildDualAccountRebalanceCandidate(
+          strategyKey,
+          params,
+          preferredSide,
+          price,
+          bestBid,
+          params.takerAccountLabel,
+          'sell',
+          makerBalances,
+          takerBalances,
+          publishedCycles,
+          ts,
+        ),
+      ])
+    ).filter(
+      (
+        candidate,
+      ): candidate is DualAccountRebalanceCandidate => candidate !== null,
+    );
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const selected = candidates.reduce((best, candidate) =>
+      candidate.futureExecution.capacity.isGreaterThan(
+        best.futureExecution.capacity,
+      )
+        ? candidate
+        : best,
+    );
+
+    this.logger.log(
+      `Dual-account volume ${strategyKey}: scheduling rebalance account=${selected.accountLabel} side=${selected.side} qty=${selected.action.qty} price=${selected.action.price} restoredSide=${selected.futureExecution.side} restoredMaker=${selected.futureExecution.resolvedAccounts.makerAccountLabel} restoredTaker=${selected.futureExecution.resolvedAccounts.takerAccountLabel} restoredCapacity=${selected.futureExecution.capacity.toFixed()}`,
+    );
+
+    return selected.action;
+  }
+
+  private async buildDualAccountRebalanceCandidate(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    preferredSide: 'buy' | 'sell',
+    futurePrice: BigNumber,
+    executionPrice: BigNumber,
+    accountLabel: string,
+    side: 'buy' | 'sell',
+    makerBalances: DualAccountPairBalances,
+    takerBalances: DualAccountPairBalances,
+    publishedCycles: number,
+    ts: string,
+  ): Promise<DualAccountRebalanceCandidate | null> {
+    if (!executionPrice.isFinite() || executionPrice.isLessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    const nextMakerBalances = this.cloneDualAccountPairBalances(makerBalances);
+    const nextTakerBalances = this.cloneDualAccountPairBalances(takerBalances);
+    const selectedBalances =
+      accountLabel === params.makerAccountLabel
+        ? nextMakerBalances
+        : nextTakerBalances;
+
+    const maxAffordableQty =
+      side === 'buy'
+        ? selectedBalances.quote.dividedBy(executionPrice)
+        : selectedBalances.base;
+    const requestedQty = BigNumber.min(
+      new BigNumber(params.baseTradeAmount),
+      maxAffordableQty,
+    );
+
+    if (!requestedQty.isFinite() || requestedQty.isLessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    const adjustedQuote = await this.quantizeAndValidateQuote(
+      `${strategyKey}:rebalance`,
+      params.exchangeName,
+      params.symbol,
+      accountLabel,
+      side,
+      0,
+      `dual-account-rebalance:${accountLabel}:${side}`,
+      requestedQty,
+      executionPrice,
+      selectedBalances,
+    );
+
+    if (!adjustedQuote) {
+      return null;
+    }
+
+    if (side === 'buy') {
+      selectedBalances.base = selectedBalances.base.plus(adjustedQuote.qty);
+    } else {
+      selectedBalances.quote = selectedBalances.quote.plus(
+        adjustedQuote.qty.multipliedBy(adjustedQuote.price),
+      );
+    }
+
+    const futureExecution = this.resolveBestDualAccountTradeabilityFromBalances(
+      params,
+      preferredSide,
+      futurePrice,
+      nextMakerBalances,
+      nextTakerBalances,
+    );
+
+    if (!futureExecution) {
+      return null;
+    }
+
+    const orderId =
+      `${params.clientId}:rebalance:${publishedCycles}:${accountLabel}:${side}:${ts}`;
+    const cycleId = `${strategyKey}:rebalance:${ts}:${accountLabel}:${side}`;
+
+    return {
+      action: this.createIntent(
+        strategyKey,
+        strategyKey,
+        params.userId,
+        params.clientId,
+        params.exchangeName,
+        params.symbol,
+        side,
+        adjustedQuote.price,
+        adjustedQuote.qty,
+        ts,
+        `dual-account-volume-rebalance-${publishedCycles}-${accountLabel}-${side}`,
+        params.executionCategory,
+        {
+          cycleId,
+          orderId,
+          role: 'rebalance',
+          rebalance: true,
+          rebalanceReason: 'no_tradable_side',
+          rebalanceAccountLabel: accountLabel,
+          makerAccountLabel:
+            futureExecution.resolvedAccounts.makerAccountLabel,
+          takerAccountLabel:
+            futureExecution.resolvedAccounts.takerAccountLabel,
+          configuredMakerAccountLabel: params.makerAccountLabel,
+          configuredTakerAccountLabel: params.takerAccountLabel,
+          preferredSide,
+          restoredSide: futureExecution.side,
+          restoredCapacity: futureExecution.capacity.toFixed(),
+          targetQty: new BigNumber(params.baseTradeAmount).toFixed(),
+          requestedQty: requestedQty.toFixed(),
+          effectiveQty: adjustedQuote.qty.toFixed(),
+        },
+        false,
+        accountLabel,
+        'IOC',
+      ),
+      futureExecution,
+      accountLabel,
+      side,
+    };
+  }
+
+  private resolveBestDualAccountTradeabilityFromBalances(
+    params: DualAccountVolumeStrategyParams,
+    preferredSide: 'buy' | 'sell',
+    price: BigNumber,
+    makerBalances: DualAccountPairBalances,
+    takerBalances: DualAccountPairBalances,
+  ): DualAccountTradeabilityPlan | null {
+    const preferredTradeability =
+      this.evaluateDualAccountTradeabilityForSideFromBalances(
+        params,
+        preferredSide,
+        price,
+        makerBalances,
+        takerBalances,
+      );
+
+    if (preferredTradeability) {
+      return preferredTradeability;
+    }
+
+    return this.evaluateDualAccountTradeabilityForSideFromBalances(
+      params,
+      preferredSide === 'buy' ? 'sell' : 'buy',
+      price,
+      makerBalances,
+      takerBalances,
+    );
+  }
+
+  private evaluateDualAccountTradeabilityForSideFromBalances(
+    params: DualAccountVolumeStrategyParams,
+    side: 'buy' | 'sell',
+    price: BigNumber,
+    makerBalances: DualAccountPairBalances,
+    takerBalances: DualAccountPairBalances,
+  ): DualAccountTradeabilityPlan | null {
+    const resolvedAccounts = this.resolveDualAccountCycleAccountsFromBalances(
+      params,
+      side,
+      price,
+      makerBalances,
+      takerBalances,
+    );
+    const profile = this.resolveDualAccountBehaviorProfile(
+      params,
+      resolvedAccounts.makerAccountLabel,
+    );
+
+    if (!this.isWithinDualAccountProfileWindow(profile)) {
+      return null;
+    }
+
+    const capacity = resolvedAccounts.capacity;
+
+    if (!capacity || !capacity.isFinite() || capacity.isLessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    return {
+      side,
+      resolvedAccounts,
+      profile,
+      capacity,
+    };
+  }
+
+  private cloneDualAccountPairBalances(
+    balances: DualAccountPairBalances,
+  ): DualAccountPairBalances {
+    return {
+      base: new BigNumber(balances.base),
+      quote: new BigNumber(balances.quote),
+      assets: {
+        ...balances.assets,
+      },
+    };
+  }
+  private async evaluateDualAccountExecutionForSide(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    side: 'buy' | 'sell',
+    price: BigNumber,
+    tradeAmountVarianceSample: number,
+  ): Promise<DualAccountExecutionPlan | null> {
+    const resolvedAccounts = await this.resolveDualAccountCycleAccounts(
+      params,
+      side,
+      price,
+    );
+
+    if (!resolvedAccounts) {
+      this.logger.warn(
+        `Dual-account volume ${strategyKey}: unable to resolve maker/taker accounts for side=${side}`,
+      );
+
+      return null;
+    }
+
+    const profile = this.resolveDualAccountBehaviorProfile(
+      params,
+      resolvedAccounts.makerAccountLabel,
+    );
+
+    if (!this.isWithinDualAccountProfileWindow(profile)) {
+      this.logger.log(
+        `Dual-account volume ${strategyKey}: maker account ${resolvedAccounts.makerAccountLabel} is outside active hours for side=${side}`,
+      );
+
+      return null;
+    }
+
+    const requestedQty = new BigNumber(
+      this.applyVariance(
+        params.baseTradeAmount,
+        profile.tradeAmountVariance ?? params.tradeAmountVariance,
+        profile.tradeAmountMultiplier,
+        tradeAmountVarianceSample,
+      ),
+    );
+
+    if (!requestedQty.isFinite() || requestedQty.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Dual-account volume ${strategyKey}: invalid qty ${params.baseTradeAmount} for side=${side}`,
+      );
+
+      return null;
+    }
+
+    const adjustedQuote = await this.quantizeAndAdaptDualAccountQuote(
+      strategyKey,
+      params,
+      side,
+      price,
+      requestedQty,
+      resolvedAccounts,
+    );
+
+    if (!adjustedQuote) {
+      return null;
+    }
+
+    return {
+      side,
+      resolvedAccounts,
+      profile,
+      requestedQty,
+      adjustedQuote,
+    };
+  }
+
+  private async quantizeAndAdaptDualAccountQuote(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    side: 'buy' | 'sell',
+    rawPrice: BigNumber,
+    requestedQty: BigNumber,
+    resolvedAccounts: DualAccountResolvedAccounts,
+  ): Promise<{ price: BigNumber; qty: BigNumber } | null> {
+    let effectivePrice = rawPrice;
+
+    if (this.exchangeConnectorAdapterService) {
+      const initialQuantized =
+        this.exchangeConnectorAdapterService.quantizeOrder(
+          params.exchangeName,
+          params.symbol,
+          requestedQty.toFixed(),
+          rawPrice.toFixed(),
+          resolvedAccounts.makerAccountLabel,
+        );
+
+      effectivePrice = new BigNumber(initialQuantized.price);
+    }
+
+    if (!effectivePrice.isFinite() || effectivePrice.isLessThanOrEqualTo(0)) {
+      this.logger.error(
+        `Skipping dual-account volume cycle for ${strategyKey}: invalid quantized price ${effectivePrice.toFixed()}`,
+      );
+
+      return null;
+    }
+
+    const capacity =
+      resolvedAccounts.makerBalances && resolvedAccounts.takerBalances
+        ? this.computeDualAccountCapacity(
+            resolvedAccounts.makerBalances,
+            resolvedAccounts.takerBalances,
+            side,
+            effectivePrice,
+          )
+        : resolvedAccounts.capacity;
+    let effectiveQty = requestedQty;
+
+    if (
+      capacity &&
+      capacity.isFinite() &&
+      capacity.isGreaterThanOrEqualTo(0) &&
+      effectiveQty.isGreaterThan(capacity)
+    ) {
+      this.logger.log(
+        `Reducing dual-account volume qty for ${strategyKey}: requested=${requestedQty.toFixed()} effective=${capacity.toFixed()} capacity=${capacity.toFixed()} side=${side} maker=${resolvedAccounts.makerAccountLabel} taker=${resolvedAccounts.takerAccountLabel}`,
+      );
+      effectiveQty = capacity;
+    }
+
+    if (!effectiveQty.isFinite() || effectiveQty.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: adapted qty ${effectiveQty.toFixed()} is non-positive after balance checks`,
+      );
+
+      return null;
+    }
+
+    let qty = effectiveQty;
+
+    if (this.exchangeConnectorAdapterService) {
+      const quantized = this.exchangeConnectorAdapterService.quantizeOrder(
+        params.exchangeName,
+        params.symbol,
+        effectiveQty.toFixed(),
+        effectivePrice.toFixed(),
+        resolvedAccounts.makerAccountLabel,
+      );
+
+      effectivePrice = new BigNumber(quantized.price);
+      qty = new BigNumber(quantized.qty);
+    }
+
+    const rules = this.exchangeConnectorAdapterService
+      ? await this.exchangeConnectorAdapterService.loadTradingRules(
+          params.exchangeName,
+          params.symbol,
+          resolvedAccounts.makerAccountLabel,
+        )
+      : {};
+
+    if (
+      !qty.isFinite() ||
+      qty.isLessThanOrEqualTo(0) ||
+      !effectivePrice.isFinite() ||
+      effectivePrice.isLessThanOrEqualTo(0) ||
+      (rules.amountMin && qty.isLessThan(rules.amountMin)) ||
+      (rules.costMin &&
+        qty.multipliedBy(effectivePrice).isLessThan(rules.costMin))
+    ) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: quantized qty ${qty.toFixed()}@${effectivePrice.toFixed()} is below exchange minimums or non-positive`,
+      );
+
+      return null;
+    }
+
+    if (resolvedAccounts.makerBalances && resolvedAccounts.takerBalances) {
+      const quantizedCapacity = this.computeDualAccountCapacity(
+        resolvedAccounts.makerBalances,
+        resolvedAccounts.takerBalances,
+        side,
+        effectivePrice,
+      );
+
+      if (qty.isGreaterThan(quantizedCapacity)) {
+        this.logger.warn(
+          `Skipping dual-account volume cycle for ${strategyKey}: quantized qty ${qty.toFixed()} exceeds live capacity ${quantizedCapacity.toFixed()} for side=${side} maker=${resolvedAccounts.makerAccountLabel} taker=${resolvedAccounts.takerAccountLabel}`,
+        );
+
+        return null;
+      }
+    }
+
+    return { price: effectivePrice, qty };
   }
 
   async buildPureMarketMakingActions(
@@ -4399,6 +5033,7 @@ export class StrategyService
     baseValue: number,
     variance?: number,
     multiplier?: number,
+    varianceSample?: number,
   ): number {
     const normalizedBase = new BigNumber(baseValue);
 
@@ -4415,7 +5050,8 @@ export class StrategyService
       return effectiveBase.toNumber();
     }
 
-    const swing = new BigNumber(Math.random() * 2 - 1).multipliedBy(
+    const sample = this.readUnitIntervalNumber(varianceSample) ?? Math.random();
+    const swing = new BigNumber(sample * 2 - 1).multipliedBy(
       normalizedVariance,
     );
 

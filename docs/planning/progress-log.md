@@ -3,6 +3,9 @@
 ## 2026-04-13
 
 - Add a `750ms` dual-account maker settlement window after the IOC leg: if the maker still looks live after the confirmation check, the runtime now cancels it instead of leaving a stale post-only order blocking later cycles
+- Make dual-account volume sizing adapt to live maker/taker balances each tick: the runtime now shrinks oversized cycles down to the currently affordable amount and skips only when the quantized order would fall below exchange minimums
+- Make dual-account volume retry the opposite side when the preferred side is not tradable with current balances, while short-circuiting zero-sized post-balance quotes before CCXT precision calls
+- Add dual-account local auto-rebalance: when neither normal side is tradable, the strategy now submits a single-account IOC rebalance order that restores the next feasible side without advancing published-cycle counters
 
 ## 2026-04-12
 

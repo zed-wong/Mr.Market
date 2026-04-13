@@ -1891,6 +1891,74 @@ describe('StrategyService', () => {
     );
   });
 
+
+  it('does not increment dual-account published cycles for rebalance-only actions', async () => {
+    const session = {
+      runId: 'run-dual-rebalance',
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 5,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: 0,
+        publishedCycles: 3,
+        completedCycles: 2,
+        tradedQuoteVolume: 250,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: {
+        ...session.params,
+        publishedCycles: 1,
+        completedCycles: 0,
+        tradedQuoteVolume: 100,
+        baseIntervalTime: 30,
+      },
+    });
+
+    (service as any).sessions.set(session.strategyKey, session);
+    await service.onDualAccountVolumeActionsPublished(session as any, [
+      {
+        type: 'CREATE_LIMIT_ORDER',
+        metadata: {
+          role: 'rebalance',
+          rebalance: true,
+        },
+      } as any,
+    ]);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          publishedCycles: 3,
+          completedCycles: 2,
+          tradedQuoteVolume: 250,
+          baseIntervalTime: 30,
+        }),
+      }),
+    );
+  });
+
   it('skips dual-account volume actions when tracked order book is unavailable', async () => {
     strategyMarketDataProviderService.getTrackedBestBidAsk = jest
       .fn()
@@ -1970,6 +2038,280 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
+  });
+
+  it('falls back to the opposite side when the preferred side is not tradable', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 10, USDT: 0 } }
+          : { free: { BTC: 0, USDT: 1000 } },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          requestedQty: '0.4',
+          effectiveQty: '0.4',
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
+  });
+
+  it('reduces dual-account volume qty to fit live balances', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 10, USDT: 25 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 0.15, USDT: 1000 },
+      });
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        qty: '0.15',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          requestedQty: '0.4',
+          effectiveQty: '0.15',
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
+  });
+
+  it('skips dual-account volume actions when adapted qty falls below exchange minimums', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async () => ({
+        free: { BTC: 0.04, USDT: 5 },
+      }),
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
+    jest.restoreAllMocks();
+  });
+
+  it('skips dual-account volume actions before quantizing a zero qty', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 0, USDT: 0 } }
+          : { free: { BTC: 0.15, USDT: 0 } },
+    );
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+      (_exchange: string, _symbol: string, qty: string, price: string) => {
+        if (Number(qty) <= 0) {
+          throw new Error('qty must stay positive');
+        }
+
+        return { qty, price };
+      },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
+    expect(
+      exchangeConnectorAdapterService.quantizeOrder.mock.calls.every(
+        ([, , qty]) => Number(qty) > 0,
+      ),
+    ).toBe(true);
+    jest.restoreAllMocks();
+  });
+
+
+  it('builds a rebalance IOC order when no dual-account side is tradable', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 0, USDT: 1000 } }
+          : { free: { BTC: 0, USDT: 500 } },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'buy',
+        qty: '0.4',
+        accountLabel: 'maker',
+        postOnly: false,
+        timeInForce: 'IOC',
+        metadata: expect.objectContaining({
+          role: 'rebalance',
+          rebalance: true,
+          rebalanceReason: 'no_tradable_side',
+          rebalanceAccountLabel: 'maker',
+          restoredSide: 'sell',
+          configuredMakerAccountLabel: 'maker',
+          configuredTakerAccountLabel: 'taker',
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
   });
 
   it('applies dual-account randomness and account profiles when building actions', async () => {

@@ -550,10 +550,12 @@ export class StrategyIntentExecutionService {
 
   private resolveIntentRole(
     intent: StrategyOrderIntent,
-  ): 'maker' | 'taker' | undefined {
+  ): 'maker' | 'taker' | 'rebalance' | undefined {
     const role = this.readMetadataString(intent, 'role');
 
-    return role === 'maker' || role === 'taker' ? role : undefined;
+    return role === 'maker' || role === 'taker' || role === 'rebalance'
+      ? role
+      : undefined;
   }
 
   private isMakerIntent(intent: StrategyOrderIntent): boolean {

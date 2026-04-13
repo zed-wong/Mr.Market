@@ -69,9 +69,6 @@ export class OrderBookTrackerService
 
     queue.push(snapshot);
     this.snapshotQueue.set(key, queue);
-    this.logger.log(
-      `Queued order book snapshot ${key} bids=${snapshot.bids.length} asks=${snapshot.asks.length} sequence=${snapshot.sequence} queueDepth=${queue.length}`,
-    );
     this.scheduleDrain();
   }
 
@@ -134,9 +131,6 @@ export class OrderBookTrackerService
             sequence: lastSnapshot.sequence,
           });
           this.lastUpdateAtByKey.set(key, Date.now());
-          this.logger.log(
-            `Applied order book snapshot ${key} bids=${lastSnapshot.bids.length} asks=${lastSnapshot.asks.length} sequence=${lastSnapshot.sequence}`,
-          );
         }
       }
 

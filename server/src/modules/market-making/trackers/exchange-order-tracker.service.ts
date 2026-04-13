@@ -37,7 +37,7 @@ export type TrackedOrder = {
   exchangeOrderId: string;
   clientOrderId?: string;
   slotKey?: string;
-  role?: 'maker' | 'taker';
+  role?: 'maker' | 'taker' | 'rebalance';
   side: 'buy' | 'sell';
   price: string;
   qty: string;

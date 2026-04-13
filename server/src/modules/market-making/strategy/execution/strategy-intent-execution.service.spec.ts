@@ -410,6 +410,37 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
+
+  it('tracks rebalance intents without running the inline dual-account taker flow', async () => {
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-rebalance',
+        accountLabel: 'maker',
+        timeInForce: 'IOC',
+        metadata: {
+          role: 'rebalance',
+          orderId: 'dual-rebalance-1',
+          cycleId: 'rebalance-1',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+        },
+      },
+    ]);
+
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'dual-rebalance-1',
+        role: 'rebalance',
+        accountLabel: 'maker',
+      }),
+    );
+    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(1);
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
+  });
+
   it('deduplicates create intents when the slot already has an active tracked order', async () => {
     exchangeOrderTrackerService.getActiveSlotOrders.mockReturnValueOnce([
       {
