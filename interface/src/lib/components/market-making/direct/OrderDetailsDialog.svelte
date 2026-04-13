@@ -17,7 +17,6 @@
     export let loading = false;
     export let onClose: () => void;
     export let onStartOrder: () => void;
-    export let onDuplicateOrder: () => void;
     export let onStopOrder: () => void;
     export let onRemoveOrder: () => void;
 
@@ -81,11 +80,12 @@
     $: lastUpdated = data?.lastUpdatedAt
         ? data.lastUpdatedAt.replace("T", " ").slice(0, 19)
         : "";
-    $: isRunning =
-        order?.runtimeState === "running" || order?.runtimeState === "active";
+    $: runtimeState = order?.runtimeState;
+    $: isRunning = runtimeState === "running" || runtimeState === "active";
+    $: isStale = runtimeState === "stale";
+    $: isResumable = runtimeState === "stopped" || runtimeState === "created";
     $: isDualAccountStrategy =
         (data?.controllerType || order?.controllerType) === "dualAccountVolume";
-    $: isStale = data?.stale ?? false;
     $: skewBalances = data
         ? isDualAccountStrategy
             ? data.inventoryBalances.filter(
@@ -249,29 +249,6 @@
                         {/if}
                     </div>
 
-                    <!-- Stale Warning Banner -->
-                    {#if isStale}
-                        <div
-                            class="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-xl px-4 py-2.5"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                                class="w-4 h-4 text-warning shrink-0"
-                            >
-                                <path
-                                    fill-rule="evenodd"
-                                    d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
-                                    clip-rule="evenodd"
-                                />
-                            </svg>
-                            <span class="text-xs text-warning font-semibold"
-                                >{$_("admin_direct_mm_stale_warning")}</span
-                            >
-                        </div>
-                    {/if}
-
                     <!-- Warnings Banner -->
                     {#if order.warnings && order.warnings.length > 0}
                         <div class="flex flex-col gap-1.5">
@@ -430,7 +407,7 @@
                                             "admin_direct_mm_executor_health",
                                         )}</span
                                     >
-                                    <div class="flex items-center gap-1.5">
+                                    <div class="flex items-center gap-1.5 tooltip tooltip-left" data-tip={data.executorHealth === 'stale' ? $_("admin_direct_mm_stale_tooltip") : ''}>
                                         <span
                                             class="w-2 h-2 rounded-full {getHealthDot(
                                                 data.executorHealth,
@@ -742,193 +719,58 @@
                                 </div>
                             </div>
 
-                            <!-- Dual Account Config Grid -->
-                            <div class="grid grid-cols-3 gap-3 mb-3">
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_order_amount",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig?.orderAmount ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                            <!-- Dual Account Config -->
+                            <div class="border border-base-300 rounded-xl p-4 mb-3">
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_order_amount")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.orderAmount || $_("admin_direct_mm_na")}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_base_increment_percentage",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig
-                                            ?.baseIncrementPercentage ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_base_increment_percentage")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.baseIncrementPercentage || $_("admin_direct_mm_na")}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_realized_pnl_quote",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig?.realizedPnlQuote ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_realized_pnl_quote")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.realizedPnlQuote || $_("admin_direct_mm_na")}</span>
                                 </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-3 mb-3">
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_interval_time",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig?.baseIntervalTime ??
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_interval_time")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.baseIntervalTime ?? $_("admin_direct_mm_na")}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_num_trades",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig?.numTrades ??
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_num_trades")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.numTrades ?? $_("admin_direct_mm_na")}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_price_push_rate",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig?.pricePushRate ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_price_push_rate")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.pricePushRate || $_("admin_direct_mm_na")}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_post_only_side",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block capitalize"
-                                        >{data?.orderConfig?.postOnlySide ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_post_only_side")}</span>
+                                    <span class="text-xs font-semibold text-base-content capitalize">{data?.orderConfig?.postOnlySide || $_("admin_direct_mm_na")}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3 text-center col-span-2"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_maker_delay",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig?.makerDelayMs ??
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                                <div class="flex items-center justify-between h-6">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_maker_delay")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.makerDelayMs ?? $_("admin_direct_mm_na")}</span>
                                 </div>
                             </div>
                         {:else}
-                            <div class="grid grid-cols-2 gap-3">
-                                <div
-                                    class="border border-base-300 rounded-xl p-3"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_order_amount",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig?.orderAmount ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                            <div class="border border-base-300 rounded-xl p-4">
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_order_amount")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.orderAmount || $_("admin_direct_mm_na")}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_("admin_direct_mm_layers")}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{data?.orderConfig?.numberOfLayers ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_layers")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{data?.orderConfig?.numberOfLayers || $_("admin_direct_mm_na")}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_bid_spread",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{formatSpread(
-                                            data?.orderConfig?.bidSpread,
-                                        )}</span
-                                    >
+                                <div class="flex items-center justify-between h-6 mb-1">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_bid_spread")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{formatSpread(data?.orderConfig?.bidSpread)}</span>
                                 </div>
-                                <div
-                                    class="border border-base-300 rounded-xl p-3"
-                                >
-                                    <span
-                                        class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                        >{$_(
-                                            "admin_direct_mm_ask_spread",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-sm font-bold text-base-content block"
-                                        >{formatSpread(
-                                            data?.orderConfig?.askSpread,
-                                        )}</span
-                                    >
+                                <div class="flex items-center justify-between h-6">
+                                    <span class="text-xs text-base-content/60">{$_("admin_direct_mm_ask_spread")}</span>
+                                    <span class="text-xs font-semibold text-base-content">{formatSpread(data?.orderConfig?.askSpread)}</span>
                                 </div>
                             </div>
                         {/if}
@@ -1193,7 +1035,7 @@
                         >
                             {$_("close")}
                         </button>
-                        {#if isRunning}
+                        {#if isRunning || isStale}
                             <button
                                 class="btn flex-1 bg-red-600 hover:bg-red-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(220,38,38,0.9)] flex items-center justify-center gap-1.5"
                                 on:click={onStopOrder}
@@ -1215,8 +1057,16 @@
                                     <path d="m6 6 12 12" />
                                 </svg>
                             </button>
+                            {#if isStale}
+                                <button
+                                    class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+                                    on:click={onRemoveOrder}
+                                >
+                                    {$_("admin_direct_mm_remove")}
+                                </button>
+                            {/if}
                         {:else}
-                            <div class="flex flex-1 gap-3">
+                            {#if isResumable}
                                 <button
                                     class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
                                     on:click={onStartOrder}
@@ -1236,19 +1086,13 @@
                                         <path d="m9 18 6-6-6-6" />
                                     </svg>
                                 </button>
-                                <button
-                                    class="btn bg-base-200 hover:bg-base-300 border border-base-300 text-base-content h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
-                                    on:click={onDuplicateOrder}
-                                >
-                                    {$_("admin_direct_mm_duplicate_order")}
-                                </button>
-                                <button
-                                    class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
-                                    on:click={onRemoveOrder}
-                                >
-                                    {$_("admin_direct_mm_remove")}
-                                </button>
-                            </div>
+                            {/if}
+                            <button
+                                class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 {isResumable ? '' : 'flex-1'} h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+                                on:click={onRemoveOrder}
+                            >
+                                {$_("admin_direct_mm_remove")}
+                            </button>
                         {/if}
                     </div>
                 </div>

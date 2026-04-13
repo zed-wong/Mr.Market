@@ -56,19 +56,31 @@
     $: targetQuoteVolumeError =
         targetQuoteVolume && isNaN(Number(targetQuoteVolume));
     $: makerDelayMsError = makerDelayMs && isNaN(Number(makerDelayMs));
+    $: makerAccountOptions = filteredApiKeys;
+    $: takerAccountOptions = filteredApiKeys.filter(
+        (key) => String(key.key_id) !== String(startMakerApiKeyId),
+    );
+    $: hasDistinctDualAccounts = makerAccountOptions.length >= 2;
     $: dualRequiredMissing =
         isDualAccountStrategy &&
         (!intervalTime || !numTrades || !pricePushRate);
+    $: dualAccountSelectionMissing =
+        isDualAccountStrategy &&
+        (!startMakerApiKeyId || !startTakerApiKeyId);
     $: dualSameAccount =
         isDualAccountStrategy &&
         !!startMakerApiKeyId &&
         !!startTakerApiKeyId &&
-        startMakerApiKeyId === startTakerApiKeyId;
+        String(startMakerApiKeyId) === String(startTakerApiKeyId);
+    $: dualAccountUnavailable =
+        isDualAccountStrategy && !hasDistinctDualAccounts;
     $: submitDisabled =
         isStarting ||
         orderAmountError ||
         orderAmountBelowMinimum ||
         dualRequiredMissing ||
+        dualAccountSelectionMissing ||
+        dualAccountUnavailable ||
         dualSameAccount;
 
     $: searchedPairs = pairSearch
@@ -79,21 +91,31 @@
 
     $: if (
         filteredApiKeys.length > 0 &&
-        !filteredApiKeys.find((k) => k.key_id === startApiKeyId)
+        !filteredApiKeys.find((k) => String(k.key_id) === String(startApiKeyId))
     ) {
-        startApiKeyId = filteredApiKeys[0].key_id;
+        startApiKeyId = String(filteredApiKeys[0].key_id);
+    }
+    $: if (filteredApiKeys.length === 0) {
+        startMakerApiKeyId = "";
+        startTakerApiKeyId = "";
     }
     $: if (
         filteredApiKeys.length > 0 &&
-        !filteredApiKeys.find((k) => k.key_id === startMakerApiKeyId)
+        !filteredApiKeys.find(
+            (k) => String(k.key_id) === String(startMakerApiKeyId),
+        )
     ) {
-        startMakerApiKeyId = filteredApiKeys[0].key_id;
+        startMakerApiKeyId = String(filteredApiKeys[0].key_id);
     }
     $: if (
+        isDualAccountStrategy &&
         filteredApiKeys.length > 0 &&
-        !filteredApiKeys.find((k) => k.key_id === startTakerApiKeyId)
+        (!takerAccountOptions.find(
+            (k) => String(k.key_id) === String(startTakerApiKeyId),
+        ) ||
+            String(startMakerApiKeyId) === String(startTakerApiKeyId))
     ) {
-        startTakerApiKeyId = filteredApiKeys[0].key_id;
+        startTakerApiKeyId = String(takerAccountOptions[0]?.key_id ?? "");
     }
     $: isDualAccountStrategy = selectedControllerType === "dualAccountVolume";
     $: renderedMinOrderAmount = displayMinOrderAmount || minOrderAmount;
@@ -106,17 +128,6 @@
         pairDropdownOpen = true;
         pairSearch = "";
         setTimeout(() => pairInputEl?.focus(), 0);
-    }
-
-    function handlePrimaryApiKeyChange(event: Event) {
-        const value = (event.currentTarget as HTMLSelectElement).value;
-
-        if (isDualAccountStrategy) {
-            startMakerApiKeyId = value;
-            return;
-        }
-
-        startApiKeyId = value;
     }
 
     function selectPair(symbol: string) {
@@ -220,30 +231,50 @@
                                 : $_("admin_direct_mm_api_key")}</span
                         >
                         {#if filteredApiKeys.length > 0}
-                            <select
-                                class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
-                                value={isDualAccountStrategy
-                                    ? startMakerApiKeyId
-                                    : startApiKeyId}
-                                on:change={handlePrimaryApiKeyChange}
-                            >
-                                <option value="" disabled selected
-                                    >{$_(
-                                        "admin_direct_mm_read_trade_keys",
-                                    )}</option
+                            {#if isDualAccountStrategy}
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    bind:value={startMakerApiKeyId}
                                 >
-                                {#each filteredApiKeys as apiKey}
-                                    <option value={apiKey.key_id}>
-                                        {apiKey.name} ({apiKey.key_id})
-                                    </option>
-                                {/each}
-                            </select>
+                                    <option value="" disabled
+                                        >{$_(
+                                            "admin_direct_mm_read_trade_keys",
+                                        )}</option
+                                    >
+                                    {#each filteredApiKeys as apiKey}
+                                        <option value={String(apiKey.key_id)}>
+                                            {apiKey.name} ({apiKey.key_id})
+                                        </option>
+                                    {/each}
+                                </select>
+                            {:else}
+                                <select
+                                    class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                    bind:value={startApiKeyId}
+                                >
+                                    <option value="" disabled
+                                        >{$_(
+                                            "admin_direct_mm_read_trade_keys",
+                                        )}</option
+                                    >
+                                    {#each filteredApiKeys as apiKey}
+                                        <option value={String(apiKey.key_id)}>
+                                            {apiKey.name} ({apiKey.key_id})
+                                        </option>
+                                    {/each}
+                                </select>
+                            {/if}
                         {:else}
                             <div
                                 class="h-10 min-h-10 px-3 rounded-lg border border-dashed border-base-300 bg-base-100 flex items-center text-sm text-base-content/50"
                             >
                                 {$_("admin_direct_mm_no_executable_api_key")}
                             </div>
+                        {/if}
+                        {#if dualAccountUnavailable}
+                            <span class="text-xs text-error mt-1 block"
+                                >{$_("admin_direct_mm_error_dual_accounts_required")}</span
+                            >
                         {/if}
                     </div>
                     {#if isDualAccountStrategy}
@@ -252,18 +283,18 @@
                                 class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
                                 >{$_("admin_direct_mm_taker_account")}</span
                             >
-                            {#if filteredApiKeys.length > 0}
+                            {#if takerAccountOptions.length > 0}
                                 <select
                                     class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
                                     bind:value={startTakerApiKeyId}
                                 >
-                                    <option value="" disabled selected
+                                    <option value="" disabled
                                         >{$_(
                                             "admin_direct_mm_read_trade_keys",
                                         )}</option
                                     >
-                                    {#each filteredApiKeys as apiKey}
-                                        <option value={apiKey.key_id}>
+                                    {#each takerAccountOptions as apiKey}
+                                        <option value={String(apiKey.key_id)}>
                                             {apiKey.name} ({apiKey.key_id})
                                         </option>
                                     {/each}

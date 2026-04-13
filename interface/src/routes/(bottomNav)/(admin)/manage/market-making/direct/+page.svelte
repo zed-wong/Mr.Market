@@ -227,12 +227,12 @@
             (!startExchangeName || key.exchange === startExchangeName),
     );
     $: selectedApiKey =
-        filteredApiKeys.find((key) => key.key_id === startApiKeyId) || null;
+        filteredApiKeys.find((key) => String(key.key_id) === String(startApiKeyId)) || null;
     $: selectedMakerApiKey =
-        filteredApiKeys.find((key) => key.key_id === startMakerApiKeyId) ||
+        filteredApiKeys.find((key) => String(key.key_id) === String(startMakerApiKeyId)) ||
         null;
     $: selectedTakerApiKey =
-        filteredApiKeys.find((key) => key.key_id === startTakerApiKeyId) ||
+        filteredApiKeys.find((key) => String(key.key_id) === String(startTakerApiKeyId)) ||
         null;
     $: walletStatusAddress = walletStatus.address || "";
     $: hasWalletConfigured = walletStatus.configured;
@@ -351,22 +351,6 @@
         prefillingFromOrderId = order.orderId;
     }
 
-    async function duplicateOrderConfig(order: DirectOrderSummary) {
-        const token = getToken();
-
-        if (!token) return;
-
-        try {
-            const status = await getDirectOrderStatus(order.orderId, token);
-            applyOrderStatusToStartForm(order, status);
-            closeOrderDetails();
-        } catch (error) {
-            toast.error(getErrorMessage(error), {
-                description: getRecoveryHint(error),
-            });
-        }
-    }
-
     async function handleStartOrder() {
         if (isStarting || startCooldown) return;
         const token = getToken();
@@ -374,6 +358,8 @@
         const missingDualAccount =
             isDualAccountStrategy &&
             (!selectedMakerApiKey || !selectedTakerApiKey);
+        const insufficientDualAccounts =
+            isDualAccountStrategy && filteredApiKeys.length < 2;
 
         if (
             !token ||
@@ -389,11 +375,18 @@
             return;
         }
 
+        if (insufficientDualAccounts) {
+            toast.error($_("admin_direct_mm_error_dual_accounts_required"), {
+                description: $_("admin_direct_mm_recovery_dual_accounts_required"),
+            });
+            return;
+        }
+
         if (
             isDualAccountStrategy &&
             selectedMakerApiKey &&
             selectedTakerApiKey &&
-            selectedMakerApiKey.key_id === selectedTakerApiKey.key_id
+            String(selectedMakerApiKey.key_id) === String(selectedTakerApiKey.key_id)
         ) {
             toast.error($_("admin_direct_mm_error_distinct_accounts"), {
                 description: $_("admin_direct_mm_recovery_distinct_accounts"),
@@ -972,11 +965,6 @@
             const order = detailsOrder;
             closeOrderDetails();
             handleResumeOrder(order);
-        }
-    }}
-    onDuplicateOrder={() => {
-        if (detailsOrder) {
-            void duplicateOrderConfig(detailsOrder);
         }
     }}
     onStopOrder={() => {
