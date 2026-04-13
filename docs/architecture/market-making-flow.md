@@ -387,12 +387,7 @@ payment flow instead of backfilling legacy rows.
 
 ## Operational Notes
 
-<<<<<<< HEAD:docs/architecture/market-making-flow.md
 - `strategy.execute_intents=false` explicitly disables live execution, so intents are created and marked processed but no exchange actions are sent.
-=======
-- `strategy.execute_intents=false` means intents are created and marked processed but no live exchange actions are sent.
-- On `main`, `strategy.execute_intents` defaults to `false` unless `MARKET_MAKING_EXECUTE_INTENTS=true` is set.
->>>>>>> d993aa5 (Refresh execution docs for current main runtime):docs/execution/flow/MARKET_MAKING_FLOW.md
 - `strategy.intent_execution_driver=worker` decouples tick from exchange execution and keeps tick latency stable under load.
 - `strategy.intent_execution_driver=sync` keeps legacy inline execution behavior.
 - Strategy definitions are DB-backed and managed via admin APIs.
