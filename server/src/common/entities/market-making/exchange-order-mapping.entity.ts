@@ -15,9 +15,9 @@ export class ExchangeOrderMapping {
   @Index('IDX_exchange_order_mapping_order_id')
   orderId: string;
 
-  @Column()
+  @Column({ nullable: true })
   @Index('IDX_exchange_order_mapping_exchange_order_id')
-  exchangeOrderId: string;
+  exchangeOrderId?: string | null;
 
   @Column()
   @Index('IDX_exchange_order_mapping_client_order_id', { unique: true })

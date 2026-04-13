@@ -25,7 +25,30 @@ describe('ExchangeOrderMappingService', () => {
     expect(repository.countBy).toHaveBeenCalledWith({ orderId: 'order-1' });
   });
 
-  it('reuses existing mapping for the same clientOrderId', async () => {
+  it('reserves a clientOrderId before exchange submission', async () => {
+    repository.findOneBy.mockResolvedValue(null);
+    const service = new ExchangeOrderMappingService(repository as any);
+
+    await expect(
+      service.reserveMapping({
+        orderId: 'order-1',
+        clientOrderId: 'order-1:0',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        exchangeOrderId: null,
+        clientOrderId: 'order-1:0',
+      }),
+    );
+    expect(repository.create).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      exchangeOrderId: null,
+      clientOrderId: 'order-1:0',
+    });
+  });
+
+  it('reuses existing mapping for the same clientOrderId and exchangeOrderId', async () => {
     const existing = {
       id: 'mapping-existing',
       orderId: 'order-1',
@@ -39,11 +62,36 @@ describe('ExchangeOrderMappingService', () => {
     await expect(
       service.createMapping({
         orderId: 'order-1',
-        exchangeOrderId: 'ex-2',
+        exchangeOrderId: 'ex-1',
         clientOrderId: 'order-1:0',
       }),
     ).resolves.toBe(existing);
     expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it('attaches exchangeOrderId onto an existing reservation', async () => {
+    repository.findOneBy.mockResolvedValue({
+      id: 'mapping-existing',
+      orderId: 'order-1',
+      exchangeOrderId: null,
+      clientOrderId: 'order-1:0',
+    });
+    const service = new ExchangeOrderMappingService(repository as any);
+
+    await expect(
+      service.createMapping({
+        orderId: 'order-1',
+        exchangeOrderId: 'ex-2',
+        clientOrderId: 'order-1:0',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        exchangeOrderId: 'ex-2',
+        clientOrderId: 'order-1:0',
+      }),
+    );
+    expect(repository.save).toHaveBeenCalledTimes(1);
   });
 
   it('creates a new mapping when clientOrderId is not reserved yet', async () => {

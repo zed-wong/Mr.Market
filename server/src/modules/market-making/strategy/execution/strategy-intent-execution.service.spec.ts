@@ -42,6 +42,7 @@ describe('StrategyIntentExecutionService', () => {
 
   const exchangeOrderMappingService = {
     countMappingsForOrder: jest.fn().mockResolvedValue(0),
+    reserveMapping: jest.fn().mockResolvedValue(undefined),
     createMapping: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -196,6 +197,10 @@ describe('StrategyIntentExecutionService', () => {
       baseIntent.intentId,
       'order-1',
     );
+    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
+      orderId: 'c1',
+      clientOrderId: buildSubmittedClientOrderId('c1', 0),
+    });
     expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
       orderId: 'c1',
       exchangeOrderId: 'order-1',
@@ -679,7 +684,7 @@ describe('StrategyIntentExecutionService', () => {
   });
 
   it('cancels retries when the strategy stops between attempts', async () => {
-    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValueOnce(
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
       new Error('temporary'),
     );
     strategyInstanceRepository.findOne
@@ -942,4 +947,68 @@ describe('StrategyIntentExecutionService', () => {
       undefined,
     );
   });
+  it('reserves clientOrderId before placement so repeated order ids advance after restart', async () => {
+    const metadata = { orderId: 'mm-order-repeat' };
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockRejectedValueOnce(
+        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+      )
+      .mockRejectedValueOnce(
+        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+      )
+      .mockRejectedValueOnce(
+        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+      );
+    exchangeOrderMappingService.countMappingsForOrder.mockResolvedValueOnce(0);
+
+    const firstService = createService(true);
+
+    await expect(
+      firstService.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'intent-before-restart',
+          metadata,
+        },
+      ]),
+    ).rejects.toThrow('duplicate client order id');
+
+    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(3);
+    expect(exchangeOrderMappingService.createMapping).not.toHaveBeenCalled();
+    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
+      orderId: 'mm-order-repeat',
+      clientOrderId: buildSubmittedClientOrderId('mm-order-repeat', 0),
+    });
+
+    jest.clearAllMocks();
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
+      id: 'order-after-restart',
+      status: 'open',
+    });
+    exchangeOrderMappingService.countMappingsForOrder.mockResolvedValueOnce(1);
+
+    const restartedService = createService(true);
+
+    await restartedService.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-after-restart',
+        metadata,
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('mm-order-repeat', 1),
+      { postOnly: false, timeInForce: undefined },
+      undefined,
+    );
+  });
+
 });

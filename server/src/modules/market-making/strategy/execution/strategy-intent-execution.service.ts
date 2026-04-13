@@ -959,10 +959,16 @@ export class StrategyIntentExecutionService {
         orderId,
       )) ??
       0;
+    const clientOrderId = buildSubmittedClientOrderId(orderId, nextSeq);
+
+    await this.exchangeOrderMappingService?.reserveMapping({
+      orderId,
+      clientOrderId,
+    });
 
     this.nextClientOrderSeqByOrderId.set(orderId, nextSeq + 1);
 
-    return buildSubmittedClientOrderId(orderId, nextSeq);
+    return clientOrderId;
   }
 
   private async runWithRetries<T>(

@@ -1891,7 +1891,6 @@ describe('StrategyService', () => {
     );
   });
 
-
   it('does not increment dual-account published cycles for rebalance-only actions', async () => {
     const session = {
       runId: 'run-dual-rebalance',
@@ -2194,6 +2193,76 @@ describe('StrategyService', () => {
     jest.restoreAllMocks();
   });
 
+  it('falls back to the opposite dual-account side when the preferred side is below exchange minimums', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 1, USDT: 0.02 } }
+          : { free: { BTC: 0.0005, USDT: 100 } },
+    );
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+      (_exchange: string, _symbol: string, qty: string, price: string) => {
+        if (Number(qty) < 0.001) {
+          throw new Error('qty must satisfy exchange minimum');
+        }
+
+        return { qty, price };
+      },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        qty: '0.4',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          requestedQty: '0.4',
+          effectiveQty: '0.4',
+        }),
+      }),
+    ]);
+    expect(
+      exchangeConnectorAdapterService.quantizeOrder.mock.calls.every(
+        ([, , qty]) => Number(qty) >= 0.001,
+      ),
+    ).toBe(true);
+    jest.restoreAllMocks();
+  });
+
   it('skips dual-account volume actions before quantizing a zero qty', async () => {
     strategyMarketDataProviderService.getTrackedBestBidAsk = jest
       .fn()
@@ -2251,7 +2320,6 @@ describe('StrategyService', () => {
     ).toBe(true);
     jest.restoreAllMocks();
   });
-
 
   it('builds a rebalance IOC order when no dual-account side is tradable', async () => {
     strategyMarketDataProviderService.getTrackedBestBidAsk = jest

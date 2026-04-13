@@ -33,7 +33,9 @@ export class ExchangeConnectorAdapterService {
     string,
     {
       amountMin?: number;
+      amountMax?: number;
       costMin?: number;
+      costMax?: number;
       makerFee?: number;
     }
   >();
@@ -82,9 +84,7 @@ export class ExchangeConnectorAdapterService {
         const params = {
           ...(clientOrderId ? { clientOrderId } : {}),
           ...(options?.postOnly ? { postOnly: true } : {}),
-          ...(options?.timeInForce
-            ? { timeInForce: options.timeInForce }
-            : {}),
+          ...(options?.timeInForce ? { timeInForce: options.timeInForce } : {}),
         };
 
         return await exchange.createOrder(
@@ -217,7 +217,9 @@ export class ExchangeConnectorAdapterService {
     accountLabel?: string,
   ): Promise<{
     amountMin?: number;
+    amountMax?: number;
     costMin?: number;
+    costMax?: number;
     makerFee?: number;
   }> {
     const key = this.toMarketKey(exchangeName, pair);
@@ -244,7 +246,9 @@ export class ExchangeConnectorAdapterService {
         const market = exchange?.markets?.[pair] || {};
         const rules = {
           amountMin: this.toFiniteNumber(market?.limits?.amount?.min),
+          amountMax: this.toFiniteNumber(market?.limits?.amount?.max),
           costMin: this.toFiniteNumber(market?.limits?.cost?.min),
+          costMax: this.toFiniteNumber(market?.limits?.cost?.max),
           makerFee: this.toFiniteNumber(
             market?.maker || exchange?.fees?.trading?.maker,
           ),

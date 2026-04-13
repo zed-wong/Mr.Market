@@ -26,7 +26,10 @@ describe('ExchangeConnectorAdapterService', () => {
     ),
     markets: {
       'BTC/USDT': {
-        limits: { amount: { min: 0.001 }, cost: { min: 10 } },
+        limits: {
+          amount: { min: 0.001, max: 5 },
+          cost: { min: 10, max: 500 },
+        },
         precision: { amount: 4, price: 2 },
         maker: 0.001,
       },
@@ -124,7 +127,9 @@ describe('ExchangeConnectorAdapterService', () => {
       service.loadTradingRules('binance', 'BTC/USDT'),
     ).resolves.toEqual({
       amountMin: 0.001,
+      amountMax: 5,
       costMin: 10,
+      costMax: 500,
       makerFee: 0.001,
     });
     await service.fetchBalance('binance');

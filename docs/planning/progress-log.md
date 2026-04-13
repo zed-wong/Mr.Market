@@ -2,6 +2,7 @@
 
 ## 2026-04-13
 
+- Guard dual-account volume quotes with pre-quantization exchange min/max checks and let below-min preferred sides fall through to fallback/rebalance instead of surfacing CCXT `InvalidOrder` errors
 - Add a `750ms` dual-account maker settlement window after the IOC leg: if the maker still looks live after the confirmation check, the runtime now cancels it instead of leaving a stale post-only order blocking later cycles
 - Make dual-account volume sizing adapt to live maker/taker balances each tick: the runtime now shrinks oversized cycles down to the currently affordable amount and skips only when the quantized order would fall below exchange minimums
 - Make dual-account volume retry the opposite side when the preferred side is not tradable with current balances, while short-circuiting zero-sized post-balance quotes before CCXT precision calls

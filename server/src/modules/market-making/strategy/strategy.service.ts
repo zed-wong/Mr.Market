@@ -1828,9 +1828,9 @@ export class StrategyService
       );
     } catch (error) {
       this.logger.warn(
-        `Failed to load dual-account balances for ${params.exchangeName} ${params.symbol}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to load dual-account balances for ${params.exchangeName} ${
+          params.symbol
+        }: ${error instanceof Error ? error.message : String(error)}`,
       );
 
       return configured;
@@ -1955,7 +1955,11 @@ export class StrategyService
 
     if (fallbackExecution) {
       this.logger.log(
-        `Dual-account volume ${strategyKey}: switched side preferred=${preferredSide} selected=${fallbackExecution.side} maker=${fallbackExecution.resolvedAccounts.makerAccountLabel} taker=${fallbackExecution.resolvedAccounts.takerAccountLabel} capacity=${
+        `Dual-account volume ${strategyKey}: switched side preferred=${preferredSide} selected=${
+          fallbackExecution.side
+        } maker=${fallbackExecution.resolvedAccounts.makerAccountLabel} taker=${
+          fallbackExecution.resolvedAccounts.takerAccountLabel
+        } capacity=${
           fallbackExecution.resolvedAccounts.capacity?.toFixed() ?? 'unknown'
         }`,
       );
@@ -1963,7 +1967,6 @@ export class StrategyService
 
     return fallbackExecution;
   }
-
 
   private async maybeBuildDualAccountRebalanceAction(
     strategyKey: string,
@@ -1991,7 +1994,9 @@ export class StrategyService
       );
     } catch (error) {
       this.logger.warn(
-        `Failed to load dual-account rebalance balances for ${params.exchangeName} ${params.symbol}: ${
+        `Failed to load dual-account rebalance balances for ${
+          params.exchangeName
+        } ${params.symbol}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -2059,9 +2064,8 @@ export class StrategyService
         ),
       ])
     ).filter(
-      (
-        candidate,
-      ): candidate is DualAccountRebalanceCandidate => candidate !== null,
+      (candidate): candidate is DualAccountRebalanceCandidate =>
+        candidate !== null,
     );
 
     if (candidates.length === 0) {
@@ -2077,7 +2081,15 @@ export class StrategyService
     );
 
     this.logger.log(
-      `Dual-account volume ${strategyKey}: scheduling rebalance account=${selected.accountLabel} side=${selected.side} qty=${selected.action.qty} price=${selected.action.price} restoredSide=${selected.futureExecution.side} restoredMaker=${selected.futureExecution.resolvedAccounts.makerAccountLabel} restoredTaker=${selected.futureExecution.resolvedAccounts.takerAccountLabel} restoredCapacity=${selected.futureExecution.capacity.toFixed()}`,
+      `Dual-account volume ${strategyKey}: scheduling rebalance account=${
+        selected.accountLabel
+      } side=${selected.side} qty=${selected.action.qty} price=${
+        selected.action.price
+      } restoredSide=${selected.futureExecution.side} restoredMaker=${
+        selected.futureExecution.resolvedAccounts.makerAccountLabel
+      } restoredTaker=${
+        selected.futureExecution.resolvedAccounts.takerAccountLabel
+      } restoredCapacity=${selected.futureExecution.capacity.toFixed()}`,
     );
 
     return selected.action;
@@ -2157,8 +2169,7 @@ export class StrategyService
       return null;
     }
 
-    const orderId =
-      `${params.clientId}:rebalance:${publishedCycles}:${accountLabel}:${side}:${ts}`;
+    const orderId = `${params.clientId}:rebalance:${publishedCycles}:${accountLabel}:${side}:${ts}`;
     const cycleId = `${strategyKey}:rebalance:${ts}:${accountLabel}:${side}`;
 
     return {
@@ -2182,10 +2193,8 @@ export class StrategyService
           rebalance: true,
           rebalanceReason: 'no_tradable_side',
           rebalanceAccountLabel: accountLabel,
-          makerAccountLabel:
-            futureExecution.resolvedAccounts.makerAccountLabel,
-          takerAccountLabel:
-            futureExecution.resolvedAccounts.takerAccountLabel,
+          makerAccountLabel: futureExecution.resolvedAccounts.makerAccountLabel,
+          takerAccountLabel: futureExecution.resolvedAccounts.takerAccountLabel,
           configuredMakerAccountLabel: params.makerAccountLabel,
           configuredTakerAccountLabel: params.takerAccountLabel,
           preferredSide,
@@ -2395,6 +2404,13 @@ export class StrategyService
             effectivePrice,
           )
         : resolvedAccounts.capacity;
+    const rules = this.exchangeConnectorAdapterService
+      ? await this.exchangeConnectorAdapterService.loadTradingRules(
+          params.exchangeName,
+          params.symbol,
+          resolvedAccounts.makerAccountLabel,
+        )
+      : {};
     let effectiveQty = requestedQty;
 
     if (
@@ -2404,14 +2420,57 @@ export class StrategyService
       effectiveQty.isGreaterThan(capacity)
     ) {
       this.logger.log(
-        `Reducing dual-account volume qty for ${strategyKey}: requested=${requestedQty.toFixed()} effective=${capacity.toFixed()} capacity=${capacity.toFixed()} side=${side} maker=${resolvedAccounts.makerAccountLabel} taker=${resolvedAccounts.takerAccountLabel}`,
+        `Reducing dual-account volume qty for ${strategyKey}: requested=${requestedQty.toFixed()} effective=${capacity.toFixed()} capacity=${capacity.toFixed()} side=${side} maker=${
+          resolvedAccounts.makerAccountLabel
+        } taker=${resolvedAccounts.takerAccountLabel}`,
       );
       effectiveQty = capacity;
     }
 
+    if (rules.amountMax && effectiveQty.isGreaterThan(rules.amountMax)) {
+      const cappedQty = new BigNumber(rules.amountMax);
+
+      this.logger.log(
+        `Capping dual-account volume qty for ${strategyKey}: effective=${effectiveQty.toFixed()} capped=${cappedQty.toFixed()} amountMax=${cappedQty.toFixed()} side=${side} maker=${
+          resolvedAccounts.makerAccountLabel
+        } taker=${resolvedAccounts.takerAccountLabel}`,
+      );
+      effectiveQty = cappedQty;
+    }
+
+    if (rules.costMax) {
+      const maxNotionalQty = new BigNumber(rules.costMax).dividedBy(
+        effectivePrice,
+      );
+
+      if (effectiveQty.isGreaterThan(maxNotionalQty)) {
+        this.logger.log(
+          `Capping dual-account volume qty for ${strategyKey}: effective=${effectiveQty.toFixed()} capped=${maxNotionalQty.toFixed()} costMax=${new BigNumber(
+            rules.costMax,
+          ).toFixed()} side=${side} maker=${
+            resolvedAccounts.makerAccountLabel
+          } taker=${resolvedAccounts.takerAccountLabel}`,
+        );
+        effectiveQty = maxNotionalQty;
+      }
+    }
+
     if (!effectiveQty.isFinite() || effectiveQty.isLessThanOrEqualTo(0)) {
       this.logger.warn(
-        `Skipping dual-account volume cycle for ${strategyKey}: adapted qty ${effectiveQty.toFixed()} is non-positive after balance checks`,
+        `Skipping dual-account volume cycle for ${strategyKey}: adapted qty ${effectiveQty.toFixed()} is non-positive after balance and rule checks`,
+      );
+
+      return null;
+    }
+
+    const effectiveCost = effectiveQty.multipliedBy(effectivePrice);
+
+    if (
+      (rules.amountMin && effectiveQty.isLessThan(rules.amountMin)) ||
+      (rules.costMin && effectiveCost.isLessThan(rules.costMin))
+    ) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: adapted qty ${effectiveQty.toFixed()}@${effectivePrice.toFixed()} is below exchange minimums before quantization`,
       );
 
       return null;
@@ -2420,25 +2479,29 @@ export class StrategyService
     let qty = effectiveQty;
 
     if (this.exchangeConnectorAdapterService) {
-      const quantized = this.exchangeConnectorAdapterService.quantizeOrder(
-        params.exchangeName,
-        params.symbol,
-        effectiveQty.toFixed(),
-        effectivePrice.toFixed(),
-        resolvedAccounts.makerAccountLabel,
-      );
-
-      effectivePrice = new BigNumber(quantized.price);
-      qty = new BigNumber(quantized.qty);
-    }
-
-    const rules = this.exchangeConnectorAdapterService
-      ? await this.exchangeConnectorAdapterService.loadTradingRules(
+      try {
+        const quantized = this.exchangeConnectorAdapterService.quantizeOrder(
           params.exchangeName,
           params.symbol,
+          effectiveQty.toFixed(),
+          effectivePrice.toFixed(),
           resolvedAccounts.makerAccountLabel,
-        )
-      : {};
+        );
+
+        effectivePrice = new BigNumber(quantized.price);
+        qty = new BigNumber(quantized.qty);
+      } catch (error) {
+        this.logger.warn(
+          `Skipping dual-account volume cycle for ${strategyKey}: quantization rejected qty ${effectiveQty.toFixed()}@${effectivePrice.toFixed()} for side=${side} maker=${
+            resolvedAccounts.makerAccountLabel
+          } taker=${resolvedAccounts.takerAccountLabel}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+
+        return null;
+      }
+    }
 
     if (
       !qty.isFinite() ||
@@ -2446,11 +2509,14 @@ export class StrategyService
       !effectivePrice.isFinite() ||
       effectivePrice.isLessThanOrEqualTo(0) ||
       (rules.amountMin && qty.isLessThan(rules.amountMin)) ||
+      (rules.amountMax && qty.isGreaterThan(rules.amountMax)) ||
       (rules.costMin &&
-        qty.multipliedBy(effectivePrice).isLessThan(rules.costMin))
+        qty.multipliedBy(effectivePrice).isLessThan(rules.costMin)) ||
+      (rules.costMax &&
+        qty.multipliedBy(effectivePrice).isGreaterThan(rules.costMax))
     ) {
       this.logger.warn(
-        `Skipping dual-account volume cycle for ${strategyKey}: quantized qty ${qty.toFixed()}@${effectivePrice.toFixed()} is below exchange minimums or non-positive`,
+        `Skipping dual-account volume cycle for ${strategyKey}: quantized qty ${qty.toFixed()}@${effectivePrice.toFixed()} is outside exchange limits or non-positive`,
       );
 
       return null;
@@ -2466,7 +2532,9 @@ export class StrategyService
 
       if (qty.isGreaterThan(quantizedCapacity)) {
         this.logger.warn(
-          `Skipping dual-account volume cycle for ${strategyKey}: quantized qty ${qty.toFixed()} exceeds live capacity ${quantizedCapacity.toFixed()} for side=${side} maker=${resolvedAccounts.makerAccountLabel} taker=${resolvedAccounts.takerAccountLabel}`,
+          `Skipping dual-account volume cycle for ${strategyKey}: quantized qty ${qty.toFixed()} exceeds live capacity ${quantizedCapacity.toFixed()} for side=${side} maker=${
+            resolvedAccounts.makerAccountLabel
+          } taker=${resolvedAccounts.takerAccountLabel}`,
         );
 
         return null;
