@@ -85,6 +85,19 @@ Deferred strategy follow-ups
 
 - [ ] Implement the plan in `docs/planning/2026-04-08-intent-worker-rate-limiting-improvements.md`
 
+### Dual-Account Volume Runtime Follow-Ups
+
+#### Summary
+
+- Reduce chronic dual-account decision latency and tick overlap pressure on MEXC.
+- Improve account-isolated request scheduling so maker/taker accounts do not block each other unnecessarily.
+- Verify IOC taker full-fill semantics before treating a cycle as successful.
+- Revisit inventory recovery so the runtime does not keep collapsing the preferred side to below-minimum quantities before falling back.
+
+#### Detailed Checklist
+
+- [ ] Work through `docs/planning/2026-04-13-dual-account-volume-runtime-follow-up-checklist.md`
+
 ## Interface
 
 ### Admin UX

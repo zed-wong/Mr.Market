@@ -32,6 +32,8 @@ Use dated files, but keep the document role clear.
 
 - **`2026-04-08-intent-worker-rate-limiting-improvements.md`**
   Role: active implementation plan for the current intent-worker rate-limit follow-up
+- **`2026-04-13-dual-account-volume-runtime-follow-up-checklist.md`**
+  Role: active checklist for remaining dual-account runtime issues observed in latest MEXC runs
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**

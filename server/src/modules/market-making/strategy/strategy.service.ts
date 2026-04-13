@@ -184,6 +184,9 @@ export class StrategyService
     OnModuleDestroy,
     OnApplicationShutdown
 {
+  private static readonly MIN_DUAL_ACCOUNT_FEE_BUFFER_RATE = new BigNumber(
+    0.002,
+  );
   private readonly logger = new CustomLogger(StrategyService.name);
   private readonly sessions = new Map<string, StrategyRuntimeSession>();
   private readonly pendingActivationStrategies = new Map<
@@ -1689,6 +1692,10 @@ export class StrategyService
     }
 
     const { bestBid, bestAsk } = trackedBestBidAsk;
+    const feeBufferRate = await this.resolveDualAccountFeeBufferRate(
+      params.exchangeName,
+      params.symbol,
+    );
 
     const publishedCycles = Number(params.publishedCycles || 0);
     const preferredSide = this.resolveVolumeSide(
@@ -1725,6 +1732,9 @@ export class StrategyService
       params,
       preferredSide,
       price,
+      bestBidBn,
+      bestAskBn,
+      feeBufferRate,
     );
     const decisionDurationMs = Date.now() - decisionStartedAtMs;
 
@@ -1736,6 +1746,7 @@ export class StrategyService
         bestBidBn,
         bestAskBn,
         price,
+        feeBufferRate,
         publishedCycles,
         ts,
       );
@@ -1841,6 +1852,7 @@ export class StrategyService
     params: DualAccountVolumeStrategyParams,
     side: 'buy' | 'sell',
     price: BigNumber,
+    feeBufferRate: BigNumber,
   ): Promise<DualAccountResolvedAccounts | null> {
     const configured: DualAccountResolvedAccounts = {
       makerAccountLabel: params.makerAccountLabel,
@@ -1885,6 +1897,7 @@ export class StrategyService
       price,
       makerBalances,
       takerBalances,
+      feeBufferRate,
     );
   }
 
@@ -1894,6 +1907,7 @@ export class StrategyService
     price: BigNumber,
     makerBalances: DualAccountPairBalances,
     takerBalances: DualAccountPairBalances,
+    feeBufferRate: BigNumber,
   ): DualAccountResolvedAccounts {
     const configured: DualAccountResolvedAccounts = {
       makerAccountLabel: params.makerAccountLabel,
@@ -1904,12 +1918,14 @@ export class StrategyService
       takerBalances,
       side,
       price,
+      feeBufferRate,
     );
     const capacity2 = this.computeDualAccountCapacity(
       takerBalances,
       makerBalances,
       side,
       price,
+      feeBufferRate,
     );
 
     if (params.dynamicRoleSwitching && capacity2.isGreaterThan(capacity1)) {
@@ -1949,14 +1965,27 @@ export class StrategyService
     },
     side: 'buy' | 'sell',
     price: BigNumber,
+    feeBufferRate: BigNumber,
   ): BigNumber {
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
       return new BigNumber(0);
     }
 
+    const bufferFactor = feeBufferRate.isFinite()
+      ? new BigNumber(1).plus(
+          feeBufferRate.isGreaterThanOrEqualTo(0) ? feeBufferRate : 0,
+        )
+      : new BigNumber(1);
+
     return side === 'buy'
-      ? BigNumber.min(makerBalances.quote.dividedBy(price), takerBalances.base)
-      : BigNumber.min(makerBalances.base, takerBalances.quote.dividedBy(price));
+      ? BigNumber.min(
+          makerBalances.quote.dividedBy(price).dividedBy(bufferFactor),
+          takerBalances.base,
+        )
+      : BigNumber.min(
+          makerBalances.base,
+          takerBalances.quote.dividedBy(price).dividedBy(bufferFactor),
+        );
   }
 
   private async resolveDualAccountExecutionPlan(
@@ -1964,6 +1993,9 @@ export class StrategyService
     params: DualAccountVolumeStrategyParams,
     preferredSide: 'buy' | 'sell',
     price: BigNumber,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+    feeBufferRate: BigNumber,
   ): Promise<DualAccountExecutionPlan | null> {
     const fallbackSide = preferredSide === 'buy' ? 'sell' : 'buy';
     const tradeAmountVarianceSample = Math.random();
@@ -1974,6 +2006,9 @@ export class StrategyService
       preferredSide,
       price,
       tradeAmountVarianceSample,
+      bestBid,
+      bestAsk,
+      feeBufferRate,
     );
 
     if (preferredExecution) {
@@ -1999,6 +2034,9 @@ export class StrategyService
       fallbackSide,
       price,
       tradeAmountVarianceSample,
+      bestBid,
+      bestAsk,
+      feeBufferRate,
     );
 
     if (!fallbackExecution) {
@@ -2019,6 +2057,7 @@ export class StrategyService
     bestBid: BigNumber,
     bestAsk: BigNumber,
     price: BigNumber,
+    feeBufferRate: BigNumber,
     publishedCycles: number,
     ts: string,
   ): Promise<ExecutorAction | null> {
@@ -2064,6 +2103,7 @@ export class StrategyService
           'buy',
           makerBalances,
           takerBalances,
+          feeBufferRate,
           publishedCycles,
           ts,
         ),
@@ -2077,6 +2117,7 @@ export class StrategyService
           'buy',
           makerBalances,
           takerBalances,
+          feeBufferRate,
           publishedCycles,
           ts,
         ),
@@ -2090,6 +2131,7 @@ export class StrategyService
           'sell',
           makerBalances,
           takerBalances,
+          feeBufferRate,
           publishedCycles,
           ts,
         ),
@@ -2103,6 +2145,7 @@ export class StrategyService
           'sell',
           makerBalances,
           takerBalances,
+          feeBufferRate,
           publishedCycles,
           ts,
         ),
@@ -2149,6 +2192,7 @@ export class StrategyService
     side: 'buy' | 'sell',
     makerBalances: DualAccountPairBalances,
     takerBalances: DualAccountPairBalances,
+    feeBufferRate: BigNumber,
     publishedCycles: number,
     ts: string,
   ): Promise<DualAccountRebalanceCandidate | null> {
@@ -2165,7 +2209,9 @@ export class StrategyService
 
     const maxAffordableQty =
       side === 'buy'
-        ? selectedBalances.quote.dividedBy(executionPrice)
+        ? selectedBalances.quote
+            .dividedBy(executionPrice)
+            .dividedBy(new BigNumber(1).plus(feeBufferRate))
         : selectedBalances.base;
     const requestedQty = BigNumber.min(
       new BigNumber(params.baseTradeAmount),
@@ -2207,6 +2253,7 @@ export class StrategyService
       futurePrice,
       nextMakerBalances,
       nextTakerBalances,
+      feeBufferRate,
     );
 
     if (!futureExecution) {
@@ -2264,6 +2311,7 @@ export class StrategyService
     price: BigNumber,
     makerBalances: DualAccountPairBalances,
     takerBalances: DualAccountPairBalances,
+    feeBufferRate: BigNumber,
   ): DualAccountTradeabilityPlan | null {
     const preferredTradeability =
       this.evaluateDualAccountTradeabilityForSideFromBalances(
@@ -2272,6 +2320,7 @@ export class StrategyService
         price,
         makerBalances,
         takerBalances,
+        feeBufferRate,
       );
 
     if (preferredTradeability) {
@@ -2284,6 +2333,7 @@ export class StrategyService
       price,
       makerBalances,
       takerBalances,
+      feeBufferRate,
     );
   }
 
@@ -2293,6 +2343,7 @@ export class StrategyService
     price: BigNumber,
     makerBalances: DualAccountPairBalances,
     takerBalances: DualAccountPairBalances,
+    feeBufferRate: BigNumber,
   ): DualAccountTradeabilityPlan | null {
     const resolvedAccounts = this.resolveDualAccountCycleAccountsFromBalances(
       params,
@@ -2300,6 +2351,7 @@ export class StrategyService
       price,
       makerBalances,
       takerBalances,
+      feeBufferRate,
     );
     const profile = this.resolveDualAccountBehaviorProfile(
       params,
@@ -2341,11 +2393,15 @@ export class StrategyService
     side: 'buy' | 'sell',
     price: BigNumber,
     tradeAmountVarianceSample: number,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+    feeBufferRate: BigNumber,
   ): Promise<DualAccountExecutionPlan | null> {
     const resolvedAccounts = await this.resolveDualAccountCycleAccounts(
       params,
       side,
       price,
+      feeBufferRate,
     );
 
     if (!resolvedAccounts) {
@@ -2393,6 +2449,9 @@ export class StrategyService
       price,
       requestedQty,
       resolvedAccounts,
+      bestBid,
+      bestAsk,
+      feeBufferRate,
     );
 
     if (!adjustedQuote) {
@@ -2416,6 +2475,9 @@ export class StrategyService
     rawPrice: BigNumber,
     requestedQty: BigNumber,
     resolvedAccounts: DualAccountResolvedAccounts,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+    feeBufferRate: BigNumber,
   ): Promise<{ price: BigNumber; qty: BigNumber } | null> {
     let effectivePrice = rawPrice;
 
@@ -2430,6 +2492,21 @@ export class StrategyService
         );
 
       effectivePrice = new BigNumber(initialQuantized.price);
+    }
+
+    effectivePrice = this.normalizeDualAccountMakerPrice(
+      strategyKey,
+      params,
+      side,
+      requestedQty,
+      effectivePrice,
+      resolvedAccounts.makerAccountLabel,
+      bestBid,
+      bestAsk,
+    );
+
+    if (!effectivePrice) {
+      return null;
     }
 
     if (!effectivePrice.isFinite() || effectivePrice.isLessThanOrEqualTo(0)) {
@@ -2447,6 +2524,7 @@ export class StrategyService
             resolvedAccounts.takerBalances,
             side,
             effectivePrice,
+            feeBufferRate,
           )
         : resolvedAccounts.capacity;
     const rules = this.exchangeConnectorAdapterService
@@ -2554,6 +2632,21 @@ export class StrategyService
       }
     }
 
+    effectivePrice = this.normalizeDualAccountMakerPrice(
+      strategyKey,
+      params,
+      side,
+      qty,
+      effectivePrice,
+      resolvedAccounts.makerAccountLabel,
+      bestBid,
+      bestAsk,
+    );
+
+    if (!effectivePrice) {
+      return null;
+    }
+
     if (
       !qty.isFinite() ||
       qty.isLessThanOrEqualTo(0) ||
@@ -2579,6 +2672,7 @@ export class StrategyService
         resolvedAccounts.takerBalances,
         side,
         effectivePrice,
+        feeBufferRate,
       );
 
       if (qty.isGreaterThan(quantizedCapacity)) {
@@ -2593,6 +2687,121 @@ export class StrategyService
     }
 
     return { price: effectivePrice, qty };
+  }
+
+  private async resolveDualAccountFeeBufferRate(
+    exchangeName: string,
+    pair: string,
+  ): Promise<BigNumber> {
+    const minimum = StrategyService.MIN_DUAL_ACCOUNT_FEE_BUFFER_RATE;
+
+    if (!this.exchangeConnectorAdapterService) {
+      return minimum;
+    }
+
+    try {
+      const rules = await this.exchangeConnectorAdapterService.loadTradingRules(
+        exchangeName,
+        pair,
+      );
+      const makerFee = new BigNumber(rules.makerFee || 0);
+
+      if (!makerFee.isFinite() || makerFee.isLessThanOrEqualTo(0)) {
+        return minimum;
+      }
+
+      const derived = makerFee.multipliedBy(2);
+
+      return derived.isGreaterThan(minimum) ? derived : minimum;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load dual-account fee buffer for ${exchangeName} ${pair}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return minimum;
+    }
+  }
+
+  private normalizeDualAccountMakerPrice(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    side: 'buy' | 'sell',
+    qty: BigNumber,
+    candidatePrice: BigNumber,
+    accountLabel: string,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+  ): BigNumber | null {
+    if (
+      this.isDualAccountMakerPriceValid(side, candidatePrice, bestBid, bestAsk)
+    ) {
+      return candidatePrice;
+    }
+
+    const boundaryPrice = side === 'buy' ? bestBid : bestAsk;
+    let adjustedPrice = boundaryPrice;
+
+    if (this.exchangeConnectorAdapterService) {
+      const quantized = this.exchangeConnectorAdapterService.quantizeOrder(
+        params.exchangeName,
+        params.symbol,
+        qty.toFixed(),
+        boundaryPrice.toFixed(),
+        accountLabel,
+      );
+
+      adjustedPrice = new BigNumber(quantized.price);
+    }
+
+    if (
+      this.isDualAccountMakerPriceValid(side, adjustedPrice, bestBid, bestAsk)
+    ) {
+      this.logger.log(
+        [
+          'Adjusted dual-account maker price',
+          `strategy=${strategyKey}`,
+          `side=${side}`,
+          `original=${candidatePrice.toFixed()}`,
+          `adjusted=${adjustedPrice.toFixed()}`,
+          `bestBid=${bestBid.toFixed()}`,
+          `bestAsk=${bestAsk.toFixed()}`,
+          'reason=quantized_outside_top_of_book',
+        ].join(' | '),
+      );
+
+      return adjustedPrice;
+    }
+
+    this.logger.warn(
+      [
+        'Skipping dual-account volume cycle after invalid maker price quantization',
+        `strategy=${strategyKey}`,
+        `side=${side}`,
+        `candidate=${candidatePrice.toFixed()}`,
+        `adjusted=${adjustedPrice.toFixed()}`,
+        `bestBid=${bestBid.toFixed()}`,
+        `bestAsk=${bestAsk.toFixed()}`,
+      ].join(' | '),
+    );
+
+    return null;
+  }
+
+  private isDualAccountMakerPriceValid(
+    side: 'buy' | 'sell',
+    price: BigNumber,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+  ): boolean {
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      return false;
+    }
+
+    return side === 'buy'
+      ? price.isGreaterThanOrEqualTo(bestBid) && price.isLessThan(bestAsk)
+      : price.isGreaterThan(bestBid) && price.isLessThanOrEqualTo(bestAsk);
   }
 
   async buildPureMarketMakingActions(
@@ -4150,13 +4359,73 @@ export class StrategyService
       pair,
       accountLabel,
     );
-    const quantized = this.exchangeConnectorAdapterService.quantizeOrder(
-      exchangeName,
-      pair,
-      rawQty.toFixed(),
-      rawPrice.toFixed(),
-      accountLabel,
-    );
+    const rawNotional = rawQty.multipliedBy(rawPrice);
+
+    if (
+      rawQty.isLessThanOrEqualTo(0) ||
+      rawPrice.isLessThanOrEqualTo(0) ||
+      (rules.amountMin && rawQty.isLessThan(rules.amountMin)) ||
+      (rules.costMin && rawNotional.isLessThan(rules.costMin))
+    ) {
+      const rejectionReasons: string[] = [];
+
+      if (rawQty.isLessThanOrEqualTo(0)) {
+        rejectionReasons.push(`raw qty ${rawQty.toFixed()} <= 0`);
+      }
+      if (rawPrice.isLessThanOrEqualTo(0)) {
+        rejectionReasons.push(`raw price ${rawPrice.toFixed()} <= 0`);
+      }
+      if (rules.amountMin && rawQty.isLessThan(rules.amountMin)) {
+        rejectionReasons.push(
+          `raw qty ${rawQty.toFixed()} ${
+            availableBalances.assets.base
+          } < amountMin ${new BigNumber(rules.amountMin).toFixed()} ${
+            availableBalances.assets.base
+          }`,
+        );
+      }
+      if (rules.costMin && rawNotional.isLessThan(rules.costMin)) {
+        rejectionReasons.push(
+          `raw notional ${rawNotional.toFixed()} ${
+            availableBalances.assets.quote
+          } (${rawQty.toFixed()} ${
+            availableBalances.assets.base
+          } * ${rawPrice.toFixed()} ${availableBalances.assets.quote}/${
+            availableBalances.assets.base
+          }) < costMin ${new BigNumber(rules.costMin).toFixed()} ${
+            availableBalances.assets.quote
+          }`,
+        );
+      }
+      this.logger.warn(
+        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${rejectionReasons.join(
+          '; ',
+        )}`,
+      );
+
+      return null;
+    }
+
+    let quantized: { price: string; qty: string };
+
+    try {
+      quantized = this.exchangeConnectorAdapterService.quantizeOrder(
+        exchangeName,
+        pair,
+        rawQty.toFixed(),
+        rawPrice.toFixed(),
+        accountLabel,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `[${strategyKey}] reason=quantization_rejected slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return null;
+    }
+
     const price = new BigNumber(quantized.price);
     const qty = new BigNumber(quantized.qty);
 
