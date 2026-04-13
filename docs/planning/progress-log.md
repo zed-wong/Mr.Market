@@ -8,6 +8,7 @@
 - Make dual-account volume sizing adapt to live maker/taker balances each tick: the runtime now shrinks oversized cycles down to the currently affordable amount and skips only when the quantized order would fall below exchange minimums
 - Make dual-account volume retry the opposite side when the preferred side is not tradable with current balances, while short-circuiting zero-sized post-balance quotes before CCXT precision calls
 - Add dual-account local auto-rebalance: when neither normal side is tradable, the strategy now submits a single-account IOC rebalance order that restores the next feasible side without advancing published-cycle counters
+- Rework dual-account market-making runtime logs for operations: every cycle now carries `tickId/cycleId`, dual-account decision logs explain preferred vs selected side with duration, taker execution logs emit per-stage timing summaries, and tick-overlap warnings are throttled into aggregated backpressure summaries
 
 ## 2026-04-12
 

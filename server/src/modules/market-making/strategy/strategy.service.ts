@@ -150,6 +150,8 @@ type DualAccountExecutionPlan = {
   profile: DualAccountBehaviorProfile;
   requestedQty: BigNumber;
   adjustedQuote: { price: BigNumber; qty: BigNumber };
+  sideReason: 'preferred_side_tradable' | 'fallback_side_tradable';
+  fallbackReason?: 'preferred_side_not_tradable';
 };
 
 type DualAccountTradeabilityPlan = {
@@ -1708,12 +1710,7 @@ export class StrategyService
 
     const spreadPosition = new BigNumber(Math.random());
     const price = bestBidBn.plus(spread.multipliedBy(spreadPosition));
-
-    this.logger.log(
-      `Dual-account volume ${strategyKey}: preferredSide=${preferredSide} bestBid=${bestBid} bestAsk=${bestAsk} spread=${spread.toFixed()} position=${spreadPosition.toFixed(
-        4,
-      )} price=${price.toFixed()}`,
-    );
+    const decisionStartedAtMs = Date.now();
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
       this.logger.error(
@@ -1729,6 +1726,7 @@ export class StrategyService
       preferredSide,
       price,
     );
+    const decisionDurationMs = Date.now() - decisionStartedAtMs;
 
     if (!resolvedExecution) {
       const rebalanceAction = await this.maybeBuildDualAccountRebalanceAction(
@@ -1753,15 +1751,50 @@ export class StrategyService
       return [];
     }
 
-    const { side, resolvedAccounts, profile, requestedQty, adjustedQuote } =
-      resolvedExecution;
+    const {
+      side,
+      resolvedAccounts,
+      profile,
+      requestedQty,
+      adjustedQuote,
+      sideReason,
+      fallbackReason,
+    } = resolvedExecution;
 
-    const cycleId = `${strategyKey}:cycle:${publishedCycles}`;
+    const tickId = ts;
+    const cycleId = `${strategyKey}:cycle:${publishedCycles}:${tickId}`;
     const makerDelayMs = this.resolveDualAccountMakerDelayMs(
       params,
       resolvedAccounts.makerAccountLabel,
     );
     const accountBuyBias = profile.buyBias ?? params.buyBias;
+    const fallbackApplied = side !== preferredSide;
+
+    this.logger.log(
+      [
+        'Dual-account volume decision',
+        `strategy=${strategyKey}`,
+        `cycle=${cycleId}`,
+        `tick=${tickId}`,
+        `preferredSide=${preferredSide}`,
+        `selectedSide=${side}`,
+        `sideReason=${sideReason}`,
+        `fallbackReason=${fallbackReason || 'n/a'}`,
+        `bestBid=${bestBid}`,
+        `bestAsk=${bestAsk}`,
+        `spread=${spread.toFixed()}`,
+        `spreadPosition=${spreadPosition.toFixed(4)}`,
+        `rawPrice=${price.toFixed()}`,
+        `price=${adjustedQuote.price.toFixed()}`,
+        `requestedQty=${requestedQty.toFixed()}`,
+        `effectiveQty=${adjustedQuote.qty.toFixed()}`,
+        `maker=${resolvedAccounts.makerAccountLabel}`,
+        `taker=${resolvedAccounts.takerAccountLabel}`,
+        `capacity=${resolvedAccounts.capacity?.toFixed() ?? 'unknown'}`,
+        `makerDelayMs=${makerDelayMs}`,
+        `decisionDurationMs=${decisionDurationMs}`,
+      ].join(' | '),
+    );
 
     return [
       this.createIntent(
@@ -1779,8 +1812,14 @@ export class StrategyService
         params.executionCategory,
         {
           cycleId,
+          tickId,
           orderId: `${params.clientId}:cycle:${publishedCycles}`,
           role: 'maker',
+          preferredSide,
+          selectedSide: side,
+          sideReason,
+          fallbackApplied,
+          fallbackReason,
           makerAccountLabel: resolvedAccounts.makerAccountLabel,
           takerAccountLabel: resolvedAccounts.takerAccountLabel,
           configuredMakerAccountLabel: params.makerAccountLabel,
@@ -1938,11 +1977,20 @@ export class StrategyService
     );
 
     if (preferredExecution) {
-      return preferredExecution;
+      return {
+        ...preferredExecution,
+        sideReason: 'preferred_side_tradable',
+      };
     }
 
     this.logger.log(
-      `Dual-account volume ${strategyKey}: preferredSide=${preferredSide} is not tradable, trying fallbackSide=${fallbackSide}`,
+      [
+        'Dual-account volume side fallback',
+        `strategy=${strategyKey}`,
+        `preferredSide=${preferredSide}`,
+        `fallbackSide=${fallbackSide}`,
+        'fallbackReason=preferred_side_not_tradable',
+      ].join(' | '),
     );
 
     const fallbackExecution = await this.evaluateDualAccountExecutionForSide(
@@ -1953,19 +2001,15 @@ export class StrategyService
       tradeAmountVarianceSample,
     );
 
-    if (fallbackExecution) {
-      this.logger.log(
-        `Dual-account volume ${strategyKey}: switched side preferred=${preferredSide} selected=${
-          fallbackExecution.side
-        } maker=${fallbackExecution.resolvedAccounts.makerAccountLabel} taker=${
-          fallbackExecution.resolvedAccounts.takerAccountLabel
-        } capacity=${
-          fallbackExecution.resolvedAccounts.capacity?.toFixed() ?? 'unknown'
-        }`,
-      );
+    if (!fallbackExecution) {
+      return null;
     }
 
-    return fallbackExecution;
+    return {
+      ...fallbackExecution,
+      sideReason: 'fallback_side_tradable',
+      fallbackReason: 'preferred_side_not_tradable',
+    };
   }
 
   private async maybeBuildDualAccountRebalanceAction(
@@ -2361,6 +2405,7 @@ export class StrategyService
       profile,
       requestedQty,
       adjustedQuote,
+      sideReason: 'preferred_side_tradable',
     };
   }
 
@@ -2422,7 +2467,9 @@ export class StrategyService
       this.logger.log(
         `Reducing dual-account volume qty for ${strategyKey}: requested=${requestedQty.toFixed()} effective=${capacity.toFixed()} capacity=${capacity.toFixed()} side=${side} maker=${
           resolvedAccounts.makerAccountLabel
-        } taker=${resolvedAccounts.takerAccountLabel}`,
+        } taker=${
+          resolvedAccounts.takerAccountLabel
+        } qtyReason=capacity_limited`,
       );
       effectiveQty = capacity;
     }
@@ -2433,7 +2480,9 @@ export class StrategyService
       this.logger.log(
         `Capping dual-account volume qty for ${strategyKey}: effective=${effectiveQty.toFixed()} capped=${cappedQty.toFixed()} amountMax=${cappedQty.toFixed()} side=${side} maker=${
           resolvedAccounts.makerAccountLabel
-        } taker=${resolvedAccounts.takerAccountLabel}`,
+        } taker=${
+          resolvedAccounts.takerAccountLabel
+        } qtyReason=exchange_amount_max`,
       );
       effectiveQty = cappedQty;
     }
@@ -2449,7 +2498,9 @@ export class StrategyService
             rules.costMax,
           ).toFixed()} side=${side} maker=${
             resolvedAccounts.makerAccountLabel
-          } taker=${resolvedAccounts.takerAccountLabel}`,
+          } taker=${
+            resolvedAccounts.takerAccountLabel
+          } qtyReason=exchange_cost_max`,
         );
         effectiveQty = maxNotionalQty;
       }
@@ -2470,7 +2521,7 @@ export class StrategyService
       (rules.costMin && effectiveCost.isLessThan(rules.costMin))
     ) {
       this.logger.warn(
-        `Skipping dual-account volume cycle for ${strategyKey}: adapted qty ${effectiveQty.toFixed()}@${effectivePrice.toFixed()} is below exchange minimums before quantization`,
+        `Skipping dual-account volume cycle for ${strategyKey}: adapted qty ${effectiveQty.toFixed()}@${effectivePrice.toFixed()} is below exchange minimums before quantization qtyReason=below_exchange_minimums`,
       );
 
       return null;

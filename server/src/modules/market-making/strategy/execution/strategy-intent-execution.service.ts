@@ -614,12 +614,23 @@ export class StrategyIntentExecutionService {
       throw new Error('Maker intent missing takerAccountLabel metadata');
     }
 
+    const cycleId =
+      this.readMetadataString(makerIntent, 'cycleId') || makerIntent.intentId;
+    const tickId =
+      this.readMetadataString(makerIntent, 'tickId') || makerIntent.createdAt;
     const makerDelayMs =
       this.readMetadataNumber(makerIntent, 'makerDelayMs') || 0;
+    const executionStartedAtMs = Date.now();
 
     if (makerDelayMs > 0) {
       this.logger.log(
-        `Dual-account taker waiting makerDelayMs=${makerDelayMs} for ${makerIntent.strategyKey}`,
+        [
+          'Dual-account taker waiting',
+          `strategy=${makerIntent.strategyKey}`,
+          `cycle=${cycleId}`,
+          `tick=${tickId}`,
+          `makerDelayMs=${makerDelayMs}`,
+        ].join(' | '),
       );
       await this.sleep(makerDelayMs);
     }
@@ -632,14 +643,28 @@ export class StrategyIntentExecutionService {
       makerIntent.accountLabel,
     );
     const makerPriceBn = new BigNumber(quantizedMaker.price);
+    const verifyBestStartedAtMs = Date.now();
     const isMakerStillBest = await this.verifyMakerIsBest(
       makerIntent,
       makerPriceBn,
     );
+    const verifyBestDurationMs = Date.now() - verifyBestStartedAtMs;
 
     if (!isMakerStillBest) {
       this.logger.warn(
-        `Dual-account taker skipped: maker ${makerIntent.side} @${quantizedMaker.price} is no longer best for ${makerIntent.strategyKey}, cancelling maker`,
+        [
+          'Dual-account taker skipped',
+          `strategy=${makerIntent.strategyKey}`,
+          `cycle=${cycleId}`,
+          `tick=${tickId}`,
+          `status=maker_not_best`,
+          `makerSide=${makerIntent.side}`,
+          `makerPrice=${quantizedMaker.price}`,
+          `makerOrderId=${makerExchangeOrderId}`,
+          `makerAccount=${makerIntent.accountLabel || 'default'}`,
+          `takerAccount=${takerAccountLabel}`,
+          `verifyBestDurationMs=${verifyBestDurationMs}`,
+        ].join(' | '),
       );
       await this.cancelMakerAfterTakerFailure(
         makerIntent,
@@ -650,8 +675,6 @@ export class StrategyIntentExecutionService {
       return false;
     }
 
-    const cycleId =
-      this.readMetadataString(makerIntent, 'cycleId') || makerIntent.intentId;
     const takerSide = this.oppositeSide(makerIntent.side);
     const takerIntent: StrategyOrderIntent = {
       ...makerIntent,
@@ -665,6 +688,7 @@ export class StrategyIntentExecutionService {
         ...(makerIntent.metadata || {}),
         role: 'taker',
         cycleId,
+        tickId,
         makerOrderId: makerExchangeOrderId,
       },
       status: 'NEW',
@@ -672,31 +696,96 @@ export class StrategyIntentExecutionService {
     };
 
     this.logger.log(
-      `Dual-account taker executing ${takerSide} ${takerIntent.qty}@${quantizedMaker.price} IOC account=${takerAccountLabel} for ${makerIntent.strategyKey}`,
+      [
+        'Dual-account taker executing',
+        `strategy=${makerIntent.strategyKey}`,
+        `cycle=${cycleId}`,
+        `tick=${tickId}`,
+        `makerSide=${makerIntent.side}`,
+        `takerSide=${takerSide}`,
+        `qty=${takerIntent.qty}`,
+        `price=${quantizedMaker.price}`,
+        `makerOrderId=${makerExchangeOrderId}`,
+        `makerAccount=${makerIntent.accountLabel || 'default'}`,
+        `takerAccount=${takerAccountLabel}`,
+        `makerDelayMs=${makerDelayMs}`,
+        `verifyBestDurationMs=${verifyBestDurationMs}`,
+      ].join(' | '),
     );
 
     try {
+      const takerExecutionStartedAtMs = Date.now();
       await this.consumeIntent(takerIntent);
+      const takerExecutionDurationMs = Date.now() - takerExecutionStartedAtMs;
+      const settlementStartedAtMs = Date.now();
       const makerSettled = await this.confirmDualAccountMakerSettlement(
         makerIntent,
         makerExchangeOrderId,
         quantizedMaker.price,
       );
+      const settlementDurationMs = Date.now() - settlementStartedAtMs;
+      const totalDurationMs = Date.now() - executionStartedAtMs;
 
       if (makerSettled) {
         this.logger.log(
-          `Dual-account taker completed for ${makerIntent.strategyKey}`,
+          [
+            'Dual-account taker completed',
+            `strategy=${makerIntent.strategyKey}`,
+            `cycle=${cycleId}`,
+            `tick=${tickId}`,
+            'status=success',
+            `makerSide=${makerIntent.side}`,
+            `takerSide=${takerSide}`,
+            `qty=${takerIntent.qty}`,
+            `price=${quantizedMaker.price}`,
+            `makerOrderId=${makerExchangeOrderId}`,
+            `makerAccount=${makerIntent.accountLabel || 'default'}`,
+            `takerAccount=${takerAccountLabel}`,
+            `makerDelayMs=${makerDelayMs}`,
+            `verifyBestDurationMs=${verifyBestDurationMs}`,
+            `takerExecutionDurationMs=${takerExecutionDurationMs}`,
+            `settlementDurationMs=${settlementDurationMs}`,
+            `totalDurationMs=${totalDurationMs}`,
+          ].join(' | '),
         );
 
         return true;
       }
 
+      this.logger.warn(
+        [
+          'Dual-account taker incomplete',
+          `strategy=${makerIntent.strategyKey}`,
+          `cycle=${cycleId}`,
+          `tick=${tickId}`,
+          'status=maker_unsettled',
+          `makerOrderId=${makerExchangeOrderId}`,
+          `makerSide=${makerIntent.side}`,
+          `takerSide=${takerSide}`,
+          `qty=${takerIntent.qty}`,
+          `price=${quantizedMaker.price}`,
+          `takerExecutionDurationMs=${takerExecutionDurationMs}`,
+          `settlementDurationMs=${settlementDurationMs}`,
+          `totalDurationMs=${totalDurationMs}`,
+        ].join(' | '),
+      );
+
       return false;
     } catch (error) {
       this.logger.warn(
-        `Dual-account taker failed for ${makerIntent.strategyKey}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        [
+          'Dual-account taker failed',
+          `strategy=${makerIntent.strategyKey}`,
+          `cycle=${cycleId}`,
+          `tick=${tickId}`,
+          `makerOrderId=${makerExchangeOrderId}`,
+          `makerSide=${makerIntent.side}`,
+          `takerSide=${takerSide}`,
+          `qty=${makerIntent.qty}`,
+          `price=${quantizedMaker.price}`,
+          `durationMs=${Date.now() - executionStartedAtMs}`,
+          `error=${error instanceof Error ? error.message : String(error)}`,
+        ].join(' | '),
       );
       await this.cancelMakerAfterTakerFailure(
         makerIntent,
@@ -766,7 +855,9 @@ export class StrategyIntentExecutionService {
       }
     } catch (error) {
       this.logger.warn(
-        `Dual-account maker settlement refresh failed for ${makerIntent.strategyKey}:${makerExchangeOrderId}: ${
+        `Dual-account maker settlement refresh failed for ${
+          makerIntent.strategyKey
+        }:${makerExchangeOrderId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
