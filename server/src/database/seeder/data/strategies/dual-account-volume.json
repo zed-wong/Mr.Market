@@ -60,6 +60,11 @@
         "type": "number",
         "description": "Stop once cumulative executed quote volume reaches this cap",
         "minimum": 0
+      },
+      "cadenceVariance": {
+        "type": "number",
+        "description": "Fractional variance around the cycle interval (e.g. 0.25 = 25%)",
+        "minimum": 0
       }
     },
     "additionalProperties": false
@@ -73,6 +78,7 @@
     "baseIncrementPercentage": 0.5,
     "pricePushRate": 0,
     "postOnlySide": "buy",
-    "makerDelayMs": 250
+    "makerDelayMs": 250,
+    "cadenceVariance": 0.25
   }
 }

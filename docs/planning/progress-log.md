@@ -2,6 +2,7 @@
 
 ## 2026-04-13
 
+- Set the seeded `dualAccountVolume` default `cadenceVariance` to `0.25` so new admin direct runs inherit a 25% cycle-interval jitter instead of a perfectly fixed cadence
 - Guard dual-account volume quotes with pre-quantization exchange min/max checks and let below-min preferred sides fall through to fallback/rebalance instead of surfacing CCXT `InvalidOrder` errors
 - Add a `750ms` dual-account maker settlement window after the IOC leg: if the maker still looks live after the confirmation check, the runtime now cancels it instead of leaving a stale post-only order blocking later cycles
 - Make dual-account volume sizing adapt to live maker/taker balances each tick: the runtime now shrinks oversized cycles down to the currently affordable amount and skips only when the quantized order would fall below exchange minimums
