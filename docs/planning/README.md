@@ -9,7 +9,7 @@ Planning docs intentionally keep dates in their filenames.
 - The date preserves the planning context for that iteration.
 - A dated doc is not automatically obsolete just because it is older.
 - If a dated doc is still guiding current work, it should remain in `planning/`.
-- If it is no longer guiding current work, it can move to `../archive/`.
+- If it is no longer guiding current work, it should move to `../archive/plans/`.
 
 ## Doc Types
 
@@ -28,7 +28,7 @@ Use dated files, but keep the document role clear.
   Use for rolling chronological change notes.
   Do not create a new dated plan when a short progress entry is enough.
 
-## Current Files And Roles
+## Current Active Files And Roles
 
 - **`2026-04-08-intent-worker-rate-limiting-improvements.md`**
   Role: active implementation plan for the current intent-worker rate-limit follow-up
@@ -44,9 +44,9 @@ Use dated files, but keep the document role clear.
 - If work is continuing within the same phase and the same document role, update the existing dated doc.
 - If the team introduces a new phase boundary or a materially different implementation approach, create a new dated doc.
 - If the change is just a short status update, add it to `progress-log.md`.
-- If a dated doc stops guiding current work, move it to `../archive/`.
+- If a dated doc stops guiding current work, move it to `../archive/plans/`.
 
 ## Notes
 
-- Historical plans live under `../archive/`, including older completed or superseded dated plans
+- Historical plans live under `../archive/plans/`, including older completed or superseded dated plans
 - For current architecture reference, see `../architecture/`

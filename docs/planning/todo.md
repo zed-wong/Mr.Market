@@ -85,6 +85,17 @@ Deferred strategy follow-ups
 
 - [ ] Implement the plan in `docs/planning/2026-04-08-intent-worker-rate-limiting-improvements.md`
 
+### Hyperliquid + PancakeSwap Volume Strategy
+
+#### Summary
+
+- Validate and harden dual-account volume strategy for Hyperliquid (CLOB): verify postOnly/IOC support, multi-account setup, rate limits, and self-trade prevention.
+- Validate single-account AMM volume strategy on PancakeSwap V3 (BSC) in a real environment: verify contract addresses, run testnet/mainnet swaps, and document gas/cost.
+
+#### Detailed Checklist
+
+- [ ] Work through `docs/planning/2026-04-13-hyperliquid-pancakeswap-volume-strategy.md`
+
 ### Dual-Account Volume Runtime Follow-Ups
 
 #### Summary
