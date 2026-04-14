@@ -45,7 +45,7 @@ Hyperliquid is a CLOB exchange accessible via CCXT. The dual-account volume stra
 - [ ] Run dual-account volume strategy with conservative params: `numTrades: 10`, `baseIntervalTime: 5000`, small `tradeAmount`
 - [ ] Verify in logs: maker postOnly accepted, taker IOC filled, `completedCycles` increments correctly
 - [ ] Check for: tick overlap, balance drift, partial fills, unexpected rejections
-- [ ] Capture a log snapshot and compare against the MEXC baseline from `2026-04-13-dual-account-volume-runtime-follow-up-checklist.md`
+- [ ] Capture a log snapshot and compare against the latest MEXC dual-account baseline recorded in `docs/planning/progress-log.md` and the remaining user-stream/runtime notes in `2026-04-14-hummingbot-like-user-stream-plan.md`
 
 ### 1.5 Production Run
 

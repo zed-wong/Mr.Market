@@ -1,6 +1,6 @@
 # Hummingbot-Like User Stream Plan
 
-**Status**: 🟡 Planning
+**Status**: 🟡 In Progress
 **Date**: 2026-04-14
 
 ## Goal
@@ -12,29 +12,31 @@ Bring Mr.Market's private exchange runtime closer to Hummingbot's user stream mo
 - first-class handling for balance, order, and trade events
 - REST reconciliation as a backup path, not the primary source of truth
 
-## Why This Plan Exists
+## Current Implementation Snapshot
 
-Today we have only a partial version of that model:
+Completed in the 2026-04-14 runtime pass:
 
-- `PrivateStreamIngestionService` listens through `watchOrders()` only
-- `PrivateStreamTrackerService` queues private order payloads and routes fill-like events
-- `ExchangeOrderTrackerService` reconciles with `fetchOrder()` when private stream activity is missing or stale
-- balances are still fetched on demand through `fetchBalance()`
+- normalized `UserStreamEvent` contract plus datasource/normalizer interfaces
+- `UserStreamIngestionService` / `UserStreamTrackerService` naming and order-event normalization
+- `watchMyTrades()` ingestion, normalized trade events, and duplicate-fill suppression
+- `BalanceStateCacheService` plus `watchBalance()` ingestion and cache-first balance reads
+- `BalanceStateRefreshService` and coarse stream-health reporting
+- `UserStreamCapabilityService` and admin-direct diagnostics
 
-That is enough for partial fill-routing parity, but it is not a full Hummingbot-like user stream system.
+This plan remains active only for the unfinished follow-up work, mainly around finer-grained recovery cadence, connector capability completion, and any remaining operational hardening.
 
 ## Current State Vs Target
 
 | Area | Current | Target |
 |---|---|---|
-| Authenticated WS abstraction | Narrow `watchOrders()` loop | Per-exchange user stream datasource abstraction |
-| Internal event model | Order payload queue only | Unified normalized `balance/order/trade` event queue |
-| Balance updates | `fetchBalance()` on demand | WS-applied cached balance state with REST refresh fallback |
-| Trade updates | Inferred mostly from order updates | First-class trade/fill events |
-| Order updates | `watchOrders()` only | Standardized order update events from user stream |
-| Fallback path | `fetchOrder()` reconciliation for tracked orders | Explicit WS + REST dual-update model |
-| Connector contract | CCXT methods called ad hoc | User stream capability contract per connector |
-| Runtime consumers | Fill router only | Fill router + balance cache + health/recovery consumers |
+| Authenticated WS abstraction | User stream services and capability classification are in place | Finish per-exchange datasource/adapter coverage |
+| Internal event model | Unified normalized `balance/order/trade` event queue is in place | Keep this contract stable while extending connector coverage |
+| Balance updates | WS-applied cached balance state with REST refresh fallback is in place | Tune stale thresholds and recovery cadence if needed |
+| Trade updates | First-class trade/fill events are in place where supported | Expand connector-specific normalizers as needed |
+| Order updates | Standardized order events are in place | Keep tracked-order state advancement aligned with new connectors |
+| Fallback path | Explicit WS + REST dual-update model is in place at a coarse level | Refine poll cadence and diagnostics only if operations need it |
+| Connector contract | Capability tiering exists | Finish any remaining per-exchange adapter cleanup |
+| Runtime consumers | Fill router + balance cache + health/recovery consumers are live | Add only the missing operational polish |
 
 ## Non-Goals
 
@@ -126,6 +128,8 @@ type UserStreamEvent =
 
 ### Phase 0: Freeze The Contract
 
+Status: completed on 2026-04-14.
+
 Objective: define the runtime contract before changing ingestion paths.
 
 Deliverables:
@@ -147,6 +151,8 @@ Exit criteria:
 
 ### Phase 1: Rename And Generalize The Current Private Stream Layer
 
+Status: completed on 2026-04-14.
+
 Objective: stop modeling the system as "watchOrders only".
 
 Deliverables:
@@ -160,6 +166,8 @@ Exit criteria:
 - runtime behavior unchanged for pure market making
 
 ### Phase 2: Add First-Class Order And Trade Event Support
+
+Status: completed on 2026-04-14.
 
 Objective: separate order updates from trade updates instead of inferring everything from order payloads.
 
@@ -181,6 +189,8 @@ Exit criteria:
 
 ### Phase 3: Add Cached Balance State With WS Updates
 
+Status: completed on 2026-04-14.
+
 Objective: stop using ad hoc balance reads as the only runtime balance source.
 
 Deliverables:
@@ -200,6 +210,8 @@ Exit criteria:
 - strategy sizing can prefer cached balances and fall back safely when stale
 
 ### Phase 4: Add Explicit REST Recovery Loops
+
+Status: mostly completed on 2026-04-14. Remaining work is optional cadence tuning and any extra metrics the operators decide they need.
 
 Objective: match Hummingbot's dual-update model instead of relying on one implicit reconciliation path.
 
@@ -237,6 +249,8 @@ Deliverables:
   - no private WS: REST-only degraded mode
 - standardize accountLabel-aware access for all user stream methods
 - close the current `watchBalance(exchangeName)` gap by threading `accountLabel`
+
+Status: in progress. Capability tiering exists, but this phase remains the main place for any remaining per-exchange adapter and normalizer cleanup.
 
 Exit criteria:
 - every supported exchange is classified into one capability tier

@@ -34,8 +34,8 @@ Use dated files, but keep the document role clear.
   Role: active implementation plan for the current intent-worker rate-limit follow-up
 - **`2026-04-13-hyperliquid-pancakeswap-volume-strategy.md`**
   Role: active validation checklist for Hyperliquid dual-account volume and PancakeSwap live AMM volume runs
-- **`2026-04-13-dual-account-volume-runtime-follow-up-checklist.md`**
-  Role: active checklist for remaining dual-account runtime issues observed in latest MEXC runs
+- **`2026-04-14-hummingbot-like-user-stream-plan.md`**
+  Role: active phased plan for the remaining user-stream migration and runtime follow-up work after the 2026-04-14 dual-account fixes
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**
@@ -51,4 +51,5 @@ Use dated files, but keep the document role clear.
 ## Notes
 
 - Historical plans live under `../archive/plans/`, including older completed or superseded dated plans
+- Completed one-off TODO/checklist docs should move to `../archive/plans/` once the implementation log and active plan index are updated
 - For current architecture reference, see `../architecture/`

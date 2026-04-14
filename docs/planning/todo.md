@@ -100,14 +100,13 @@ Deferred strategy follow-ups
 
 #### Summary
 
-- Reduce chronic dual-account decision latency and tick overlap pressure on MEXC.
+- Finish the remaining user-stream migration work after the 2026-04-14 runtime fixes.
 - Improve account-isolated request scheduling so maker/taker accounts do not block each other unnecessarily.
-- Verify IOC taker full-fill semantics before treating a cycle as successful.
-- Revisit inventory recovery so the runtime does not keep collapsing the preferred side to below-minimum quantities before falling back.
+- Keep dual-account inventory handling and stream operations observable and safe.
 
 #### Detailed Checklist
 
-- [ ] Work through `docs/planning/2026-04-13-dual-account-volume-runtime-follow-up-checklist.md`
+- [ ] Work through the remaining items in `docs/planning/2026-04-14-hummingbot-like-user-stream-plan.md`
 
 ## Interface
 

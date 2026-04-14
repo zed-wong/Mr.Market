@@ -2,6 +2,16 @@
 
 ## 2026-04-14
 
+- Archive superseded planning docs (`2026-04-13-dual-account-volume-runtime-follow-up-checklist.md`, `2026-04-13-composable-strategy-architecture.md`, `2026-04-14-user-stream-dual-account-todo.md`) and refresh `docs/planning/README.md`, `todo.md`, and the active user-stream plan so the planning index matches current work
+- Add `BalanceStateCacheService` plus `watchBalance()` ingestion and tracker application so dual-account/runtime balance reads can use WS-primary cached balances with REST backfill on stale reads
+- Add `BalanceStateRefreshService` to refresh silent accounts via REST and expose coarse stream-health states (`healthy`, `degraded`, `silent`, `reconnecting`) plus last refresh timestamps
+- Add `inventory_balance` as a dual-account side-selection mode so the runtime can bias buy/sell from live maker inventory instead of rigid cycle alternation
+- Add `UserStreamCapabilityService` to classify exchanges into `full` / `partial` / `rest_only` capability tiers and expose those diagnostics, along with cache freshness and stream health, through the admin direct status endpoint
+- Finish the dual-account fee-buffer correction: `loadTradingRules()` now exposes `takerFee`, the runtime sizes dual-account capacity against `makerFee + takerFee`, and the buffer formula now retains `1 - totalFeeRate` instead of dividing by `1 + fee`
+- Reuse a single dual-account balance snapshot across preferred-side evaluation, fallback-side evaluation, and rebalance candidate selection so one tick no longer re-fetches the same maker/taker balances multiple times
+- Start Phase 1/2 of the user-stream migration in runtime code: add `UserStreamIngestionService` / `UserStreamTrackerService` aliases, normalize `watchOrders()` into `kind:'order'` events, add `watchMyTrades()` ingestion for `kind:'trade'` events, and suppress duplicate normalized trade fills in the tracker while preserving existing watcher/tracker unit coverage
+- Close Phase 0 of the 2026-04-14 user-stream / dual-account todo by adding the normalized `UserStreamEvent` contract, datasource/normalizer interfaces, and `docs/architecture/server/user-stream-model.md` as the new private-stream architecture baseline
+- Tighten dual-account taker IOC completion rules in `StrategyIntentExecutionService`: require a confirmed taker fill before counting a completed cycle, accumulate `tradedQuoteVolume` from actual taker fill quote, and fail IOC acks that return neither an exchange order id nor any fill
 - Add a new active planning doc, `docs/planning/2026-04-14-hummingbot-like-user-stream-plan.md`, to scope a phased migration from the current `watchOrders()`-only private stream path toward a Hummingbot-like normalized user-stream architecture with first-class balance/order/trade events and explicit REST fallback loops
 
 ## 2026-04-13
@@ -315,6 +325,10 @@
 ## 2026-04-10
 
 - Derive effective direct-order minimums from live exchange `amount.min` and `cost.min / price`, and surface rounded minimum hints in the admin direct order UI
+
+## 2026-04-14
+
+- Finish dual-account user-stream plan: add exchange normalizer registry, trade-over-order fill dedup, balance cache + REST refresh diagnostics, and admin status visibility for watcher state, queue depth, and duplicate suppression
 
 ## 2026-02-06
 
