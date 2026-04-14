@@ -34,7 +34,7 @@
         normalizeConfigOverrides,
         resolveMinOrderAmount,
         type ExchangeMarketMetadata,
-    } from "$lib/components/market-making/direct/helpers";
+    } from "$lib/helpers/market-making/direct/helpers";
     import ApiKeysPanel from "$lib/components/market-making/direct/ApiKeysPanel.svelte";
     import CampaignsPanel from "$lib/components/market-making/direct/CampaignsPanel.svelte";
     import EvmWalletStatusBar from "$lib/components/market-making/direct/EvmWalletStatusBar.svelte";

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { toast } from "svelte-sonner";
-  import { formatDate, getControllerTypeLabel, getControllerTypeClasses, getVisibilityLabel } from "./helpers";
+  import { formatDate, getControllerTypeLabel, getControllerTypeClasses, getVisibilityLabel } from "$lib/helpers/admin/settings/strategies/helpers";
   import {
     enableStrategyDefinition,
     disableStrategyDefinition,

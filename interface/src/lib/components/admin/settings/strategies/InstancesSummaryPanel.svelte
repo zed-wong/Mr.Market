@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { formatRelativeTime } from "./helpers";
+  import { formatRelativeTime } from "$lib/helpers/admin/settings/strategies/helpers";
   import type { StrategyInstanceView } from "$lib/types/hufi/strategy-definition";
 
   export let instances: StrategyInstanceView[] = [];

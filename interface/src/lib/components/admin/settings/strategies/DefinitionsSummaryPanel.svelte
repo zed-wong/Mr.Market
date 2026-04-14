@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { getControllerTypeLabel, getControllerTypeClasses } from "./helpers";
+  import { getControllerTypeLabel, getControllerTypeClasses } from "$lib/helpers/admin/settings/strategies/helpers";
   import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
 
   export let definitions: StrategyDefinition[] = [];

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
-    import { formatCampaignType } from "./helpers";
+    import { formatCampaignType } from "$lib/helpers/market-making/direct/helpers";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
 
     export let show = false;

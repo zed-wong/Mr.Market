@@ -9,7 +9,7 @@
     import {
         formatTimestamp,
         resolveInventorySkewAllocation,
-    } from "$lib/components/market-making/direct/helpers";
+    } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
     export let order: DirectOrderSummary | null = null;

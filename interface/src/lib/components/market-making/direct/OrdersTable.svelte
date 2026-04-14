@@ -2,7 +2,7 @@
   import { _ } from "svelte-i18n";
   import ExchangeIcon from "$lib/components/common/exchangeIcon.svelte";
   import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
-  import { getStateLabel } from "$lib/components/market-making/direct/helpers";
+  import { getStateLabel } from "$lib/helpers/market-making/direct/helpers";
 
   export let orders: DirectOrderSummary[] = [];
   export let onCreateClick: () => void;

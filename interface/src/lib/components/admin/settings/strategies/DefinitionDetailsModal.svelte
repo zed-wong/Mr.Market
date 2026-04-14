@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { formatDate, getControllerTypeLabel, getControllerTypeClasses, getVisibilityLabel } from "./helpers";
+  import { formatDate, getControllerTypeLabel, getControllerTypeClasses, getVisibilityLabel } from "$lib/helpers/admin/settings/strategies/helpers";
   import SchemaConfigForm from "./SchemaConfigForm.svelte";
   import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
 

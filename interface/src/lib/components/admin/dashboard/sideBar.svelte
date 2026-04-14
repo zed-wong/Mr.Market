@@ -6,7 +6,7 @@
     import { exit } from "$lib/helpers/mrm/admin";
     import { darkTheme, toggleTheme } from "$lib/stores/theme";
     import SideBarIcons from "./sideBarIcons.svelte";
-    import { buildAdminSidebarMenu } from "./sidebar-menu";
+    import { buildAdminSidebarMenu } from "$lib/helpers/admin/dashboard/sidebar-menu";
 
     export let sidebarOpen = false;
     let currentPath = "/";

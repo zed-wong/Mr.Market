@@ -2,7 +2,7 @@
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
     import { createStrategyDefinition } from "$lib/helpers/mrm/admin/strategy";
-    import { CONFIG_SCHEMA_TEMPLATES } from "./configTemplates";
+    import { CONFIG_SCHEMA_TEMPLATES } from "$lib/helpers/admin/settings/strategies/configTemplates";
     import SchemaConfigForm from "./SchemaConfigForm.svelte";
     import type { StrategyDefinitionVisibility } from "$lib/types/hufi/strategy-definition";
 

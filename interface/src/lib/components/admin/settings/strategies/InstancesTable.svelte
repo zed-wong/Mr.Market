@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { formatDate, getStatusClasses, getStatusLabel } from "./helpers";
+  import { formatDate, getStatusClasses, getStatusLabel } from "$lib/helpers/admin/settings/strategies/helpers";
   import type { StrategyInstanceView } from "$lib/types/hufi/strategy-definition";
 
   export let instances: StrategyInstanceView[] = [];

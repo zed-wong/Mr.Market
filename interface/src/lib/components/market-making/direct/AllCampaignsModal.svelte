@@ -1,6 +1,6 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
-    import { formatFundAmount, formatCampaignType } from "./helpers";
+    import { formatFundAmount, formatCampaignType } from "$lib/helpers/market-making/direct/helpers";
     import type { AdminCampaign } from "$lib/types/hufi/admin-direct-market-making";
 
     export let show = false;
