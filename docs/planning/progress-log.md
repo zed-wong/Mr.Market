@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-04-14
+
+- Add a new active planning doc, `docs/planning/2026-04-14-hummingbot-like-user-stream-plan.md`, to scope a phased migration from the current `watchOrders()`-only private stream path toward a Hummingbot-like normalized user-stream architecture with first-class balance/order/trade events and explicit REST fallback loops
+
 ## 2026-04-13
 
 - Capture a dated TODO checklist for the remaining dual-account runtime issues seen in the latest MEXC run: chronic overlap pressure, per-exchange queue serialization across accounts, repeated below-minimum preferred-side collapse before fallback, and missing explicit taker IOC fill-completeness validation
