@@ -6,7 +6,7 @@ import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id'
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
-import { PrivateStreamTrackerService } from '../trackers/private-stream-tracker.service';
+import { UserStreamTrackerService } from '../trackers/user-stream-tracker.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
@@ -163,13 +163,29 @@ const createMappingRepository = (rows: any[] = []) => ({
   ),
   create: jest.fn((value) => value),
   save: jest.fn(async (value) => {
+    const matchIndex = rows.findIndex(
+      (row) =>
+        (value.id && row.id === value.id) ||
+        (value.clientOrderId && row.clientOrderId === value.clientOrderId),
+    );
     const row = {
-      id: `mapping-${rows.length + 1}`,
-      createdAt: new Date('2026-03-11T00:00:00.000Z'),
+      id:
+        matchIndex >= 0
+          ? rows[matchIndex].id
+          : `mapping-${rows.length + 1}`,
+      createdAt:
+        matchIndex >= 0
+          ? rows[matchIndex].createdAt
+          : new Date('2026-03-11T00:00:00.000Z'),
+      ...(matchIndex >= 0 ? rows[matchIndex] : {}),
       ...value,
     };
 
-    rows.push(row);
+    if (matchIndex >= 0) {
+      rows[matchIndex] = row;
+    } else {
+      rows.push(row);
+    }
 
     return row;
   }),
@@ -310,6 +326,7 @@ const createFixture = () => {
     createStrategyInstanceRepository(strategyInstanceRows) as any,
     undefined,
     undefined,
+    undefined,
     exchangeOrderTrackerService,
     new StrategyControllerRegistry([new PureMarketMakingStrategyController()]),
     executorOrchestratorService,
@@ -325,7 +342,7 @@ const createFixture = () => {
     undefined,
     undefined,
   );
-  const privateStreamTrackerService = new PrivateStreamTrackerService(
+  const userStreamTrackerService = new UserStreamTrackerService(
     undefined,
     new FillRoutingService(exchangeOrderMappingService),
     exchangeOrderTrackerService,
@@ -348,7 +365,7 @@ const createFixture = () => {
     strategyIntentWorkerService,
     exchangeOrderTrackerService,
     executorRegistry,
-    privateStreamTrackerService,
+    userStreamTrackerService,
   };
 };
 
@@ -423,19 +440,20 @@ describe('Strategy runtime architecture', () => {
     const onFill = jest.fn();
 
     executor?.configure({ onFill });
-    fixture.privateStreamTrackerService.queueAccountEvent({
+    fixture.userStreamTrackerService.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: `ex-${submittedClientOrderId0}`,
-        amount: '1',
         status: 'closed',
+        cumulativeQty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:01.000Z',
     });
 
-    await fixture.privateStreamTrackerService.onTick(
+    await fixture.userStreamTrackerService.onTick(
       '2026-03-11T00:00:01.500Z',
     );
 
@@ -491,19 +509,19 @@ describe('Strategy runtime architecture', () => {
     ).toEqual(['order-1-pureMarketMaking', 'order-2-pureMarketMaking']);
 
     executor?.configure({ onFill });
-    fixture.privateStreamTrackerService.queueAccountEvent({
+    fixture.userStreamTrackerService.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'trade',
+      kind: 'trade',
       payload: {
         clientOrderId: 'order-2:99',
-        amount: '1',
-        status: 'filled',
+        qty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:01.000Z',
     });
 
-    await fixture.privateStreamTrackerService.onTick(
+    await fixture.userStreamTrackerService.onTick(
       '2026-03-11T00:00:01.500Z',
     );
 

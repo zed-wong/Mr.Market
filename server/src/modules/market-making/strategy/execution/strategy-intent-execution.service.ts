@@ -135,7 +135,9 @@ export class StrategyIntentExecutionService {
     return this.processedIntentIds.has(intentId);
   }
 
-  private async consumeIntent(intent: StrategyOrderIntent): Promise<void> {
+  private async consumeIntent(
+    intent: StrategyOrderIntent,
+  ): Promise<Record<string, unknown> | undefined> {
     if (this.processedIntentIds.has(intent.intentId)) {
       return;
     }
@@ -190,6 +192,8 @@ export class StrategyIntentExecutionService {
     }
 
     try {
+      let executionResult: Record<string, unknown> | undefined;
+
       if (intent.type === 'CREATE_LIMIT_ORDER') {
         const activeSlotOrders =
           this.exchangeOrderTrackerService?.getActiveSlotOrders?.(
@@ -250,6 +254,9 @@ export class StrategyIntentExecutionService {
           ),
         );
 
+        this.assertImmediateOrderAck(intent, result);
+        executionResult = result as Record<string, unknown> | undefined;
+
         if (result?.id) {
           await this.strategyIntentStoreService?.attachMixinOrderId(
             intent.intentId,
@@ -299,14 +306,11 @@ export class StrategyIntentExecutionService {
             updatedAt: getRFC3339Timestamp(),
           });
           if (this.isMakerIntent(intent)) {
-            const makerSettled = await this.executeInlineDualAccountTaker(
+            await this.executeInlineDualAccountTaker(
               intent,
               String(result.id),
               this.readMetadataString(intent, 'price') || intent.price,
             );
-            if (makerSettled) {
-              await this.incrementCompletedCycles(intent.strategyKey);
-            }
           }
         } else {
           this.logger.warn(
@@ -317,6 +321,7 @@ export class StrategyIntentExecutionService {
             } result=${JSON.stringify(result)}`,
           );
         }
+
       }
 
       if (intent.type === 'CANCEL_ORDER') {
@@ -374,8 +379,10 @@ export class StrategyIntentExecutionService {
               ? 'cancelled'
               : 'pending_cancel',
           createdAt: getRFC3339Timestamp(),
-          updatedAt: getRFC3339Timestamp(),
+            updatedAt: getRFC3339Timestamp(),
         });
+
+        executionResult = result as Record<string, unknown> | undefined;
       }
 
       if (intent.type === 'EXECUTE_AMM_SWAP') {
@@ -463,6 +470,8 @@ export class StrategyIntentExecutionService {
             },
           }),
         );
+
+        executionResult = result as Record<string, unknown> | undefined;
       }
 
       if (
@@ -496,6 +505,8 @@ export class StrategyIntentExecutionService {
         intent.intentId,
       );
       this.processedIntentIds.add(intent.intentId);
+
+      return executionResult;
     } catch (error) {
       if (error instanceof IntentCancelledError) {
         return;
@@ -715,8 +726,30 @@ export class StrategyIntentExecutionService {
 
     try {
       const takerExecutionStartedAtMs = Date.now();
-      await this.consumeIntent(takerIntent);
+      const takerResult = await this.consumeIntent(takerIntent);
       const takerExecutionDurationMs = Date.now() - takerExecutionStartedAtMs;
+
+      const takerExchangeOrderId =
+        this.readOrderIdFromResult(takerResult) ||
+        (await this.strategyIntentStoreService?.getMixinOrderId(
+          takerIntent.intentId,
+        ));
+      let takerFilledQty = this.readFilledQtyFromResult(takerResult);
+      if (takerExchangeOrderId) {
+        try {
+          const takerOrder =
+            await this.exchangeConnectorAdapterService.fetchOrder(
+              takerIntent.exchange,
+              takerIntent.pair,
+              takerExchangeOrderId,
+              takerIntent.accountLabel,
+            );
+          takerFilledQty = this.readFilledQtyFromResult(takerOrder);
+        } catch {
+          // Best-effort: keep immediate ack fill, otherwise treat as unknown.
+        }
+      }
+
       const settlementStartedAtMs = Date.now();
       const makerSettled = await this.confirmDualAccountMakerSettlement(
         makerIntent,
@@ -726,7 +759,24 @@ export class StrategyIntentExecutionService {
       const settlementDurationMs = Date.now() - settlementStartedAtMs;
       const totalDurationMs = Date.now() - executionStartedAtMs;
 
-      if (makerSettled) {
+      const takerRequestedQty = new BigNumber(takerIntent.qty);
+      const takerFillRatio =
+        takerFilledQty && takerRequestedQty.isGreaterThan(0)
+          ? takerFilledQty.dividedBy(takerRequestedQty)
+          : undefined;
+      const takerSufficient = Boolean(
+        takerFillRatio?.isGreaterThanOrEqualTo(0.95),
+      );
+
+      if (makerSettled && takerSufficient) {
+        const actualQuoteVolume = takerFilledQty
+          ? takerFilledQty.multipliedBy(quantizedMaker.price).toFixed()
+          : undefined;
+        await this.incrementCompletedCycles(
+          makerIntent.strategyKey,
+          actualQuoteVolume,
+        );
+
         this.logger.log(
           [
             'Dual-account taker completed',
@@ -746,10 +796,31 @@ export class StrategyIntentExecutionService {
             `takerExecutionDurationMs=${takerExecutionDurationMs}`,
             `settlementDurationMs=${settlementDurationMs}`,
             `totalDurationMs=${totalDurationMs}`,
+            `takerFilledQty=${takerFilledQty?.toFixed() || 'unknown'}`,
+            `takerFillRatio=${takerFillRatio?.toFixed(4) || 'unknown'}`,
           ].join(' | '),
         );
 
         return true;
+      }
+
+      if (makerSettled && !takerSufficient) {
+        this.logger.warn(
+          [
+            'Dual-account taker partial fill',
+            `strategy=${makerIntent.strategyKey}`,
+            `cycle=${cycleId}`,
+            `tick=${tickId}`,
+            'status=taker_partial_fill',
+            `takerFilledQty=${takerFilledQty?.toFixed() || 'unknown'}`,
+            `takerRequestedQty=${takerRequestedQty.toFixed()}`,
+            `takerFillRatio=${takerFillRatio?.toFixed(4) || 'unknown'}`,
+            `makerOrderId=${makerExchangeOrderId}`,
+            `totalDurationMs=${Date.now() - executionStartedAtMs}`,
+          ].join(' | '),
+        );
+
+        return false;
       }
 
       this.logger.warn(
@@ -1003,7 +1074,10 @@ export class StrategyIntentExecutionService {
     }
   }
 
-  private async incrementCompletedCycles(strategyKey: string): Promise<void> {
+  private async incrementCompletedCycles(
+    strategyKey: string,
+    tradedQuoteVolume?: string,
+  ): Promise<void> {
     if (!this.strategyInstanceRepository) {
       return;
     }
@@ -1020,6 +1094,11 @@ export class StrategyIntentExecutionService {
       ...(strategyInstance.parameters || {}),
       completedCycles:
         Number(strategyInstance.parameters?.completedCycles || 0) + 1,
+      tradedQuoteVolume: tradedQuoteVolume
+        ? new BigNumber(strategyInstance.parameters?.tradedQuoteVolume || 0)
+            .plus(tradedQuoteVolume)
+            .toFixed()
+        : strategyInstance.parameters?.tradedQuoteVolume,
     };
 
     await this.strategyInstanceRepository.update(
@@ -1040,6 +1119,75 @@ export class StrategyIntentExecutionService {
         : undefined;
 
     return metadataOrderId || intent.clientId;
+  }
+
+  private assertImmediateOrderAck(
+    intent: StrategyOrderIntent,
+    result: unknown,
+  ): void {
+    if (intent.type !== 'CREATE_LIMIT_ORDER' || intent.timeInForce !== 'IOC') {
+      return;
+    }
+
+    if (this.readOrderIdFromResult(result)) {
+      return;
+    }
+
+    const filledQty = this.readFilledQtyFromResult(result);
+    if (filledQty?.isGreaterThan(0)) {
+      return;
+    }
+
+    const status = this.readOrderStatusFromResult(result);
+    if (status) {
+      throw new Error(`IOC order not acknowledged: status=${status}`);
+    }
+
+    throw new Error('IOC order returned no exchange order id');
+  }
+
+  private readOrderIdFromResult(result: unknown): string | undefined {
+    if (!result || typeof result !== 'object') {
+      return undefined;
+    }
+
+    const value = (result as Record<string, unknown>).id;
+
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : undefined;
+  }
+
+  private readOrderStatusFromResult(result: unknown): string | undefined {
+    if (!result || typeof result !== 'object') {
+      return undefined;
+    }
+
+    const value = (result as Record<string, unknown>).status;
+
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim().toLowerCase()
+      : undefined;
+  }
+
+  private readFilledQtyFromResult(result: unknown): BigNumber | undefined {
+    if (!result || typeof result !== 'object') {
+      return undefined;
+    }
+
+    const value = (result as Record<string, unknown>).filled;
+
+    if (value == null) {
+      return undefined;
+    }
+
+    try {
+      const qty = new BigNumber(value as BigNumber.Value);
+
+      return qty.isFinite() ? qty : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async reserveClientOrderId(orderId: string): Promise<string> {

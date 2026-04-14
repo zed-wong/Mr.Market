@@ -93,7 +93,7 @@ describeSandbox('Private stream reconnect parity (system)', () => {
         throw new Error('simulated watchOrders disconnect');
       }
 
-      helper.getPrivateStreamIngestionService().stopAllWatchers();
+      helper.getUserStreamIngestionService().stopAllWatchers();
 
       if (watchCallCount === 2) {
         return [recoveredEvent];
@@ -103,8 +103,8 @@ describeSandbox('Private stream reconnect parity (system)', () => {
     });
 
     try {
-      helper.getPrivateStreamIngestionService().stopAllWatchers();
-      helper.getPrivateStreamIngestionService().startOrderWatcher({
+      helper.getUserStreamIngestionService().stopAllWatchers();
+      helper.getUserStreamIngestionService().startOrderWatcher({
         exchange: order.exchangeName,
         accountLabel: config!.accountLabel,
         symbol: order.pair,
@@ -128,7 +128,7 @@ describeSandbox('Private stream reconnect parity (system)', () => {
       if (originalWatchOrders) {
         exchange.watchOrders = originalWatchOrders;
       }
-      helper.getPrivateStreamIngestionService().stopAllWatchers();
+      helper.getUserStreamIngestionService().stopAllWatchers();
     }
   });
 });

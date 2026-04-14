@@ -364,7 +364,7 @@ describe('ExchangeOrderTrackerService', () => {
     ).toBe('sell');
   });
 
-  it('marks private stream activity and uses slow poll interval', async () => {
+  it('marks user stream activity and uses slow poll interval', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
     };
@@ -388,7 +388,7 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
 
-    service.markPrivateStreamActivity('binance', 'default');
+    service.markUserStreamActivity('binance', 'default');
 
     await service.onTick('2026-02-11T00:00:01.000Z');
 
@@ -401,7 +401,7 @@ describe('ExchangeOrderTrackerService', () => {
     expect(adapter.fetchOrder).toHaveBeenCalledTimes(0);
   });
 
-  it('uses fast poll interval when private stream is silent', async () => {
+  it('uses fast poll interval when user stream is silent', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
     };

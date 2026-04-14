@@ -66,7 +66,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
     log.step('waiting for watchOrders subscription');
     await pollUntil(
       async () =>
-        helper.getPrivateStreamIngestionService().isWatching({
+        helper.getUserStreamIngestionService().isWatching({
           exchange: order.exchangeName,
           accountLabel: config!.accountLabel,
           symbol: order.pair,
@@ -110,19 +110,19 @@ describeSandbox('Private fill ingestion parity (system)', () => {
     });
 
     log.step('queueing deterministic private-stream fill event');
-    helper.getPrivateStreamTrackerService().queueAccountEvent({
+    helper.getUserStreamTrackerService().queueAccountEvent({
       exchange: order.exchangeName,
       accountLabel: config!.accountLabel,
-      eventType: 'watch_orders',
+      kind: 'order',
       payload: {
-        id: trackedOrder?.exchangeOrderId,
+        exchangeOrderId: trackedOrder?.exchangeOrderId,
         clientOrderId: trackedOrder?.clientOrderId,
-        symbol: order.pair,
+        pair: order.pair,
         side: trackedOrder?.side,
         price: trackedOrder?.price,
-        filled: trackedOrder?.qty,
-        amount: trackedOrder?.qty,
+        cumulativeQty: trackedOrder?.qty,
         status: 'closed',
+        raw: {},
       },
       receivedAt: new Date().toISOString(),
     });
@@ -157,7 +157,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
 
     await pollUntil(
       async () =>
-        helper.getPrivateStreamIngestionService().isWatching({
+        helper.getUserStreamIngestionService().isWatching({
           exchange: order.exchangeName,
           accountLabel: config!.accountLabel,
           symbol: order.pair,
@@ -348,7 +348,7 @@ describeSandbox('Private fill ingestion parity (system)', () => {
         log.result('tracked order filled on exchange', {
           exchangeOrderId: filledTargetOrder?.id,
           status: filledTargetOrder?.status,
-          filled: filledTargetOrder?.filled,
+          cumulativeQty: filledTargetOrder?.filled,
         });
       } catch {
         const targetOrder = await helper.fetchExchangeOrder(

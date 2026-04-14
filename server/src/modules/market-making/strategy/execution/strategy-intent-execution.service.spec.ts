@@ -62,6 +62,7 @@ describe('StrategyIntentExecutionService', () => {
   const intentStoreService = {
     updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
+    getMixinOrderId: jest.fn().mockResolvedValue(undefined),
   };
 
   const durabilityService = {
@@ -159,6 +160,7 @@ describe('StrategyIntentExecutionService', () => {
       parameters: {},
     });
     strategyInstanceRepository.update.mockResolvedValue(undefined);
+    intentStoreService.getMixinOrderId.mockResolvedValue(undefined);
   });
 
   it('executes CREATE_LIMIT_ORDER intents once (idempotent)', async () => {
@@ -296,11 +298,17 @@ describe('StrategyIntentExecutionService', () => {
     exchangeConnectorAdapterService.placeLimitOrder
       .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
       .mockResolvedValueOnce({ id: 'taker-order', status: 'closed' });
-    exchangeConnectorAdapterService.fetchOrder.mockResolvedValueOnce({
-      id: 'maker-order',
-      status: 'open',
-      filled: '0',
-    });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'taker-order',
+        status: 'closed',
+        filled: '1',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order',
+        status: 'open',
+        filled: '0',
+      });
     const service = createService(
       true,
       createConfigService(true, {
@@ -373,6 +381,70 @@ describe('StrategyIntentExecutionService', () => {
       'maker',
     );
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('does not increment completed cycles when the dual-account taker only partially fills', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
+      .mockResolvedValueOnce({ id: 'taker-order', status: 'expired' });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'taker-order',
+        status: 'expired',
+        filled: '0.5',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order',
+        status: 'closed',
+        filled: '1',
+      });
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-partial',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          makerDelayMs: 0,
+          cycleId: 'cycle-partial',
+          orderId: 'dual-cycle-partial',
+        },
+      },
+    ]);
+
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalledWith(
+      { strategyKey: 'u1-c1-pureMarketMaking' },
+      expect.objectContaining({
+        parameters: expect.objectContaining({ completedCycles: 1 }),
+      }),
+    );
+  });
+
+  it('fails IOC intents that return neither an exchange order id nor any fill', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValueOnce({
+      status: 'expired',
+      filled: '0',
+    });
+    const service = createService(true);
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'ioc-no-ack',
+          timeInForce: 'IOC',
+        },
+      ]),
+    ).rejects.toThrow('IOC order not acknowledged: status=expired');
+
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'ioc-no-ack',
+      'FAILED',
+      'IOC order not acknowledged: status=expired',
+    );
   });
 
   it('keeps dynamic maker/taker metadata when executing inline dual-account taker', async () => {

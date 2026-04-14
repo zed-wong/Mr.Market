@@ -9,7 +9,7 @@ import { StrategyIntentStoreService } from 'src/modules/market-making/strategy/e
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
-import { PrivateStreamTrackerService } from 'src/modules/market-making/trackers/private-stream-tracker.service';
+import { UserStreamTrackerService } from 'src/modules/market-making/trackers/user-stream-tracker.service';
 import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 
@@ -69,8 +69,8 @@ describe('Admin direct market making runtime (system)', () => {
     const exchangeOrderTrackerService = moduleRef.get(
       ExchangeOrderTrackerService,
     );
-    const privateStreamTrackerService = moduleRef.get(
-      PrivateStreamTrackerService,
+    const userStreamTrackerService = moduleRef.get(
+      UserStreamTrackerService,
     );
     const orderBookTrackerService = moduleRef.get(OrderBookTrackerService);
     const campaignService = moduleRef.get(CampaignService, { strict: false });
@@ -82,6 +82,9 @@ describe('Admin direct market making runtime (system)', () => {
       marketMakingRepository as any,
       growdataMarketMakingPairRepository as any,
       strategyDefinitionRepository as any,
+      {
+        findOne: jest.fn().mockResolvedValue(null),
+      } as any,
       userOrdersService as any,
       marketMakingRuntimeService as any,
       {
@@ -124,7 +127,7 @@ describe('Admin direct market making runtime (system)', () => {
       strategyService as any,
       strategyIntentStoreService as any,
       exchangeOrderTrackerService as any,
-      privateStreamTrackerService as any,
+      userStreamTrackerService as any,
       orderBookTrackerService as any,
       (campaignService || {
         getCampaigns: jest.fn().mockResolvedValue([]),
@@ -133,6 +136,9 @@ describe('Admin direct market making runtime (system)', () => {
       {
         get: jest.fn().mockReturnValue(undefined),
       } as any,
+      undefined,
+      undefined,
+      undefined,
     );
 
     log.step('starting direct admin order');

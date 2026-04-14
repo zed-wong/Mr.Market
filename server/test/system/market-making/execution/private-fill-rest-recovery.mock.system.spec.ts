@@ -72,6 +72,7 @@ describe('Private fill REST recovery parity (mock system)', () => {
         update: jest.fn(),
       } as any,
       undefined,
+      undefined,
       new QuoteExecutorManagerService(),
       exchangeOrderTrackerService,
       {
@@ -86,6 +87,8 @@ describe('Private fill REST recovery parity (mock system)', () => {
       {
         cancelPendingIntents: jest.fn(),
       } as unknown as StrategyIntentStoreService,
+      undefined,
+      undefined,
       undefined,
       undefined,
       balanceLedgerService as unknown as BalanceLedgerService,

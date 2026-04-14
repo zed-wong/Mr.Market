@@ -22,6 +22,8 @@ import { Repository } from 'typeorm';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
+import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
+import { BalanceStateRefreshService } from '../balance-state/balance-state-refresh.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
@@ -30,7 +32,7 @@ import {
   TrackedOrder,
 } from '../trackers/exchange-order-tracker.service';
 import { OrderBookIngestionService } from '../trackers/order-book-ingestion.service';
-import { PrivateStreamIngestionService } from '../trackers/private-stream-ingestion.service';
+import { UserStreamIngestionService } from '../trackers/user-stream-ingestion.service';
 import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
@@ -70,7 +72,7 @@ type BaseVolumeStrategyParams = {
   pricePushRate: number;
   executionCategory: StrategyExecutionCategory;
   executionVenue?: VolumeExecutionVenue;
-  postOnlySide?: 'buy' | 'sell';
+  postOnlySide?: 'buy' | 'sell' | 'inventory_balance';
   executedTrades?: number;
 };
 
@@ -168,6 +170,11 @@ type DualAccountRebalanceCandidate = {
   side: 'buy' | 'sell';
 };
 
+type DualAccountBalanceSnapshot = {
+  makerBalances: DualAccountPairBalances;
+  takerBalances: DualAccountPairBalances;
+};
+
 type PooledExecutorTarget = {
   exchange: string;
   pair: string;
@@ -184,9 +191,6 @@ export class StrategyService
     OnModuleDestroy,
     OnApplicationShutdown
 {
-  private static readonly MIN_DUAL_ACCOUNT_FEE_BUFFER_RATE = new BigNumber(
-    0.002,
-  );
   private readonly logger = new CustomLogger(StrategyService.name);
   private readonly sessions = new Map<string, StrategyRuntimeSession>();
   private readonly pendingActivationStrategies = new Map<
@@ -234,7 +238,11 @@ export class StrategyService
     @Optional()
     private readonly orderBookIngestionService?: OrderBookIngestionService,
     @Optional()
-    private readonly privateStreamIngestionService?: PrivateStreamIngestionService,
+    private readonly userStreamIngestionService?: UserStreamIngestionService,
+    @Optional()
+    private readonly balanceStateCacheService?: BalanceStateCacheService,
+    @Optional()
+    private readonly balanceStateRefreshService?: BalanceStateRefreshService,
     @Optional()
     private readonly balanceLedgerService?: BalanceLedgerService,
     @Optional()
@@ -1029,6 +1037,7 @@ export class StrategyService
         pooledTarget.pair,
         accountLabel,
       );
+      this.startBalanceWatchers(strategyType, pooledTarget.exchange, params);
       this.logger.log(
         `Order book ingestion available=${Boolean(
           this.orderBookIngestionService,
@@ -1698,11 +1707,6 @@ export class StrategyService
     );
 
     const publishedCycles = Number(params.publishedCycles || 0);
-    const preferredSide = this.resolveVolumeSide(
-      params.postOnlySide,
-      publishedCycles,
-      params.buyBias,
-    );
     const bestBidBn = new BigNumber(bestBid);
     const bestAskBn = new BigNumber(bestAsk);
     const spread = bestAskBn.minus(bestBidBn);
@@ -1718,6 +1722,15 @@ export class StrategyService
     const spreadPosition = new BigNumber(Math.random());
     const price = bestBidBn.plus(spread.multipliedBy(spreadPosition));
     const decisionStartedAtMs = Date.now();
+    const balanceSnapshot = await this.loadDualAccountBalanceSnapshot(
+      params,
+      'execution',
+    );
+    const preferredSide = await this.resolveDualAccountPreferredSide(
+      params,
+      publishedCycles,
+      balanceSnapshot?.makerBalances || undefined,
+    );
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
       this.logger.error(
@@ -1735,6 +1748,7 @@ export class StrategyService
       bestBidBn,
       bestAskBn,
       feeBufferRate,
+      balanceSnapshot,
     );
     const decisionDurationMs = Date.now() - decisionStartedAtMs;
 
@@ -1749,6 +1763,7 @@ export class StrategyService
         feeBufferRate,
         publishedCycles,
         ts,
+        balanceSnapshot,
       );
 
       if (rebalanceAction) {
@@ -1853,6 +1868,7 @@ export class StrategyService
     side: 'buy' | 'sell',
     price: BigNumber,
     feeBufferRate: BigNumber,
+    balanceSnapshot?: DualAccountBalanceSnapshot | null,
   ): Promise<DualAccountResolvedAccounts | null> {
     const configured: DualAccountResolvedAccounts = {
       makerAccountLabel: params.makerAccountLabel,
@@ -1863,33 +1879,14 @@ export class StrategyService
       return configured;
     }
 
-    let makerBalances: DualAccountPairBalances | null = null;
-    let takerBalances: DualAccountPairBalances | null = null;
+    const snapshot =
+      balanceSnapshot ||
+      (await this.loadDualAccountBalanceSnapshot(params, 'execution'));
 
-    try {
-      makerBalances = await this.getAvailableBalancesForPair(
-        params.exchangeName,
-        params.symbol,
-        params.makerAccountLabel,
-      );
-      takerBalances = await this.getAvailableBalancesForPair(
-        params.exchangeName,
-        params.symbol,
-        params.takerAccountLabel,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to load dual-account balances for ${params.exchangeName} ${
-          params.symbol
-        }: ${error instanceof Error ? error.message : String(error)}`,
-      );
-
+    if (!snapshot) {
       return configured;
     }
-
-    if (!makerBalances || !takerBalances) {
-      return configured;
-    }
+    const { makerBalances, takerBalances } = snapshot;
 
     return this.resolveDualAccountCycleAccountsFromBalances(
       params,
@@ -1971,20 +1968,23 @@ export class StrategyService
       return new BigNumber(0);
     }
 
-    const bufferFactor = feeBufferRate.isFinite()
-      ? new BigNumber(1).plus(
-          feeBufferRate.isGreaterThanOrEqualTo(0) ? feeBufferRate : 0,
+    const retainFactor = feeBufferRate.isFinite()
+      ? BigNumber.max(
+          new BigNumber(1).minus(
+            feeBufferRate.isGreaterThanOrEqualTo(0) ? feeBufferRate : 0,
+          ),
+          new BigNumber(0),
         )
       : new BigNumber(1);
 
     return side === 'buy'
       ? BigNumber.min(
-          makerBalances.quote.dividedBy(price).dividedBy(bufferFactor),
+          makerBalances.quote.dividedBy(price).multipliedBy(retainFactor),
           takerBalances.base,
         )
       : BigNumber.min(
           makerBalances.base,
-          takerBalances.quote.dividedBy(price).dividedBy(bufferFactor),
+          takerBalances.quote.dividedBy(price).multipliedBy(retainFactor),
         );
   }
 
@@ -1996,6 +1996,7 @@ export class StrategyService
     bestBid: BigNumber,
     bestAsk: BigNumber,
     feeBufferRate: BigNumber,
+    balanceSnapshot?: DualAccountBalanceSnapshot | null,
   ): Promise<DualAccountExecutionPlan | null> {
     const fallbackSide = preferredSide === 'buy' ? 'sell' : 'buy';
     const tradeAmountVarianceSample = Math.random();
@@ -2009,6 +2010,7 @@ export class StrategyService
       bestBid,
       bestAsk,
       feeBufferRate,
+      balanceSnapshot,
     );
 
     if (preferredExecution) {
@@ -2037,6 +2039,7 @@ export class StrategyService
       bestBid,
       bestAsk,
       feeBufferRate,
+      balanceSnapshot,
     );
 
     if (!fallbackExecution) {
@@ -2060,36 +2063,16 @@ export class StrategyService
     feeBufferRate: BigNumber,
     publishedCycles: number,
     ts: string,
+    balanceSnapshot?: DualAccountBalanceSnapshot | null,
   ): Promise<ExecutorAction | null> {
-    let makerBalances: DualAccountPairBalances | null = null;
-    let takerBalances: DualAccountPairBalances | null = null;
+    const snapshot =
+      balanceSnapshot ||
+      (await this.loadDualAccountBalanceSnapshot(params, 'rebalance'));
 
-    try {
-      makerBalances = await this.getAvailableBalancesForPair(
-        params.exchangeName,
-        params.symbol,
-        params.makerAccountLabel,
-      );
-      takerBalances = await this.getAvailableBalancesForPair(
-        params.exchangeName,
-        params.symbol,
-        params.takerAccountLabel,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to load dual-account rebalance balances for ${
-          params.exchangeName
-        } ${params.symbol}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-
+    if (!snapshot) {
       return null;
     }
-
-    if (!makerBalances || !takerBalances) {
-      return null;
-    }
+    const { makerBalances, takerBalances } = snapshot;
 
     const candidates = (
       await Promise.all([
@@ -2211,7 +2194,7 @@ export class StrategyService
       side === 'buy'
         ? selectedBalances.quote
             .dividedBy(executionPrice)
-            .dividedBy(new BigNumber(1).plus(feeBufferRate))
+            .multipliedBy(new BigNumber(1).minus(feeBufferRate))
         : selectedBalances.base;
     const requestedQty = BigNumber.min(
       new BigNumber(params.baseTradeAmount),
@@ -2396,12 +2379,14 @@ export class StrategyService
     bestBid: BigNumber,
     bestAsk: BigNumber,
     feeBufferRate: BigNumber,
+    balanceSnapshot?: DualAccountBalanceSnapshot | null,
   ): Promise<DualAccountExecutionPlan | null> {
     const resolvedAccounts = await this.resolveDualAccountCycleAccounts(
       params,
       side,
       price,
       feeBufferRate,
+      balanceSnapshot,
     );
 
     if (!resolvedAccounts) {
@@ -2693,10 +2678,8 @@ export class StrategyService
     exchangeName: string,
     pair: string,
   ): Promise<BigNumber> {
-    const minimum = StrategyService.MIN_DUAL_ACCOUNT_FEE_BUFFER_RATE;
-
     if (!this.exchangeConnectorAdapterService) {
-      return minimum;
+      return new BigNumber(0);
     }
 
     try {
@@ -2705,14 +2688,15 @@ export class StrategyService
         pair,
       );
       const makerFee = new BigNumber(rules.makerFee || 0);
+      const takerFee = new BigNumber(rules.takerFee || 0);
 
-      if (!makerFee.isFinite() || makerFee.isLessThanOrEqualTo(0)) {
-        return minimum;
+      const totalFeeRate = makerFee.plus(takerFee);
+
+      if (!totalFeeRate.isFinite() || totalFeeRate.isLessThanOrEqualTo(0)) {
+        return new BigNumber(0);
       }
 
-      const derived = makerFee.multipliedBy(2);
-
-      return derived.isGreaterThan(minimum) ? derived : minimum;
+      return totalFeeRate;
     } catch (error) {
       this.logger.warn(
         `Failed to load dual-account fee buffer for ${exchangeName} ${pair}: ${
@@ -2720,8 +2704,129 @@ export class StrategyService
         }`,
       );
 
-      return minimum;
+      return new BigNumber(0);
     }
+  }
+
+  private async loadDualAccountBalanceSnapshot(
+    params: DualAccountVolumeStrategyParams,
+    context: 'execution' | 'rebalance',
+  ): Promise<DualAccountBalanceSnapshot | null> {
+    try {
+      const [makerBalances, takerBalances] = await Promise.all([
+        this.getAvailableBalancesForPair(
+          params.exchangeName,
+          params.symbol,
+          params.makerAccountLabel,
+        ),
+        this.getAvailableBalancesForPair(
+          params.exchangeName,
+          params.symbol,
+          params.takerAccountLabel,
+        ),
+      ]);
+
+      if (!makerBalances || !takerBalances) {
+        return null;
+      }
+
+      return {
+        makerBalances,
+        takerBalances,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load dual-account ${context} balances for ${
+          params.exchangeName
+        } ${params.symbol}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return null;
+    }
+  }
+
+  private async resolveDualAccountPreferredSide(
+    params: DualAccountVolumeStrategyParams,
+    publishedCycles: number,
+    makerBalances?: DualAccountPairBalances,
+  ): Promise<'buy' | 'sell'> {
+    if (params.postOnlySide !== 'inventory_balance') {
+      return this.resolveVolumeSide(
+        params.postOnlySide,
+        publishedCycles,
+        params.buyBias,
+      );
+    }
+
+    const resolvedMakerBalances =
+      makerBalances ||
+      (await this.getAvailableBalancesForPair(
+        params.exchangeName,
+        params.symbol,
+        params.makerAccountLabel,
+      ));
+
+    if (!resolvedMakerBalances) {
+      return this.resolveVolumeSide(undefined, publishedCycles, params.buyBias);
+    }
+
+    const quoteValue = resolvedMakerBalances.quote;
+    const baseValue =
+      resolvedMakerBalances.base.multipliedBy(
+        await this.resolveInventoryReferencePrice(
+          params.exchangeName,
+          params.symbol,
+        ),
+      );
+    const totalValue = quoteValue.plus(baseValue);
+
+    if (!totalValue.isFinite() || totalValue.isLessThanOrEqualTo(0)) {
+      return this.resolveVolumeSide(undefined, publishedCycles, params.buyBias);
+    }
+
+    const imbalance = quoteValue.minus(baseValue).dividedBy(totalValue);
+
+    if (imbalance.isGreaterThan(0.05)) {
+      return 'buy';
+    }
+
+    if (imbalance.isLessThan(-0.05)) {
+      return 'sell';
+    }
+
+    return this.resolveVolumeSide(undefined, publishedCycles, params.buyBias);
+  }
+
+  private async resolveInventoryReferencePrice(
+    exchangeName: string,
+    pair: string,
+  ): Promise<BigNumber> {
+    const trackedBestBidAsk =
+      this.strategyMarketDataProviderService?.getTrackedBestBidAsk(
+        exchangeName,
+        pair,
+      );
+
+    if (trackedBestBidAsk?.bestBid && trackedBestBidAsk?.bestAsk) {
+      return new BigNumber(trackedBestBidAsk.bestBid)
+        .plus(trackedBestBidAsk.bestAsk)
+        .dividedBy(2);
+    }
+
+    const bestBidAsk = await this.strategyMarketDataProviderService?.getBestBidAsk(
+      exchangeName,
+      pair,
+    );
+
+    if (bestBidAsk?.bestBid && bestBidAsk?.bestAsk) {
+      return new BigNumber(bestBidAsk.bestBid)
+        .plus(bestBidAsk.bestAsk)
+        .dividedBy(2);
+    }
+
+    return new BigNumber(1);
   }
 
   private normalizeDualAccountMakerPrice(
@@ -3402,11 +3507,11 @@ export class StrategyService
   }
 
   private resolveVolumeSide(
-    postOnlySide: 'buy' | 'sell' | undefined,
+    postOnlySide: 'buy' | 'sell' | 'inventory_balance' | undefined,
     executedTrades: number,
     buyBias?: number,
   ): 'buy' | 'sell' {
-    if (postOnlySide) {
+    if (postOnlySide === 'buy' || postOnlySide === 'sell') {
       return postOnlySide;
     }
 
@@ -3944,6 +4049,11 @@ export class StrategyService
       pooledTarget.pair,
       this.resolveAccountLabel(session.strategyType, session.params),
     );
+    this.stopBalanceWatchers(
+      session.strategyType,
+      pooledTarget.exchange,
+      session.params,
+    );
     this.orderBookIngestionService?.releaseSubscription(
       pooledTarget.exchange,
       pooledTarget.pair,
@@ -4057,11 +4167,68 @@ export class StrategyService
       return;
     }
 
-    this.privateStreamIngestionService?.startOrderWatcher({
+    this.userStreamIngestionService?.startOrderWatcher({
       exchange,
       accountLabel: accountLabel || 'default',
       symbol: pair,
     });
+    this.userStreamIngestionService?.startTradeWatcher({
+      exchange,
+      accountLabel: accountLabel || 'default',
+      symbol: pair,
+    });
+  }
+
+  private startBalanceWatchers(
+    strategyType: StrategyType,
+    exchange: string,
+    params: StrategyRuntimeSession['params'],
+  ): void {
+    if (strategyType !== 'dualAccountVolume') {
+      return;
+    }
+
+    const dualParams = params as DualAccountVolumeStrategyParams;
+
+    for (const accountLabel of [
+      dualParams.makerAccountLabel,
+      dualParams.takerAccountLabel,
+    ]) {
+      this.userStreamIngestionService?.startBalanceWatcher({
+        exchange,
+        accountLabel: accountLabel || 'default',
+      });
+      this.balanceStateRefreshService?.registerAccount(
+        exchange,
+        accountLabel || 'default',
+      );
+    }
+  }
+
+  private stopBalanceWatchers(
+    strategyType: StrategyType,
+    exchange: string,
+    params: StrategyRuntimeSession['params'],
+  ): void {
+    if (strategyType !== 'dualAccountVolume') {
+      return;
+    }
+
+    const dualParams = params as DualAccountVolumeStrategyParams;
+
+    for (const accountLabel of [
+      dualParams.makerAccountLabel,
+      dualParams.takerAccountLabel,
+    ]) {
+      this.userStreamIngestionService?.stopBalanceWatcher({
+        exchange,
+        accountLabel: accountLabel || 'default',
+      });
+      this.balanceStateRefreshService?.releaseAccount(
+        exchange,
+        accountLabel || 'default',
+      );
+    }
   }
 
   private stopPrivateOrderWatcher(
@@ -4074,7 +4241,12 @@ export class StrategyService
       return;
     }
 
-    this.privateStreamIngestionService?.stopOrderWatcher({
+    this.userStreamIngestionService?.stopOrderWatcher({
+      exchange,
+      accountLabel: accountLabel || 'default',
+      symbol: pair,
+    });
+    this.userStreamIngestionService?.stopTradeWatcher({
       exchange,
       accountLabel: accountLabel || 'default',
       symbol: pair,
@@ -4313,9 +4485,40 @@ export class StrategyService
       return null;
     }
 
+    const normalizedAccountLabel = accountLabel || 'default';
+    const cachedBase = this.balanceStateCacheService?.getBalance(
+      exchangeName,
+      normalizedAccountLabel,
+      assets.base,
+    );
+    const cachedQuote = this.balanceStateCacheService?.getBalance(
+      exchangeName,
+      normalizedAccountLabel,
+      assets.quote,
+    );
+    const nowMs = Date.now();
+    const cachedFresh =
+      (this.balanceStateCacheService?.isFresh(cachedBase, nowMs) ?? false) &&
+      (this.balanceStateCacheService?.isFresh(cachedQuote, nowMs) ?? false);
+
+    if (cachedFresh) {
+      return {
+        base: new BigNumber(cachedBase.free || 0),
+        quote: new BigNumber(cachedQuote.free || 0),
+        assets,
+      };
+    }
+
     const balance = await this.exchangeConnectorAdapterService?.fetchBalance(
       exchangeName,
       accountLabel,
+    );
+    this.balanceStateCacheService?.applyBalanceSnapshot(
+      exchangeName,
+      normalizedAccountLabel,
+      balance || {},
+      getRFC3339Timestamp(),
+      'rest',
     );
 
     return {

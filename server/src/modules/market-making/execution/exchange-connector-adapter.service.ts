@@ -201,8 +201,28 @@ export class ExchangeConnectorAdapterService {
     return await exchange.watchOrderBook(pair);
   }
 
-  async watchBalance(exchangeName: string): Promise<any> {
-    const exchange = this.exchangeInitService.getExchange(exchangeName);
+  async watchMyTrades(
+    exchangeName: string,
+    pair?: string,
+    accountLabel?: string,
+  ): Promise<any> {
+    const exchange = this.exchangeInitService.getExchange(
+      exchangeName,
+      accountLabel,
+    );
+
+    if (typeof exchange.watchMyTrades !== 'function') {
+      return null;
+    }
+
+    return await exchange.watchMyTrades(pair);
+  }
+
+  async watchBalance(exchangeName: string, accountLabel?: string): Promise<any> {
+    const exchange = this.exchangeInitService.getExchange(
+      exchangeName,
+      accountLabel,
+    );
 
     if (typeof exchange.watchBalance !== 'function') {
       return null;
@@ -221,6 +241,7 @@ export class ExchangeConnectorAdapterService {
     costMin?: number;
     costMax?: number;
     makerFee?: number;
+    takerFee?: number;
   }> {
     const key = this.toMarketKey(exchangeName, pair);
     const cached = this.marketRulesByKey.get(key);
@@ -251,6 +272,9 @@ export class ExchangeConnectorAdapterService {
           costMax: this.toFiniteNumber(market?.limits?.cost?.max),
           makerFee: this.toFiniteNumber(
             market?.maker || exchange?.fees?.trading?.maker,
+          ),
+          takerFee: this.toFiniteNumber(
+            market?.taker || exchange?.fees?.trading?.taker,
           ),
         };
 

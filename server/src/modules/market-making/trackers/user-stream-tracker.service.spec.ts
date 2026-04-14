@@ -1,16 +1,55 @@
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
+import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
-import { PrivateStreamTrackerService } from './private-stream-tracker.service';
+import { UserStreamTrackerService } from './user-stream-tracker.service';
 
-describe('PrivateStreamTrackerService', () => {
+describe('UserStreamTrackerService', () => {
+  it('applies normalized balance events into the balance cache', async () => {
+    const balanceStateCacheService = new BalanceStateCacheService();
+    const service = new UserStreamTrackerService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      balanceStateCacheService,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'maker',
+      kind: 'balance',
+      payload: {
+        asset: 'USDT',
+        free: '100',
+        used: '5',
+        total: '105',
+        source: 'ws',
+      },
+      receivedAt: '2026-04-14T00:00:00.000Z',
+    });
+
+    await service.onTick('2026-04-14T00:00:01.000Z');
+
+    expect(
+      balanceStateCacheService.getBalance('binance', 'maker', 'USDT'),
+    ).toEqual(
+      expect.objectContaining({
+        free: '100',
+        used: '5',
+        total: '105',
+        source: 'ws',
+      }),
+    );
+  });
+
   it('skips non-fill events and still tracks the latest account event', async () => {
     const fillRoutingService = {
       resolveOrderForFill: jest.fn(),
     } as unknown as FillRoutingService;
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       fillRoutingService,
       undefined,
@@ -20,17 +59,15 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'read-only',
-      eventType: 'balance_update',
-      payload: { asset: 'USDT', free: '100' },
+      kind: 'balance',
+      payload: { asset: 'USDT', free: '100', source: 'ws' },
       receivedAt: '2026-02-11T00:00:00.000Z',
     });
 
     await service.onTick('2026-02-11T00:00:01.000Z');
 
     expect(fillRoutingService.resolveOrderForFill).not.toHaveBeenCalled();
-    expect(service.getLatestEvent('binance', 'read-only')?.eventType).toBe(
-      'balance_update',
-    );
+    expect(service.getLatestEvent('binance', 'read-only')?.kind).toBe('balance');
     expect(service.getOrphanedFills()).toEqual([]);
   });
 
@@ -38,7 +75,7 @@ describe('PrivateStreamTrackerService', () => {
     const fillRoutingService = {
       resolveOrderForFill: jest.fn(),
     } as unknown as FillRoutingService;
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       fillRoutingService,
       undefined,
@@ -48,10 +85,11 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'fill',
+      kind: 'trade',
       payload: {
-        status: 'filled',
-        symbol: 'BTC/USDT',
+        pair: 'BTC/USDT',
+        qty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:00.000Z',
     });
@@ -64,7 +102,7 @@ describe('PrivateStreamTrackerService', () => {
 
   it('routes parseable fill events via clientOrderId', async () => {
     const onFill = jest.fn();
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue({
@@ -76,7 +114,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest.fn().mockReturnValue({
@@ -89,11 +127,11 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'trade',
+      kind: 'trade',
       payload: {
         clientOrderId: 'order-1:0',
-        amount: '1',
-        status: 'filled',
+        qty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:00.000Z',
     });
@@ -109,9 +147,152 @@ describe('PrivateStreamTrackerService', () => {
     expect(service.getOrphanedFills()).toEqual([]);
   });
 
+  it('deduplicates repeated normalized trade events for the same fill', async () => {
+    const onFill = jest.fn();
+    const service = new UserStreamTrackerService(
+      undefined,
+      {
+        resolveOrderForFill: jest.fn().mockResolvedValue({
+          orderId: 'order-1',
+          seq: 0,
+          source: 'clientOrderId',
+        }),
+      } as unknown as FillRoutingService,
+      {
+        getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
+        upsertOrder: jest.fn(),
+        markUserStreamActivity: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      {
+        findExecutorByOrderId: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
+          onFill,
+        }),
+      } as unknown as ExecutorRegistry,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      kind: 'trade',
+      payload: {
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'ex-123',
+        clientOrderId: 'order-1:0',
+        fillId: 'fill-1',
+        side: 'buy',
+        qty: '1',
+        cumulativeQty: '1',
+        price: '100',
+        raw: {},
+      },
+      receivedAt: '2026-03-11T00:00:00.000Z',
+    });
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      kind: 'trade',
+      payload: {
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'ex-123',
+        clientOrderId: 'order-1:0',
+        fillId: 'fill-1',
+        side: 'buy',
+        qty: '1',
+        cumulativeQty: '1',
+        price: '100',
+        raw: {},
+      },
+      receivedAt: '2026-03-11T00:00:01.000Z',
+    });
+
+    await service.onTick('2026-03-11T00:00:02.000Z');
+
+    expect(onFill).toHaveBeenCalledTimes(1);
+    expect(service.getDuplicateFillSuppressionCount()).toBe(1);
+  });
+
+  it('suppresses order-derived cumulative fills after the same trade fill was already routed', async () => {
+    const onFill = jest.fn();
+    const service = new UserStreamTrackerService(
+      undefined,
+      {
+        resolveOrderForFill: jest.fn().mockResolvedValue({
+          orderId: 'order-1',
+          seq: 0,
+          source: 'clientOrderId',
+        }),
+      } as unknown as FillRoutingService,
+      {
+        getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
+        upsertOrder: jest.fn(),
+        markUserStreamActivity: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      {
+        findExecutorByOrderId: jest.fn().mockReturnValue({
+          getSession: jest.fn().mockReturnValue({ accountLabel: 'default' }),
+          onFill,
+        }),
+      } as unknown as ExecutorRegistry,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      kind: 'trade',
+      payload: {
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'ex-123',
+        clientOrderId: 'order-1:0',
+        fillId: 'fill-1',
+        side: 'buy',
+        qty: '1',
+        cumulativeQty: '1',
+        price: '100',
+        raw: {},
+      },
+      receivedAt: '2026-03-11T00:00:00.000Z',
+    });
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      kind: 'order',
+      payload: {
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'ex-123',
+        clientOrderId: 'order-1:0',
+        side: 'buy',
+        status: 'filled',
+        cumulativeQty: '1',
+        price: '100',
+        raw: {},
+      },
+      receivedAt: '2026-03-11T00:00:01.000Z',
+    });
+
+    await service.onTick('2026-03-11T00:00:02.000Z');
+
+    expect(onFill).toHaveBeenCalledTimes(1);
+    expect(service.getDuplicateFillSuppressionCount()).toBe(1);
+  });
+
+  it('reports queue depth for diagnostics', () => {
+    const service = new UserStreamTrackerService();
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      kind: 'balance',
+      payload: { asset: 'USDT', free: '100', source: 'ws' },
+      receivedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    expect(service.getQueueDepth()).toBeGreaterThanOrEqual(1);
+  });
+
   it('routes via exchangeOrderId tracker fallback when fill resolution returns null', async () => {
     const onFill = jest.fn();
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue(null),
@@ -131,7 +312,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -144,11 +325,12 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: 'ex-123',
-        amount: '1',
         status: 'filled',
+        cumulativeQty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:02.000Z',
     });
@@ -166,7 +348,7 @@ describe('PrivateStreamTrackerService', () => {
   });
 
   it('records orphaned fills when routing cannot resolve an order', async () => {
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue(null),
@@ -174,7 +356,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue(undefined),
@@ -189,13 +371,13 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'fill',
+      kind: 'trade',
       payload: {
         clientOrderId: 'legacy-client-oid',
         exchangeOrderId: 'ex-missing',
-        symbol: 'BTC/USDT',
-        amount: '1',
-        status: 'filled',
+        pair: 'BTC/USDT',
+        qty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:04.000Z',
     });
@@ -216,7 +398,7 @@ describe('PrivateStreamTrackerService', () => {
   });
 
   it('records orphaned fills when the executor cannot be found', async () => {
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue({
@@ -228,7 +410,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest.fn().mockReturnValue(undefined),
@@ -238,11 +420,11 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'fill',
+      kind: 'trade',
       payload: {
         clientOrderId: 'order-1:0',
-        amount: '1',
-        status: 'filled',
+        qty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:06.000Z',
     });
@@ -258,7 +440,7 @@ describe('PrivateStreamTrackerService', () => {
   });
 
   it('caps orphaned fills at 100 entries and evicts the oldest', async () => {
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue(null),
@@ -266,7 +448,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue(undefined),
@@ -277,13 +459,13 @@ describe('PrivateStreamTrackerService', () => {
       service.queueAccountEvent({
         exchange: 'binance',
         accountLabel: 'default',
-        eventType: 'fill',
+        kind: 'trade',
         payload: {
           clientOrderId: `legacy-${index}`,
           exchangeOrderId: `ex-${index}`,
-          symbol: 'BTC/USDT',
-          amount: '1',
-          status: 'filled',
+          pair: 'BTC/USDT',
+          qty: '1',
+          raw: {},
         },
         receivedAt: `2026-03-11T00:00:${String(index).padStart(2, '0')}.000Z`,
       });
@@ -302,7 +484,7 @@ describe('PrivateStreamTrackerService', () => {
 
   it('rejects fills that cross account boundaries', async () => {
     const onFill = jest.fn();
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue({
@@ -314,7 +496,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest.fn().mockReturnValue({
@@ -331,12 +513,13 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'account-A',
-      eventType: 'fill',
+      kind: 'trade',
       payload: {
         clientOrderId: 'order-1:0',
         exchangeOrderId: 'ex-1',
-        symbol: 'BTC/USDT',
-        status: 'filled',
+        pair: 'BTC/USDT',
+        qty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:08.000Z',
     });
@@ -356,7 +539,7 @@ describe('PrivateStreamTrackerService', () => {
 
   it('updates tracked order status when fill events change exchange order state', async () => {
     const upsertOrder = jest.fn();
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue({
@@ -379,7 +562,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder,
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -393,11 +576,12 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: 'ex-1',
         clientOrderId: 'legacy-client-oid',
         status: 'closed',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:10.000Z',
     });
@@ -415,7 +599,7 @@ describe('PrivateStreamTrackerService', () => {
 
   it('processes queued fill events in FIFO order and keeps the latest event by account', async () => {
     const processed: string[] = [];
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockImplementation(async (input) => ({
@@ -427,7 +611,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest
@@ -445,13 +629,13 @@ describe('PrivateStreamTrackerService', () => {
       service.queueAccountEvent({
         exchange: 'binance',
         accountLabel: 'default',
-        eventType: 'fill',
+        kind: 'trade',
         payload: {
           clientOrderId: `order-${index}:0`,
           exchangeOrderId: `ex-${index}`,
-          symbol: 'BTC/USDT',
-          amount: '1',
-          status: 'filled',
+          pair: 'BTC/USDT',
+          qty: '1',
+          raw: {},
         },
         receivedAt: `2026-03-11T00:00:${String(index).padStart(2, '0')}.000Z`,
       });
@@ -475,7 +659,7 @@ describe('PrivateStreamTrackerService', () => {
 
   it('converts cumulative filled updates into incremental fill qty before routing', async () => {
     const onFill = jest.fn();
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue(null),
@@ -496,7 +680,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -509,11 +693,12 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: 'ex-123',
         status: 'partially_filled',
-        filled: '2',
+        cumulativeQty: '2',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:03.000Z',
     });
@@ -531,7 +716,7 @@ describe('PrivateStreamTrackerService', () => {
 
   it('drops duplicate cumulative filled updates that do not advance filled qty', async () => {
     const onFill = jest.fn();
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue(null),
@@ -552,7 +737,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -565,11 +750,12 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: 'ex-123',
         status: 'partially_filled',
-        filled: '2',
+        cumulativeQty: '2',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:03.000Z',
     });
@@ -582,7 +768,7 @@ describe('PrivateStreamTrackerService', () => {
   it('routes only positive deltas across a cumulative fill progression', async () => {
     const onFill = jest.fn();
     let cumulativeFilledQty = '0';
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue(null),
@@ -606,7 +792,7 @@ describe('PrivateStreamTrackerService', () => {
           cumulativeFilledQty =
             order.cumulativeFilledQty || cumulativeFilledQty;
         }),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -619,33 +805,36 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: 'ex-123',
         status: 'partially_filled',
-        filled: '1',
+        cumulativeQty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:01.000Z',
     });
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: 'ex-123',
         status: 'partially_filled',
-        filled: '2',
+        cumulativeQty: '2',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:02.000Z',
     });
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: 'ex-123',
         status: 'partially_filled',
-        filled: '2',
+        cumulativeQty: '2',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:03.000Z',
     });
@@ -670,7 +859,7 @@ describe('PrivateStreamTrackerService', () => {
   });
 
   it('tracks lastRecvTime when account events are queued', () => {
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       undefined,
       undefined,
@@ -680,8 +869,8 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'balance_update',
-      payload: { asset: 'USDT', free: '100' },
+      kind: 'balance',
+      payload: { asset: 'USDT', free: '100', source: 'ws' },
       receivedAt: '2026-02-11T00:00:00.000Z',
     });
 
@@ -692,7 +881,7 @@ describe('PrivateStreamTrackerService', () => {
   });
 
   it('reports silent when no events received within threshold', () => {
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       undefined,
       undefined,
@@ -704,8 +893,8 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'balance_update',
-      payload: { asset: 'USDT', free: '100' },
+      kind: 'balance',
+      payload: { asset: 'USDT', free: '100', source: 'ws' },
       receivedAt: '2026-02-11T00:00:00.000Z',
     });
 
@@ -714,7 +903,7 @@ describe('PrivateStreamTrackerService', () => {
 
   it('processes events immediately without waiting for tick', async () => {
     const onFill = jest.fn();
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue({
@@ -726,7 +915,7 @@ describe('PrivateStreamTrackerService', () => {
       {
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         findExecutorByOrderId: jest.fn().mockReturnValue({
@@ -739,11 +928,11 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'trade',
+      kind: 'trade',
       payload: {
         clientOrderId: 'order-1:0',
-        amount: '1',
-        status: 'filled',
+        qty: '1',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:00.000Z',
     });
@@ -760,7 +949,7 @@ describe('PrivateStreamTrackerService', () => {
 
   it('ignores cumulative filled updates that move backwards', async () => {
     const onFill = jest.fn();
-    const service = new PrivateStreamTrackerService(
+    const service = new UserStreamTrackerService(
       undefined,
       {
         resolveOrderForFill: jest.fn().mockResolvedValue(null),
@@ -781,7 +970,7 @@ describe('PrivateStreamTrackerService', () => {
           updatedAt: '2026-03-11T00:00:00.000Z',
         }),
         upsertOrder: jest.fn(),
-        markPrivateStreamActivity: jest.fn(),
+        markUserStreamActivity: jest.fn(),
       } as unknown as ExchangeOrderTrackerService,
       {
         getExecutor: jest.fn().mockReturnValue({
@@ -794,11 +983,12 @@ describe('PrivateStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      eventType: 'execution',
+      kind: 'order',
       payload: {
         exchangeOrderId: 'ex-123',
         status: 'partially_filled',
-        filled: '1.5',
+        cumulativeQty: '1.5',
+        raw: {},
       },
       receivedAt: '2026-03-11T00:00:03.000Z',
     });

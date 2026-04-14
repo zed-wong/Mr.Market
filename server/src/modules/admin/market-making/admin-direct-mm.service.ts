@@ -3,6 +3,7 @@ import {
   HttpException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -23,6 +24,8 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CampaignService } from 'src/modules/campaign/campaign.service';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
+import { BalanceStateRefreshService } from 'src/modules/market-making/balance-state/balance-state-refresh.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
@@ -33,7 +36,9 @@ import {
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
-import { PrivateStreamTrackerService } from 'src/modules/market-making/trackers/private-stream-tracker.service';
+import { UserStreamIngestionService } from 'src/modules/market-making/trackers/user-stream-ingestion.service';
+import { UserStreamTrackerService } from 'src/modules/market-making/trackers/user-stream-tracker.service';
+import { UserStreamCapabilityService } from 'src/modules/market-making/user-stream';
 import { mapStrategySnapshotToMarketMakingOrderFields } from 'src/modules/market-making/user-orders/market-making-order-snapshot.utils';
 import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
@@ -94,10 +99,18 @@ export class AdminDirectMarketMakingService {
     private readonly strategyService: StrategyService,
     private readonly strategyIntentStoreService: StrategyIntentStoreService,
     private readonly exchangeOrderTrackerService: ExchangeOrderTrackerService,
-    private readonly privateStreamTrackerService: PrivateStreamTrackerService,
+    private readonly userStreamTrackerService: UserStreamTrackerService,
     private readonly orderBookTrackerService: OrderBookTrackerService,
     private readonly campaignService: CampaignService,
     private readonly configService: ConfigService,
+    @Optional()
+    private readonly userStreamIngestionService?: UserStreamIngestionService,
+    @Optional()
+    private readonly balanceStateCacheService?: BalanceStateCacheService,
+    @Optional()
+    private readonly balanceStateRefreshService?: BalanceStateRefreshService,
+    @Optional()
+    private readonly userStreamCapabilityService?: UserStreamCapabilityService,
   ) {}
 
   async directStart(
@@ -449,7 +462,7 @@ export class AdminDirectMarketMakingService {
         : null;
     const privateEvent =
       controllerType === 'pureMarketMaking'
-        ? this.privateStreamTrackerService.getLatestEvent(
+        ? this.userStreamTrackerService.getLatestEvent(
             order.exchangeName,
             primaryAccountLabel,
           )
@@ -471,6 +484,7 @@ export class AdminDirectMarketMakingService {
       used: string;
       total: string;
       accountLabel?: string;
+      source?: string;
     }> = [];
 
     const [baseAsset, quoteAsset] = this.parsePair(order.pair);
@@ -495,20 +509,97 @@ export class AdminDirectMarketMakingService {
       accountsToFetch.push({ label: takerAccountLabel, tag: 'taker' });
     }
 
-    for (const { label, tag } of accountsToFetch) {
-      try {
-        const exchange = this.exchangeInitService.getExchange(
+    const balanceCacheStatus = accountsToFetch.flatMap(({ label, tag }) =>
+      assets.map((asset) => {
+        const cached = this.balanceStateCacheService?.getBalance(
           order.exchangeName,
           label,
+          asset,
         );
-        const balance = await exchange.fetchBalance();
+
+        return {
+          asset,
+          accountLabel: tag || label,
+          source: cached?.source || 'missing',
+          freshnessTimestamp: cached?.freshnessTimestamp || null,
+          stale: this.balanceStateCacheService?.isStale(cached) ?? true,
+        };
+      }),
+    );
+    const userStreamCapabilities = accountsToFetch.map(({ label, tag }) => ({
+      accountLabel: tag || label,
+      ...this.userStreamCapabilityService?.getCapabilities(
+        order.exchangeName,
+        label,
+      ),
+    }));
+    const streamHealth = accountsToFetch.map(({ label, tag }) => ({
+      accountLabel: tag || label,
+      ...this.userStreamIngestionService?.getWatcherState({
+        exchange: order.exchangeName,
+        accountLabel: label,
+        symbol: order.pair,
+      }),
+      state:
+        this.balanceStateRefreshService?.getHealthState(order.exchangeName, label) ||
+        'silent',
+      lastEventAt:
+        this.userStreamTrackerService.getLatestEvent(order.exchangeName, label)
+          ?.receivedAt || null,
+      lastBalanceRefreshAt:
+        this.balanceStateRefreshService?.getLastRefreshTime(
+          order.exchangeName,
+          label,
+        ) || null,
+    }));
+    const userStreamRuntime = {
+      activeWatcherCount:
+        this.userStreamIngestionService?.getActiveWatcherCount() || 0,
+      queueDepth: this.userStreamTrackerService.getQueueDepth(),
+      duplicateFillSuppressionCount:
+        this.userStreamTrackerService.getDuplicateFillSuppressionCount(),
+    };
+
+    for (const { label, tag } of accountsToFetch) {
+      try {
+        let balance: Record<string, any> | undefined;
+        const isCacheFresh = assets.every((asset) => {
+          const cached = this.balanceStateCacheService?.getBalance(
+            order.exchangeName,
+            label,
+            asset,
+          );
+
+          return this.balanceStateCacheService?.isFresh(cached) ?? false;
+        });
+
+        if (!isCacheFresh) {
+          const exchange = this.exchangeInitService.getExchange(
+            order.exchangeName,
+            label,
+          );
+          balance = await exchange.fetchBalance();
+          this.balanceStateCacheService?.applyBalanceSnapshot(
+            order.exchangeName,
+            label,
+            balance || {},
+            getRFC3339Timestamp(),
+            'rest',
+          );
+        }
 
         for (const asset of assets) {
+          const cached = this.balanceStateCacheService?.getBalance(
+            order.exchangeName,
+            label,
+            asset,
+          );
           inventoryBalances.push({
             asset,
-            free: String(balance?.free?.[asset] ?? 0),
-            used: String(balance?.used?.[asset] ?? 0),
-            total: String(balance?.total?.[asset] ?? 0),
+            free: String(cached?.free ?? balance?.free?.[asset] ?? 0),
+            used: String(cached?.used ?? balance?.used?.[asset] ?? 0),
+            total: String(cached?.total ?? balance?.total?.[asset] ?? 0),
+            source: cached?.source || (isCacheFresh ? 'unknown' : 'rest'),
             ...(tag ? { accountLabel: tag } : {}),
           });
         }
@@ -620,6 +711,10 @@ export class AdminDirectMarketMakingService {
       orderConfig,
       spread,
       inventoryBalances,
+      balanceCacheStatus,
+      userStreamCapabilities,
+      userStreamRuntime,
+      streamHealth,
       stale: executorHealth === 'stale',
     };
   }

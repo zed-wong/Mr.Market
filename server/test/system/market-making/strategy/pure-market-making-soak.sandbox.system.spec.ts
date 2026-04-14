@@ -178,7 +178,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
         fillInjections: FILL_INJECT_TICKS.size,
         errorTypes: ERROR_TYPES,
         exchange: config!.exchangeId,
-        symbol: config!.symbol,
+        pair: config!.symbol,
       },
     );
 
@@ -308,19 +308,19 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
         const buyOrder = openOrders.find((o) => o.side === 'buy');
 
         if (buyOrder) {
-          helper.getPrivateStreamTrackerService().queueAccountEvent({
+          helper.getUserStreamTrackerService().queueAccountEvent({
             exchange: order.exchangeName,
             accountLabel: config!.accountLabel,
-            eventType: 'watch_orders',
+            kind: 'order',
             payload: {
-              id: buyOrder.exchangeOrderId,
+              exchangeOrderId: buyOrder.exchangeOrderId,
               clientOrderId: buyOrder.clientOrderId,
-              symbol: order.pair,
+              pair: order.pair,
               side: buyOrder.side,
               price: buyOrder.price,
-              filled: buyOrder.qty,
-              amount: buyOrder.qty,
+              cumulativeQty: buyOrder.qty,
               status: 'closed',
+              raw: {},
             },
             receivedAt: new Date().toISOString(),
           });

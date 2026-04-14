@@ -176,7 +176,7 @@ export class PureMarketMakingStrategyDto {
   exchangeName: string;
 
   @ApiPropertyOptional({
-    description: 'Exchange account label used for private-stream routing',
+    description: 'Exchange account label used for user-stream routing',
     example: 'default',
   })
   accountLabel?: string;
@@ -523,12 +523,12 @@ export class ExecuteDualAccountVolumeStrategyDto {
   pricePushRate: number;
 
   @ApiPropertyOptional({
-    description: 'The first maker order side',
+    description: 'The first maker order side, or inventory_balance to choose from live balances',
     example: 'buy',
   })
   @IsOptional()
-  @IsEnum(Side)
-  postOnlySide?: Side;
+  @IsIn([...Side, 'inventory_balance'])
+  postOnlySide?: Side | 'inventory_balance';
 
   @ApiPropertyOptional({
     description:

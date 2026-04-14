@@ -7,19 +7,13 @@ import {
 import BigNumber from 'bignumber.js';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
+import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
+import { UserStreamEvent } from '../user-stream';
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
-
-type PrivateStreamEvent = {
-  exchange: string;
-  accountLabel: string;
-  eventType: string;
-  payload: Record<string, unknown>;
-  receivedAt: string;
-};
 
 type RoutedFillCandidate = {
   exchange: string;
@@ -47,14 +41,17 @@ type OrphanedFillEvent = RoutedFillCandidate & {
 };
 
 @Injectable()
-export class PrivateStreamTrackerService
+export class UserStreamTrackerService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
-  private readonly logger = new CustomLogger(PrivateStreamTrackerService.name);
-  private readonly queue: PrivateStreamEvent[] = [];
-  private readonly latestByKey = new Map<string, PrivateStreamEvent>();
+  private readonly logger = new CustomLogger(UserStreamTrackerService.name);
+  private readonly queue: UserStreamEvent[] = [];
+  private readonly latestByKey = new Map<string, UserStreamEvent>();
   private readonly orphanedFills: OrphanedFillEvent[] = [];
   private readonly lastRecvTimeByKey = new Map<string, number>();
+  private readonly latestFillFingerprintByOrder = new Map<string, string>();
+  private readonly latestTradeCumulativeQtyByOrder = new Map<string, string>();
+  private duplicateFillSuppressionCount = 0;
   private drainScheduled = false;
   private drainInProgress = false;
 
@@ -67,18 +64,16 @@ export class PrivateStreamTrackerService
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
     @Optional()
     private readonly executorRegistry?: ExecutorRegistry,
+    @Optional()
+    private readonly balanceStateCacheService?: BalanceStateCacheService,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.clockTickCoordinatorService?.register(
-      'private-stream-tracker',
-      this,
-      2,
-    );
+    this.clockTickCoordinatorService?.register('user-stream-tracker', this, 2);
   }
 
   async onModuleDestroy(): Promise<void> {
-    this.clockTickCoordinatorService?.unregister('private-stream-tracker');
+    this.clockTickCoordinatorService?.unregister('user-stream-tracker');
   }
 
   async start(): Promise<void> {
@@ -89,19 +84,22 @@ export class PrivateStreamTrackerService
     this.queue.length = 0;
     this.orphanedFills.length = 0;
     this.lastRecvTimeByKey.clear();
+    this.latestFillFingerprintByOrder.clear();
+    this.latestTradeCumulativeQtyByOrder.clear();
+    this.duplicateFillSuppressionCount = 0;
   }
 
   async health(): Promise<boolean> {
     return true;
   }
 
-  queueAccountEvent(event: PrivateStreamEvent): void {
+  queueAccountEvent(event: UserStreamEvent): void {
     this.queue.push(event);
     this.lastRecvTimeByKey.set(
       this.toKey(event.exchange, event.accountLabel),
       Date.now(),
     );
-    this.exchangeOrderTrackerService?.markPrivateStreamActivity(
+    this.exchangeOrderTrackerService?.markUserStreamActivity(
       event.exchange,
       event.accountLabel,
     );
@@ -111,7 +109,7 @@ export class PrivateStreamTrackerService
   getLatestEvent(
     exchange: string,
     accountLabel: string,
-  ): PrivateStreamEvent | undefined {
+  ): UserStreamEvent | undefined {
     return this.latestByKey.get(this.toKey(exchange, accountLabel));
   }
 
@@ -135,6 +133,14 @@ export class PrivateStreamTrackerService
     return [...this.orphanedFills];
   }
 
+  getQueueDepth(): number {
+    return this.queue.length;
+  }
+
+  getDuplicateFillSuppressionCount(): number {
+    return this.duplicateFillSuppressionCount;
+  }
+
   async onTick(_: string): Promise<void> {
     await this.flushPendingEvents();
   }
@@ -154,10 +160,21 @@ export class PrivateStreamTrackerService
           continue;
         }
 
-        this.latestByKey.set(
-          this.toKey(event.exchange, event.accountLabel),
-          event,
-        );
+        this.latestByKey.set(this.toKey(event.exchange, event.accountLabel), event);
+
+        if (event.kind === 'balance') {
+          this.balanceStateCacheService?.applyBalanceUpdate({
+            exchange: event.exchange,
+            accountLabel: event.accountLabel,
+            asset: event.payload.asset,
+            free: event.payload.free,
+            used: event.payload.used,
+            total: event.payload.total,
+            source: event.payload.source,
+            freshnessTimestamp: event.receivedAt,
+          });
+          continue;
+        }
 
         const fill = this.extractFillCandidate(event);
 
@@ -187,6 +204,10 @@ export class PrivateStreamTrackerService
   }
 
   private async routeFillCandidate(fill: RoutedFillCandidate): Promise<void> {
+    if (this.isDuplicateFill(fill)) {
+      return;
+    }
+
     const resolution = await this.fillRoutingService?.resolveOrderForFill({
       clientOrderId: fill.clientOrderId,
       exchangeOrderId: fill.exchangeOrderId,
@@ -209,17 +230,13 @@ export class PrivateStreamTrackerService
       (trackedOrder
         ? this.executorRegistry?.getExecutor(fill.exchange, trackedOrder.pair)
         : undefined);
-    // Derive session from the actual executor that will handle the fill:
-    // - Primary path: try resolvedExecutor first, fall back to executor (same executor when resolution exists)
-    // - Early fill path (!resolution): use executor with trackedOrder.orderId
     const resolvedSession = resolution?.orderId
       ? resolvedExecutor?.getSession(resolution.orderId) ||
         executor?.getSession(resolution.orderId)
       : trackedOrder?.orderId && executor
-      ? executor.getSession(trackedOrder.orderId)
-      : undefined;
+        ? executor.getSession(trackedOrder.orderId)
+        : undefined;
 
-    // Guard: prevent state mutation when account labels don't match
     if (
       resolvedSession?.accountLabel &&
       resolvedSession.accountLabel !== fill.accountLabel
@@ -231,7 +248,6 @@ export class PrivateStreamTrackerService
         },
         'account_boundary_violation',
       );
-
       return;
     }
 
@@ -260,13 +276,11 @@ export class PrivateStreamTrackerService
         clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
         ...routedFill,
       });
-
       return;
     }
 
     if (!resolution) {
       this.recordOrphanedFill(fill, 'unresolved_order');
-
       return;
     }
 
@@ -278,7 +292,6 @@ export class PrivateStreamTrackerService
         },
         'missing_executor',
       );
-
       return;
     }
 
@@ -290,11 +303,9 @@ export class PrivateStreamTrackerService
     });
   }
 
-  private extractFillCandidate(
-    event: PrivateStreamEvent,
-  ): RoutedFillCandidate | null {
-    const eventType = String(event.eventType || '').toLowerCase();
-    const payload = event.payload || {};
+  private extractFillCandidate(event: UserStreamEvent): RoutedFillCandidate | null {
+    const eventType = event.kind.toLowerCase();
+    const payload = this.normalizeEventPayload(event);
     const status = this.normalizeStatus(
       this.pickString(payload, [
         'status',
@@ -339,13 +350,18 @@ export class PrivateStreamTrackerService
       return null;
     }
 
-    const qty = this.pickNumberField(payload, [
+    const cumulativeQty = this.pickNumberString(payload, [
+      'cumulativeQty',
       'filled',
+    ]);
+    const deltaQty = this.pickNumberString(payload, [
       'fillQty',
       'amount',
       'qty',
       'trade.amount',
     ]);
+    const qtyKind = deltaQty ? 'delta' : cumulativeQty ? 'cumulative' : undefined;
+    const qtyValue = deltaQty || cumulativeQty;
 
     return {
       exchange: event.exchange,
@@ -369,13 +385,32 @@ export class PrivateStreamTrackerService
         'average',
         'trade.price',
       ]),
-      qty: qty?.value,
-      cumulativeQty: qty?.kind === 'cumulative' ? qty.value : undefined,
-      qtyKind: qty?.kind,
+      qty: qtyValue,
+      cumulativeQty,
+      qtyKind,
       status,
       receivedAt: event.receivedAt,
       payload,
     };
+  }
+
+  private normalizeEventPayload(event: UserStreamEvent): Record<string, unknown> {
+    if (event.kind === 'order' || event.kind === 'trade') {
+      return {
+        ...(event.payload.raw || {}),
+        pair: event.payload.pair,
+        exchangeOrderId: event.payload.exchangeOrderId,
+        clientOrderId: event.payload.clientOrderId,
+        side: event.payload.side,
+        price: event.payload.price,
+        cumulativeQty: event.payload.cumulativeQty,
+        status: event.kind === 'order' ? event.payload.status : undefined,
+        fillId: event.kind === 'trade' ? event.payload.fillId : undefined,
+        qty: event.kind === 'trade' ? event.payload.qty : undefined,
+      };
+    }
+
+    return { ...event.payload };
   }
 
   private normalizeStatus(
@@ -443,7 +478,10 @@ export class PrivateStreamTrackerService
     for (const key of keys) {
       const value = this.getValue(payload, key);
       const normalizedKey = key.toLowerCase();
-      const kind = normalizedKey === 'filled' ? 'cumulative' : 'delta';
+      const kind =
+        normalizedKey === 'filled' || normalizedKey === 'cumulativeqty'
+          ? 'cumulative'
+          : 'delta';
 
       if (typeof value === 'string' && value.trim().length > 0) {
         return {
@@ -466,6 +504,7 @@ export class PrivateStreamTrackerService
   private normalizeFillForDispatch(
     fill: RoutedFillCandidate,
     trackedOrder?: {
+      orderId?: string;
       clientOrderId?: string;
       side: 'buy' | 'sell';
       price: string;
@@ -523,6 +562,65 @@ export class PrivateStreamTrackerService
       previousValue.isFinite() &&
       currentValue.isGreaterThan(previousValue)
     );
+  }
+
+  private isDuplicateFill(fill: RoutedFillCandidate): boolean {
+    const orderKey = [
+      fill.exchange,
+      fill.accountLabel,
+      fill.exchangeOrderId || '',
+      fill.clientOrderId || '',
+    ].join(':');
+
+    if (orderKey === ':::') {
+      return false;
+    }
+
+    const fingerprint = [
+      fill.fillId || '',
+      fill.cumulativeQty || '',
+      fill.qty || '',
+    ].join(':');
+    const previous = this.latestFillFingerprintByOrder.get(orderKey);
+
+    if (previous === fingerprint) {
+      this.duplicateFillSuppressionCount += 1;
+      return true;
+    }
+
+    if (
+      fill.status &&
+      fill.cumulativeQty &&
+      this.wasTradeFillAlreadyObserved(orderKey, fill.cumulativeQty)
+    ) {
+      this.duplicateFillSuppressionCount += 1;
+      return true;
+    }
+
+    this.latestFillFingerprintByOrder.set(orderKey, fingerprint);
+
+    if (!fill.status && fill.cumulativeQty) {
+      this.latestTradeCumulativeQtyByOrder.set(orderKey, fill.cumulativeQty);
+    }
+
+    return false;
+  }
+
+  private wasTradeFillAlreadyObserved(
+    orderKey: string,
+    cumulativeQty: string,
+  ): boolean {
+    const previous = this.latestTradeCumulativeQtyByOrder.get(orderKey);
+
+    if (!previous) {
+      return false;
+    }
+
+    try {
+      return new BigNumber(previous).isGreaterThanOrEqualTo(cumulativeQty);
+    } catch {
+      return false;
+    }
   }
 
   private getValue(payload: Record<string, unknown>, path: string): unknown {

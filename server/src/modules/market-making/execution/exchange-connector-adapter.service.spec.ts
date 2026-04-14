@@ -32,6 +32,7 @@ describe('ExchangeConnectorAdapterService', () => {
         },
         precision: { amount: 4, price: 2 },
         maker: 0.001,
+        taker: 0.002,
       },
     },
   };
@@ -111,10 +112,14 @@ describe('ExchangeConnectorAdapterService', () => {
     );
 
     await service.watchOrderBook('binance', 'BTC/USDT');
-    await service.watchBalance('binance');
+    await service.watchBalance('binance', 'default');
 
     expect(exchange.watchOrderBook).toHaveBeenCalledWith('BTC/USDT');
     expect(exchange.watchBalance).toHaveBeenCalled();
+    expect(exchangeInitService.getExchange).toHaveBeenCalledWith(
+      'binance',
+      'default',
+    );
   });
 
   it('loads trading rules and fetches balances through adapter', async () => {
@@ -131,6 +136,7 @@ describe('ExchangeConnectorAdapterService', () => {
       costMin: 10,
       costMax: 500,
       makerFee: 0.001,
+      takerFee: 0.002,
     });
     await service.fetchBalance('binance');
 

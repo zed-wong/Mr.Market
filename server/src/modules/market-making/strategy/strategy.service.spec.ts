@@ -2192,15 +2192,77 @@ describe('StrategyService', () => {
       '2026-03-11T00:00:00.000Z',
     );
 
-    expect(actions).toEqual([
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toEqual(
       expect.objectContaining({
-        qty: '1',
         accountLabel: 'maker',
+        qty: '1.000998',
         metadata: expect.objectContaining({
           makerAccountLabel: 'maker',
           takerAccountLabel: 'taker',
           requestedQty: '2',
-          effectiveQty: '1',
+          effectiveQty: '1.000998',
+          makerDelayMs: 250,
+        }),
+      }),
+    );
+    jest.restoreAllMocks();
+  });
+
+  it('uses maker+taker fee as the dual-account capacity buffer', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.loadTradingRules.mockResolvedValue({
+      amountMin: 0.001,
+      costMin: 10,
+      makerFee: 0.001,
+      takerFee: 0.002,
+    });
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 10, USDT: 100.3 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 10, USDT: 1000 },
+      });
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 2,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        qty: '0.999991',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          requestedQty: '2',
+          effectiveQty: '0.999991',
         }),
       }),
     ]);
@@ -2498,6 +2560,61 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
+    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(2);
+    jest.restoreAllMocks();
+  });
+
+  it('reuses one dual-account balance snapshot when preferred side falls back to the opposite side', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 1, USDT: 10 } }
+          : { free: { BTC: 0, USDT: 1000 } },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          sideReason: 'fallback_side_tradable',
+          fallbackReason: 'preferred_side_not_tradable',
+        }),
+      }),
+    ]);
+    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(2);
     jest.restoreAllMocks();
   });
 
@@ -2646,13 +2763,15 @@ describe('StrategyService', () => {
 
     expect(actions).toEqual([
       expect.objectContaining({
-        side: 'sell',
-        price: '100.5',
+        accountLabel: 'maker',
+        side: 'buy',
+        price: '101.6',
         qty: '7.5',
         metadata: expect.objectContaining({
           activeHours: undefined,
           buyBias: 0.7,
           makerDelayMs: 300,
+          effectiveQty: '7.5',
         }),
       }),
     ]);

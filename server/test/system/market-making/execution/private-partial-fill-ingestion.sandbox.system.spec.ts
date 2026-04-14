@@ -63,7 +63,7 @@ describeSandbox('Private partial-fill ingestion parity (system)', () => {
     log.step('waiting for watchOrders subscription');
     await pollUntil(
       async () =>
-        helper.getPrivateStreamIngestionService().isWatching({
+        helper.getUserStreamIngestionService().isWatching({
           exchange: order.exchangeName,
           accountLabel: config!.accountLabel,
           symbol: order.pair,
@@ -105,19 +105,19 @@ describeSandbox('Private partial-fill ingestion parity (system)', () => {
     });
 
     log.step('queueing deterministic partially_filled private-stream event');
-    helper.getPrivateStreamTrackerService().queueAccountEvent({
+    helper.getUserStreamTrackerService().queueAccountEvent({
       exchange: order.exchangeName,
       accountLabel: config!.accountLabel,
-      eventType: 'watch_orders',
+      kind: 'order',
       payload: {
-        id: trackedOrder?.exchangeOrderId,
+        exchangeOrderId: trackedOrder?.exchangeOrderId,
         clientOrderId: trackedOrder?.clientOrderId,
-        symbol: order.pair,
+        pair: order.pair,
         side: trackedOrder?.side,
         price: trackedOrder?.price,
-        filled: partialQty,
-        amount: trackedOrder?.qty,
+        cumulativeQty: partialQty,
         status: 'partially_filled',
+        raw: {},
       },
       receivedAt: new Date().toISOString(),
     });

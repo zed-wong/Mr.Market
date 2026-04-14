@@ -108,6 +108,14 @@ export class StrategyIntentStoreService {
     await this.strategyOrderIntentRepository.save(existing);
   }
 
+  async getMixinOrderId(intentId: string): Promise<string | undefined> {
+    const existing = await this.strategyOrderIntentRepository.findOneBy({
+      intentId,
+    });
+
+    return existing?.mixinOrderId ?? undefined;
+  }
+
   async listAll(): Promise<StrategyOrderIntentEntity[]> {
     return await this.strategyOrderIntentRepository.find();
   }

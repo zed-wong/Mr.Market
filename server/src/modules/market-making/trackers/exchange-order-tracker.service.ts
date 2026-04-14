@@ -99,7 +99,7 @@ export class ExchangeOrderTrackerService
 
   private readonly orders = new Map<string, TrackedOrder>();
   private readonly fillLog = new Map<string, FillLogEntry[]>();
-  private readonly lastPrivateStreamActivityByKey = new Map<string, number>();
+  private readonly lastUserStreamActivityByKey = new Map<string, number>();
   private readonly lastPolledAtByOrderKey = new Map<string, number>();
 
   constructor(
@@ -225,8 +225,8 @@ export class ExchangeOrderTrackerService
     return this.getPrunedFillLog(strategyKey, Date.now() - windowMs).length;
   }
 
-  markPrivateStreamActivity(exchange: string, accountLabel: string): void {
-    this.lastPrivateStreamActivityByKey.set(
+  markUserStreamActivity(exchange: string, accountLabel: string): void {
+    this.lastUserStreamActivityByKey.set(
       `${exchange}:${accountLabel}`,
       Date.now(),
     );
@@ -339,12 +339,12 @@ export class ExchangeOrderTrackerService
     }
   }
 
-  private isPrivateStreamHealthy(
+  private isUserStreamHealthy(
     exchange: string,
     accountLabel?: string,
   ): boolean {
     const key = `${exchange}:${accountLabel || 'default'}`;
-    const lastActivity = this.lastPrivateStreamActivityByKey.get(key);
+    const lastActivity = this.lastUserStreamActivityByKey.get(key);
 
     if (lastActivity === undefined) {
       return false;
@@ -363,7 +363,7 @@ export class ExchangeOrderTrackerService
       order.exchangeOrderId,
     );
     const lastPolled = this.lastPolledAtByOrderKey.get(key);
-    const interval = this.isPrivateStreamHealthy(
+    const interval = this.isUserStreamHealthy(
       order.exchange,
       order.accountLabel,
     )

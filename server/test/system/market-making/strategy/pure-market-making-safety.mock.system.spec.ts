@@ -166,6 +166,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       } as any,
       strategyRepo as any,
       undefined,
+      undefined,
       new QuoteExecutorManagerService(),
       exchangeOrderTrackerService,
       {
@@ -180,6 +181,8 @@ describe('Pure market making safety gaps (mock system)', () => {
       strategyMarketDataProviderService as unknown as StrategyMarketDataProviderService,
       executorRegistry,
       strategyIntentStoreService as any,
+      undefined,
+      undefined,
       undefined,
       undefined,
       {

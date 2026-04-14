@@ -125,8 +125,21 @@ describe('AdminDirectMarketMakingService', () => {
       getLiveOrders: jest.fn().mockReturnValue([]),
       getFillCount: jest.fn().mockReturnValue(0),
     };
-    const privateStreamTrackerService = {
+    const userStreamTrackerService = {
       getLatestEvent: jest.fn().mockReturnValue(null),
+      getQueueDepth: jest.fn().mockReturnValue(0),
+      getDuplicateFillSuppressionCount: jest.fn().mockReturnValue(0),
+    };
+    const userStreamIngestionService = {
+      getActiveWatcherCount: jest.fn().mockReturnValue(0),
+      getWatcherState: jest.fn().mockReturnValue({
+        order: false,
+        trade: false,
+        balance: false,
+        orderRefCount: 0,
+        tradeRefCount: 0,
+        balanceRefCount: 0,
+      }),
     };
     const orderBookTrackerService = {
       getOrderBook: jest.fn().mockReturnValue(null),
@@ -143,6 +156,24 @@ describe('AdminDirectMarketMakingService', () => {
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
     };
+    const balanceStateCacheService = {
+      getBalance: jest.fn().mockReturnValue(undefined),
+      applyBalanceSnapshot: jest.fn(),
+      isFresh: jest.fn().mockReturnValue(false),
+      isStale: jest.fn().mockReturnValue(true),
+    };
+    const balanceStateRefreshService = {
+      getHealthState: jest.fn().mockReturnValue('silent'),
+      getLastRefreshTime: jest.fn().mockReturnValue(undefined),
+    };
+    const userStreamCapabilityService = {
+      getCapabilities: jest.fn().mockReturnValue({
+        watchOrders: true,
+        watchMyTrades: true,
+        watchBalance: true,
+        tier: 'full',
+      }),
+    };
 
     const service = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
@@ -158,10 +189,14 @@ describe('AdminDirectMarketMakingService', () => {
       strategyService as any,
       strategyIntentStoreService as any,
       exchangeOrderTrackerService as any,
-      privateStreamTrackerService as any,
+      userStreamTrackerService as any,
       orderBookTrackerService as any,
       campaignService as any,
       configService as any,
+      userStreamIngestionService as any,
+      balanceStateCacheService as any,
+      balanceStateRefreshService as any,
+      userStreamCapabilityService as any,
     );
 
     return {
@@ -180,10 +215,14 @@ describe('AdminDirectMarketMakingService', () => {
       strategyService,
       strategyIntentStoreService,
       exchangeOrderTrackerService,
-      privateStreamTrackerService,
+      userStreamTrackerService,
+      userStreamIngestionService,
       orderBookTrackerService,
       campaignService,
       configService,
+      balanceStateCacheService,
+      balanceStateRefreshService,
+      userStreamCapabilityService,
     };
   };
 
@@ -941,7 +980,8 @@ describe('AdminDirectMarketMakingService', () => {
       strategyIntentStoreService,
       exchangeOrderTrackerService,
       strategyService,
-      privateStreamTrackerService,
+      userStreamTrackerService,
+      userStreamIngestionService,
     } = buildService();
 
     marketMakingRepository.findOne.mockResolvedValue({
@@ -982,9 +1022,33 @@ describe('AdminDirectMarketMakingService', () => {
     expect(strategyIntentStoreService.getQueueState).toHaveBeenCalledWith(
       'admin-user-order-2-dualAccountVolume',
     );
-    expect(privateStreamTrackerService.getLatestEvent).not.toHaveBeenCalled();
+    expect(userStreamTrackerService.getLatestEvent).toHaveBeenCalledTimes(2);
+    expect(userStreamIngestionService.getWatcherState).toHaveBeenCalledTimes(
+      2,
+    );
     expect(result.controllerType).toBe('dualAccountVolume');
     expect(result.privateStreamEventAt).toBeNull();
+    expect(result.userStreamRuntime).toEqual({
+      activeWatcherCount: 0,
+      queueDepth: 0,
+      duplicateFillSuppressionCount: 0,
+    });
+    expect(result.streamHealth).toEqual([
+      expect.objectContaining({
+        accountLabel: 'maker',
+        state: 'silent',
+        order: false,
+        trade: false,
+        balance: false,
+      }),
+      expect.objectContaining({
+        accountLabel: 'taker',
+        state: 'silent',
+        order: false,
+        trade: false,
+        balance: false,
+      }),
+    ]);
     expect(result.orderConfig).toEqual({
       orderAmount: '5',
       bidSpread: null,
@@ -1133,7 +1197,8 @@ describe('AdminDirectMarketMakingService', () => {
       service,
       marketMakingRepository,
       executorRegistry,
-      privateStreamTrackerService,
+      userStreamTrackerService,
+      userStreamIngestionService,
       exchangeOrderTrackerService,
       strategyService,
       orderBookTrackerService,
@@ -1161,9 +1226,22 @@ describe('AdminDirectMarketMakingService', () => {
         nextRunAtMs: Date.now() + 5000,
       }),
     });
-    privateStreamTrackerService.getLatestEvent.mockReturnValue({
+    userStreamTrackerService.getLatestEvent.mockReturnValue({
       receivedAt: '2026-04-01T00:00:02.000Z',
     });
+    userStreamIngestionService.getActiveWatcherCount.mockReturnValue(3);
+    userStreamIngestionService.getWatcherState.mockReturnValue({
+      order: true,
+      trade: true,
+      balance: true,
+      orderRefCount: 1,
+      tradeRefCount: 1,
+      balanceRefCount: 1,
+    });
+    userStreamTrackerService.getQueueDepth.mockReturnValue(2);
+    userStreamTrackerService.getDuplicateFillSuppressionCount.mockReturnValue(
+      4,
+    );
     exchangeOrderTrackerService.getOpenOrders.mockReturnValue([]);
     strategyService.getLatestIntentsForStrategy.mockReturnValue([]);
     orderBookTrackerService.getOrderBook.mockReturnValue({
@@ -1183,6 +1261,21 @@ describe('AdminDirectMarketMakingService', () => {
     expect(result.executorHealth).toBe('active');
     expect(result.runtimeState).toBe('active');
     expect(result.accountLabel).toBe('desk-1');
+    expect(result.userStreamRuntime).toEqual({
+      activeWatcherCount: 3,
+      queueDepth: 2,
+      duplicateFillSuppressionCount: 4,
+    });
+    expect(result.streamHealth).toEqual([
+      expect.objectContaining({
+        accountLabel: 'api-key-1',
+        state: 'silent',
+        order: true,
+        trade: true,
+        balance: true,
+        lastEventAt: '2026-04-01T00:00:02.000Z',
+      }),
+    ]);
     expect(result.orderConfig).toEqual({
       orderAmount: '10',
       bidSpread: null,

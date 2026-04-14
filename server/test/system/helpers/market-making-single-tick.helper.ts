@@ -51,8 +51,8 @@ import { ClockTickCoordinatorService } from 'src/modules/market-making/tick/cloc
 import type { TickComponent } from 'src/modules/market-making/tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
-import { PrivateStreamIngestionService } from 'src/modules/market-making/trackers/private-stream-ingestion.service';
-import { PrivateStreamTrackerService } from 'src/modules/market-making/trackers/private-stream-tracker.service';
+import { UserStreamIngestionService } from 'src/modules/market-making/trackers/user-stream-ingestion.service';
+import { UserStreamTrackerService } from 'src/modules/market-making/trackers/user-stream-tracker.service';
 import { MarketMakingOrderProcessor } from 'src/modules/market-making/user-orders/market-making.processor';
 import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
@@ -131,8 +131,8 @@ export class MarketMakingSingleTickHelper {
   private marketMakingOrderRepository!: Repository<MarketMakingOrder>;
   private moduleRef!: TestingModule;
   private orderBookTrackerService!: OrderBookTrackerService;
-  private privateStreamIngestionService!: PrivateStreamIngestionService;
-  private privateStreamTrackerService!: PrivateStreamTrackerService;
+  private userStreamIngestionService!: UserStreamIngestionService;
+  private userStreamTrackerService!: UserStreamTrackerService;
   private readonly runtimeOrderIds = new Set<string>();
   private strategyDefinitionRepository!: Repository<StrategyDefinition>;
   private strategyIntentExecutionService!: StrategyIntentExecutionService;
@@ -181,12 +181,12 @@ export class MarketMakingSingleTickHelper {
     return this.orderBookTrackerService;
   }
 
-  getPrivateStreamIngestionService(): PrivateStreamIngestionService {
-    return this.privateStreamIngestionService;
+  getUserStreamIngestionService(): UserStreamIngestionService {
+    return this.userStreamIngestionService;
   }
 
-  getPrivateStreamTrackerService(): PrivateStreamTrackerService {
-    return this.privateStreamTrackerService;
+  getUserStreamTrackerService(): UserStreamTrackerService {
+    return this.userStreamTrackerService;
   }
 
   getModuleRef(): TestingModule {
@@ -264,8 +264,8 @@ export class MarketMakingSingleTickHelper {
         MarketMakingOrderProcessor,
         ClockTickCoordinatorService,
         OrderBookTrackerService,
-        PrivateStreamIngestionService,
-        PrivateStreamTrackerService,
+        UserStreamIngestionService,
+        UserStreamTrackerService,
         DualAccountVolumeStrategyController,
         PureMarketMakingStrategyController,
         QuoteExecutorManagerService,
@@ -391,11 +391,11 @@ export class MarketMakingSingleTickHelper {
     this.strategyOrderIntentRepository = this.moduleRef.get(
       getRepositoryToken(StrategyOrderIntentEntity),
     );
-    this.privateStreamIngestionService = this.moduleRef.get(
-      PrivateStreamIngestionService,
+    this.userStreamIngestionService = this.moduleRef.get(
+      UserStreamIngestionService,
     );
-    this.privateStreamTrackerService = this.moduleRef.get(
-      PrivateStreamTrackerService,
+    this.userStreamTrackerService = this.moduleRef.get(
+      UserStreamTrackerService,
     );
 
     this.exchange = await waitForInitializedExchange(
@@ -407,7 +407,7 @@ export class MarketMakingSingleTickHelper {
     for (const component of [
       this.orderBookTrackerService,
       this.exchangeOrderTrackerService,
-      this.privateStreamTrackerService,
+      this.userStreamTrackerService,
       this.moduleRef.get(StrategyService),
     ]) {
       const lifecycleComponent = component as TickComponent & {
@@ -545,7 +545,7 @@ export class MarketMakingSingleTickHelper {
   }
 
   async flushPrivateStreamEvents(): Promise<void> {
-    await this.privateStreamTrackerService.onTick(getRFC3339Timestamp());
+    await this.userStreamTrackerService.onTick(getRFC3339Timestamp());
   }
 
   async forceSessionReadyForNextTick(orderId: string): Promise<void> {
