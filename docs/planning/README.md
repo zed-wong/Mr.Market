@@ -35,7 +35,7 @@ Use dated files, but keep the document role clear.
 - **`2026-04-13-hyperliquid-pancakeswap-volume-strategy.md`**
   Role: active validation checklist for Hyperliquid dual-account volume and PancakeSwap live AMM volume runs
 - **`2026-04-14-hummingbot-like-user-stream-plan.md`**
-  Role: active phased plan for the remaining user-stream migration and runtime follow-up work after the 2026-04-14 dual-account fixes
+  Role: active implementation record for the 2026-04-14 user-stream migration and runtime follow-up work
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**

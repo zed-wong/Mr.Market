@@ -153,7 +153,7 @@ The engine correctly solved multi-tenancy but scoped the executor boundary too n
 | | |
 |---|---|
 | **Hummingbot** | `UserStreamTracker` — dedicated authenticated WebSocket per connector for fills, balance updates, position changes |
-| **Status** | `PrivateStreamIngestionService` exists but is not per-connector or standardized as an interface |
+| **Status** | A normalized `UserStreamIngestionService` now exists, but connector-specific standardization and full parity remain in progress |
 | **Priority** | High |
 
 #### #21 — Trading Rules / Quantization

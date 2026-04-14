@@ -100,13 +100,13 @@ Deferred strategy follow-ups
 
 #### Summary
 
-- Finish the remaining user-stream migration work after the 2026-04-14 runtime fixes.
+- User-stream migration work from the 2026-04-14 runtime plan is complete.
 - Improve account-isolated request scheduling so maker/taker accounts do not block each other unnecessarily.
 - Keep dual-account inventory handling and stream operations observable and safe.
 
 #### Detailed Checklist
 
-- [ ] Work through the remaining items in `docs/planning/2026-04-14-hummingbot-like-user-stream-plan.md`
+- [x] Complete `docs/planning/2026-04-14-hummingbot-like-user-stream-plan.md`
 
 ## Interface
 
