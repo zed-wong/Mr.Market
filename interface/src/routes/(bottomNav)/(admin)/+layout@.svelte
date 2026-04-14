@@ -95,13 +95,24 @@
     {/if}
 
     <dialog bind:this={tokenExpiredDialogEl} class="modal modal-bottom sm:modal-middle">
-        <div class="modal-box">
-            <span class="font-semibold text-lg">{$_("token_expired_title")}</span>
-            <p class="py-3 text-sm text-base-content/70">
+        <div class="modal-box rounded-2xl p-8">
+            <div class="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-5">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 text-primary">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182M2.985 14.652" />
+                </svg>
+            </div>
+            <span class="text-xl font-bold text-base-content">{$_("token_expired_title")}</span>
+            <p class="pt-3 pb-6 text-sm text-base-content/60 leading-relaxed">
                 {$_("token_expired_message")}
             </p>
-            <div class="modal-action">
-                <button class="btn btn-primary" on:click={confirmTokenExpired}>
+            <div class="flex items-center gap-3 justify-end">
+                <button
+                    class="btn btn-ghost text-primary font-semibold"
+                    on:click={() => { tokenExpiredDialogEl?.close(); showTokenExpired.set(false); }}
+                >
+                    {$_("cancel")}
+                </button>
+                <button class="btn btn-primary rounded-xl px-8" on:click={confirmTokenExpired}>
                     {$_("login_again")}
                 </button>
             </div>

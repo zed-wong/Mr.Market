@@ -296,20 +296,25 @@
 </aside>
 
 <dialog bind:this={exitDialogEl} class="modal modal-bottom sm:modal-middle">
-    <div class="modal-box">
-        <h3 class="font-semibold text-lg">{$_("exit_admin_title")}</h3>
-        <p class="py-3 text-sm text-base-content/70">
+    <div class="modal-box rounded-2xl p-8">
+        <div class="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-5">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 text-primary">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+            </svg>
+        </div>
+        <span class="text-xl font-bold text-base-content">{$_("exit_admin_title")}</span>
+        <p class="pt-3 pb-6 text-sm text-base-content/60 leading-relaxed">
             {$_("exit_admin_message")}
         </p>
-        <div class="modal-action">
+        <div class="flex items-center gap-3 justify-end">
             <button
-                class="btn btn-ghost"
+                class="btn btn-ghost text-primary font-semibold"
                 on:click={() => exitDialogEl?.close()}
             >
                 {$_("cancel")}
             </button>
-            <button class="btn btn-error" on:click={confirmExit}
-                >{$_("exit")}</button
+            <button class="btn btn-primary rounded-xl px-8" on:click={confirmExit}
+                >{$_("exit_admin_confirm")}</button
             >
         </div>
     </div>
