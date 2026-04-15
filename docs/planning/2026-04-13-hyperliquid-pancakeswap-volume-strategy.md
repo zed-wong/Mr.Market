@@ -23,12 +23,12 @@ Hyperliquid is a CLOB exchange accessible via CCXT. The dual-account volume stra
 - [ ] Confirm Hyperliquid CCXT driver supports `createOrder` with `timeInForce: 'IOC'` for taker legs
 - [ ] Confirm `fetchBalance` returns the expected free/used/total structure for both accounts
 - [ ] Confirm `amountToPrecision` / `priceToPrecision` produce valid values (run `loadMarkets()` and inspect precision fields)
-- [ ] Check whether Hyperliquid has self-trade prevention and how it behaves (reject vs. cancel-oldest)
+- [ ] Confirm two separate Hyperliquid accounts (different owners) can fill each other's orders without restriction
 - [ ] Document Hyperliquid rate limits and compare against `strategy.exchange_min_request_interval_ms` default (200ms)
 
 ### 1.2 Account Setup
 
-- [ ] Determine how to create two isolated trading accounts on Hyperliquid (sub-accounts, separate wallets, or vaults)
+- [ ] Use two separate Hyperliquid accounts (different wallet owners) to avoid any self-trade prevention
 - [ ] Verify `ExchangeInitService.getExchange(exchangeName, accountLabel)` can load two distinct Hyperliquid instances with different API keys
 - [ ] Add two Hyperliquid API key entries in `api_keys_config` with distinct `accountLabel` values
 - [ ] Fund both accounts with enough base + quote for the target pair
@@ -37,7 +37,7 @@ Hyperliquid is a CLOB exchange accessible via CCXT. The dual-account volume stra
 
 - [ ] If Hyperliquid requires different order params (e.g. `type: 'limit'` vs perp-specific fields), add a thin normalization layer in `ExchangeConnectorAdapterService.placeLimitOrder`
 - [ ] If rate limits are tighter than MEXC, add a Hyperliquid-specific `exchange_min_request_interval_ms` override or per-exchange config
-- [ ] If self-trade prevention rejects taker orders, add a configurable price offset (e.g. 1 tick) to the taker leg so maker and taker prices don't collide
+- [ ] If cross-account fills require a price offset, add a configurable tick offset to the taker leg
 
 ### 1.4 Testnet Dry Run
 
@@ -68,10 +68,9 @@ PancakeSwap V3 is already integrated as `dexId: 'pancakeV3'` with BSC (chain 56)
 - [ ] Confirm the target token pair has sufficient liquidity on PancakeSwap V3 (check pool TVL)
 - [ ] Ensure the wallet (`recipient` address) has enough base token, quote token, and BNB for gas
 
-### 2.2 Testnet Run (BSC Testnet or Fork)
+### 2.2 Local Fork Dry Run
 
-- [ ] If BSC testnet has PancakeSwap V3 deployment, run against it first
-- [ ] If not, use a local Hardhat/Anvil fork of BSC mainnet to simulate swaps without real funds
+- [ ] Use a local Hardhat/Anvil fork of BSC mainnet to simulate swaps without real funds
 - [ ] Run volume strategy with `dexId: 'pancakeV3'`, `chainId: 56`, `numTrades: 5`, small `baseTradeAmount`
 - [ ] Verify: swap executes, correct tokens move, `executedTrades` increments, slippage within `slippageBps`
 
@@ -96,8 +95,7 @@ PancakeSwap V3 is already integrated as `dexId: 'pancakeV3'` with BSC (chain 56)
 |------|------|--------|
 | Exchange connector | `exchange-connector-adapter.service.ts` | Possible Hyperliquid-specific order param normalization |
 | Exchange init | `exchange-init.service.ts` | Verify Hyperliquid multi-account loading works |
-| DEX addresses | `server/src/modules/defi/addresses.ts` | Verify/update PancakeSwap V3 addresses |
-| Frontend constants | `interface/src/lib/helpers/constants.ts` | Add `hyperliquid` to `SUPPORTED_EXCHANGES` if needed for UI |
+| DEX addresses | `server/src/common/constants/defi-addresses.ts` | Verify/update PancakeSwap V3 addresses (single source of truth) |
 | Config | env / strategy config | Hyperliquid-specific rate limit tuning |
 
 ## Non-Goals
