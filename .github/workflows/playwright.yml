@@ -39,25 +39,34 @@ jobs:
         env:
           DATABASE_PATH: data/mr_market.db
 
-      - name: Wait for localhost:3000 to become available
+      - name: Start server and wait for health check
         run: |
-          cd server && bun run start:dev &
-          echo "Waiting for localhost:3000 to become available..."
+          SERVER_LOG=/tmp/mr-market-playwright-server.log
+          HEALTH_URL=http://localhost:3000/health
+          MAX_ATTEMPTS=30
+          SLEEP_SECONDS=3
+
+          cd server
+          bun run start:dev >"$SERVER_LOG" 2>&1 &
+          SERVER_PID=$!
+          echo "Started server with PID $SERVER_PID"
+          echo "Waiting for $HEALTH_URL to become available..."
+
           attempt=1
-          max_attempts=3
-          while [ $attempt -le $max_attempts ]; do
-              echo "Attempt $attempt of $max_attempts"
-              if $(curl --output /dev/null --silent --head --fail http://localhost:3000); then
-                  echo "localhost:3000 is now available."
-                  break
-              fi
-              attempt=$((attempt+1))
-              sleep 5
-          done
-          if [ $attempt -gt $max_attempts ]; then
-              echo "Failed to connect to localhost:3000 after $max_attempts attempts."
+          until curl --output /dev/null --silent --fail "$HEALTH_URL"; do
+            if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+              echo "Failed to connect to $HEALTH_URL after $MAX_ATTEMPTS attempts."
+              echo "Last 200 lines of server log:"
+              tail -n 200 "$SERVER_LOG" || true
               exit 1
-          fi
+            fi
+
+            echo "Attempt $attempt/$MAX_ATTEMPTS: server not ready yet"
+            attempt=$((attempt + 1))
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "$HEALTH_URL is now available."
         env:
           DATABASE_PATH: data/mr_market.db
           JWT_SECRET: 6b23439e8fee67c5da38b61b8779e9f41a5e3e36efe723c6299dd2111896def6
