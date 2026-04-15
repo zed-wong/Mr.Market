@@ -15,7 +15,7 @@ describe('PauseWithdrawOrchestratorService', () => {
       executeWithdrawal: jest.fn().mockResolvedValue({ trace_id: 'tx-1' }),
     };
     const exchangeOrderTrackerService = {
-      getOpenOrders: jest.fn().mockReturnValue([]),
+      getLiveOrders: jest.fn().mockReturnValue([]),
     };
     const exchangeConnectorAdapterService = {
       cancelOrder: jest.fn().mockResolvedValue(undefined),
@@ -82,7 +82,7 @@ describe('PauseWithdrawOrchestratorService', () => {
       executeWithdrawal: jest.fn().mockResolvedValue({ trace_id: 'tx-1' }),
     };
     const exchangeOrderTrackerService = {
-      getOpenOrders: jest.fn().mockReturnValue([{ exchangeOrderId: 'ex-1' }]),
+      getLiveOrders: jest.fn().mockReturnValue([{ exchangeOrderId: 'ex-1' }]),
     };
     const exchangeConnectorAdapterService = {
       cancelOrder: jest.fn().mockResolvedValue(undefined),
@@ -130,7 +130,7 @@ describe('PauseWithdrawOrchestratorService', () => {
       executeWithdrawal: jest.fn().mockResolvedValue({ trace_id: 'tx-1' }),
     };
     const exchangeOrderTrackerService = {
-      getOpenOrders: jest
+      getLiveOrders: jest
         .fn()
         .mockReturnValueOnce([
           {
@@ -191,7 +191,7 @@ describe('PauseWithdrawOrchestratorService', () => {
         .mockRejectedValue(new Error('external transfer failed')),
     };
     const exchangeOrderTrackerService = {
-      getOpenOrders: jest.fn().mockReturnValue([]),
+      getLiveOrders: jest.fn().mockReturnValue([]),
     };
     const exchangeConnectorAdapterService = {
       cancelOrder: jest.fn().mockResolvedValue(undefined),

@@ -27,7 +27,6 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
-import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import {
@@ -40,6 +39,7 @@ import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/stra
 import { ExecutorOrchestratorService } from 'src/modules/market-making/strategy/intent/executor-orchestrator.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { MarketMakingOrderProcessor } from 'src/modules/market-making/user-orders/market-making.processor';
+import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
@@ -169,6 +169,7 @@ export class MarketMakingRuntimeHelper {
         ExchangeInitService,
         ExecutorOrchestratorService,
         ExecutorRegistry,
+        MarketMakingRuntimeService,
         MarketMakingOrderProcessor,
         StrategyConfigResolverService,
         StrategyIntentStoreService,
@@ -197,10 +198,6 @@ export class MarketMakingRuntimeHelper {
         },
         {
           provide: GrowdataRepository,
-          useValue: {},
-        },
-        {
-          provide: LocalCampaignService,
           useValue: {},
         },
         {

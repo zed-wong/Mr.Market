@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { MarketMakingOrderProcessor } from './market-making.processor';
+import { MarketMakingRuntimeService } from './market-making-runtime.service';
 
 describe('MarketMakingOrderProcessor', () => {
   const createProcessor = () => {
@@ -14,7 +15,7 @@ describe('MarketMakingOrderProcessor', () => {
         bidSpread: '0.1',
         askSpread: '0.2',
         orderAmount: '10',
-        orderRefreshTime: '15000',
+        orderRefreshTime: '1000',
         numberOfLayers: '2',
         priceSourceType: 'MID_PRICE',
         amountChangePerLayer: '0',
@@ -156,10 +157,15 @@ describe('MarketMakingOrderProcessor', () => {
         defaultConfig: {},
       }),
     };
+    const marketMakingRuntimeService = new MarketMakingRuntimeService(
+      strategyRuntimeDispatcher as any,
+      strategyService as any,
+      strategyDefinitionRepository as any,
+    );
 
     const processor = new MarketMakingOrderProcessor(
       userOrdersService as any,
-      strategyService as any,
+      marketMakingRuntimeService as any,
       {
         calculateMoveFundsFee: jest.fn().mockResolvedValue({
           base_fee_id: 'asset-fee-base',
@@ -180,7 +186,6 @@ describe('MarketMakingOrderProcessor', () => {
       } as any,
       transactionService as any,
       { executeWithdrawal: jest.fn() } as any,
-      { joinCampaign: jest.fn() } as any,
       { getCampaigns: jest.fn() } as any,
       {
         findFirstAPIKeyByExchange: jest.fn(),
@@ -189,11 +194,9 @@ describe('MarketMakingOrderProcessor', () => {
       { getNetworkForAsset: jest.fn() } as any,
       {} as any,
       strategyConfigResolver as any,
-      strategyRuntimeDispatcher as any,
       paymentStateRepository as any,
       marketMakingOrderIntentRepository as any,
       marketMakingRepository as any,
-      strategyDefinitionRepository as any,
       balanceLedgerService as any,
     );
 
@@ -505,7 +508,7 @@ describe('MarketMakingOrderProcessor', () => {
           bidSpread: 0.1,
           askSpread: 0.2,
           orderAmount: 10,
-          orderRefreshTime: 15000,
+          orderRefreshTime: 1000,
           numberOfLayers: 2,
         },
       },
@@ -530,7 +533,7 @@ describe('MarketMakingOrderProcessor', () => {
         bidSpread: 0.1,
         askSpread: 0.2,
         orderAmount: 10,
-        orderRefreshTime: 15000,
+        orderRefreshTime: 1000,
         numberOfLayers: 2,
       }),
     );
@@ -655,7 +658,7 @@ describe('MarketMakingOrderProcessor', () => {
       strategyDefinitionId: 'strategy-def-1',
       configOverrides: {
         bidSpread: 0.002,
-        orderRefreshTime: 15000,
+        orderRefreshTime: 1000,
       },
     });
     marketMakingRepository.findOne.mockResolvedValueOnce(null);
@@ -676,7 +679,7 @@ describe('MarketMakingOrderProcessor', () => {
         marketMakingOrderId: 'order-1',
         exchangeName: 'binance',
         bidSpread: 0.002,
-        orderRefreshTime: 15000,
+        orderRefreshTime: 1000,
       }),
     );
     expect(marketMakingRepository.save).toHaveBeenCalledWith(

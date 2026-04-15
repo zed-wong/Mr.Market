@@ -13,3 +13,6 @@ dist
 server/data/*.db
 server/data/*.db-shm
 server/data/*.db-wal
+.gstack/
+.context/
+.impeccable.md

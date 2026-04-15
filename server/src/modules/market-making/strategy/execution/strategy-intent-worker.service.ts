@@ -5,8 +5,11 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { Repository } from 'typeorm';
 
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyIntentExecutionService } from './strategy-intent-execution.service';
@@ -30,6 +33,9 @@ export class StrategyIntentWorkerService
 
   constructor(
     private readonly configService: ConfigService,
+    @Optional()
+    @InjectRepository(StrategyInstance)
+    private readonly strategyInstanceRepository?: Repository<StrategyInstance>,
     @Optional()
     private readonly strategyIntentStoreService?: StrategyIntentStoreService,
     @Optional()
@@ -131,11 +137,21 @@ export class StrategyIntentWorkerService
         continue;
       }
 
-      const headIntent = await this.strategyIntentStoreService.getHeadIntent(
+      const isStrategyRunning = await this.isStrategyRunning(strategyKey);
+
+      if (!isStrategyRunning) {
+        await this.strategyIntentStoreService.cancelPendingIntents(
+          strategyKey,
+          'strategy stopped before intent execution',
+        );
+        continue;
+      }
+
+      const headIntent = await this.strategyIntentStoreService.getNextNewIntent(
         strategyKey,
       );
 
-      if (!headIntent || headIntent.status !== 'NEW') {
+      if (!headIntent) {
         continue;
       }
 
@@ -187,10 +203,27 @@ export class StrategyIntentWorkerService
       try {
         await this.strategyIntentExecutionService?.consumeIntents([intent]);
       } catch (error) {
+        const role =
+          intent.metadata &&
+          typeof intent.metadata === 'object' &&
+          typeof (intent.metadata as Record<string, unknown>).role === 'string'
+            ? String((intent.metadata as Record<string, unknown>).role)
+            : 'unknown';
+
         this.logger.error(
-          `Intent execution failed for ${intent.intentId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          [
+            'Intent worker failed',
+            `strategy=${intent.strategyKey}`,
+            `intent=${intent.intentId}`,
+            `exchange=${intent.exchange}`,
+            `pair=${intent.pair}`,
+            `role=${role}`,
+            `account=${intent.accountLabel || 'default'}`,
+            `side=${intent.side}`,
+            `qty=${intent.qty}`,
+            `price=${intent.price}`,
+            `error=${error instanceof Error ? error.message : String(error)}`,
+          ].join(' | '),
         );
       }
     })();
@@ -224,6 +257,7 @@ export class StrategyIntentWorkerService
       userId: intentEntity.userId,
       clientId: intentEntity.clientId,
       exchange: intentEntity.exchange,
+      accountLabel: intentEntity.accountLabel || undefined,
       pair: intentEntity.pair,
       side: intentEntity.side as StrategyOrderIntent['side'],
       price: intentEntity.price,
@@ -232,6 +266,14 @@ export class StrategyIntentWorkerService
       executionCategory: intentEntity.executionCategory as
         | StrategyOrderIntent['executionCategory']
         | undefined,
+      postOnly:
+        typeof intentEntity.postOnly === 'boolean'
+          ? intentEntity.postOnly
+          : undefined,
+      timeInForce: intentEntity.timeInForce as
+        | StrategyOrderIntent['timeInForce']
+        | undefined,
+      slotKey: intentEntity.slotKey || undefined,
       metadata:
         (intentEntity.metadata as StrategyOrderIntent['metadata']) || undefined,
       createdAt: intentEntity.createdAt,
@@ -244,5 +286,21 @@ export class StrategyIntentWorkerService
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async isStrategyRunning(strategyKey: string): Promise<boolean> {
+    if (!this.strategyInstanceRepository) {
+      return true;
+    }
+
+    const strategyInstance = await this.strategyInstanceRepository.findOne({
+      where: { strategyKey },
+    });
+
+    if (!strategyInstance) {
+      return true;
+    }
+
+    return strategyInstance.status === 'running';
   }
 }

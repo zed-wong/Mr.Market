@@ -139,6 +139,22 @@ export class GrowdataMarketMakingPairDto {
   @IsOptional()
   custom_fee_rate: string;
 
+  @IsString()
+  @IsOptional()
+  min_order_amount: string;
+
+  @IsString()
+  @IsOptional()
+  max_order_amount: string;
+
+  @IsString()
+  @IsOptional()
+  amount_significant_figures: string;
+
+  @IsString()
+  @IsOptional()
+  price_significant_figures: string;
+
   @IsBoolean()
   enable: boolean;
 }

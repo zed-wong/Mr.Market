@@ -169,23 +169,24 @@ export class MarketDataGateway
     this.clientSubscriptions.get(clientId).add(compositeKey);
 
     try {
-      if (!this.marketDataService.isSubscribed(type, exchange, symbol)) {
-        switch (type) {
-          case 'orderbook':
-            await this.marketDataService.watchOrderBook(
-              exchange,
-              symbol,
-              callback,
-            );
-            break;
-          case 'ticker':
+      switch (type) {
+        case 'orderbook':
+          this.marketDataService.subscribeOrderBook(
+            exchange,
+            symbol,
+            clientId,
+            callback,
+          );
+          break;
+        case 'ticker':
+          if (!this.marketDataService.isSubscribed(type, exchange, symbol)) {
             await this.marketDataService.watchTicker(
               exchange,
               symbol,
               callback,
             );
-            break;
-        }
+          }
+          break;
       }
     } catch (error) {
       this.logger.error(`Error in subscribing to ${type}: ${error.message}`);
@@ -427,9 +428,14 @@ export class MarketDataGateway
     this.logger.log(`Unsubscribe: ${subscriptionKey}`);
     this.clientSubscriptions.get(clientId)?.delete(subscriptionKey);
 
+    if (type === 'orderbook' && symbol) {
+      this.marketDataService.unsubscribeOrderBook(exchange, symbol, clientId);
+
+      return;
+    }
+
     if (!this.isSymbolSubscribedByAnyClient(subscriptionKey)) {
       switch (type) {
-        case 'orderbook':
         case 'ticker':
           this.marketDataService.unsubscribeData(type, exchange, symbol);
           break;

@@ -2,12 +2,33 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
-import { Not, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import {
   StrategyIntentStatus,
   StrategyOrderIntent,
 } from '../config/strategy-intent.types';
+
+export type StrategyIntentQueueState = {
+  blockedByFailure: boolean;
+  headIntentStatus: StrategyIntentStatus | null;
+  failedHeadIntentId?: string;
+  failedHeadUpdatedAt?: string;
+  failedHeadErrorReason?: string;
+};
+
+const ACTIVE_OR_FAILED_INTENT_STATUSES: StrategyIntentStatus[] = [
+  'NEW',
+  'SENT',
+  'ACKED',
+  'FAILED',
+];
+
+const CANCELLABLE_INTENT_STATUSES: StrategyIntentStatus[] = [
+  'NEW',
+  'SENT',
+  'ACKED',
+];
 
 @Injectable()
 export class StrategyIntentStoreService {
@@ -29,12 +50,16 @@ export class StrategyIntentStoreService {
       clientId: intent.clientId,
       type: intent.type,
       exchange: intent.exchange,
+      accountLabel: intent.accountLabel,
       pair: intent.pair,
       side: intent.side,
       price: intent.price,
       qty: intent.qty,
       mixinOrderId: intent.mixinOrderId,
       executionCategory: intent.executionCategory,
+      postOnly: intent.postOnly,
+      timeInForce: intent.timeInForce,
+      slotKey: intent.slotKey,
       metadata: intent.metadata,
       status: intent.status,
       errorReason: undefined,
@@ -83,6 +108,14 @@ export class StrategyIntentStoreService {
     await this.strategyOrderIntentRepository.save(existing);
   }
 
+  async getMixinOrderId(intentId: string): Promise<string | undefined> {
+    const existing = await this.strategyOrderIntentRepository.findOneBy({
+      intentId,
+    });
+
+    return existing?.mixinOrderId ?? undefined;
+  }
+
   async listAll(): Promise<StrategyOrderIntentEntity[]> {
     return await this.strategyOrderIntentRepository.find();
   }
@@ -111,12 +144,86 @@ export class StrategyIntentStoreService {
     return await this.strategyOrderIntentRepository.findOne({
       where: {
         strategyKey,
-        status: Not('DONE'),
+        status: In(ACTIVE_OR_FAILED_INTENT_STATUSES),
       },
       order: {
         createdAt: 'ASC',
         intentId: 'ASC',
       },
     });
+  }
+
+  async getNextNewIntent(
+    strategyKey: string,
+  ): Promise<StrategyOrderIntentEntity | null> {
+    return await this.strategyOrderIntentRepository.findOne({
+      where: {
+        strategyKey,
+        status: 'NEW',
+      },
+      order: {
+        createdAt: 'ASC',
+        intentId: 'ASC',
+      },
+    });
+  }
+
+  async getQueueState(strategyKey: string): Promise<StrategyIntentQueueState> {
+    const [headIntent, oldestNewIntent] = await Promise.all([
+      this.getHeadIntent(strategyKey),
+      this.getNextNewIntent(strategyKey),
+    ]);
+
+    const blockedByFailure =
+      headIntent?.status === 'FAILED' &&
+      Boolean(oldestNewIntent) &&
+      oldestNewIntent?.intentId !== headIntent.intentId;
+
+    if (!blockedByFailure || !headIntent) {
+      return {
+        blockedByFailure: false,
+        headIntentStatus: (headIntent?.status as StrategyIntentStatus) || null,
+      };
+    }
+
+    return {
+      blockedByFailure: true,
+      headIntentStatus: 'FAILED',
+      failedHeadIntentId: headIntent.intentId,
+      failedHeadUpdatedAt: headIntent.updatedAt,
+      failedHeadErrorReason: headIntent.errorReason,
+    };
+  }
+
+  async cancelPendingIntents(
+    strategyKey: string,
+    errorReason: string,
+  ): Promise<number> {
+    const pendingIntents = await this.strategyOrderIntentRepository.find({
+      where: {
+        strategyKey,
+        status: In(CANCELLABLE_INTENT_STATUSES),
+      },
+      order: {
+        createdAt: 'ASC',
+        intentId: 'ASC',
+      },
+    });
+
+    if (pendingIntents.length === 0) {
+      return 0;
+    }
+
+    const updatedAt = getRFC3339Timestamp();
+
+    for (const intent of pendingIntents) {
+      intent.status = 'CANCELLED';
+      intent.errorReason = errorReason;
+      intent.updatedAt = updatedAt;
+    }
+
+    await this.strategyOrderIntentRepository.save(pendingIntents);
+
+    return pendingIntents.length;
   }
 }

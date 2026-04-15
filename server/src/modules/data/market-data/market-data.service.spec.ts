@@ -143,6 +143,39 @@ describe('MarketdataService', () => {
   });
 
   describe('subscriptions', () => {
+    it('shares a single order book stream across multiple consumers', async () => {
+      const watchOrderBook = jest
+        .fn()
+        .mockResolvedValueOnce({ bids: [[1, 2]], asks: [[3, 4]] });
+      const consumerA = jest.fn();
+      const consumerB = jest.fn();
+
+      exchangeInitService.getExchange.mockReturnValue({
+        watchOrderBook,
+        has: { watchOrderBook: true },
+      });
+
+      service.subscribeOrderBook('binance', 'BTC/USDT', 'a', consumerA);
+      service.subscribeOrderBook('binance', 'BTC/USDT', 'b', consumerB);
+
+      await Promise.resolve();
+      service.unsubscribeOrderBook('binance', 'BTC/USDT', 'a');
+      service.unsubscribeOrderBook('binance', 'BTC/USDT', 'b');
+      await Promise.resolve();
+
+      expect((service as any).orderBookSubscriptionTasks.size).toBe(1);
+      expect((service as any).orderBookListeners.size).toBe(0);
+      expect(watchOrderBook.mock.calls.length).toBeGreaterThanOrEqual(1);
+      expect(consumerA).toHaveBeenCalledWith({
+        bids: [[1, 2]],
+        asks: [[3, 4]],
+      });
+      expect(consumerB).toHaveBeenCalledWith({
+        bids: [[1, 2]],
+        asks: [[3, 4]],
+      });
+    });
+
     it('uses watchTickers capability for watchTickers subscriptions', async () => {
       const watchTickers = jest
         .fn()
@@ -166,8 +199,12 @@ describe('MarketdataService', () => {
         'orderbook:binance:BTC/USDT',
         true,
       );
+      (service as any).orderBookListeners.set(
+        'orderbook:binance:BTC/USDT',
+        new Map([['consumer', jest.fn()]]),
+      );
 
-      service.unsubscribeOrderBook('binance', 'BTC/USDT');
+      service.unsubscribeOrderBook('binance', 'BTC/USDT', 'consumer');
 
       expect(
         (service as any).activeSubscriptions.has('orderbook:binance:BTC/USDT'),

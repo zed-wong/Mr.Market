@@ -16,11 +16,16 @@ export class ClockTickCoordinatorService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new CustomLogger(ClockTickCoordinatorService.name);
+  private readonly skipTickWarnIntervalMs = 30000;
   private readonly tickSizeMs: number;
   private readonly components = new Map<string, RegisteredTickComponent>();
   private intervalId?: NodeJS.Timeout;
   private running = false;
   private tickInProgress = false;
+  private tickStartedAtMs?: number;
+  private skippedTickCount = 0;
+  private skippedTickBurstStartedAtMs?: number;
+  private lastSkipTickWarnAtMs?: number;
 
   constructor(private readonly configService: ConfigService) {
     this.tickSizeMs = Number(
@@ -72,6 +77,10 @@ export class ClockTickCoordinatorService
       this.intervalId = undefined;
     }
 
+    while (this.tickInProgress) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
     for (const item of [...this.getSortedComponents()].reverse()) {
       await item.component.stop();
     }
@@ -79,18 +88,43 @@ export class ClockTickCoordinatorService
 
   async tickOnce(): Promise<void> {
     if (this.tickInProgress) {
-      this.logger.warn(
-        'Skipping tick because previous tick is still in progress',
-      );
+      const now = Date.now();
+      this.skippedTickCount += 1;
+      this.skippedTickBurstStartedAtMs =
+        this.skippedTickBurstStartedAtMs ?? now;
+      const runningDurationMs = this.tickStartedAtMs
+        ? now - this.tickStartedAtMs
+        : undefined;
+
+      if (
+        !this.lastSkipTickWarnAtMs ||
+        now - this.lastSkipTickWarnAtMs >= this.skipTickWarnIntervalMs
+      ) {
+        this.lastSkipTickWarnAtMs = now;
+        this.logger.warn(
+          [
+            'Tick overlap detected',
+            `skippedCount=${this.skippedTickCount}`,
+            `runningDurationMs=${runningDurationMs ?? 'n/a'}`,
+            `tickSizeMs=${this.tickSizeMs}`,
+          ].join(' | '),
+        );
+      }
 
       return;
     }
 
     this.tickInProgress = true;
+    this.tickStartedAtMs = Date.now();
     const ts = getRFC3339Timestamp();
 
     try {
       for (const item of this.getSortedComponents()) {
+        if (!this.running) {
+          this.logger.log('Tick aborted: coordinator stopped mid-tick');
+          break;
+        }
+
         const isHealthy = await item.component.health();
 
         if (!isHealthy) {
@@ -101,7 +135,32 @@ export class ClockTickCoordinatorService
         await item.component.onTick(ts);
       }
     } finally {
+      const tickFinishedAtMs = Date.now();
+      const tickDurationMs = this.tickStartedAtMs
+        ? tickFinishedAtMs - this.tickStartedAtMs
+        : undefined;
+
+      if (this.skippedTickCount > 0) {
+        const overlapWindowMs = this.skippedTickBurstStartedAtMs
+          ? tickFinishedAtMs - this.skippedTickBurstStartedAtMs
+          : undefined;
+
+        this.logger.warn(
+          [
+            'Tick completed after overlap pressure',
+            `skippedCount=${this.skippedTickCount}`,
+            `tickDurationMs=${tickDurationMs ?? 'n/a'}`,
+            `overlapWindowMs=${overlapWindowMs ?? 'n/a'}`,
+            `tickSizeMs=${this.tickSizeMs}`,
+          ].join(' | '),
+        );
+      }
+
       this.tickInProgress = false;
+      this.tickStartedAtMs = undefined;
+      this.skippedTickCount = 0;
+      this.skippedTickBurstStartedAtMs = undefined;
+      this.lastSkipTickWarnAtMs = undefined;
     }
   }
 

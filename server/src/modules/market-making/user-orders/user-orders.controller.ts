@@ -6,9 +6,12 @@ import {
   HttpStatus,
   Param,
   Post,
-  Query,
+  Req,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBody,
   ApiOperation,
   ApiProperty,
@@ -17,6 +20,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
+import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 
 import { UserOrdersService } from './user-orders.service';
 
@@ -54,20 +58,37 @@ class CreateMarketMakingIntentBody {
 export class UserOrdersController {
   constructor(private readonly userOrdersService: UserOrdersService) {}
 
+  private getAuthenticatedUserId(request: {
+    user?: { userId?: string };
+  }): string {
+    const userId = request.user?.userId;
+
+    if (!userId) {
+      throw new UnauthorizedException('Authenticated user not found');
+    }
+
+    return userId;
+  }
+
   @Get('/all')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get all strategy by user' })
-  @ApiQuery({ name: 'userId', type: String, description: 'User ID' })
   @ApiResponse({
     status: 200,
     description: 'All strategies of user.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async getAllStrategy(@Query('userId') userId: string) {
-    return await this.userOrdersService.findAllStrategyByUser(userId);
+  async getAllStrategy(@Req() request: { user?: { userId?: string } }) {
+    return await this.userOrdersService.findAllStrategyByUser(
+      this.getAuthenticatedUserId(request),
+    );
   }
 
   @Get('/payment-state/market-making/:order_id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get payment state by id' })
   @ApiResponse({
@@ -75,26 +96,35 @@ export class UserOrdersController {
     description: 'The payment state of order.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async getMarketMakingPaymentState(@Param('order_id') orderId: string) {
-    return await this.userOrdersService.findMarketMakingPaymentStateById(
+  async getMarketMakingPaymentState(
+    @Param('order_id') orderId: string,
+    @Req() request: { user?: { userId?: string } },
+  ) {
+    return await this.userOrdersService.findOwnedMarketMakingPaymentStateById(
+      this.getAuthenticatedUserId(request),
       orderId,
     );
   }
 
   @Get('/simply-grow/all')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get all simply grow orders by user' })
-  @ApiQuery({ name: 'userId', type: String, description: 'User ID' })
   @ApiResponse({
     status: 200,
     description: 'All simply grow orders of user.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async getSimplyGrowByUserId(@Query('user_id') userId: string) {
-    return await this.userOrdersService.findSimplyGrowByUserId(userId);
+  async getSimplyGrowByUserId(@Req() request: { user?: { userId?: string } }) {
+    return await this.userOrdersService.findSimplyGrowByUserId(
+      this.getAuthenticatedUserId(request),
+    );
   }
 
   @Get('/simply-grow/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get simply grow order by id' })
   @ApiQuery({ name: 'id', type: String, description: 'Order ID' })
@@ -103,21 +133,32 @@ export class UserOrdersController {
     description: 'The details of the simply grow order.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async getSimplyGrowByOrderId(@Param('id') id: string) {
-    return await this.userOrdersService.findSimplyGrowByOrderId(id);
+  async getSimplyGrowByOrderId(
+    @Param('id') id: string,
+    @Req() request: { user?: { userId?: string } },
+  ) {
+    return await this.userOrdersService.findOwnedSimplyGrowByOrderId(
+      this.getAuthenticatedUserId(request),
+      id,
+    );
   }
 
   @Get('/market-making/all')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get all market making by user' })
-  @ApiQuery({ name: 'userId', type: String, description: 'User ID' })
   @ApiResponse({
     status: 200,
     description: 'All market making order of user.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async getAllMarketMakingByUser(@Query('userId') userId: string) {
-    return await this.userOrdersService.findMarketMakingByUserId(userId);
+  async getAllMarketMakingByUser(
+    @Req() request: { user?: { userId?: string } },
+  ) {
+    return await this.userOrdersService.findMarketMakingByUserId(
+      this.getAuthenticatedUserId(request),
+    );
   }
 
   @Get('/market-making/strategies')
@@ -135,19 +176,28 @@ export class UserOrdersController {
   }
 
   @Get('/market-making/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get all market making by user' })
-  @ApiQuery({ name: 'userId', type: String, description: 'User ID' })
   @ApiResponse({
     status: 200,
     description: 'The details of the market making.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async getMarketMakingDetailsById(@Param('id') id: string) {
-    return await this.userOrdersService.findMarketMakingByOrderId(id);
+  async getMarketMakingDetailsById(
+    @Param('id') id: string,
+    @Req() request: { user?: { userId?: string } },
+  ) {
+    return await this.userOrdersService.findOwnedMarketMakingByOrderId(
+      this.getAuthenticatedUserId(request),
+      id,
+    );
   }
 
   @Post('/market-making/intent')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Create market making order intent' })
   @ApiBody({ type: CreateMarketMakingIntentBody })
@@ -156,11 +206,19 @@ export class UserOrdersController {
     description: 'Market making order intent created.',
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
-  async createMarketMakingIntent(@Body() body: CreateMarketMakingIntentBody) {
-    return await this.userOrdersService.createMarketMakingOrderIntent(body);
+  async createMarketMakingIntent(
+    @Body() body: CreateMarketMakingIntentBody,
+    @Req() request: { user?: { userId?: string } },
+  ) {
+    return await this.userOrdersService.createMarketMakingOrderIntent({
+      ...body,
+      userId: this.getAuthenticatedUserId(request),
+    });
   }
 
   @Get('/market-making/history/:userId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get all market making history by user' })
   @ApiResponse({
@@ -169,9 +227,11 @@ export class UserOrdersController {
   })
   @ApiResponse({ status: 400, description: 'Bad request.' })
   async getUserOrders(
-    @Param('userId') userId: string,
+    @Req() request: { user?: { userId?: string } },
   ): Promise<StrategyExecutionHistory[]> {
-    return await this.userOrdersService.getUserOrders(userId);
+    return await this.userOrdersService.getUserOrders(
+      this.getAuthenticatedUserId(request),
+    );
   }
 
   // @Get('/market-making/history/instance/:id')

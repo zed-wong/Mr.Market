@@ -118,27 +118,15 @@ test("market-making quick add focuses on asset selection after clicking Add", as
     });
   });
 
+  await page.addInitScript(() => {
+    localStorage.setItem("admin-access-token", "test-admin-token");
+  });
+
   await page.goto("/manage/settings/market-making");
 
-  const loginHeading = page.getByRole("heading", { name: /login/i });
   const addPairLauncher = page.getByTestId("market-making-add-pair");
 
-  await expect
-    .poll(async () => {
-      const loginVisible = await loginHeading.isVisible().catch(() => false);
-      const addPairVisible = await addPairLauncher.isVisible().catch(() => false);
-      return loginVisible || addPairVisible;
-    }, { timeout: 10000 })
-    .toBeTruthy();
-
-  if (await loginHeading.isVisible().catch(() => false)) {
-    await page.locator('input[type="password"]').fill("password");
-    await page.getByRole("button", { name: /^login$/i }).click();
-    await expect(loginHeading).not.toBeVisible({ timeout: 10000 });
-    await page.goto("/manage/settings/market-making");
-  }
-
-  await expect(addPairLauncher).toBeVisible();
+  await expect(addPairLauncher).toBeVisible({ timeout: 10000 });
   await addPairLauncher.click();
 
   const searchInput = page.locator("#quick-symbol-input");

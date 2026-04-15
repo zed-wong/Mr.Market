@@ -5,5 +5,7 @@ export const checked = writable(false);
 export const correct = writable(false);
 export const loginLoading = writable(false);
 
+export const showTokenExpired = writable(false);
+
 // /manage/user
 export const userSearch = writable('')

@@ -74,7 +74,7 @@ describe('StrategyIntentWorkerService', () => {
       listStrategyKeysWithNewIntents: jest
         .fn()
         .mockResolvedValue(['s1', 's2', 's3']),
-      getHeadIntent: jest.fn(async (strategyKey: string) =>
+      getNextNewIntent: jest.fn(async (strategyKey: string) =>
         createHeadIntent(strategyKey, `${strategyKey}-intent`),
       ),
     };
@@ -98,6 +98,7 @@ describe('StrategyIntentWorkerService', () => {
       createConfigService({
         'strategy.intent_worker_max_in_flight': 2,
       }),
+      undefined as any,
       strategyIntentStoreService as any,
       strategyIntentExecutionService as any,
     );
@@ -111,22 +112,27 @@ describe('StrategyIntentWorkerService', () => {
     await service.onModuleDestroy();
   });
 
-  it('does not execute later intents when head-of-line is not NEW', async () => {
+  it('executes the oldest NEW intent even when an older FAILED intent exists', async () => {
     const strategyIntentStoreService = {
       listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),
-      getHeadIntent: jest
+      getNextNewIntent: jest
         .fn()
-        .mockResolvedValue(
-          createHeadIntent('s1', 's1-old', 'binance', 'FAILED'),
-        ),
+        .mockResolvedValue(createHeadIntent('s1', 's1-next', 'binance')),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
     };
     const strategyIntentExecutionService = {
       hasProcessedIntent: jest.fn().mockReturnValue(false),
-      consumeIntents: jest.fn(),
+      consumeIntents: jest.fn(async () => {}),
     };
 
     const service = new StrategyIntentWorkerService(
       createConfigService(),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          strategyKey: 's1',
+          status: 'running',
+        }),
+      } as any,
       strategyIntentStoreService as any,
       strategyIntentExecutionService as any,
     );
@@ -135,9 +141,12 @@ describe('StrategyIntentWorkerService', () => {
     await wait(40);
     await service.onModuleDestroy();
 
-    expect(
-      strategyIntentExecutionService.consumeIntents,
-    ).not.toHaveBeenCalled();
+    expect(strategyIntentExecutionService.consumeIntents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        intentId: 's1-next',
+        strategyKey: 's1',
+      }),
+    ]);
   });
 
   it('enforces per-exchange in-flight cap', async () => {
@@ -147,11 +156,12 @@ describe('StrategyIntentWorkerService', () => {
 
     const strategyIntentStoreService = {
       listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1', 's2']),
-      getHeadIntent: jest
+      getNextNewIntent: jest
         .fn()
         .mockImplementation(async (strategyKey: string) =>
           createHeadIntent(strategyKey, `${strategyKey}-intent`, 'binance'),
         ),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
     };
 
     const strategyIntentExecutionService = {
@@ -174,6 +184,11 @@ describe('StrategyIntentWorkerService', () => {
         'strategy.intent_worker_max_in_flight': 2,
         'strategy.intent_worker_max_in_flight_per_exchange': 1,
       }),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          status: 'running',
+        }),
+      } as any,
       strategyIntentStoreService as any,
       strategyIntentExecutionService as any,
     );
@@ -207,13 +222,14 @@ describe('StrategyIntentWorkerService', () => {
           )
           .map(([strategyKey]) => strategyKey);
       }),
-      getHeadIntent: jest.fn(async (strategyKey: string) => {
+      getNextNewIntent: jest.fn(async (strategyKey: string) => {
         return (
           intentsByStrategy[
             strategyKey as keyof typeof intentsByStrategy
-          ]?.find((intent) => intent.status !== 'DONE') || null
+          ]?.find((intent) => intent.status === 'NEW') || null
         );
       }),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
     };
 
     const strategyIntentExecutionService = {
@@ -249,6 +265,11 @@ describe('StrategyIntentWorkerService', () => {
         'strategy.intent_worker_max_in_flight': 2,
         'strategy.intent_worker_max_in_flight_per_exchange': 2,
       }),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          status: 'running',
+        }),
+      } as any,
       strategyIntentStoreService as any,
       strategyIntentExecutionService as any,
     );
@@ -269,12 +290,13 @@ describe('StrategyIntentWorkerService', () => {
 
     const strategyIntentStoreService = {
       listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1', 's2']),
-      getHeadIntent: jest.fn(async (strategyKey: string) => ({
+      getNextNewIntent: jest.fn(async (strategyKey: string) => ({
         ...createHeadIntent(strategyKey, duplicateIntentId),
         strategyInstanceId: strategyKey,
         userId: `${strategyKey}-user`,
         clientId: `${strategyKey}-client`,
       })),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
     };
 
     const strategyIntentExecutionService = {
@@ -295,6 +317,11 @@ describe('StrategyIntentWorkerService', () => {
         'strategy.intent_worker_max_in_flight': 2,
         'strategy.intent_worker_max_in_flight_per_exchange': 2,
       }),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          status: 'running',
+        }),
+      } as any,
       strategyIntentStoreService as any,
       strategyIntentExecutionService as any,
     );
@@ -316,12 +343,13 @@ describe('StrategyIntentWorkerService', () => {
   it('maps execution category and metadata from stored intent entity', async () => {
     const strategyIntentStoreService = {
       listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),
-      getHeadIntent: jest.fn().mockResolvedValue({
+      getNextNewIntent: jest.fn().mockResolvedValue({
         ...createHeadIntent('s1', 's1-amm', 'uniswapV3'),
         type: 'EXECUTE_AMM_SWAP',
         executionCategory: 'amm_dex',
         metadata: { dexId: 'uniswapV3', chainId: 1 },
       }),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
     };
     const strategyIntentExecutionService = {
       hasProcessedIntent: jest.fn().mockReturnValue(false),
@@ -330,6 +358,11 @@ describe('StrategyIntentWorkerService', () => {
 
     const service = new StrategyIntentWorkerService(
       createConfigService(),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          status: 'running',
+        }),
+      } as any,
       strategyIntentStoreService as any,
       strategyIntentExecutionService as any,
     );
@@ -347,5 +380,40 @@ describe('StrategyIntentWorkerService', () => {
         metadata: expect.objectContaining({ dexId: 'uniswapV3', chainId: 1 }),
       }),
     ]);
+  });
+
+  it('cancels pending intents for stopped strategies before dispatch', async () => {
+    const strategyIntentStoreService = {
+      listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),
+      getNextNewIntent: jest.fn(),
+      cancelPendingIntents: jest.fn().mockResolvedValue(2),
+    };
+    const strategyIntentExecutionService = {
+      hasProcessedIntent: jest.fn().mockReturnValue(false),
+      consumeIntents: jest.fn(),
+    };
+
+    const service = new StrategyIntentWorkerService(
+      createConfigService(),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          strategyKey: 's1',
+          status: 'stopped',
+        }),
+      } as any,
+      strategyIntentStoreService as any,
+      strategyIntentExecutionService as any,
+    );
+
+    await service.onModuleInit();
+    await wait(40);
+    await service.onModuleDestroy();
+
+    expect(
+      strategyIntentStoreService.cancelPendingIntents,
+    ).toHaveBeenCalledWith('s1', 'strategy stopped before intent execution');
+    expect(
+      strategyIntentExecutionService.consumeIntents,
+    ).not.toHaveBeenCalled();
   });
 });

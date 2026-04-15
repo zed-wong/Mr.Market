@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger'; // Import Swagger decorators
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from 'src/modules/auth/auth.service';
 
 import { CustomLogger } from '../infrastructure/logger/logger.service';
@@ -13,6 +14,7 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiBody({
     description: 'Login with password',
     schema: {

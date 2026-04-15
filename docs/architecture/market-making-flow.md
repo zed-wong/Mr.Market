@@ -67,7 +67,7 @@ flowchart TD
   Q[Tick loop<br/>ClockTickCoordinator -> StrategyService.onTick]
   R[ExecutorRegistry active executors run<br/>executor.onTick -> controller.decideActions]
   S[Intents executed by worker/executor]
-  T[Fill arrives<br/>PrivateStreamTracker]
+  T[Fill arrives<br/>UserStreamTracker]
   U[FillRoutingService parses clientOrderId<br/>fallback to ExchangeOrderMapping]
   V[Route fill to executor session<br/>update trackers and executor hooks]
   W[stop_mm -> removeOrder from executor<br/>state=stopped]
@@ -187,16 +187,16 @@ If withdrawal path is enabled and used:
 
 ### 6) Fill routing flow
 
-1. `PrivateStreamTracker` receives fill event with `clientOrderId`.
+1. `UserStreamTracker` receives fill event with `clientOrderId`.
 2. `FillRoutingService.resolveOrderForFill()` routes the fill:
    - **Primary path**: Parse local `clientOrderId` format `{orderId}:{seq}` when the incoming value is parseable.
    - **Fallback 1**: Look up `ExchangeOrderMapping` by `clientOrderId`.
    - **Fallback 2**: Look up `ExchangeOrderMapping` by `exchangeOrderId`.
    - **Orphan**: Log for manual review if all fail.
 3. `ExecutorRegistry.findExecutorByOrderId()` resolves executor for order.
-4. `PrivateStreamTracker` only dispatches fills with the owning `orderId`; when an exchange stream sends cumulative `filled`, it first converts that snapshot to a positive delta against `ExchangeOrderTracker` state.
-5. `StrategyService` builds ledger idempotency from stable fill identity (`fillId` or order+price+side+cumulative state), not local receipt time, so duplicate private-stream replays do not drift balances.
-6. `PrivateStreamTracker` updates order-tracker state and forwards the normalized fill to `ExchangePairExecutor.onFill(fill)`.
+4. `UserStreamTracker` only dispatches fills with the owning `orderId`; when an exchange stream sends cumulative `filled`, it first converts that snapshot to a positive delta against `ExchangeOrderTracker` state.
+5. `StrategyService` builds ledger idempotency from stable fill identity (`fillId` or order+price+side+cumulative state), not local receipt time, so duplicate user-stream replays do not drift balances.
+6. `UserStreamTracker` updates order-tracker state and forwards the normalized fill to `ExchangePairExecutor.onFill(fill)`.
 7. `ExchangePairExecutor` dispatches to the target session handler. In the current pooled runtime, fills update tracker state and runtime bookkeeping for future ticks; controller-specific fill callbacks remain limited.
 
 ### 7) Stop market making
@@ -387,12 +387,7 @@ payment flow instead of backfilling legacy rows.
 
 ## Operational Notes
 
-<<<<<<< HEAD:docs/architecture/market-making-flow.md
 - `strategy.execute_intents=false` explicitly disables live execution, so intents are created and marked processed but no exchange actions are sent.
-=======
-- `strategy.execute_intents=false` means intents are created and marked processed but no live exchange actions are sent.
-- On `main`, `strategy.execute_intents` defaults to `false` unless `MARKET_MAKING_EXECUTE_INTENTS=true` is set.
->>>>>>> d993aa5 (Refresh execution docs for current main runtime):docs/execution/flow/MARKET_MAKING_FLOW.md
 - `strategy.intent_execution_driver=worker` decouples tick from exchange execution and keeps tick latency stable under load.
 - `strategy.intent_execution_driver=sync` keeps legacy inline execution behavior.
 - Strategy definitions are DB-backed and managed via admin APIs.
@@ -435,7 +430,7 @@ server/src/modules/market-making/
 │   └── clock-tick-coordinator.service.ts
 ├── trackers/
 │   ├── order-book-tracker.service.ts
-│   ├── private-stream-tracker.service.ts
+│   ├── user-stream-tracker.service.ts
 │   └── exchange-order-tracker.service.ts
 ├── user-orders/
 │   ├── user-orders.controller.ts

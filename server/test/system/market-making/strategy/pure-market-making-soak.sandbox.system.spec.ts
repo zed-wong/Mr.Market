@@ -42,10 +42,13 @@ const SOAK_SEED = Number(process.env.SOAK_SEED || 42);
 // Seeded PRNG (mulberry32) for reproducible random schedules.
 function createSeededRng(seed: number): () => number {
   let s = seed | 0;
+
   return () => {
     s = (s + 0x6d2b79f5) | 0;
     let t = Math.imul(s ^ (s >>> 15), 1 | s);
+
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
@@ -53,10 +56,13 @@ function createSeededRng(seed: number): () => number {
 // Fisher-Yates shuffle with seeded RNG.
 function shuffle<T>(arr: T[], rng: () => number): T[] {
   const a = [...arr];
+
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
+
     [a[i], a[j]] = [a[j]!, a[i]!];
   }
+
   return a;
 }
 
@@ -81,10 +87,7 @@ function generateInjectionSchedule(
 
   const errorCount = Math.max(4, Math.round(tickCount * 0.2));
   const fillCount = Math.max(2, Math.round(tickCount * 0.05));
-  const totalAbnormal = Math.min(
-    errorCount + fillCount,
-    eligibleTicks.length,
-  );
+  const totalAbnormal = Math.min(errorCount + fillCount, eligibleTicks.length);
 
   const shuffled = shuffle(eligibleTicks, rng);
   const abnormalTicks = shuffled.slice(0, totalAbnormal).sort((a, b) => a - b);
@@ -97,12 +100,10 @@ function generateInjectionSchedule(
     abnormalTicks.slice(errorCount, errorCount + fillCount),
   );
 
-  const errorSchedule: ErrorInjectionSchedule[] = errorTicks.map(
-    (tick, i) => ({
-      tick,
-      type: ERROR_TYPES[i % ERROR_TYPES.length]!,
-    }),
-  );
+  const errorSchedule: ErrorInjectionSchedule[] = errorTicks.map((tick, i) => ({
+    tick,
+    type: ERROR_TYPES[i % ERROR_TYPES.length]!,
+  }));
 
   return { errorSchedule, fillTicks };
 }
@@ -177,7 +178,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
         fillInjections: FILL_INJECT_TICKS.size,
         errorTypes: ERROR_TYPES,
         exchange: config!.exchangeId,
-        symbol: config!.symbol,
+        pair: config!.symbol,
       },
     );
 
@@ -201,7 +202,9 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     const startMs = Date.now();
 
     // --- Setup phase ---
-    log.step('Creating persisted pure market-making order (1 layer, no hanging orders, 1s refresh)');
+    log.step(
+      'Creating persisted pure market-making order (1 layer, no hanging orders, 1s refresh)',
+    );
     const fixture = await helper.createPersistedPureMarketMakingOrder({
       hangingOrdersEnabled: false,
       numberOfLayers: 1,
@@ -217,10 +220,13 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       orderRefreshTimeMs: SOAK_ORDER_REFRESH_TIME_MS,
     });
 
-    log.step('Starting order — executor session will be created and strategy tick cycle begins');
+    log.step(
+      'Starting order — executor session will be created and strategy tick cycle begins',
+    );
     await helper.startOrder(order.orderId, order.userId);
 
     const executor = helper.getExecutor(order.exchangeName, order.pair);
+
     expect(executor).toBeDefined();
 
     log.result('Order started', {
@@ -231,15 +237,14 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     // Register a fill callback on the executor. This verifies the exchange event
     // pipeline correctly delivers fill events to the strategy's executor.
     const onFill = jest.fn();
+
     executor?.configure({
       onFill: async (_session, fill) => {
         onFill(fill);
       },
     });
 
-    const adapter = helper
-      .getModuleRef()
-      .get(ExchangeConnectorAdapterService);
+    const adapter = helper.getModuleRef().get(ExchangeConnectorAdapterService);
 
     // --- Soak loop ---
     const snapshots: TickSnapshot[] = [];
@@ -303,19 +308,19 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
         const buyOrder = openOrders.find((o) => o.side === 'buy');
 
         if (buyOrder) {
-          helper.getPrivateStreamTrackerService().queueAccountEvent({
+          helper.getUserStreamTrackerService().queueAccountEvent({
             exchange: order.exchangeName,
             accountLabel: config!.accountLabel,
-            eventType: 'watch_orders',
+            kind: 'order',
             payload: {
-              id: buyOrder.exchangeOrderId,
+              exchangeOrderId: buyOrder.exchangeOrderId,
               clientOrderId: buyOrder.clientOrderId,
-              symbol: order.pair,
+              pair: order.pair,
               side: buyOrder.side,
               price: buyOrder.price,
-              filled: buyOrder.qty,
-              amount: buyOrder.qty,
+              cumulativeQty: buyOrder.qty,
               status: 'closed',
+              raw: {},
             },
             receivedAt: new Date().toISOString(),
           });
@@ -340,6 +345,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       const mappings = await helper.listOrderMappings(order.orderId);
       const openOrders = helper.getOpenTrackedOrders(strategyKey);
       const intentsProducedThisTick = intents.length - previousIntentCount;
+
       previousIntentCount = intents.length;
 
       const currentExchangeOrderIds: Set<string> = new Set(
@@ -389,9 +395,8 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
         sessionCount,
         executorCount: activeExecutors.length,
         heapUsedMb:
-          Math.round(
-            (process.memoryUsage().heapUsed / (1024 * 1024)) * 100,
-          ) / 100,
+          Math.round((process.memoryUsage().heapUsed / (1024 * 1024)) * 100) /
+          100,
         tickError,
         injectedErrorType: scheduledError?.type || null,
         injectedFill,
@@ -402,14 +407,27 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       snapshots.push(snapshot);
 
       const logInterval = Math.max(5, Math.floor(SOAK_TICK_COUNT / 40));
+
       if (tick % logInterval === 0 || tick === 1 || tick === SOAK_TICK_COUNT) {
-        const phase = tick === 1 ? 'warm-up' : tick === SOAK_TICK_COUNT ? 'final' : 'sample';
-        const errorNote = scheduledError ? ` [INJECTED: ${scheduledError.type}]` : '';
+        const phase =
+          tick === 1
+            ? 'warm-up'
+            : tick === SOAK_TICK_COUNT
+            ? 'final'
+            : 'sample';
+        const errorNote = scheduledError
+          ? ` [INJECTED: ${scheduledError.type}]`
+          : '';
         const fillNote = injectedFill ? ' [FILL INJECTED]' : '';
-        const skipNote = !tickError && intentsProducedThisTick === 0 ? ' [SKIPPED — no intents produced]' : '';
+        const skipNote =
+          !tickError && intentsProducedThisTick === 0
+            ? ' [SKIPPED — no intents produced]'
+            : '';
 
         log.result(
-          `[${phase}] tick ${tick}/${SOAK_TICK_COUNT} (${elapsed(startMs)})${errorNote}${fillNote}${skipNote}\n` +
+          `[${phase}] tick ${tick}/${SOAK_TICK_COUNT} (${elapsed(
+            startMs,
+          )})${errorNote}${fillNote}${skipNote}\n` +
             `  Open orders: ${openOrders.length} | Intents this tick: ${intentsProducedThisTick} | ` +
             `Total intents: ${intents.length} (DONE: ${snapshot.doneIntentCount}, FAILED: ${snapshot.failedIntentCount}, NEW: ${snapshot.newIntentCount}, SENT: ${snapshot.sentIntentCount})\n` +
             `  Tracker: ${snapshot.orderMappingCount} mappings | History: ${snapshot.historyDbRowCount} rows | ` +
@@ -473,6 +491,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     // --- Invariant 1: Sessions stay bounded ---
     // One order = one session. If sessionCount ever exceeds 1, a leaked session exists.
     let inv1Pass = true;
+
     for (const snapshot of snapshots) {
       try {
         expect(snapshot.sessionCount).toBeLessThanOrEqual(1);
@@ -489,7 +508,11 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       formatInvariantResult(
         '1',
         inv1Pass,
-        `session count bounded at ${lastSnapshot.sessionCount} throughout ${SOAK_TICK_COUNT} ticks — ${inv1Pass ? 'no leaked sessions' : 'LEAKED SESSION DETECTED'}`,
+        `session count bounded at ${
+          lastSnapshot.sessionCount
+        } throughout ${SOAK_TICK_COUNT} ticks — ${
+          inv1Pass ? 'no leaked sessions' : 'LEAKED SESSION DETECTED'
+        }`,
       ),
       {
         sessionCountHistory: snapshots.map((s) => s.sessionCount),
@@ -501,6 +524,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     // --- Invariant 2: Executor count stays bounded ---
     // One pair = one executor. If executorCount ever exceeds 1, a leaked executor exists.
     let inv2Pass = true;
+
     for (const snapshot of snapshots) {
       try {
         expect(snapshot.executorCount).toBeLessThanOrEqual(1);
@@ -517,7 +541,9 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       formatInvariantResult(
         '2',
         inv2Pass,
-        `executor count bounded at ${lastSnapshot.executorCount} throughout — ${inv2Pass ? 'no leaked executors' : 'LEAKED EXECUTOR DETECTED'}`,
+        `executor count bounded at ${lastSnapshot.executorCount} throughout — ${
+          inv2Pass ? 'no leaked executors' : 'LEAKED EXECUTOR DETECTED'
+        }`,
       ),
       {
         executorCountHistory: snapshots.map((s) => s.executorCount),
@@ -530,6 +556,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     // Every intent must reach a terminal state (DONE or FAILED). NEW/SENT = stalled.
     const inv3Pass =
       lastSnapshot.newIntentCount === 0 && lastSnapshot.sentIntentCount === 0;
+
     log.check(
       formatInvariantResult(
         '3',
@@ -537,7 +564,11 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
         `${lastSnapshot.totalIntentCount} total intents — ` +
           `${lastSnapshot.doneIntentCount} DONE, ${lastSnapshot.failedIntentCount} FAILED, ` +
           `${lastSnapshot.newIntentCount} NEW, ${lastSnapshot.sentIntentCount} SENT. ` +
-          `${inv3Pass ? 'All reached terminal state.' : 'INTENTS STALLED IN NEW/SENT!'}`,
+          `${
+            inv3Pass
+              ? 'All reached terminal state.'
+              : 'INTENTS STALLED IN NEW/SENT!'
+          }`,
       ),
       {
         newCount: lastSnapshot.newIntentCount,
@@ -567,8 +598,14 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
         inv4Pass,
         `${ticksWithIntents.length} ticks produced intents × ${expectedIntentsPerTick} intents/tick = ${expectedTotalIntents} expected. ` +
           `Got ${lastSnapshot.totalIntentCount} total. ` +
-          `${lastSnapshot.doneIntentCount + lastSnapshot.failedIntentCount} reached terminal state. ` +
-          `${inv4Pass ? 'All accounted for.' : 'MISMATCH — intents missing or unaccounted!'}`,
+          `${
+            lastSnapshot.doneIntentCount + lastSnapshot.failedIntentCount
+          } reached terminal state. ` +
+          `${
+            inv4Pass
+              ? 'All accounted for.'
+              : 'MISMATCH — intents missing or unaccounted!'
+          }`,
       ),
       {
         ticksProducingIntents: ticksWithIntents.length,
@@ -579,14 +616,15 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       },
     );
     expect(lastSnapshot.totalIntentCount).toBe(expectedTotalIntents);
-    expect(
-      lastSnapshot.doneIntentCount + lastSnapshot.failedIntentCount,
-    ).toBe(expectedTotalIntents);
+    expect(lastSnapshot.doneIntentCount + lastSnapshot.failedIntentCount).toBe(
+      expectedTotalIntents,
+    );
 
     // --- Invariant 5: Order mappings match successfully executed intents ---
     // Every DONE intent should have a corresponding order mapping.
     const inv5Pass =
       lastSnapshot.orderMappingCount === lastSnapshot.doneIntentCount;
+
     log.check(
       formatInvariantResult(
         '5',
@@ -605,6 +643,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     // Every DONE intent should produce an execution history record.
     const inv6Pass =
       lastSnapshot.executionHistoryCount === lastSnapshot.doneIntentCount;
+
     log.check(
       formatInvariantResult(
         '6',
@@ -645,6 +684,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     );
 
     let inv8Pass = true;
+
     if (activeErrorSchedule.length > 0) {
       for (const scheduled of activeErrorSchedule) {
         if (scheduled.tick < SOAK_TICK_COUNT) {
@@ -664,13 +704,16 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       }
 
       const observedImpact = ticksWithErrors.length + skippedTicks.length;
+
       log.check(
         formatInvariantResult(
           '8',
           inv8Pass,
           `${activeErrorSchedule.length} scheduled errors — ` +
             `${ticksWithErrors.length} threw, ${skippedTicks.length} silently skipped, ` +
-            `${errorRecoveryCount} recovered — ${inv8Pass ? 'all recovered, strategy resumed' : 'RECOVERY FAILED'}`,
+            `${errorRecoveryCount} recovered — ${
+              inv8Pass ? 'all recovered, strategy resumed' : 'RECOVERY FAILED'
+            }`,
         ),
         {
           scheduledErrors: activeErrorSchedule.length,
@@ -678,7 +721,9 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
           silentSkips: skippedTicks.length,
           errorRecoveries: errorRecoveryCount,
           observedImpact,
-          errorTypes: Array.from(new Set(activeErrorSchedule.map((e) => e.type))),
+          errorTypes: Array.from(
+            new Set(activeErrorSchedule.map((e) => e.type)),
+          ),
         },
       );
     }
@@ -686,6 +731,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     // --- Invariant 9: Each successful tick produces exactly 2 intents ---
     // 1-layer market making = 1 buy + 1 sell = 2 intents per tick.
     let inv9Pass = true;
+
     for (const snapshot of ticksWithIntents) {
       try {
         expect(snapshot.intentsProducedThisTick).toBe(expectedIntentsPerTick);
@@ -697,7 +743,11 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       formatInvariantResult(
         '9',
         inv9Pass,
-        `${ticksWithIntents.length} ticks produced intents — ${inv9Pass ? 'all had exactly 2 intents (1 buy + 1 sell)' : `TICK HAD WRONG INTENT COUNT`}`,
+        `${ticksWithIntents.length} ticks produced intents — ${
+          inv9Pass
+            ? 'all had exactly 2 intents (1 buy + 1 sell)'
+            : `TICK HAD WRONG INTENT COUNT`
+        }`,
       ),
       {
         ticksProducingIntents: ticksWithIntents.length,
@@ -712,6 +762,7 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     // At every tick, mappings and history rows should match DONE intents.
     // This catches mid-tick state inconsistency.
     let inv10Pass = true;
+
     for (const snapshot of snapshots) {
       try {
         expect(snapshot.orderMappingCount).toBe(snapshot.doneIntentCount);
@@ -724,19 +775,26 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       formatInvariantResult(
         '10',
         inv10Pass,
-        `order mappings = DONE intents at every tick: ${inv10Pass ? 'consistent throughout' : 'INCONSISTENCY DETECTED'}`,
+        `order mappings = DONE intents at every tick: ${
+          inv10Pass ? 'consistent throughout' : 'INCONSISTENCY DETECTED'
+        }`,
       ),
     );
 
     // --- Invariant 11: Simulated fills reached the executor ---
     if (fillsInjected > 0) {
       const inv11Pass = onFill.mock.calls.length >= fillsInjected;
+
       log.check(
         formatInvariantResult(
           '11',
           inv11Pass,
           `${fillsInjected} fill(s) injected, ${onFill.mock.calls.length} executor callback(s) received — ` +
-            `${inv11Pass ? 'all fills routed to executor (PASS)' : 'SOME FILLS MISSED (FAIL)'}`,
+            `${
+              inv11Pass
+                ? 'all fills routed to executor (PASS)'
+                : 'SOME FILLS MISSED (FAIL)'
+            }`,
         ),
         {
           fillsInjected,
@@ -764,8 +822,12 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       formatInvariantResult(
         '12',
         inv12Pass,
-        `heap early avg: ${Math.round(earlyAvgHeap * 100) / 100}MB → late avg: ${Math.round(lateAvgHeap * 100) / 100}MB ` +
-          `(growth: ${Math.round(heapGrowthMb * 100) / 100}MB, threshold: ${heapGrowthThresholdMb}MB) — ` +
+        `heap early avg: ${
+          Math.round(earlyAvgHeap * 100) / 100
+        }MB → late avg: ${Math.round(lateAvgHeap * 100) / 100}MB ` +
+          `(growth: ${
+            Math.round(heapGrowthMb * 100) / 100
+          }MB, threshold: ${heapGrowthThresholdMb}MB) — ` +
           `${inv12Pass ? 'stable (PASS)' : 'GROWING (FAIL)'}`,
       ),
       {
@@ -790,8 +852,11 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
     );
 
     const inv13Pass = stoppedSession === undefined;
+
     log.result(
-      `${inv13Pass ? 'PASS' : 'FAIL'} Post-stop: session ${inv13Pass ? 'removed' : 'still exists (LEAK)'}`,
+      `${inv13Pass ? 'PASS' : 'FAIL'} Post-stop: session ${
+        inv13Pass ? 'removed' : 'still exists (LEAK)'
+      }`,
       {
         sessionExists: Boolean(stoppedSession),
         executorExists: Boolean(
@@ -815,18 +880,28 @@ describeSandbox('Pure market making soak stability (sandbox system)', () => {
       inv12Pass;
 
     log.check(
-      `\n${allPassed ? '✅ ALL INVARIANTS PASSED' : '❌ SOME INVARIANTS FAILED'}\n` +
-        `  ${SOAK_TICK_COUNT} tick soak (${elapsed(startMs)}) against live sandbox exchange.\n` +
+      `\n${
+        allPassed ? '✅ ALL INVARIANTS PASSED' : '❌ SOME INVARIANTS FAILED'
+      }\n` +
+        `  ${SOAK_TICK_COUNT} tick soak (${elapsed(
+          startMs,
+        )}) against live sandbox exchange.\n` +
         `  Intents produced: ${lastSnapshot.totalIntentCount} total, ${lastSnapshot.doneIntentCount} DONE, ${lastSnapshot.failedIntentCount} FAILED.\n` +
         `  Cancel-replace cycles: ${cancelReplaceCount}. Errors recovered: ${errorRecoveryCount}. Fills injected: ${fillsInjected}.\n` +
-        `  Heap: ${Math.round(baselineHeapMb * 100) / 100}MB → ${Math.round(finalHeapMb * 100) / 100}MB (${Math.round(heapGrowthMb * 100) / 100}MB delta).\n` +
+        `  Heap: ${Math.round(baselineHeapMb * 100) / 100}MB → ${
+          Math.round(finalHeapMb * 100) / 100
+        }MB (${Math.round(heapGrowthMb * 100) / 100}MB delta).\n` +
         `\n  What this means:\n` +
         `    - The bot's order lifecycle is stable: every tick cancels stale orders and places fresh ones.\n` +
         `    - Error resilience holds: when the exchange fails, intents reach terminal states and the strategy resumes.\n` +
         `    - Fill routing is correct: exchange events are delivered to the executor with no silent drops.\n` +
         `    - Memory is bounded: no unbounded growth in heap, maps, or session counts.\n` +
         `    - State is consistent: DB rows, intent counts, and mappings stay in sync at every tick.\n` +
-        `\n  Production implication: ${allPassed ? 'This system is safe for continuous multi-day operation with active market making.' : 'One or more invariants failed — investigate before deploying.'}`,
+        `\n  Production implication: ${
+          allPassed
+            ? 'This system is safe for continuous multi-day operation with active market making.'
+            : 'One or more invariants failed — investigate before deploying.'
+        }`,
     );
   });
 });

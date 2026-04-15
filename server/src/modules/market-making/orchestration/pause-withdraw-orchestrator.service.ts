@@ -16,7 +16,11 @@ type PauseWithdrawCommand = {
   operationId: string;
   userId: string;
   clientId: string;
-  strategyType: 'arbitrage' | 'pureMarketMaking' | 'volume';
+  strategyType:
+    | 'arbitrage'
+    | 'pureMarketMaking'
+    | 'volume'
+    | 'dualAccountVolume';
   assetId: string;
   amount: string;
   destination: string;
@@ -162,7 +166,7 @@ export class PauseWithdrawOrchestratorService {
 
     while (true) {
       const openOrders =
-        this.exchangeOrderTrackerService.getOpenOrders(strategyKey);
+        this.exchangeOrderTrackerService.getLiveOrders(strategyKey);
 
       if (openOrders.length === 0) {
         return;

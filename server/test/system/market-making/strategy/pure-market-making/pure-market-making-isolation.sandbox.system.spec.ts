@@ -75,7 +75,9 @@ describeSandbox('Pure market making isolation parity (sandbox system)', () => {
     await helper.runSingleTick(first.order.orderId);
 
     const firstIntents = await helper.listStrategyIntents(first.order.orderId);
-    const secondIntents = await helper.listStrategyIntents(second.order.orderId);
+    const secondIntents = await helper.listStrategyIntents(
+      second.order.orderId,
+    );
 
     log.result('multi-pair isolation verified', {
       firstPair: first.order.pair,

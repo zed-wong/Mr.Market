@@ -43,7 +43,7 @@ export function mapStrategySnapshotToMarketMakingOrderFields(
     bidSpread: toStoredString(resolvedConfig.bidSpread, '0.001'),
     askSpread: toStoredString(resolvedConfig.askSpread, '0.001'),
     orderAmount: toStoredString(resolvedConfig.orderAmount, '0'),
-    orderRefreshTime: toStoredString(resolvedConfig.orderRefreshTime, '10000'),
+    orderRefreshTime: toStoredString(resolvedConfig.orderRefreshTime, '1000'),
     numberOfLayers: toStoredString(resolvedConfig.numberOfLayers, '1'),
     priceSourceType: toStoredPriceSourceType(resolvedConfig.priceSourceType),
     amountChangePerLayer: toStoredString(

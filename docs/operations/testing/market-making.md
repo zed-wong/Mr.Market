@@ -97,7 +97,7 @@ Current `clientOrderId` rule:
 Boundary:
 
 - validates pure market-making runtime behavior through the real sandbox path
-- does not validate exchange private-stream ingestion
+- does not validate exchange user-stream ingestion
 
 ### Phase 7A: Intent Engine Mock Coverage
 
@@ -115,14 +115,14 @@ Coverage:
 - assert duplicate consumption of the same persisted intent does not create duplicate side effects
 - assert persisted durability receipts survive worker restart and suppress re-delivered execution
 
-### Phase 8: Private-Fill Ingestion
+### Phase 8: User-Stream Fill Ingestion
 
 Spec: `server/test/system/market-making/execution/private-fill-ingestion.sandbox.system.spec.ts`
 
 Coverage:
 
-- start the real private `watchOrders()` ingestion loop from the runtime attach path
-- route a deterministic filled private-stream payload to the pooled executor
+- start the real authenticated `watchOrders()` user-stream ingestion loop from the runtime attach path
+- route a deterministic filled user-stream payload to the pooled executor
 - when a second sandbox account is configured, place a real counterparty order and assert the live fill reaches the executor through `FillRoutingService`
 - stop the watcher through the real `stop_mm` path
 
@@ -151,7 +151,7 @@ Deterministically scheduled via seeded PRNG. First 2 ticks are warm-up (no injec
 
 **Fill injection (~5% of ticks):**
 
-Injects a synthetic `watch_orders` closed event for an open buy order through the private-stream tracker. Verifies the executor `onFill` callback receives the routed fill.
+Injects a synthetic `watch_orders` closed event for an open buy order through the user-stream tracker. Verifies the executor `onFill` callback receives the routed fill.
 
 **12 invariants verified after the soak loop:**
 

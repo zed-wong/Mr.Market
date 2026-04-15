@@ -1,5 +1,80 @@
 # Execution Flow Changelog
 
+## 2026-04-14
+
+- Archive superseded planning docs (`2026-04-13-dual-account-volume-runtime-follow-up-checklist.md`, `2026-04-13-composable-strategy-architecture.md`, `2026-04-14-user-stream-dual-account-todo.md`) and refresh `docs/planning/README.md`, `todo.md`, and the active user-stream plan so the planning index matches current work
+- Add `BalanceStateCacheService` plus `watchBalance()` ingestion and tracker application so dual-account/runtime balance reads can use WS-primary cached balances with REST backfill on stale reads
+- Add `BalanceStateRefreshService` to refresh silent accounts via REST and expose coarse stream-health states (`healthy`, `degraded`, `silent`, `reconnecting`) plus last refresh timestamps
+- Add `inventory_balance` as a dual-account side-selection mode so the runtime can bias buy/sell from live maker inventory instead of rigid cycle alternation
+- Add `UserStreamCapabilityService` to classify exchanges into `full` / `partial` / `rest_only` capability tiers and expose those diagnostics, along with cache freshness and stream health, through the admin direct status endpoint
+- Finish the dual-account fee-buffer correction: `loadTradingRules()` now exposes `takerFee`, the runtime sizes dual-account capacity against `makerFee + takerFee`, and the buffer formula now retains `1 - totalFeeRate` instead of dividing by `1 + fee`
+- Reuse a single dual-account balance snapshot across preferred-side evaluation, fallback-side evaluation, and rebalance candidate selection so one tick no longer re-fetches the same maker/taker balances multiple times
+- Start Phase 1/2 of the user-stream migration in runtime code: add `UserStreamIngestionService` / `UserStreamTrackerService` aliases, normalize `watchOrders()` into `kind:'order'` events, add `watchMyTrades()` ingestion for `kind:'trade'` events, and suppress duplicate normalized trade fills in the tracker while preserving existing watcher/tracker unit coverage
+- Close Phase 0 of the 2026-04-14 user-stream / dual-account todo by adding the normalized `UserStreamEvent` contract, datasource/normalizer interfaces, and `docs/architecture/server/user-stream-model.md` as the new private-stream architecture baseline
+- Tighten dual-account taker IOC completion rules in `StrategyIntentExecutionService`: require a confirmed taker fill before counting a completed cycle, accumulate `tradedQuoteVolume` from actual taker fill quote, and fail IOC acks that return neither an exchange order id nor any fill
+- Add a new active planning doc, `docs/planning/2026-04-14-hummingbot-like-user-stream-plan.md`, to scope a phased migration from the current `watchOrders()`-only private stream path toward a Hummingbot-like normalized user-stream architecture with first-class balance/order/trade events and explicit REST fallback loops
+
+## 2026-04-13
+
+- Capture a dated TODO checklist for the remaining dual-account runtime issues seen in the latest MEXC run: chronic overlap pressure, per-exchange queue serialization across accounts, repeated below-minimum preferred-side collapse before fallback, and missing explicit taker IOC fill-completeness validation
+- Add two dual-account volume guardrails for admin direct runs: reserve a small fee buffer when turning live balances into publishable capacity, and clamp quantized maker prices back to the correct top-of-book side (or skip the cycle if no valid post-only price remains) so MEXC edge-size cycles stop flapping between `Insufficient position` and `maker_not_best`
+- Make `quantizeAndValidateQuote()` short-circuit raw below-min dual-account rebalance quotes and swallow exchange precision rejections as skip signals, so tiny-balance MEXC sessions stop surfacing fatal `amountToPrecision()` errors on tick
+- Set the seeded `dualAccountVolume` default `cadenceVariance` to `0.25` so new admin direct runs inherit a 25% cycle-interval jitter instead of a perfectly fixed cadence
+- Guard dual-account volume quotes with pre-quantization exchange min/max checks and let below-min preferred sides fall through to fallback/rebalance instead of surfacing CCXT `InvalidOrder` errors
+- Add a `750ms` dual-account maker settlement window after the IOC leg: if the maker still looks live after the confirmation check, the runtime now cancels it instead of leaving a stale post-only order blocking later cycles
+- Make dual-account volume sizing adapt to live maker/taker balances each tick: the runtime now shrinks oversized cycles down to the currently affordable amount and skips only when the quantized order would fall below exchange minimums
+- Make dual-account volume retry the opposite side when the preferred side is not tradable with current balances, while short-circuiting zero-sized post-balance quotes before CCXT precision calls
+- Add dual-account local auto-rebalance: when neither normal side is tradable, the strategy now submits a single-account IOC rebalance order that restores the next feasible side without advancing published-cycle counters
+- Rework dual-account market-making runtime logs for operations: every cycle now carries `tickId/cycleId`, dual-account decision logs explain preferred vs selected side with duration, taker execution logs emit per-stage timing summaries, and tick-overlap warnings are throttled into aggregated backpressure summaries
+
+## 2026-04-12
+
+- Fix stale market-making runtime recovery after stop/restart: tracker modules now receive `StrategyInstance` and `MarketMakingOrder` repositories, orphan tracked orders can transition from `pending_create` to `cancelled`, and startup restore now refuses order-bound strategy rows whose bound market-making order is no longer `running`
+- Fix admin direct order-details inventory skew math: normalize base balances into quote value using the live bid/ask midpoint before rendering the allocation bar, so dual-account XIN/USDT balances no longer compare raw token counts against USDT totals
+- Bound market-making exchange adapter calls with a timeout so a hung CCXT request cannot hold the per-exchange queue forever, which previously let one stuck dual-account intent block tracker polling and keep the global tick coordinator in `previous tick is still in progress`
+
+## 2026-04-11
+
+- Realign the admin direct market-making sandbox system spec with the `key_id`-based API key identity cutover by removing the obsolete direct-start `accountLabel` payload field, replacing legacy `exchange_index` fixtures with `key_id`, and documenting a dated dual-account volume release gate checklist
+- Add `dualAccountVolume` controller registration to the single-tick system-test helper, add a dedicated dual-account admin-direct sandbox system spec, make admin direct status merge live `strategy_instance.parameters` over the stored snapshot, and fix dual-account published-cycle persistence to preserve execution-written completion counters
+
+## 2026-04-10
+
+- Add short-lived in-memory HuFi access-token caching in `CampaignService` and route admin campaign joined-status reads through the shared token helper to avoid nonce/sign/auth on every admin page refresh
+
+- Make admin direct MM minimum-order handling use real exchange market limits: frontend now resolves live CCXT minimums instead of rendering non-positive `0`, and backend now persists exchange-derived pair limits/precision when admin market-making pairs are added or refreshed
+- Rewrite `docs/archive/plans/2026-04-10-api-key-identity-migration-plan.md` into an MVP hard-cutover plan: no old-client compatibility, no old-order/runtime preservation, `key_id` as the sole runtime identity, and a full DB reset + seed deployment assumption
+- Close the deferred volume controller follow-up: sanitize volume/dual-account cadence parsing, keep controller rerun compatible with legacy `incrementPercentage` / `intervalTime` / `tradeAmount` keys, and source rerun tenant identity from `StrategyInstance.userId/clientId` instead of persisted params
+- Start Phase 0 of `docs/archive/plans/2026-04-09-unified-execution-plan.md`: make exchange execution account-aware by threading `accountLabel` through the connector adapter, PMM runtime balance/rule/restore/cancel paths, tracked-order persistence, and intent execution
+- Persist restart-critical strategy intent fields (`accountLabel`, `timeInForce`, `slotKey`, `postOnly`) plus tracked-order account metadata (`accountLabel`, `slotKey`, `role`) with a new nullable migration and unit coverage for adapter, tracker, intent execution/store/worker, and strategy runtime regression paths
+- Start Phase 1 of `docs/archive/plans/2026-04-09-unified-execution-plan.md`: switch PMM quote generation to stable `slotKey` targets, split tracker live-vs-active slot queries, rewrite PMM refresh into cancel-first slot reconciliation, and add slot-aware create dedup plus stop-path publish gating
+- Start Phase 2 of `docs/archive/plans/2026-04-09-unified-execution-plan.md`: add `dualAccountVolume` runtime/controller plumbing, dual-label readiness gating, maker->taker IOC sequencing, cycle counter persistence, dangling-maker restart cleanup, and dual-account server test coverage
+- Start Phase 3 of `docs/archive/plans/2026-04-09-unified-execution-plan.md`: add admin direct dual-account start/list/status support, expose dual-account config in the admin direct MM UI and order details drawer, add PMM slot-reconciliation reason logging (`slot_occupied`, `waiting_cancel`, `within_tolerance`, `insufficient_balance`), and extend targeted backend coverage
+
+## 2026-04-09
+
+- Add a dated PMM minimum-safe-stability close-gap plan in `docs/archive/plans/2026-04-09-pmm-minimum-safe-stability-gap-plan.md`, narrowing the Hummingbot gap list into phased must-have/should-have/recommended work for single-venue PMM safe operation
+- Harden PMM runtime recovery and shutdown paths: restore tracked exchange orders on startup via REST open-order reconciliation, cancel orphaned exchange orders, add process-shutdown cancel-all with bounded wait, and add a realized-PnL kill switch with unit coverage
+- Route REST-recovered fill deltas back through the executor/ledger path, add mock-system PMM safety coverage for restart/shutdown/disconnect/kill-switch behavior, add mock-system WS/REST fill-recovery dedup coverage, and close the April 9 PMM minimum-safe-stability todo checklist
+- Add a new PMM active-order reconciliation design plan plus a follow-up todo checklist to fix remaining Hummingbot-gap behavior around `pending_create` slot occupancy, phased cancel-then-recreate refresh, and stop-path tail-intent races
+
+## 2026-04-08
+
+- Add `min_order_amount`, `max_order_amount`, `amount_significant_figures`, and `price_significant_figures` to grow market-making pairs with a migration, seed population, and shared frontend/backend types
+
+## 2026-04-07
+
+- Route market-making order book tracking through the shared `MarketdataService` stream, add a thin `OrderBookIngestionService` consumer for runtime session start/stop, and log tracker/order-book/ticker fallback reasons so strategy pricing no longer depends on per-tick ticker HTTP requests when websocket books are available
+- Add bounded retry/backoff to exchange client initialization so transient `loadMarkets()` failures do not permanently leave an exchange in `failed` state until config changes
+
+## 2026-04-02
+
+- Bind private user-orders reads and market-making intent creation to the authenticated JWT user, add ownership checks for payment/detail lookups, and cover the security change with controller/service unit tests
+
+## 2026-04-02 — Unified Exchange Account Design
+
+- Designed and documented unified `ExchangeAccount` entity to replace `admin_exchanges` + `api_keys_config` split. Root cause: `admin_exchanges.enable` has no runtime effect — CCXT always needs credentials. Saved to `docs/archive/plans/2026-04-02-unified-exchange-account-design.md`, marked as future TODO in `todo.md`.
+
 ## 2026-04-01
 
 - Add an English planning note that frames the backend as a `Funding Layer` plus `Execution Layer`, with mixin, manual funding, and EVM wallets treated as funding sources that converge on a shared `ready_to_start` state
@@ -247,6 +322,14 @@
 
 - Switch Playwright workflow to SQLite and remove Postgres service
 
+## 2026-04-10
+
+- Derive effective direct-order minimums from live exchange `amount.min` and `cost.min / price`, and surface rounded minimum hints in the admin direct order UI
+
+## 2026-04-14
+
+- Finish dual-account user-stream plan: add exchange normalizer registry, trade-over-order fill dedup, balance cache + REST refresh diagnostics, and admin status visibility for watcher state, queue depth, and duplicate suppression
+
 ## 2026-02-06
 
 - Adjust Mixin snapshot polling interval and clarify view-only exchange mode when no API keys
@@ -260,8 +343,6 @@
 
 - Remove interface-side market making memo generator so intent API remains the memo source of truth
 - Add guards and queue alignment for market-making processing (BigNumber import, withdrawal monitor retries, VWAP safety)
-
-## 2026-02-02
 
 - Allow market-making fee checks to treat base/quote assets as fees and dedupe payment check jobs per order
 
@@ -302,3 +383,4 @@
 - Add withdrawal timeout (30 minutes) to error handling
 - Add comprehensive ui/DESIGN_PATTERN.md with full design system documentation
 - Fix admin global fee API to read the seeded primary config instead of assuming `config_id = 1`, which made `/manage/settings/fees` show `0` fees
+- Add admin direct market-making flow with shared runtime start/stop, campaign joins, source filtering, and admin monitoring UI

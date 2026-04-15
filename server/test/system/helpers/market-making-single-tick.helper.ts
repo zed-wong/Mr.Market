@@ -12,6 +12,7 @@ import { StrategyDefinition } from 'src/common/entities/market-making/strategy-d
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
+import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -32,8 +33,8 @@ import { ExchangeOrderMappingService } from 'src/modules/market-making/execution
 import { FillRoutingService } from 'src/modules/market-making/execution/fill-routing.service';
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
-import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
+import { DualAccountVolumeStrategyController } from 'src/modules/market-making/strategy/controllers/dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from 'src/modules/market-making/strategy/controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from 'src/modules/market-making/strategy/data/strategy-market-data-provider.service';
@@ -50,9 +51,10 @@ import { ClockTickCoordinatorService } from 'src/modules/market-making/tick/cloc
 import type { TickComponent } from 'src/modules/market-making/tick/tick-component.interface';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
-import { PrivateStreamIngestionService } from 'src/modules/market-making/trackers/private-stream-ingestion.service';
-import { PrivateStreamTrackerService } from 'src/modules/market-making/trackers/private-stream-tracker.service';
+import { UserStreamIngestionService } from 'src/modules/market-making/trackers/user-stream-ingestion.service';
+import { UserStreamTrackerService } from 'src/modules/market-making/trackers/user-stream-tracker.service';
 import { MarketMakingOrderProcessor } from 'src/modules/market-making/user-orders/market-making.processor';
+import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { TransactionService } from 'src/modules/mixin/transaction/transaction.service';
@@ -78,6 +80,7 @@ const SINGLE_TICK_TEST_ENTITIES = [
   StrategyExecutionHistory,
   StrategyInstance,
   StrategyOrderIntentEntity,
+  TrackedOrderEntity,
 ];
 
 type RuntimeFixture = {
@@ -91,9 +94,14 @@ type PureMarketMakingRuntimeOverrides = {
   amountChangePerLayer?: number;
   amountChangeType?: 'fixed' | 'percentage';
   bidSpread?: number;
+  filledOrderDelay?: number;
   hangingOrdersEnabled?: boolean;
+  hangingOrdersCancelPct?: number;
+  maxOrderAge?: number;
+  minimumSpread?: number;
   numberOfLayers?: number;
   orderAmount?: number;
+  orderRefreshTolerancePct?: number;
   orderId?: string;
   orderRefreshTime?: number;
   pair?: string;
@@ -123,8 +131,8 @@ export class MarketMakingSingleTickHelper {
   private marketMakingOrderRepository!: Repository<MarketMakingOrder>;
   private moduleRef!: TestingModule;
   private orderBookTrackerService!: OrderBookTrackerService;
-  private privateStreamIngestionService!: PrivateStreamIngestionService;
-  private privateStreamTrackerService!: PrivateStreamTrackerService;
+  private userStreamIngestionService!: UserStreamIngestionService;
+  private userStreamTrackerService!: UserStreamTrackerService;
   private readonly runtimeOrderIds = new Set<string>();
   private strategyDefinitionRepository!: Repository<StrategyDefinition>;
   private strategyIntentExecutionService!: StrategyIntentExecutionService;
@@ -173,12 +181,12 @@ export class MarketMakingSingleTickHelper {
     return this.orderBookTrackerService;
   }
 
-  getPrivateStreamIngestionService(): PrivateStreamIngestionService {
-    return this.privateStreamIngestionService;
+  getUserStreamIngestionService(): UserStreamIngestionService {
+    return this.userStreamIngestionService;
   }
 
-  getPrivateStreamTrackerService(): PrivateStreamTrackerService {
-    return this.privateStreamTrackerService;
+  getUserStreamTrackerService(): UserStreamTrackerService {
+    return this.userStreamTrackerService;
   }
 
   getModuleRef(): TestingModule {
@@ -252,11 +260,13 @@ export class MarketMakingSingleTickHelper {
         ExecutorOrchestratorService,
         ExecutorRegistry,
         FillRoutingService,
+        MarketMakingRuntimeService,
         MarketMakingOrderProcessor,
         ClockTickCoordinatorService,
         OrderBookTrackerService,
-        PrivateStreamIngestionService,
-        PrivateStreamTrackerService,
+        UserStreamIngestionService,
+        UserStreamTrackerService,
+        DualAccountVolumeStrategyController,
         PureMarketMakingStrategyController,
         QuoteExecutorManagerService,
         StrategyIntentExecutionService,
@@ -291,10 +301,6 @@ export class MarketMakingSingleTickHelper {
           useValue: {},
         },
         {
-          provide: LocalCampaignService,
-          useValue: {},
-        },
-        {
           provide: MarketdataService,
           useValue: {
             getTickerPrice: async () => null,
@@ -318,9 +324,17 @@ export class MarketMakingSingleTickHelper {
         {
           provide: StrategyControllerRegistry,
           useFactory: (
+            dualAccountVolumeController: DualAccountVolumeStrategyController,
             pureMarketMakingController: PureMarketMakingStrategyController,
-          ) => new StrategyControllerRegistry([pureMarketMakingController]),
-          inject: [PureMarketMakingStrategyController],
+          ) =>
+            new StrategyControllerRegistry([
+              pureMarketMakingController,
+              dualAccountVolumeController,
+            ]),
+          inject: [
+            DualAccountVolumeStrategyController,
+            PureMarketMakingStrategyController,
+          ],
         },
         {
           provide: TransactionService,
@@ -377,11 +391,11 @@ export class MarketMakingSingleTickHelper {
     this.strategyOrderIntentRepository = this.moduleRef.get(
       getRepositoryToken(StrategyOrderIntentEntity),
     );
-    this.privateStreamIngestionService = this.moduleRef.get(
-      PrivateStreamIngestionService,
+    this.userStreamIngestionService = this.moduleRef.get(
+      UserStreamIngestionService,
     );
-    this.privateStreamTrackerService = this.moduleRef.get(
-      PrivateStreamTrackerService,
+    this.userStreamTrackerService = this.moduleRef.get(
+      UserStreamTrackerService,
     );
 
     this.exchange = await waitForInitializedExchange(
@@ -393,7 +407,7 @@ export class MarketMakingSingleTickHelper {
     for (const component of [
       this.orderBookTrackerService,
       this.exchangeOrderTrackerService,
-      this.privateStreamTrackerService,
+      this.userStreamTrackerService,
       this.moduleRef.get(StrategyService),
     ]) {
       const lifecycleComponent = component as TickComponent & {
@@ -459,8 +473,13 @@ export class MarketMakingSingleTickHelper {
           amountChangeType,
           askSpread,
           bidSpread,
+          filledOrderDelay: overrides.filledOrderDelay,
           hangingOrdersEnabled: overrides.hangingOrdersEnabled,
+          hangingOrdersCancelPct: overrides.hangingOrdersCancelPct,
+          maxOrderAge: overrides.maxOrderAge,
+          minimumSpread: overrides.minimumSpread,
           orderAmount,
+          orderRefreshTolerancePct: overrides.orderRefreshTolerancePct,
           orderRefreshTime,
           numberOfLayers,
           pair,
@@ -526,7 +545,7 @@ export class MarketMakingSingleTickHelper {
   }
 
   async flushPrivateStreamEvents(): Promise<void> {
-    await this.privateStreamTrackerService.onTick(getRFC3339Timestamp());
+    await this.userStreamTrackerService.onTick(getRFC3339Timestamp());
   }
 
   async forceSessionReadyForNextTick(orderId: string): Promise<void> {
@@ -705,9 +724,14 @@ export class MarketMakingSingleTickHelper {
       amountChangePerLayer: number;
       amountChangeType: 'fixed' | 'percentage';
       bidSpread: number;
+      filledOrderDelay?: number;
       hangingOrdersEnabled?: boolean;
+      hangingOrdersCancelPct?: number;
+      maxOrderAge?: number;
+      minimumSpread?: number;
       numberOfLayers: number;
       orderAmount: number;
+      orderRefreshTolerancePct?: number;
       orderRefreshTime: number;
       pair: string;
       userId: string;
@@ -731,6 +755,11 @@ export class MarketMakingSingleTickHelper {
         amountChangePerLayer: overrides.amountChangePerLayer,
         amountChangeType: overrides.amountChangeType,
         hangingOrdersEnabled: Boolean(overrides.hangingOrdersEnabled),
+        minimumSpread: overrides.minimumSpread,
+        orderRefreshTolerancePct: overrides.orderRefreshTolerancePct,
+        filledOrderDelay: overrides.filledOrderDelay,
+        maxOrderAge: overrides.maxOrderAge,
+        hangingOrdersCancelPct: overrides.hangingOrdersCancelPct,
       },
     };
   }

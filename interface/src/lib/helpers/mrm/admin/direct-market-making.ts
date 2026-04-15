@@ -1,0 +1,166 @@
+import { MRM_BACKEND_URL } from "$lib/helpers/constants";
+import { getHeaders, handleApiResponse } from "$lib/helpers/mrm/common";
+import type {
+  AdminCampaign,
+  CampaignJoinPayload,
+  DirectOrderStatus,
+  DirectOrderSummary,
+  DirectStartPayload,
+  DirectWalletStatus,
+} from "$lib/types/hufi/admin-direct-market-making";
+import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
+
+export const listDirectOrders = async (
+  token: string,
+): Promise<DirectOrderSummary[]> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-orders`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const listDirectStrategies = async (
+  token: string,
+): Promise<StrategyDefinition[]> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-strategies`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const startDirectOrder = async (
+  payload: DirectStartPayload,
+  token: string,
+): Promise<{ orderId: string; state: string; warnings: string[] }> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-start`,
+    {
+      method: "POST",
+      headers: getHeaders(token),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const stopDirectOrder = async (
+  orderId: string,
+  token: string,
+): Promise<{ orderId: string; state: string }> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-stop`,
+    {
+      method: "POST",
+      headers: getHeaders(token),
+      body: JSON.stringify({ orderId }),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const resumeDirectOrder = async (
+  orderId: string,
+  token: string,
+): Promise<{ orderId: string; state: string; warnings: string[] }> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-resume`,
+    {
+      method: "POST",
+      headers: getHeaders(token),
+      body: JSON.stringify({ orderId }),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const removeDirectOrder = async (
+  orderId: string,
+  token: string,
+): Promise<{ orderId: string; state: string }> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-orders/${orderId}`,
+    {
+      method: "DELETE",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const getDirectOrderStatus = async (
+  orderId: string,
+  token: string,
+): Promise<DirectOrderStatus> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/direct-orders/${orderId}/status`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const listAdminCampaigns = async (
+  token: string,
+): Promise<AdminCampaign[]> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/campaigns`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const joinAdminCampaign = async (
+  payload: CampaignJoinPayload,
+  token: string,
+): Promise<{
+  status: string;
+  apiKeyId: string;
+  campaignAddress: string;
+  chainId: number;
+}> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/campaign-join`,
+    {
+      method: "POST",
+      headers: getHeaders(token),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const getDirectWalletStatus = async (
+  token: string,
+): Promise<DirectWalletStatus> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/wallet-status`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};

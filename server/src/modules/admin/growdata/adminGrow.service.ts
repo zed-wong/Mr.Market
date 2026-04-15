@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import BigNumber from 'bignumber.js';
 import {
   GrowdataArbitragePair,
   GrowdataExchange,
@@ -11,8 +12,23 @@ import {
 } from 'src/modules/admin/growdata/adminGrow.dto';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { GrowdataService } from 'src/modules/data/grow-data/grow-data.service';
+import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
+
+type ExchangeMarketSnapshot = {
+  symbol?: string;
+  limits?: {
+    amount?: {
+      min?: number | string | null;
+      max?: number | string | null;
+    };
+  };
+  precision?: {
+    amount?: number | string | null;
+    price?: number | string | null;
+  };
+};
 
 @Injectable()
 export class AdminGrowService {
@@ -22,6 +38,7 @@ export class AdminGrowService {
     private readonly growDataService: GrowdataService,
     private readonly growdataRepository: GrowdataRepository,
     private readonly mixinClientService: MixinClientService,
+    private readonly exchangeInitService: ExchangeInitService,
   ) {}
 
   private async resolveChainInfo(assetId?: string) {
@@ -50,6 +67,83 @@ export class AdminGrowService {
       this.logger.warn(`Failed to resolve chain info for ${assetId}`, error);
 
       return { chainId: undefined, chainIconUrl: undefined };
+    }
+  }
+
+  private normalizeMarketSymbol(symbol?: string) {
+    return String(symbol || '')
+      .split(':')[0]
+      .trim()
+      .toUpperCase();
+  }
+
+  private readFiniteString(value: unknown): string | undefined {
+    const trimmed = String(value ?? '').trim();
+
+    return trimmed ? trimmed : undefined;
+  }
+
+  private readPositiveString(value: unknown): string | undefined {
+    const trimmed = String(value ?? '').trim();
+
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const amount = new BigNumber(trimmed);
+
+    if (!amount.isFinite() || !amount.isGreaterThan(0)) {
+      return undefined;
+    }
+
+    return amount.toString();
+  }
+
+  private async applyExchangeMarketMetadata(
+    pair: GrowdataMarketMakingPair,
+  ): Promise<GrowdataMarketMakingPair> {
+    if (!pair.exchange_id || !pair.symbol) {
+      return pair;
+    }
+
+    try {
+      const markets = (await this.exchangeInitService.getCcxtExchangeMarkets(
+        pair.exchange_id,
+      )) as ExchangeMarketSnapshot[];
+      const normalizedSymbol = this.normalizeMarketSymbol(pair.symbol);
+      const market = Array.isArray(markets)
+        ? markets.find(
+            (item) =>
+              this.normalizeMarketSymbol(item?.symbol) === normalizedSymbol,
+          )
+        : undefined;
+
+      if (!market) {
+        return pair;
+      }
+
+      return {
+        ...pair,
+        min_order_amount:
+          this.readPositiveString(pair.min_order_amount) ??
+          this.readPositiveString(market.limits?.amount?.min),
+        max_order_amount:
+          this.readPositiveString(pair.max_order_amount) ??
+          this.readPositiveString(market.limits?.amount?.max),
+        amount_significant_figures:
+          this.readFiniteString(pair.amount_significant_figures) ??
+          this.readFiniteString(market.precision?.amount),
+        price_significant_figures:
+          this.readFiniteString(pair.price_significant_figures) ??
+          this.readFiniteString(market.precision?.price),
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to resolve exchange market metadata for ${pair.exchange_id} ${pair.symbol}`,
+        error,
+      );
+
+      return pair;
     }
   }
 
@@ -147,10 +241,11 @@ export class AdminGrowService {
     if (!exchange) {
       throw new Error('Exchange not found');
     }
-    const pair = await this.applyChainInfo({
+    const pairWithChainInfo = await this.applyChainInfo({
       ...pairDto,
       exchange_id: exchange.exchange_id,
     } as GrowdataMarketMakingPair);
+    const pair = await this.applyExchangeMarketMetadata(pairWithChainInfo);
 
     return this.growdataRepository.addMarketMakingPair(pair);
   }
@@ -176,7 +271,10 @@ export class AdminGrowService {
     if (pair) {
       Object.assign(pair, modifications);
       // Assuming there's a method to update the pair
-      const updatedPair = await this.applyChainInfo(pair);
+      const pairWithChainInfo = await this.applyChainInfo(pair);
+      const updatedPair = await this.applyExchangeMarketMetadata(
+        pairWithChainInfo,
+      );
 
       return this.growdataRepository.addMarketMakingPair(updatedPair);
     }

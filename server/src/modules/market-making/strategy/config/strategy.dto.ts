@@ -1,7 +1,10 @@
 // strategy.dto.ts
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsBoolean,
   IsEnum,
   IsEthereumAddress,
   IsIn,
@@ -10,8 +13,10 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  Max,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Side } from 'src/common/constants/side';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
@@ -20,6 +25,86 @@ import { STRATEGY_EXECUTION_CATEGORIES } from './strategy-execution-category';
 
 export type VolumeExecutionVenue = 'cex' | 'dex';
 export type DexAdapterId = 'uniswapV3' | 'pancakeV3';
+
+export class DualAccountBehaviorProfileDto {
+  @ApiPropertyOptional({ example: 0.95 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  tradeAmountMultiplier?: number;
+
+  @ApiPropertyOptional({ example: 0.15 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  tradeAmountVariance?: number;
+
+  @ApiPropertyOptional({ example: 0.9 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  priceOffsetMultiplier?: number;
+
+  @ApiPropertyOptional({ example: 0.2 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  priceOffsetVariance?: number;
+
+  @ApiPropertyOptional({ example: 1.1 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  cadenceMultiplier?: number;
+
+  @ApiPropertyOptional({ example: 0.25 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cadenceVariance?: number;
+
+  @ApiPropertyOptional({ example: 1.2 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  makerDelayMultiplier?: number;
+
+  @ApiPropertyOptional({ example: 0.5 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  makerDelayVariance?: number;
+
+  @ApiPropertyOptional({ example: 0.6 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  buyBias?: number;
+
+  @ApiPropertyOptional({ example: [8, 9, 10, 11] })
+  @IsOptional()
+  @Type(() => Number)
+  @ArrayMaxSize(24)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(23, { each: true })
+  activeHours?: number[];
+}
+
+export class DualAccountBehaviorProfilesDto {
+  @ApiPropertyOptional({ type: DualAccountBehaviorProfileDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DualAccountBehaviorProfileDto)
+  maker?: DualAccountBehaviorProfileDto;
+
+  @ApiPropertyOptional({ type: DualAccountBehaviorProfileDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DualAccountBehaviorProfileDto)
+  taker?: DualAccountBehaviorProfileDto;
+}
 
 export class ArbitrageStrategyDto {
   @ApiProperty({
@@ -91,7 +176,7 @@ export class PureMarketMakingStrategyDto {
   exchangeName: string;
 
   @ApiPropertyOptional({
-    description: 'Exchange account label used for private-stream routing',
+    description: 'Exchange account label used for user-stream routing',
     example: 'default',
   })
   accountLabel?: string;
@@ -195,6 +280,45 @@ export class PureMarketMakingStrategyDto {
     example: 0.5,
   })
   currentBaseRatio?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum effective spread required to place or keep a quote',
+    example: 0.01,
+  })
+  minimumSpread?: number;
+
+  @ApiPropertyOptional({
+    description: 'Skip refresh when quote drift remains below this percentage',
+    example: 0.002,
+  })
+  orderRefreshTolerancePct?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cooldown after a fill before placing new quotes, in milliseconds',
+    example: 5000,
+  })
+  filledOrderDelay?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum order age before forced refresh, in milliseconds',
+    example: 60000,
+  })
+  maxOrderAge?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cancel hanging orders when their drift exceeds this percentage',
+    example: 0.02,
+  })
+  hangingOrdersCancelPct?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Stop the strategy when realized loss breaches this threshold. Use a positive absolute quote value or a percentage string like "5%".',
+    example: '5%',
+  })
+  killSwitchThreshold?: number | string;
 }
 export class ExecuteVolumeStrategyDto {
   @ApiPropertyOptional({
@@ -360,6 +484,165 @@ export class ExecuteVolumeStrategyDto {
   @IsOptional()
   @IsEnum(Side)
   postOnlySide?: Side;
+}
+
+export class ExecuteDualAccountVolumeStrategyDto {
+  @ApiProperty({ description: 'Name of the exchange used for both accounts' })
+  @IsString()
+  exchangeName: string;
+
+  @ApiProperty({ description: 'Trading pair to execute', example: 'BTC/USDT' })
+  @IsString()
+  symbol: string;
+
+  @ApiProperty({ description: 'Base amount to trade per cycle' })
+  @IsNumber()
+  @IsPositive()
+  baseTradeAmount: number;
+
+  @ApiProperty({ description: 'Cadence between cycles in seconds' })
+  @IsInt()
+  @IsPositive()
+  baseIntervalTime: number;
+
+  @ApiProperty({ description: 'Total number of successful cycles to execute' })
+  @IsInt()
+  @Min(0)
+  numTrades: number;
+
+  @ApiProperty({
+    description: 'Percentage increment for offsetting from midPrice',
+  })
+  @IsNumber()
+  baseIncrementPercentage: number;
+
+  @ApiProperty({
+    description: 'Rate at which to push pricing after each published cycle',
+  })
+  @IsNumber()
+  pricePushRate: number;
+
+  @ApiPropertyOptional({
+    description: 'The first maker order side, or inventory_balance to choose from live balances',
+    example: 'buy',
+  })
+  @IsOptional()
+  @IsIn([...Side, 'inventory_balance'])
+  postOnlySide?: Side | 'inventory_balance';
+
+  @ApiPropertyOptional({
+    description:
+      'Allow maker/taker account roles to switch dynamically each cycle based on available balances',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  dynamicRoleSwitching?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Stop the strategy once cumulative executed quote volume reaches this cap',
+    example: 10000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  targetQuoteVolume?: number;
+
+  @ApiProperty({ description: 'Maker exchange account label' })
+  @IsString()
+  makerAccountLabel: string;
+
+  @ApiProperty({ description: 'Taker exchange account label' })
+  @IsString()
+  takerAccountLabel: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Delay in milliseconds between maker acceptance and taker IOC submission',
+    example: 250,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  makerDelayMs?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Trade-size variance percentage applied around baseTradeAmount',
+    example: 0.15,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  tradeAmountVariance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Price-offset variance percentage applied around baseIncrementPercentage',
+    example: 0.2,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  priceOffsetVariance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cadence variance percentage applied around baseIntervalTime for each cycle',
+    example: 0.25,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cadenceVariance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Maker delay variance percentage applied around makerDelayMs for each cycle',
+    example: 0.5,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  makerDelayVariance?: number;
+
+  @ApiPropertyOptional({
+    description: 'Probability of placing a buy when postOnlySide is not fixed',
+    example: 0.55,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  buyBias?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Per-account behavior profiles keyed by exchange account label',
+    example: {
+      maker: {
+        tradeAmountMultiplier: 0.95,
+        buyBias: 0.6,
+      },
+      taker: {
+        tradeAmountMultiplier: 1.05,
+        cadenceMultiplier: 1.1,
+      },
+    },
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DualAccountBehaviorProfilesDto)
+  accountProfiles?: DualAccountBehaviorProfilesDto;
+
+  @ApiProperty({ description: 'User ID' })
+  @IsString()
+  userId: string;
+
+  @ApiProperty({ description: 'Client ID' })
+  @IsString()
+  clientId: string;
 }
 
 export class StopVolumeStrategyDto {

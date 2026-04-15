@@ -132,6 +132,18 @@ export class GrowdataMarketMakingPair {
   @Column({ nullable: true })
   custom_fee_rate: string;
 
+  @Column({ nullable: true })
+  min_order_amount: string;
+
+  @Column({ nullable: true })
+  max_order_amount: string;
+
+  @Column({ nullable: true })
+  amount_significant_figures: string;
+
+  @Column({ nullable: true })
+  price_significant_figures: string;
+
   @Column({ default: true })
   enable: boolean;
 }

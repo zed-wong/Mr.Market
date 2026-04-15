@@ -78,8 +78,6 @@ export class SpotdataService {
   private async _getSupportedPairs(): Promise<any> {
     const tradingPairs = await this.spotdataRepository.findAllTradingPairs();
 
-    this.logger.debug(`Fetched trading pairs: ${JSON.stringify(tradingPairs)}`);
-
     const exchangeToSymbolsMap: { [exchange: string]: string[] } = {};
 
     // Organize symbols by exchange to minimize API calls
@@ -152,10 +150,6 @@ export class SpotdataService {
     const results = await Promise.all(promises);
 
     const flattenedResults = results.flat();
-
-    this.logger.debug(
-      `Spotdata trading pairs: ${JSON.stringify(flattenedResults)}`,
-    );
 
     return flattenedResults;
   }

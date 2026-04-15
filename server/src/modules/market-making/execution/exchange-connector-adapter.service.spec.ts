@@ -14,19 +14,44 @@ describe('ExchangeConnectorAdapterService', () => {
       .mockResolvedValue({ id: 'ex-order-1', status: 'open' }),
     fetchOpenOrders: jest.fn().mockResolvedValue([{ id: 'ex-order-1' }]),
     fetchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
+    fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 1, USDT: 1000 } }),
     watchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
     watchBalance: jest.fn().mockResolvedValue({ total: {} }),
+    loadMarkets: jest.fn().mockResolvedValue(undefined),
+    amountToPrecision: jest.fn((_pair: string, amount: number) =>
+      amount.toFixed(4),
+    ),
+    priceToPrecision: jest.fn((_pair: string, price: number) =>
+      price.toFixed(2),
+    ),
+    markets: {
+      'BTC/USDT': {
+        limits: {
+          amount: { min: 0.001, max: 5 },
+          cost: { min: 10, max: 500 },
+        },
+        precision: { amount: 4, price: 2 },
+        maker: 0.001,
+        taker: 0.002,
+      },
+    },
   };
 
   const exchangeInitService = {
     getExchange: jest.fn().mockReturnValue(exchange),
   };
 
-  const createConfigService = (minRequestIntervalMs = 1) =>
+  const createConfigService = (
+    minRequestIntervalMs = 1,
+    requestTimeoutMs = 15_000,
+  ) =>
     ({
       get: jest.fn((key: string, defaultValue?: number) => {
         if (key === 'strategy.exchange_min_request_interval_ms') {
           return minRequestIntervalMs;
+        }
+        if (key === 'strategy.exchange_request_timeout_ms') {
+          return requestTimeoutMs;
         }
 
         return defaultValue;
@@ -50,6 +75,7 @@ describe('ExchangeConnectorAdapterService', () => {
       '1',
       '100',
       'order-1:0',
+      { postOnly: true },
     );
     await service.cancelOrder('binance', 'BTC/USDT', 'ex-order-1');
 
@@ -59,7 +85,7 @@ describe('ExchangeConnectorAdapterService', () => {
       'buy',
       1,
       100,
-      { clientOrderId: 'order-1:0' },
+      { clientOrderId: 'order-1:0', postOnly: true },
     );
     expect(exchange.cancelOrder).toHaveBeenCalledWith('ex-order-1', 'BTC/USDT');
   });
@@ -86,10 +112,54 @@ describe('ExchangeConnectorAdapterService', () => {
     );
 
     await service.watchOrderBook('binance', 'BTC/USDT');
-    await service.watchBalance('binance');
+    await service.watchBalance('binance', 'default');
 
     expect(exchange.watchOrderBook).toHaveBeenCalledWith('BTC/USDT');
     expect(exchange.watchBalance).toHaveBeenCalled();
+    expect(exchangeInitService.getExchange).toHaveBeenCalledWith(
+      'binance',
+      'default',
+    );
+  });
+
+  it('loads trading rules and fetches balances through adapter', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    await expect(
+      service.loadTradingRules('binance', 'BTC/USDT'),
+    ).resolves.toEqual({
+      amountMin: 0.001,
+      amountMax: 5,
+      costMin: 10,
+      costMax: 500,
+      makerFee: 0.001,
+      takerFee: 0.002,
+    });
+    await service.fetchBalance('binance');
+
+    expect(exchange.fetchBalance).toHaveBeenCalled();
+  });
+
+  it('quantizes orders through ccxt precision helpers', () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    expect(
+      service.quantizeOrder('binance', 'BTC/USDT', '0.123456', '100.987'),
+    ).toEqual({
+      qty: '0.1235',
+      price: '100.99',
+    });
+    expect(exchange.amountToPrecision).toHaveBeenCalledWith(
+      'BTC/USDT',
+      0.123456,
+    );
+    expect(exchange.priceToPrecision).toHaveBeenCalledWith('BTC/USDT', 100.987);
   });
 
   it('serializes concurrent calls per exchange and applies interval after prior completion', async () => {
@@ -145,5 +215,78 @@ describe('ExchangeConnectorAdapterService', () => {
     expect(secondCallAtMs - firstResolvedAtMs).toBeGreaterThanOrEqual(
       minIntervalMs,
     );
+  });
+
+  it('prioritizes writes ahead of queued market reads on the same exchange', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(0),
+    );
+    const callOrder: string[] = [];
+    let resolveFetchOrder!: (value: any) => void;
+
+    exchange.fetchOrder.mockImplementationOnce(
+      async () =>
+        await new Promise((resolve) => {
+          resolveFetchOrder = resolve;
+        }),
+    );
+    exchange.fetchOrderBook.mockImplementation(async () => {
+      callOrder.push('fetchOrderBook');
+
+      return { bids: [], asks: [] };
+    });
+    exchange.createOrder.mockImplementation(async () => {
+      callOrder.push('createOrder');
+
+      return { id: 'ex-order-2' };
+    });
+
+    const stateRead = service.fetchOrder('binance', 'BTC/USDT', 'ex-order-1');
+
+    await Promise.resolve();
+    const marketRead = service.fetchOrderBook('binance', 'BTC/USDT');
+    const write = service.placeLimitOrder(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+    );
+
+    resolveFetchOrder({ id: 'ex-order-1', status: 'open' });
+    await Promise.all([stateRead, marketRead, write]);
+
+    expect(callOrder).toEqual(['createOrder', 'fetchOrderBook']);
+  });
+
+  it('times out a hung request and releases the exchange queue for later work', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(0, 20),
+    );
+
+    exchange.createOrder.mockImplementationOnce(
+      async () => await new Promise(() => undefined),
+    );
+    exchange.fetchOrderBook.mockResolvedValueOnce({ bids: [], asks: [] });
+
+    const stuckWrite = service.placeLimitOrder(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+    );
+
+    await Promise.resolve();
+
+    const queuedRead = service.fetchOrderBook('binance', 'BTC/USDT');
+
+    await expect(stuckWrite).rejects.toThrow(
+      'Exchange request timed out after 20ms',
+    );
+    await expect(queuedRead).resolves.toEqual({ bids: [], asks: [] });
+    expect(exchange.fetchOrderBook).toHaveBeenCalledTimes(1);
   });
 });

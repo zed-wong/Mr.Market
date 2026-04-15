@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { Repository } from 'typeorm';
@@ -20,6 +20,8 @@ type StrategyConfigSchema = {
 
 @Injectable()
 export class StrategyConfigResolverService {
+  private readonly logger = new Logger(StrategyConfigResolverService.name);
+
   constructor(
     @InjectRepository(StrategyDefinition)
     private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
@@ -238,6 +240,14 @@ export class StrategyConfigResolverService {
       for (const field of Object.keys(config)) {
         if (!knownFields.has(field)) {
           const fieldPath = path ? `${path}.${field}` : field;
+
+          this.logger.error(
+            `Strategy config additionalProperties violation ${JSON.stringify({
+              fieldPath,
+              configKeys: Object.keys(config),
+              allowedKeys: [...knownFields],
+            })}`,
+          );
 
           throw new BadRequestException(
             `Config field ${fieldPath} is not allowed`,

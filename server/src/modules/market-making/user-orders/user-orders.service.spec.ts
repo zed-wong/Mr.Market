@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -186,7 +187,7 @@ describe('UserOrdersService', () => {
   });
 
   describe('listEnabledMarketMakingStrategies', () => {
-    it('returns only enabled pure market making definitions for user selection', async () => {
+    it('returns only enabled public pure market making definitions for user selection', async () => {
       jest.spyOn(strategyDefinitionRepository, 'find').mockResolvedValueOnce([
         {
           id: 'strategy-1',
@@ -194,15 +195,27 @@ describe('UserOrdersService', () => {
           name: 'Basic MM',
           description: 'basic strategy',
           controllerType: 'pureMarketMaking',
+          visibility: 'public',
           defaultConfig: { bidSpread: 0.1 },
           configSchema: { type: 'object' },
         } as unknown as StrategyDefinition,
         {
           id: 'strategy-2',
+          key: 'dual-volume',
+          name: 'Dual Volume',
+          description: 'paired direct volume',
+          controllerType: 'dualAccountVolume',
+          visibility: 'admin',
+          defaultConfig: { baseTradeAmount: 5 },
+          configSchema: { type: 'object' },
+        } as unknown as StrategyDefinition,
+        {
+          id: 'strategy-3',
           key: 'volume',
           name: 'Volume',
           description: 'non-mm strategy',
           controllerType: 'volume',
+          visibility: 'public',
           defaultConfig: { incrementPercentage: 0.1 },
           configSchema: { type: 'object' },
         } as unknown as StrategyDefinition,
@@ -211,7 +224,7 @@ describe('UserOrdersService', () => {
       const result = await service.listEnabledMarketMakingStrategies();
 
       expect(strategyDefinitionRepository.find).toHaveBeenCalledWith({
-        where: { enabled: true },
+        where: { enabled: true, visibility: 'public' },
         order: { updatedAt: 'DESC' },
       });
       expect(result).toEqual([
@@ -257,7 +270,7 @@ describe('UserOrdersService', () => {
         strategyDefinitionId: 'strategy-1',
         configOverrides: {
           bidSpread: 0.002,
-          orderRefreshTime: 15000,
+          orderRefreshTime: 1000,
         },
       });
 
@@ -283,7 +296,7 @@ describe('UserOrdersService', () => {
           strategyDefinitionId: 'strategy-1',
           configOverrides: {
             bidSpread: 0.002,
-            orderRefreshTime: 15000,
+            orderRefreshTime: 1000,
           },
           state: 'pending',
         }),
@@ -363,7 +376,7 @@ describe('UserOrdersService', () => {
           marketMakingPairId: 'pair-1',
           strategyDefinitionId: 'strategy-1',
           configOverrides: {
-            orderRefreshTime: '15000' as any,
+            orderRefreshTime: '1000' as any,
           },
         }),
       ).rejects.toThrow('Config field orderRefreshTime must be number');
@@ -394,8 +407,168 @@ describe('UserOrdersService', () => {
           strategyDefinitionId: 'strategy-2',
         }),
       ).rejects.toThrow(
-        'strategyDefinitionId must reference a pure market making definition',
+        'strategyDefinitionId must reference a public pure market making definition',
       );
+    });
+  });
+
+  describe('user-facing source filters', () => {
+    it('filters admin direct orders from market-making lists', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      jest
+        .spyOn(marketMakingRepository, 'createQueryBuilder')
+        .mockReturnValue(queryBuilder as any);
+
+      await service.findMarketMakingByUserId('user-1');
+
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'order.userId = :userId',
+        {
+          userId: 'user-1',
+        },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(order.source IS NULL OR order.source != :source)',
+        { source: 'admin_direct' },
+      );
+    });
+
+    it('filters admin direct orders from public detail lookups', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(undefined),
+      };
+
+      jest
+        .spyOn(marketMakingRepository, 'createQueryBuilder')
+        .mockReturnValue(queryBuilder as any);
+
+      await service.findPublicMarketMakingByOrderId('order-1');
+
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'order.orderId = :orderId',
+        {
+          orderId: 'order-1',
+        },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(order.source IS NULL OR order.source != :source)',
+        { source: 'admin_direct' },
+      );
+    });
+
+    it('filters admin direct orders from combined user strategy lists', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      jest
+        .spyOn(marketMakingRepository, 'createQueryBuilder')
+        .mockReturnValue(queryBuilder as any);
+      jest.spyOn(simplyGrowRepository, 'findBy').mockResolvedValue([]);
+
+      await service.findAllStrategyByUser('user-1');
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(order.source IS NULL OR order.source != :source)',
+        { source: 'admin_direct' },
+      );
+    });
+
+    it('scopes owned market-making detail lookups to the authenticated user', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(undefined),
+      };
+
+      jest
+        .spyOn(marketMakingRepository, 'createQueryBuilder')
+        .mockReturnValue(queryBuilder as any);
+
+      await expect(
+        service.findOwnedMarketMakingByOrderId('user-1', 'order-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'order.orderId = :orderId',
+        {
+          orderId: 'order-1',
+        },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'order.userId = :userId',
+        {
+          userId: 'user-1',
+        },
+      );
+    });
+  });
+
+  describe('ownership checks', () => {
+    it('returns payment state only when it belongs to the user', async () => {
+      const paymentState = {
+        orderId: 'order-1',
+        userId: 'user-1',
+      } as MarketMakingPaymentState;
+
+      const findOneBySpy = jest
+        .spyOn(
+          testingModule.get<Repository<MarketMakingPaymentState>>(
+            getRepositoryToken(MarketMakingPaymentState),
+          ),
+          'findOneBy',
+        )
+        .mockResolvedValueOnce(paymentState);
+
+      await expect(
+        service.findOwnedMarketMakingPaymentStateById('user-1', 'order-1'),
+      ).resolves.toEqual({
+        code: 200,
+        message: 'Found',
+        data: paymentState,
+      });
+
+      expect(findOneBySpy).toHaveBeenCalledWith({
+        orderId: 'order-1',
+        userId: 'user-1',
+      });
+    });
+
+    it('rejects payment state lookups for other users', async () => {
+      jest
+        .spyOn(
+          testingModule.get<Repository<MarketMakingPaymentState>>(
+            getRepositoryToken(MarketMakingPaymentState),
+          ),
+          'findOneBy',
+        )
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOwnedMarketMakingPaymentStateById('user-2', 'order-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects simply grow detail lookups for other users', async () => {
+      jest.spyOn(simplyGrowRepository, 'findOneBy').mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOwnedSimplyGrowByOrderId('user-2', 'order-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(simplyGrowRepository.findOneBy).toHaveBeenCalledWith({
+        orderId: 'order-1',
+        userId: 'user-2',
+      });
     });
   });
 });

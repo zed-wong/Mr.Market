@@ -43,7 +43,6 @@ describe('ExchangeinitService', () => {
           {
             key_id: '1',
             exchange: 'binance',
-            exchange_index: 'default',
             name: 'default',
             api_key: 'key',
             api_secret: 'secret',
@@ -113,6 +112,31 @@ describe('ExchangeinitService', () => {
     expect(exchangeService.readSupportedExchanges).toHaveBeenCalledTimes(1);
   });
 
+  it('builds DB-backed exchange configs with key_id account labels', () => {
+    const exchangeConfigs = (service as any).buildExchangeConfigsFromDb([
+      {
+        key_id: '42',
+        exchange: 'binance',
+        name: 'desk-42',
+        api_key: 'key',
+        api_secret: 'secret',
+      },
+    ]);
+
+    expect(exchangeConfigs).toEqual([
+      expect.objectContaining({
+        name: 'binance',
+        accounts: [
+          expect.objectContaining({
+            label: '42',
+            apiKey: 'key',
+            secret: 'secret',
+          }),
+        ],
+      }),
+    ]);
+  });
+
   it('refreshes exchanges when API keys change', async () => {
     await Promise.resolve();
     expect(initializeExchangeConfigsSpy).toHaveBeenCalledTimes(1);
@@ -121,6 +145,57 @@ describe('ExchangeinitService', () => {
     await Promise.resolve();
 
     expect(initializeExchangeConfigsSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries transient exchange initialization failures before giving up', async () => {
+    class FlakyExchange {
+      static attempts = 0;
+      has = {};
+
+      async loadMarkets() {
+        FlakyExchange.attempts += 1;
+
+        if (FlakyExchange.attempts < 3) {
+          throw new Error('temporary network failure');
+        }
+      }
+    }
+
+    (service as any).initializationRetryDelayMs = 0;
+
+    const exchange = await (service as any).initializeAccountWithRetry(
+      {
+        name: 'mexc',
+        class: FlakyExchange,
+      },
+      {
+        label: 'default',
+        apiKey: 'key',
+        secret: 'secret',
+      },
+    );
+
+    expect(exchange).toBeInstanceOf(FlakyExchange);
+    expect(FlakyExchange.attempts).toBe(3);
+  });
+
+  it('reports pending exchanges as not ready without throwing', () => {
+    (service as any).exchangeInitializationStates.set('mexc', 'pending');
+
+    expect(service.isReady('mexc')).toBe(false);
+  });
+
+  it('notifies ready listeners for each initialized account label', async () => {
+    const listener = jest.fn();
+    const unsubscribe = service.onExchangeReady(listener);
+
+    (service as any).notifyExchangeReady('mexc', ['default', 'desk-1']);
+    await Promise.resolve();
+
+    expect(listener).toHaveBeenNthCalledWith(1, 'mexc', 'default');
+    expect(listener).toHaveBeenNthCalledWith(2, 'mexc', 'desk-1');
+
+    unsubscribe();
   });
 
   it('uses env-driven sandbox config when sandbox credentials are present', async () => {
@@ -181,7 +256,6 @@ describe('ExchangeinitService', () => {
         {
           key_id: '1',
           exchange: 'binance',
-          exchange_index: 'default',
           name: 'default',
           api_key: 'key',
           api_secret: 'secret',

@@ -242,14 +242,15 @@ This section explains each module with three questions:
 #### `data/grow-data/grow-data.module.ts`
 
 - What: manages grow and market-making pair metadata repository and APIs.
+- Includes: market-making pair execution constraints such as min/max order amount and amount/price precision snapshots.
 - Why: strategy and order flows require trusted pair/exchange metadata.
 - Where: used in order-intent creation and admin pair management.
 
 #### `data/market-data/market-data.module.ts`
 
-- What: serves market data through service/controller/gateway.
-- Why: strategies and UI need live and queryable market states.
-- Where: used by strategy market data provider and realtime client features.
+- What: serves market data through service/controller/gateway, with shared internal order-book subscriptions multiplexed to multiple consumers.
+- Why: strategies and UI need one live market-data stream instead of duplicate exchange websocket connections.
+- Where: used by strategy market data provider, market-making order-book ingestion, and realtime client features.
 
 #### `data/spot-data/spot-data.module.ts`
 
@@ -275,8 +276,8 @@ This section explains each module with three questions:
 
 #### `infrastructure/exchange-init/exchange-init.module.ts`
 
-- What: exchange client/bootstrap initialization service, including `test:system`-gated sandbox boot for system-test parity.
-- Why: all exchange operations need consistent startup, caching, sandbox toggles, and client lifecycle.
+- What: exchange client/bootstrap initialization service, including `test:system`-gated sandbox boot for system-test parity and bounded retry/backoff around transient client boot failures.
+- Why: all exchange operations need consistent startup, caching, sandbox toggles, and client lifecycle without letting one temporary network failure permanently strand an exchange in `failed`.
 - Where: used across fee checks, health checks, strategy execution dependencies, and sandbox execution-system tests.
 
 #### `infrastructure/health/health.module.ts`
@@ -319,8 +320,8 @@ This section explains each module with three questions:
 
 #### `market-making/trackers/trackers.module.ts`
 
-- What: tracks order books, private stream events, and exchange order status.
-- Why: execution and reconciliation require current exchange-side state.
+- What: tracks order books, user-stream events, and exchange order status, including a thin order-book ingestion layer that subscribes market-making sessions to the shared market-data stream.
+- Why: execution and reconciliation require current exchange-side state without falling back to per-tick REST/ticker requests.
 - Where: used by strategy runtime and pause/withdraw drain logic.
 
 #### `market-making/execution/execution.module.ts`
@@ -332,8 +333,8 @@ This section explains each module with three questions:
 #### `market-making/execution/fill-routing.service.ts`
 
 - What: resolves fill events to orders using clientOrderId parsing and ExchangeOrderMapping fallback.
-- Why: pooled executors need deterministic fill routing to the owning session, while private-stream duplicates and cumulative `filled` snapshots must remain ledger-safe.
-- Where: used by private stream tracker when processing fill events.
+- Why: pooled executors need deterministic fill routing to the owning session, while user-stream duplicates and cumulative `filled` snapshots must remain ledger-safe.
+- Where: used by user-stream tracker when processing fill events.
 
 #### `market-making/execution/exchange-order-mapping.service.ts`
 

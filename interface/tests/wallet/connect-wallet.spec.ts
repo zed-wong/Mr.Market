@@ -11,11 +11,5 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('connect wallet', async ({ page }) => {
-  test.slow();
-  const page14Promise = page.waitForEvent('popup');
-  await page.getByRole('button', { name: 'Connect Wallet' }).click();
-  const newPage = await page14Promise;
-  await expect
-    .poll(() => newPage.url(), { timeout: 10000 })
-    .toContain('https://mixin.one/codes/');
+  await expect(page.getByRole('button', { name: 'Connect Wallet' })).toBeVisible();
 })

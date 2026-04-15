@@ -5,7 +5,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { Job } from 'bull';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { MarketMakingCreateMemoDetails } from 'src/common/types/memo/memo';
@@ -21,12 +20,10 @@ import { Repository } from 'typeorm';
 import { getRFC3339Timestamp } from '../../../common/helpers/utils';
 import { FeeService } from '../fee/fee.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
-import { LocalCampaignService } from '../local-campaign/local-campaign.service';
 import { NetworkMappingService } from '../network-mapping/network-mapping.service';
 import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
-import { StrategyRuntimeDispatcherService } from '../strategy/execution/strategy-runtime-dispatcher.service';
-import { StrategyService } from '../strategy/strategy.service';
 import { mapStrategySnapshotToMarketMakingOrderFields } from './market-making-order-snapshot.utils';
+import { MarketMakingRuntimeService } from './market-making-runtime.service';
 import { UserOrdersService } from './user-orders.service';
 
 interface ProcessSnapshotJobData {
@@ -65,26 +62,22 @@ export class MarketMakingOrderProcessor {
 
   constructor(
     private readonly userOrdersService: UserOrdersService,
-    private readonly strategyService: StrategyService,
+    private readonly marketMakingRuntimeService: MarketMakingRuntimeService,
     private readonly feeService: FeeService,
     private readonly growDataRepository: GrowdataRepository,
     private readonly transactionService: TransactionService,
     private readonly withdrawalService: WithdrawalService,
-    private readonly localCampaignService: LocalCampaignService,
     private readonly hufiCampaignService: CampaignService,
     private readonly exchangeService: ExchangeApiKeyService,
     private readonly networkMappingService: NetworkMappingService,
     private readonly mixinClientService: MixinClientService,
     private readonly strategyConfigResolver: StrategyConfigResolverService,
-    private readonly strategyRuntimeDispatcher: StrategyRuntimeDispatcherService,
     @InjectRepository(MarketMakingPaymentState)
     private readonly paymentStateRepository: Repository<MarketMakingPaymentState>,
     @InjectRepository(MarketMakingOrderIntent)
     private readonly marketMakingOrderIntentRepository: Repository<MarketMakingOrderIntent>,
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
-    @InjectRepository(StrategyDefinition)
-    private readonly strategyDefinitionRepository: Repository<StrategyDefinition>,
     private readonly balanceLedgerService: BalanceLedgerService,
   ) {}
 
@@ -940,7 +933,7 @@ export class MarketMakingOrderProcessor {
       };
     }>,
   ) {
-    const { orderId, campaignId, hufiCampaign } = job.data;
+    const { orderId, hufiCampaign } = job.data;
 
     this.logger.log(`Joining campaign for order ${orderId}`);
 
@@ -958,59 +951,34 @@ export class MarketMakingOrderProcessor {
         throw new Error(`Order ${orderId} not found`);
       }
 
-      // Step 1: Try to join HuFi campaign (external Web3 integration)
-      let hufiJoinResult = null;
-
       if (hufiCampaign?.chainId && hufiCampaign?.campaignAddress) {
         try {
           this.logger.log(
             `Joining HuFi campaign: chainId=${hufiCampaign.chainId}, address=${hufiCampaign.campaignAddress}`,
           );
 
-          // Get active campaigns to find matching one
           const campaigns = await this.hufiCampaignService.getCampaigns();
           const matchingCampaign = campaigns.find(
             (c) =>
-              c.chainId === hufiCampaign.chainId &&
+              c.chain_id === hufiCampaign.chainId &&
               c.address.toLowerCase() ===
                 hufiCampaign.campaignAddress.toLowerCase(),
           );
 
           if (matchingCampaign) {
-            // Use the @Cron auto-join logic from CampaignService
-            // The cron job handles Web3 auth and joining
             this.logger.log(
               `Found matching HuFi campaign: ${matchingCampaign.address}. Will be auto-joined by cron.`,
             );
-            hufiJoinResult = { scheduled: true, campaign: matchingCampaign };
           } else {
             this.logger.warn(
               `HuFi campaign not found: chainId=${hufiCampaign.chainId}, address=${hufiCampaign.campaignAddress}`,
             );
           }
         } catch (hufiError) {
-          // HuFi join failure should not block the MM order flow
           this.logger.error(
             `Failed to join HuFi campaign (non-blocking): ${hufiError.message}`,
           );
         }
-      }
-
-      // Step 2: Store local campaign record for tracking and reward distribution
-      const localCampaignId =
-        campaignId || `mm_${order.exchangeName}_${order.pair}`;
-      const participation = await this.localCampaignService.joinCampaign(
-        order.userId,
-        localCampaignId,
-        orderId,
-      );
-
-      this.logger.log(
-        `Local campaign record created for order ${orderId}: participationId=${participation.id}`,
-      );
-
-      if (hufiJoinResult) {
-        this.logger.log(`HuFi campaign join scheduled for order ${orderId}`);
       }
 
       await this.userOrdersService.updateMarketMakingOrderState(
@@ -1018,7 +986,6 @@ export class MarketMakingOrderProcessor {
         'campaign_joined',
       );
 
-      // Queue market making start
       await (job.queue as any).add(
         'start_mm',
         {
@@ -1068,28 +1035,9 @@ export class MarketMakingOrderProcessor {
     );
 
     try {
-      if (!order.strategySnapshot?.resolvedConfig) {
-        throw new Error(`Order ${orderId} has no strategySnapshot.`);
-      }
+      await this.marketMakingRuntimeService.startOrder(order);
 
-      const { controllerType, resolvedConfig } = order.strategySnapshot;
-      const strategyType =
-        this.strategyRuntimeDispatcher.toStrategyType(controllerType);
-
-      await this.strategyRuntimeDispatcher.startByStrategyType(
-        strategyType,
-        resolvedConfig as Record<string, any>,
-      );
-
-      if (order.strategyDefinitionId) {
-        await this.strategyService.linkDefinitionToStrategyInstance(
-          order.userId,
-          orderId,
-          strategyType,
-          order.strategyDefinitionId,
-          strategyType === 'pureMarketMaking' ? orderId : undefined,
-        );
-      } else {
+      if (!order.strategyDefinitionId) {
         this.logger.warn(
           `Order ${orderId} started from strategySnapshot without strategyDefinitionId binding`,
         );
@@ -1119,27 +1067,10 @@ export class MarketMakingOrderProcessor {
     const order = await this.userOrdersService.findMarketMakingByOrderId(
       orderId,
     );
-    let strategyType =
-      this.strategyRuntimeDispatcher.toStrategyType('pureMarketMaking');
 
-    if (order?.strategyDefinitionId) {
-      const definition = await this.strategyDefinitionRepository.findOne({
-        where: { id: order.strategyDefinitionId },
-      });
-
-      if (definition) {
-        const controllerType =
-          this.strategyConfigResolver.getDefinitionControllerType(definition);
-
-        strategyType =
-          this.strategyRuntimeDispatcher.toStrategyType(controllerType);
-      }
-    }
-
-    await this.strategyRuntimeDispatcher.stopByStrategyType(
-      strategyType,
+    await this.marketMakingRuntimeService.stopOrder(
+      order,
       order?.userId || userId || 'system',
-      orderId,
     );
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,

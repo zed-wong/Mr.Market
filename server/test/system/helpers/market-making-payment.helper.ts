@@ -23,12 +23,12 @@ import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.reposit
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
-import { LocalCampaignService } from 'src/modules/market-making/local-campaign/local-campaign.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { MarketMakingOrderProcessor } from 'src/modules/market-making/user-orders/market-making.processor';
+import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { MixinClientService } from 'src/modules/mixin/client/mixin-client.service';
 import { SnapshotsService } from 'src/modules/mixin/snapshots/snapshots.service';
@@ -187,6 +187,7 @@ export class MarketMakingPaymentHelper {
       ],
       providers: [
         BalanceLedgerService,
+        MarketMakingRuntimeService,
         MarketMakingOrderProcessor,
         SnapshotsService,
         StrategyConfigResolverService,
@@ -227,10 +228,6 @@ export class MarketMakingPaymentHelper {
                 pairId === pairConfig.id ? pairConfig : null,
               ),
           },
-        },
-        {
-          provide: LocalCampaignService,
-          useValue: {},
         },
         {
           provide: MixinClientService,
@@ -325,7 +322,7 @@ export class MarketMakingPaymentHelper {
           bidSpread: 0.001,
           askSpread: 0.001,
           orderAmount: 0.01,
-          orderRefreshTime: 15000,
+          orderRefreshTime: 1000,
           numberOfLayers: 1,
           priceSourceType: PriceSourceType.MID_PRICE,
           amountChangePerLayer: 0,

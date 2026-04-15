@@ -49,8 +49,13 @@ export class AdminStrategyService {
   ) {}
 
   async startStrategy(startStrategyDto: StartStrategyDto) {
-    const { strategyType, arbitrageParams, marketMakingParams, volumeParams } =
-      startStrategyDto;
+    const {
+      strategyType,
+      arbitrageParams,
+      marketMakingParams,
+      volumeParams,
+      dualAccountVolumeParams,
+    } = startStrategyDto;
 
     const definitionControllerType =
       strategyType === 'marketMaking' ? 'pureMarketMaking' : strategyType;
@@ -63,6 +68,8 @@ export class AdminStrategyService {
           }
         : strategyType === 'marketMaking'
         ? marketMakingParams
+        : strategyType === 'dualAccountVolume'
+        ? dualAccountVolumeParams
         : volumeParams;
 
     if (legacyConfig?.userId && legacyConfig?.clientId) {
@@ -110,6 +117,16 @@ export class AdminStrategyService {
       await this.strategyRuntimeDispatcher.startByStrategyType(
         'volume',
         volumeParams as unknown as Record<string, unknown>,
+      );
+
+      return;
+    } else if (
+      strategyType === 'dualAccountVolume' &&
+      dualAccountVolumeParams
+    ) {
+      await this.strategyRuntimeDispatcher.startByStrategyType(
+        'dualAccountVolume',
+        dualAccountVolumeParams as unknown as Record<string, unknown>,
       );
 
       return;
@@ -346,7 +363,7 @@ export class AdminStrategyService {
       configSchema: dto.configSchema,
       defaultConfig: dto.defaultConfig,
       enabled: true,
-      visibility: dto.visibility || 'system',
+      visibility: dto.visibility || 'public',
       createdBy: dto.createdBy,
     });
 

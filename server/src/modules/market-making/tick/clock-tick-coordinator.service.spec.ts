@@ -52,9 +52,12 @@ describe('ClockTickCoordinatorService', () => {
     service.register('second', second, 20);
     service.register('first', first, 10);
 
+    await service.start();
     await service.tickOnce();
 
     expect(executionOrder).toEqual(['first', 'second']);
+
+    await service.stop();
   });
 
   it('starts and stops all registered components', async () => {
@@ -84,10 +87,13 @@ describe('ClockTickCoordinatorService', () => {
     service.register('healthy', healthy, 10);
     service.register('unhealthy', unhealthy, 20);
 
+    await service.start();
     await service.tickOnce();
 
     expect(healthy.onTick).toHaveBeenCalledTimes(1);
     expect(unhealthy.onTick).not.toHaveBeenCalled();
+
+    await service.stop();
   });
 
   it('does not run overlapping ticks', async () => {

@@ -190,41 +190,50 @@ export async function seedGrowdataMarketMakingPair(
   marketData: PairSeedData[],
 ) {
   const existing = await repository.find({
-    select: ['exchange_id', 'symbol'],
+    select: ['id', 'exchange_id', 'symbol'],
   });
 
   const existingKeys = new Set(
     existing.map((p) => `${p.exchange_id}:${p.symbol}`),
   );
+  const existingIdByKey = new Map(
+    existing.map((p) => [`${p.exchange_id}:${p.symbol}`, p.id]),
+  );
 
-  const toInsert = marketData
-    .filter((d) => !existingKeys.has(`${d.exchangeId}:${d.pairSymbol}`))
-    .map((d) => ({
-      id: randomUUID(),
-      exchange_id: d.exchangeId,
-      symbol: d.pairSymbol,
-      base_symbol: d.baseSymbol,
-      quote_symbol: d.quoteSymbol,
-      base_asset_id: d.baseAsset.asset_id,
-      base_icon_url: d.baseAsset.icon_url,
-      base_chain_id: d.baseAsset.chain_id,
-      base_chain_icon_url: d.baseChainIconUrl,
-      quote_asset_id: d.quoteAsset.asset_id,
-      quote_icon_url: d.quoteAsset.icon_url,
-      quote_chain_id: d.quoteAsset.chain_id,
-      quote_chain_icon_url: d.quoteChainIconUrl,
-      base_price: '',
-      target_price: '',
-      custom_fee_rate: '',
-      enable: true,
-    }));
+  const toSave = marketData.map((d) => ({
+    id: existingIdByKey.get(`${d.exchangeId}:${d.pairSymbol}`) || randomUUID(),
+    exchange_id: d.exchangeId,
+    symbol: d.pairSymbol,
+    base_symbol: d.baseSymbol,
+    quote_symbol: d.quoteSymbol,
+    base_asset_id: d.baseAsset.asset_id,
+    base_icon_url: d.baseAsset.icon_url,
+    base_chain_id: d.baseAsset.chain_id,
+    base_chain_icon_url: d.baseChainIconUrl,
+    quote_asset_id: d.quoteAsset.asset_id,
+    quote_icon_url: d.quoteAsset.icon_url,
+    quote_chain_id: d.quoteAsset.chain_id,
+    quote_chain_icon_url: d.quoteChainIconUrl,
+    base_price: '',
+    target_price: '',
+    custom_fee_rate: '',
+    min_order_amount: String(d.marketInfo.limits.amount.min ?? ''),
+    max_order_amount: String(d.marketInfo.limits.amount.max ?? ''),
+    amount_significant_figures: String(d.marketInfo.precision.amount ?? 8),
+    price_significant_figures: String(d.marketInfo.precision.price ?? 8),
+    enable: true,
+  }));
 
-  if (toInsert.length > 0) {
-    await repository.save(toInsert);
+  if (toSave.length > 0) {
+    await repository.save(toSave);
   }
 
+  const insertedCount = marketData.filter(
+    (d) => !existingKeys.has(`${d.exchangeId}:${d.pairSymbol}`),
+  ).length;
+
   log.success(
-    `Market Making Pairs: ${toInsert.length} inserted, ${existing.length} existing`,
+    `Market Making Pairs: ${insertedCount} inserted, ${existing.length} existing`,
   );
 }
 
@@ -372,7 +381,7 @@ export async function seedStrategyDefinitions(
           unknown
         >,
         enabled: definition.enabled !== false,
-        visibility: String(definition.visibility || 'system'),
+        visibility: String(definition.visibility || 'public'),
         createdBy: definition.createdBy
           ? String(definition.createdBy)
           : undefined,

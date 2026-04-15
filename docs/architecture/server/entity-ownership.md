@@ -52,7 +52,8 @@ This file maps key entities to module ownership and business usage.
 | `Contribution` | `campaign` | admin/reporting | Contribution records for campaign economics. |
 | `HufiScoreSnapshot` | `campaign` | reporting/admin | Daily HUFI score evidence. |
 | `CustomConfigEntity` | `infrastructure/custom-config` | `fee`, operations | Runtime tuning values. |
-| `APIKeysConfig` | `market-making/exchange-api-key` | `exchange`, `exchange-init`, execution paths | Exchange credential and mode configuration. |
+| `APIKeysConfig` | `market-making/exchange-api-key` | `exchange`, `exchange-init`, execution paths | Exchange credential config. Admin runtime account identity is the persisted `key_id`, not a client label alias. |
+| `GrowdataMarketMakingPair` | `data/grow-data` | `admin/growdata`, `user-orders`, `admin/market-making` | Canonical market-making pair catalog plus persisted exchange-derived limits/precision (`min_order_amount`, `max_order_amount`, precision); grow info and admin direct validation compute effective minimums from those fields plus live exchange `cost.min` and price data. |
 
 ## Ownership rules used in current codebase
 

@@ -2,17 +2,23 @@
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
+import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
+import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { PerformanceService } from '../performance/performance.service';
+import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
 import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
 import { ExecutorRegistry } from './execution/executor-registry';
+import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { StrategyService } from './strategy.service';
 
@@ -21,6 +27,11 @@ class PerformanceServiceMock {
 }
 
 class ExchangeInitServiceMock {
+  private readonly readyListeners: Array<
+    (exchangeName: string, accountLabel: string) => void | Promise<void>
+  > = [];
+  isReady = jest.fn().mockReturnValue(true);
+
   getExchange(exchangeName: string): any {
     return {
       id: exchangeName,
@@ -32,6 +43,29 @@ class ExchangeInitServiceMock {
   getSupportedExchanges(): string[] {
     return ['bitfinex', 'mexc', 'binance'];
   }
+
+  onExchangeReady(
+    listener: (
+      exchangeName: string,
+      accountLabel: string,
+    ) => void | Promise<void>,
+  ): () => void {
+    this.readyListeners.push(listener);
+
+    return () => {
+      const index = this.readyListeners.indexOf(listener);
+
+      if (index >= 0) {
+        this.readyListeners.splice(index, 1);
+      }
+    };
+  }
+
+  async emitReady(exchangeName: string, accountLabel: string): Promise<void> {
+    for (const listener of this.readyListeners) {
+      await listener(exchangeName, accountLabel);
+    }
+  }
 }
 
 describe('StrategyService', () => {
@@ -41,13 +75,37 @@ describe('StrategyService', () => {
   let executorOrchestratorService: {
     dispatchActions: jest.Mock;
   };
+  let strategyIntentStoreService: {
+    cancelPendingIntents: jest.Mock;
+  };
   let balanceLedgerService: {
     adjust: jest.Mock;
   };
+  let exchangeOrderTrackerService: {
+    getOpenOrders: jest.Mock;
+    getLiveOrders: jest.Mock;
+    getActiveSlotOrders: jest.Mock;
+    getTrackedOrders: jest.Mock;
+    upsertOrder: jest.Mock;
+  };
   let strategyMarketDataProviderService: {
     getReferencePrice: jest.Mock;
+    getTrackedBestBidAsk: jest.Mock;
     getBestBidAsk: jest.Mock;
     getOrderBook: jest.Mock;
+    hasTrackedOrderBook: jest.Mock;
+  };
+  let exchangeConnectorAdapterService: {
+    loadTradingRules: jest.Mock;
+    quantizeOrder: jest.Mock;
+    fetchBalance: jest.Mock;
+    cancelOrder: jest.Mock;
+    fetchOpenOrders: jest.Mock;
+    fetchOrder: jest.Mock;
+  };
+  let exchangeOrderMappingService: {
+    findByClientOrderId: jest.Mock;
+    findByExchangeOrderId: jest.Mock;
   };
 
   const mockStrategyInstanceRepository = {
@@ -56,6 +114,9 @@ describe('StrategyService', () => {
     save: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+  };
+  const mockMarketMakingOrderRepository = {
+    findOne: jest.fn(),
   };
 
   const registerPooledSession = async ({
@@ -70,7 +131,11 @@ describe('StrategyService', () => {
     runId,
   }: {
     strategyKey: string;
-    strategyType: 'pureMarketMaking' | 'volume' | 'timeIndicator';
+    strategyType:
+      | 'pureMarketMaking'
+      | 'dualAccountVolume'
+      | 'volume'
+      | 'timeIndicator';
     userId: string;
     clientId: string;
     cadenceMs: number;
@@ -103,8 +168,21 @@ describe('StrategyService', () => {
     balanceLedgerService = {
       adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
+    exchangeOrderTrackerService = {
+      getOpenOrders: jest.fn().mockReturnValue([]),
+      getLiveOrders: jest.fn().mockReturnValue([]),
+      getActiveSlotOrders: jest.fn().mockReturnValue([]),
+      getTrackedOrders: jest.fn().mockReturnValue([]),
+      upsertOrder: jest.fn(),
+    };
+    strategyIntentStoreService = {
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
+    };
     strategyMarketDataProviderService = {
       getReferencePrice: jest.fn().mockResolvedValue(100.5),
+      getTrackedBestBidAsk: jest
+        .fn()
+        .mockReturnValue({ bestBid: 100, bestAsk: 101 }),
       getBestBidAsk: jest
         .fn()
         .mockResolvedValue({ bestBid: 100, bestAsk: 101 }),
@@ -112,7 +190,35 @@ describe('StrategyService', () => {
         bids: [[100, 10]],
         asks: [[101, 10]],
       }),
+      hasTrackedOrderBook: jest.fn().mockReturnValue(true),
     };
+    exchangeConnectorAdapterService = {
+      loadTradingRules: jest.fn().mockResolvedValue({
+        amountMin: 0.001,
+        costMin: 10,
+        makerFee: 0.001,
+      }),
+      quantizeOrder: jest.fn(
+        (_: string, __: string, qty: string, price: string) => ({
+          qty,
+          price,
+        }),
+      ),
+      fetchBalance: jest.fn().mockResolvedValue({
+        free: { BTC: 10, USDT: 1000 },
+      }),
+      cancelOrder: jest.fn().mockResolvedValue({ status: 'cancelled' }),
+      fetchOpenOrders: jest.fn().mockResolvedValue([]),
+      fetchOrder: jest.fn().mockResolvedValue(null),
+    };
+    exchangeOrderMappingService = {
+      findByClientOrderId: jest.fn().mockResolvedValue(null),
+      findByExchangeOrderId: jest.fn().mockResolvedValue(null),
+    };
+    mockMarketMakingOrderRepository.findOne.mockResolvedValue({
+      orderId: 'default-order',
+      state: 'running',
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -140,11 +246,31 @@ describe('StrategyService', () => {
           provide: StrategyMarketDataProviderService,
           useValue: strategyMarketDataProviderService,
         },
+        {
+          provide: StrategyIntentStoreService,
+          useValue: strategyIntentStoreService,
+        },
+        {
+          provide: ExchangeOrderTrackerService,
+          useValue: exchangeOrderTrackerService,
+        },
+        {
+          provide: ExchangeConnectorAdapterService,
+          useValue: exchangeConnectorAdapterService,
+        },
+        {
+          provide: ExchangeOrderMappingService,
+          useValue: exchangeOrderMappingService,
+        },
         ExecutorRegistry,
         { provide: ConfigService, useValue: { get: jest.fn() } },
         {
           provide: getRepositoryToken(StrategyInstance),
           useValue: mockStrategyInstanceRepository,
+        },
+        {
+          provide: getRepositoryToken(MarketMakingOrder),
+          useValue: mockMarketMakingOrderRepository,
         },
       ],
     }).compile();
@@ -154,8 +280,13 @@ describe('StrategyService', () => {
     exchangeInitService = module.get<ExchangeInitServiceMock>(
       ExchangeInitService as any,
     );
+    await service.onModuleInit();
 
     jest.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    await service.onModuleDestroy();
   });
 
   it('registers a pure market making session without executing orders directly', async () => {
@@ -178,6 +309,103 @@ describe('StrategyService', () => {
 
     await service.executePureMarketMakingStrategy(strategyParamsDto);
     await service.executeMMCycle(strategyParamsDto);
+  });
+
+  it('restores tracked PMM orders and cancels orphan exchange orders on startup', async () => {
+    const strategy = {
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      status: 'running',
+      parameters: {
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+    };
+
+    mockStrategyInstanceRepository.find.mockResolvedValue([strategy]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'order-1',
+        strategyKey: strategy.strategyKey,
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'ex-known',
+        clientOrderId: 'mm-known',
+        side: 'buy',
+        price: '99',
+        qty: '1',
+        cumulativeFilledQty: '0',
+        status: 'pending_create',
+        createdAt: '2026-04-09T00:00:00.000Z',
+        updatedAt: '2026-04-09T00:00:00.000Z',
+      },
+    ]);
+    exchangeConnectorAdapterService.fetchOpenOrders.mockResolvedValue([
+      {
+        id: 'ex-known',
+        clientOrderId: 'mm-known',
+        status: 'open',
+        side: 'buy',
+        price: '99',
+        amount: '1',
+        filled: '0',
+      },
+      {
+        id: 'ex-orphan',
+        clientOrderId: 'mm-orphan',
+        status: 'open',
+        side: 'sell',
+        price: '101',
+        amount: '1',
+        filled: '0',
+      },
+    ]);
+    exchangeOrderMappingService.findByClientOrderId.mockImplementation(
+      async (clientOrderId: string) =>
+        clientOrderId === 'mm-orphan' ? { orderId: 'order-1' } : null,
+    );
+    jest.spyOn(service, 'getCadenceMs').mockReturnValue(1000);
+    jest.spyOn(service as any, 'upsertSession').mockResolvedValue({
+      strategyKey: strategy.strategyKey,
+    });
+
+    await service.start();
+
+    expect(
+      exchangeConnectorAdapterService.fetchOpenOrders,
+    ).toHaveBeenCalledWith('binance', 'BTC/USDT', undefined);
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'ex-orphan',
+      undefined,
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-known',
+        status: 'open',
+      }),
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-orphan',
+        status: 'cancelled',
+      }),
+    );
   });
 
   it('registers pure market making runtime in pooled executor registry', async () => {
@@ -592,16 +820,76 @@ describe('StrategyService', () => {
     expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
       'client1-pureMarketMaking',
       expect.arrayContaining([
-        expect.objectContaining({ type: 'STOP_CONTROLLER' }),
+        expect.objectContaining({
+          type: 'STOP_CONTROLLER',
+          status: 'CANCELLED',
+        }),
       ]),
+    );
+    expect(
+      strategyIntentStoreService.cancelPendingIntents,
+    ).toHaveBeenCalledWith(
+      'client1-pureMarketMaking',
+      'strategy stopped before intent execution',
     );
 
     const intents = service.getLatestIntentsForStrategy(
       'client1-pureMarketMaking',
     );
 
-    expect(intents.some((intent) => intent.type === 'STOP_CONTROLLER')).toBe(
-      true,
+    expect(intents).toEqual([]);
+  });
+
+  it('cancels tracked orders for active sessions during application shutdown', async () => {
+    (service as any).sessions.set('order-1-pureMarketMaking', {
+      runId: 'run-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+      },
+    });
+    exchangeOrderTrackerService.getTrackedOrders
+      .mockReturnValueOnce([
+        {
+          orderId: 'order-1',
+          strategyKey: 'order-1-pureMarketMaking',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'ex-open',
+          side: 'buy',
+          price: '99',
+          qty: '1',
+          status: 'open',
+          createdAt: '2026-04-09T00:00:00.000Z',
+          updatedAt: '2026-04-09T00:00:00.000Z',
+        },
+      ])
+      .mockReturnValue([]);
+
+    await service.onApplicationShutdown('SIGTERM');
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'order-1-pureMarketMaking' },
+      expect.objectContaining({ status: 'stopped' }),
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'ex-open',
+      undefined,
+    );
+    expect(
+      strategyIntentStoreService.cancelPendingIntents,
+    ).toHaveBeenCalledWith(
+      'order-1-pureMarketMaking',
+      expect.stringContaining('SIGTERM'),
     );
   });
 
@@ -629,6 +917,42 @@ describe('StrategyService', () => {
     expect(
       executorRegistry.getExecutor('bitfinex', 'BTC/USDT'),
     ).toBeUndefined();
+  });
+
+  it('cancels tracked open orders during stop', async () => {
+    const trackedOrder = {
+      orderId: 'client1',
+      strategyKey: 'client1-pureMarketMaking',
+      exchange: 'bitfinex',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    exchangeOrderTrackerService.getOpenOrders.mockReturnValue([trackedOrder]);
+    exchangeOrderTrackerService.getTrackedOrders
+      .mockReturnValueOnce([trackedOrder])
+      .mockReturnValue([]);
+
+    await service.stopStrategyForUser('1', 'client1', 'pureMarketMaking');
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'bitfinex',
+      'BTC/USDT',
+      'ex-1',
+      undefined,
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-1',
+        status: 'cancelled',
+      }),
+    );
   });
 
   it('falls back to ticker price when order book is empty', async () => {
@@ -1098,6 +1422,7 @@ describe('StrategyService', () => {
         userId: 'user-1',
         clientId: 'order-1',
         marketMakingOrderId: null,
+        status: 'running',
         parameters: {
           userId: 'user-1',
           clientId: 'order-1',
@@ -1136,6 +1461,115 @@ describe('StrategyService', () => {
     dateNowSpy.mockRestore();
   });
 
+  it('stops stale order-bound strategies during startup when the bound order is not running', async () => {
+    mockStrategyInstanceRepository.find.mockResolvedValue([
+      {
+        strategyKey: 'order-1-pureMarketMaking',
+        strategyType: 'pureMarketMaking',
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        status: 'running',
+        parameters: {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          orderRefreshTime: 1500,
+        },
+      },
+    ]);
+    mockMarketMakingOrderRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      state: 'stopped',
+    });
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockImplementation((strategyType: string) => {
+        if (strategyType === 'pureMarketMaking') {
+          return {
+            getCadenceMs: jest.fn(() => 1500),
+          };
+        }
+
+        return undefined;
+      }),
+      listControllerTypes: jest.fn(),
+    };
+
+    await service.start();
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'order-1-pureMarketMaking' },
+      expect.objectContaining({ status: 'stopped' }),
+    );
+    expect(
+      executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getSession('order-1'),
+    ).toBeUndefined();
+  });
+
+  it('queues pooled strategies from persistence until the exchange account is ready', async () => {
+    const nowMs = 1_700_000_000_000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+
+    exchangeInitService.isReady.mockReturnValue(false);
+    mockStrategyInstanceRepository.find.mockResolvedValue([
+      {
+        strategyKey: 'order-1-pureMarketMaking',
+        strategyType: 'pureMarketMaking',
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: null,
+        status: 'running',
+        parameters: {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          orderRefreshTime: 1500,
+          accountLabel: 'default',
+        },
+      },
+    ]);
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockImplementation((strategyType: string) => {
+        if (strategyType === 'pureMarketMaking') {
+          return {
+            getCadenceMs: jest.fn(() => 1500),
+          };
+        }
+
+        return undefined;
+      }),
+      listControllerTypes: jest.fn(),
+    };
+
+    await service.start();
+
+    expect(
+      executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getSession('order-1'),
+    ).toBeUndefined();
+
+    exchangeInitService.isReady.mockReturnValue(true);
+    await exchangeInitService.emitReady('binance', 'default');
+
+    expect(
+      executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getSession('order-1'),
+    ).toEqual(
+      expect.objectContaining({
+        strategyKey: 'order-1-pureMarketMaking',
+        nextRunAtMs: nowMs,
+      }),
+    );
+
+    dateNowSpy.mockRestore();
+  });
+
   it('rejects legacy arbitrage sessions during start hydration', async () => {
     mockStrategyInstanceRepository.find.mockResolvedValue([
       {
@@ -1143,6 +1577,7 @@ describe('StrategyService', () => {
         strategyType: 'arbitrage',
         userId: 'user-2',
         clientId: 'client-2',
+        status: 'running',
         parameters: {
           userId: 'user-2',
           clientId: 'client-2',
@@ -1231,6 +1666,1313 @@ describe('StrategyService', () => {
 
     expect(() => service.getCadenceMs({}, 'pureMarketMaking')).toThrow(
       'Strategy controller for type pureMarketMaking is not registered',
+    );
+  });
+
+  it('requires both dual-account labels to be ready before activation', () => {
+    exchangeInitService.isReady
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(true);
+
+    expect(
+      (service as any).canActivateStrategyImmediately({
+        strategyType: 'dualAccountVolume',
+        clientId: 'client-1',
+        parameters: {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+        },
+      }),
+    ).toBe(false);
+
+    expect(
+      (service as any).canActivateStrategyImmediately({
+        strategyType: 'dualAccountVolume',
+        clientId: 'client-1',
+        parameters: {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('publishes dual-account maker intents and persists published cycles', async () => {
+    const session = {
+      runId: 'run-dual',
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: 0,
+        publishedCycles: 0,
+        completedCycles: 0,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: session.params,
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    strategyMarketDataProviderService.getBestBidAsk.mockResolvedValue({
+      bestBid: 100,
+      bestAsk: 101,
+    });
+
+    const actions = await service.buildDualAccountVolumeSessionActions(
+      session as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        accountLabel: 'maker',
+        postOnly: true,
+        metadata: expect.objectContaining({
+          role: 'maker',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+        }),
+      }),
+    ]);
+
+    (service as any).sessions.set(session.strategyKey, session);
+    await service.onDualAccountVolumeActionsPublished(session as any, actions);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({ publishedCycles: 1 }),
+      }),
+    );
+  });
+
+  it('preserves only hot-config fields while keeping runtime dual-account counters', async () => {
+    const session = {
+      runId: 'run-dual-merge',
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: 0,
+        publishedCycles: 0,
+        completedCycles: 0,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: {
+        ...session.params,
+        publishedCycles: 0,
+        completedCycles: 1,
+        tradedQuoteVolume: 100,
+        baseIntervalTime: 15,
+      },
+    });
+
+    (service as any).sessions.set(session.strategyKey, session);
+    await service.onDualAccountVolumeActionsPublished(session as any, [
+      { type: 'CREATE_LIMIT_ORDER' } as any,
+    ]);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          publishedCycles: 1,
+          completedCycles: 0,
+          baseIntervalTime: 15,
+        }),
+      }),
+    );
+  });
+
+  it('does not let persisted dual-account counters overwrite runtime counters', async () => {
+    const session = {
+      runId: 'run-dual-runtime-wins',
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 5,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: 0,
+        publishedCycles: 3,
+        completedCycles: 2,
+        tradedQuoteVolume: 250,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: {
+        ...session.params,
+        publishedCycles: 1,
+        completedCycles: 0,
+        tradedQuoteVolume: 100,
+        baseIntervalTime: 30,
+      },
+    });
+
+    (service as any).sessions.set(session.strategyKey, session);
+    await service.onDualAccountVolumeActionsPublished(session as any, [
+      { type: 'CREATE_LIMIT_ORDER' } as any,
+    ]);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          publishedCycles: 4,
+          completedCycles: 2,
+          tradedQuoteVolume: 250,
+          baseIntervalTime: 30,
+        }),
+      }),
+    );
+  });
+
+  it('does not increment dual-account published cycles for rebalance-only actions', async () => {
+    const session = {
+      runId: 'run-dual-rebalance',
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 5,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: 0,
+        publishedCycles: 3,
+        completedCycles: 2,
+        tradedQuoteVolume: 250,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: {
+        ...session.params,
+        publishedCycles: 1,
+        completedCycles: 0,
+        tradedQuoteVolume: 100,
+        baseIntervalTime: 30,
+      },
+    });
+
+    (service as any).sessions.set(session.strategyKey, session);
+    await service.onDualAccountVolumeActionsPublished(session as any, [
+      {
+        type: 'CREATE_LIMIT_ORDER',
+        metadata: {
+          role: 'rebalance',
+          rebalance: true,
+        },
+      } as any,
+    ]);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: session.strategyKey },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          publishedCycles: 3,
+          completedCycles: 2,
+          tradedQuoteVolume: 250,
+          baseIntervalTime: 30,
+        }),
+      }),
+    );
+  });
+
+  it('skips dual-account volume actions when tracked order book is unavailable', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue(null);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
+  });
+
+  it('switches dual-account maker/taker roles when dynamic switching finds higher capacity on the taker side', async () => {
+    strategyMarketDataProviderService.getBestBidAsk.mockResolvedValue({
+      bestBid: 100,
+      bestAsk: 101,
+    });
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 5, USDT: 10 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 0.1, USDT: 5000 },
+      });
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: true,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        accountLabel: 'taker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'taker',
+          takerAccountLabel: 'maker',
+          dynamicRoleSwitching: true,
+        }),
+      }),
+    ]);
+  });
+
+  it('falls back to the opposite side when the preferred side is not tradable', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 10, USDT: 0 } }
+          : { free: { BTC: 0, USDT: 1000 } },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          requestedQty: '0.4',
+          effectiveQty: '0.4',
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
+  });
+
+  it('reduces dual-account volume qty to fit live balances', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 10, USDT: 25 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 0.15, USDT: 1000 },
+      });
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        qty: '0.15',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          requestedQty: '0.4',
+          effectiveQty: '0.15',
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
+  });
+
+  it('reserves a fee buffer before publishing a quote-limited dual-account cycle', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 10, USDT: 100.2 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 10, USDT: 1000 },
+      });
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 2,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toEqual(
+      expect.objectContaining({
+        accountLabel: 'maker',
+        qty: '1.000998',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          requestedQty: '2',
+          effectiveQty: '1.000998',
+          makerDelayMs: 250,
+        }),
+      }),
+    );
+    jest.restoreAllMocks();
+  });
+
+  it('uses maker+taker fee as the dual-account capacity buffer', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.loadTradingRules.mockResolvedValue({
+      amountMin: 0.001,
+      costMin: 10,
+      makerFee: 0.001,
+      takerFee: 0.002,
+    });
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 10, USDT: 100.3 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 10, USDT: 1000 },
+      });
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 2,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        qty: '0.999991',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          requestedQty: '2',
+          effectiveQty: '0.999991',
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
+  });
+
+  it('skips dual-account volume actions when adapted qty falls below exchange minimums', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async () => ({
+        free: { BTC: 0.04, USDT: 5 },
+      }),
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
+    jest.restoreAllMocks();
+  });
+
+  it('falls back to the opposite dual-account side when the preferred side is below exchange minimums', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 1, USDT: 0.02 } }
+          : { free: { BTC: 0.0005, USDT: 100 } },
+    );
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+      (_exchange: string, _symbol: string, qty: string, price: string) => {
+        if (Number(qty) < 0.001) {
+          throw new Error('qty must satisfy exchange minimum');
+        }
+
+        return { qty, price };
+      },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        qty: '0.4',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          requestedQty: '0.4',
+          effectiveQty: '0.4',
+        }),
+      }),
+    ]);
+    expect(
+      exchangeConnectorAdapterService.quantizeOrder.mock.calls.every(
+        ([, , qty]) => Number(qty) >= 0.001,
+      ),
+    ).toBe(true);
+    jest.restoreAllMocks();
+  });
+
+  it('adjusts an invalid quantized sell maker price back to the best ask', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 10, USDT: 0 } }
+          : { free: { BTC: 10, USDT: 1000 } },
+    );
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+      (_exchange: string, _symbol: string, qty: string, price: string) => ({
+        qty,
+        price: Number(price) >= 101 ? '101' : '100',
+      }),
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.2);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'sell',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        price: '101',
+        qty: '0.4',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          effectiveQty: '0.4',
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
+  });
+
+  it('skips dual-account volume actions before quantizing a zero qty', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 0, USDT: 0 } }
+          : { free: { BTC: 0.15, USDT: 0 } },
+    );
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+      (_exchange: string, _symbol: string, qty: string, price: string) => {
+        if (Number(qty) <= 0) {
+          throw new Error('qty must stay positive');
+        }
+
+        return { qty, price };
+      },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
+    expect(
+      exchangeConnectorAdapterService.quantizeOrder.mock.calls.every(
+        ([, , qty]) => Number(qty) > 0,
+      ),
+    ).toBe(true);
+    jest.restoreAllMocks();
+  });
+
+  it('builds a rebalance IOC order when no dual-account side is tradable', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 0, USDT: 1000 } }
+          : { free: { BTC: 0, USDT: 500 } },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'buy',
+        qty: '0.4',
+        accountLabel: 'maker',
+        postOnly: false,
+        timeInForce: 'IOC',
+        metadata: expect.objectContaining({
+          role: 'rebalance',
+          rebalance: true,
+          rebalanceReason: 'no_tradable_side',
+          rebalanceAccountLabel: 'maker',
+          restoredSide: 'sell',
+          configuredMakerAccountLabel: 'maker',
+          configuredTakerAccountLabel: 'taker',
+        }),
+      }),
+    ]);
+    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(2);
+    jest.restoreAllMocks();
+  });
+
+  it('reuses one dual-account balance snapshot when preferred side falls back to the opposite side', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 1, USDT: 10 } }
+          : { free: { BTC: 0, USDT: 1000 } },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 0.4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        postOnlySide: 'buy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          sideReason: 'fallback_side_tradable',
+          fallbackReason: 'preferred_side_not_tradable',
+        }),
+      }),
+    ]);
+    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(2);
+    jest.restoreAllMocks();
+  });
+
+  it('skips dual-account rebalance when every candidate is below exchange minimums', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 101,
+      });
+    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
+      async (_exchange: string, accountLabel?: string) =>
+        accountLabel === 'maker'
+          ? { free: { BTC: 0, USDT: 0.02 } }
+          : { free: { BTC: 0.0005, USDT: 0.03 } },
+    );
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+      (_exchange: string, _symbol: string, qty: string, price: string) => {
+        if (Number(qty) < 0.001) {
+          throw new Error('qty must satisfy exchange minimum');
+        }
+
+        return { qty, price };
+      },
+    );
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    await expect(
+      service.buildDualAccountVolumeActions(
+        'dual-key',
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          baseIncrementPercentage: 0.1,
+          baseIntervalTime: 10,
+          baseTradeAmount: 0.4,
+          numTrades: 2,
+          userId: 'user1',
+          clientId: 'client1',
+          pricePushRate: 0,
+          executionCategory: 'clob_cex',
+          executionVenue: 'cex',
+          postOnlySide: 'buy',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          makerDelayMs: 250,
+          dynamicRoleSwitching: false,
+          publishedCycles: 0,
+          completedCycles: 0,
+        } as any,
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    expect(
+      exchangeConnectorAdapterService.quantizeOrder.mock.calls.every(
+        ([, , qty]) => Number(qty) >= 0.001,
+      ),
+    ).toBe(true);
+    jest.restoreAllMocks();
+  });
+
+  it('treats exchange quantization failures as skipped quotes', async () => {
+    const warnSpy = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(() => {
+      throw new Error(
+        'mexc amount of XIN/USDT must be greater than minimum amount precision of 0.001',
+      );
+    });
+
+    await expect(
+      (service as any).quantizeAndValidateQuote(
+        'dual-key:rebalance',
+        'mexc',
+        'XIN/USDT',
+        'maker',
+        'buy',
+        0,
+        'dual-account-rebalance:maker:buy',
+        new BigNumber(0.2),
+        new BigNumber(58.47),
+        {
+          base: new BigNumber(0),
+          quote: new BigNumber(20),
+          assets: { base: 'XIN', quote: 'USDT' },
+        },
+      ),
+    ).resolves.toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('reason=quantization_rejected'),
+    );
+    jest.restoreAllMocks();
+  });
+
+  it('applies dual-account randomness and account profiles when building actions', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 102,
+      });
+    jest
+      .spyOn(Math, 'random')
+      .mockReturnValueOnce(0.8)
+      .mockReturnValueOnce(0.25)
+      .mockReturnValueOnce(0.75)
+      .mockReturnValueOnce(0.1);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 2,
+        baseIntervalTime: 10,
+        baseTradeAmount: 4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        tradeAmountVariance: 0.5,
+        priceOffsetVariance: 0.5,
+        makerDelayVariance: 0.5,
+        buyBias: 0.7,
+        accountProfiles: {
+          maker: {
+            tradeAmountMultiplier: 1.5,
+            priceOffsetMultiplier: 0.5,
+            makerDelayMultiplier: 2,
+          },
+        },
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        accountLabel: 'maker',
+        side: 'buy',
+        price: '101.6',
+        qty: '7.5',
+        metadata: expect.objectContaining({
+          activeHours: undefined,
+          buyBias: 0.7,
+          makerDelayMs: 300,
+          effectiveQty: '7.5',
+        }),
+      }),
+    ]);
+    jest.restoreAllMocks();
+  });
+
+  it('recalculates dual-account cadence jitter across ticks', async () => {
+    const activeSession = {
+      runId: 'run-cadence',
+      strategyKey: 'dual-cadence',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 10000,
+      nextRunAtMs: 0,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 10,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        cadenceVariance: 0.2,
+        publishedCycles: 1,
+        completedCycles: 0,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: activeSession.strategyKey,
+      parameters: activeSession.params,
+    });
+    (service as any).sessions.set(activeSession.strategyKey, activeSession);
+    jest
+      .spyOn(Math, 'random')
+      .mockReturnValueOnce(0.25)
+      .mockReturnValueOnce(0.75);
+
+    await service.onDualAccountVolumeActionsPublished(activeSession as any, [
+      { type: 'CREATE_LIMIT_ORDER' } as any,
+    ]);
+
+    const updatedSession = (service as any).sessions.get(
+      activeSession.strategyKey,
+    );
+
+    expect(updatedSession.cadenceMs).toBe(9000);
+    jest.restoreAllMocks();
+  });
+
+  it('skips dual-account volume actions when maker profile is outside active hours', async () => {
+    strategyMarketDataProviderService.getTrackedBestBidAsk = jest
+      .fn()
+      .mockReturnValue({
+        bestBid: 100,
+        bestAsk: 102,
+      });
+    const serviceDateSpy = jest
+      .spyOn(Date.prototype, 'getHours')
+      .mockReturnValue(8);
+
+    const actions = await service.buildDualAccountVolumeActions(
+      'dual-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 2,
+        baseIntervalTime: 10,
+        baseTradeAmount: 4,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        accountProfiles: {
+          maker: {
+            activeHours: [10, 11],
+          },
+        },
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
+    serviceDateSpy.mockRestore();
+  });
+
+  it('cancels dangling dual-account maker orders during runtime restore', async () => {
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'dual-cycle-1',
+        strategyKey: 'user1-client1-dualAccountVolume',
+        exchange: 'binance',
+        accountLabel: 'maker',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'maker-order-1',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'open',
+        role: 'maker',
+        createdAt: '2026-04-11T00:00:00.000Z',
+        updatedAt: '2026-04-11T00:00:00.000Z',
+      },
+    ]);
+    jest
+      .spyOn(service as any, 'waitForTrackedOrdersToSettle')
+      .mockResolvedValue(undefined);
+
+    await (service as any).restoreRuntimeStateForStrategy({
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+    });
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order-1',
+      'maker',
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'maker-order-1',
+        accountLabel: 'maker',
+        role: 'maker',
+        status: 'cancelled',
+      }),
+    );
+    expect((service as any).waitForTrackedOrdersToSettle).toHaveBeenCalledWith(
+      'user1-client1-dualAccountVolume',
+      10_000,
+    );
+  });
+
+  it('stops dual-account volume when target quote volume is reached', async () => {
+    const stopStrategyForUserSpy = jest
+      .spyOn(service, 'stopStrategyForUser')
+      .mockResolvedValue(undefined);
+    const session = {
+      runId: 'run-target',
+      strategyKey: 'dual-target',
+      strategyType: 'dualAccountVolume',
+      userId: 'user-1',
+      clientId: 'client-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      tradedQuoteVolume: 1500,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 100,
+        userId: 'user-1',
+        clientId: 'client-1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        publishedCycles: 0,
+        completedCycles: 0,
+        targetQuoteVolume: 1000,
+        tradedQuoteVolume: 1500,
+      },
+    };
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: session.strategyKey,
+      parameters: session.params,
+    });
+    (service as any).sessions.set(session.strategyKey, session);
+
+    await expect(
+      service.buildDualAccountVolumeSessionActions(
+        session as any,
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    expect(stopStrategyForUserSpy).toHaveBeenCalledWith(
+      'user-1',
+      'client-1',
+      'dualAccountVolume',
     );
   });
 
@@ -1407,10 +3149,8 @@ describe('StrategyService', () => {
       (service as any).quoteExecutorManagerService.buildQuotes,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
-        existingOpenOrdersBySide: {
-          buy: 2,
-          sell: 1,
-        },
+        midPrice: '100',
+        numberOfLayers: 1,
       }),
     );
   });
@@ -1467,7 +3207,496 @@ describe('StrategyService', () => {
         '2026-03-11T00:00:00.000Z',
       ),
     ).resolves.toEqual([]);
-    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('enforces minimum spread, sets postOnly, and skips refresh within tolerance', async () => {
+    (service as any).exchangeOrderTrackerService = {
+      getOpenOrders: jest.fn().mockReturnValue([
+        {
+          side: 'buy',
+          price: '99',
+          status: 'open',
+        },
+        {
+          side: 'sell',
+          price: '101',
+          status: 'open',
+        },
+      ]),
+    };
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([
+        {
+          layer: 1,
+          side: 'buy',
+          price: '99.5',
+          qty: '1',
+          shouldCreate: true,
+        },
+        {
+          layer: 1,
+          side: 'sell',
+          price: '101',
+          qty: '1',
+          shouldCreate: true,
+        },
+      ]),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+          minimumSpread: 0.01,
+          orderRefreshTolerancePct: 0.02,
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    (service as any).exchangeOrderTrackerService.getOpenOrders.mockReturnValue(
+      [],
+    );
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+          minimumSpread: 0.01,
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        side: 'sell',
+        postOnly: true,
+      }),
+    ]);
+  });
+
+  it('cancels an occupied slot without recreating it in the same tick when outside tolerance', async () => {
+    (service as any).exchangeOrderTrackerService = {
+      getActiveSlotOrders: jest.fn().mockReturnValue([
+        {
+          exchangeOrderId: 'ex-buy-1',
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '95',
+          qty: '1',
+          status: 'open',
+        },
+      ]),
+      getLiveOrders: jest.fn().mockReturnValue([
+        {
+          exchangeOrderId: 'ex-buy-1',
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '95',
+          qty: '1',
+          status: 'open',
+          createdAt: '2026-03-11T00:00:00.000Z',
+        },
+      ]),
+    };
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([
+        {
+          layer: 1,
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '99',
+          qty: '1',
+        },
+      ]),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        type: 'CANCEL_ORDER',
+        mixinOrderId: 'ex-buy-1',
+        slotKey: 'layer-1-buy',
+      }),
+    ]);
+  });
+
+  it('does not create a duplicate PMM order when the slot is already pending create', async () => {
+    (service as any).exchangeOrderTrackerService = {
+      getActiveSlotOrders: jest.fn().mockReturnValue([
+        {
+          exchangeOrderId: 'ex-pending-1',
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '99',
+          qty: '1',
+          status: 'pending_create',
+        },
+      ]),
+      getLiveOrders: jest.fn().mockReturnValue([]),
+    };
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([
+        {
+          layer: 1,
+          slotKey: 'layer-1-buy',
+          side: 'buy',
+          price: '99',
+          qty: '1',
+        },
+      ]),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it('quantizes PMM quotes and skips unaffordable or below-minimum orders', async () => {
+    (service as any).exchangeOrderTrackerService = {
+      getOpenOrders: jest.fn().mockReturnValue([]),
+    };
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([
+        {
+          layer: 1,
+          side: 'buy',
+          price: '100.129',
+          qty: '0.1239',
+          shouldCreate: true,
+        },
+      ]),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        price: '100.129',
+        qty: '0.1239',
+      }),
+    ]);
+
+    exchangeConnectorAdapterService.fetchBalance.mockResolvedValueOnce({
+      free: { BTC: 0, USDT: 1 },
+    });
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it('reserves balances across PMM quotes within the same tick', async () => {
+    (service as any).exchangeOrderTrackerService = {
+      getOpenOrders: jest.fn().mockReturnValue([]),
+    };
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([
+        {
+          layer: 1,
+          side: 'buy',
+          price: '100',
+          qty: '5',
+          shouldCreate: true,
+        },
+        {
+          layer: 2,
+          side: 'buy',
+          price: '100',
+          qty: '6',
+          shouldCreate: true,
+        },
+      ]),
+    };
+    exchangeConnectorAdapterService.fetchBalance.mockResolvedValueOnce({
+      free: { BTC: 0, USDT: 1000 },
+    });
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 2,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toHaveLength(1);
+  });
+
+  it('gates PMM action building when connector health is degraded and restores on success', async () => {
+    (service as any).setConnectorHealthStatus('binance', 'DEGRADED');
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    (service as any).setConnectorHealthStatus('binance', 'CONNECTED');
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([
+        {
+          layer: 1,
+          side: 'sell',
+          price: '101',
+          qty: '1',
+          shouldCreate: true,
+        },
+      ]),
+    };
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toHaveLength(1);
+  });
+
+  it('triggers the PMM kill switch and stops the strategy when realized loss breaches the threshold', async () => {
+    (service as any).sessions.set('order-1-pureMarketMaking', {
+      runId: 'run-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      cadenceMs: 1000,
+      nextRunAtMs: 0,
+      realizedPnlQuote: -25,
+      tradedQuoteVolume: 100,
+      params: {
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+      },
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+          killSwitchThreshold: 10,
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([]);
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'order-1-pureMarketMaking' },
+      expect.objectContaining({ status: 'stopped' }),
+    );
+    expect(
+      strategyIntentStoreService.cancelPendingIntents,
+    ).toHaveBeenCalledWith(
+      'order-1-pureMarketMaking',
+      'strategy stopped before intent execution',
+    );
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
+      'order-1-pureMarketMaking',
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'STOP_CONTROLLER',
+        }),
+      ]),
+    );
+  });
+
+  it('emits cancel actions for stale or far-drifted PMM orders', async () => {
+    (service as any).exchangeOrderTrackerService = {
+      getOpenOrders: jest.fn().mockReturnValue([
+        {
+          exchangeOrderId: 'ex-old',
+          side: 'buy',
+          price: '90',
+          qty: '1',
+          createdAt: '2020-01-01T00:00:00.000Z',
+          status: 'open',
+        },
+      ]),
+    };
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([]),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await expect(
+      service.buildPureMarketMakingActions(
+        'order-1-pureMarketMaking',
+        {
+          userId: 'user-1',
+          clientId: 'order-1',
+          pair: 'BTC/USDT',
+          exchangeName: 'binance',
+          bidSpread: 0.01,
+          askSpread: 0.01,
+          orderAmount: 1,
+          orderRefreshTime: 1000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+          maxOrderAge: 1000,
+          hangingOrdersCancelPct: 0.05,
+        },
+        '2026-03-11T00:00:00.000Z',
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        type: 'CANCEL_ORDER',
+        mixinOrderId: 'ex-old',
+      }),
+    ]);
   });
 
   it('builds a time indicator entry when EMA crossover and balances allow it', async () => {

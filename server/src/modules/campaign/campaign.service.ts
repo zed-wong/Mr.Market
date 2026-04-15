@@ -1,22 +1,26 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import axios, { AxiosInstance } from 'axios';
 
 import { ExchangeInitService } from '../infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from '../infrastructure/logger/logger.service';
 import { Web3Service } from '../web3/web3.service';
-import { CampaignDataDto } from './campaign.dto';
+import { CampaignDataDto, CampaignListResponseDto } from './campaign.dto';
 
 @Injectable()
 export class CampaignService {
+  private static readonly ACCESS_TOKEN_TTL_MS = 5 * 60 * 1000;
   private readonly logger = new CustomLogger(CampaignService.name);
 
   private readonly campaignLauncherBaseUrl: string;
   private readonly recordingOracleBaseUrl: string;
   private readonly hufiCampaignLauncherAPI: AxiosInstance;
   private readonly hufiRecordingOracleAPI: AxiosInstance;
+  private readonly accessTokenCache = new Map<
+    string,
+    { token: string; expiresAt: number }
+  >();
 
   constructor(
     private readonly configService: ConfigService,
@@ -39,17 +43,14 @@ export class CampaignService {
     });
   }
 
-  async getCampaigns() {
-    this.logger.log('Getting HuFi campaigns');
-
+  async getCampaigns(): Promise<CampaignDataDto[]> {
     try {
-      const { data } = await this.hufiCampaignLauncherAPI.get<
-        CampaignDataDto[]
-      >('/campaign?chainId=-1');
+      const { data } =
+        await this.hufiCampaignLauncherAPI.get<CampaignListResponseDto>(
+          '/campaigns?chain_id=137&status=active&limit=100&page=1',
+        );
 
-      this.logger.log('Finished getting HuFi campaigns');
-
-      return data;
+      return data.results;
     } catch (error) {
       this.logger.warn(`Error getting HuFi campaigns: ${error.message}`);
 
@@ -112,13 +113,10 @@ export class CampaignService {
     this.logger.log(`Authenticating Web3 user: ${wallet_address}`);
 
     try {
-      // Create a wallet instance from the private key to sign the nonce
       const { Wallet } = await import('ethers');
       const wallet = new Wallet(private_key);
-
-      // Sign the nonce using EIP-191 message signing convention
-      // signMessage automatically prepends "\x19Ethereum Signed Message:\n" + message.length
-      const signature = await wallet.signMessage(nonce);
+      const signableMessage = JSON.stringify({ nonce });
+      const signature = await wallet.signMessage(signableMessage);
 
       this.logger.log('Nonce signed successfully, requesting access token');
 
@@ -145,6 +143,77 @@ export class CampaignService {
       );
       throw new Error(`Failed to authenticate Web3 user: ${errorMessage}`);
     }
+  }
+
+  invalidateAccessToken(walletAddress: string): void {
+    this.accessTokenCache.delete(walletAddress.toLowerCase());
+  }
+
+  async getAccessToken(
+    walletAddress: string,
+    privateKey: string,
+  ): Promise<string> {
+    const cacheKey = walletAddress.toLowerCase();
+    const cached = this.accessTokenCache.get(cacheKey);
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.token;
+    }
+
+    const nonce = await this.get_auth_nonce(walletAddress);
+    const accessToken = await this.authenticate_web3_user(
+      walletAddress,
+      nonce,
+      privateKey,
+    );
+
+    this.accessTokenCache.set(cacheKey, {
+      token: accessToken,
+      expiresAt: Date.now() + CampaignService.ACCESS_TOKEN_TTL_MS,
+    });
+
+    return accessToken;
+  }
+
+  async getJoinedCampaignKeys(accessToken: string): Promise<Set<string>> {
+    const { data } = await this.hufiRecordingOracleAPI.get<{
+      results: Array<Record<string, unknown>>;
+    }>('/campaigns', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    return new Set(
+      (data.results ?? []).map(
+        (c) =>
+          `${c.chain_id ?? ''}:${String(
+            c.escrow_address ?? c.address ?? '',
+          ).toLowerCase()}`,
+      ),
+    );
+  }
+
+  async getJoinedCampaignBindings(accessToken: string): Promise<
+    Array<{
+      chainId: number;
+      campaignAddress: string;
+      exchangeName: string | null;
+    }>
+  > {
+    const { data } = await this.hufiRecordingOracleAPI.get<{
+      results: Array<Record<string, unknown>>;
+    }>('/campaigns', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    return (data.results ?? []).map((campaign) => ({
+      chainId: Number(campaign.chain_id ?? 0),
+      campaignAddress: String(
+        campaign.escrow_address ?? campaign.address ?? '',
+      ).toLowerCase(),
+      exchangeName: campaign.exchange_name
+        ? String(campaign.exchange_name).toLowerCase()
+        : null,
+    }));
   }
 
   /**
@@ -209,6 +278,55 @@ export class CampaignService {
     }
   }
 
+  async register_exchange_api_key(
+    access_token: string,
+    exchange_name: string,
+    api_key: string,
+    secret_key: string,
+    extras?: Record<string, unknown>,
+  ): Promise<any> {
+    this.logger.log(`Registering exchange API key for ${exchange_name}`);
+
+    try {
+      const payload: Record<string, unknown> = {
+        exchange_name,
+        api_key,
+        secret_key,
+      };
+
+      if (extras && Object.keys(extras).length > 0) {
+        payload.extras = extras;
+      }
+
+      const { data } = await this.hufiRecordingOracleAPI.post(
+        '/exchange-api-keys',
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${access_token}`,
+          },
+        },
+      );
+
+      this.logger.log(
+        `Successfully registered exchange API key for ${exchange_name}`,
+      );
+
+      return data;
+    } catch (error) {
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        'Unknown error occurred';
+
+      this.logger.warn(
+        `Error registering exchange API key for ${exchange_name}: ${errorMessage}`,
+        error.stack,
+      );
+      throw new Error(`Failed to register exchange API key: ${errorMessage}`);
+    }
+  }
+
   /**
    * Helper method: Complete Campaign Join Flow
    * Orchestrates the complete flow to join a campaign by chaining the three functions:
@@ -226,25 +344,31 @@ export class CampaignService {
   async joinCampaignWithAuth(
     wallet_address: string,
     private_key: string,
+    exchange_name: string,
+    api_key: string,
+    secret_key: string,
     chain_id: number,
     campaign_address: string,
+    extras?: Record<string, unknown>,
   ): Promise<any> {
     this.logger.log(
       `Starting complete campaign join flow for wallet: ${wallet_address}`,
     );
 
     try {
-      // Step 1: Get authentication nonce
-      const nonce = await this.get_auth_nonce(wallet_address);
-
-      // Step 2: Authenticate and get access token
-      const access_token = await this.authenticate_web3_user(
+      const access_token = await this.getAccessToken(
         wallet_address,
-        nonce,
         private_key,
       );
 
-      // Step 3: Join the campaign using the access token
+      await this.register_exchange_api_key(
+        access_token,
+        exchange_name,
+        api_key,
+        secret_key,
+        extras,
+      );
+
       const result = await this.join_campaign(
         access_token,
         chain_id,
@@ -268,7 +392,7 @@ export class CampaignService {
   /**
    * Every hour, check if there are any new campaigns to join
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  // Auto-join disabled intentionally.
   async joinCampaigns() {
     if (!this.campaignLauncherBaseUrl) {
       this.logger.warn(
@@ -289,8 +413,8 @@ export class CampaignService {
     this.logger.log('Getting running campaigns');
     const runningCampaigns = campaigns.filter((campaign) => {
       return (
-        campaign.status !== 'Complete' &&
-        new Date(campaign.endBlock * 1000) >= new Date()
+        campaign.status !== 'completed' &&
+        new Date(campaign.end_date) >= new Date()
       );
     });
 
@@ -302,37 +426,53 @@ export class CampaignService {
 
     this.logger.log(`Joining ${runningCampaigns.length} campaigns`);
 
+    const firstCampaign = runningCampaigns[0];
+    const walletAddress = await this.web3Service
+      .getSigner(firstCampaign.chain_id)
+      .getAddress();
+
+    let joinedKeys: Set<string>;
+
+    try {
+      const privateKey = this.web3Service.getSigner(
+        firstCampaign.chain_id,
+      ).privateKey;
+      const accessToken = await this.getAccessToken(walletAddress, privateKey);
+
+      joinedKeys = await this.getJoinedCampaignKeys(accessToken);
+    } catch (e) {
+      this.logger.warn(
+        'Failed to fetch joined campaigns, skipping join check: ',
+        e.message,
+      );
+      joinedKeys = new Set();
+    }
+
     for (const campaign of runningCampaigns) {
       try {
-        const walletAddress = await this.web3Service
-          .getSigner(campaign.chainId)
-          .getAddress();
+        const key = `${campaign.chain_id}:${campaign.address.toLowerCase()}`;
 
-        const { data: joined } = await this.hufiRecordingOracleAPI.get(
-          `/mr-market/campaign?chainId=${campaign.chainId}&address=${campaign.address}&walletAddress=${walletAddress}`,
-        );
-
-        if (joined) {
+        if (joinedKeys.has(key)) {
           this.logger.log('Already joined campaign');
           continue;
         }
 
         const exchangeInstance = await this.exchangeService.getExchange(
-          campaign.exchangeName,
+          campaign.exchange_name,
           'read-only',
         );
 
         await this.hufiRecordingOracleAPI.post('/mr-market/campaign', {
           wallet_address: walletAddress,
-          chain_id: campaign.chainId,
+          chain_id: campaign.chain_id,
           address: campaign.address,
-          exchange_name: campaign.exchangeName,
+          exchange_name: campaign.exchange_name,
           api_key: exchangeInstance.apiKey,
           secret: exchangeInstance.secret,
         });
 
         this.logger.log(
-          `Joined Hu-Fi campaign:\n\tChainId: ${campaign.chainId}\n\tAddress: ${campaign.address}\n\tExchange: ${campaign.exchangeName}`,
+          `Joined Hu-Fi campaign:\n\tChainId: ${campaign.chain_id}\n\tAddress: ${campaign.address}\n\tExchange: ${campaign.exchange_name}`,
         );
       } catch (e) {
         this.logger.warn('Error joining campaign: ', e.message);

@@ -1,26 +1,12 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Campaign } from 'src/common/entities/campaign/campaign.entity';
-import { HufiScoreSnapshot } from 'src/common/entities/campaign/hufi-score-snapshot.entity';
-import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 
 import { ExchangeInitModule } from '../infrastructure/exchange-init/exchange-init.module';
 import { Web3Module } from '../web3/web3.module';
 import { CampaignService } from './campaign.service';
-import { CampaignSyncService } from './campaign-sync.service';
-import { HufiScoreEstimatorService } from './hufi-score-estimator.service';
 
 @Module({
-  imports: [
-    Web3Module,
-    ExchangeInitModule,
-    TypeOrmModule.forFeature([
-      Campaign,
-      HufiScoreSnapshot,
-      StrategyExecutionHistory,
-    ]),
-  ],
-  providers: [CampaignService, CampaignSyncService, HufiScoreEstimatorService],
+  imports: [Web3Module, ExchangeInitModule],
+  providers: [CampaignService],
   exports: [CampaignService],
 })
 export class CampaignModule {}

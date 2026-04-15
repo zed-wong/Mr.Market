@@ -9,7 +9,7 @@ Planning docs intentionally keep dates in their filenames.
 - The date preserves the planning context for that iteration.
 - A dated doc is not automatically obsolete just because it is older.
 - If a dated doc is still guiding current work, it should remain in `planning/`.
-- If it is no longer guiding current work, it can move to `../archive/`.
+- If it is no longer guiding current work, it should move to `../archive/plans/`.
 
 ## Doc Types
 
@@ -28,31 +28,28 @@ Use dated files, but keep the document role clear.
   Use for rolling chronological change notes.
   Do not create a new dated plan when a short progress entry is enough.
 
-## Current Files And Roles
+## Current Active Files And Roles
 
+- **`2026-04-08-intent-worker-rate-limiting-improvements.md`**
+  Role: active implementation plan for the current intent-worker rate-limit follow-up
+- **`2026-04-13-hyperliquid-pancakeswap-volume-strategy.md`**
+  Role: active validation checklist for Hyperliquid dual-account volume and PancakeSwap live AMM volume runs
+- **`2026-04-14-hummingbot-like-user-stream-plan.md`**
+  Role: active implementation record for the 2026-04-14 user-stream migration and runtime follow-up work
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**
   Role: rolling chronological implementation log
-- **`2026-03-18-market-making-testing-roadmap.md`**
-  Role: market-making testing roadmap for stage order, boundaries, and phase gates
-- **`2026-03-15-ccxt-sandbox-integration-testing-plan.md`**
-  Role: detailed Track A sandbox execution plan
-- **`2026-03-20-system-test-gap-analysis-and-improvement-plan.md`**
-  Role: gap-analysis reference for current system-test coverage and remaining infrastructure/runtime fidelity work
-- **`2026-03-21-persistent-sandbox-market-making-validation-plan.md`**
-  Role: current operator-facing persistent sandbox validation proposal
-- **`2026-03-23-dual-mode-self-hosted-cli-idea.md`**
-  Role: IDEA — dual-mode architecture (SaaS + self-hosted CLI) for future consideration
 
 ## When To Update Vs Create
 
 - If work is continuing within the same phase and the same document role, update the existing dated doc.
 - If the team introduces a new phase boundary or a materially different implementation approach, create a new dated doc.
 - If the change is just a short status update, add it to `progress-log.md`.
-- If a dated doc stops guiding current work, move it to `../archive/`.
+- If a dated doc stops guiding current work, move it to `../archive/plans/`.
 
 ## Notes
 
-- Historical plans live under `../archive/`, including older completed or superseded dated plans
+- Historical plans live under `../archive/plans/`, including older completed or superseded dated plans
+- Completed one-off TODO/checklist docs should move to `../archive/plans/` once the implementation log and active plan index are updated
 - For current architecture reference, see `../architecture/`

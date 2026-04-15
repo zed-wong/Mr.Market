@@ -1,11 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDecimal, IsUUID } from 'class-validator';
+import { IsDecimal, IsEnum, IsOptional, IsUUID } from 'class-validator';
 
 import {
   ArbitrageStrategyDto,
+  ExecuteDualAccountVolumeStrategyDto,
   ExecuteVolumeStrategyDto,
   PureMarketMakingStrategyDto,
 } from '../../market-making/strategy/config/strategy.dto';
+
+export enum StrategyDefinitionVisibility {
+  PUBLIC = 'public',
+  ADMIN = 'admin',
+}
 
 // Unified DTO for starting strategies that handles all types
 export class StartStrategyDto {
@@ -13,7 +19,7 @@ export class StartStrategyDto {
     description: 'Type of strategy to start',
     example: 'arbitrage',
   })
-  strategyType: 'arbitrage' | 'marketMaking' | 'volume';
+  strategyType: 'arbitrage' | 'marketMaking' | 'volume' | 'dualAccountVolume';
 
   @ApiPropertyOptional({
     description: 'Parameters for arbitrage strategy (required for arbitrage)',
@@ -33,6 +39,13 @@ export class StartStrategyDto {
     type: ExecuteVolumeStrategyDto,
   })
   volumeParams?: ExecuteVolumeStrategyDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Parameters for dual-account volume strategy (required for dualAccountVolume)',
+    type: ExecuteDualAccountVolumeStrategyDto,
+  })
+  dualAccountVolumeParams?: ExecuteDualAccountVolumeStrategyDto;
 
   @ApiPropertyOptional({
     description: 'Check interval in seconds (arbitrage-specific)',
@@ -65,7 +78,7 @@ export class StopStrategyDto {
     description: 'Type of strategy to stop',
     example: 'arbitrage',
   })
-  strategyType: 'arbitrage' | 'marketMaking' | 'volume';
+  strategyType: 'arbitrage' | 'marketMaking' | 'volume' | 'dualAccountVolume';
 }
 
 export class GetDepositAddressDto {
@@ -196,8 +209,11 @@ export class StrategyDefinitionDto {
 
   @ApiPropertyOptional({
     description: 'Definition visibility scope',
-    example: 'system',
+    example: 'public',
+    enum: StrategyDefinitionVisibility,
   })
+  @IsOptional()
+  @IsEnum(StrategyDefinitionVisibility)
   visibility?: string;
 
   @ApiPropertyOptional({
@@ -226,7 +242,12 @@ export class UpdateStrategyDefinitionDto {
   @ApiPropertyOptional({ description: 'Default config values' })
   defaultConfig?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ description: 'Definition visibility' })
+  @ApiPropertyOptional({
+    description: 'Definition visibility',
+    enum: StrategyDefinitionVisibility,
+  })
+  @IsOptional()
+  @IsEnum(StrategyDefinitionVisibility)
   visibility?: string;
 }
 

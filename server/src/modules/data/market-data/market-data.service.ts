@@ -10,6 +10,7 @@ import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange
 import { CustomLogger } from '../../infrastructure/logger/logger.service';
 
 export type marketDataType = 'orderbook' | 'OHLCV' | 'ticker' | 'tickers';
+type MarketDataListener = (data: any) => void;
 
 @Injectable()
 export class MarketdataService {
@@ -17,6 +18,14 @@ export class MarketdataService {
   private exchanges = new Map<string, ccxt.Exchange>();
   private readonly logger = new CustomLogger(MarketdataService.name);
   private activeSubscriptions = new Map<string, boolean>(); // Track active subscriptions
+  private readonly orderBookListeners = new Map<
+    string,
+    Map<string, MarketDataListener>
+  >();
+  private readonly orderBookSubscriptionTasks = new Map<
+    string,
+    Promise<void>
+  >();
 
   private cachingTTL: 10; // 10s
 
@@ -149,14 +158,6 @@ export class MarketdataService {
     onData: (data: any) => void,
     limit = 14,
   ): Promise<void> {
-    const exchange = this.ExchangeInitService.getExchange(exchangeName);
-
-    if (!exchange || !exchange.has.watchOrderBook) {
-      throw new Error(
-        `Exchange ${exchangeName} does not support watchOrderBook or is not configured.`,
-      );
-    }
-
     const subscriptionKey = createCompositeKey(
       'orderbook',
       exchangeName,
@@ -171,16 +172,57 @@ export class MarketdataService {
 
     while (this.isSubscriptionActive(subscriptionKey)) {
       try {
+        const exchange = this.ExchangeInitService.getExchange(exchangeName);
+
+        if (!exchange || !exchange.has.watchOrderBook) {
+          throw new Error(
+            `Exchange ${exchangeName} does not support watchOrderBook or is not configured.`,
+          );
+        }
+
         const orderBook = await exchange.watchOrderBook(symbol, limit);
 
         onData(orderBook);
       } catch (error) {
-        this.logger.error(
+        this.logger.warn(
           `Error watching order book for ${symbol} on ${exchangeName}: ${error.message}`,
         );
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Reconnect after a delay
       }
     }
+  }
+
+  subscribeOrderBook(
+    exchangeName: string,
+    symbol: string,
+    consumerId: string,
+    onData: MarketDataListener,
+  ): void {
+    const subscriptionKey = createCompositeKey(
+      'orderbook',
+      exchangeName,
+      symbol,
+    );
+    const listeners =
+      this.orderBookListeners.get(subscriptionKey) ||
+      new Map<string, MarketDataListener>();
+
+    listeners.set(consumerId, onData);
+    this.orderBookListeners.set(subscriptionKey, listeners);
+
+    if (this.orderBookSubscriptionTasks.has(subscriptionKey)) {
+      return;
+    }
+
+    this.activeSubscriptions.set(subscriptionKey, true);
+
+    const task = this.watchOrderBook(exchangeName, symbol, (data) => {
+      this.dispatchOrderBook(subscriptionKey, data);
+    }).finally(() => {
+      this.orderBookSubscriptionTasks.delete(subscriptionKey);
+    });
+
+    this.orderBookSubscriptionTasks.set(subscriptionKey, task);
   }
 
   async watchOHLCV(
@@ -319,12 +361,28 @@ export class MarketdataService {
     return this.isSubscriptionActive(subscriptionKey);
   }
 
-  unsubscribeOrderBook(exchangeName: string, symbol: string): void {
+  unsubscribeOrderBook(
+    exchangeName: string,
+    symbol: string,
+    consumerId?: string,
+  ): void {
     const subscriptionKey = createCompositeKey(
       'orderbook',
       exchangeName,
       symbol,
     );
+
+    if (consumerId) {
+      const listeners = this.orderBookListeners.get(subscriptionKey);
+
+      listeners?.delete(consumerId);
+
+      if (listeners && listeners.size > 0) {
+        return;
+      }
+    }
+
+    this.orderBookListeners.delete(subscriptionKey);
 
     this.deactivateSubscription(subscriptionKey);
   }
@@ -407,5 +465,27 @@ export class MarketdataService {
   private deactivateSubscription(subscriptionKey: string): void {
     this.activeSubscriptions.set(subscriptionKey, false);
     this.activeSubscriptions.delete(subscriptionKey);
+  }
+
+  private dispatchOrderBook(subscriptionKey: string, orderBook: any): void {
+    const listeners = this.orderBookListeners.get(subscriptionKey);
+
+    if (!listeners || listeners.size === 0) {
+      this.deactivateSubscription(subscriptionKey);
+
+      return;
+    }
+
+    for (const listener of listeners.values()) {
+      try {
+        listener(orderBook);
+      } catch (error) {
+        this.logger.error(
+          `Order book listener failed for ${subscriptionKey}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
   }
 }

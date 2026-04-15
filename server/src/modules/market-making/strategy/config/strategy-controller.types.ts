@@ -6,6 +6,7 @@ import type { ExecutorAction } from './executor-action.types';
 export type StrategyType =
   | 'arbitrage'
   | 'pureMarketMaking'
+  | 'dualAccountVolume'
   | 'volume'
   | 'timeIndicator';
 
@@ -18,6 +19,11 @@ export type StrategyRuntimeSession = {
   marketMakingOrderId?: string;
   cadenceMs: number;
   nextRunAtMs: number;
+  lastFillTimestamp?: number;
+  realizedPnlQuote?: number;
+  tradedQuoteVolume?: number;
+  inventoryBaseQty?: number;
+  inventoryCostQuote?: number;
   params: Record<string, unknown>;
 };
 

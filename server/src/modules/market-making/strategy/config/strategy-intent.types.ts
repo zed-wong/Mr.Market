@@ -8,7 +8,13 @@ export type StrategyIntentType =
   | 'STOP_CONTROLLER'
   | 'STOP_EXECUTOR';
 
-export type StrategyIntentStatus = 'NEW' | 'SENT' | 'ACKED' | 'FAILED' | 'DONE';
+export type StrategyIntentStatus =
+  | 'NEW'
+  | 'SENT'
+  | 'ACKED'
+  | 'FAILED'
+  | 'DONE'
+  | 'CANCELLED';
 
 export type StrategyOrderIntent = {
   type: StrategyIntentType;
@@ -18,12 +24,16 @@ export type StrategyOrderIntent = {
   userId: string;
   clientId: string;
   exchange: string;
+  accountLabel?: string;
   pair: string;
   side: 'buy' | 'sell';
   price: string;
   qty: string;
   mixinOrderId?: string;
   executionCategory?: StrategyExecutionCategory;
+  postOnly?: boolean;
+  timeInForce?: 'GTC' | 'IOC';
+  slotKey?: string;
   metadata?: Record<string, unknown>;
   createdAt: string;
   status: StrategyIntentStatus;

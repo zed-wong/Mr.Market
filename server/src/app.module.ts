@@ -1,8 +1,9 @@
 import { BullModule } from '@nestjs/bull';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as dotenv from 'dotenv';
 import { join } from 'path';
@@ -12,8 +13,7 @@ import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { AppController } from './app.controller';
 import { APIKeysConfig } from './common/entities/admin/api-keys.entity';
 import { CustomConfigEntity } from './common/entities/admin/custom-config.entity';
-import { Campaign } from './common/entities/campaign/campaign.entity';
-import { CampaignParticipation } from './common/entities/campaign/campaign-participation.entity';
+import { CampaignJoin } from './common/entities/campaign/campaign-join.entity';
 import { Contribution } from './common/entities/campaign/contribution.entity';
 import { HufiScoreSnapshot } from './common/entities/campaign/hufi-score-snapshot.entity';
 import {
@@ -35,6 +35,7 @@ import { StrategyDefinition } from './common/entities/market-making/strategy-def
 import { StrategyExecutionHistory } from './common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from './common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from './common/entities/market-making/strategy-order-intent.entity';
+import { TrackedOrderEntity } from './common/entities/market-making/tracked-order.entity';
 import {
   MixinReleaseHistory,
   MixinReleaseToken,
@@ -66,7 +67,6 @@ import { LoggerModule } from './modules/infrastructure/logger/logger.module';
 import { CustomLogger } from './modules/infrastructure/logger/logger.service';
 import { DurabilityModule } from './modules/market-making/durability/durability.module';
 import { LedgerModule } from './modules/market-making/ledger/ledger.module';
-import { LocalCampaignModule } from './modules/market-making/local-campaign/local-campaign.module';
 import { MetricsModule } from './modules/market-making/metrics/metrics.module';
 import { OrchestrationModule } from './modules/market-making/orchestration/orchestration.module';
 import { PerformanceModule } from './modules/market-making/performance/performance.module';
@@ -129,6 +129,7 @@ function buildRedisConfig(configService: ConfigService) {
         Performance,
         SpotOrder,
         APIKeysConfig,
+        CampaignJoin,
         CustomConfigEntity,
         Contribution,
         MixinReleaseToken,
@@ -145,8 +146,6 @@ function buildRedisConfig(configService: ConfigService) {
         GrowdataArbitragePair,
         GrowdataMarketMakingPair,
         Withdrawal,
-        Campaign,
-        CampaignParticipation,
         MarketMakingOrderIntent,
         LedgerEntry,
         BalanceReadModel,
@@ -158,6 +157,7 @@ function buildRedisConfig(configService: ConfigService) {
         HufiScoreSnapshot,
         StrategyOrderIntentEntity,
         ExchangeOrderMapping,
+        TrackedOrderEntity,
       ],
       synchronize: false,
       migrations: [join(__dirname, 'database/migrations/*{.ts,.js}')],
@@ -184,7 +184,6 @@ function buildRedisConfig(configService: ConfigService) {
     Web3Module,
     MetricsModule,
     UserOrdersModule,
-    LocalCampaignModule,
     TickModule,
     LedgerModule,
     DurabilityModule,
@@ -201,6 +200,12 @@ function buildRedisConfig(configService: ConfigService) {
     }),
   ],
   controllers: [AppController, AdminController],
-  providers: [CustomLogger],
+  providers: [
+    CustomLogger,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

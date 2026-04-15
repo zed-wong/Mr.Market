@@ -15,6 +15,7 @@ export class SoakErrorInjector {
       adapter[method] as (...args: unknown[]) => Promise<unknown>
     ).bind(adapter);
     const key = `${method}:${Date.now()}`;
+
     this.activeInjections.add(key);
     let remaining = failCount;
 
@@ -29,6 +30,7 @@ export class SoakErrorInjector {
         }
         throw new Error(errorMessage);
       }
+
       return original(...args);
     };
   }
@@ -42,6 +44,7 @@ export class SoakErrorInjector {
       adapter[method] as (...args: unknown[]) => Promise<unknown>
     ).bind(adapter);
     const key = `${method}:permanent:${Date.now()}`;
+
     this.activeInjections.add(key);
     let active = true;
 
@@ -51,6 +54,7 @@ export class SoakErrorInjector {
       if (active) {
         throw new Error(errorMessage);
       }
+
       return original(...args);
     };
 

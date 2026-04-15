@@ -28,6 +28,9 @@ export class StrategyOrderIntentEntity {
   @Column()
   exchange: string;
 
+  @Column({ nullable: true })
+  accountLabel?: string;
+
   @Column()
   pair: string;
 
@@ -45,6 +48,15 @@ export class StrategyOrderIntentEntity {
 
   @Column({ nullable: true })
   executionCategory?: string;
+
+  @Column({ nullable: true })
+  postOnly?: boolean;
+
+  @Column({ nullable: true })
+  timeInForce?: string;
+
+  @Column({ nullable: true })
+  slotKey?: string;
 
   @Column({ type: 'simple-json', nullable: true })
   metadata?: Record<string, unknown>;

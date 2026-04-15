@@ -2,89 +2,76 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class CampaignDataDto {
   @ApiProperty()
-  chainId: number;
-
-  @ApiProperty()
-  requesterAddress: string;
-
-  @ApiProperty()
-  exchangeName: string;
-
-  @ApiProperty()
-  symbol: string;
-
-  @ApiProperty()
-  duration: number;
-
-  @ApiProperty()
-  fundAmount: string;
-
-  @ApiProperty()
-  startBlock: number;
-
-  @ApiProperty()
-  endBlock: number;
-
-  @ApiProperty()
-  type: string;
+  chain_id: number;
 
   @ApiProperty()
   address: string;
 
   @ApiProperty()
-  amountPaid: string;
+  type: string;
 
   @ApiProperty()
-  balance: string;
+  exchange_name: string;
 
   @ApiProperty()
-  count: string;
+  symbol: string;
 
   @ApiProperty()
-  factoryAddress: string;
+  details: Record<string, unknown>;
 
   @ApiProperty()
-  finalResultsUrl?: string;
+  start_date: string;
 
   @ApiProperty()
-  intermediateResultsUrl?: string;
+  end_date: string;
 
   @ApiProperty()
-  launcher: string;
+  fund_amount: string;
 
   @ApiProperty()
-  manifestHash?: string;
+  fund_token: string;
 
   @ApiProperty()
-  manifestUrl?: string;
+  fund_token_symbol: string;
 
   @ApiProperty()
-  recordingOracle?: string;
-
-  @ApiProperty()
-  recordingOracleFee?: string;
-
-  @ApiProperty()
-  reputationOracle?: string;
-
-  @ApiProperty()
-  reputationOracleFee?: string;
-
-  @ApiProperty()
-  exchangeOracle?: string;
-
-  @ApiProperty()
-  exchangeOracleFee?: string;
+  fund_token_decimals: number;
 
   @ApiProperty()
   status: string;
 
   @ApiProperty()
-  token: string;
+  launcher: string;
 
   @ApiProperty()
-  totalFundedAmount: string;
+  exchange_oracle?: string;
 
   @ApiProperty()
-  createdAt: string;
+  recording_oracle?: string;
+
+  @ApiProperty()
+  reputation_oracle?: string;
+
+  @ApiProperty()
+  balance: string;
+
+  @ApiProperty()
+  amount_paid: string;
+
+  @ApiProperty()
+  intermediate_results_url?: string;
+
+  @ApiProperty()
+  final_results_url?: string;
+
+  @ApiProperty()
+  created_at: number;
+}
+
+export class CampaignListResponseDto {
+  @ApiProperty()
+  has_more: boolean;
+
+  @ApiProperty({ type: [CampaignDataDto] })
+  results: CampaignDataDto[];
 }

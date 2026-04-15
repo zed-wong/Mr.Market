@@ -21,6 +21,8 @@ This doc tree explains backend design in simple business terms.
 - Queue workers and schedulers run long-lived flows.
 - Durable intent and ledger records protect side effects.
 - Strategy runtime is split into controller, intent, execution, and worker stages.
+- Admin-owned exchange runtime identity is the `api_keys_config.key_id`; frontend payloads do not provide execution account labels.
+- Admin growdata market-making pairs persist exchange-derived order limits and precision, while runtime reads expose effective minimum order amounts using `max(amount.min, cost.min / live price)` for admin and user order-entry flows.
 
 ## Test structure
 

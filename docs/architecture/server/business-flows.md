@@ -34,6 +34,29 @@ Detailed reference:
 
 - `../market-making-flow.md`
 
+## Flow 1A: Admin direct market-making
+
+Summary:
+
+1. Admin creates a direct market-making order without the payment flow.
+2. Service resolves a pinned strategy snapshot, writes `source=admin_direct`, and stores the maker `apiKeyId` plus resolved account labels for either single-account PMM or dual-account volume routing.
+3. Direct start reuses the same shared runtime start path as queue-driven `start_mm`.
+4. Runtime health reads executor registry state, tracker data, queue state, and exchange balances for the admin status endpoint, including dual-account maker/taker metadata and cycle counters.
+5. Optional HuFi campaign joins run asynchronously and may link or detach from the direct order lifecycle.
+
+Main modules:
+
+- `admin/market-making`
+- `market-making/user-orders`
+- `market-making/strategy`
+- `market-making/trackers`
+- `campaign`
+
+Why this flow exists:
+
+- Operations needs a fast path to start or stop market making for an exchange account without simulating funding.
+- Admin-only orders must stay isolated from user-facing queries while still sharing the production runtime.
+
 ## Flow 2: Strategy runtime and pooled execution
 
 Summary:
@@ -56,7 +79,8 @@ Main modules:
 Why this flow exists:
 
 - It separates decision logic from side effects.
-- It shares exchange:pair market data across sessions and keeps fill routing deterministic per owning order/session, even when private streams replay cumulative order updates.
+- It shares exchange:pair market data across sessions, while account-aware execution/tracking keeps REST order management and user-stream fill routing pinned to the correct exchange account during restart recovery and shutdown cleanup.
+- `dualAccountVolume` reuses the pooled executor on one exchange:pair but sequences maker placement on one account and taker IOC execution on a second account, with restart recovery cancelling dangling maker orders instead of replaying taker legs.
 
 Detailed reference:
 
@@ -133,16 +157,19 @@ Summary:
 1. Scheduler syncs campaign data from external sources.
 2. Join operations are scheduled for active participation.
 3. Score estimator writes HUFI score snapshots from trading history.
+4. Admin direct campaign joins may pre-bind exchange credentials, then transition through `pending`, `joined`, `linked`, or `detached` as runtime state changes.
 
 Main modules:
 
 - `campaign`
 - `market-making/local-campaign`
 - `market-making/strategy`
+- `admin/market-making`
 
 Why this flow exists:
 
 - It connects trading activity to campaign participation and score tracking.
+- Admin operations can prepare campaign linkage ahead of runtime start without exposing those records to user order views.
 
 ## Trigger Map
 
@@ -155,3 +182,8 @@ Why this flow exists:
 
 - Some branches are conditional, especially around withdrawal queueing and campaign join behavior, so docs should describe intended flow without overstating currently enabled runtime paths.
 - Legacy strategy aliases still exist for compatibility and should not be treated as the preferred new design.
+- Order-bound market-making runtime rows are only eligible for startup restore and tracked-order polling while the bound `MarketMakingOrder.state` is still `running`; stopped orders should now self-heal their tracked exchange rows instead of being treated as active forever after a restart.
+- Exchange execution now applies a bounded adapter timeout before releasing the shared per-exchange queue; without that guard, a hung CCXT call could block tracked-order polling inside the tick coordinator and leave the runtime spamming `Skipping tick because previous tick is still in progress`.
+- Dual-account volume maker orders now use a short post-IOC settlement window before the runtime decides whether to keep the maker live; if the maker still appears non-terminal after that check, it is cancelled to avoid stale post-only orders blocking the next cycle.
+- Dual-account volume cycles now read live balances for the selected maker/taker pair before publishing: oversized configured amounts are reduced to the currently affordable quantity, the runtime can retry the opposite side when the preferred side has no tradable balance path, and zero-sized or raw below-min post-balance quotes are dropped before CCXT precision helpers run.
+- When both normal dual-account sides are blocked by inventory, `dualAccountVolume` now emits a one-leg IOC rebalance order from the strategy layer; rebalance candidates that still fail raw exchange minimums or precision quantization are skipped without failing the whole tick, and successful rebalance fills are accounted like any other trade without advancing dual-account cycle counters or triggering the inline taker path.

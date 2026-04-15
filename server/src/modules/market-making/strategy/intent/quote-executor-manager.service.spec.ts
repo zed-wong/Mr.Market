@@ -17,8 +17,6 @@ describe('QuoteExecutorManagerService', () => {
       currentBaseRatio: 0.8,
       makerHeavyMode: true,
       makerHeavyBiasBps: 20,
-      hangingOrdersEnabled: false,
-      existingOpenOrdersBySide: { buy: 0, sell: 0 },
     });
 
     expect(quotes.length).toBe(4);
@@ -29,7 +27,7 @@ describe('QuoteExecutorManagerService', () => {
     expect(Number(sellQuote?.price)).toBeGreaterThanOrEqual(100);
   });
 
-  it('keeps hanging orders by skipping equivalent new quotes', () => {
+  it('assigns stable slot keys per layer and side', () => {
     const service = new QuoteExecutorManagerService();
 
     const quotes = service.buildQuotes({
@@ -45,12 +43,13 @@ describe('QuoteExecutorManagerService', () => {
       currentBaseRatio: 0.5,
       makerHeavyMode: false,
       makerHeavyBiasBps: 0,
-      hangingOrdersEnabled: true,
-      existingOpenOrdersBySide: { buy: 1, sell: 1 },
     });
 
-    const newQuotes = quotes.filter((quote) => quote.shouldCreate);
-
-    expect(newQuotes.length).toBe(2);
+    expect(quotes.map((quote) => quote.slotKey)).toEqual([
+      'layer-1-buy',
+      'layer-1-sell',
+      'layer-2-buy',
+      'layer-2-sell',
+    ]);
   });
 });

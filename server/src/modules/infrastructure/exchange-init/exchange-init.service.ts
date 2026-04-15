@@ -30,6 +30,10 @@ type ExchangeConfig = {
 };
 
 type ExchangeInitializationState = 'pending' | 'ready' | 'failed';
+type ExchangeReadyListener = (
+  exchangeName: string,
+  accountLabel: string,
+) => void | Promise<void>;
 const SYSTEM_TEST_SANDBOX_EXCHANGE_FLAG =
   'MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE';
 
@@ -43,8 +47,11 @@ export class ExchangeInitService {
     string,
     ExchangeInitializationState
   >();
+  private readonly exchangeReadyListeners = new Set<ExchangeReadyListener>();
   private readonly marketsCacheTtlSeconds = 60 * 60;
   private readonly refreshIntervalMs = 10 * 1000;
+  private readonly initializationRetryAttempts = 3;
+  private readonly initializationRetryDelayMs = 1000;
   private apiKeysSignature: string | null = null;
 
   constructor(
@@ -479,7 +486,7 @@ export class ExchangeInitService {
       }
 
       const accounts = keys.map((key) => ({
-        label: key.exchange_index || 'default',
+        label: String(key.key_id || '').trim(),
         apiKey: key.api_key,
         secret: key.api_secret,
       }));
@@ -496,13 +503,7 @@ export class ExchangeInitService {
 
   private computeApiKeysSignature(apiKeys: APIKeysConfig[]): string {
     const entries = apiKeys.map((key) =>
-      [
-        key.key_id,
-        key.exchange,
-        key.exchange_index,
-        key.api_key,
-        key.api_secret,
-      ].join('::'),
+      [key.key_id, key.exchange, key.api_key, key.api_secret].join('::'),
     );
 
     entries.sort();
@@ -526,6 +527,72 @@ export class ExchangeInitService {
     }
 
     return new Error(String(error));
+  }
+
+  private async initializeAccountWithRetry(
+    config: ExchangeConfig,
+    account: ExchangeAccountConfig,
+  ): Promise<ccxt.Exchange> {
+    let lastError: Error | null = null;
+
+    for (
+      let attempt = 1;
+      attempt <= this.initializationRetryAttempts;
+      attempt += 1
+    ) {
+      try {
+        const exchange = new config.class({
+          apiKey: account.apiKey,
+          secret: account.secret,
+          password: account.password,
+          uid: account.uid,
+        });
+
+        if (account.sandboxMode) {
+          this.applySandboxExchangeOverrides(config.name, exchange);
+
+          if (typeof (exchange as any).setSandboxMode !== 'function') {
+            throw new Error(
+              `Exchange ${config.name} does not expose setSandboxMode(true)`,
+            );
+          }
+
+          (exchange as any).setSandboxMode(true);
+        }
+
+        await exchange.loadMarkets();
+
+        if (config.name === 'probit' && exchange.has['signIn']) {
+          try {
+            await exchange.signIn();
+            this.logger.log(
+              `${config.name} ${account.label} signed in successfully.`,
+            );
+          } catch (error) {
+            const normalizedError = this.normalizeInitializationError(error);
+
+            this.logger.error(
+              `ProBit ${account.label} sign-in failed: ${normalizedError.message}`,
+            );
+          }
+        }
+
+        return exchange;
+      } catch (error) {
+        lastError = this.normalizeInitializationError(error);
+
+        if (attempt >= this.initializationRetryAttempts) {
+          break;
+        }
+
+        this.logger.warn(
+          `Retrying initialization for ${config.name} ${account.label} after attempt ${attempt}/${this.initializationRetryAttempts}: ${lastError.message}`,
+        );
+        await this.sleep(this.initializationRetryDelayMs);
+      }
+    }
+
+    throw lastError || new Error('exchange initialization failed');
   }
 
   private async initializeExchangeConfigs(exchangeConfigs: ExchangeConfig[]) {
@@ -558,43 +625,10 @@ export class ExchangeInitService {
         await Promise.all(
           configuredAccounts.map(async (account) => {
             try {
-              const exchange = new config.class({
-                apiKey: account.apiKey,
-                secret: account.secret,
-                password: account.password,
-                uid: account.uid,
-              });
-
-              if (account.sandboxMode) {
-                this.applySandboxExchangeOverrides(config.name, exchange);
-
-                if (typeof (exchange as any).setSandboxMode !== 'function') {
-                  throw new Error(
-                    `Exchange ${config.name} does not expose setSandboxMode(true)`,
-                  );
-                }
-
-                (exchange as any).setSandboxMode(true);
-              }
-
-              await exchange.loadMarkets();
-
-              // Call signIn only for ProBit accounts
-              if (config.name === 'probit' && exchange.has['signIn']) {
-                try {
-                  await exchange.signIn();
-                  this.logger.log(
-                    `${config.name} ${account.label} signed in successfully.`,
-                  );
-                } catch (error) {
-                  const normalizedError =
-                    this.normalizeInitializationError(error);
-
-                  this.logger.error(
-                    `ProBit ${account.label} sign-in failed: ${normalizedError.message}`,
-                  );
-                }
-              }
+              const exchange = await this.initializeAccountWithRetry(
+                config,
+                account,
+              );
 
               // Save the initialized exchange
               exchangeMap.set(account.label, exchange);
@@ -626,6 +660,7 @@ export class ExchangeInitService {
         if (exchangeMap.size > 0) {
           this.exchanges.set(config.name, exchangeMap);
           this.exchangeInitializationStates.set(config.name, 'ready');
+          this.notifyExchangeReady(config.name, [...exchangeMap.keys()]);
 
           return;
         }
@@ -757,6 +792,54 @@ export class ExchangeInitService {
     keepAliveTimer.unref?.();
   }
 
+  private async sleep(ms: number): Promise<void> {
+    if (ms <= 0) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  onExchangeReady(listener: ExchangeReadyListener): () => void {
+    this.exchangeReadyListeners.add(listener);
+
+    return () => {
+      this.exchangeReadyListeners.delete(listener);
+    };
+  }
+
+  isReady(exchangeName: string, label = 'default'): boolean {
+    try {
+      this.getExchange(exchangeName, label);
+
+      return true;
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
+  private notifyExchangeReady(
+    exchangeName: string,
+    accountLabels: string[],
+  ): void {
+    for (const accountLabel of accountLabels) {
+      for (const listener of this.exchangeReadyListeners) {
+        Promise.resolve(listener(exchangeName, accountLabel)).catch((error) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+
+          this.logger.error(
+            `Exchange ready listener failed for ${exchangeName}:${accountLabel}: ${message}`,
+          );
+        });
+      }
+    }
+  }
+
   getExchange(exchangeName: string, label: string = 'default'): ccxt.Exchange {
     const exchangeMap = this.exchanges.get(exchangeName);
     const initializationState =
@@ -806,10 +889,10 @@ export class ExchangeInitService {
         );
       }
 
-      this.logger.warn(
-        `Exchange ${exchangeName} with label ${label} is not configured.`,
-      );
-      throw new InternalServerErrorException('Exchange configuration error.');
+      const message = `Exchange ${exchangeName} with label ${label} is not configured.`;
+
+      this.logger.warn(message);
+      throw new InternalServerErrorException(message);
     }
 
     return exchange;

@@ -4,6 +4,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
@@ -26,9 +27,11 @@ type OrderBookDelta = {
 export class OrderBookTrackerService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new CustomLogger(OrderBookTrackerService.name);
   private readonly books = new Map<string, OrderBookState>();
   private readonly snapshotQueue = new Map<string, OrderBookState[]>();
-  private readonly deltaQueue = new Map<string, OrderBookDelta[]>();
+  private readonly lastUpdateAtByKey = new Map<string, number>();
+  private drainScheduled = false;
 
   constructor(
     @Optional()
@@ -49,7 +52,7 @@ export class OrderBookTrackerService
 
   async stop(): Promise<void> {
     this.snapshotQueue.clear();
-    this.deltaQueue.clear();
+    this.lastUpdateAtByKey.clear();
   }
 
   async health(): Promise<boolean> {
@@ -66,79 +69,83 @@ export class OrderBookTrackerService
 
     queue.push(snapshot);
     this.snapshotQueue.set(key, queue);
+    this.scheduleDrain();
   }
 
-  queueDelta(exchange: string, pair: string, delta: OrderBookDelta): void {
-    const key = this.toKey(exchange, pair);
-    const queue = this.deltaQueue.get(key) || [];
-
-    queue.push(delta);
-    this.deltaQueue.set(key, queue);
+  queueDelta(_exchange: string, _pair: string, _delta: OrderBookDelta): void {
+    this.logger.debug('queueDelta is a no-op; deltas are no longer processed');
   }
 
   getOrderBook(exchange: string, pair: string): OrderBookState | undefined {
     return this.books.get(this.toKey(exchange, pair));
   }
 
+  getLastUpdateAt(exchange: string, pair: string): number | undefined {
+    return this.lastUpdateAtByKey.get(this.toKey(exchange, pair));
+  }
+
+  isStale(exchange: string, pair: string, maxAgeMs: number): boolean {
+    const lastUpdate = this.lastUpdateAtByKey.get(this.toKey(exchange, pair));
+
+    if (lastUpdate === undefined) {
+      return true;
+    }
+
+    return Date.now() - lastUpdate > maxAgeMs;
+  }
+
   async onTick(_: string): Promise<void> {
-    const keys = new Set<string>([
-      ...this.snapshotQueue.keys(),
-      ...this.deltaQueue.keys(),
-    ]);
+    this.flushPendingSnapshots();
+  }
+
+  private scheduleDrain(): void {
+    if (this.drainScheduled) {
+      return;
+    }
+    this.drainScheduled = true;
+    setImmediate(() => {
+      this.drainScheduled = false;
+      this.flushPendingSnapshots();
+    });
+  }
+
+  private flushPendingSnapshots(): void {
+    const keys = [...this.snapshotQueue.keys()];
 
     for (const key of keys) {
       const snapshots = this.snapshotQueue.get(key) || [];
-      const deltas = this.deltaQueue.get(key) || [];
 
       if (snapshots.length > 0) {
         const lastSnapshot = snapshots[snapshots.length - 1];
+        const bids = [...lastSnapshot.bids];
+        const asks = [...lastSnapshot.asks];
 
-        this.books.set(key, {
-          bids: [...lastSnapshot.bids],
-          asks: [...lastSnapshot.asks],
-          sequence: lastSnapshot.sequence,
-        });
-      }
-
-      for (const delta of deltas) {
-        const existing = this.books.get(key);
-
-        if (!existing || delta.sequence <= existing.sequence) {
-          continue;
+        if (this.isCrossed(bids, asks)) {
+          this.logger.warn(
+            `Rejected crossed order book ${key} bestBid=${bids[0]?.[0]} bestAsk=${asks[0]?.[0]}`,
+          );
+        } else {
+          this.books.set(key, {
+            bids,
+            asks,
+            sequence: lastSnapshot.sequence,
+          });
+          this.lastUpdateAtByKey.set(key, Date.now());
         }
-        this.books.set(key, {
-          bids: this.mergeSide(existing.bids, delta.bids, true),
-          asks: this.mergeSide(existing.asks, delta.asks, false),
-          sequence: delta.sequence,
-        });
       }
 
       this.snapshotQueue.delete(key);
-      this.deltaQueue.delete(key);
     }
   }
 
-  private mergeSide(
-    current: BookLevel[],
-    updates: BookLevel[],
-    isBid: boolean,
-  ): BookLevel[] {
-    const map = new Map<number, number>();
+  private isCrossed(bids: BookLevel[], asks: BookLevel[]): boolean {
+    if (bids.length === 0 || asks.length === 0) {
+      return false;
+    }
+    const bestBid = bids[0][0];
+    const bestAsk = asks[0][0];
 
-    current.forEach(([price, qty]) => map.set(price, qty));
-    updates.forEach(([price, qty]) => {
-      if (qty <= 0) {
-        map.delete(price);
-      } else {
-        map.set(price, qty);
-      }
-    });
-
-    const sorted = [...map.entries()].sort((a, b) =>
-      isBid ? b[0] - a[0] : a[0] - b[0],
-    );
-
-    return sorted.map(([price, qty]) => [price, qty]);
+    return bestBid >= bestAsk;
   }
 
   private toKey(exchange: string, pair: string): string {

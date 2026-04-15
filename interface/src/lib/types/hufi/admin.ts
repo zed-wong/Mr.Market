@@ -24,10 +24,14 @@ export interface AdminSwapOrder {
 export interface AdminSingleKey {
   key_id: string;
   exchange: string;
-  exchange_index: string;
   name: string;
   api_key: string;
   api_secret: string;
-  state?: string; // Optional, computed or missing
-  last_update?: string; // Optional
+  permissions?: string;
+  state?: string;
+  validation_status?: string;
+  validation_error?: string | null;
+  validated_at?: string | null;
+  created_at?: string;
+  last_update?: string;
 }

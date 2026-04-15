@@ -62,9 +62,13 @@ export class UserOrdersService {
 
   async findAllStrategyByUser(userId: string) {
     try {
-      const market_makings = await this.marketMakingRepository.findBy({
-        userId,
-      });
+      const market_makings = await this.marketMakingRepository
+        .createQueryBuilder('order')
+        .where('order.userId = :userId', { userId })
+        .andWhere('(order.source IS NULL OR order.source != :source)', {
+          source: 'admin_direct',
+        })
+        .getMany();
       const simply_grows = await this.simplyGrowRepository.findBy({ userId });
 
       return {
@@ -94,6 +98,22 @@ export class UserOrdersService {
     orderId: string,
   ): Promise<SimplyGrowOrder | undefined> {
     return await this.simplyGrowRepository.findOneBy({ orderId });
+  }
+
+  async findOwnedSimplyGrowByOrderId(
+    userId: string,
+    orderId: string,
+  ): Promise<SimplyGrowOrder> {
+    const order = await this.simplyGrowRepository.findOneBy({
+      orderId,
+      userId,
+    });
+
+    if (!order) {
+      throw new NotFoundException('Simply grow order not found');
+    }
+
+    return order;
   }
 
   async findSimplyGrowByUserId(userId: string): Promise<SimplyGrowOrder[]> {
@@ -139,7 +159,13 @@ export class UserOrdersService {
 
   async findMarketMakingByUserId(userId: string): Promise<MarketMakingOrder[]> {
     try {
-      return await this.marketMakingRepository.findBy({ userId });
+      return await this.marketMakingRepository
+        .createQueryBuilder('order')
+        .where('order.userId = :userId', { userId })
+        .andWhere('(order.source IS NULL OR order.source != :source)', {
+          source: 'admin_direct',
+        })
+        .getMany();
     } catch (error) {
       this.logger.error(
         'Error finding market making orders by userId',
@@ -194,6 +220,19 @@ export class UserOrdersService {
 
   async findMarketMakingPaymentStateByIdRaw(orderId: string) {
     return await this.paymentStateRepository.findOneBy({ orderId });
+  }
+
+  async findOwnedMarketMakingPaymentStateById(userId: string, orderId: string) {
+    const result = await this.paymentStateRepository.findOneBy({
+      orderId,
+      userId,
+    });
+
+    if (!result) {
+      throw new NotFoundException('Payment state not found');
+    }
+
+    return { code: 200, message: 'Found', data: result };
   }
 
   async findMarketMakingPaymentStateByState(
@@ -268,9 +307,9 @@ export class UserOrdersService {
     if (!definition) {
       throw new NotFoundException('Strategy definition not found or disabled');
     }
-    if (!this.isPureMarketMakingDefinition(definition)) {
+    if (!this.isPublicUserMarketMakingDefinition(definition)) {
       throw new BadRequestException(
-        'strategyDefinitionId must reference a pure market making definition',
+        'strategyDefinitionId must reference a public pure market making definition',
       );
     }
 
@@ -314,14 +353,48 @@ export class UserOrdersService {
     return { orderId, memo, expiresAt };
   }
 
+  async findPublicMarketMakingByOrderId(
+    orderId: string,
+  ): Promise<MarketMakingOrder | undefined> {
+    return await this.marketMakingRepository
+      .createQueryBuilder('order')
+      .where('order.orderId = :orderId', { orderId })
+      .andWhere('(order.source IS NULL OR order.source != :source)', {
+        source: 'admin_direct',
+      })
+      .getOne();
+  }
+
+  async findOwnedMarketMakingByOrderId(
+    userId: string,
+    orderId: string,
+  ): Promise<MarketMakingOrder> {
+    const order = await this.marketMakingRepository
+      .createQueryBuilder('order')
+      .where('order.orderId = :orderId', { orderId })
+      .andWhere('order.userId = :userId', { userId })
+      .andWhere('(order.source IS NULL OR order.source != :source)', {
+        source: 'admin_direct',
+      })
+      .getOne();
+
+    if (!order) {
+      throw new NotFoundException('Market making order not found');
+    }
+
+    return order;
+  }
+
   async listEnabledMarketMakingStrategies() {
     const definitions = await this.strategyDefinitionRepository.find({
-      where: { enabled: true },
+      where: { enabled: true, visibility: 'public' },
       order: { updatedAt: 'DESC' },
     });
 
     return definitions
-      .filter((definition) => this.isPureMarketMakingDefinition(definition))
+      .filter((definition) =>
+        this.isPublicUserMarketMakingDefinition(definition),
+      )
       .map((definition) => ({
         id: definition.id,
         key: definition.key,
@@ -333,7 +406,7 @@ export class UserOrdersService {
       }));
   }
 
-  private isPureMarketMakingDefinition(
+  private isPublicUserMarketMakingDefinition(
     definition: Partial<StrategyDefinition> | null | undefined,
   ): boolean {
     const controllerType = normalizeControllerType(

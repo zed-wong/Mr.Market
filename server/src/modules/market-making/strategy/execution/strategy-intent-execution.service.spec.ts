@@ -16,17 +16,33 @@ describe('StrategyIntentExecutionService', () => {
     placeLimitOrder: jest
       .fn()
       .mockResolvedValue({ id: 'order-1', status: 'open' }),
+    fetchOrder: jest
+      .fn()
+      .mockResolvedValue({ id: 'order-1', status: 'closed', filled: '1' }),
+    quantizeOrder: jest.fn(
+      (_exchange: string, _pair: string, qty: string, price: string) => ({
+        qty,
+        price,
+      }),
+    ),
     cancelOrder: jest
       .fn()
       .mockResolvedValue({ id: 'exchange-order-1', status: 'canceled' }),
+    fetchOrderBook: jest
+      .fn()
+      .mockResolvedValue({ bids: [[100, 1]], asks: [[101, 1]] }),
   };
 
   const exchangeOrderTrackerService = {
     upsertOrder: jest.fn(),
+    getTrackedOrders: jest.fn().mockReturnValue([]),
+    getActiveSlotOrders: jest.fn().mockReturnValue([]),
+    getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
   };
 
   const exchangeOrderMappingService = {
     countMappingsForOrder: jest.fn().mockResolvedValue(0),
+    reserveMapping: jest.fn().mockResolvedValue(undefined),
     createMapping: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -46,6 +62,7 @@ describe('StrategyIntentExecutionService', () => {
   const intentStoreService = {
     updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
+    getMixinOrderId: jest.fn().mockResolvedValue(undefined),
   };
 
   const durabilityService = {
@@ -54,20 +71,30 @@ describe('StrategyIntentExecutionService', () => {
     appendOutboxEvent: jest.fn().mockResolvedValue(undefined),
   };
 
-  const createConfigService = (executeIntents: boolean) =>
-    ({
-      get: jest.fn((key: string, defaultValue?: boolean) => {
-        if (key === 'strategy.execute_intents') {
-          return executeIntents;
-        }
-        if (key === 'strategy.intent_max_retries') {
-          return 2;
-        }
-        if (key === 'strategy.intent_retry_base_delay_ms') {
-          return 1;
-        }
+  const strategyInstanceRepository = {
+    findOne: jest.fn().mockResolvedValue({
+      strategyKey: 'u1-c1-pureMarketMaking',
+      status: 'running',
+      parameters: {},
+    }),
+    update: jest.fn().mockResolvedValue(undefined),
+  };
 
-        return defaultValue;
+  const createConfigService = (
+    executeIntents: boolean,
+    overrides?: Record<string, unknown>,
+  ) =>
+    ({
+      get: jest.fn((key: string, defaultValue?: unknown) => {
+        const values: Record<string, unknown> = {
+          'strategy.execute_intents': executeIntents,
+          'strategy.intent_max_retries': 2,
+          'strategy.intent_retry_base_delay_ms': 1,
+          'strategy.dual_account_maker_settlement_timeout_ms': 0,
+          ...(overrides || {}),
+        };
+
+        return values[key] ?? defaultValue;
       }),
     } as unknown as ConfigService);
 
@@ -96,6 +123,7 @@ describe('StrategyIntentExecutionService', () => {
       configService,
       exchangeConnectorAdapterService as any,
       executionHistoryRepository as any,
+      strategyInstanceRepository as any,
       durabilityService as any,
       intentStoreService as any,
       exchangeOrderTrackerService as any,
@@ -113,7 +141,26 @@ describe('StrategyIntentExecutionService', () => {
       id: 'exchange-order-1',
       status: 'canceled',
     });
+    exchangeConnectorAdapterService.fetchOrder.mockResolvedValue({
+      id: 'order-1',
+      status: 'closed',
+      filled: '1',
+    });
+    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+      (_exchange: string, _pair: string, qty: string, price: string) => ({
+        qty,
+        price,
+      }),
+    );
     exchangeOrderMappingService.countMappingsForOrder.mockResolvedValue(0);
+    exchangeOrderTrackerService.getByExchangeOrderId.mockReturnValue(undefined);
+    strategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: 'u1-c1-pureMarketMaking',
+      status: 'running',
+      parameters: {},
+    });
+    strategyInstanceRepository.update.mockResolvedValue(undefined);
+    intentStoreService.getMixinOrderId.mockResolvedValue(undefined);
   });
 
   it('executes CREATE_LIMIT_ORDER intents once (idempotent)', async () => {
@@ -133,6 +180,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('c1', 0),
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       baseIntent.intentId,
@@ -150,6 +199,10 @@ describe('StrategyIntentExecutionService', () => {
       baseIntent.intentId,
       'order-1',
     );
+    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
+      orderId: 'c1',
+      clientOrderId: buildSubmittedClientOrderId('c1', 0),
+    });
     expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
       orderId: 'c1',
       exchangeOrderId: 'order-1',
@@ -159,7 +212,379 @@ describe('StrategyIntentExecutionService', () => {
       expect.objectContaining({
         exchangeOrderId: 'order-1',
         clientOrderId: buildSubmittedClientOrderId('c1', 0),
+        status: 'pending_create',
       }),
+    );
+  });
+
+  it('passes postOnly to limit-order execution', async () => {
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-post-only',
+        postOnly: true,
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('c1', 0),
+      { postOnly: true, timeInForce: undefined },
+      undefined,
+    );
+  });
+
+  it('executes dual-account maker then taker and persists completed cycles', async () => {
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          makerDelayMs: 0,
+          cycleId: 'cycle-1',
+          orderId: 'dual-cycle-1',
+        },
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenNthCalledWith(
+      1,
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('dual-cycle-1', 0),
+      { postOnly: false, timeInForce: undefined },
+      'maker',
+    );
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenNthCalledWith(
+      2,
+      'binance',
+      'BTC/USDT',
+      'sell',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('dual-cycle-1', 1),
+      { postOnly: false, timeInForce: 'IOC' },
+      'taker',
+    );
+    expect(strategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'u1-c1-pureMarketMaking' },
+      expect.objectContaining({
+        parameters: expect.objectContaining({ completedCycles: 1 }),
+      }),
+    );
+  });
+
+  it('cancels a dual-account maker that remains live after the settlement window', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
+      .mockResolvedValueOnce({ id: 'taker-order', status: 'closed' });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'taker-order',
+        status: 'closed',
+        filled: '1',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order',
+        status: 'open',
+        filled: '0',
+      });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_maker_settlement_timeout_ms': 1,
+      }),
+    );
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-live',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          makerDelayMs: 0,
+          cycleId: 'cycle-live',
+          orderId: 'dual-cycle-live',
+        },
+      },
+    ]);
+
+    expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order',
+      'maker',
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order',
+      'maker',
+    );
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalledWith(
+      { strategyKey: 'u1-c1-pureMarketMaking' },
+      expect.objectContaining({
+        parameters: expect.objectContaining({ completedCycles: 1 }),
+      }),
+    );
+  });
+
+  it('cancels maker on dual-account taker failure', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
+      .mockRejectedValue(new Error('taker failed'));
+    const service = createService(true);
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-fail',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            makerDelayMs: 0,
+            cycleId: 'cycle-2',
+            orderId: 'dual-cycle-2',
+          },
+        },
+      ]),
+    ).rejects.toThrow('taker failed');
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order',
+      'maker',
+    );
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('does not increment completed cycles when the dual-account taker only partially fills', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
+      .mockResolvedValueOnce({ id: 'taker-order', status: 'expired' });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'taker-order',
+        status: 'expired',
+        filled: '0.5',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order',
+        status: 'closed',
+        filled: '1',
+      });
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-partial',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          makerDelayMs: 0,
+          cycleId: 'cycle-partial',
+          orderId: 'dual-cycle-partial',
+        },
+      },
+    ]);
+
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalledWith(
+      { strategyKey: 'u1-c1-pureMarketMaking' },
+      expect.objectContaining({
+        parameters: expect.objectContaining({ completedCycles: 1 }),
+      }),
+    );
+  });
+
+  it('fails IOC intents that return neither an exchange order id nor any fill', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValueOnce({
+      status: 'expired',
+      filled: '0',
+    });
+    const service = createService(true);
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'ioc-no-ack',
+          timeInForce: 'IOC',
+        },
+      ]),
+    ).rejects.toThrow('IOC order not acknowledged: status=expired');
+
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'ioc-no-ack',
+      'FAILED',
+      'IOC order not acknowledged: status=expired',
+    );
+  });
+
+  it('keeps dynamic maker/taker metadata when executing inline dual-account taker', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
+      .mockResolvedValueOnce({ id: 'taker-order', status: 'filled' });
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-dynamic',
+        accountLabel: 'taker',
+        metadata: {
+          role: 'maker',
+          makerAccountLabel: 'taker',
+          takerAccountLabel: 'maker',
+          configuredMakerAccountLabel: 'maker',
+          configuredTakerAccountLabel: 'taker',
+          dynamicRoleSwitching: true,
+          makerDelayMs: 0,
+          cycleId: 'cycle-3',
+          orderId: 'dual-cycle-3',
+        },
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenNthCalledWith(
+      2,
+      'binance',
+      'BTC/USDT',
+      'sell',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('dual-cycle-3', 1),
+      { postOnly: false, timeInForce: 'IOC' },
+      'maker',
+    );
+  });
+
+
+  it('tracks rebalance intents without running the inline dual-account taker flow', async () => {
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-rebalance',
+        accountLabel: 'maker',
+        timeInForce: 'IOC',
+        metadata: {
+          role: 'rebalance',
+          orderId: 'dual-rebalance-1',
+          cycleId: 'rebalance-1',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+        },
+      },
+    ]);
+
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'dual-rebalance-1',
+        role: 'rebalance',
+        accountLabel: 'maker',
+      }),
+    );
+    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(1);
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates create intents when the slot already has an active tracked order', async () => {
+    exchangeOrderTrackerService.getActiveSlotOrders.mockReturnValueOnce([
+      {
+        slotKey: 'layer-1-buy',
+        status: 'open',
+      },
+    ]);
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-slot-dedup',
+        slotKey: 'layer-1-buy',
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-slot-dedup',
+      'DONE',
+    );
+  });
+
+  it('deduplicates create intents when an equivalent order is already pending_create', async () => {
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValueOnce([
+      {
+        side: 'buy',
+        status: 'pending_create',
+        price: '100',
+        qty: '1',
+      },
+    ]);
+    const service = createService(true);
+
+    await service.consumeIntents([baseIntent]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'DONE',
+    );
+  });
+
+  it('deduplicates cancel intents when the tracked order is already pending cancel', async () => {
+    exchangeOrderTrackerService.getByExchangeOrderId.mockReturnValueOnce({
+      status: 'pending_cancel',
+    });
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-cancel-dedup',
+        type: 'CANCEL_ORDER',
+        mixinOrderId: 'exchange-order-1',
+      },
+    ]);
+
+    expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-cancel-dedup',
+      'DONE',
     );
   });
 
@@ -244,6 +669,7 @@ describe('StrategyIntentExecutionService', () => {
       'binance',
       'BTC/USDT',
       'exchange-order-1',
+      undefined,
     );
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -302,6 +728,63 @@ describe('StrategyIntentExecutionService', () => {
       baseIntent.intentId,
       'FAILED',
       'exchange down',
+    );
+  });
+
+  it('cancels an in-flight intent when the strategy is stopped before execution', async () => {
+    strategyInstanceRepository.findOne.mockResolvedValueOnce({
+      strategyKey: baseIntent.strategyKey,
+      status: 'stopped',
+    });
+    const service = createService(true);
+
+    await expect(service.consumeIntents([baseIntent])).resolves.toBeUndefined();
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'CANCELLED',
+      'strategy stopped before intent execution',
+    );
+    expect(intentStoreService.updateIntentStatus).not.toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'FAILED',
+      expect.anything(),
+    );
+  });
+
+  it('cancels retries when the strategy stops between attempts', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
+      new Error('temporary'),
+    );
+    strategyInstanceRepository.findOne
+      .mockResolvedValueOnce({
+        strategyKey: baseIntent.strategyKey,
+        status: 'running',
+      })
+      .mockResolvedValueOnce({
+        strategyKey: baseIntent.strategyKey,
+        status: 'running',
+      })
+      .mockResolvedValueOnce({
+        strategyKey: baseIntent.strategyKey,
+        status: 'stopped',
+      });
+    const service = createService(true);
+
+    await expect(
+      service.consumeIntents([{ ...baseIntent, intentId: 'retry-stop' }]),
+    ).resolves.toBeUndefined();
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(1);
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'retry-stop',
+      'CANCELLED',
+      'strategy stopped before intent execution',
     );
   });
 
@@ -440,6 +923,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-1', 0),
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
@@ -451,6 +936,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-1', 1),
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
   });
 
@@ -494,6 +981,8 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-restart', 2),
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
 
     jest.clearAllMocks();
@@ -526,6 +1015,72 @@ describe('StrategyIntentExecutionService', () => {
       '1',
       '100',
       buildSubmittedClientOrderId('mm-order-restart', 3),
+      { postOnly: false, timeInForce: undefined },
+      undefined,
     );
   });
+  it('reserves clientOrderId before placement so repeated order ids advance after restart', async () => {
+    const metadata = { orderId: 'mm-order-repeat' };
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockRejectedValueOnce(
+        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+      )
+      .mockRejectedValueOnce(
+        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+      )
+      .mockRejectedValueOnce(
+        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+      );
+    exchangeOrderMappingService.countMappingsForOrder.mockResolvedValueOnce(0);
+
+    const firstService = createService(true);
+
+    await expect(
+      firstService.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'intent-before-restart',
+          metadata,
+        },
+      ]),
+    ).rejects.toThrow('duplicate client order id');
+
+    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(3);
+    expect(exchangeOrderMappingService.createMapping).not.toHaveBeenCalled();
+    expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
+      orderId: 'mm-order-repeat',
+      clientOrderId: buildSubmittedClientOrderId('mm-order-repeat', 0),
+    });
+
+    jest.clearAllMocks();
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
+      id: 'order-after-restart',
+      status: 'open',
+    });
+    exchangeOrderMappingService.countMappingsForOrder.mockResolvedValueOnce(1);
+
+    const restartedService = createService(true);
+
+    await restartedService.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'intent-after-restart',
+        metadata,
+      },
+    ]);
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('mm-order-repeat', 1),
+      { postOnly: false, timeInForce: undefined },
+      undefined,
+    );
+  });
+
 });

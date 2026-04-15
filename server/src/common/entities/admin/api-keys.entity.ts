@@ -7,13 +7,10 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 @Entity()
 export class APIKeysConfig {
   @PrimaryGeneratedColumn()
-  key_id: string; // The UUID for an admin-owned exchange API key
+  key_id: string; // The autoincrement primary key for an admin-owned exchange API key
 
   @Column()
   exchange: string; // The identifier of exchange
-
-  @Column()
-  exchange_index: string; // The index used in the exchange map
 
   @Column()
   name: string; // The name(alias) of API key
@@ -23,4 +20,19 @@ export class APIKeysConfig {
 
   @Column()
   api_secret: string; // The secret
+
+  @Column({ default: 'read' })
+  permissions: string; // 'read' or 'read-trade'
+
+  @Column({ default: 'pending' })
+  validation_status: string; // pending, valid, invalid
+
+  @Column({ nullable: true })
+  validation_error?: string | null;
+
+  @Column({ nullable: true })
+  validated_at?: string | null;
+
+  @Column()
+  created_at: string; // RFC3339 creation timestamp
 }

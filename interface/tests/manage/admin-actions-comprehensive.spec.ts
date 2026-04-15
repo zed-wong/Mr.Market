@@ -325,7 +325,7 @@ test.describe("admin settings actions", () => {
     const keyRow = page.locator("tr", { hasText: "Kraken Key" });
     await expect(keyRow).toBeVisible({ timeout: 10000 });
 
-    await keyRow.locator("button").nth(1).click();
+    await keyRow.getByTitle(/delete/i).click();
     await keyRow.getByRole("button", { name: /confirm/i }).click();
 
     await expect(page.locator("tr", { hasText: "Kraken Key" })).toHaveCount(0, { timeout: 10000 });

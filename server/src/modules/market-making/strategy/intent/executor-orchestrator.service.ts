@@ -42,8 +42,37 @@ export class ExecutorOrchestratorService {
       await this.strategyIntentExecutionService?.consumeIntents(intents);
     }
 
+    for (const intent of intents) {
+      const cycleId = this.readMetadataString(intent, 'cycleId') || 'n/a';
+      const role = this.readMetadataString(intent, 'role') || 'unknown';
+      const tickId = this.readMetadataString(intent, 'tickId') || 'n/a';
+
+      this.logger.log(
+        [
+          'Intent published',
+          `type=${intent.type}`,
+          `strategy=${strategyKey}`,
+          `cycle=${cycleId}`,
+          `tick=${tickId}`,
+          `role=${role}`,
+          `side=${intent.side}`,
+          `qty=${intent.qty}`,
+          `price=${intent.price}`,
+          `exchange=${intent.exchange}`,
+          `pair=${intent.pair}`,
+          `account=${intent.accountLabel || 'default'}`,
+          `driver=${intentExecutionDriver}`,
+        ].join(' | '),
+      );
+    }
+
     this.logger.log(
-      `Published ${intents.length} intents for ${strategyKey} (driver=${intentExecutionDriver})`,
+      [
+        'Intent batch published',
+        `strategy=${strategyKey}`,
+        `count=${intents.length}`,
+        `driver=${intentExecutionDriver}`,
+      ].join(' | '),
     );
 
     return intents;
@@ -54,5 +83,20 @@ export class ExecutorOrchestratorService {
       ...action,
       status: action.status || 'NEW',
     };
+  }
+
+  private readMetadataString(
+    intent: StrategyOrderIntent,
+    key: string,
+  ): string | undefined {
+    if (!intent.metadata || typeof intent.metadata !== 'object') {
+      return undefined;
+    }
+
+    const value = (intent.metadata as Record<string, unknown>)[key];
+
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : undefined;
   }
 }

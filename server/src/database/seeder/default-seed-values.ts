@@ -9,6 +9,7 @@ import { StrategyDefinition } from 'src/common/entities/market-making/strategy-d
 
 import { TOP_EXCHANGES as EXCHANGES } from './data/exchanges';
 import arbitrageSeedDefinition from './data/strategies/arbitrage.json';
+import dualAccountVolumeSeedDefinition from './data/strategies/dual-account-volume.json';
 import pureMarketMakingSeedDefinition from './data/strategies/pure-market-making.json';
 import timeIndicatorSeedDefinition from './data/strategies/time-indicator.json';
 import volumeSeedDefinition from './data/strategies/volume.json';
@@ -55,7 +56,7 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
       pureMarketMakingSeedDefinition as SeededStrategyDefinitionConfig
     ).defaultConfig,
     enabled: true,
-    visibility: 'system',
+    visibility: 'public',
     createdBy: 'seed',
   },
   {
@@ -68,7 +69,7 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     defaultConfig: (arbitrageSeedDefinition as SeededStrategyDefinitionConfig)
       .defaultConfig,
     enabled: true,
-    visibility: 'system',
+    visibility: 'admin',
     createdBy: 'seed',
   },
   {
@@ -81,7 +82,23 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     defaultConfig: (volumeSeedDefinition as SeededStrategyDefinitionConfig)
       .defaultConfig,
     enabled: true,
-    visibility: 'system',
+    visibility: 'admin',
+    createdBy: 'seed',
+  },
+  {
+    key: 'dual_account_volume',
+    name: 'Dual Account Volume',
+    description:
+      'Generate paired maker/taker volume for admin direct market making',
+    controllerType: 'dualAccountVolume',
+    configSchema: (
+      dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig
+    ).configSchema,
+    defaultConfig: (
+      dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig
+    ).defaultConfig,
+    enabled: true,
+    visibility: 'admin',
     createdBy: 'seed',
   },
   {
@@ -96,7 +113,7 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
       timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig
     ).defaultConfig,
     enabled: true,
-    visibility: 'system',
+    visibility: 'admin',
     createdBy: 'seed',
   },
 ];

@@ -30,18 +30,59 @@ const createRepository = (rows: StrategyOrderIntentEntity[] = []) => ({
   findOneBy: jest.fn(async ({ intentId }: { intentId: string }) => {
     return rows.find((row) => row.intentId === intentId) || null;
   }),
-  save: jest.fn(async (payload: StrategyOrderIntentEntity) => {
-    const index = rows.findIndex((row) => row.intentId === payload.intentId);
+  save: jest.fn(
+    async (
+      payload: StrategyOrderIntentEntity | StrategyOrderIntentEntity[],
+    ) => {
+      const items = Array.isArray(payload) ? payload : [payload];
 
-    if (index >= 0) {
-      rows[index] = { ...payload };
-    } else {
-      rows.push({ ...payload });
-    }
+      for (const item of items) {
+        const index = rows.findIndex((row) => row.intentId === item.intentId);
 
-    return payload;
-  }),
-  find: jest.fn(async () => rows.map((row) => ({ ...row }))),
+        if (index >= 0) {
+          rows[index] = { ...item };
+        } else {
+          rows.push({ ...item });
+        }
+      }
+
+      return payload;
+    },
+  ),
+  find: jest.fn(
+    async (
+      options?:
+        | {
+            where?: {
+              strategyKey?: string;
+              status?: { _value?: string[] } | string;
+            };
+          }
+        | undefined,
+    ) => {
+      const strategyKey = options?.where?.strategyKey;
+      const statusFilter = options?.where?.status;
+      const expectedStatuses = Array.isArray((statusFilter as any)?._value)
+        ? (statusFilter as any)._value
+        : typeof statusFilter === 'string'
+        ? [statusFilter]
+        : undefined;
+
+      return rows
+        .filter((row) => {
+          if (strategyKey && row.strategyKey !== strategyKey) {
+            return false;
+          }
+
+          if (expectedStatuses && !expectedStatuses.includes(row.status)) {
+            return false;
+          }
+
+          return true;
+        })
+        .map((row) => ({ ...row }));
+    },
+  ),
   createQueryBuilder: jest.fn(() => {
     const state = {
       limit: 0,
@@ -105,17 +146,22 @@ const createRepository = (rows: StrategyOrderIntentEntity[] = []) => ({
     }: {
       where: {
         strategyKey: string;
-        status: { _value?: string };
+        status: { _value?: string } | string;
       };
     }) => {
-      const excludedStatus = where.status?._value;
+      const expectedStatuses =
+        typeof where.status === 'string'
+          ? [where.status]
+          : Array.isArray(where.status?._value)
+          ? where.status._value
+          : undefined;
 
       return (
         rows
           .filter(
             (row) =>
               row.strategyKey === where.strategyKey &&
-              row.status !== excludedStatus,
+              (!expectedStatuses || expectedStatuses.includes(row.status)),
           )
           .sort((a, b) => {
             if (a.createdAt !== b.createdAt) {
@@ -265,5 +311,115 @@ describe('StrategyIntentStoreService', () => {
       }),
     );
     await expect(service.getHeadIntent('missing')).resolves.toBeNull();
+  });
+
+  it('returns the oldest NEW intent for a strategy', async () => {
+    const rows = [
+      createIntent({
+        intentId: 'intent-failed',
+        strategyKey: 'strategy-1',
+        status: 'FAILED',
+        createdAt: '2026-03-11T00:00:00.000Z',
+      }),
+      createIntent({
+        intentId: 'intent-new-2',
+        strategyKey: 'strategy-1',
+        createdAt: '2026-03-11T00:00:02.000Z',
+      }),
+      createIntent({
+        intentId: 'intent-new-1',
+        strategyKey: 'strategy-1',
+        createdAt: '2026-03-11T00:00:01.000Z',
+      }),
+    ];
+    const repository = createRepository(rows);
+    const service = new StrategyIntentStoreService(repository as any);
+
+    await expect(service.getNextNewIntent('strategy-1')).resolves.toEqual(
+      expect.objectContaining({
+        intentId: 'intent-new-1',
+      }),
+    );
+  });
+
+  it('reports a blocked queue when a FAILED head intent has later NEW intents', async () => {
+    const rows = [
+      createIntent({
+        intentId: 'intent-failed',
+        strategyKey: 'strategy-1',
+        status: 'FAILED',
+        errorReason: 'minimum notional',
+        createdAt: '2026-03-11T00:00:00.000Z',
+        updatedAt: '2026-03-11T00:00:05.000Z',
+      }),
+      createIntent({
+        intentId: 'intent-new-1',
+        strategyKey: 'strategy-1',
+        createdAt: '2026-03-11T00:00:01.000Z',
+      }),
+    ];
+    const repository = createRepository(rows);
+    const service = new StrategyIntentStoreService(repository as any);
+
+    await expect(service.getQueueState('strategy-1')).resolves.toEqual({
+      blockedByFailure: true,
+      headIntentStatus: 'FAILED',
+      failedHeadIntentId: 'intent-failed',
+      failedHeadUpdatedAt: '2026-03-11T00:00:05.000Z',
+      failedHeadErrorReason: 'minimum notional',
+    });
+  });
+
+  it('cancels pending intents for a strategy without touching terminal rows', async () => {
+    const rows = [
+      createIntent({
+        intentId: 'intent-new',
+        strategyKey: 'strategy-1',
+        status: 'NEW',
+      }),
+      createIntent({
+        intentId: 'intent-sent',
+        strategyKey: 'strategy-1',
+        status: 'SENT',
+      }),
+      createIntent({
+        intentId: 'intent-acked',
+        strategyKey: 'strategy-1',
+        status: 'ACKED',
+      }),
+      createIntent({
+        intentId: 'intent-failed',
+        strategyKey: 'strategy-1',
+        status: 'FAILED',
+      }),
+      createIntent({
+        intentId: 'intent-done',
+        strategyKey: 'strategy-1',
+        status: 'DONE',
+      }),
+    ];
+    const repository = createRepository(rows);
+    const service = new StrategyIntentStoreService(repository as any);
+
+    await expect(
+      service.cancelPendingIntents(
+        'strategy-1',
+        'strategy stopped before intent execution',
+      ),
+    ).resolves.toBe(3);
+
+    expect(
+      rows
+        .filter((row) =>
+          ['intent-new', 'intent-sent', 'intent-acked'].includes(row.intentId),
+        )
+        .map((row) => row.status),
+    ).toEqual(['CANCELLED', 'CANCELLED', 'CANCELLED']);
+    expect(rows.find((row) => row.intentId === 'intent-failed')?.status).toBe(
+      'FAILED',
+    );
+    expect(rows.find((row) => row.intentId === 'intent-done')?.status).toBe(
+      'DONE',
+    );
   });
 });

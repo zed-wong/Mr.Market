@@ -5,6 +5,11 @@ export const getHeaders = (token: string) => ({
 
 export const handleApiResponse = async (response: Response) => {
   if (!response.ok) {
+    if (response.status === 401) {
+      const { showTokenExpired } = await import('$lib/stores/admin');
+      showTokenExpired.set(true);
+      throw new Error('Token expired');
+    }
     const errorText = await response.text();
     let errorMessage = errorText;
     try {

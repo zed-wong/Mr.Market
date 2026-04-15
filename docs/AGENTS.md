@@ -1,43 +1,39 @@
-# Development Principles
+# Principles
 Follow KISS, YAGNI, and DRY. Don't add unnecessary code. Reuse existing codebase.
 
 # Tech Stack
+- **Frontend**: Always use Svelte 4 syntax + SvelteKit + daisyui/tailwind + svelte-i18n (`$_()`)
+- **Backend**: Always use bignumber.js for calculation, and getRFC3339Timestamp() for timestamp
 
-## Frontend
-- Svelte 4 syntax (not Svelte 5)
-- daisyui + tailwindcss for styling
-  - White text: `text-base-100`
-  - Black text: `text-base-content`
-  - White bg: `bg-base-100`
-  - Black bg: `bg-base-content`
-  - Gray: `bg-base-content/60` or `bg-base-300`
-  - Avoid custom colors like `text-gray-900`
-  - Use `capitalize` instead of `uppercase`
-  - Use `<span>` with tailwind classes instead of `<h1>`, `<p>`
-- svelte-i18n with `$_` for text, en.json is default
+# Styling Rules
+- daisyui semantic colors only: `text-base-100` / `bg-base-100` / `text-base-content` / `bg-base-content` / `bg-base-300`
+- No custom colors (e.g. `text-gray-900`). Use `capitalize`, not `uppercase`. Use `<span>` + tailwind, not `<h1>`/`<p>`.
 
-## Backend
-- bignumber.js for numeric calculations
-- getRFC3339Timestamp() for string timestamps
+# Frontend File Placement (`interface/src/`)
+
+```
+routes/                          # Pages — SvelteKit file-based routing
+  (bottomNav)/                   # Main app (home, market, spot, swap, wallet, market-making, admin)
+  (secondary)/                   # Screens without bottom nav
+  */+page.svelte                 # Each page
+  */components/                  # Page-specific components (only used by that page)
+
+lib/
+  components/                    # Shared components (reused across pages)
+    common/                      # Generic UI (loading, icons, etc.)
+    {feature}/                   # Feature folders: admin, home, market, spot, wallet...
+    dialogs/ topBar/ bottomNav/ skeleton/
+  stores/                        # Svelte stores, one file per feature
+  helpers/                       # API calls & utils by domain (mrm/, mixin/, currency/)
+  types/                         # TypeScript interfaces by domain (common/, hufi/)
+i18n/                            # Language JSONs, en.json is default
+```
+
+**Rule**: Component used by one page → page's `components/`. Reused across pages → `lib/components/`.
 
 # Conventions
-
-## Dependencies
-Use bun (not npm/yarn/pnpm)
-
-## Package Dependencies
-- Keep dependencies minimal in package.json — only add when truly necessary
-- Prefer well-established, widely-used libraries over niche or unmaintained ones
-- Before adding a new dependency, evaluate if the functionality can be achieved with existing packages or minimal custom code
-
-## Commits
-No agent signatures (Claude, sisyphus, etc.) in commit messages
-
-## Docs
-- Keep docs updated with code changes
-- Update docs/planning/progress-log.md (one line per change)
-- Keep docs/architecture/server/ as the md mirror of active server architecture
-- If you need to read documentation, look in `docs/` first
-
-# Security
-Never read .env files directly
+- Use **bun** (not npm/yarn/pnpm). Keep dependencies minimal.
+- No agent signatures in commit messages.
+- Keep docs updated: `docs/planning/progress-log.md`, `docs/architecture/server/`, `docs/architecture/strategies/`.
+- Never read `.env` files.
+- Always keep the architecture 100% perfect at present, don't do compatibility unless mentioned

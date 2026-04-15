@@ -42,7 +42,7 @@ export class Contribution {
   @Column()
   tokenAddress: string; // New field for token contract address
 
-  @ManyToOne(() => StrategyInstance, (strategy) => strategy.contributions, {
+  @ManyToOne('StrategyInstance', 'contributions', {
     onDelete: 'CASCADE',
   })
   strategy: StrategyInstance;

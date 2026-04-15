@@ -8,6 +8,7 @@ describe('StrategyRuntimeDispatcherService', () => {
   const strategyService = {
     startArbitrageStrategyForUser: jest.fn(),
     executePureMarketMakingStrategy: jest.fn(),
+    executeDualAccountVolumeStrategy: jest.fn(),
     executeVolumeStrategy: jest.fn(),
     stopStrategyForUser: jest.fn(),
   } as unknown as StrategyService;
@@ -22,6 +23,9 @@ describe('StrategyRuntimeDispatcherService', () => {
     expect(service.toStrategyType('pureMarketMaking')).toBe('pureMarketMaking');
     expect(service.toStrategyType('pure_market_making')).toBe(
       'pureMarketMaking',
+    );
+    expect(service.toStrategyType('dual_account_volume')).toBe(
+      'dualAccountVolume',
     );
     expect(service.toStrategyType('volume')).toBe('volume');
     expect(service.toStrategyType('time_indicator')).toBe('timeIndicator');
@@ -63,6 +67,33 @@ describe('StrategyRuntimeDispatcherService', () => {
     expect(
       strategyService.executePureMarketMakingStrategy,
     ).toHaveBeenCalledWith(expect.objectContaining({ pair: 'BTC/USDT' }));
+  });
+
+  it('dispatches dual-account volume start', async () => {
+    await service.startByStrategyType('dualAccountVolume', {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      baseIncrementPercentage: 0.5,
+      baseIntervalTime: 12,
+      baseTradeAmount: 0.2,
+      numTrades: 5,
+      userId: 'u1',
+      clientId: 'c1',
+      pricePushRate: 0,
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      makerDelayMs: 250,
+    });
+
+    expect(
+      strategyService.executeDualAccountVolumeStrategy,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeName: 'binance',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+      }),
+    );
   });
 
   it('dispatches volume start with fallback aliases', async () => {

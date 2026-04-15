@@ -46,7 +46,7 @@ export class StrategyInstance {
   @Column()
   status: string; // "running", "stopped", etc.
 
-  @OneToMany(() => Contribution, (contribution) => contribution.strategy)
+  @OneToMany('Contribution', 'strategy')
   contributions: Contribution[];
 
   @CreateDateColumn()

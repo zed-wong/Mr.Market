@@ -64,7 +64,7 @@ describe('StrategyConfigResolverService', () => {
         key: 'pure-mm',
         enabled: true,
         controllerType: 'pureMarketMaking',
-        defaultConfig: { pair: 'BTC/USDT', orderRefreshTime: 15000 },
+        defaultConfig: { pair: 'BTC/USDT', orderRefreshTime: 1000 },
         configSchema: {
           type: 'object',
           required: ['pair'],
@@ -248,7 +248,7 @@ describe('StrategyConfigResolverService', () => {
       defaultConfig: {
         bidSpread: 0.001,
         askSpread: 0.001,
-        orderRefreshTime: 10000,
+        orderRefreshTime: 1000,
       },
       configSchema: {
         type: 'object',
@@ -281,7 +281,7 @@ describe('StrategyConfigResolverService', () => {
       resolvedConfig: {
         bidSpread: 0.0025,
         askSpread: 0.001,
-        orderRefreshTime: 10000,
+        orderRefreshTime: 1000,
         pair: 'BTC/USDT',
         exchangeName: 'binance',
         userId: 'user-1',

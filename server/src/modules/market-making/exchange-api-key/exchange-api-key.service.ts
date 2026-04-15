@@ -41,6 +41,7 @@ import { ExchangeApiKeyRepository } from './exchange-api-key.repository';
 export class ExchangeApiKeyService {
   private exchangeInstances: { [key: string]: ccxt.Exchange } = {};
   private readonly logger = new CustomLogger(ExchangeApiKeyService.name);
+  private readonly validationTimeoutMs = 5000;
 
   constructor(
     private exchangeRepository: ExchangeApiKeyRepository,
@@ -119,12 +120,50 @@ export class ExchangeApiKeyService {
   async readAllAPIKeys() {
     const keys = await this.exchangeRepository.readAllAPIKeys();
 
-    return keys.map((k) => {
-      return {
-        ...k,
-        api_secret: '********', // Mask secret
-      };
-    });
+    return keys.map((k) => ({
+      ...k,
+      api_secret: '********',
+      state: this.resolveApiKeyState(k),
+    }));
+  }
+
+  private resolveApiKeyState(key: APIKeysConfig): string {
+    if (key.validation_status === 'valid') {
+      return 'alive';
+    }
+
+    if (key.validation_status === 'pending') {
+      return 'pending';
+    }
+
+    const exchangeClass = ccxt[key.exchange];
+
+    if (!exchangeClass) {
+      return 'error';
+    }
+
+    try {
+      const instance = this.exchangeInstances[key.key_id];
+
+      if (instance) {
+        return 'alive';
+      }
+
+      new exchangeClass({
+        apiKey: key.api_key,
+        secret: key.api_secret,
+      });
+
+      return 'alive';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      this.logger.warn(
+        `Failed to initialize exchange client for key ${key.key_id}: ${message}`,
+      );
+
+      return 'error';
+    }
   }
 
   async readDecryptedAPIKeys(): Promise<APIKeysConfig[]> {
@@ -185,10 +224,13 @@ export class ExchangeApiKeyService {
         const apiKeyConfig = new APIKeysConfig();
 
         apiKeyConfig.exchange = config.name;
-        apiKeyConfig.exchange_index = account.label || 'default';
-        apiKeyConfig.name = account.label || 'default';
+        apiKeyConfig.name =
+          String(account.label || 'default').trim() || 'default';
         apiKeyConfig.api_key = account.apiKey;
         apiKeyConfig.api_secret = encrypt(account.secret, publicKey);
+        apiKeyConfig.permissions =
+          account.label === 'read-only' ? 'read' : 'read-trade';
+        apiKeyConfig.created_at = getRFC3339Timestamp();
 
         await this.exchangeRepository.addAPIKey(apiKeyConfig);
         savedCount += 1;
@@ -637,46 +679,140 @@ export class ExchangeApiKeyService {
       );
     }
 
-    // 2. Validate with CCXT
-    try {
-      const exchangeClass = ccxt[key.exchange];
+    key.name = String(key.name || '').trim();
 
-      if (!exchangeClass) {
-        throw new BadRequestException(`Exchange ${key.exchange} not supported`);
-      }
-      const exchangeInstance = new exchangeClass({
-        apiKey: key.api_key,
-        secret: rawSecret,
-      });
-
-      // Try to fetch balance to validate keys
-      await exchangeInstance.fetchBalance();
-    } catch (e) {
-      this.logger.error(
-        `Failed to validate API Key for ${key.exchange}: ${e.message}`,
-      );
-      throw new BadRequestException(
-        `Invalid API Key or Secret for ${key.exchange}. Verification failed: ${e.message}`,
-      );
+    if (!key.name) {
+      throw new BadRequestException('API key name is required');
     }
 
-    // 3. Encrypt for storage
+    const exchangeClass = ccxt[key.exchange];
+
+    if (!exchangeClass) {
+      throw new BadRequestException(`Exchange ${key.exchange} not supported`);
+    }
+
+    // 2. Encrypt for storage
     const storageEncryptedSecret = encrypt(
       rawSecret,
       getPublicKeyFromPrivate(privateKey),
     );
 
     key.api_secret = storageEncryptedSecret;
+    key.validation_status = 'pending';
+    key.validation_error = null;
+    key.validated_at = null;
+    key.created_at = key.created_at || getRFC3339Timestamp();
     const savedKey = await this.exchangeRepository.addAPIKey(key);
 
-    // reload keys to update memory
-    await this.loadAPIKeys();
+    await this.registerExchangeInstance(savedKey.key_id, {
+      ...savedKey,
+      api_secret: rawSecret,
+    });
+    void this.validateApiKeyInBackground(savedKey.key_id);
 
     return savedKey;
   }
 
+  private async registerExchangeInstance(
+    keyId: string,
+    key: Pick<APIKeysConfig, 'exchange' | 'api_key' | 'api_secret'>,
+  ): Promise<void> {
+    const exchangeClass = ccxt[key.exchange];
+
+    if (!exchangeClass) {
+      return;
+    }
+
+    this.exchangeInstances[keyId] = new exchangeClass({
+      apiKey: key.api_key,
+      secret: key.api_secret,
+    });
+  }
+
+  private async validateApiKeyInBackground(keyId: string): Promise<void> {
+    try {
+      const key = await this.readDecryptedAPIKey(keyId);
+
+      if (!key) {
+        return;
+      }
+
+      const exchangeClass = ccxt[key.exchange];
+
+      if (!exchangeClass) {
+        await this.exchangeRepository.updateAPIKey(keyId, {
+          validation_status: 'invalid',
+          validation_error: `Exchange ${key.exchange} not supported`,
+          validated_at: getRFC3339Timestamp(),
+        });
+
+        return;
+      }
+
+      const exchangeInstance =
+        this.exchangeInstances[keyId] ||
+        new exchangeClass({
+          apiKey: key.api_key,
+          secret: key.api_secret,
+        });
+
+      this.exchangeInstances[keyId] = exchangeInstance;
+
+      await Promise.race([
+        exchangeInstance.fetchBalance(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Validation timeout')),
+            this.validationTimeoutMs,
+          ),
+        ),
+      ]);
+
+      await this.exchangeRepository.updateAPIKey(keyId, {
+        validation_status: 'valid',
+        validation_error: null,
+        validated_at: getRFC3339Timestamp(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      this.logger.warn(`API key validation failed for ${keyId}: ${message}`);
+      await this.exchangeRepository.updateAPIKey(keyId, {
+        validation_status: 'invalid',
+        validation_error: message,
+        validated_at: getRFC3339Timestamp(),
+      });
+    }
+  }
+
   async readAPIKey(keyId: string) {
     return await this.exchangeRepository.readAPIKey(keyId);
+  }
+
+  async readDecryptedAPIKey(keyId: string): Promise<APIKeysConfig | null> {
+    const key = await this.exchangeRepository.readAPIKey(keyId);
+
+    if (!key) {
+      return null;
+    }
+
+    const privateKey =
+      this.configService.get<string>('admin.encryption_private_key') || '';
+
+    let apiSecret = key.api_secret;
+
+    if (privateKey) {
+      try {
+        apiSecret = decrypt(apiSecret, privateKey);
+      } catch (e) {
+        this.logger.warn(`Failed to decrypt key ${key.key_id}: ${e.message}`);
+      }
+    }
+
+    return {
+      ...key,
+      api_secret: apiSecret,
+    };
   }
 
   async findFirstAPIKeyByExchange(

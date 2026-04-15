@@ -1,70 +1,53 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
-import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
-import { Campaign } from 'src/common/entities/campaign/campaign.entity';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
-import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { CampaignService } from './campaign.service';
 
+type CampaignRecord = {
+  address?: string;
+  chainId?: number | string;
+  symbol?: string;
+  exchangeName?: string;
+  token?: string;
+  totalFundedAmount?: string | number;
+  type?: string;
+  status?: string;
+  startBlock?: number | string;
+  endBlock?: number | string;
+};
+
 @Injectable()
 export class CampaignSyncService {
-  private readonly logger = new CustomLogger(CampaignSyncService.name);
-
   constructor(
     private readonly campaignService: CampaignService,
-    @InjectRepository(Campaign)
-    private readonly campaignRepository: Repository<Campaign>,
+    private readonly campaignRepository: Repository<any>,
   ) {}
-
-  @Cron(CronExpression.EVERY_HOUR)
-  async syncCampaignsCron(): Promise<void> {
-    await this.syncCampaigns();
-  }
 
   async syncCampaigns(): Promise<number> {
     const campaigns = await this.campaignService.getCampaigns();
     let synced = 0;
 
-    for (const item of campaigns) {
+    for (const campaign of campaigns) {
+      if (!this.isSupportedCampaign(campaign)) {
+        continue;
+      }
+
+      const normalized = this.normalizeCampaign(campaign);
+
       try {
         const existing = await this.campaignRepository.findOneBy({
-          address: item.address,
-          chainId: item.chainId,
+          address: normalized.address,
+          chainId: normalized.chainId,
         });
 
-        const mapped = {
-          name: item.address,
-          address: item.address,
-          chainId: item.chainId,
-          pair: item.symbol,
-          exchange: item.exchangeName,
-          rewardToken: item.token,
-          startTime: this.toSafeDate(item.startBlock),
-          endTime: this.toSafeDate(item.endBlock),
-          status: this.mapStatus(item.status),
-          totalReward: this.toSafeNumber(item.totalFundedAmount),
-          type: item.type,
-          updatedAt: new Date(getRFC3339Timestamp()),
-        };
+        const entity = existing
+          ? { ...existing, ...normalized }
+          : this.campaignRepository.create(normalized);
 
-        if (existing) {
-          await this.campaignRepository.save({ ...existing, ...mapped });
-        } else {
-          await this.campaignRepository.save(
-            this.campaignRepository.create(mapped as any),
-          );
-        }
+        await this.campaignRepository.save(entity);
         synced += 1;
-      } catch (error) {
-        this.logger.error(
-          `Failed syncing campaign ${String(
-            item?.address || 'unknown',
-          )} on chain ${String(item?.chainId || 'unknown')}: ${error.message}`,
-        );
+      } catch {
         continue;
       }
     }
@@ -72,61 +55,47 @@ export class CampaignSyncService {
     return synced;
   }
 
-  private mapStatus(remoteStatus: string): string {
-    const normalized = (remoteStatus || '').toLowerCase();
-
-    if (normalized.includes('running') || normalized.includes('active')) {
-      return 'active';
-    }
-    if (normalized.includes('complete') || normalized.includes('finished')) {
-      return 'completed';
-    }
-    if (normalized.includes('payout')) {
-      return 'payout';
-    }
-
-    return 'cancelled';
+  private isSupportedCampaign(campaign: CampaignRecord): boolean {
+    return String(campaign.exchangeName || '').toLowerCase() === 'binance';
   }
 
-  private toSafeDate(unixSeconds: unknown): Date {
-    const parsed = Number(unixSeconds);
+  private normalizeCampaign(campaign: CampaignRecord) {
+    const startTime = this.toValidDate(campaign.startBlock);
+    const endTime = this.toValidDate(campaign.endBlock);
 
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return new Date(0);
-    }
-
-    const milliseconds = Math.trunc(parsed * 1000);
-
-    // Date max/min in JS is +/- 8.64e15 ms.
-    if (!Number.isFinite(milliseconds) || Math.abs(milliseconds) > 8.64e15) {
-      return new Date(0);
-    }
-
-    const date = new Date(milliseconds);
-
-    if (Number.isNaN(date.getTime())) {
-      return new Date(0);
-    }
-
-    return date;
+    return {
+      address: String(campaign.address || '').toLowerCase(),
+      chainId: Number(campaign.chainId || 0),
+      symbol: campaign.symbol || '',
+      exchangeName: String(campaign.exchangeName || '').toLowerCase(),
+      token: campaign.token || '',
+      totalReward: this.toNumber(campaign.totalFundedAmount),
+      type: campaign.type || '',
+      status: this.normalizeStatus(campaign.status),
+      startTime,
+      endTime,
+    };
   }
 
-  private toSafeNumber(value: unknown): number {
-    // BigNumber ctor doesn't accept unknown, so normalize first.
-    const normalized: string | number =
-      typeof value === 'number' || typeof value === 'string' ? value : 0;
-    const parsed = new BigNumber(normalized);
+  private toNumber(value: string | number | undefined): number {
+    const normalized = new BigNumber(value ?? 0);
 
-    if (!parsed.isFinite()) {
-      return 0;
+    return normalized.isFinite() ? normalized.toNumber() : 0;
+  }
+
+  private toValidDate(value: string | number | undefined): Date {
+    const numeric = Number(value);
+
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return new Date(numeric * 1000);
     }
 
-    const asNumber = parsed.toNumber();
+    return new Date(0);
+  }
 
-    if (!Number.isFinite(asNumber) || asNumber < 0) {
-      return 0;
-    }
-
-    return asNumber;
+  private normalizeStatus(status: string | undefined): string {
+    return String(status || '').toLowerCase() === 'running'
+      ? 'active'
+      : String(status || '').toLowerCase();
   }
 }

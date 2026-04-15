@@ -2,6 +2,7 @@
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
 import { ArbitrageStrategyController } from './arbitrage-strategy.controller';
+import { DualAccountVolumeStrategyController } from './dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from './pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './strategy-controller.registry';
 import { TimeIndicatorStrategyController } from './time-indicator-strategy.controller';
@@ -13,6 +14,11 @@ describe('StrategyControllerRegistry', () => {
       .fn()
       .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
     executePureMarketMakingStrategy: jest.fn().mockResolvedValue(undefined),
+    buildDualAccountVolumeSessionActions: jest
+      .fn()
+      .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
+    onDualAccountVolumeActionsPublished: jest.fn().mockResolvedValue(undefined),
+    executeDualAccountVolumeStrategy: jest.fn().mockResolvedValue(undefined),
     buildArbitrageActions: jest
       .fn()
       .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
@@ -69,16 +75,24 @@ describe('StrategyControllerRegistry', () => {
   it('registers controllers by type and lists them in insertion order', () => {
     const pure = new PureMarketMakingStrategyController();
     const arbitrage = new ArbitrageStrategyController();
+    const dualAccountVolume = new DualAccountVolumeStrategyController();
     const volume = new VolumeStrategyController();
-    const registry = new StrategyControllerRegistry([pure, arbitrage, volume]);
+    const registry = new StrategyControllerRegistry([
+      pure,
+      arbitrage,
+      dualAccountVolume,
+      volume,
+    ]);
 
     expect(registry.getController('pureMarketMaking')).toBe(pure);
     expect(registry.getController('arbitrage')).toBe(arbitrage);
+    expect(registry.getController('dualAccountVolume')).toBe(dualAccountVolume);
     expect(registry.getController('volume')).toBe(volume);
     expect(registry.getController('missing')).toBeUndefined();
     expect(registry.listControllerTypes()).toEqual([
       'pureMarketMaking',
       'arbitrage',
+      'dualAccountVolume',
       'volume',
     ]);
   });
@@ -103,6 +117,7 @@ describe('StrategyControllerRegistry', () => {
 
     expect(controller.getCadenceMs({ orderRefreshTime: 200 })).toBe(1000);
     expect(controller.getCadenceMs({ orderRefreshTime: 2500 })).toBe(2500);
+    expect(controller.getCadenceMs({})).toBe(1000);
 
     await expect(
       controller.decideActions(
@@ -161,15 +176,113 @@ describe('StrategyControllerRegistry', () => {
     );
   });
 
-  it('delegates volume controller operations to StrategyService', async () => {
-    const controller = new VolumeStrategyController();
+  it('delegates dual-account volume controller operations to StrategyService', async () => {
+    const controller = new DualAccountVolumeStrategyController();
     const strategyInstance = {
-      parameters: session.params,
+      userId: 'entity-user',
+      clientId: 'entity-client',
+      parameters: {
+        ...session.params,
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        tradeAmountVariance: 0.1,
+        priceOffsetVariance: 0.2,
+        cadenceVariance: 0.3,
+        makerDelayVariance: 0.4,
+        buyBias: 0.6,
+        accountProfiles: {
+          maker: {
+            tradeAmountMultiplier: 0.95,
+          },
+        },
+        userId: 'stale-user',
+        clientId: 'stale-client',
+      },
     } as unknown as StrategyInstance;
     const actions = [{ type: 'CREATE_LIMIT_ORDER' }] as any[];
 
     expect(controller.getCadenceMs({ baseIntervalTime: 0.5 })).toBe(1000);
     expect(controller.getCadenceMs({ baseIntervalTime: 8 })).toBe(8000);
+    expect(controller.getCadenceMs({ baseIntervalTime: 'oops' as any })).toBe(
+      10000,
+    );
+
+    await expect(
+      controller.decideActions(
+        { ...session, strategyType: 'dualAccountVolume' } as any,
+        '2026-03-11T00:00:00.000Z',
+        service as any,
+      ),
+    ).resolves.toEqual(actions);
+    await expect(
+      controller.onActionsPublished?.(
+        { ...session, strategyType: 'dualAccountVolume' } as any,
+        actions,
+        service as any,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      controller.rerun(strategyInstance, service as any),
+    ).resolves.toBeUndefined();
+
+    expect(service.buildDualAccountVolumeSessionActions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyType: 'dualAccountVolume',
+      }),
+      '2026-03-11T00:00:00.000Z',
+    );
+    expect(service.onDualAccountVolumeActionsPublished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyType: 'dualAccountVolume',
+      }),
+      actions,
+    );
+    expect(service.executeDualAccountVolumeStrategy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        tradeAmountVariance: 0.1,
+        priceOffsetVariance: 0.2,
+        cadenceVariance: 0.3,
+        makerDelayVariance: 0.4,
+        buyBias: 0.6,
+        accountProfiles: {
+          maker: {
+            tradeAmountMultiplier: 0.95,
+          },
+        },
+        userId: 'entity-user',
+        clientId: 'entity-client',
+      }),
+    );
+  });
+
+  it('delegates volume controller operations to StrategyService', async () => {
+    const controller = new VolumeStrategyController();
+    const strategyInstance = {
+      userId: 'entity-user',
+      clientId: 'entity-client',
+      parameters: {
+        ...session.params,
+        userId: 'stale-user',
+        clientId: 'stale-client',
+        incrementPercentage: 0.25,
+        intervalTime: 11,
+        tradeAmount: 3,
+        baseIncrementPercentage: undefined,
+        baseIntervalTime: undefined,
+        baseTradeAmount: undefined,
+      },
+    } as unknown as StrategyInstance;
+    const actions = [{ type: 'CREATE_LIMIT_ORDER' }] as any[];
+
+    expect(controller.getCadenceMs({ baseIntervalTime: 0.5 })).toBe(1000);
+    expect(controller.getCadenceMs({ baseIntervalTime: 8 })).toBe(8000);
+    expect(controller.getCadenceMs({ intervalTime: 'oops' as any })).toBe(
+      10000,
+    );
 
     await expect(
       controller.decideActions(
@@ -204,12 +317,12 @@ describe('StrategyControllerRegistry', () => {
     expect(service.executeVolumeStrategy).toHaveBeenCalledWith(
       session.params.exchangeName,
       session.params.symbol,
-      session.params.baseIncrementPercentage,
-      session.params.baseIntervalTime,
-      session.params.baseTradeAmount,
+      0.25,
+      11,
+      3,
       session.params.numTrades,
-      session.params.userId,
-      session.params.clientId,
+      'entity-user',
+      'entity-client',
       session.params.pricePushRate,
       session.params.postOnlySide,
       session.params.executionVenue,

@@ -15,6 +15,33 @@
 
     let keys: AdminSingleKey[] = [];
     $: keys = $page.data.apiKeys || [];
+    let searchQuery = "";
+    let statusFilter = "all";
+    let filteredKeys: AdminSingleKey[] = [];
+
+    $: normalizedSearchQuery = searchQuery.trim().toLowerCase();
+    $: filteredKeys = keys.filter((key) => {
+        const matchesSearch =
+            !normalizedSearchQuery ||
+            [
+                key.name,
+                key.exchange,
+                key.key_id,
+                key.api_key,
+            ]
+                .filter(Boolean)
+                .some((value) =>
+                    value.toLowerCase().includes(normalizedSearchQuery),
+                );
+
+        const normalizedState = (key.state || "").toLowerCase();
+        const matchesStatus =
+            statusFilter === "all" ||
+            (statusFilter === "active" && normalizedState === "alive") ||
+            (statusFilter === "inactive" && normalizedState !== "alive");
+
+        return matchesSearch && matchesStatus;
+    });
 
     let isRefreshing = false;
 
@@ -190,15 +217,19 @@
                     type="text"
                     placeholder="Search keys..."
                     class="input input-bordered w-full pl-10"
+                    bind:value={searchQuery}
                 />
             </div>
 
             <div class="flex items-center gap-2">
                 <span class="text-sm text-base-content/60">STATUS:</span>
-                <select class="select select-bordered select-sm">
-                    <option selected>All</option>
-                    <option>Active</option>
-                    <option>Inactive</option>
+                <select
+                    class="select select-bordered select-sm"
+                    bind:value={statusFilter}
+                >
+                    <option value="all">All</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
                 </select>
             </div>
         </div>
@@ -206,7 +237,7 @@
         <div
             class="card bg-base-100 shadow-sm border border-base-200 overflow-hidden"
         >
-            <KeyList {keys} on:delete={HandleDelete} />
+            <KeyList keys={filteredKeys} on:delete={HandleDelete} />
         </div>
     {/if}
 </div>

@@ -19,6 +19,7 @@
   let AddNewName = "";
   let AddNewApiKey = "";
   let AddNewApiSecret = "";
+  let AddNewPermissions = "read";
   let publicKey = "";
   let encryptionError = "";
 
@@ -65,7 +66,13 @@
       }
 
       await addAPIKey(
-        { exchange, name, api_key, api_secret: encryptedSecret },
+        {
+          exchange,
+          name,
+          api_key,
+          api_secret: encryptedSecret,
+          permissions: AddNewPermissions,
+        },
         token,
       );
     } catch (e: any) {
@@ -91,6 +98,7 @@
     AddNewName = "";
     AddNewApiKey = "";
     AddNewApiSecret = "";
+    AddNewPermissions = "read";
   };
 
   function openDialog() {
@@ -263,6 +271,33 @@
           <span class="label-text-alt text-base-content/60 text-xs">
             {$_("api_secret_note")}
           </span>
+        </div>
+      </div>
+      <div class="form-control w-full">
+        <span class="label">
+          <span class="label-text font-medium">{$_("permissions")}</span>
+        </span>
+        <div class="flex gap-3">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="permissions"
+              class="radio radio-primary radio-sm"
+              value="read"
+              bind:group={AddNewPermissions}
+            />
+            <span class="text-sm">{$_("read_only")}</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="permissions"
+              class="radio radio-primary radio-sm"
+              value="read-trade"
+              bind:group={AddNewPermissions}
+            />
+            <span class="text-sm">{$_("read_trade")}</span>
+          </label>
         </div>
       </div>
 

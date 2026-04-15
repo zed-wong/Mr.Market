@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import * as encryption from './common/helpers/crypto';
@@ -78,6 +79,7 @@ async function bootstrap() {
     origin: allowedOrigins,
     credentials: true,
   });
+  app.use(helmet());
 
   // Global request logging
   app.use((req, _, next) => {
@@ -85,19 +87,21 @@ async function bootstrap() {
     next();
   });
 
-  const config = new DocumentBuilder()
-    .setTitle('Mixin Doc backend API')
-    .setDescription('Mixin Doc backend to execute trades and strategies')
-    .setVersion('1.0')
-    .addBearerAuth({
-      type: 'http',
-      scheme: 'bearer',
-      bearerFormat: 'JWT', // Optional, but helps with proper documentation
-    })
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Mixin Doc backend API')
+      .setDescription('Mixin Doc backend to execute trades and strategies')
+      .setVersion('1.0')
+      .addBearerAuth({
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT', // Optional, but helps with proper documentation
+      })
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
 
-  SwaggerModule.setup('docs', app, document);
+    SwaggerModule.setup('docs', app, document);
+  }
 
   const port = process.env.PORT || 3000;
 

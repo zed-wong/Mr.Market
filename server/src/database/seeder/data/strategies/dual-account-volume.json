@@ -1,0 +1,84 @@
+{
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "exchangeName",
+      "symbol",
+      "baseTradeAmount",
+      "baseIntervalTime",
+      "numTrades",
+      "baseIncrementPercentage",
+      "pricePushRate"
+    ],
+    "properties": {
+      "exchangeName": {
+        "type": "string",
+        "description": "Exchange name shared by maker and taker accounts"
+      },
+      "symbol": {
+        "type": "string",
+        "description": "Trading pair symbol (e.g. BTC/USDT)"
+      },
+      "baseTradeAmount": {
+        "type": "number",
+        "description": "Base amount to trade per cycle",
+        "minimum": 0
+      },
+      "baseIntervalTime": {
+        "type": "number",
+        "description": "Seconds between execution cycles",
+        "minimum": 1
+      },
+      "numTrades": {
+        "type": "number",
+        "description": "Total successful cycles to execute",
+        "minimum": 0
+      },
+      "baseIncrementPercentage": {
+        "type": "number",
+        "description": "Offset from mid price (percent)"
+      },
+      "pricePushRate": {
+        "type": "number",
+        "description": "Per-cycle price push rate (percent)"
+      },
+      "postOnlySide": {
+        "type": "string",
+        "enum": ["buy", "sell"],
+        "description": "Maker side for the first cycle"
+      },
+      "makerDelayMs": {
+        "type": "number",
+        "description": "Delay before the taker IOC leg submits",
+        "minimum": 0
+      },
+      "dynamicRoleSwitching": {
+        "type": "boolean",
+        "description": "Switch maker/taker roles dynamically based on balances"
+      },
+      "targetQuoteVolume": {
+        "type": "number",
+        "description": "Stop once cumulative executed quote volume reaches this cap",
+        "minimum": 0
+      },
+      "cadenceVariance": {
+        "type": "number",
+        "description": "Fractional variance around the cycle interval (e.g. 0.25 = 25%)",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "exchangeName": "binance",
+    "symbol": "BTC/USDT",
+    "baseTradeAmount": 0.1,
+    "baseIntervalTime": 30,
+    "numTrades": 100,
+    "baseIncrementPercentage": 0.5,
+    "pricePushRate": 0,
+    "postOnlySide": "buy",
+    "makerDelayMs": 250,
+    "cadenceVariance": 0.25
+  }
+}

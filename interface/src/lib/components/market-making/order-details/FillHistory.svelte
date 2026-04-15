@@ -7,7 +7,7 @@
         amount: string;
         time: string;
         price: string;
-        status: "Partial Fill" | "Filled" | "Canceled";
+        status: string;
     }>;
 </script>
 

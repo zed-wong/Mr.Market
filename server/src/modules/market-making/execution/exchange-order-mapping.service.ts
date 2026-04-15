@@ -14,6 +14,27 @@ export class ExchangeOrderMappingService {
     return await this.exchangeOrderMappingRepository.countBy({ orderId });
   }
 
+  async reserveMapping(params: {
+    orderId: string;
+    clientOrderId: string;
+  }): Promise<ExchangeOrderMapping> {
+    const existing = await this.exchangeOrderMappingRepository.findOneBy({
+      clientOrderId: params.clientOrderId,
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    return await this.exchangeOrderMappingRepository.save(
+      this.exchangeOrderMappingRepository.create({
+        orderId: params.orderId,
+        exchangeOrderId: null,
+        clientOrderId: params.clientOrderId,
+      }),
+    );
+  }
+
   async createMapping(params: {
     orderId: string;
     exchangeOrderId: string;
@@ -23,8 +44,18 @@ export class ExchangeOrderMappingService {
       clientOrderId: params.clientOrderId,
     });
 
-    if (existing) {
+    if (existing?.exchangeOrderId === params.exchangeOrderId) {
       return existing;
+    }
+
+    if (existing) {
+      return await this.exchangeOrderMappingRepository.save(
+        this.exchangeOrderMappingRepository.create({
+          ...existing,
+          orderId: params.orderId,
+          exchangeOrderId: params.exchangeOrderId,
+        }),
+      );
     }
 
     return await this.exchangeOrderMappingRepository.save(
