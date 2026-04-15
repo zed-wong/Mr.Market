@@ -125,14 +125,24 @@ export class ClockTickCoordinatorService
           break;
         }
 
-        const isHealthy = await item.component.health();
+        try {
+          const isHealthy = await item.component.health();
 
-        if (!isHealthy) {
-          this.logger.warn(`Skipping unhealthy tick component: ${item.id}`);
-          continue;
+          if (!isHealthy) {
+            this.logger.warn(`Skipping unhealthy tick component: ${item.id}`);
+            continue;
+          }
+
+          await item.component.onTick(ts);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const trace = error instanceof Error ? error.stack : undefined;
+
+          this.logger.error(
+            `Tick component failed: ${item.id} ts=${ts}: ${message}`,
+            trace,
+          );
         }
-
-        await item.component.onTick(ts);
       }
     } finally {
       const tickFinishedAtMs = Date.now();

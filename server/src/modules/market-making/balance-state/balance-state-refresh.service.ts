@@ -3,8 +3,10 @@ import {
   OnModuleDestroy,
   OnModuleInit,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
@@ -24,6 +26,7 @@ export class BalanceStateRefreshService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
   private static readonly SILENT_MS = 30_000;
+  private readonly logger = new CustomLogger(BalanceStateRefreshService.name);
   private readonly accounts = new Map<string, RegisteredBalanceAccount>();
   private readonly lastRefreshAtByKey = new Map<string, string>();
 
@@ -112,10 +115,29 @@ export class BalanceStateRefreshService
         continue;
       }
 
-      const balance = await this.exchangeConnectorAdapterService?.fetchBalance(
-        account.exchange,
-        account.accountLabel,
-      );
+      let balance: unknown;
+
+      try {
+        balance = await this.exchangeConnectorAdapterService?.fetchBalance(
+          account.exchange,
+          account.accountLabel,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const trace = error instanceof Error ? error.stack : undefined;
+        const key = this.toKey(account.exchange, account.accountLabel);
+
+        this.logger.warn(
+          `Balance refresh failed for ${key}: ${message}`,
+          trace,
+        );
+
+        if (!(error instanceof ServiceUnavailableException)) {
+          this.lastRefreshAtByKey.delete(key);
+        }
+
+        continue;
+      }
 
       if (!balance) {
         continue;

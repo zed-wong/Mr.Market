@@ -1,5 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+
 import { ClockTickCoordinatorService } from './clock-tick-coordinator.service';
 
 type TestTickComponent = {
@@ -92,6 +94,32 @@ describe('ClockTickCoordinatorService', () => {
 
     expect(healthy.onTick).toHaveBeenCalledTimes(1);
     expect(unhealthy.onTick).not.toHaveBeenCalled();
+
+    await service.stop();
+  });
+
+  it('continues ticking later components when one component throws', async () => {
+    const service = createService(100);
+    const first = createComponent();
+    const second = createComponent();
+    const loggerErrorSpy = jest
+      .spyOn(CustomLogger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    first.onTick = jest.fn().mockRejectedValue(new Error('boom'));
+
+    service.register('first', first, 10);
+    service.register('second', second, 20);
+
+    await service.start();
+    await service.tickOnce();
+
+    expect(first.onTick).toHaveBeenCalledTimes(1);
+    expect(second.onTick).toHaveBeenCalledTimes(1);
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Tick component failed: first'),
+      expect.any(String),
+    );
 
     await service.stop();
   });
