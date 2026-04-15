@@ -22,6 +22,8 @@
     socket,
   } from "$lib/stores/spot";
 
+  let dialogEl: HTMLDialogElement | null = null;
+
   let tabItems = [
     { name: "all" },
     ...SUPPORTED_EXCHANGES.map((exchange) => ({ name: exchange })),
@@ -61,12 +63,24 @@
   onDestroy(async () => {
     pairSelectorLoaded.set(false);
   });
+
+  $: if (dialogEl) {
+    if ($pairSelectorDialog) {
+      if (!dialogEl.open) {
+        dialogEl.showModal();
+      }
+    } else if (dialogEl.open) {
+      dialogEl.close();
+    }
+  }
 </script>
 
 <dialog
+  bind:this={dialogEl}
   id="select_pair_modal"
   class="modal modal-bottom sm:modal-middle"
   class:modal-open={$pairSelectorDialog}
+  on:close={() => pairSelectorDialog.set(false)}
 >
   <div
     class="modal-box h-[90vh] pt-0 px-0"
