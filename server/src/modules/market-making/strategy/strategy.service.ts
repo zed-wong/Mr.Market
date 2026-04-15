@@ -117,6 +117,7 @@ type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   publishedCycles?: number;
   completedCycles?: number;
   orderBookReady?: boolean;
+  consecutiveFallbackCycles?: number;
 };
 
 type DualAccountBehaviorProfile = {
@@ -173,6 +174,23 @@ type DualAccountRebalanceCandidate = {
 type DualAccountBalanceSnapshot = {
   makerBalances: DualAccountPairBalances;
   takerBalances: DualAccountPairBalances;
+};
+
+type DualAccountCapacityDiagnostics = {
+  buyCapacity: BigNumber;
+  sellCapacity: BigNumber;
+  preferredSideCapacity: BigNumber;
+  selectedSideCapacity: BigNumber;
+  capacityUtilization: BigNumber;
+  capacityLimited: boolean;
+  capacityLimiter:
+    | 'maker_base'
+    | 'maker_quote'
+    | 'taker_base'
+    | 'taker_quote'
+    | 'balanced'
+    | 'unknown';
+  rebalanceNeeded: boolean;
 };
 
 type PooledExecutorTarget = {
@@ -679,6 +697,7 @@ export class StrategyService
       publishedCycles: 0,
       completedCycles: 0,
       orderBookReady: false,
+      consecutiveFallbackCycles: 0,
       tradedQuoteVolume: 0,
       realizedPnlQuote: 0,
       inventoryBaseQty: 0,
@@ -1631,11 +1650,27 @@ export class StrategyService
     const shouldIncrementPublishedCycles = actions.some(
       (action) => !this.isDualAccountRebalanceAction(action),
     );
+    const tradeAction = actions.find(
+      (action) => !this.isDualAccountRebalanceAction(action),
+    );
+    const metadata =
+      tradeAction &&
+      tradeAction.metadata &&
+      typeof tradeAction.metadata === 'object'
+        ? (tradeAction.metadata as Record<string, unknown>)
+        : undefined;
+    const consecutiveFallbackCycles =
+      metadata && metadata.consecutiveFallbackCycles !== undefined
+        ? Number(metadata.consecutiveFallbackCycles)
+        : Number(mergedParams.consecutiveFallbackCycles || 0);
     const nextParams: DualAccountVolumeStrategyParams = {
       ...mergedParams,
       publishedCycles:
         Number(mergedParams.publishedCycles || 0) +
         (shouldIncrementPublishedCycles ? 1 : 0),
+      consecutiveFallbackCycles: Number.isFinite(consecutiveFallbackCycles)
+        ? consecutiveFallbackCycles
+        : Number(mergedParams.consecutiveFallbackCycles || 0),
       orderBookReady:
         this.strategyMarketDataProviderService?.hasTrackedOrderBook(
           mergedParams.exchangeName,
@@ -1795,6 +1830,25 @@ export class StrategyService
     );
     const accountBuyBias = profile.buyBias ?? params.buyBias;
     const fallbackApplied = side !== preferredSide;
+    const capacityDiagnostics = balanceSnapshot
+      ? this.buildDualAccountCapacityDiagnostics(
+          params,
+          adjustedQuote.price,
+          feeBufferRate,
+          balanceSnapshot,
+          preferredSide,
+          side,
+          adjustedQuote.qty,
+        )
+      : null;
+    const consecutiveFallbackCycles = fallbackApplied
+      ? Number(params.consecutiveFallbackCycles || 0) + 1
+      : 0;
+    const estimatedLegNotional = adjustedQuote.qty.multipliedBy(
+      adjustedQuote.price,
+    );
+    const estimatedTotalFee = estimatedLegNotional.multipliedBy(feeBufferRate);
+    const netEdgeEstimate = estimatedTotalFee.negated();
 
     this.logger.log(
       [
@@ -1817,6 +1871,17 @@ export class StrategyService
         `maker=${resolvedAccounts.makerAccountLabel}`,
         `taker=${resolvedAccounts.takerAccountLabel}`,
         `capacity=${resolvedAccounts.capacity?.toFixed() ?? 'unknown'}`,
+        `buyCapacity=${
+          capacityDiagnostics?.buyCapacity.toFixed() ?? 'unknown'
+        }`,
+        `sellCapacity=${
+          capacityDiagnostics?.sellCapacity.toFixed() ?? 'unknown'
+        }`,
+        `capacityLimiter=${capacityDiagnostics?.capacityLimiter ?? 'unknown'}`,
+        `consecutiveFallbackCycles=${consecutiveFallbackCycles}`,
+        `estimatedTotalFee=${estimatedTotalFee.toFixed()}`,
+        `netEdgeEstimate=${netEdgeEstimate.toFixed()}`,
+        `rebalanceNeeded=${capacityDiagnostics?.rebalanceNeeded ?? false}`,
         `makerDelayMs=${makerDelayMs}`,
         `decisionDurationMs=${decisionDurationMs}`,
       ].join(' | '),
@@ -1856,6 +1921,21 @@ export class StrategyService
           buyBias: accountBuyBias,
           requestedQty: requestedQty.toFixed(),
           effectiveQty: adjustedQuote.qty.toFixed(),
+          buyCapacity: capacityDiagnostics?.buyCapacity.toFixed(),
+          sellCapacity: capacityDiagnostics?.sellCapacity.toFixed(),
+          preferredSideCapacity:
+            capacityDiagnostics?.preferredSideCapacity.toFixed(),
+          selectedSideCapacity:
+            capacityDiagnostics?.selectedSideCapacity.toFixed(),
+          capacityUtilization:
+            capacityDiagnostics?.capacityUtilization.toFixed(),
+          capacityLimited: capacityDiagnostics?.capacityLimited,
+          capacityLimiter: capacityDiagnostics?.capacityLimiter,
+          consecutiveFallbackCycles,
+          estimatedTotalFee: estimatedTotalFee.toFixed(),
+          netEdgeEstimate: netEdgeEstimate.toFixed(),
+          feeBufferRate: feeBufferRate.toFixed(),
+          rebalanceNeeded: capacityDiagnostics?.rebalanceNeeded ?? false,
         },
         true,
         resolvedAccounts.makerAccountLabel,
@@ -1986,6 +2066,130 @@ export class StrategyService
           makerBalances.base,
           takerBalances.quote.dividedBy(price).multipliedBy(retainFactor),
         );
+  }
+
+  private buildDualAccountCapacityDiagnostics(
+    params: DualAccountVolumeStrategyParams,
+    price: BigNumber,
+    feeBufferRate: BigNumber,
+    snapshot: DualAccountBalanceSnapshot,
+    preferredSide: 'buy' | 'sell',
+    selectedSide: 'buy' | 'sell',
+    effectiveQty: BigNumber,
+  ): DualAccountCapacityDiagnostics {
+    const buyResolved = this.resolveDualAccountCycleAccountsFromBalances(
+      params,
+      'buy',
+      price,
+      snapshot.makerBalances,
+      snapshot.takerBalances,
+      feeBufferRate,
+    );
+    const sellResolved = this.resolveDualAccountCycleAccountsFromBalances(
+      params,
+      'sell',
+      price,
+      snapshot.makerBalances,
+      snapshot.takerBalances,
+      feeBufferRate,
+    );
+    const buyCapacity = buyResolved.capacity || new BigNumber(0);
+    const sellCapacity = sellResolved.capacity || new BigNumber(0);
+    const preferredSideCapacity =
+      preferredSide === 'buy' ? buyCapacity : sellCapacity;
+    const selectedSideCapacity =
+      selectedSide === 'buy' ? buyCapacity : sellCapacity;
+    const capacityUtilization = selectedSideCapacity.isGreaterThan(0)
+      ? effectiveQty.dividedBy(selectedSideCapacity)
+      : new BigNumber(0);
+    const smallerCapacity = BigNumber.min(buyCapacity, sellCapacity);
+    const largerCapacity = BigNumber.max(buyCapacity, sellCapacity);
+    const imbalanceRatio = smallerCapacity.isGreaterThan(0)
+      ? largerCapacity.dividedBy(smallerCapacity)
+      : new BigNumber(Infinity);
+
+    return {
+      buyCapacity,
+      sellCapacity,
+      preferredSideCapacity,
+      selectedSideCapacity,
+      capacityUtilization,
+      capacityLimited: selectedSideCapacity.isGreaterThan(0)
+        ? effectiveQty.isGreaterThanOrEqualTo(selectedSideCapacity)
+        : false,
+      capacityLimiter: this.resolveDualAccountCapacityLimiter(
+        selectedSide === 'buy' ? buyResolved : sellResolved,
+        selectedSide,
+        price,
+        feeBufferRate,
+      ),
+      rebalanceNeeded:
+        buyCapacity.isLessThanOrEqualTo(0) ||
+        sellCapacity.isLessThanOrEqualTo(0) ||
+        preferredSideCapacity.isLessThanOrEqualTo(0) ||
+        imbalanceRatio.isGreaterThanOrEqualTo(2),
+    };
+  }
+
+  private resolveDualAccountCapacityLimiter(
+    resolvedAccounts: DualAccountResolvedAccounts,
+    side: 'buy' | 'sell',
+    price: BigNumber,
+    feeBufferRate: BigNumber,
+  ):
+    | 'maker_base'
+    | 'maker_quote'
+    | 'taker_base'
+    | 'taker_quote'
+    | 'balanced'
+    | 'unknown' {
+    if (
+      !resolvedAccounts.makerBalances ||
+      !resolvedAccounts.takerBalances ||
+      !price.isFinite() ||
+      price.isLessThanOrEqualTo(0)
+    ) {
+      return 'unknown';
+    }
+
+    const retainFactor = feeBufferRate.isFinite()
+      ? BigNumber.max(
+          new BigNumber(1).minus(
+            feeBufferRate.isGreaterThanOrEqualTo(0) ? feeBufferRate : 0,
+          ),
+          new BigNumber(0),
+        )
+      : new BigNumber(1);
+
+    if (side === 'buy') {
+      const makerQuoteCapacity = resolvedAccounts.makerBalances.quote
+        .dividedBy(price)
+        .multipliedBy(retainFactor);
+      const takerBaseCapacity = resolvedAccounts.takerBalances.base;
+
+      if (makerQuoteCapacity.isLessThan(takerBaseCapacity)) {
+        return 'maker_quote';
+      }
+      if (takerBaseCapacity.isLessThan(makerQuoteCapacity)) {
+        return 'taker_base';
+      }
+
+      return 'balanced';
+    }
+
+    const makerBaseCapacity = resolvedAccounts.makerBalances.base;
+    const takerQuoteCapacity = resolvedAccounts.takerBalances.quote
+      .dividedBy(price)
+      .multipliedBy(retainFactor);
+
+    if (makerBaseCapacity.isLessThan(takerQuoteCapacity)) {
+      return 'maker_base';
+    }
+    if (takerQuoteCapacity.isLessThan(makerBaseCapacity)) {
+      return 'taker_quote';
+    }
+
+    return 'balanced';
   }
 
   private async resolveDualAccountExecutionPlan(
@@ -2773,13 +2977,12 @@ export class StrategyService
     }
 
     const quoteValue = resolvedMakerBalances.quote;
-    const baseValue =
-      resolvedMakerBalances.base.multipliedBy(
-        await this.resolveInventoryReferencePrice(
-          params.exchangeName,
-          params.symbol,
-        ),
-      );
+    const baseValue = resolvedMakerBalances.base.multipliedBy(
+      await this.resolveInventoryReferencePrice(
+        params.exchangeName,
+        params.symbol,
+      ),
+    );
     const totalValue = quoteValue.plus(baseValue);
 
     if (!totalValue.isFinite() || totalValue.isLessThanOrEqualTo(0)) {
@@ -2815,10 +3018,11 @@ export class StrategyService
         .dividedBy(2);
     }
 
-    const bestBidAsk = await this.strategyMarketDataProviderService?.getBestBidAsk(
-      exchangeName,
-      pair,
-    );
+    const bestBidAsk =
+      await this.strategyMarketDataProviderService?.getBestBidAsk(
+        exchangeName,
+        pair,
+      );
 
     if (bestBidAsk?.bestBid && bestBidAsk?.bestAsk) {
       return new BigNumber(bestBidAsk.bestBid)

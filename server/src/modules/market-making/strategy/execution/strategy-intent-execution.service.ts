@@ -321,7 +321,6 @@ export class StrategyIntentExecutionService {
             } result=${JSON.stringify(result)}`,
           );
         }
-
       }
 
       if (intent.type === 'CANCEL_ORDER') {
@@ -379,7 +378,7 @@ export class StrategyIntentExecutionService {
               ? 'cancelled'
               : 'pending_cancel',
           createdAt: getRFC3339Timestamp(),
-            updatedAt: getRFC3339Timestamp(),
+          updatedAt: getRFC3339Timestamp(),
         });
 
         executionResult = result as Record<string, unknown> | undefined;
@@ -607,6 +606,31 @@ export class StrategyIntentExecutionService {
     return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
   }
 
+  private readMetadataBoolean(
+    intent: StrategyOrderIntent,
+    key: string,
+  ): boolean | undefined {
+    if (!intent.metadata || typeof intent.metadata !== 'object') {
+      return undefined;
+    }
+
+    const value = (intent.metadata as Record<string, unknown>)[key];
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      if (value === 'true') {
+        return true;
+      }
+      if (value === 'false') {
+        return false;
+      }
+    }
+
+    return undefined;
+  }
+
   private oppositeSide(side: 'buy' | 'sell'): 'buy' | 'sell' {
     return side === 'buy' ? 'sell' : 'buy';
   }
@@ -631,6 +655,20 @@ export class StrategyIntentExecutionService {
       this.readMetadataString(makerIntent, 'tickId') || makerIntent.createdAt;
     const makerDelayMs =
       this.readMetadataNumber(makerIntent, 'makerDelayMs') || 0;
+    const buyCapacity = this.readMetadataString(makerIntent, 'buyCapacity');
+    const sellCapacity = this.readMetadataString(makerIntent, 'sellCapacity');
+    const capacityLimiter =
+      this.readMetadataString(makerIntent, 'capacityLimiter') || 'unknown';
+    const consecutiveFallbackCycles =
+      this.readMetadataNumber(makerIntent, 'consecutiveFallbackCycles') || 0;
+    const estimatedTotalFee =
+      this.readMetadataString(makerIntent, 'estimatedTotalFee') || 'unknown';
+    const netEdgeEstimate =
+      this.readMetadataString(makerIntent, 'netEdgeEstimate') || 'unknown';
+    const rebalanceNeeded =
+      this.readMetadataBoolean(makerIntent, 'rebalanceNeeded') ?? false;
+    const feeBufferRate =
+      this.readMetadataString(makerIntent, 'feeBufferRate') || '0';
     const executionStartedAtMs = Date.now();
 
     if (makerDelayMs > 0) {
@@ -767,6 +805,19 @@ export class StrategyIntentExecutionService {
       const takerSufficient = Boolean(
         takerFillRatio?.isGreaterThanOrEqualTo(0.95),
       );
+      const actualFilledQty = takerFilledQty || takerRequestedQty;
+      const actualLegNotional = actualFilledQty.multipliedBy(
+        quantizedMaker.price,
+      );
+      const actualCampaignVolumeIncrement = actualLegNotional.multipliedBy(2);
+      const actualNetEdge = actualLegNotional
+        .multipliedBy(new BigNumber(feeBufferRate))
+        .negated();
+      const lossPerCampaignVolume = actualCampaignVolumeIncrement.isGreaterThan(
+        0,
+      )
+        ? actualNetEdge.negated().dividedBy(actualCampaignVolumeIncrement)
+        : new BigNumber(0);
 
       if (makerSettled && takerSufficient) {
         const actualQuoteVolume = takerFilledQty
@@ -791,6 +842,13 @@ export class StrategyIntentExecutionService {
             `makerOrderId=${makerExchangeOrderId}`,
             `makerAccount=${makerIntent.accountLabel || 'default'}`,
             `takerAccount=${takerAccountLabel}`,
+            `buyCapacity=${buyCapacity}`,
+            `sellCapacity=${sellCapacity}`,
+            `capacityLimiter=${capacityLimiter}`,
+            `consecutiveFallbackCycles=${consecutiveFallbackCycles}`,
+            `estimatedTotalFee=${estimatedTotalFee}`,
+            `netEdgeEstimate=${netEdgeEstimate}`,
+            `rebalanceNeeded=${rebalanceNeeded}`,
             `makerDelayMs=${makerDelayMs}`,
             `verifyBestDurationMs=${verifyBestDurationMs}`,
             `takerExecutionDurationMs=${takerExecutionDurationMs}`,
@@ -798,6 +856,9 @@ export class StrategyIntentExecutionService {
             `totalDurationMs=${totalDurationMs}`,
             `takerFilledQty=${takerFilledQty?.toFixed() || 'unknown'}`,
             `takerFillRatio=${takerFillRatio?.toFixed(4) || 'unknown'}`,
+            `campaignVolumeIncrementActual=${actualCampaignVolumeIncrement.toFixed()}`,
+            `actualNetEdge=${actualNetEdge.toFixed()}`,
+            `lossPerCampaignVolume=${lossPerCampaignVolume.toFixed()}`,
           ].join(' | '),
         );
 
