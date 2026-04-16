@@ -2,6 +2,7 @@
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
 import { ArbitrageStrategyController } from './arbitrage-strategy.controller';
+import { DualAccountBestCapacityVolumeStrategyController } from './dual-account-best-capacity-volume-strategy.controller';
 import { DualAccountVolumeStrategyController } from './dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from './pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './strategy-controller.registry';
@@ -17,8 +18,14 @@ describe('StrategyControllerRegistry', () => {
     buildDualAccountVolumeSessionActions: jest
       .fn()
       .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
+    buildDualAccountBestCapacityVolumeSessionActions: jest
+      .fn()
+      .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
     onDualAccountVolumeActionsPublished: jest.fn().mockResolvedValue(undefined),
     executeDualAccountVolumeStrategy: jest.fn().mockResolvedValue(undefined),
+    executeDualAccountBestCapacityVolumeStrategy: jest
+      .fn()
+      .mockResolvedValue(undefined),
     buildArbitrageActions: jest
       .fn()
       .mockResolvedValue([{ type: 'CREATE_LIMIT_ORDER' }]),
@@ -75,23 +82,30 @@ describe('StrategyControllerRegistry', () => {
   it('registers controllers by type and lists them in insertion order', () => {
     const pure = new PureMarketMakingStrategyController();
     const arbitrage = new ArbitrageStrategyController();
+    const dualAccountBestCapacityVolume =
+      new DualAccountBestCapacityVolumeStrategyController();
     const dualAccountVolume = new DualAccountVolumeStrategyController();
     const volume = new VolumeStrategyController();
     const registry = new StrategyControllerRegistry([
       pure,
       arbitrage,
+      dualAccountBestCapacityVolume,
       dualAccountVolume,
       volume,
     ]);
 
     expect(registry.getController('pureMarketMaking')).toBe(pure);
     expect(registry.getController('arbitrage')).toBe(arbitrage);
+    expect(registry.getController('dualAccountBestCapacityVolume')).toBe(
+      dualAccountBestCapacityVolume,
+    );
     expect(registry.getController('dualAccountVolume')).toBe(dualAccountVolume);
     expect(registry.getController('volume')).toBe(volume);
     expect(registry.getController('missing')).toBeUndefined();
     expect(registry.listControllerTypes()).toEqual([
       'pureMarketMaking',
       'arbitrage',
+      'dualAccountBestCapacityVolume',
       'dualAccountVolume',
       'volume',
     ]);

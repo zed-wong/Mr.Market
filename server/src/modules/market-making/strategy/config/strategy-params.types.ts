@@ -64,7 +64,11 @@ export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   publishedCycles?: number;
   completedCycles?: number;
   orderBookReady?: boolean;
+  consecutiveFallbackCycles?: number;
 };
+
+export type DualAccountBestCapacityVolumeStrategyParams =
+  DualAccountVolumeStrategyParams;
 
 export type DualAccountBehaviorProfile = {
   tradeAmountMultiplier?: number;
@@ -101,6 +105,17 @@ export type DualAccountExecutionPlan = {
   adjustedQuote: { price: BigNumber; qty: BigNumber };
   sideReason: 'preferred_side_tradable' | 'fallback_side_tradable';
   fallbackReason?: 'preferred_side_not_tradable';
+};
+
+export type DualAccountBestCapacityCandidate = {
+  side: 'buy' | 'sell';
+  makerAccountLabel: string;
+  takerAccountLabel: string;
+  makerBalances: DualAccountPairBalances;
+  takerBalances: DualAccountPairBalances;
+  capacity: BigNumber;
+  candidateRank: number;
+  roleAssignment: 'configured' | 'swapped';
 };
 
 export type DualAccountTradeabilityPlan = {

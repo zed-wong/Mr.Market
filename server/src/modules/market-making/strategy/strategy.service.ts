@@ -34,11 +34,28 @@ import {
 import { OrderBookIngestionService } from '../trackers/order-book-ingestion.service';
 import { UserStreamIngestionService } from '../trackers/user-stream-ingestion.service';
 import { ExecutorAction } from './config/executor-action.types';
+import type {
+  AmmDexVolumeStrategyParams,
+  CexVolumeStrategyParams,
+  ConnectorHealthStatus,
+  DualAccountBalanceSnapshot,
+  DualAccountBestCapacityCandidate,
+  DualAccountBehaviorProfile,
+  DualAccountExecutionPlan,
+  DualAccountPairBalances,
+  DualAccountRebalanceCandidate,
+  DualAccountResolvedAccounts,
+  DualAccountTradeabilityPlan,
+  DualAccountVolumeStrategyParams,
+  PooledExecutorTarget,
+  VolumeStrategyParams,
+} from './config/strategy-params.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
   DualAccountBehaviorProfileDto,
   DualAccountBehaviorProfilesDto,
+  ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ExecuteDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
@@ -60,122 +77,6 @@ import { StrategyIntentStoreService } from './execution/strategy-intent-store.se
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
 
-type BaseVolumeStrategyParams = {
-  exchangeName: string;
-  symbol: string;
-  baseIncrementPercentage: number;
-  baseIntervalTime: number;
-  baseTradeAmount: number;
-  numTrades: number;
-  userId: string;
-  clientId: string;
-  pricePushRate: number;
-  executionCategory: StrategyExecutionCategory;
-  executionVenue?: VolumeExecutionVenue;
-  postOnlySide?: 'buy' | 'sell' | 'inventory_balance';
-  executedTrades?: number;
-};
-
-type CexVolumeStrategyParams = BaseVolumeStrategyParams & {
-  executionCategory: 'clob_cex' | 'clob_dex';
-};
-
-type AmmDexVolumeStrategyParams = BaseVolumeStrategyParams & {
-  executionCategory: 'amm_dex';
-  executionVenue: 'dex';
-  dexId: DexAdapterId;
-  chainId: number;
-  tokenIn: string;
-  tokenOut: string;
-  feeTier: number;
-  slippageBps?: number;
-  recipient?: string;
-};
-
-type VolumeStrategyParams =
-  | CexVolumeStrategyParams
-  | AmmDexVolumeStrategyParams;
-
-type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
-  executionCategory: 'clob_cex';
-  executionVenue: 'cex';
-  makerAccountLabel: string;
-  takerAccountLabel: string;
-  makerDelayMs: number;
-  tradeAmountVariance?: number;
-  priceOffsetVariance?: number;
-  cadenceVariance?: number;
-  makerDelayVariance?: number;
-  buyBias?: number;
-  accountProfiles?: DualAccountBehaviorProfilesDto;
-  dynamicRoleSwitching?: boolean;
-  targetQuoteVolume?: number;
-  tradedQuoteVolume?: number;
-  realizedPnlQuote?: number;
-  inventoryBaseQty?: number;
-  inventoryCostQuote?: number;
-  publishedCycles?: number;
-  completedCycles?: number;
-  orderBookReady?: boolean;
-  consecutiveFallbackCycles?: number;
-};
-
-type DualAccountBehaviorProfile = {
-  tradeAmountMultiplier?: number;
-  tradeAmountVariance?: number;
-  priceOffsetMultiplier?: number;
-  priceOffsetVariance?: number;
-  cadenceMultiplier?: number;
-  cadenceVariance?: number;
-  makerDelayMultiplier?: number;
-  makerDelayVariance?: number;
-  buyBias?: number;
-  activeHours?: number[];
-};
-
-type DualAccountPairBalances = {
-  base: BigNumber;
-  quote: BigNumber;
-  assets: { base: string; quote: string };
-};
-
-type DualAccountResolvedAccounts = {
-  makerAccountLabel: string;
-  takerAccountLabel: string;
-  makerBalances?: DualAccountPairBalances;
-  takerBalances?: DualAccountPairBalances;
-  capacity?: BigNumber;
-};
-
-type DualAccountExecutionPlan = {
-  side: 'buy' | 'sell';
-  resolvedAccounts: DualAccountResolvedAccounts;
-  profile: DualAccountBehaviorProfile;
-  requestedQty: BigNumber;
-  adjustedQuote: { price: BigNumber; qty: BigNumber };
-  sideReason: 'preferred_side_tradable' | 'fallback_side_tradable';
-  fallbackReason?: 'preferred_side_not_tradable';
-};
-
-type DualAccountTradeabilityPlan = {
-  side: 'buy' | 'sell';
-  resolvedAccounts: DualAccountResolvedAccounts;
-  profile: DualAccountBehaviorProfile;
-  capacity: BigNumber;
-};
-
-type DualAccountRebalanceCandidate = {
-  action: ExecutorAction;
-  futureExecution: DualAccountTradeabilityPlan;
-  accountLabel: string;
-  side: 'buy' | 'sell';
-};
-
-type DualAccountBalanceSnapshot = {
-  makerBalances: DualAccountPairBalances;
-  takerBalances: DualAccountPairBalances;
-};
-
 type DualAccountCapacityDiagnostics = {
   buyCapacity: BigNumber;
   sellCapacity: BigNumber;
@@ -192,14 +93,6 @@ type DualAccountCapacityDiagnostics = {
     | 'unknown';
   rebalanceNeeded: boolean;
 };
-
-type PooledExecutorTarget = {
-  exchange: string;
-  pair: string;
-  orderId: string;
-};
-
-type ConnectorHealthStatus = 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED';
 
 @Injectable()
 export class StrategyService
@@ -220,6 +113,8 @@ export class StrategyService
     StrategyOrderIntent[]
   >();
   private readonly stoppingStrategyKeys = new Set<string>();
+  private readonly loggedDualAccountBestCapacityIgnoredConfigWarnings =
+    new Set<string>();
   private readonly connectorHealthByExchange = new Map<
     string,
     ConnectorHealthStatus
@@ -642,68 +537,12 @@ export class StrategyService
   async executeDualAccountVolumeStrategy(
     params: ExecuteDualAccountVolumeStrategyDto,
   ): Promise<void> {
-    const makerAccountLabel = String(params.makerAccountLabel || '').trim();
-    const takerAccountLabel = String(params.takerAccountLabel || '').trim();
-
-    if (!makerAccountLabel || !takerAccountLabel) {
-      throw new Error(
-        'Dual account volume strategy requires makerAccountLabel and takerAccountLabel',
-      );
-    }
-
-    if (makerAccountLabel === takerAccountLabel) {
-      throw new Error(
-        'Dual account volume strategy requires different maker and taker account labels',
-      );
-    }
-
+    const normalizedParams = this.normalizeDualAccountStrategyParams(params);
     const strategyKey = createStrategyKey({
       type: 'dualAccountVolume',
       user_id: params.userId,
       client_id: params.clientId,
     });
-
-    const normalizedParams: DualAccountVolumeStrategyParams = {
-      exchangeName: String(params.exchangeName || '').trim(),
-      symbol: String(params.symbol || '').trim(),
-      baseIncrementPercentage: Number(params.baseIncrementPercentage || 0),
-      baseIntervalTime: Number(params.baseIntervalTime || 10),
-      baseTradeAmount: Number(params.baseTradeAmount || 0),
-      numTrades: Number(params.numTrades || 0),
-      userId: params.userId,
-      clientId: params.clientId,
-      pricePushRate: Number(params.pricePushRate || 0),
-      executionCategory: 'clob_cex',
-      executionVenue: 'cex',
-      postOnlySide: params.postOnlySide,
-      makerAccountLabel,
-      takerAccountLabel,
-      makerDelayMs: Number(params.makerDelayMs || 0),
-      tradeAmountVariance: this.readNonNegativeNumber(
-        params.tradeAmountVariance,
-      ),
-      priceOffsetVariance: this.readNonNegativeNumber(
-        params.priceOffsetVariance,
-      ),
-      cadenceVariance: this.readNonNegativeNumber(params.cadenceVariance),
-      makerDelayVariance: this.readNonNegativeNumber(params.makerDelayVariance),
-      buyBias: this.readUnitIntervalNumber(params.buyBias),
-      accountProfiles: params.accountProfiles,
-      dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
-      targetQuoteVolume:
-        params.targetQuoteVolume !== undefined
-          ? Number(params.targetQuoteVolume)
-          : undefined,
-      publishedCycles: 0,
-      completedCycles: 0,
-      orderBookReady: false,
-      consecutiveFallbackCycles: 0,
-      tradedQuoteVolume: 0,
-      realizedPnlQuote: 0,
-      inventoryBaseQty: 0,
-      inventoryCostQuote: 0,
-    };
-
     const cadenceMs = this.resolveNextDualAccountCadenceMs(normalizedParams);
 
     await this.upsertStrategyInstance(
@@ -716,6 +555,34 @@ export class StrategyService
     await this.upsertSession(
       strategyKey,
       'dualAccountVolume',
+      params.userId,
+      params.clientId,
+      cadenceMs,
+      normalizedParams,
+    );
+  }
+
+  async executeDualAccountBestCapacityVolumeStrategy(
+    params: ExecuteDualAccountBestCapacityVolumeStrategyDto,
+  ): Promise<void> {
+    const normalizedParams = this.normalizeDualAccountStrategyParams(params);
+    const strategyKey = createStrategyKey({
+      type: 'dualAccountBestCapacityVolume',
+      user_id: params.userId,
+      client_id: params.clientId,
+    });
+    const cadenceMs = this.resolveNextDualAccountCadenceMs(normalizedParams);
+
+    await this.upsertStrategyInstance(
+      strategyKey,
+      params.userId,
+      params.clientId,
+      'dualAccountBestCapacityVolume',
+      normalizedParams,
+    );
+    await this.upsertSession(
+      strategyKey,
+      'dualAccountBestCapacityVolume',
       params.userId,
       params.clientId,
       cadenceMs,
@@ -1241,7 +1108,11 @@ export class StrategyService
     strategyType: StrategyType,
     parameters: Record<string, any>,
   ): Promise<number> {
-    if (strategyType === 'volume' || strategyType === 'dualAccountVolume') {
+    if (
+      strategyType === 'volume' ||
+      strategyType === 'dualAccountVolume' ||
+      strategyType === 'dualAccountBestCapacityVolume'
+    ) {
       const venue = String(parameters.executionVenue || '').toLowerCase();
       const category = String(parameters.executionCategory || '').toLowerCase();
 
@@ -1539,6 +1410,25 @@ export class StrategyService
     session: StrategyRuntimeSession,
     ts: string,
   ): Promise<ExecutorAction[]> {
+    return await this.buildDualAccountSessionActions(session, ts, 'classic');
+  }
+
+  async buildDualAccountBestCapacityVolumeSessionActions(
+    session: StrategyRuntimeSession,
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    return await this.buildDualAccountSessionActions(
+      session,
+      ts,
+      'best_capacity',
+    );
+  }
+
+  private async buildDualAccountSessionActions(
+    session: StrategyRuntimeSession,
+    ts: string,
+    selectionModel: 'classic' | 'best_capacity',
+  ): Promise<ExecutorAction[]> {
     const activeSession = this.sessions.get(session.strategyKey);
     const persistedParams = (
       await this.strategyInstanceRepository.findOne({
@@ -1610,11 +1500,17 @@ export class StrategyService
       return [];
     }
 
-    return await this.buildDualAccountVolumeActions(
-      session.strategyKey,
-      latestParams,
-      ts,
-    );
+    return selectionModel === 'best_capacity'
+      ? await this.buildDualAccountBestCapacityVolumeActions(
+          session.strategyKey,
+          latestParams,
+          ts,
+        )
+      : await this.buildDualAccountVolumeActions(
+          session.strategyKey,
+          latestParams,
+          ts,
+        );
   }
 
   async onDualAccountVolumeActionsPublished(
@@ -1943,6 +1839,225 @@ export class StrategyService
     ];
   }
 
+  async buildDualAccountBestCapacityVolumeActions(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    ts: string,
+  ): Promise<ExecutorAction[]> {
+    if (!this.strategyMarketDataProviderService) {
+      throw new Error('strategy market data provider is not available');
+    }
+
+    this.maybeWarnDualAccountBestCapacityIgnoredFields(strategyKey, params);
+
+    const trackedBestBidAsk =
+      this.strategyMarketDataProviderService.getTrackedBestBidAsk(
+        params.exchangeName,
+        params.symbol,
+      );
+
+    if (!trackedBestBidAsk) {
+      if (params.orderBookReady) {
+        this.logger.warn(
+          `Skipping dual-account best-capacity volume cycle for ${strategyKey}: tracked order book unavailable`,
+        );
+      }
+
+      this.logger.warn(
+        `Deferring dual-account best-capacity volume cycle for ${strategyKey}: waiting for tracked order book`,
+      );
+
+      return [];
+    }
+
+    const { bestBid, bestAsk } = trackedBestBidAsk;
+    const feeBufferRate = await this.resolveDualAccountFeeBufferRate(
+      params.exchangeName,
+      params.symbol,
+    );
+    const publishedCycles = Number(params.publishedCycles || 0);
+    const bestBidBn = new BigNumber(bestBid);
+    const bestAskBn = new BigNumber(bestAsk);
+    const spread = bestAskBn.minus(bestBidBn);
+
+    if (spread.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Skipping dual-account best-capacity volume cycle for ${strategyKey}: no spread bestBid=${bestBid} bestAsk=${bestAsk}`,
+      );
+
+      return [];
+    }
+
+    const spreadPosition = new BigNumber(Math.random());
+    const price = bestBidBn.plus(spread.multipliedBy(spreadPosition));
+    const decisionStartedAtMs = Date.now();
+    const balanceSnapshot = await this.loadDualAccountBalanceSnapshot(
+      params,
+      'execution',
+    );
+
+    if (!balanceSnapshot) {
+      return [];
+    }
+
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      this.logger.error(
+        `Skipping dual-account best-capacity volume cycle for ${strategyKey}: invalid non-positive price ${price.toFixed()}`,
+      );
+
+      return [];
+    }
+
+    const rawCandidates = this.buildDualAccountBestCapacityCandidates(
+      params,
+      price,
+      feeBufferRate,
+      balanceSnapshot,
+    );
+    const resolvedExecution =
+      await this.resolveBestExecutableDualAccountCandidate(
+        strategyKey,
+        params,
+        rawCandidates,
+        price,
+        bestBidBn,
+        bestAskBn,
+        feeBufferRate,
+      );
+    const decisionDurationMs = Date.now() - decisionStartedAtMs;
+
+    if (!resolvedExecution) {
+      const rebalanceAction = await this.maybeBuildDualAccountRebalanceAction(
+        strategyKey,
+        params,
+        'buy',
+        bestBidBn,
+        bestAskBn,
+        price,
+        feeBufferRate,
+        publishedCycles,
+        ts,
+        balanceSnapshot,
+      );
+
+      if (rebalanceAction) {
+        return [rebalanceAction];
+      }
+
+      this.logger.warn(
+        `Skipping dual-account best-capacity volume cycle for ${strategyKey}: no executable candidate found`,
+      );
+
+      return [];
+    }
+
+    const {
+      side,
+      resolvedAccounts,
+      profile,
+      requestedQty,
+      adjustedQuote,
+      candidate,
+    } = resolvedExecution;
+    const cycleId = `${strategyKey}:cycle:${publishedCycles}:${ts}`;
+    const makerDelayMs = this.resolveDualAccountMakerDelayMs(
+      params,
+      resolvedAccounts.makerAccountLabel,
+    );
+    const accountBuyBias = profile.buyBias ?? params.buyBias;
+    const selectedCapacity = candidate.capacity;
+    const estimatedLegNotional = adjustedQuote.qty.multipliedBy(
+      adjustedQuote.price,
+    );
+    const estimatedTotalFee = estimatedLegNotional.multipliedBy(feeBufferRate);
+    const netEdgeEstimate = estimatedTotalFee.negated();
+
+    this.logger.log(
+      [
+        'Dual-account best-capacity decision',
+        `strategy=${strategyKey}`,
+        `cycle=${cycleId}`,
+        `tick=${ts}`,
+        'selectionModel=best_capacity',
+        `candidateRank=${candidate.candidateRank}`,
+        `candidateCount=${rawCandidates.length}`,
+        `selectedSide=${side}`,
+        `price=${adjustedQuote.price.toFixed()}`,
+        `requestedQty=${requestedQty.toFixed()}`,
+        `effectiveQty=${adjustedQuote.qty.toFixed()}`,
+        `selectedCapacity=${selectedCapacity.toFixed()}`,
+        `maker=${resolvedAccounts.makerAccountLabel}`,
+        `taker=${resolvedAccounts.takerAccountLabel}`,
+        `decisionDurationMs=${decisionDurationMs}`,
+      ].join(' | '),
+    );
+
+    return [
+      this.createIntent(
+        strategyKey,
+        strategyKey,
+        params.userId,
+        params.clientId,
+        params.exchangeName,
+        params.symbol,
+        side,
+        adjustedQuote.price,
+        adjustedQuote.qty,
+        ts,
+        `dual-account-best-capacity-volume-maker-${publishedCycles}`,
+        params.executionCategory,
+        {
+          cycleId,
+          tickId: ts,
+          orderId: `${params.clientId}:cycle:${publishedCycles}`,
+          role: 'maker',
+          selectionModel: 'best_capacity',
+          candidateRank: candidate.candidateRank,
+          candidateCount: rawCandidates.length,
+          buyCapacityConfigured: this.findDualAccountCandidateCapacity(
+            rawCandidates,
+            'buy',
+            'configured',
+          )?.toFixed(),
+          sellCapacityConfigured: this.findDualAccountCandidateCapacity(
+            rawCandidates,
+            'sell',
+            'configured',
+          )?.toFixed(),
+          buyCapacitySwapped: this.findDualAccountCandidateCapacity(
+            rawCandidates,
+            'buy',
+            'swapped',
+          )?.toFixed(),
+          sellCapacitySwapped: this.findDualAccountCandidateCapacity(
+            rawCandidates,
+            'sell',
+            'swapped',
+          )?.toFixed(),
+          selectedCapacity: selectedCapacity.toFixed(),
+          selectedMakerAccountLabel: resolvedAccounts.makerAccountLabel,
+          selectedTakerAccountLabel: resolvedAccounts.takerAccountLabel,
+          rebalanced: false,
+          makerAccountLabel: resolvedAccounts.makerAccountLabel,
+          takerAccountLabel: resolvedAccounts.takerAccountLabel,
+          configuredMakerAccountLabel: params.makerAccountLabel,
+          configuredTakerAccountLabel: params.takerAccountLabel,
+          dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
+          makerDelayMs,
+          activeHours: profile.activeHours,
+          buyBias: accountBuyBias,
+          requestedQty: requestedQty.toFixed(),
+          effectiveQty: adjustedQuote.qty.toFixed(),
+          estimatedTotalFee: estimatedTotalFee.toFixed(),
+          netEdgeEstimate: netEdgeEstimate.toFixed(),
+          feeBufferRate: feeBufferRate.toFixed(),
+        },
+        true,
+        resolvedAccounts.makerAccountLabel,
+      ),
+    ];
+  }
+
   private async resolveDualAccountCycleAccounts(
     params: DualAccountVolumeStrategyParams,
     side: 'buy' | 'sell',
@@ -2255,6 +2370,149 @@ export class StrategyService
       sideReason: 'fallback_side_tradable',
       fallbackReason: 'preferred_side_not_tradable',
     };
+  }
+
+  private buildDualAccountBestCapacityCandidates(
+    params: DualAccountVolumeStrategyParams,
+    price: BigNumber,
+    feeBufferRate: BigNumber,
+    snapshot: DualAccountBalanceSnapshot,
+  ): DualAccountBestCapacityCandidate[] {
+    const retainFactor = feeBufferRate.isFinite()
+      ? BigNumber.max(
+          new BigNumber(1).minus(
+            feeBufferRate.isGreaterThanOrEqualTo(0) ? feeBufferRate : 0,
+          ),
+          new BigNumber(0),
+        )
+      : new BigNumber(1);
+    const candidates: Omit<DualAccountBestCapacityCandidate, 'candidateRank'>[] =
+      ([
+        {
+          side: 'buy' as const,
+          makerAccountLabel: params.makerAccountLabel,
+          takerAccountLabel: params.takerAccountLabel,
+          makerBalances: snapshot.makerBalances,
+          takerBalances: snapshot.takerBalances,
+          capacity: BigNumber.min(
+            snapshot.makerBalances.quote
+              .dividedBy(price)
+              .multipliedBy(retainFactor),
+            snapshot.takerBalances.base,
+          ),
+          roleAssignment: 'configured' as const,
+        },
+        {
+          side: 'buy' as const,
+          makerAccountLabel: params.takerAccountLabel,
+          takerAccountLabel: params.makerAccountLabel,
+          makerBalances: snapshot.takerBalances,
+          takerBalances: snapshot.makerBalances,
+          capacity: BigNumber.min(
+            snapshot.takerBalances.quote
+              .dividedBy(price)
+              .multipliedBy(retainFactor),
+            snapshot.makerBalances.base,
+          ),
+          roleAssignment: 'swapped' as const,
+        },
+        {
+          side: 'sell' as const,
+          makerAccountLabel: params.makerAccountLabel,
+          takerAccountLabel: params.takerAccountLabel,
+          makerBalances: snapshot.makerBalances,
+          takerBalances: snapshot.takerBalances,
+          capacity: BigNumber.min(
+            snapshot.makerBalances.base,
+            snapshot.takerBalances.quote
+              .dividedBy(price)
+              .multipliedBy(retainFactor),
+          ),
+          roleAssignment: 'configured' as const,
+        },
+        {
+          side: 'sell' as const,
+          makerAccountLabel: params.takerAccountLabel,
+          takerAccountLabel: params.makerAccountLabel,
+          makerBalances: snapshot.takerBalances,
+          takerBalances: snapshot.makerBalances,
+          capacity: BigNumber.min(
+            snapshot.takerBalances.base,
+            snapshot.makerBalances.quote
+              .dividedBy(price)
+              .multipliedBy(retainFactor),
+          ),
+          roleAssignment: 'swapped' as const,
+        },
+      ] as const).filter(
+        (candidate) =>
+          candidate.capacity.isFinite() && candidate.capacity.isGreaterThan(0),
+      );
+
+    candidates.sort((left, right) => {
+      const capacityComparison = right.capacity.comparedTo(left.capacity);
+
+      if (capacityComparison !== 0) {
+        return capacityComparison;
+      }
+
+      if (left.roleAssignment !== right.roleAssignment) {
+        return left.roleAssignment === 'configured' ? -1 : 1;
+      }
+
+      if (left.side !== right.side) {
+        return left.side === 'buy' ? -1 : 1;
+      }
+
+      return 0;
+    });
+
+    return candidates.map((candidate, index) => ({
+      ...candidate,
+      candidateRank: index + 1,
+    }));
+  }
+
+  private async resolveBestExecutableDualAccountCandidate(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    candidates: DualAccountBestCapacityCandidate[],
+    price: BigNumber,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+    feeBufferRate: BigNumber,
+  ): Promise<(DualAccountExecutionPlan & { candidate: DualAccountBestCapacityCandidate }) | null> {
+    const tradeAmountVarianceSample = Math.random();
+
+    for (const candidate of candidates) {
+      const execution = await this.evaluateDualAccountExecutionForSideWithAccounts(
+        strategyKey,
+        params,
+        candidate.side,
+        {
+          makerAccountLabel: candidate.makerAccountLabel,
+          takerAccountLabel: candidate.takerAccountLabel,
+          makerBalances: candidate.makerBalances,
+          takerBalances: candidate.takerBalances,
+          capacity: candidate.capacity,
+        },
+        price,
+        tradeAmountVarianceSample,
+        bestBid,
+        bestAsk,
+        feeBufferRate,
+      );
+
+      if (execution) {
+        return {
+          ...execution,
+          candidate,
+          sideReason: 'preferred_side_tradable',
+        };
+      }
+    }
+
+    return null;
   }
 
   private async maybeBuildDualAccountRebalanceAction(
@@ -2606,6 +2864,35 @@ export class StrategyService
       resolvedAccounts.makerAccountLabel,
     );
 
+    return await this.evaluateDualAccountExecutionForSideWithAccounts(
+      strategyKey,
+      params,
+      side,
+      resolvedAccounts,
+      price,
+      tradeAmountVarianceSample,
+      bestBid,
+      bestAsk,
+      feeBufferRate,
+    );
+  }
+
+  private async evaluateDualAccountExecutionForSideWithAccounts(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    side: 'buy' | 'sell',
+    resolvedAccounts: DualAccountResolvedAccounts,
+    price: BigNumber,
+    tradeAmountVarianceSample: number,
+    bestBid: BigNumber,
+    bestAsk: BigNumber,
+    feeBufferRate: BigNumber,
+  ): Promise<DualAccountExecutionPlan | null> {
+    const profile = this.resolveDualAccountBehaviorProfile(
+      params,
+      resolvedAccounts.makerAccountLabel,
+    );
+
     if (!this.isWithinDualAccountProfileWindow(profile)) {
       this.logger.log(
         `Dual-account volume ${strategyKey}: maker account ${resolvedAccounts.makerAccountLabel} is outside active hours for side=${side}`,
@@ -2910,6 +3197,17 @@ export class StrategyService
 
       return new BigNumber(0);
     }
+  }
+
+  private findDualAccountCandidateCapacity(
+    candidates: DualAccountBestCapacityCandidate[],
+    side: 'buy' | 'sell',
+    roleAssignment: 'configured' | 'swapped',
+  ): BigNumber | undefined {
+    return candidates.find(
+      (candidate) =>
+        candidate.side === side && candidate.roleAssignment === roleAssignment,
+    )?.capacity;
   }
 
   private async loadDualAccountBalanceSnapshot(
@@ -4286,7 +4584,11 @@ export class StrategyService
       return null;
     }
 
-    if (strategyType === 'volume' || strategyType === 'dualAccountVolume') {
+    if (
+      strategyType === 'volume' ||
+      strategyType === 'dualAccountVolume' ||
+      strategyType === 'dualAccountBestCapacityVolume'
+    ) {
       const exchange = String(
         (params as unknown as VolumeStrategyParams).exchangeName || '',
       ).trim();
@@ -4323,7 +4625,10 @@ export class StrategyService
     strategyType: StrategyType,
     params: StrategyRuntimeSession['params'],
   ): string | undefined {
-    if (strategyType === 'dualAccountVolume') {
+    if (
+      strategyType === 'dualAccountVolume' ||
+      strategyType === 'dualAccountBestCapacityVolume'
+    ) {
       const accountLabel = String(
         (params as unknown as DualAccountVolumeStrategyParams)
           .makerAccountLabel || 'default',
@@ -4348,7 +4653,10 @@ export class StrategyService
     strategyType: StrategyType,
     params: StrategyRuntimeSession['params'],
   ): string[] {
-    if (strategyType === 'dualAccountVolume') {
+    if (
+      strategyType === 'dualAccountVolume' ||
+      strategyType === 'dualAccountBestCapacityVolume'
+    ) {
       const dualParams = params as unknown as DualAccountVolumeStrategyParams;
 
       return [dualParams.makerAccountLabel, dualParams.takerAccountLabel]
@@ -4388,7 +4696,10 @@ export class StrategyService
     exchange: string,
     params: StrategyRuntimeSession['params'],
   ): void {
-    if (strategyType !== 'dualAccountVolume') {
+    if (
+      strategyType !== 'dualAccountVolume' &&
+      strategyType !== 'dualAccountBestCapacityVolume'
+    ) {
       return;
     }
 
@@ -4414,7 +4725,10 @@ export class StrategyService
     exchange: string,
     params: StrategyRuntimeSession['params'],
   ): void {
-    if (strategyType !== 'dualAccountVolume') {
+    if (
+      strategyType !== 'dualAccountVolume' &&
+      strategyType !== 'dualAccountBestCapacityVolume'
+    ) {
       return;
     }
 
@@ -4499,17 +4813,23 @@ export class StrategyService
   ): Promise<void> {
     if (
       session.strategyType !== 'pureMarketMaking' &&
-      session.strategyType !== 'dualAccountVolume'
+      session.strategyType !== 'dualAccountVolume' &&
+      session.strategyType !== 'dualAccountBestCapacityVolume'
     ) {
       return;
     }
 
     await this.applyFillToBalanceLedger(session, fill);
     this.recordSessionPnL(session, fill, {
-      includeTradedQuoteVolume: session.strategyType !== 'dualAccountVolume',
+      includeTradedQuoteVolume:
+        session.strategyType !== 'dualAccountVolume' &&
+        session.strategyType !== 'dualAccountBestCapacityVolume',
     });
 
-    if (session.strategyType === 'dualAccountVolume') {
+    if (
+      session.strategyType === 'dualAccountVolume' ||
+      session.strategyType === 'dualAccountBestCapacityVolume'
+    ) {
       const persistedParams = (
         await this.strategyInstanceRepository.findOne({
           where: { strategyKey: session.strategyKey },
@@ -5033,7 +5353,10 @@ export class StrategyService
   private async restoreRuntimeStateForStrategy(
     strategy: StrategyInstance,
   ): Promise<void> {
-    if (strategy.strategyType === 'dualAccountVolume') {
+    if (
+      strategy.strategyType === 'dualAccountVolume' ||
+      strategy.strategyType === 'dualAccountBestCapacityVolume'
+    ) {
       await this.restoreDualAccountVolumeRuntimeState(strategy);
 
       return;
@@ -5195,7 +5518,8 @@ export class StrategyService
 
         if (
           session.strategyType === 'pureMarketMaking' ||
-          session.strategyType === 'dualAccountVolume'
+          session.strategyType === 'dualAccountVolume' ||
+          session.strategyType === 'dualAccountBestCapacityVolume'
         ) {
           await this.cancelTrackedOrdersForStrategy(session.strategyKey);
           await this.forceTrackedOrdersTerminal(session.strategyKey);
@@ -5857,6 +6181,102 @@ export class StrategyService
         : undefined;
 
     return candidate ? this.normalizeBehaviorProfile(candidate) : {};
+  }
+
+  private normalizeDualAccountStrategyParams(
+    params:
+      | ExecuteDualAccountVolumeStrategyDto
+      | ExecuteDualAccountBestCapacityVolumeStrategyDto,
+  ): DualAccountVolumeStrategyParams {
+    const makerAccountLabel = String(params.makerAccountLabel || '').trim();
+    const takerAccountLabel = String(params.takerAccountLabel || '').trim();
+
+    if (!makerAccountLabel || !takerAccountLabel) {
+      throw new Error(
+        'Dual account volume strategy requires makerAccountLabel and takerAccountLabel',
+      );
+    }
+
+    if (makerAccountLabel === takerAccountLabel) {
+      throw new Error(
+        'Dual account volume strategy requires different maker and taker account labels',
+      );
+    }
+
+    return {
+      exchangeName: String(params.exchangeName || '').trim(),
+      symbol: String(params.symbol || '').trim(),
+      baseIncrementPercentage: Number(params.baseIncrementPercentage || 0),
+      baseIntervalTime: Number(params.baseIntervalTime || 10),
+      baseTradeAmount: Number(params.baseTradeAmount || 0),
+      numTrades: Number(params.numTrades || 0),
+      userId: params.userId,
+      clientId: params.clientId,
+      pricePushRate: Number(params.pricePushRate || 0),
+      executionCategory: 'clob_cex',
+      executionVenue: 'cex',
+      postOnlySide: params.postOnlySide,
+      makerAccountLabel,
+      takerAccountLabel,
+      makerDelayMs: Number(params.makerDelayMs || 0),
+      tradeAmountVariance: this.readNonNegativeNumber(
+        params.tradeAmountVariance,
+      ),
+      priceOffsetVariance: this.readNonNegativeNumber(
+        params.priceOffsetVariance,
+      ),
+      cadenceVariance: this.readNonNegativeNumber(params.cadenceVariance),
+      makerDelayVariance: this.readNonNegativeNumber(params.makerDelayVariance),
+      buyBias: this.readUnitIntervalNumber(params.buyBias),
+      accountProfiles: params.accountProfiles,
+      dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
+      targetQuoteVolume:
+        params.targetQuoteVolume !== undefined
+          ? Number(params.targetQuoteVolume)
+          : undefined,
+      publishedCycles: 0,
+      completedCycles: 0,
+      orderBookReady: false,
+      consecutiveFallbackCycles: 0,
+      tradedQuoteVolume: 0,
+      realizedPnlQuote: 0,
+      inventoryBaseQty: 0,
+      inventoryCostQuote: 0,
+    };
+  }
+
+  private maybeWarnDualAccountBestCapacityIgnoredFields(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+  ): void {
+    if (
+      this.loggedDualAccountBestCapacityIgnoredConfigWarnings.has(strategyKey)
+    ) {
+      return;
+    }
+
+    const ignoredFields: string[] = [];
+
+    if (params.dynamicRoleSwitching) {
+      ignoredFields.push('dynamicRoleSwitching');
+    }
+    if (params.postOnlySide !== undefined) {
+      ignoredFields.push('postOnlySide');
+    }
+    if (params.buyBias !== undefined) {
+      ignoredFields.push('buyBias');
+    }
+
+    if (ignoredFields.length === 0) {
+      return;
+    }
+
+    this.loggedDualAccountBestCapacityIgnoredConfigWarnings.add(strategyKey);
+    this.logger.warn(
+      `Dual-account best-capacity strategy ${strategyKey}: ignoring config fields ${ignoredFields.join(
+        ', ',
+      )}`,
+    );
   }
 
   private normalizeBehaviorProfile(

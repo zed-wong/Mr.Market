@@ -9,6 +9,7 @@ describe('StrategyRuntimeDispatcherService', () => {
     startArbitrageStrategyForUser: jest.fn(),
     executePureMarketMakingStrategy: jest.fn(),
     executeDualAccountVolumeStrategy: jest.fn(),
+    executeDualAccountBestCapacityVolumeStrategy: jest.fn(),
     executeVolumeStrategy: jest.fn(),
     stopStrategyForUser: jest.fn(),
   } as unknown as StrategyService;
@@ -26,6 +27,9 @@ describe('StrategyRuntimeDispatcherService', () => {
     );
     expect(service.toStrategyType('dual_account_volume')).toBe(
       'dualAccountVolume',
+    );
+    expect(service.toStrategyType('dual_account_best_capacity_volume')).toBe(
+      'dualAccountBestCapacityVolume',
     );
     expect(service.toStrategyType('volume')).toBe('volume');
     expect(service.toStrategyType('time_indicator')).toBe('timeIndicator');
@@ -87,6 +91,33 @@ describe('StrategyRuntimeDispatcherService', () => {
 
     expect(
       strategyService.executeDualAccountVolumeStrategy,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeName: 'binance',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+      }),
+    );
+  });
+
+  it('dispatches dual-account best-capacity volume start', async () => {
+    await service.startByStrategyType('dualAccountBestCapacityVolume', {
+      exchangeName: 'binance',
+      symbol: 'BTC/USDT',
+      baseIncrementPercentage: 0.5,
+      baseIntervalTime: 12,
+      baseTradeAmount: 0.2,
+      numTrades: 5,
+      userId: 'u1',
+      clientId: 'c1',
+      pricePushRate: 0,
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      makerDelayMs: 250,
+    });
+
+    expect(
+      strategyService.executeDualAccountBestCapacityVolumeStrategy,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         exchangeName: 'binance',

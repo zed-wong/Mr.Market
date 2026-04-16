@@ -22,6 +22,7 @@ import { TickModule } from '../tick/tick.module';
 import { TrackersModule } from '../trackers/trackers.module';
 import type { StrategyController as StrategyRuntimeController } from './config/strategy-controller.types';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
+import { DualAccountBestCapacityVolumeStrategyController } from './controllers/dual-account-best-capacity-volume-strategy.controller';
 import { DualAccountVolumeStrategyController } from './controllers/dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
@@ -77,6 +78,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyMarketDataProviderService,
     ArbitrageStrategyController,
     PureMarketMakingStrategyController,
+    DualAccountBestCapacityVolumeStrategyController,
     DualAccountVolumeStrategyController,
     VolumeStrategyController,
     TimeIndicatorStrategyController,
@@ -85,12 +87,14 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
       useFactory: (
         arbitrage: ArbitrageStrategyController,
         pureMarketMaking: PureMarketMakingStrategyController,
+        dualAccountBestCapacityVolume: DualAccountBestCapacityVolumeStrategyController,
         dualAccountVolume: DualAccountVolumeStrategyController,
         volume: VolumeStrategyController,
         timeIndicator: TimeIndicatorStrategyController,
       ): StrategyRuntimeController[] => [
         arbitrage,
         pureMarketMaking,
+        dualAccountBestCapacityVolume,
         dualAccountVolume,
         volume,
         timeIndicator,
@@ -98,6 +102,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
       inject: [
         ArbitrageStrategyController,
         PureMarketMakingStrategyController,
+        DualAccountBestCapacityVolumeStrategyController,
         DualAccountVolumeStrategyController,
         VolumeStrategyController,
         TimeIndicatorStrategyController,

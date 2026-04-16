@@ -3,6 +3,7 @@ import { IsDecimal, IsEnum, IsOptional, IsUUID } from 'class-validator';
 
 import {
   ArbitrageStrategyDto,
+  ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ExecuteDualAccountVolumeStrategyDto,
   ExecuteVolumeStrategyDto,
   PureMarketMakingStrategyDto,
@@ -19,7 +20,12 @@ export class StartStrategyDto {
     description: 'Type of strategy to start',
     example: 'arbitrage',
   })
-  strategyType: 'arbitrage' | 'marketMaking' | 'volume' | 'dualAccountVolume';
+  strategyType:
+    | 'arbitrage'
+    | 'marketMaking'
+    | 'volume'
+    | 'dualAccountVolume'
+    | 'dualAccountBestCapacityVolume';
 
   @ApiPropertyOptional({
     description: 'Parameters for arbitrage strategy (required for arbitrage)',
@@ -46,6 +52,13 @@ export class StartStrategyDto {
     type: ExecuteDualAccountVolumeStrategyDto,
   })
   dualAccountVolumeParams?: ExecuteDualAccountVolumeStrategyDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Parameters for dual-account best-capacity volume strategy (required for dualAccountBestCapacityVolume)',
+    type: ExecuteDualAccountBestCapacityVolumeStrategyDto,
+  })
+  dualAccountBestCapacityVolumeParams?: ExecuteDualAccountBestCapacityVolumeStrategyDto;
 
   @ApiPropertyOptional({
     description: 'Check interval in seconds (arbitrage-specific)',
@@ -78,7 +91,12 @@ export class StopStrategyDto {
     description: 'Type of strategy to stop',
     example: 'arbitrage',
   })
-  strategyType: 'arbitrage' | 'marketMaking' | 'volume' | 'dualAccountVolume';
+  strategyType:
+    | 'arbitrage'
+    | 'marketMaking'
+    | 'volume'
+    | 'dualAccountVolume'
+    | 'dualAccountBestCapacityVolume';
 }
 
 export class GetDepositAddressDto {

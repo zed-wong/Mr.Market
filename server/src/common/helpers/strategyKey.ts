@@ -3,6 +3,7 @@ export interface StrategyKey {
     | 'arbitrage'
     | 'pureMarketMaking'
     | 'dualAccountVolume'
+    | 'dualAccountBestCapacityVolume'
     | 'volume'
     | 'timeIndicator'
     | 'alpaca-arbitrage'

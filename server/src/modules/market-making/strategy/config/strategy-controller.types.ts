@@ -7,6 +7,7 @@ export type StrategyType =
   | 'arbitrage'
   | 'pureMarketMaking'
   | 'dualAccountVolume'
+  | 'dualAccountBestCapacityVolume'
   | 'volume'
   | 'timeIndicator';
 

@@ -20,7 +20,8 @@ type PauseWithdrawCommand = {
     | 'arbitrage'
     | 'pureMarketMaking'
     | 'volume'
-    | 'dualAccountVolume';
+    | 'dualAccountVolume'
+    | 'dualAccountBestCapacityVolume';
   assetId: string;
   amount: string;
   destination: string;

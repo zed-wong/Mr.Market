@@ -55,6 +55,7 @@ export class AdminStrategyService {
       marketMakingParams,
       volumeParams,
       dualAccountVolumeParams,
+      dualAccountBestCapacityVolumeParams,
     } = startStrategyDto;
 
     const definitionControllerType =
@@ -70,6 +71,8 @@ export class AdminStrategyService {
         ? marketMakingParams
         : strategyType === 'dualAccountVolume'
         ? dualAccountVolumeParams
+        : strategyType === 'dualAccountBestCapacityVolume'
+        ? dualAccountBestCapacityVolumeParams
         : volumeParams;
 
     if (legacyConfig?.userId && legacyConfig?.clientId) {
@@ -127,6 +130,19 @@ export class AdminStrategyService {
       await this.strategyRuntimeDispatcher.startByStrategyType(
         'dualAccountVolume',
         dualAccountVolumeParams as unknown as Record<string, unknown>,
+      );
+
+      return;
+    } else if (
+      strategyType === 'dualAccountBestCapacityVolume' &&
+      dualAccountBestCapacityVolumeParams
+    ) {
+      await this.strategyRuntimeDispatcher.startByStrategyType(
+        'dualAccountBestCapacityVolume',
+        dualAccountBestCapacityVolumeParams as unknown as Record<
+          string,
+          unknown
+        >,
       );
 
       return;

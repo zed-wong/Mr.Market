@@ -645,6 +645,8 @@ export class ExecuteDualAccountVolumeStrategyDto {
   clientId: string;
 }
 
+export class ExecuteDualAccountBestCapacityVolumeStrategyDto extends ExecuteDualAccountVolumeStrategyDto {}
+
 export class StopVolumeStrategyDto {
   @ApiProperty({ description: 'User ID' })
   userId: string;

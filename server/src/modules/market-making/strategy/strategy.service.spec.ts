@@ -133,6 +133,7 @@ describe('StrategyService', () => {
     strategyKey: string;
     strategyType:
       | 'pureMarketMaking'
+      | 'dualAccountBestCapacityVolume'
       | 'dualAccountVolume'
       | 'volume'
       | 'timeIndicator';
@@ -2136,6 +2137,104 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
+  });
+
+  it('builds best-capacity dual-account actions using the highest executable candidate', async () => {
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 5, USDT: 500 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 1, USDT: 5000 },
+      });
+
+    const actions = await service.buildDualAccountBestCapacityVolumeActions(
+      'dual-best-key',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        accountLabel: 'maker',
+        metadata: expect.objectContaining({
+          selectionModel: 'best_capacity',
+          candidateRank: 1,
+          selectedMakerAccountLabel: 'maker',
+          selectedTakerAccountLabel: 'taker',
+        }),
+      }),
+    ]);
+  });
+
+  it('skips the top best-capacity candidate when it fails active-hours and picks the next candidate', async () => {
+    const dateNowSpy = jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(new Date('2026-03-11T01:00:00.000Z').getTime());
+    exchangeConnectorAdapterService.fetchBalance
+      .mockResolvedValueOnce({
+        free: { BTC: 5, USDT: 500 },
+      })
+      .mockResolvedValueOnce({
+        free: { BTC: 1, USDT: 5000 },
+      });
+
+    const actions = await service.buildDualAccountBestCapacityVolumeActions(
+      'dual-best-hours',
+      {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 2,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        accountProfiles: {
+          maker: { activeHours: [5] },
+          taker: {},
+        },
+        publishedCycles: 0,
+        completedCycles: 0,
+      } as any,
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions[0]).toEqual(
+      expect.objectContaining({
+        accountLabel: 'taker',
+        metadata: expect.objectContaining({
+          selectedMakerAccountLabel: 'taker',
+          selectedTakerAccountLabel: 'maker',
+          candidateRank: 2,
+        }),
+      }),
+    );
+    dateNowSpy.mockRestore();
   });
 
   it('falls back to the opposite side when the preferred side is not tradable', async () => {
