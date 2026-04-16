@@ -2,6 +2,7 @@
 
 ## 2026-04-16
 
+- Rewrite `docs/planning/2026-04-13-hyperliquid-pancakeswap-volume-strategy.md` from a loose validation checklist into an execution-ready implementation + validation plan: add explicit phases, hard gates, file ownership, test matrix, operator runbook outputs, Hyperliquid `key_id` account-identity alignment, and a measured decision point for whether per-exchange queue serialization is acceptable
 - Lock `dualAccountVolume.tradedQuoteVolume` to the single-leg progress definition: preserve the execution-layer taker-fill quote counter during dual-account fill/PnL persistence, add regression coverage so user-stream fills cannot overwrite it with gross fill notional, and document that `targetQuoteVolume` stops against taker-leg quote progress rather than doubled turnover
 
 ## 2026-04-14

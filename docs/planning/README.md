@@ -33,7 +33,7 @@ Use dated files, but keep the document role clear.
 - **`2026-04-08-intent-worker-rate-limiting-improvements.md`**
   Role: active implementation plan for the current intent-worker rate-limit follow-up
 - **`2026-04-13-hyperliquid-pancakeswap-volume-strategy.md`**
-  Role: active validation checklist for Hyperliquid dual-account volume and PancakeSwap live AMM volume runs
+  Role: active implementation + validation plan for Hyperliquid dual-account volume and PancakeSwap live AMM volume runs
 - **`2026-04-14-hummingbot-like-user-stream-plan.md`**
   Role: active implementation record for the 2026-04-14 user-stream migration and runtime follow-up work
 - **`todo.md`**
