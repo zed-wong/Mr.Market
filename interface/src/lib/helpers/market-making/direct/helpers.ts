@@ -334,6 +334,34 @@ export function resolveInventorySkewAllocation(
   };
 }
 
+export function aggregateBalancesByAsset(
+  balances: InventoryBalanceSummary[],
+): InventoryBalanceSummary[] {
+  const map = new Map<string, { free: BigNumber; used: BigNumber; total: BigNumber }>();
+  for (const b of balances) {
+    const key = String(b.asset || "").trim().toUpperCase();
+    if (!key) continue;
+    const existing = map.get(key);
+    if (existing) {
+      existing.free = existing.free.plus(readNonNegativeBigNumber(b.free));
+      existing.used = existing.used.plus(readNonNegativeBigNumber(b.used));
+      existing.total = existing.total.plus(readNonNegativeBigNumber(b.total));
+    } else {
+      map.set(key, {
+        free: readNonNegativeBigNumber(b.free),
+        used: readNonNegativeBigNumber(b.used),
+        total: readNonNegativeBigNumber(b.total),
+      });
+    }
+  }
+  return Array.from(map.entries()).map(([key, v]) => ({
+    asset: key,
+    free: v.free.toString(),
+    used: v.used.toString(),
+    total: v.total.toString(),
+  }));
+}
+
 export function normalizeConfigOverrides(
   controllerType: string,
   configRows: { key: string; value: string }[],

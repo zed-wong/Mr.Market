@@ -9,6 +9,7 @@
     import {
         formatTimestamp,
         resolveInventorySkewAllocation,
+        aggregateBalancesByAsset,
     } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
@@ -88,9 +89,7 @@
         (data?.controllerType || order?.controllerType) === "dualAccountVolume";
     $: skewBalances = data
         ? isDualAccountStrategy
-            ? data.inventoryBalances.filter(
-                  (b) => !b.accountLabel || b.accountLabel === "maker",
-              )
+            ? aggregateBalancesByAsset(data.inventoryBalances)
             : data.inventoryBalances
         : [];
     $: inventorySkew =
@@ -990,7 +989,7 @@
                             </div>
                         {/if}
 
-                        <!-- Inventory Skew Bar (maker balances for dual, all for single) -->
+                        <!-- Inventory Skew Bar (aggregated balances for dual, all for single) -->
                         {#if inventorySkew !== null}
                             <div class="mt-3">
                                 <div

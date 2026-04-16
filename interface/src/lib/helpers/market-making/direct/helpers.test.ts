@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  aggregateBalancesByAsset,
   formatOrderAmountForDisplay,
   normalizeConfigOverrides,
   readPositiveOrderAmount,
@@ -154,6 +155,23 @@ describe('resolveInventorySkewAllocation', () => {
       quoteAsset: 'USDT',
       basePercent: 66,
       quotePercent: 34,
+    });
+  });
+
+  it('aggregates maker and taker balances for skew', () => {
+    const aggregated = aggregateBalancesByAsset([
+      { asset: 'BTC', free: '0.5', used: '0.1', total: '0.6', accountLabel: 'maker' },
+      { asset: 'USDT', free: '1000', used: '200', total: '1200', accountLabel: 'maker' },
+      { asset: 'BTC', free: '0.3', used: '0.05', total: '0.35', accountLabel: 'taker' },
+      { asset: 'USDT', free: '500', used: '100', total: '600', accountLabel: 'taker' },
+    ]);
+    expect(
+      resolveInventorySkewAllocation(aggregated, 'BTC/USDT', '50000', '50000'),
+    ).toEqual({
+      baseAsset: 'BTC',
+      quoteAsset: 'USDT',
+      basePercent: 96,
+      quotePercent: 4,
     });
   });
 
