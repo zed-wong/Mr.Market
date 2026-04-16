@@ -135,16 +135,12 @@
                                     )}</span
                                 >
                             </span>
-                            <span class="text-xs text-base-content/50">
-                                {$_("admin_direct_mm_api_key")}:
-                                <span
-                                    >{String(
-                                        campaign.apiKeyName ||
-                                            campaign.apiKeyId ||
-                                            "Deleted",
-                                    )}</span
-                                >
-                            </span>
+                            {#if campaign.apiKeyName || campaign.apiKeyId}
+                                <span class="text-xs text-base-content/50">
+                                    {$_("admin_direct_mm_api_key")}:
+                                    <span>{String(campaign.apiKeyName || campaign.apiKeyId)}</span>
+                                </span>
+                            {/if}
                         </div>
                         <span
                             class="badge badge-success badge-outline border capitalize font-bold text-xs px-2 py-0.5 rounded-md"

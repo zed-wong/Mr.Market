@@ -176,14 +176,10 @@ export class CampaignService {
   }
 
   async getJoinedCampaignKeys(accessToken: string): Promise<Set<string>> {
-    const { data } = await this.hufiRecordingOracleAPI.get<{
-      results: Array<Record<string, unknown>>;
-    }>('/campaigns', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const allResults = await this.fetchAllJoinedCampaigns(accessToken);
 
     return new Set(
-      (data.results ?? []).map(
+      allResults.map(
         (c) =>
           `${c.chain_id ?? ''}:${String(
             c.escrow_address ?? c.address ?? '',
@@ -199,13 +195,9 @@ export class CampaignService {
       exchangeName: string | null;
     }>
   > {
-    const { data } = await this.hufiRecordingOracleAPI.get<{
-      results: Array<Record<string, unknown>>;
-    }>('/campaigns', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const allResults = await this.fetchAllJoinedCampaigns(accessToken);
 
-    return (data.results ?? []).map((campaign) => ({
+    return allResults.map((campaign) => ({
       chainId: Number(campaign.chain_id ?? 0),
       campaignAddress: String(
         campaign.escrow_address ?? campaign.address ?? '',
@@ -214,6 +206,39 @@ export class CampaignService {
         ? String(campaign.exchange_name).toLowerCase()
         : null,
     }));
+  }
+
+  private async fetchAllJoinedCampaigns(
+    accessToken: string,
+  ): Promise<Array<Record<string, unknown>>> {
+    const limit = 50;
+    const allResults: Array<Record<string, unknown>> = [];
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const params: Record<string, number> = { limit };
+
+      if (allResults.length > 0) {
+        params.skip = allResults.length;
+      }
+
+      const { data } = await this.hufiRecordingOracleAPI.get<{
+        has_more: boolean;
+        results: Array<Record<string, unknown>>;
+      }>('/campaigns', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params,
+      });
+
+      const results = data.results ?? [];
+      allResults.push(...results);
+
+      if (!data.has_more || results.length < limit) {
+        break;
+      }
+    }
+
+    return allResults;
   }
 
   /**
