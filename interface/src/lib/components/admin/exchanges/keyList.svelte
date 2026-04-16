@@ -14,7 +14,7 @@
 
     // Pagination
     let currentPage = 1;
-    const itemsPerPage = 4;
+    const itemsPerPage = 10;
     $: totalPages = Math.ceil(keys.length / itemsPerPage);
     $: if (currentPage > totalPages) {
         currentPage = Math.max(1, totalPages);
@@ -23,6 +23,10 @@
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage,
     );
+
+    function goToPage(page: number) {
+        currentPage = page;
+    }
 </script>
 
 <div class="overflow-x-auto">
@@ -83,29 +87,27 @@
         <button
             class="join-item btn btn-sm"
             disabled={currentPage === 1}
-            on:click={() => (currentPage = Math.max(1, currentPage - 1))}
+            on:click={() => goToPage(currentPage - 1)}
         >
             «
         </button>
-        {#each Array(totalPages) as _, i}
-            {#if totalPages <= 5 || i === 0 || i === totalPages - 1 || Math.abs(i + 1 - currentPage) <= 1}
+        {#each Array.from({ length: totalPages }, (_, i) => i + 1) as pageNum (pageNum)}
+            {#if totalPages <= 5 || pageNum === 1 || pageNum === totalPages || Math.abs(pageNum - currentPage) <= 1}
                 <button
-                    class="join-item btn btn-sm {currentPage === i + 1
-                        ? 'btn-active'
-                        : ''}"
-                    on:click={() => (currentPage = i + 1)}
+                    class="join-item btn btn-sm"
+                    class:btn-active={currentPage === pageNum}
+                    on:click={() => goToPage(pageNum)}
                 >
-                    {i + 1}
+                    {pageNum}
                 </button>
-            {:else if Math.abs(i + 1 - currentPage) === 2}
+            {:else if Math.abs(pageNum - currentPage) === 2}
                 <button class="join-item btn btn-sm btn-disabled">...</button>
             {/if}
         {/each}
         <button
             class="join-item btn btn-sm"
             disabled={totalPages === 0 || currentPage === totalPages}
-            on:click={() =>
-                (currentPage = Math.min(totalPages, currentPage + 1))}
+            on:click={() => goToPage(currentPage + 1)}
         >
             »
         </button>

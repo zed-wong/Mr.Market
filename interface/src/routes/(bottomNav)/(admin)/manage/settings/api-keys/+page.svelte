@@ -1,12 +1,10 @@
 <script lang="ts">
     import clsx from "clsx";
     import { _ } from "svelte-i18n";
-    import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
     import { invalidate } from "$app/navigation";
     import { page } from "$app/stores";
     import {
-        getAllAPIKeys,
         removeAPIKey,
     } from "$lib/helpers/mrm/admin/exchanges";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
@@ -15,33 +13,6 @@
 
     let keys: AdminSingleKey[] = [];
     $: keys = $page.data.apiKeys || [];
-    let searchQuery = "";
-    let statusFilter = "all";
-    let filteredKeys: AdminSingleKey[] = [];
-
-    $: normalizedSearchQuery = searchQuery.trim().toLowerCase();
-    $: filteredKeys = keys.filter((key) => {
-        const matchesSearch =
-            !normalizedSearchQuery ||
-            [
-                key.name,
-                key.exchange,
-                key.key_id,
-                key.api_key,
-            ]
-                .filter(Boolean)
-                .some((value) =>
-                    value.toLowerCase().includes(normalizedSearchQuery),
-                );
-
-        const normalizedState = (key.state || "").toLowerCase();
-        const matchesStatus =
-            statusFilter === "all" ||
-            (statusFilter === "active" && normalizedState === "alive") ||
-            (statusFilter === "inactive" && normalizedState !== "alive");
-
-        return matchesSearch && matchesStatus;
-    });
 
     let isRefreshing = false;
 
@@ -190,54 +161,10 @@
             <p class="text-lg font-medium">{$_("no_api_keys_found")}</p>
         </div>
     {:else}
-        <!-- Search and Filter Bar -->
-        <div
-            class="flex flex-col md:flex-row gap-4 items-start md:items-center"
-        >
-            <div class="relative flex-1 max-w-md">
-                <div
-                    class="absolute inset-y-0 left-3 flex items-center pointer-events-none"
-                >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke-width="1.5"
-                        stroke="currentColor"
-                        class="w-5 h-5 text-base-content/40"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-                        />
-                    </svg>
-                </div>
-                <input
-                    type="text"
-                    placeholder="Search keys..."
-                    class="input input-bordered w-full pl-10"
-                    bind:value={searchQuery}
-                />
-            </div>
-
-            <div class="flex items-center gap-2">
-                <span class="text-sm text-base-content/60">STATUS:</span>
-                <select
-                    class="select select-bordered select-sm"
-                    bind:value={statusFilter}
-                >
-                    <option value="all">All</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                </select>
-            </div>
-        </div>
-
         <div
             class="card bg-base-100 shadow-sm border border-base-200 overflow-hidden"
         >
-            <KeyList keys={filteredKeys} on:delete={HandleDelete} />
+            <KeyList {keys} on:delete={HandleDelete} />
         </div>
     {/if}
 </div>
