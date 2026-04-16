@@ -289,7 +289,10 @@ describe('StrategyIntentExecutionService', () => {
     expect(strategyInstanceRepository.update).toHaveBeenCalledWith(
       { strategyKey: 'u1-c1-pureMarketMaking' },
       expect.objectContaining({
-        parameters: expect.objectContaining({ completedCycles: 1 }),
+        parameters: expect.objectContaining({
+          completedCycles: 1,
+          tradedQuoteVolume: '100',
+        }),
       }),
     );
   });

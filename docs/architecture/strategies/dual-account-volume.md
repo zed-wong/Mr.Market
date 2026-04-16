@@ -18,7 +18,7 @@ Admin directStart
 Stop conditions:
 
 - `completedCycles >= numTrades`
-- `tradedQuoteVolume >= targetQuoteVolume` (when targetQuoteVolume > 0)
+- `tradedQuoteVolume >= targetQuoteVolume` (when targetQuoteVolume > 0; `tradedQuoteVolume` is actual taker-leg filled quote progress, not gross two-leg turnover)
 
 ## Per-Tick Cycle
 
@@ -114,7 +114,7 @@ Key properties:
 | `baseTradeAmount`      | number                    | Base quantity per cycle                                    |
 | `baseIntervalTime`     | number                    | Seconds between cycles                                     |
 | `numTrades`            | number                    | Completed cycles before auto-stop                          |
-| `targetQuoteVolume`    | number                    | Cumulative quote volume auto-stop threshold (0 = disabled) |
+| `targetQuoteVolume`    | number                    | Taker-leg cumulative quote progress auto-stop threshold (0 = disabled) |
 | `postOnlySide`         | `'buy' \| 'sell' \| null` | Fixed maker side, null for auto                            |
 | `buyBias`              | number (0-1)              | Probability of buy when side is auto                       |
 | `makerDelayMs`         | number                    | Delay between maker fill and taker IOC                     |
@@ -152,6 +152,7 @@ Key properties:
 
 - A cycle is complete only when both maker and taker legs succeed
 - `completedCycles` increments only on successful taker fill
+- `tradedQuoteVolume` accumulates only actual taker-leg filled quote, never doubled maker+taker turnover
 - `publishedCycles` increments only for non-rebalance ticks
 - Rebalance orders are single-leg IOC, never paired
 - Maker orders are always `postOnly=true`

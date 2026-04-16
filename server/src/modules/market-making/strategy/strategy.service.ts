@@ -4505,12 +4505,26 @@ export class StrategyService
     }
 
     await this.applyFillToBalanceLedger(session, fill);
-    this.recordSessionPnL(session, fill);
+    this.recordSessionPnL(session, fill, {
+      includeTradedQuoteVolume: session.strategyType !== 'dualAccountVolume',
+    });
 
     if (session.strategyType === 'dualAccountVolume') {
+      const persistedParams = (
+        await this.strategyInstanceRepository.findOne({
+          where: { strategyKey: session.strategyKey },
+        })
+      )?.parameters as Partial<DualAccountVolumeStrategyParams> | undefined;
+      const nextParams = this.mergeDualAccountFillRuntimeIntoPersisted(
+        session.params as DualAccountVolumeStrategyParams,
+        persistedParams,
+      );
+
+      session.params = nextParams;
+      session.tradedQuoteVolume = Number(nextParams.tradedQuoteVolume || 0);
       await this.persistStrategyParams(
         session.strategyKey,
-        session.params as DualAccountVolumeStrategyParams,
+        nextParams,
       );
       session.nextRunAtMs = Math.min(session.nextRunAtMs, Date.now());
 
@@ -5343,6 +5357,9 @@ export class StrategyService
       price?: string;
       qty?: string;
     },
+    options?: {
+      includeTradedQuoteVolume?: boolean;
+    },
   ): void {
     if (!fill.side || !fill.price || !fill.qty) {
       return;
@@ -5363,6 +5380,8 @@ export class StrategyService
     const currentInventoryQty = new BigNumber(session.inventoryBaseQty || 0);
     const currentInventoryCost = new BigNumber(session.inventoryCostQuote || 0);
     const currentRealizedPnl = new BigNumber(session.realizedPnlQuote || 0);
+    const includeTradedQuoteVolume =
+      options?.includeTradedQuoteVolume ?? true;
     const currentTradedVolume = new BigNumber(session.tradedQuoteVolume || 0);
     const fillNotional = price.multipliedBy(qty);
 
@@ -5395,16 +5414,49 @@ export class StrategyService
     session.inventoryBaseQty = nextInventoryQty.toNumber();
     session.inventoryCostQuote = nextInventoryCost.toNumber();
     session.realizedPnlQuote = nextRealizedPnl.toNumber();
-    session.tradedQuoteVolume = currentTradedVolume
-      .plus(fillNotional)
-      .toNumber();
+    if (includeTradedQuoteVolume) {
+      session.tradedQuoteVolume = currentTradedVolume
+        .plus(fillNotional)
+        .toNumber();
+    }
     session.params = {
       ...session.params,
       inventoryBaseQty: session.inventoryBaseQty,
       inventoryCostQuote: session.inventoryCostQuote,
       realizedPnlQuote: session.realizedPnlQuote,
-      tradedQuoteVolume: session.tradedQuoteVolume,
+      ...(includeTradedQuoteVolume
+        ? {
+            tradedQuoteVolume: session.tradedQuoteVolume,
+          }
+        : {}),
     };
+  }
+
+  private mergeDualAccountFillRuntimeIntoPersisted(
+    runtime: DualAccountVolumeStrategyParams,
+    persisted?: Partial<DualAccountVolumeStrategyParams>,
+  ): DualAccountVolumeStrategyParams {
+    if (!persisted) {
+      return runtime;
+    }
+
+    const next: DualAccountVolumeStrategyParams = {
+      ...runtime,
+    };
+
+    if (Number.isFinite(Number(persisted.publishedCycles))) {
+      next.publishedCycles = Number(persisted.publishedCycles);
+    }
+
+    if (Number.isFinite(Number(persisted.completedCycles))) {
+      next.completedCycles = Number(persisted.completedCycles);
+    }
+
+    if (Number.isFinite(Number(persisted.tradedQuoteVolume))) {
+      next.tradedQuoteVolume = Number(persisted.tradedQuoteVolume);
+    }
+
+    return next;
   }
 
   private async isOrderOwnedByStrategy(

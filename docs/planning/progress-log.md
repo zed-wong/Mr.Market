@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-04-16
+
+- Lock `dualAccountVolume.tradedQuoteVolume` to the single-leg progress definition: preserve the execution-layer taker-fill quote counter during dual-account fill/PnL persistence, add regression coverage so user-stream fills cannot overwrite it with gross fill notional, and document that `targetQuoteVolume` stops against taker-leg quote progress rather than doubled turnover
+
 ## 2026-04-14
 
 - Archive superseded planning docs (`2026-04-13-dual-account-volume-runtime-follow-up-checklist.md`, `2026-04-13-composable-strategy-architecture.md`, `2026-04-14-user-stream-dual-account-todo.md`) and refresh `docs/planning/README.md`, `todo.md`, and the active user-stream plan so the planning index matches current work

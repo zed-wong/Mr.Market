@@ -686,6 +686,104 @@ describe('StrategyService', () => {
     expect(executor?.getSession('client1')?.nextRunAtMs).toBe(nowMs);
   });
 
+  it('preserves persisted dual-account single-leg progress when fills update pnl state', async () => {
+    await registerPooledSession({
+      strategyKey: 'user1-client1-dualAccountVolume',
+      strategyType: 'dualAccountVolume',
+      userId: 'user1',
+      clientId: 'client1',
+      cadenceMs: 1000,
+      nextRunAtMs: 10_000,
+      params: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 5,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 0,
+        completedCycles: 0,
+        tradedQuoteVolume: 0,
+        realizedPnlQuote: 0,
+        inventoryBaseQty: 0,
+        inventoryCostQuote: 0,
+      },
+    });
+
+    mockStrategyInstanceRepository.findOne.mockResolvedValue({
+      strategyKey: 'user1-client1-dualAccountVolume',
+      parameters: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseIncrementPercentage: 0.1,
+        baseIntervalTime: 10,
+        baseTradeAmount: 1,
+        numTrades: 5,
+        userId: 'user1',
+        clientId: 'client1',
+        pricePushRate: 0,
+        executionCategory: 'clob_cex',
+        executionVenue: 'cex',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+        makerDelayMs: 250,
+        dynamicRoleSwitching: false,
+        publishedCycles: 3,
+        completedCycles: 2,
+        tradedQuoteVolume: 420,
+        realizedPnlQuote: 0,
+        inventoryBaseQty: 0,
+        inventoryCostQuote: 0,
+      },
+    });
+
+    await service.routeFillForExchangePair('binance', 'BTC/USDT', {
+      orderId: 'client1',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'client1:0',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      receivedAt: '2026-04-16T00:00:00.000Z',
+    });
+
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: 'user1-client1-dualAccountVolume' },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          publishedCycles: 3,
+          completedCycles: 2,
+          tradedQuoteVolume: 420,
+          inventoryBaseQty: 1,
+          inventoryCostQuote: 100,
+          realizedPnlQuote: 0,
+        }),
+      }),
+    );
+
+    const executor = executorRegistry.getExecutor('binance', 'BTC/USDT');
+
+    expect(executor?.getSession('client1')).toEqual(
+      expect.objectContaining({
+        tradedQuoteVolume: 420,
+        params: expect.objectContaining({
+          tradedQuoteVolume: 420,
+          inventoryBaseQty: 1,
+          inventoryCostQuote: 100,
+        }),
+      }),
+    );
+  });
+
   it('publishes intents for a pure market making cycle', async () => {
     const strategyParamsDto: PureMarketMakingStrategyDto = {
       userId: '1',
