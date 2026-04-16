@@ -137,6 +137,65 @@ describe('ExchangeinitService', () => {
     ]);
   });
 
+  it('maps hyperliquid api_key to walletAddress during DB-backed config build', () => {
+    const exchangeConfigs = (service as any).buildExchangeConfigsFromDb([
+      {
+        key_id: '77',
+        exchange: 'hyperliquid',
+        name: 'hl-77',
+        api_key: '0xabc123',
+        api_secret: 'secret',
+      },
+    ]);
+
+    expect(exchangeConfigs).toEqual([
+      expect.objectContaining({
+        name: 'hyperliquid',
+        accounts: [
+          expect.objectContaining({
+            label: '77',
+            apiKey: '0xabc123',
+            secret: 'secret',
+            walletAddress: '0xabc123',
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it('passes walletAddress to exchange initialization when configured', async () => {
+    class HyperliquidExchange {
+      has = {};
+      constructor(public readonly options: Record<string, unknown>) {}
+      async loadMarkets() {}
+    }
+
+    const exchange = await (service as any).initializeAccountWithRetry(
+      {
+        name: 'hyperliquid',
+        class: HyperliquidExchange,
+      },
+      {
+        label: 'hl-1',
+        apiKey: '0xwallet',
+        secret: 'private-key',
+        walletAddress: '0xwallet',
+      },
+    );
+
+    expect(exchange).toBeInstanceOf(HyperliquidExchange);
+    expect((exchange as any).options).toEqual(
+      expect.objectContaining({
+        apiKey: '0xwallet',
+        secret: 'private-key',
+        walletAddress: '0xwallet',
+        options: expect.objectContaining({
+          walletAddress: '0xwallet',
+        }),
+      }),
+    );
+  });
+
   it('refreshes exchanges when API keys change', async () => {
     await Promise.resolve();
     expect(initializeExchangeConfigsSpy).toHaveBeenCalledTimes(1);

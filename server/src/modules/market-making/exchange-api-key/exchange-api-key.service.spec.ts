@@ -193,4 +193,23 @@ describe('ExchangeApiKeyService', () => {
       }),
     );
   });
+
+  it('builds hyperliquid exchange client options with walletAddress', () => {
+    const { service } = makeService();
+
+    expect(
+      (service as any).buildExchangeClientOptions({
+        exchange: 'hyperliquid',
+        api_key: '0xwallet',
+        api_secret: 'private-key',
+      }),
+    ).toEqual({
+      apiKey: '0xwallet',
+      secret: 'private-key',
+      walletAddress: '0xwallet',
+      options: {
+        walletAddress: '0xwallet',
+      },
+    });
+  });
 });

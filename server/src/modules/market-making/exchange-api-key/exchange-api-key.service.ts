@@ -723,10 +723,31 @@ export class ExchangeApiKeyService {
       return;
     }
 
-    this.exchangeInstances[keyId] = new exchangeClass({
+    this.exchangeInstances[keyId] = new exchangeClass(
+      this.buildExchangeClientOptions(key),
+    );
+  }
+
+  private buildExchangeClientOptions(
+    key: Pick<APIKeysConfig, 'exchange' | 'api_key' | 'api_secret'>,
+  ): Record<string, unknown> {
+    const options: Record<string, unknown> = {
       apiKey: key.api_key,
       secret: key.api_secret,
-    });
+    };
+
+    if (key.exchange === 'hyperliquid') {
+      const walletAddress = String(key.api_key || '').trim();
+
+      if (walletAddress) {
+        options.walletAddress = walletAddress;
+        options.options = {
+          walletAddress,
+        };
+      }
+    }
+
+    return options;
   }
 
   private async validateApiKeyInBackground(keyId: string): Promise<void> {
@@ -751,10 +772,7 @@ export class ExchangeApiKeyService {
 
       const exchangeInstance =
         this.exchangeInstances[keyId] ||
-        new exchangeClass({
-          apiKey: key.api_key,
-          secret: key.api_secret,
-        });
+        new exchangeClass(this.buildExchangeClientOptions(key));
 
       this.exchangeInstances[keyId] = exchangeInstance;
 

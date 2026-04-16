@@ -44,4 +44,59 @@ describe('ExchangeConnectorAdapterService rate-limit behavior', () => {
 
     expect(exchange.fetchOrderBook).toHaveBeenCalledTimes(2);
   });
+
+  it('keeps rate-limit queues isolated per account on the same exchange', async () => {
+    const exchange = {
+      createOrder: jest.fn().mockResolvedValue({ id: 'ok' }),
+    };
+    const exchangeInitService = {
+      getExchange: jest.fn().mockReturnValue(exchange),
+    };
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(25),
+    );
+
+    let makerResolvedAt = 0;
+    let takerResolvedAt = 0;
+
+    exchange.createOrder
+      .mockImplementationOnce(async () => {
+        makerResolvedAt = Date.now();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        return { id: 'maker' };
+      })
+      .mockImplementationOnce(async () => {
+        takerResolvedAt = Date.now();
+
+        return { id: 'taker' };
+      });
+
+    await Promise.all([
+      service.placeLimitOrder(
+        'hyperliquid',
+        'BTC/USDT',
+        'buy',
+        '1',
+        '100',
+        'maker-order',
+        undefined,
+        'maker',
+      ),
+      service.placeLimitOrder(
+        'hyperliquid',
+        'BTC/USDT',
+        'sell',
+        '1',
+        '101',
+        'taker-order',
+        { timeInForce: 'IOC' },
+        'taker',
+      ),
+    ]);
+
+    expect(exchange.createOrder).toHaveBeenCalledTimes(2);
+    expect(Math.abs(takerResolvedAt - makerResolvedAt)).toBeLessThan(25);
+  });
 });

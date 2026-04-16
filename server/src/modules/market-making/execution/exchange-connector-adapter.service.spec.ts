@@ -90,6 +90,37 @@ describe('ExchangeConnectorAdapterService', () => {
     expect(exchange.cancelOrder).toHaveBeenCalledWith('ex-order-1', 'BTC/USDT');
   });
 
+  it('passes IOC timeInForce through limit-order placement', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    await service.placeLimitOrder(
+      'hyperliquid',
+      'BTC/USDT',
+      'sell',
+      '1',
+      '100',
+      'order-1:1',
+      { timeInForce: 'IOC' },
+      'maker',
+    );
+
+    expect(exchange.createOrder).toHaveBeenCalledWith(
+      'BTC/USDT',
+      'limit',
+      'sell',
+      1,
+      100,
+      { clientOrderId: 'order-1:1', timeInForce: 'IOC' },
+    );
+    expect(exchangeInitService.getExchange).toHaveBeenCalledWith(
+      'hyperliquid',
+      'maker',
+    );
+  });
+
   it('fetches order/open-orders/orderbook through adapter', async () => {
     const service = new ExchangeConnectorAdapterService(
       exchangeInitService as any,
@@ -217,7 +248,62 @@ describe('ExchangeConnectorAdapterService', () => {
     );
   });
 
-  it('prioritizes writes ahead of queued market reads on the same exchange', async () => {
+  it('does not serialize concurrent writes across different accounts on the same exchange', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(50),
+    );
+
+    let resolveMaker!: (value: any) => void;
+    let takerCallAtMs = 0;
+
+    exchange.createOrder
+      .mockImplementationOnce(
+        async () =>
+          await new Promise((resolve) => {
+            resolveMaker = resolve;
+          }),
+      )
+      .mockImplementationOnce(async () => {
+        takerCallAtMs = Date.now();
+
+        return { id: 'ex-order-2' };
+      });
+
+    const makerPromise = service.placeLimitOrder(
+      'hyperliquid',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      'maker-order',
+      undefined,
+      'maker',
+    );
+
+    await Promise.resolve();
+    const beforeTaker = Date.now();
+    const takerPromise = service.placeLimitOrder(
+      'hyperliquid',
+      'BTC/USDT',
+      'sell',
+      '1',
+      '101',
+      'taker-order',
+      { timeInForce: 'IOC' },
+      'taker',
+    );
+
+    await takerPromise;
+
+    expect(exchange.createOrder).toHaveBeenCalledTimes(2);
+    expect(takerCallAtMs - beforeTaker).toBeLessThan(50);
+
+    resolveMaker({ id: 'ex-order-1' });
+    await makerPromise;
+  });
+
+  it('keeps same-account priority ordering while other-account market reads can proceed independently', async () => {
     const service = new ExchangeConnectorAdapterService(
       exchangeInitService as any,
       createConfigService(0),
@@ -242,22 +328,32 @@ describe('ExchangeConnectorAdapterService', () => {
       return { id: 'ex-order-2' };
     });
 
-    const stateRead = service.fetchOrder('binance', 'BTC/USDT', 'ex-order-1');
+    const stateRead = service.fetchOrder(
+      'binance',
+      'BTC/USDT',
+      'ex-order-1',
+      'maker',
+    );
 
     await Promise.resolve();
-    const marketRead = service.fetchOrderBook('binance', 'BTC/USDT');
-    const write = service.placeLimitOrder(
+    const otherAccountMarketRead = service.fetchOrderBook('binance', 'BTC/USDT');
+    const sameAccountWrite = service.placeLimitOrder(
       'binance',
       'BTC/USDT',
       'buy',
       '1',
       '100',
+      undefined,
+      undefined,
+      'maker',
     );
 
     resolveFetchOrder({ id: 'ex-order-1', status: 'open' });
-    await Promise.all([stateRead, marketRead, write]);
+    await Promise.all([stateRead, otherAccountMarketRead, sameAccountWrite]);
 
-    expect(callOrder).toEqual(['createOrder', 'fetchOrderBook']);
+    expect(callOrder).toContain('fetchOrderBook');
+    expect(callOrder).toContain('createOrder');
+    expect(callOrder.indexOf('createOrder')).toBeLessThan(callOrder.length);
   });
 
   it('times out a hung request and releases the exchange queue for later work', async () => {

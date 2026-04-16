@@ -73,9 +73,9 @@ export class ExchangeConnectorAdapterService {
     accountLabel?: string,
   ): Promise<any> {
     return await this.withRateLimit(
-      exchangeName,
+      this.toRateLimitKey(exchangeName, accountLabel),
       'write',
-      `placeLimitOrder ${pair} ${side}`,
+      `placeLimitOrder ${exchangeName}:${accountLabel || 'default'} ${pair} ${side}`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(
           exchangeName,
@@ -106,9 +106,9 @@ export class ExchangeConnectorAdapterService {
     accountLabel?: string,
   ): Promise<any> {
     return await this.withRateLimit(
-      exchangeName,
+      this.toRateLimitKey(exchangeName, accountLabel),
       'write',
-      `cancelOrder ${pair}`,
+      `cancelOrder ${exchangeName}:${accountLabel || 'default'} ${pair}`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(
           exchangeName,
@@ -127,9 +127,9 @@ export class ExchangeConnectorAdapterService {
     accountLabel?: string,
   ): Promise<any> {
     return await this.withRateLimit(
-      exchangeName,
+      this.toRateLimitKey(exchangeName, accountLabel),
       'stateRead',
-      `fetchOrder ${pair}`,
+      `fetchOrder ${exchangeName}:${accountLabel || 'default'} ${pair}`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(
           exchangeName,
@@ -147,9 +147,9 @@ export class ExchangeConnectorAdapterService {
     accountLabel?: string,
   ): Promise<any[]> {
     return await this.withRateLimit(
-      exchangeName,
+      this.toRateLimitKey(exchangeName, accountLabel),
       'stateRead',
-      `fetchOpenOrders ${pair || 'all'}`,
+      `fetchOpenOrders ${exchangeName}:${accountLabel || 'default'} ${pair || 'all'}`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(
           exchangeName,
@@ -251,9 +251,9 @@ export class ExchangeConnectorAdapterService {
     }
 
     return await this.withRateLimit(
-      exchangeName,
+      this.toRateLimitKey(exchangeName, accountLabel),
       'marketRead',
-      `loadTradingRules ${pair}`,
+      `loadTradingRules ${exchangeName}:${accountLabel || 'default'} ${pair}`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(
           exchangeName,
@@ -316,9 +316,9 @@ export class ExchangeConnectorAdapterService {
     accountLabel?: string,
   ): Promise<any> {
     return await this.withRateLimit(
-      exchangeName,
+      this.toRateLimitKey(exchangeName, accountLabel),
       'stateRead',
-      'fetchBalance',
+      `fetchBalance ${exchangeName}:${accountLabel || 'default'}`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(
           exchangeName,
@@ -331,13 +331,13 @@ export class ExchangeConnectorAdapterService {
   }
 
   private async withRateLimit<T>(
-    exchangeName: string,
+    queueKey: string,
     requestKind: keyof typeof ExchangeConnectorAdapterService.REQUEST_PRIORITY_BY_KIND,
     label: string,
     work: () => Promise<T>,
   ): Promise<T> {
     return await new Promise<T>((resolve, reject) => {
-      const queue = this.queueByExchange.get(exchangeName) || [];
+      const queue = this.queueByExchange.get(queueKey) || [];
 
       queue.push({
         priority:
@@ -348,33 +348,33 @@ export class ExchangeConnectorAdapterService {
         reject,
       });
       queue.sort((a, b) => a.priority - b.priority);
-      this.queueByExchange.set(exchangeName, queue);
-      void this.drainQueue(exchangeName);
+      this.queueByExchange.set(queueKey, queue);
+      void this.drainQueue(queueKey);
     });
   }
 
-  private async drainQueue(exchangeName: string): Promise<void> {
-    if (this.drainingExchanges.has(exchangeName)) {
+  private async drainQueue(queueKey: string): Promise<void> {
+    if (this.drainingExchanges.has(queueKey)) {
       return;
     }
 
-    this.drainingExchanges.add(exchangeName);
+    this.drainingExchanges.add(queueKey);
 
     try {
       while (true) {
-        const queue = this.queueByExchange.get(exchangeName) || [];
+        const queue = this.queueByExchange.get(queueKey) || [];
         const next = queue.shift();
 
         if (!next) {
-          this.queueByExchange.delete(exchangeName);
+          this.queueByExchange.delete(queueKey);
 
           return;
         }
 
-        this.queueByExchange.set(exchangeName, queue);
+        this.queueByExchange.set(queueKey, queue);
 
         try {
-          const lastAt = this.lastRequestAtMsByExchange.get(exchangeName) || 0;
+          const lastAt = this.lastRequestAtMsByExchange.get(queueKey) || 0;
           const now = Date.now();
           const waitMs = Math.max(
             0,
@@ -386,21 +386,25 @@ export class ExchangeConnectorAdapterService {
           }
 
           const result = await this.withRequestTimeout(
-            exchangeName,
+            queueKey,
             next.label,
             next.work,
           );
 
-          this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
+          this.lastRequestAtMsByExchange.set(queueKey, Date.now());
           next.resolve(result);
         } catch (error) {
-          this.lastRequestAtMsByExchange.set(exchangeName, Date.now());
+          this.lastRequestAtMsByExchange.set(queueKey, Date.now());
           next.reject(error);
         }
       }
     } finally {
-      this.drainingExchanges.delete(exchangeName);
+      this.drainingExchanges.delete(queueKey);
     }
+  }
+
+  private toRateLimitKey(exchangeName: string, accountLabel?: string): string {
+    return `${exchangeName}:${accountLabel || 'default'}`;
   }
 
   private async sleep(ms: number): Promise<void> {

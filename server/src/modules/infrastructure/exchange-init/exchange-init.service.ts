@@ -20,6 +20,7 @@ type ExchangeAccountConfig = {
   secret?: string;
   password?: string;
   uid?: string;
+  walletAddress?: string;
   sandboxMode?: boolean;
 };
 
@@ -489,6 +490,10 @@ export class ExchangeInitService {
         label: String(key.key_id || '').trim(),
         apiKey: key.api_key,
         secret: key.api_secret,
+        walletAddress:
+          key.exchange === 'hyperliquid'
+            ? String(key.api_key || '').trim() || undefined
+            : undefined,
       }));
 
       exchangeConfigs.push({
@@ -546,6 +551,14 @@ export class ExchangeInitService {
           secret: account.secret,
           password: account.password,
           uid: account.uid,
+          ...(account.walletAddress
+            ? {
+                walletAddress: account.walletAddress,
+                options: {
+                  walletAddress: account.walletAddress,
+                },
+              }
+            : {}),
         });
 
         if (account.sandboxMode) {
