@@ -208,6 +208,7 @@ describe('ExchangeApiKeyService', () => {
       secret: 'private-key',
       walletAddress: '0xwallet',
       options: {
+        builderFee: false,
         walletAddress: '0xwallet',
       },
     });

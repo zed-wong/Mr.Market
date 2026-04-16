@@ -555,6 +555,7 @@ export class ExchangeInitService {
             ? {
                 walletAddress: account.walletAddress,
                 options: {
+                  builderFee: false,
                   walletAddress: account.walletAddress,
                 },
               }

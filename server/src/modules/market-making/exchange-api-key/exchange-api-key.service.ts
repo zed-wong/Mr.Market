@@ -742,6 +742,7 @@ export class ExchangeApiKeyService {
       if (walletAddress) {
         options.walletAddress = walletAddress;
         options.options = {
+          builderFee: false,
           walletAddress,
         };
       }

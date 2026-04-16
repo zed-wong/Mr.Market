@@ -190,6 +190,7 @@ describe('ExchangeinitService', () => {
         secret: 'private-key',
         walletAddress: '0xwallet',
         options: expect.objectContaining({
+          builderFee: false,
           walletAddress: '0xwallet',
         }),
       }),
