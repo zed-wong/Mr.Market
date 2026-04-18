@@ -1,6 +1,7 @@
 .vercel
 .claude
 .codex
+.factory
 node_modules
 .worktrees/
 dist

@@ -2,6 +2,8 @@
 
 ## 2026-04-16
 
+- Centralize strategy-definition capability derivation for admin direct MM: expose `directOrderCompatible`, `directExecutionMode`, and `launchSurfaces` on definition responses, and filter direct-launch surfaces by capability instead of controller-name allowlists
+- Surface `dualAccountBestCapacityVolume` in admin strategy settings by adding a seeded definition, frontend schema template, controller picker entry, and display labels so it appears in `/manage/settings/strategies` instead of remaining backend-only
 - Rewrite `docs/planning/2026-04-13-hyperliquid-pancakeswap-volume-strategy.md` from a loose validation checklist into an execution-ready implementation + validation plan: add explicit phases, hard gates, file ownership, test matrix, operator runbook outputs, Hyperliquid `key_id` account-identity alignment, and a measured decision point for whether per-exchange queue serialization is acceptable
 - Lock `dualAccountVolume.tradedQuoteVolume` to the single-leg progress definition: preserve the execution-layer taker-fill quote counter during dual-account fill/PnL persistence, add regression coverage so user-stream fills cannot overwrite it with gross fill notional, and document that `targetQuoteVolume` stops against taker-leg quote progress rather than doubled turnover
 
