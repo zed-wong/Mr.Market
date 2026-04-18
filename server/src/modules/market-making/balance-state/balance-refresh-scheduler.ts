@@ -5,6 +5,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
 import { MARKET_MAKING_EVENT_NAMES } from '../events/market-making-events.types';
@@ -26,8 +27,10 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private stopped = false;
+  private readonly logger = new CustomLogger(BalanceRefreshScheduler.name);
   private readonly dueAtByKey = new Map<string, number>();
   private readonly detachListeners: Array<() => void> = [];
+  private lastRegisteredSnapshot = '';
 
   constructor(
     private readonly balanceStateRefreshService: BalanceStateRefreshService,
@@ -160,6 +163,15 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
   private syncRegisteredAccounts(nowMs: number): void {
     const registeredAccounts =
       this.balanceStateRefreshService.getRegisteredAccounts();
+    const snapshot = registeredAccounts
+      .map((account) => this.toKey(account.exchange, account.accountLabel))
+      .sort()
+      .join(',');
+
+    if (snapshot !== this.lastRegisteredSnapshot) {
+      this.lastRegisteredSnapshot = snapshot;
+      this.logRegisteredAccounts(registeredAccounts, nowMs);
+    }
     const registeredKeys = new Set<string>();
 
     for (const account of registeredAccounts) {
@@ -220,6 +232,10 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    if (accounts.length > 0 || selected.length > 0) {
+      this.logDueSelection(accounts, selected, nowMs);
+    }
+
     return selected;
   }
 
@@ -241,6 +257,7 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
       key,
       existingDueAt === undefined ? nowMs : Math.min(existingDueAt, nowMs),
     );
+    this.logMarkDue(key, existingDueAt, nowMs);
   }
 
   private nextJitterMs(maxJitterMs = BalanceRefreshScheduler.LOOP_MS): number {
@@ -249,5 +266,53 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
 
   private toKey(exchange: string, accountLabel: string): string {
     return `${exchange}:${accountLabel || 'default'}`;
+  }
+
+  private logRegisteredAccounts(
+    accounts: RegisteredBalanceAccount[],
+    nowMs: number,
+  ): void {
+    this.logger.log(
+      `registeredAccounts nowMs=${nowMs} accounts=${accounts
+        .map((account) => {
+          const key = this.toKey(account.exchange, account.accountLabel);
+          const dueAt = this.dueAtByKey.get(key);
+
+          return `${key}(dueAt=${dueAt ?? 'unset'})`;
+        })
+        .join(', ')}`,
+    );
+  }
+
+  private logDueSelection(
+    dueCandidates: RegisteredBalanceAccount[],
+    selected: RegisteredBalanceAccount[],
+    nowMs: number,
+  ): void {
+    this.logger.log(
+      `dueSelection nowMs=${nowMs} candidates=${dueCandidates
+        .map((account) => {
+          const key = this.toKey(account.exchange, account.accountLabel);
+
+          return `${key}(dueAt=${
+            this.dueAtByKey.get(key) ?? 'unset'
+          })`;
+        })
+        .join(', ')} selected=${selected
+        .map((account) => this.toKey(account.exchange, account.accountLabel))
+        .join(', ')}`,
+    );
+  }
+
+  private logMarkDue(
+    key: string,
+    existingDueAt: number | undefined,
+    nowMs: number,
+  ): void {
+    this.logger.log(
+      `markDue key=${key} existingDueAt=${
+        existingDueAt ?? 'unset'
+      } newDueAt=${this.dueAtByKey.get(key) ?? 'unset'} nowMs=${nowMs}`,
+    );
   }
 }

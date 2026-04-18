@@ -5835,6 +5835,14 @@ export class StrategyService
       assets.quote,
     );
     const nowMs = Date.now();
+    const baseDiagnostic = this.balanceStateCacheService?.getEntryDiagnostic(
+      cachedBase,
+      nowMs,
+    );
+    const quoteDiagnostic = this.balanceStateCacheService?.getEntryDiagnostic(
+      cachedQuote,
+      nowMs,
+    );
     const cachedFresh =
       (this.balanceStateCacheService?.isFresh(cachedBase, nowMs) ?? false) &&
       (this.balanceStateCacheService?.isFresh(cachedQuote, nowMs) ?? false);
@@ -5851,6 +5859,29 @@ export class StrategyService
       readPolicy === 'fresh-cache-only' || this.shouldUseCachedStateOnly()
         ? 'fresh-cache-only'
         : 'cache-or-rest';
+
+    this.logger.warn(
+      [
+        `Balance cache diagnostic for ${exchangeName} ${pair} account=${normalizedAccountLabel}`,
+        `requestedReadPolicy=${readPolicy}`,
+        `effectiveReadPolicy=${effectiveReadPolicy}`,
+        `cacheOnlyDuringDecision=${this.shouldUseCachedStateOnly()}`,
+        `baseAsset=${assets.base}`,
+        `basePresent=${baseDiagnostic?.present ?? false}`,
+        `baseFresh=${baseDiagnostic?.fresh ?? false}`,
+        `baseAgeMs=${baseDiagnostic?.ageMs ?? 'missing'}`,
+        `baseSource=${baseDiagnostic?.source ?? 'missing'}`,
+        `baseFreshnessTs=${baseDiagnostic?.freshnessTimestamp ?? 'missing'}`,
+        `baseFree=${baseDiagnostic?.free ?? 'missing'}`,
+        `quoteAsset=${assets.quote}`,
+        `quotePresent=${quoteDiagnostic?.present ?? false}`,
+        `quoteFresh=${quoteDiagnostic?.fresh ?? false}`,
+        `quoteAgeMs=${quoteDiagnostic?.ageMs ?? 'missing'}`,
+        `quoteSource=${quoteDiagnostic?.source ?? 'missing'}`,
+        `quoteFreshnessTs=${quoteDiagnostic?.freshnessTimestamp ?? 'missing'}`,
+        `quoteFree=${quoteDiagnostic?.free ?? 'missing'}`,
+      ].join(' | '),
+    );
 
     if (effectiveReadPolicy === 'fresh-cache-only') {
       this.logger.warn(

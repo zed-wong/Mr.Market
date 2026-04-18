@@ -7,6 +7,7 @@ import {
   UserStreamEventNormalizer,
   UserStreamNormalizerRegistryService,
 } from '../user-stream';
+import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { UserStreamTrackerService } from './user-stream-tracker.service';
 
 type WatchOrdersCapableExchange = {
@@ -47,6 +48,8 @@ export class UserStreamIngestionService implements OnModuleDestroy {
   constructor(
     private readonly exchangeInitService: ExchangeInitService,
     private readonly userStreamTrackerService: UserStreamTrackerService,
+    @Optional()
+    private readonly balanceStateCacheService?: BalanceStateCacheService,
     @Optional()
     private readonly userStreamNormalizerRegistryService?: UserStreamNormalizerRegistryService,
   ) {}
@@ -127,6 +130,11 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
     if (state) {
       state.refCount += 1;
+      this.logger.log(
+        `Reusing balance watcher for ${params.exchange}:${
+          params.accountLabel || 'default'
+        } refCount=${state.refCount} generation=${state.generation}`,
+      );
 
       return;
     }
@@ -134,7 +142,26 @@ export class UserStreamIngestionService implements OnModuleDestroy {
     const generation = ++this.generationCounter;
 
     this.activeBalanceWatchers.set(key, { refCount: 1, generation });
-    void this.runBalanceWatcher(key, generation, params);
+    this.logger.log(
+      `Starting balance watcher for ${params.exchange}:${
+        params.accountLabel || 'default'
+      } generation=${generation}`,
+    );
+    void this.seedBalanceSnapshot(params)
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const trace = error instanceof Error ? error.stack : undefined;
+
+        this.logger.warn(
+          `Initial fetchBalance failed for ${params.exchange}:${
+            params.accountLabel || 'default'
+          }: ${message}`,
+          trace,
+        );
+      })
+      .finally(() => {
+        void this.runBalanceWatcher(key, generation, params);
+      });
   }
 
   stopBalanceWatcher(params: Omit<OrderWatcherParams, 'symbol'>): void {
@@ -402,15 +429,21 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         }
 
         const watchedBalance = await exchange.watchBalance();
+        const normalizedEvents = this.getNormalizer(params.exchange)
+          .normalizeBalance(
+            params.exchange,
+            params.accountLabel || 'default',
+            watchedBalance,
+            getRFC3339Timestamp(),
+          );
 
-        for (const event of this.getNormalizer(
-          params.exchange,
-        ).normalizeBalance(
-          params.exchange,
-          params.accountLabel || 'default',
-          watchedBalance,
-          getRFC3339Timestamp(),
-        )) {
+        this.logger.log(
+          `watchBalance received payload for ${params.exchange}:${
+            params.accountLabel || 'default'
+          } normalizedEventCount=${normalizedEvents.length}`,
+        );
+
+        for (const event of normalizedEvents) {
           this.userStreamTrackerService.queueAccountEvent(event);
         }
 
@@ -438,6 +471,40 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         }
       }
     }
+  }
+
+  private async seedBalanceSnapshot(
+    params: Omit<OrderWatcherParams, 'symbol'>,
+  ): Promise<void> {
+    const exchange = this.exchangeInitService.getExchange(
+      params.exchange,
+      params.accountLabel || 'default',
+    ) as {
+      fetchBalance?: () => Promise<unknown>;
+    };
+
+    if (typeof exchange.fetchBalance !== 'function') {
+      return;
+    }
+
+    const balance = await exchange.fetchBalance();
+
+    if (!balance || typeof balance !== 'object') {
+      return;
+    }
+
+    this.balanceStateCacheService?.applyBalanceSnapshot(
+      params.exchange,
+      params.accountLabel || 'default',
+      balance as Record<string, any>,
+      getRFC3339Timestamp(),
+      'rest',
+    );
+    this.logger.log(
+      `Seeded balance cache from fetchBalance for ${params.exchange}:${
+        params.accountLabel || 'default'
+      }`,
+    );
   }
 
   private normalizeObjects(value: unknown): Array<Record<string, unknown>> {

@@ -51,6 +51,44 @@ export class BalanceStateCacheService {
     );
   }
 
+  getEntryDiagnostic(
+    entry: BalanceEntry | undefined,
+    nowMs = Date.now(),
+  ): {
+    present: boolean;
+    fresh: boolean;
+    ageMs: number | null;
+    freshnessTimestamp?: string;
+    source?: 'ws' | 'rest';
+    free?: string;
+    used?: string;
+    total?: string;
+  } {
+    if (!entry) {
+      return {
+        present: false,
+        fresh: false,
+        ageMs: null,
+      };
+    }
+
+    const freshnessMs = Date.parse(entry.freshnessTimestamp);
+    const ageMs = Number.isFinite(freshnessMs) ? nowMs - freshnessMs : null;
+    const fresh =
+      ageMs !== null && ageMs <= BalanceStateCacheService.STALE_MS;
+
+    return {
+      present: true,
+      fresh,
+      ageMs,
+      freshnessTimestamp: entry.freshnessTimestamp,
+      source: entry.source,
+      free: entry.free,
+      used: entry.used,
+      total: entry.total,
+    };
+  }
+
   applyBalanceSnapshot(
     exchange: string,
     accountLabel: string,
