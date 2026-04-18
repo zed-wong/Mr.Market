@@ -35,6 +35,8 @@ const errorKeyMap: Record<string, string> = {
   "API key not found": "admin_direct_mm_error_api_key_not_found",
   "API key exchange does not match request":
     "admin_direct_mm_error_api_key_exchange_mismatch",
+  "API key must have read-trade permissions":
+    "admin_direct_mm_error_api_key_permissions",
   "API key account label does not match request":
     "admin_direct_mm_error_api_key_account_mismatch",
   "Strategy definition not found": "admin_direct_mm_error_definition_not_found",
@@ -338,6 +340,19 @@ export function resolveInventorySkewAllocation(
   };
 }
 
+export function isDualDirectOrderControllerType(controllerType: unknown): boolean {
+  return (
+    controllerType === "dualAccountVolume" ||
+    controllerType === "dualAccountBestCapacityVolume"
+  );
+}
+
+export function isBestCapacityDirectOrderControllerType(
+  controllerType: unknown,
+): boolean {
+  return controllerType === "dualAccountBestCapacityVolume";
+}
+
 export function aggregateBalancesByAsset(
   balances: InventoryBalanceSummary[],
 ): InventoryBalanceSummary[] {
@@ -373,9 +388,7 @@ export function normalizeConfigOverrides(
   orderSpread: string,
   dualFields?: DualAccountVolumeFields,
 ): Record<string, unknown> {
-  const isDualAccountStrategy =
-    controllerType === "dualAccountVolume" ||
-    controllerType === "dualAccountBestCapacityVolume";
+  const isDualAccountStrategy = isDualDirectOrderControllerType(controllerType);
   const reservedFields = new Set([
     "userId",
     "clientId",

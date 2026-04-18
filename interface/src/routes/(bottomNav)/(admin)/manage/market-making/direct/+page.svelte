@@ -31,10 +31,12 @@
         formatOrderAmountForDisplay,
         getErrorMessage,
         getRecoveryHint,
+        isDualDirectOrderControllerType,
         normalizeConfigOverrides,
         resolveMinOrderAmount,
         type ExchangeMarketMetadata,
     } from "$lib/helpers/market-making/direct/helpers";
+    import { filterExecutableApiKeys } from "$lib/helpers/market-making/direct/api-key-filter";
     import ApiKeysPanel from "$lib/components/market-making/direct/ApiKeysPanel.svelte";
     import CampaignsPanel from "$lib/components/market-making/direct/CampaignsPanel.svelte";
     import EvmWalletStatusBar from "$lib/components/market-making/direct/EvmWalletStatusBar.svelte";
@@ -225,12 +227,9 @@
         ) || null;
     $: selectedControllerType = selectedStrategy?.controllerType || "";
     $: isDualAccountStrategy =
-        selectedStrategy?.directExecutionMode === "dual_account";
-    $: filteredApiKeys = apiKeys.filter(
-        (key) =>
-            key.permissions === "read-trade" &&
-            (!startExchangeName || key.exchange === startExchangeName),
-    );
+        selectedStrategy?.directExecutionMode === "dual_account" ||
+        isDualDirectOrderControllerType(selectedControllerType);
+    $: filteredApiKeys = filterExecutableApiKeys(apiKeys, startExchangeName);
     $: selectedApiKey =
         filteredApiKeys.find((key) => String(key.key_id) === String(startApiKeyId)) || null;
     $: selectedMakerApiKey =

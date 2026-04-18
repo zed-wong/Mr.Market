@@ -10,6 +10,8 @@
         formatTimestamp,
         resolveInventorySkewAllocation,
         aggregateBalancesByAsset,
+        isBestCapacityDirectOrderControllerType,
+        isDualDirectOrderControllerType,
     } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
@@ -85,8 +87,11 @@
     $: isRunning = runtimeState === "running" || runtimeState === "active";
     $: isStale = runtimeState === "stale";
     $: isResumable = runtimeState === "stopped" || runtimeState === "created";
+    $: resolvedControllerType = data?.controllerType || order?.controllerType;
     $: isDualAccountStrategy =
-        (data?.controllerType || order?.controllerType) === "dualAccountVolume";
+        isDualDirectOrderControllerType(resolvedControllerType);
+    $: isBestCapacityStrategy =
+        isBestCapacityDirectOrderControllerType(resolvedControllerType);
     $: skewBalances = data
         ? isDualAccountStrategy
             ? aggregateBalancesByAsset(data.inventoryBalances)
@@ -605,7 +610,9 @@
                                         <span
                                             class="text-[10px] text-base-content/40 font-semibold"
                                             >{$_(
-                                                "admin_direct_mm_order_amount",
+                                                isBestCapacityStrategy
+                                                    ? "admin_direct_mm_max_order_amount"
+                                                    : "admin_direct_mm_order_amount",
                                             )}</span
                                         >
                                     </div>
@@ -657,14 +664,20 @@
                                 >
                                     <span class="text-xs text-base-content/60"
                                         >{$_(
-                                            "admin_direct_mm_base_increment_percentage",
+                                            isBestCapacityStrategy
+                                                ? "admin_direct_mm_daily_volume_target_config"
+                                                : "admin_direct_mm_base_increment_percentage",
                                         )}</span
                                     >
                                     <span
                                         class="text-xs font-semibold text-base-content"
-                                        >{data?.orderConfig
-                                            ?.baseIncrementPercentage ||
-                                            $_("admin_direct_mm_na")}</span
+                                        >{isBestCapacityStrategy
+                                            ? data?.orderConfig
+                                                  ?.targetQuoteVolume ||
+                                              $_("admin_direct_mm_na")
+                                            : data?.orderConfig
+                                                  ?.baseIncrementPercentage ||
+                                              $_("admin_direct_mm_na")}</span
                                     >
                                 </div>
                                 <div
@@ -686,7 +699,9 @@
                                 >
                                     <span class="text-xs text-base-content/60"
                                         >{$_(
-                                            "admin_direct_mm_interval_time",
+                                            isBestCapacityStrategy
+                                                ? "admin_direct_mm_interval_optional"
+                                                : "admin_direct_mm_interval_time",
                                         )}</span
                                     >
                                     <span
@@ -695,48 +710,53 @@
                                             $_("admin_direct_mm_na")}</span
                                     >
                                 </div>
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_num_trades",
-                                        )}</span
+                                {#if !isBestCapacityStrategy}
+                                    <div
+                                        class="flex items-center justify-between h-6 mb-1"
                                     >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{data?.orderConfig?.numTrades ??
-                                            $_("admin_direct_mm_na")}</span
+                                        <span
+                                            class="text-xs text-base-content/60"
+                                            >{$_(
+                                                "admin_direct_mm_num_trades",
+                                            )}</span
+                                        >
+                                        <span
+                                            class="text-xs font-semibold text-base-content"
+                                            >{data?.orderConfig?.numTrades ??
+                                                $_("admin_direct_mm_na")}</span
+                                        >
+                                    </div>
+                                    <div
+                                        class="flex items-center justify-between h-6 mb-1"
                                     >
-                                </div>
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_price_push_rate",
-                                        )}</span
+                                        <span
+                                            class="text-xs text-base-content/60"
+                                            >{$_(
+                                                "admin_direct_mm_price_push_rate",
+                                            )}</span
+                                        >
+                                        <span
+                                            class="text-xs font-semibold text-base-content"
+                                            >{data?.orderConfig?.pricePushRate ||
+                                                $_("admin_direct_mm_na")}</span
+                                        >
+                                    </div>
+                                    <div
+                                        class="flex items-center justify-between h-6 mb-1"
                                     >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{data?.orderConfig?.pricePushRate ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
-                                </div>
-                                <div
-                                    class="flex items-center justify-between h-6 mb-1"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_post_only_side",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-xs font-semibold text-base-content capitalize"
-                                        >{data?.orderConfig?.postOnlySide ||
-                                            $_("admin_direct_mm_na")}</span
-                                    >
-                                </div>
+                                        <span
+                                            class="text-xs text-base-content/60"
+                                            >{$_(
+                                                "admin_direct_mm_post_only_side",
+                                            )}</span
+                                        >
+                                        <span
+                                            class="text-xs font-semibold text-base-content capitalize"
+                                            >{data?.orderConfig?.postOnlySide ||
+                                                $_("admin_direct_mm_na")}</span
+                                        >
+                                    </div>
+                                {/if}
                                 <div
                                     class="flex items-center justify-between h-6"
                                 >

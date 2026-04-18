@@ -266,6 +266,18 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         type: "number",
         description: "Delay before the taker IOC leg submits",
       },
+      tradeAmountVariance: {
+        type: "number",
+        description: "Fractional variance applied to trade amount",
+      },
+      priceOffsetVariance: {
+        type: "number",
+        description: "Fractional variance applied to maker price offset",
+      },
+      makerDelayVariance: {
+        type: "number",
+        description: "Fractional variance applied to maker delay",
+      },
     },
   },
   dualAccountBestCapacityVolume: {

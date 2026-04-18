@@ -3,6 +3,10 @@
     import { _ } from "svelte-i18n";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
+    import {
+        isBestCapacityDirectOrderControllerType,
+        isDualDirectOrderControllerType,
+    } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
     export let isStarting = false;
@@ -46,10 +50,9 @@
 
     $: baseCoin = startPair ? startPair.split("/")[0] : "";
     $: isDualAccountStrategy =
-        selectedControllerType === "dualAccountVolume" ||
-        selectedControllerType === "dualAccountBestCapacityVolume";
+        isDualDirectOrderControllerType(selectedControllerType);
     $: isBestCapacityStrategy =
-        selectedControllerType === "dualAccountBestCapacityVolume";
+        isBestCapacityDirectOrderControllerType(selectedControllerType);
 
     $: orderAmountError = orderAmount && isNaN(Number(orderAmount));
     $: orderAmountBelowMinimum =

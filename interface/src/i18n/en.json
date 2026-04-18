@@ -851,6 +851,7 @@
   "admin_direct_mm_recovery_retry": "Retry the action after reviewing the current runtime status.",
   "admin_direct_mm_error_api_key_not_found": "API key not found.",
   "admin_direct_mm_error_api_key_exchange_mismatch": "API key exchange does not match the selected exchange.",
+  "admin_direct_mm_error_api_key_permissions": "API key must have read-trade permissions.",
   "admin_direct_mm_error_api_key_account_mismatch": "API key account label does not match the selected account.",
   "admin_direct_mm_error_definition_not_found": "Strategy definition not found.",
   "admin_direct_mm_error_order_not_found": "Order not found.",

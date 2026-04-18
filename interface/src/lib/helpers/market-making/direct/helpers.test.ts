@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   aggregateBalancesByAsset,
   formatOrderAmountForDisplay,
+  isBestCapacityDirectOrderControllerType,
+  isDualDirectOrderControllerType,
   normalizeConfigOverrides,
   readPositiveOrderAmount,
   resolveInventorySkewAllocation,
@@ -41,6 +43,42 @@ describe('normalizeConfigOverrides', () => {
     });
   });
 
+  it('maps dual-account variance quick fields into config overrides', () => {
+    expect(
+      normalizeConfigOverrides(
+        'dualAccountVolume',
+        [],
+        '5',
+        '0.4',
+        {
+          intervalTime: '30',
+          numTrades: '100',
+          pricePushRate: '0',
+          postOnlySide: 'buy',
+          dynamicRoleSwitching: false,
+          targetQuoteVolume: '',
+          makerDelayMs: '250',
+          cadenceVariance: '0.25',
+          tradeAmountVariance: '0.15',
+          priceOffsetVariance: '0.2',
+          makerDelayVariance: '0.5',
+        },
+      ),
+    ).toEqual({
+      baseTradeAmount: 5,
+      baseIncrementPercentage: 0.4,
+      baseIntervalTime: 30,
+      numTrades: 100,
+      pricePushRate: 0,
+      postOnlySide: 'buy',
+      makerDelayMs: 250,
+      cadenceVariance: 0.25,
+      tradeAmountVariance: 0.15,
+      priceOffsetVariance: 0.2,
+      makerDelayVariance: 0.5,
+    });
+  });
+
   it('drops reserved system-managed fields from manual config rows', () => {
     expect(
       normalizeConfigOverrides(
@@ -72,6 +110,27 @@ describe('normalizeConfigOverrides', () => {
       makerDelayMs: 250,
       maxOrderAmount: 5,
     });
+  });
+});
+
+describe('direct controller helpers', () => {
+  it('recognizes both dual direct-order controller types', () => {
+    expect(isDualDirectOrderControllerType('dualAccountVolume')).toBe(true);
+    expect(
+      isDualDirectOrderControllerType('dualAccountBestCapacityVolume'),
+    ).toBe(true);
+    expect(isDualDirectOrderControllerType('pureMarketMaking')).toBe(false);
+  });
+
+  it('recognizes the best-capacity direct-order controller type', () => {
+    expect(
+      isBestCapacityDirectOrderControllerType(
+        'dualAccountBestCapacityVolume',
+      ),
+    ).toBe(true);
+    expect(isBestCapacityDirectOrderControllerType('dualAccountVolume')).toBe(
+      false,
+    );
   });
 });
 

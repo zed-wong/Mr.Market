@@ -763,6 +763,7 @@
   "admin_direct_mm_recovery_retry": "检查当前运行状态后重试该操作。",
   "admin_direct_mm_error_api_key_not_found": "未找到 API 密钥。",
   "admin_direct_mm_error_api_key_exchange_mismatch": "API 密钥所属交易所与当前选择不匹配。",
+  "admin_direct_mm_error_api_key_permissions": "API 密钥必须具备读取和交易权限。",
   "admin_direct_mm_error_api_key_account_mismatch": "API 密钥账户标签与当前选择不匹配。",
   "admin_direct_mm_error_definition_not_found": "未找到策略定义。",
   "admin_direct_mm_error_order_not_found": "未找到订单。",
