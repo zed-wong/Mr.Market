@@ -2,55 +2,7 @@
 
 ## Current Todo
 
-### Codebase Health (2026-04-18)
 
-#### P0 — Type Safety (blocks 13 test suites)
-
-- [ ] Implement or restore 4 missing methods in `StrategyService` (`strategy.service.ts`):
-  - `finalizeSettledDualAccountCycle` (line 1451)
-  - `buildActiveDualAccountCycleState` (line 1588)
-  - `resolveTrackedOrderForFill` (line 4855)
-  - `applyDualAccountFillProgress` (line 4880)
-  - Without these, runtime `TypeError: this.xxx is not a function` will crash production.
-
-#### P1 — Lint (server: 181 errors, interface: 4 errors)
-
-- [ ] Run `bun run lint --fix` on server (~140/181 errors are auto-fixable formatting)
-- [ ] Remove 4 unused destructured variables in `CreateOrderModal.svelte` (lines 71-77): `cadenceVarianceError`, `tradeAmountVarianceError`, `priceOffsetVarianceError`, `makerDelayVarianceError`
-- [ ] Remove unused `UserStreamEvent` import in `generic-ccxt-user-stream-event-normalizer.service.ts:5`
-- [ ] Fix 4 `@typescript-eslint/no-explicit-any` warnings on server
-
-#### P2 — Dead Code (server)
-
-- [ ] Remove or wire up `time-indicator.service.ts` (528 lines unused)
-- [ ] Remove `snapshots-metrics.service.ts` (220 lines unused)
-- [ ] Remove `mixin.processor.ts` (77 lines unused)
-- [ ] Remove `spot.event.ts` + `market-making.event.ts` (unused event files)
-- [ ] Remove `spotChecks.ts` (28 lines unused)
-- [ ] Remove `pricing.ts` in defi/utils (60 lines unused)
-- [ ] Remove `signal.ts` + `signaltype.ts` (constants unused)
-- [ ] Remove `health.fixture.ts` (unused test fixture)
-- [ ] Remove `soak-error-injector.ts` + `soak-snapshot-collector.ts` (unused test helpers)
-- [ ] Remove `typeorm.config.ts` unused at root (if only used by TypeORM CLI, consider keeping)
-- [ ] Trim 8 unused runtime deps: `@nestjs/axios`, `@nestjs/event-emitter`, `@nestjs/serve-static`, `@nestjs/terminus`, `@types/sqlite3`, `cookie-parser`, `express`, `protobufjs`
-- [ ] Trim 9 unused devDeps: `@golevelup/ts-jest`, `@types/bull`, `@types/cookie-parser`, `@types/express`, `@types/express-session`, `@types/supertest`, `source-map-support`, `supertest`, `ts-loader`
-- [ ] Clean 19 unused exports and 34 unused exported types
-
-#### P2 — Dead Code (interface)
-
-- [ ] Remove 5 unused Svelte components: `title.svelte`, `growNewArbBar.svelte`, `growNewMMBar.svelte`, `marketMakingBar.svelte`, `action.svelte`
-- [ ] Remove `temporary.ts` (28 lines, explicitly temporary)
-- [ ] Remove `fetch.ts` + `socket.ts` unused store abstractions (87 lines total)
-- [ ] Remove 3 unused type files: `asset.ts`, `arbitrage.ts`, `market_making.ts`
-- [ ] Fix duplicate export: `encrypt|encryptSecret` in `crypto.ts` (same function exported twice)
-- [ ] Trim 4 unused runtime deps: `jsencrypt`, `tweetnacl`, `tweetnacl-sealedbox`, `tweetnacl-util`
-- [ ] Trim 5 unused devDeps: `eslint-config-standard-with-typescript`, `eslint-plugin-import`, `eslint-plugin-n`, `eslint-plugin-promise`, `tslib`
-- [ ] Audit and trim ~91 unused exports (many in `grow.ts`, `market.ts`, `spot.ts` stores; `mixin.ts`, `chart.ts`, `sortTable.ts` helpers)
-
-#### P3 — Polish
-
-- [ ] Resolve 19 unresolved imports in interface (`./$types` in SvelteKit route files — likely generated, but knip flags them)
-- [ ] Add `knip.json` config to both projects to suppress false positives and track dead code CI
 
 This file keeps the detailed unchecked checklist and also adds short summary sections so the current work is easier to scan.
 
