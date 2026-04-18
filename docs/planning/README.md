@@ -31,15 +31,25 @@ Use dated files, but keep the document role clear.
 ## Current Active Files And Roles
 
 - **`2026-04-08-intent-worker-rate-limiting-improvements.md`**
-  Role: active implementation plan for the current intent-worker rate-limit follow-up
+  Role: active implementation plan for the current intent-worker rate-limit follow-up (not yet started)
 - **`2026-04-13-hyperliquid-pancakeswap-volume-strategy.md`**
   Role: active implementation + validation plan for Hyperliquid dual-account volume and PancakeSwap live AMM volume runs
 - **`2026-04-14-hummingbot-like-user-stream-plan.md`**
-  Role: active implementation record for the 2026-04-14 user-stream migration and runtime follow-up work
+  Role: active implementation record for the 2026-04-14 user-stream migration (Phase 0+1/2 done, follow-up work remaining)
+- **`2026-04-14-split-strategy-service-dual-account.md`**
+  Role: not started. StrategyService has grown to 6827 lines. Plan to split into focused per-strategy-type services
+- **`2026-04-16-dual-account-4-way-capacity-selection.md`**
+  Role: active. Current feature branch (`dualAccountBestCapacityVolume`). 4-way best-capacity volume strategy
+- **`2026-04-18-codebase-health-audit.md`**
+  Role: active. Health audit findings and remediation checklist from 2026-04-18
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**
   Role: rolling chronological implementation log
+
+## Archived
+
+- **`2026-04-12-multi-account-counter-recon-volume-strategy.md`** → archived to `../archive/plans/`. Superseded by `2026-04-16-dual-account-4-way-capacity-selection.md` (the 4-way capacity approach replaced the multi-account randomization idea)
 
 ## When To Update Vs Create
 
