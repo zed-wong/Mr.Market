@@ -5,12 +5,15 @@ import {
   Optional,
 } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
+import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
+import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { UserStreamEvent } from '../user-stream';
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
@@ -44,11 +47,16 @@ type OrphanedFillEvent = RoutedFillCandidate & {
 export class UserStreamTrackerService
   implements TickComponent, OnModuleInit, OnModuleDestroy
 {
+  private static readonly SILENT_MS = 30_000;
   private readonly logger = new CustomLogger(UserStreamTrackerService.name);
   private readonly queue: UserStreamEvent[] = [];
   private readonly latestByKey = new Map<string, UserStreamEvent>();
   private readonly orphanedFills: OrphanedFillEvent[] = [];
   private readonly lastRecvTimeByKey = new Map<string, number>();
+  private readonly healthByKey = new Map<
+    string,
+    'healthy' | 'degraded' | 'silent'
+  >();
   private readonly latestFillFingerprintByOrder = new Map<string, string>();
   private readonly latestTradeCumulativeQtyByOrder = new Map<string, string>();
   private duplicateFillSuppressionCount = 0;
@@ -66,6 +74,10 @@ export class UserStreamTrackerService
     private readonly executorRegistry?: ExecutorRegistry,
     @Optional()
     private readonly balanceStateCacheService?: BalanceStateCacheService,
+    @Optional()
+    private readonly marketMakingEventBus?: MarketMakingEventBus,
+    @Optional()
+    private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -84,6 +96,7 @@ export class UserStreamTrackerService
     this.queue.length = 0;
     this.orphanedFills.length = 0;
     this.lastRecvTimeByKey.clear();
+    this.healthByKey.clear();
     this.latestFillFingerprintByOrder.clear();
     this.latestTradeCumulativeQtyByOrder.clear();
     this.duplicateFillSuppressionCount = 0;
@@ -103,6 +116,7 @@ export class UserStreamTrackerService
       event.exchange,
       event.accountLabel,
     );
+    this.updateStreamHealth(event.exchange, event.accountLabel);
     this.scheduleDrain();
   }
 
@@ -143,6 +157,7 @@ export class UserStreamTrackerService
 
   async onTick(_: string): Promise<void> {
     await this.flushPendingEvents();
+    this.refreshTrackedHealthStates();
   }
 
   private async flushPendingEvents(): Promise<void> {
@@ -151,6 +166,9 @@ export class UserStreamTrackerService
     }
 
     this.drainInProgress = true;
+    const queueDepthStart = this.queue.length;
+    let processedCount = 0;
+    const startedAtMs = Date.now();
 
     try {
       while (this.queue.length > 0) {
@@ -159,6 +177,8 @@ export class UserStreamTrackerService
         if (!event) {
           continue;
         }
+
+        processedCount += 1;
 
         this.latestByKey.set(
           this.toKey(event.exchange, event.accountLabel),
@@ -188,6 +208,20 @@ export class UserStreamTrackerService
         await this.routeFillCandidate(fill);
       }
     } finally {
+      if (queueDepthStart > 0 || processedCount > 0) {
+        this.runtimeTimingService?.recordDuration(
+          'user-stream.drain',
+          Date.now() - startedAtMs,
+          {
+            duplicateFillSuppressionCount: this.duplicateFillSuppressionCount,
+            processedCount,
+            queueDepthEnd: this.queue.length,
+            queueDepthStart,
+          },
+          { warnThresholdMs: 250 },
+        );
+      }
+
       this.drainInProgress = false;
     }
   }
@@ -256,15 +290,18 @@ export class UserStreamTrackerService
     }
 
     if (trackedOrder && fill.status) {
-      this.exchangeOrderTrackerService?.upsertOrder({
-        ...trackedOrder,
-        clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
-        cumulativeFilledQty:
-          fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
-        status: fill.status,
-        createdAt: trackedOrder.createdAt,
-        updatedAt: fill.receivedAt,
-      });
+      this.exchangeOrderTrackerService?.upsertOrder(
+        {
+          ...trackedOrder,
+          clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
+          cumulativeFilledQty:
+            fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
+          status: fill.status,
+          createdAt: trackedOrder.createdAt,
+          updatedAt: fill.receivedAt,
+        },
+        'ws',
+      );
     }
 
     const routedFill = this.normalizeFillForDispatch(fill, trackedOrder);
@@ -678,6 +715,55 @@ export class UserStreamTrackerService
         fill.exchangeOrderId || ''
       } reason=${reason}`,
     );
+  }
+
+  private refreshTrackedHealthStates(): void {
+    for (const key of this.lastRecvTimeByKey.keys()) {
+      const [exchange, accountLabel] = key.split(':');
+
+      this.updateStreamHealth(exchange, accountLabel || 'default');
+    }
+  }
+
+  private updateStreamHealth(exchange: string, accountLabel: string): void {
+    const key = this.toKey(exchange, accountLabel);
+    const previousHealth = this.healthByKey.get(key);
+    const health = this.resolveStreamHealth(
+      this.lastRecvTimeByKey.get(key),
+      Date.now(),
+    );
+
+    if (previousHealth === health) {
+      return;
+    }
+
+    this.healthByKey.set(key, health);
+    this.marketMakingEventBus?.emitStreamHealthChanged({
+      exchange,
+      accountLabel,
+      previousHealth,
+      health,
+      changedAt: getRFC3339Timestamp(),
+    });
+  }
+
+  private resolveStreamHealth(
+    lastRecvTimeMs: number | undefined,
+    nowMs: number,
+  ): 'healthy' | 'degraded' | 'silent' {
+    if (lastRecvTimeMs === undefined) {
+      return 'silent';
+    }
+
+    if (nowMs - lastRecvTimeMs <= BalanceStateCacheService.STALE_MS) {
+      return 'healthy';
+    }
+
+    if (nowMs - lastRecvTimeMs <= UserStreamTrackerService.SILENT_MS) {
+      return 'degraded';
+    }
+
+    return 'silent';
   }
 
   private toKey(exchange: string, accountLabel: string): string {

@@ -1,9 +1,15 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { TickComponent } from './tick-component.interface';
+import { MarketMakingRuntimeTimingService } from './runtime-timing.service';
 
 type RegisteredTickComponent = {
   id: string;
@@ -27,7 +33,11 @@ export class ClockTickCoordinatorService
   private skippedTickBurstStartedAtMs?: number;
   private lastSkipTickWarnAtMs?: number;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional()
+    private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
+  ) {
     this.tickSizeMs = Number(
       this.configService.get('strategy.tick_size_ms', 1000),
     );
@@ -118,6 +128,13 @@ export class ClockTickCoordinatorService
     this.tickInProgress = true;
     this.tickStartedAtMs = Date.now();
     const ts = getRFC3339Timestamp();
+    const componentTimings: Array<{
+      id: string;
+      healthy: boolean;
+      healthCheckDurationMs: number;
+      onTickDurationMs: number;
+      totalDurationMs: number;
+    }> = [];
 
     try {
       for (const item of this.getSortedComponents()) {
@@ -126,15 +143,25 @@ export class ClockTickCoordinatorService
           break;
         }
 
+        const componentStartedAtMs = Date.now();
+        let healthy = false;
+        let healthCheckDurationMs = 0;
+        let onTickDurationMs = 0;
+
         try {
+          const healthCheckStartedAtMs = Date.now();
           const isHealthy = await item.component.health();
+          healthCheckDurationMs = Date.now() - healthCheckStartedAtMs;
+          healthy = isHealthy;
 
           if (!isHealthy) {
             this.logger.warn(`Skipping unhealthy tick component: ${item.id}`);
             continue;
           }
 
+          const onTickStartedAtMs = Date.now();
           await item.component.onTick(ts);
+          onTickDurationMs = Date.now() - onTickStartedAtMs;
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
@@ -144,6 +171,28 @@ export class ClockTickCoordinatorService
             `Tick component failed: ${item.id} ts=${ts}: ${message}`,
             trace,
           );
+        } finally {
+          const totalDurationMs = Date.now() - componentStartedAtMs;
+
+          componentTimings.push({
+            id: item.id,
+            healthy,
+            healthCheckDurationMs,
+            onTickDurationMs,
+            totalDurationMs,
+          });
+          this.runtimeTimingService?.recordDuration(
+            'coordinator.component',
+            totalDurationMs,
+            {
+              componentId: item.id,
+              healthy,
+              healthCheckDurationMs,
+              onTickDurationMs,
+              tickTs: ts,
+            },
+            { warnThresholdMs: this.tickSizeMs },
+          );
         }
       }
     } finally {
@@ -151,6 +200,30 @@ export class ClockTickCoordinatorService
       const tickDurationMs = this.tickStartedAtMs
         ? tickFinishedAtMs - this.tickStartedAtMs
         : undefined;
+      const componentDurationMs = componentTimings.reduce(
+        (sum, timing) => sum + timing.totalDurationMs,
+        0,
+      );
+      const coordinatorOverheadMs =
+        tickDurationMs !== undefined
+          ? Math.max(0, tickDurationMs - componentDurationMs)
+          : undefined;
+
+      if (tickDurationMs !== undefined) {
+        this.runtimeTimingService?.recordDuration(
+          'coordinator.tick',
+          tickDurationMs,
+          {
+            componentCount: componentTimings.length,
+            componentDurationMs,
+            coordinatorOverheadMs,
+            skippedTickCount: this.skippedTickCount,
+            tickSizeMs: this.tickSizeMs,
+            tickTs: ts,
+          },
+          { warnThresholdMs: this.tickSizeMs },
+        );
+      }
 
       if (this.skippedTickCount > 0) {
         const overlapWindowMs = this.skippedTickBurstStartedAtMs

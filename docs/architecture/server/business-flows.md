@@ -79,7 +79,9 @@ Main modules:
 Why this flow exists:
 
 - It separates decision logic from side effects.
+- It now records coordinator/component/executor/session/network timings through a shared runtime timing recorder, so refactor work can measure tick pressure instead of inferring it from overlap warnings alone.
 - It shares exchange:pair market data across sessions, while account-aware execution/tracking keeps REST order management and user-stream fill routing pinned to the correct exchange account during restart recovery and shutdown cleanup.
+- Order, balance, and stream-health cache changes now publish typed internal market-making events. Current behavior still reads the same caches, but the event layer is now in place for off-tick reconciliation and refresh workers.
 - `dualAccountVolume` reuses the pooled executor on one exchange:pair but sequences maker placement on one account and taker IOC execution on a second account, with restart recovery cancelling dangling maker orders instead of replaying taker legs.
 - `dualAccountVolume.tradedQuoteVolume` is the strategy progress metric for actual taker-leg filled quote only; gross maker+taker turnover stays a separate reporting concept.
 

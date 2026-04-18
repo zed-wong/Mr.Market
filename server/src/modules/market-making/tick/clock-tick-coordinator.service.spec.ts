@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ClockTickCoordinatorService } from './clock-tick-coordinator.service';
+import { MarketMakingRuntimeTimingService } from './runtime-timing.service';
 
 type TestTickComponent = {
   start: () => Promise<void>;
@@ -11,7 +12,10 @@ type TestTickComponent = {
 };
 
 describe('ClockTickCoordinatorService', () => {
-  const createService = (tickSizeMs = 1000) => {
+  const createService = (
+    tickSizeMs = 1000,
+    runtimeTimingService?: MarketMakingRuntimeTimingService,
+  ) => {
     const configService = {
       get: jest.fn((key: string, defaultValue?: number) => {
         if (key === 'strategy.tick_size_ms') {
@@ -22,7 +26,7 @@ describe('ClockTickCoordinatorService', () => {
       }),
     } as unknown as ConfigService;
 
-    return new ClockTickCoordinatorService(configService);
+    return new ClockTickCoordinatorService(configService, runtimeTimingService);
   };
 
   const createComponent = (): TestTickComponent => ({
@@ -147,5 +151,32 @@ describe('ClockTickCoordinatorService', () => {
     pendingResolver?.();
     await Promise.resolve();
     await service.stop();
+  });
+
+  it('records coordinator and component timing metrics for completed ticks', async () => {
+    const runtimeTimingService = new MarketMakingRuntimeTimingService();
+    const service = createService(100, runtimeTimingService);
+    const component = createComponent();
+
+    service.register('component', component, 10);
+
+    await service.start();
+    await service.tickOnce();
+    await service.stop();
+
+    const snapshot = runtimeTimingService.getSnapshot();
+
+    expect(snapshot.stats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: 'coordinator.component',
+          count: 1,
+        }),
+        expect.objectContaining({
+          scope: 'coordinator.tick',
+          count: 1,
+        }),
+      ]),
+    );
   });
 });

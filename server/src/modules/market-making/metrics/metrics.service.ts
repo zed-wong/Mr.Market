@@ -4,6 +4,8 @@ import { StrategyExecutionHistory } from 'src/common/entities/market-making/stra
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
+import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
+
 @Injectable()
 export class MetricsService {
   private readonly logger = new CustomLogger(MetricsService.name);
@@ -11,6 +13,7 @@ export class MetricsService {
   constructor(
     @InjectRepository(StrategyExecutionHistory)
     private readonly orderRepository: Repository<StrategyExecutionHistory>,
+    private readonly runtimeTimingService: MarketMakingRuntimeTimingService,
   ) {}
 
   public async getStrategyMetrics() {
@@ -79,5 +82,9 @@ export class MetricsService {
     });
 
     return metrics;
+  }
+
+  getRuntimeMetrics() {
+    return this.runtimeTimingService.getSnapshot();
   }
 }

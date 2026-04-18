@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 
 import { MetricsService } from './metrics.service';
+import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 
 type StrategyExecutionHistoryRepoMock = {
   query: jest.Mock;
@@ -11,15 +12,18 @@ type StrategyExecutionHistoryRepoMock = {
 describe('MetricsService', () => {
   let service: MetricsService;
   let repository: StrategyExecutionHistoryRepoMock;
+  let runtimeTimingService: MarketMakingRuntimeTimingService;
 
   beforeEach(async () => {
     repository = {
       query: jest.fn(),
     };
+    runtimeTimingService = new MarketMakingRuntimeTimingService();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MetricsService,
+        MarketMakingRuntimeTimingService,
         {
           provide: getRepositoryToken(StrategyExecutionHistory),
           useValue: repository,
@@ -28,6 +32,9 @@ describe('MetricsService', () => {
     }).compile();
 
     service = module.get<MetricsService>(MetricsService);
+    runtimeTimingService = module.get<MarketMakingRuntimeTimingService>(
+      MarketMakingRuntimeTimingService,
+    );
   });
 
   it('should be defined', () => {
@@ -81,5 +88,27 @@ describe('MetricsService', () => {
         orderBookVolume: '220',
       },
     ]);
+  });
+
+  it('returns runtime timing metrics from the shared recorder', () => {
+    runtimeTimingService.recordDuration('strategy.tick', 42, {
+      executorCount: 2,
+    });
+
+    expect(service.getRuntimeMetrics()).toEqual({
+      stats: [
+        expect.objectContaining({
+          scope: 'strategy.tick',
+          count: 1,
+          lastDurationMs: 42,
+        }),
+      ],
+      recent: [
+        expect.objectContaining({
+          scope: 'strategy.tick',
+          durationMs: 42,
+        }),
+      ],
+    });
   });
 });

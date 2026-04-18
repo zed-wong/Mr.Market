@@ -162,6 +162,8 @@ Key properties:
 | `strategy/execution/strategy-intent-execution.service.ts`         | Intent execution, exchange ack handling, tracked-order upserts                  |
 | `trackers/user-stream-tracker.service.ts`                         | Dual-account fill delta normalization, routing, and dedup                       |
 | `trackers/exchange-order-tracker.service.ts`                      | Recovered fill delta routing when user stream is stale                          |
+| `events/market-making-event-bus.service.ts`                       | Typed internal order/balance/stream-health event propagation foundation         |
+| `tick/runtime-timing.service.ts`                                  | Tick, executor, session, and network timing snapshots for runtime refactor work |
 | `admin/market-making/admin-direct-mm.service.ts`                  | Admin CRUD (start/stop/resume/remove)                                           |
 | `execution/exchange-connector-adapter.service.ts`                 | CCXT wrapper with multi-account routing                                         |
 

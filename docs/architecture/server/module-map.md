@@ -314,14 +314,14 @@ This section explains each module with three questions:
 
 #### `market-making/tick/tick.module.ts`
 
-- What: provides the clock tick coordinator contract.
-- Why: strategy and trackers run as deterministic periodic components.
-- Where: used by strategy service and tracker services registered as tick components.
+- What: provides the clock tick coordinator contract plus shared runtime timing recording.
+- Why: strategy and trackers run as deterministic periodic components, and the refactor needs per-tick/per-component/per-network timing evidence before behavior changes.
+- Where: used by strategy service and tracker services registered as tick components, and by `/metrics/runtime`.
 
 #### `market-making/trackers/trackers.module.ts`
 
-- What: tracks order books, user-stream events, and exchange order status, including a thin order-book ingestion layer that subscribes market-making sessions to the shared market-data stream.
-- Why: execution and reconciliation require current exchange-side state without falling back to per-tick REST/ticker requests.
+- What: tracks order books, user-stream events, and exchange order status, including a thin order-book ingestion layer that subscribes market-making sessions to the shared market-data stream and a typed market-making event bus for order/balance/stream-health propagation.
+- Why: execution and reconciliation require current exchange-side state without falling back to per-tick REST/ticker requests, and the runtime refactor needs those cache transitions observable without coupling everything to the shared tick loop.
 - Where: used by strategy runtime and pause/withdraw drain logic.
 
 #### `market-making/execution/execution.module.ts`

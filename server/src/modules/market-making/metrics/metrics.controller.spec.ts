@@ -4,7 +4,8 @@ import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
 
 const mockMetricsService = {
-  // mock methods of MetricsService that are used by MetricsController
+  getStrategyMetrics: jest.fn(),
+  getRuntimeMetrics: jest.fn(),
 };
 
 describe('MetricsController', () => {
@@ -26,5 +27,18 @@ describe('MetricsController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('returns runtime metrics through the controller', () => {
+    mockMetricsService.getRuntimeMetrics.mockReturnValue({
+      stats: [],
+      recent: [],
+    });
+
+    expect(controller.getRuntimeMetrics()).toEqual({
+      stats: [],
+      recent: [],
+    });
+    expect(mockMetricsService.getRuntimeMetrics).toHaveBeenCalledTimes(1);
   });
 });

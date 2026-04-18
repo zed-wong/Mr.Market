@@ -14,9 +14,11 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
+import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
+import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 import { TickComponent } from '../tick/tick-component.interface';
 
 export type TrackedOrderState =
@@ -52,6 +54,8 @@ type FillLogEntry = {
   side: string;
   qty: string;
 };
+
+type TrackedOrderUpdateSource = 'ws' | 'rest' | 'bootstrap' | 'system';
 
 @Injectable()
 export class ExchangeOrderTrackerService
@@ -118,6 +122,10 @@ export class ExchangeOrderTrackerService
     @Optional()
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
+    @Optional()
+    private readonly marketMakingEventBus?: MarketMakingEventBus,
+    @Optional()
+    private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -145,7 +153,10 @@ export class ExchangeOrderTrackerService
     return true;
   }
 
-  upsertOrder(order: TrackedOrder): void {
+  upsertOrder(
+    order: TrackedOrder,
+    source: TrackedOrderUpdateSource = 'system',
+  ): void {
     const key = this.toKey(
       order.exchange,
       order.accountLabel,
@@ -161,9 +172,11 @@ export class ExchangeOrderTrackerService
       }
 
       const nextOrder = this.mergeOrder(existingOrder, order, nextStatus);
+      const fillDelta = this.computeFillDelta(existingOrder, nextOrder);
 
       this.orders.set(key, nextOrder);
       void this.persistOrder(nextOrder, key);
+      this.emitOrderStateChanged(existingOrder, nextOrder, source, fillDelta);
 
       return;
     }
@@ -178,6 +191,7 @@ export class ExchangeOrderTrackerService
 
     this.orders.set(key, createdOrder);
     void this.persistOrder(createdOrder, key);
+    this.emitOrderStateChanged(undefined, createdOrder, source);
   }
 
   getLiveOrders(strategyKey: string): TrackedOrder[] {
@@ -294,12 +308,34 @@ export class ExchangeOrderTrackerService
       >;
 
       try {
-        latest = await this.exchangeConnectorAdapterService?.fetchOrder(
-          order.exchange,
-          order.pair,
-          order.exchangeOrderId,
-          order.accountLabel,
-        );
+        latest = this.runtimeTimingService
+          ? await this.runtimeTimingService.measureAsync(
+              'order-tracker.fetch-order',
+              {
+                accountLabel: order.accountLabel || 'default',
+                exchange: order.exchange,
+                exchangeOrderId: order.exchangeOrderId,
+                pair: order.pair,
+              },
+              () =>
+                this.exchangeConnectorAdapterService?.fetchOrder(
+                  order.exchange,
+                  order.pair,
+                  order.exchangeOrderId,
+                  order.accountLabel,
+                ) as Promise<
+                  Awaited<
+                    ReturnType<ExchangeConnectorAdapterService['fetchOrder']>
+                  >
+                >,
+              { warnThresholdMs: 500 },
+            )
+          : await this.exchangeConnectorAdapterService?.fetchOrder(
+              order.exchange,
+              order.pair,
+              order.exchangeOrderId,
+              order.accountLabel,
+            );
       } catch (error) {
         if (error instanceof ServiceUnavailableException) {
           continue;
@@ -327,13 +363,23 @@ export class ExchangeOrderTrackerService
 
       const fillDelta = this.recordFill(order, nextOrder, ts);
 
-      this.upsertOrder(nextOrder);
+      this.upsertOrder(nextOrder, 'rest');
 
       if (ExchangeOrderTrackerService.terminalStates.has(normalizedStatus)) {
         this.lastPolledAtByOrderKey.delete(orderKey);
       }
 
       if (fillDelta) {
+        this.marketMakingEventBus?.emitOrderFillRecovered({
+          exchange: order.exchange,
+          accountLabel: order.accountLabel || 'default',
+          strategyKey: order.strategyKey,
+          orderId: order.orderId,
+          exchangeOrderId: order.exchangeOrderId,
+          fillDelta,
+          source: 'rest',
+          recoveredAt: ts,
+        });
         await this.routeRecoveredFill(order, nextOrder, fillDelta, ts);
       }
     }
@@ -378,10 +424,9 @@ export class ExchangeOrderTrackerService
     nextOrder: TrackedOrder,
     ts: string,
   ): { qty: string; cumulativeQty: string } | null {
-    const previousFilledQty = Number(previousOrder.cumulativeFilledQty || 0);
-    const nextFilledQty = Number(nextOrder.cumulativeFilledQty || 0);
+    const fillDelta = this.computeFillDelta(previousOrder, nextOrder);
 
-    if (!Number.isFinite(nextFilledQty) || nextFilledQty <= previousFilledQty) {
+    if (!fillDelta) {
       return null;
     }
 
@@ -393,15 +438,12 @@ export class ExchangeOrderTrackerService
     fills.push({
       ts,
       side: previousOrder.side,
-      qty: String(nextFilledQty - previousFilledQty),
+      qty: fillDelta.qty,
     });
 
     this.fillLog.set(previousOrder.strategyKey, fills);
 
-    return {
-      qty: String(nextFilledQty - previousFilledQty),
-      cumulativeQty: String(nextFilledQty),
-    };
+    return fillDelta;
   }
 
   private async routeRecoveredFill(
@@ -579,6 +621,57 @@ export class ExchangeOrderTrackerService
     }
 
     return bigNumberValue.toFixed();
+  }
+
+  private computeFillDelta(
+    previousOrder: TrackedOrder,
+    nextOrder: TrackedOrder,
+  ): { qty: string; cumulativeQty: string } | null {
+    const previousFilledQty = new BigNumber(
+      previousOrder.cumulativeFilledQty || 0,
+    );
+    const nextFilledQty = new BigNumber(nextOrder.cumulativeFilledQty || 0);
+
+    if (
+      !previousFilledQty.isFinite() ||
+      !nextFilledQty.isFinite() ||
+      !nextFilledQty.isGreaterThan(previousFilledQty)
+    ) {
+      return null;
+    }
+
+    return {
+      qty: nextFilledQty.minus(previousFilledQty).toFixed(),
+      cumulativeQty: nextFilledQty.toFixed(),
+    };
+  }
+
+  private emitOrderStateChanged(
+    previousOrder: TrackedOrder | undefined,
+    nextOrder: TrackedOrder,
+    source: TrackedOrderUpdateSource,
+    fillDelta?: { qty: string; cumulativeQty: string } | null,
+  ): void {
+    if (
+      previousOrder &&
+      previousOrder.status === nextOrder.status &&
+      !fillDelta
+    ) {
+      return;
+    }
+
+    this.marketMakingEventBus?.emitOrderStateChanged({
+      exchange: nextOrder.exchange,
+      accountLabel: nextOrder.accountLabel || 'default',
+      strategyKey: nextOrder.strategyKey,
+      orderId: nextOrder.orderId,
+      exchangeOrderId: nextOrder.exchangeOrderId,
+      previousState: previousOrder?.status,
+      newState: nextOrder.status,
+      fillDelta: fillDelta || undefined,
+      source,
+      updatedAt: nextOrder.updatedAt,
+    });
   }
 
   private async hydratePersistedOrders(): Promise<void> {

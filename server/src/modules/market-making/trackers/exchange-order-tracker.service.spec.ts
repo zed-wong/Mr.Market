@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
+
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 
 describe('ExchangeOrderTrackerService', () => {
@@ -528,5 +530,113 @@ describe('ExchangeOrderTrackerService', () => {
     await service.onTick('2026-02-11T00:00:01.000Z');
 
     expect(fetchedIds[0]).toBe('pending-1');
+  });
+
+  it('emits order.state-changed when tracked order state changes', () => {
+    const marketMakingEventBus = new MarketMakingEventBus();
+    const emitOrderStateChangedSpy = jest.spyOn(
+      marketMakingEventBus,
+      'emitOrderStateChanged',
+    );
+    const service = new ExchangeOrderTrackerService(
+      undefined as any,
+      undefined as any,
+      undefined as any,
+      undefined as any,
+      undefined as any,
+      undefined as any,
+      marketMakingEventBus,
+    );
+
+    service.upsertOrder({
+      orderId: 'order-1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'pending_create',
+      createdAt: '2026-04-18T00:00:00.000Z',
+      updatedAt: '2026-04-18T00:00:00.000Z',
+    });
+    service.upsertOrder(
+      {
+        orderId: 'order-1',
+        strategyKey: 'strategy-1',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'ex-1',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'open',
+        createdAt: '2026-04-18T00:00:00.000Z',
+        updatedAt: '2026-04-18T00:00:01.000Z',
+      },
+      'ws',
+    );
+
+    expect(emitOrderStateChangedSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-1',
+        previousState: 'pending_create',
+        newState: 'open',
+        source: 'ws',
+      }),
+    );
+  });
+
+  it('emits order.fill-recovered when REST polling discovers a new fill delta', async () => {
+    const adapter = {
+      fetchOrder: jest.fn().mockResolvedValue({
+        id: 'ex-1',
+        status: 'partially_filled',
+        filled: '0.5',
+      }),
+    };
+    const marketMakingEventBus = new MarketMakingEventBus();
+    const emitOrderFillRecoveredSpy = jest.spyOn(
+      marketMakingEventBus,
+      'emitOrderFillRecovered',
+    );
+    const service = new ExchangeOrderTrackerService(
+      undefined as any,
+      adapter as any,
+      undefined as any,
+      undefined as any,
+      undefined as any,
+      undefined as any,
+      marketMakingEventBus,
+    );
+
+    service.upsertOrder({
+      orderId: 'order-1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      cumulativeFilledQty: '0',
+      status: 'open',
+      createdAt: '2026-04-18T00:00:00.000Z',
+      updatedAt: '2026-04-18T00:00:00.000Z',
+    });
+
+    await service.onTick('2026-04-18T00:00:01.000Z');
+
+    expect(emitOrderFillRecoveredSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-1',
+        fillDelta: {
+          qty: '0.5',
+          cumulativeQty: '0.5',
+        },
+        source: 'rest',
+      }),
+    );
   });
 });

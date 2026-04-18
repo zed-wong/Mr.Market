@@ -1,6 +1,7 @@
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
+import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
@@ -290,6 +291,62 @@ describe('UserStreamTrackerService', () => {
     });
 
     expect(service.getQueueDepth()).toBeGreaterThanOrEqual(1);
+  });
+
+  it('emits stream.health-changed when an account recovers and later degrades', async () => {
+    const marketMakingEventBus = new MarketMakingEventBus();
+    const emitStreamHealthChangedSpy = jest.spyOn(
+      marketMakingEventBus,
+      'emitStreamHealthChanged',
+    );
+    const service = new UserStreamTrackerService(
+      undefined,
+      undefined,
+      {
+        markUserStreamActivity: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      undefined,
+      undefined,
+      marketMakingEventBus,
+    );
+    const nowSpy = jest.spyOn(Date, 'now');
+
+    nowSpy.mockReturnValue(Date.parse('2026-04-18T00:00:00.000Z'));
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'maker',
+      kind: 'balance',
+      payload: {
+        asset: 'USDT',
+        free: '100',
+        source: 'ws',
+      },
+      receivedAt: '2026-04-18T00:00:00.000Z',
+    });
+
+    await service.onTick('2026-04-18T00:00:01.000Z');
+
+    nowSpy.mockReturnValue(Date.parse('2026-04-18T00:00:20.000Z'));
+    await service.onTick('2026-04-18T00:00:20.000Z');
+
+    expect(emitStreamHealthChangedSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        exchange: 'binance',
+        accountLabel: 'maker',
+        previousHealth: undefined,
+        health: 'healthy',
+      }),
+    );
+    expect(emitStreamHealthChangedSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        exchange: 'binance',
+        accountLabel: 'maker',
+        previousHealth: 'healthy',
+        health: 'degraded',
+      }),
+    );
   });
 
   it('routes via exchangeOrderId tracker fallback when fill resolution returns null', async () => {
@@ -596,6 +653,7 @@ describe('UserStreamTrackerService', () => {
         status: 'filled',
         updatedAt: '2026-03-11T00:00:10.000Z',
       }),
+      'ws',
     );
   });
 

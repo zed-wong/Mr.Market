@@ -10,6 +10,7 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
+import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import { UserStreamTrackerService } from '../trackers/user-stream-tracker.service';
 import { BalanceStateCacheService } from './balance-state-cache.service';
@@ -39,6 +40,8 @@ export class BalanceStateRefreshService
     private readonly balanceStateCacheService?: BalanceStateCacheService,
     @Optional()
     private readonly userStreamTrackerService?: UserStreamTrackerService,
+    @Optional()
+    private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -124,10 +127,28 @@ export class BalanceStateRefreshService
       let balance: unknown;
 
       try {
-        balance = await this.exchangeConnectorAdapterService?.fetchBalance(
-          account.exchange,
-          account.accountLabel,
-        );
+        balance = this.runtimeTimingService
+          ? await this.runtimeTimingService.measureAsync(
+              'balance-refresh.fetch-balance',
+              {
+                accountLabel: account.accountLabel,
+                exchange: account.exchange,
+                health: this.getHealthState(
+                  account.exchange,
+                  account.accountLabel,
+                ),
+              },
+              () =>
+                this.exchangeConnectorAdapterService?.fetchBalance(
+                  account.exchange,
+                  account.accountLabel,
+                ) as Promise<unknown>,
+              { warnThresholdMs: 500 },
+            )
+          : await this.exchangeConnectorAdapterService?.fetchBalance(
+              account.exchange,
+              account.accountLabel,
+            );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const trace = error instanceof Error ? error.stack : undefined;

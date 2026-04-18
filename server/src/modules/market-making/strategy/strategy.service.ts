@@ -26,6 +26,7 @@ import { ExchangeConnectorAdapterService } from '../execution/exchange-connector
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
+import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 import { TickComponent } from '../tick/tick-component.interface';
 import {
   ExchangeOrderTrackerService,
@@ -73,6 +74,7 @@ import type {
 import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
+import { ExchangePairExecutorSession } from './execution/exchange-pair-executor';
 import { ExecutorRegistry } from './execution/executor-registry';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
@@ -163,6 +165,8 @@ export class StrategyService
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
     @Optional()
     private readonly exchangeOrderMappingService?: ExchangeOrderMappingService,
+    @Optional()
+    private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -244,8 +248,13 @@ export class StrategyService
 
   private async onTickForPooledExecutors(ts: string): Promise<void> {
     const executors = this.executorRegistry?.getActiveExecutors() || [];
+    const strategyTickStartedAtMs = Date.now();
 
     for (const executor of executors) {
+      const executorStartedAtMs = Date.now();
+      const activeSessionCount = executor.getActiveSessions().length;
+      const dueSessionCount = executor.getDueSessionCount(executorStartedAtMs);
+
       try {
         await executor.onTick(ts);
       } catch (error) {
@@ -257,8 +266,31 @@ export class StrategyService
           `onTick executor failed for exchange=${executor.exchange} pair=${executor.pair} ts=${ts}: ${errorMessage}`,
           errorTrace,
         );
+      } finally {
+        this.runtimeTimingService?.recordDuration(
+          'strategy.executor.tick',
+          Date.now() - executorStartedAtMs,
+          {
+            activeSessionCount,
+            dueSessionCount,
+            exchange: executor.exchange,
+            pair: executor.pair,
+            tickTs: ts,
+          },
+          { warnThresholdMs: 250 },
+        );
       }
     }
+
+    this.runtimeTimingService?.recordDuration(
+      'strategy.tick',
+      Date.now() - strategyTickStartedAtMs,
+      {
+        executorCount: executors.length,
+        tickTs: ts,
+      },
+      { warnThresholdMs: 500 },
+    );
   }
 
   async getRunningStrategies(): Promise<StrategyInstance[]> {
@@ -1270,30 +1302,48 @@ export class StrategyService
   }
 
   private async runSession(
-    session: StrategyRuntimeSession,
+    session: ExchangePairExecutorSession,
     ts: string,
   ): Promise<void> {
-    const controller = this.strategyControllerRegistry?.getController(
-      session.strategyType,
-    );
+    const startedAtMs = Date.now();
 
-    if (controller) {
-      const actions = await controller.decideActions(session, ts, this);
+    try {
+      const controller = this.strategyControllerRegistry?.getController(
+        session.strategyType,
+      );
 
-      if (actions.length > 0) {
-        await this.publishIntents(session.strategyKey, actions);
+      if (controller) {
+        const actions = await controller.decideActions(session, ts, this);
 
-        if (typeof controller.onActionsPublished === 'function') {
-          await controller.onActionsPublished(session, actions, this);
+        if (actions.length > 0) {
+          await this.publishIntents(session.strategyKey, actions);
+
+          if (typeof controller.onActionsPublished === 'function') {
+            await controller.onActionsPublished(session, actions, this);
+          }
         }
+
+        return;
       }
 
-      return;
+      throw new Error(
+        `Strategy controller for type ${session.strategyType} is not registered`,
+      );
+    } finally {
+      this.runtimeTimingService?.recordDuration(
+        'strategy.session.tick',
+        Date.now() - startedAtMs,
+        {
+          accountLabel: session.accountLabel || 'default',
+          exchange: session.exchange,
+          pair: session.pair,
+          strategyKey: session.strategyKey,
+          strategyType: session.strategyType,
+          tickTs: ts,
+        },
+        { warnThresholdMs: 200 },
+      );
     }
-
-    throw new Error(
-      `Strategy controller for type ${session.strategyType} is not registered`,
-    );
   }
 
   async buildVolumeSessionActions(
@@ -4482,7 +4532,19 @@ export class StrategyService
     let balances;
 
     try {
-      balances = await ex.fetchBalance();
+      balances = this.runtimeTimingService
+        ? await this.runtimeTimingService.measureAsync(
+            'strategy.fetch-balance',
+            {
+              accountLabel: 'default',
+              exchange: exchangeName,
+              pair: symbol,
+              reason: 'indicator-balance-check',
+            },
+            () => ex.fetchBalance(),
+            { warnThresholdMs: 500 },
+          )
+        : await ex.fetchBalance();
     } catch (e: unknown) {
       const { message } = this.toErrorDetails(e);
 
@@ -5457,10 +5519,32 @@ export class StrategyService
       };
     }
 
-    const balance = await this.exchangeConnectorAdapterService?.fetchBalance(
-      exchangeName,
-      accountLabel,
-    );
+    const balance: Awaited<
+      ReturnType<ExchangeConnectorAdapterService['fetchBalance']>
+    > = this.runtimeTimingService
+      ? await this.runtimeTimingService.measureAsync(
+          'strategy.fetch-balance',
+          {
+            accountLabel: normalizedAccountLabel,
+            exchange: exchangeName,
+            pair,
+            reason: 'stale-cache',
+          },
+          () =>
+            this.exchangeConnectorAdapterService?.fetchBalance(
+              exchangeName,
+              accountLabel,
+            ) as Promise<
+              Awaited<
+                ReturnType<ExchangeConnectorAdapterService['fetchBalance']>
+              >
+            >,
+          { warnThresholdMs: 500 },
+        )
+      : await this.exchangeConnectorAdapterService?.fetchBalance(
+          exchangeName,
+          accountLabel,
+        );
 
     this.balanceStateCacheService?.applyBalanceSnapshot(
       exchangeName,
@@ -5880,12 +5964,33 @@ export class StrategyService
       }
 
       try {
-        const latest = await this.exchangeConnectorAdapterService.fetchOrder(
-          trackedOrder.exchange,
-          trackedOrder.pair,
-          trackedOrder.exchangeOrderId,
-          trackedOrder.accountLabel,
-        );
+        const latest: Awaited<
+          ReturnType<ExchangeConnectorAdapterService['fetchOrder']>
+        > = this.runtimeTimingService
+          ? await this.runtimeTimingService.measureAsync(
+              'strategy.fetch-order',
+              {
+                accountLabel: trackedOrder.accountLabel || 'default',
+                exchange: trackedOrder.exchange,
+                exchangeOrderId: trackedOrder.exchangeOrderId,
+                pair: trackedOrder.pair,
+                reason: 'startup-reconciliation',
+              },
+              () =>
+                this.exchangeConnectorAdapterService.fetchOrder(
+                  trackedOrder.exchange,
+                  trackedOrder.pair,
+                  trackedOrder.exchangeOrderId,
+                  trackedOrder.accountLabel,
+                ),
+              { warnThresholdMs: 500 },
+            )
+          : await this.exchangeConnectorAdapterService.fetchOrder(
+              trackedOrder.exchange,
+              trackedOrder.pair,
+              trackedOrder.exchangeOrderId,
+              trackedOrder.accountLabel,
+            );
 
         if (!latest) {
           continue;
@@ -5986,13 +6091,39 @@ export class StrategyService
       await Promise.all(
         pendingOrders.map(async (order) => {
           try {
-            const latest =
-              await this.exchangeConnectorAdapterService?.fetchOrder(
-                order.exchange,
-                order.pair,
-                order.exchangeOrderId,
-                order.accountLabel,
-              );
+            const latest: Awaited<
+              ReturnType<ExchangeConnectorAdapterService['fetchOrder']>
+            > = this.runtimeTimingService
+              ? await this.runtimeTimingService.measureAsync(
+                  'strategy.fetch-order',
+                  {
+                    accountLabel: order.accountLabel || 'default',
+                    exchange: order.exchange,
+                    exchangeOrderId: order.exchangeOrderId,
+                    pair: order.pair,
+                    reason: 'shutdown-settle',
+                  },
+                  () =>
+                    this.exchangeConnectorAdapterService?.fetchOrder(
+                      order.exchange,
+                      order.pair,
+                      order.exchangeOrderId,
+                      order.accountLabel,
+                    ) as Promise<
+                      Awaited<
+                        ReturnType<
+                          ExchangeConnectorAdapterService['fetchOrder']
+                        >
+                      >
+                    >,
+                  { warnThresholdMs: 500 },
+                )
+              : await this.exchangeConnectorAdapterService?.fetchOrder(
+                  order.exchange,
+                  order.pair,
+                  order.exchangeOrderId,
+                  order.accountLabel,
+                );
 
             if (!latest) {
               return;

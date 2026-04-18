@@ -17,4 +17,11 @@ export class MetricsController {
   getMetrics() {
     return this.metricsService.getStrategyMetrics();
   }
+
+  @Get('runtime')
+  @ApiOperation({ summary: 'Get market-making runtime timing metrics' })
+  @ApiResponse({ status: 200, description: 'Runtime timing metrics' })
+  getRuntimeMetrics() {
+    return this.metricsService.getRuntimeMetrics();
+  }
 }

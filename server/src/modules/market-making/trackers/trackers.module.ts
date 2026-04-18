@@ -8,6 +8,7 @@ import { MarketdataModule } from '../../data/market-data/market-data.module';
 import { ExchangeInitModule } from '../../infrastructure/exchange-init/exchange-init.module';
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { BalanceStateRefreshService } from '../balance-state/balance-state-refresh.service';
+import { MarketMakingEventsModule } from '../events/market-making-events.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { TickModule } from '../tick/tick.module';
 import {
@@ -27,6 +28,7 @@ import { UserStreamTrackerService } from './user-stream-tracker.service';
   imports: [
     TickModule,
     ExecutionModule,
+    MarketMakingEventsModule,
     ExchangeInitModule,
     MarketdataModule,
     TypeOrmModule.forFeature([

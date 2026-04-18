@@ -149,6 +149,12 @@ export class ExchangePairExecutor {
     );
   }
 
+  getDueSessionCount(nowMs = Date.now()): number {
+    return this.getActiveSessions().filter(
+      (session) => session.nextRunAtMs <= nowMs,
+    ).length;
+  }
+
   getRecentErrors(orderId: string): RecentErrorEntry[] {
     return [...(this.recentErrors.get(orderId) || [])];
   }
