@@ -54,6 +54,21 @@
         "description": "Delay before the taker IOC leg submits",
         "minimum": 0
       },
+      "tradeAmountVariance": {
+        "type": "number",
+        "description": "Fractional variance applied to trade amount",
+        "minimum": 0
+      },
+      "priceOffsetVariance": {
+        "type": "number",
+        "description": "Fractional variance applied to maker price offset",
+        "minimum": 0
+      },
+      "makerDelayVariance": {
+        "type": "number",
+        "description": "Fractional variance applied to maker delay",
+        "minimum": 0
+      },
       "dynamicRoleSwitching": {
         "type": "boolean",
         "description": "Switch maker/taker roles dynamically based on balances"

@@ -1083,6 +1083,12 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException('API key exchange does not match request');
     }
 
+    if (String(apiKey.permissions || '').trim() !== 'read-trade') {
+      throw new BadRequestException(
+        'API key must have read-trade permissions',
+      );
+    }
+
     const accountLabel = String(apiKey.key_id || '').trim();
 
     if (!accountLabel) {
@@ -1277,11 +1283,22 @@ export class AdminDirectMarketMakingService {
       const warnings: string[] = [];
       const baseFree = new BigNumber(balance?.free?.[baseAsset] ?? 0);
       const quoteFree = new BigNumber(balance?.free?.[quoteAsset] ?? 0);
+      const quoteRequirement =
+        quoteAsset &&
+        orderAmount.isFinite() &&
+        orderAmount.isGreaterThan(0)
+          ? (
+              await this.resolveTickerPrice(exchangeName, pair, accountLabel)
+            )?.multipliedBy(orderAmount) || null
+          : null;
 
       if (baseAsset && baseFree.isZero()) {
         warnings.push(`Low ${baseAsset} balance`);
       }
-      if (quoteAsset && quoteFree.isLessThan(orderAmount)) {
+      if (
+        quoteAsset &&
+        quoteFree.isLessThan(quoteRequirement || orderAmount)
+      ) {
         warnings.push(`Low ${quoteAsset} balance`);
       }
 

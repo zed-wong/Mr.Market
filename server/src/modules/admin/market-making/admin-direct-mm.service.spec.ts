@@ -66,6 +66,17 @@ describe('AdminDirectMarketMakingService', () => {
     };
     const exchangeApiKeyService = {
       readAPIKey: jest.fn().mockImplementation(async (apiKeyId: string) => {
+        if (apiKeyId === 'api-key-readonly') {
+          return {
+            exchange: 'binance',
+            key_id: 'api-key-readonly',
+            name: 'desk-readonly',
+            api_key: 'api-key-readonly',
+            api_secret: 'api-secret-readonly',
+            permissions: 'read',
+          };
+        }
+
         if (apiKeyId === 'api-key-2') {
           return {
             exchange: 'binance',
@@ -73,6 +84,7 @@ describe('AdminDirectMarketMakingService', () => {
             name: 'desk-2',
             api_key: 'api-key-2',
             api_secret: 'api-secret-2',
+            permissions: 'read-trade',
           };
         }
 
@@ -82,6 +94,7 @@ describe('AdminDirectMarketMakingService', () => {
           name: 'desk-1',
           api_key: 'api-key',
           api_secret: 'api-secret',
+          permissions: 'read-trade',
         };
       }),
       readDecryptedAPIKey: jest.fn().mockResolvedValue({
@@ -328,6 +341,24 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
+  it('rejects direct start when the API key is read-only', async () => {
+    const { service, strategyDefinitionRepository } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-1',
+      enabled: true,
+      controllerType: 'pureMarketMaking',
+      configSchema: singleAccountLaunchConfig,
+    });
+
+    await expect(
+      service.directStart({
+        ...directStartDto,
+        apiKeyId: 'api-key-readonly',
+      }),
+    ).rejects.toThrow('API key must have read-trade permissions');
+  });
+
   it('fails direct start when the strategy definition is missing', async () => {
     const { service, strategyDefinitionRepository } = buildService();
 
@@ -401,6 +432,51 @@ describe('AdminDirectMarketMakingService', () => {
 
     expect(result.state).toBe('running');
     expect(result.warnings).toEqual(['Low BTC balance', 'Low USDT balance']);
+  });
+
+  it('calculates quote-balance warnings using the live pair price', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      exchange,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-1',
+      enabled: true,
+      controllerType: 'pureMarketMaking',
+      configSchema: singleAccountLaunchConfig,
+    });
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'pureMarketMaking',
+      resolvedConfig: {
+        bidSpread: 0.001,
+        askSpread: 0.001,
+        orderAmount: 2,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: 'MID_PRICE',
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        ceilingPrice: 0,
+        floorPrice: 0,
+      },
+    });
+    exchange.fetchBalance.mockResolvedValue({
+      free: { BTC: 1, USDT: 50 },
+      used: {},
+      total: {},
+    });
+    exchange.fetchTicker.mockResolvedValue({
+      bid: 99,
+      ask: 101,
+    });
+
+    const result = await service.directStart(directStartDto);
+
+    expect(result.state).toBe('running');
+    expect(result.warnings).toEqual(['Low USDT balance']);
   });
 
   it('rejects direct start when order amount is below the market minimum', async () => {
@@ -1004,6 +1080,7 @@ describe('AdminDirectMarketMakingService', () => {
       name: 'desk-1',
       api_key: 'api-key',
       api_secret: 'api-secret',
+      permissions: 'read-trade',
     });
 
     await expect(
