@@ -35,6 +35,7 @@ import { OrderBookIngestionService } from '../trackers/order-book-ingestion.serv
 import { UserStreamIngestionService } from '../trackers/user-stream-ingestion.service';
 import { ExecutorAction } from './config/executor-action.types';
 import type {
+  DualAccountActiveCycleState,
   AmmDexVolumeStrategyParams,
   CexVolumeStrategyParams,
   ConnectorHealthStatus,
@@ -220,6 +221,7 @@ export class StrategyService
       orderId?: string;
       exchangeOrderId?: string | null;
       clientOrderId?: string | null;
+      accountLabel?: string | null;
       fillId?: string | null;
       side?: 'buy' | 'sell';
       price?: string;
@@ -918,11 +920,11 @@ export class StrategyService
         },
       );
 
-      this.startPrivateOrderWatcher(
+      this.startPrivateWatchers(
         strategyType,
         pooledTarget.exchange,
         pooledTarget.pair,
-        accountLabel,
+        params,
       );
       this.startBalanceWatchers(strategyType, pooledTarget.exchange, params);
       this.logger.log(
@@ -1439,10 +1441,18 @@ export class StrategyService
     const runtimeParams =
       (activeSession?.params as DualAccountVolumeStrategyParams) ||
       (session.params as DualAccountVolumeStrategyParams);
-    const latestParams = this.mergeDualAccountConfigIntoRuntime(
+    let latestParams = this.mergeDualAccountConfigIntoRuntime(
       runtimeParams,
       persistedParams,
     );
+    const activeTrackedOrders = this.getCancelableTrackedOrders(session.strategyKey);
+
+    if (activeTrackedOrders.length === 0) {
+      latestParams = await this.finalizeSettledDualAccountCycle(
+        session,
+        latestParams,
+      );
+    }
 
     if (this.isSameActiveSession(activeSession, session) && activeSession) {
       activeSession.params = latestParams;
@@ -1499,7 +1509,7 @@ export class StrategyService
       return [];
     }
 
-    if (this.getCancelableTrackedOrders(session.strategyKey).length > 0) {
+    if (activeTrackedOrders.length > 0) {
       return [];
     }
 
@@ -1575,6 +1585,7 @@ export class StrategyService
           mergedParams.exchangeName,
           mergedParams.symbol,
         ) || false,
+      activeCycle: this.buildActiveDualAccountCycleState(tradeAction),
     };
 
     await this.persistStrategyParams(session.strategyKey, nextParams);
@@ -4550,11 +4561,11 @@ export class StrategyService
       pooledTarget.pair,
     );
 
-    this.stopPrivateOrderWatcher(
+    this.stopPrivateWatchers(
       session.strategyType,
       pooledTarget.exchange,
       pooledTarget.pair,
-      this.resolveAccountLabel(session.strategyType, session.params),
+      session.params,
     );
     this.stopBalanceWatchers(
       session.strategyType,
@@ -4634,12 +4645,7 @@ export class StrategyService
       strategyType === 'dualAccountVolume' ||
       strategyType === 'dualAccountBestCapacityVolume'
     ) {
-      const accountLabel = String(
-        (params as unknown as DualAccountVolumeStrategyParams)
-          .makerAccountLabel || 'default',
-      ).trim();
-
-      return accountLabel || 'default';
+      return undefined;
     }
 
     if (strategyType !== 'pureMarketMaking') {
@@ -4674,26 +4680,35 @@ export class StrategyService
     return accountLabel ? [accountLabel] : ['default'];
   }
 
-  private startPrivateOrderWatcher(
+  private startPrivateWatchers(
     strategyType: StrategyType,
     exchange: string,
     pair: string,
-    accountLabel?: string,
+    params: StrategyRuntimeSession['params'],
   ): void {
-    if (strategyType !== 'pureMarketMaking') {
+    if (
+      strategyType !== 'pureMarketMaking' &&
+      strategyType !== 'dualAccountVolume' &&
+      strategyType !== 'dualAccountBestCapacityVolume'
+    ) {
       return;
     }
 
-    this.userStreamIngestionService?.startOrderWatcher({
-      exchange,
-      accountLabel: accountLabel || 'default',
-      symbol: pair,
-    });
-    this.userStreamIngestionService?.startTradeWatcher({
-      exchange,
-      accountLabel: accountLabel || 'default',
-      symbol: pair,
-    });
+    for (const accountLabel of this.resolveRequiredAccountLabels(
+      strategyType,
+      params,
+    )) {
+      this.userStreamIngestionService?.startOrderWatcher({
+        exchange,
+        accountLabel: accountLabel || 'default',
+        symbol: pair,
+      });
+      this.userStreamIngestionService?.startTradeWatcher({
+        exchange,
+        accountLabel: accountLabel || 'default',
+        symbol: pair,
+      });
+    }
   }
 
   private startBalanceWatchers(
@@ -4754,26 +4769,35 @@ export class StrategyService
     }
   }
 
-  private stopPrivateOrderWatcher(
+  private stopPrivateWatchers(
     strategyType: StrategyType,
     exchange: string,
     pair: string,
-    accountLabel?: string,
+    params: StrategyRuntimeSession['params'],
   ): void {
-    if (strategyType !== 'pureMarketMaking') {
+    if (
+      strategyType !== 'pureMarketMaking' &&
+      strategyType !== 'dualAccountVolume' &&
+      strategyType !== 'dualAccountBestCapacityVolume'
+    ) {
       return;
     }
 
-    this.userStreamIngestionService?.stopOrderWatcher({
-      exchange,
-      accountLabel: accountLabel || 'default',
-      symbol: pair,
-    });
-    this.userStreamIngestionService?.stopTradeWatcher({
-      exchange,
-      accountLabel: accountLabel || 'default',
-      symbol: pair,
-    });
+    for (const accountLabel of this.resolveRequiredAccountLabels(
+      strategyType,
+      params,
+    )) {
+      this.userStreamIngestionService?.stopOrderWatcher({
+        exchange,
+        accountLabel: accountLabel || 'default',
+        symbol: pair,
+      });
+      this.userStreamIngestionService?.stopTradeWatcher({
+        exchange,
+        accountLabel: accountLabel || 'default',
+        symbol: pair,
+      });
+    }
   }
 
   private logSessionTickError(
@@ -4806,8 +4830,10 @@ export class StrategyService
   private async handleSessionFill(
     session: StrategyRuntimeSession,
     fill: {
+      orderId?: string;
       exchangeOrderId?: string | null;
       clientOrderId?: string | null;
+      accountLabel?: string | null;
       fillId?: string | null;
       side?: 'buy' | 'sell';
       price?: string;
@@ -4824,11 +4850,17 @@ export class StrategyService
       return;
     }
 
+    const trackedOrder =
+      session.strategyType === 'dualAccountVolume' ||
+      session.strategyType === 'dualAccountBestCapacityVolume'
+        ? this.resolveTrackedOrderForFill(session, fill)
+        : undefined;
+
     await this.applyFillToBalanceLedger(session, fill);
     this.recordSessionPnL(session, fill, {
       includeTradedQuoteVolume:
-        session.strategyType !== 'dualAccountVolume' &&
-        session.strategyType !== 'dualAccountBestCapacityVolume',
+        session.strategyType === 'pureMarketMaking' ||
+        trackedOrder?.role === 'taker',
     });
 
     if (
@@ -4840,10 +4872,19 @@ export class StrategyService
           where: { strategyKey: session.strategyKey },
         })
       )?.parameters as Partial<DualAccountVolumeStrategyParams> | undefined;
-      const nextParams = this.mergeDualAccountFillRuntimeIntoPersisted(
+      let nextParams = this.mergeDualAccountFillRuntimeIntoPersisted(
         session.params as DualAccountVolumeStrategyParams,
         persistedParams,
       );
+
+      if (trackedOrder) {
+        nextParams = await this.applyDualAccountFillProgress(
+          session,
+          fill,
+          trackedOrder,
+          nextParams,
+        );
+      }
 
       session.params = nextParams;
       session.tradedQuoteVolume = Number(nextParams.tradedQuoteVolume || 0);
@@ -4866,6 +4907,262 @@ export class StrategyService
       Number.isFinite(delayMs) && delayMs > 0
         ? Math.max(session.nextRunAtMs, session.lastFillTimestamp + delayMs)
         : Math.min(session.nextRunAtMs, Date.now());
+  }
+
+  private buildActiveDualAccountCycleState(
+    action?: ExecutorAction,
+  ): DualAccountActiveCycleState | undefined {
+    if (!action || this.isDualAccountRebalanceAction(action)) {
+      return undefined;
+    }
+
+    const metadata =
+      action.metadata && typeof action.metadata === 'object'
+        ? (action.metadata as Record<string, unknown>)
+        : undefined;
+
+    if (metadata?.role !== 'maker') {
+      return undefined;
+    }
+
+    const makerAccountLabel = this.readString(
+      metadata.makerAccountLabel,
+      this.readString(action.accountLabel),
+    );
+    const takerAccountLabel = this.readString(metadata.takerAccountLabel);
+    const cycleId = this.readString(metadata.cycleId, action.intentId);
+    const tickId = this.readString(metadata.tickId, action.createdAt);
+    const orderId = this.readString(metadata.orderId, action.clientId);
+    const price = this.readString(action.price);
+    const requestedQty = this.readString(action.qty);
+
+    if (
+      !makerAccountLabel ||
+      !takerAccountLabel ||
+      !cycleId ||
+      !tickId ||
+      !orderId ||
+      !price ||
+      !requestedQty
+    ) {
+      return undefined;
+    }
+
+    return {
+      cycleId,
+      tickId,
+      orderId,
+      makerSide: action.side,
+      makerAccountLabel,
+      takerAccountLabel,
+      price,
+      requestedQty,
+      makerFilledQty: '0',
+      takerFilledQty: '0',
+    };
+  }
+
+  private resolveTrackedOrderForFill(
+    session: StrategyRuntimeSession,
+    fill: {
+      orderId?: string;
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      accountLabel?: string | null;
+    },
+  ): TrackedOrder | undefined {
+    const exchangeOrderId = this.readString(fill.exchangeOrderId);
+    const clientOrderId = this.readString(fill.clientOrderId);
+    const accountLabel = this.readString(fill.accountLabel);
+    const exchange = this.readString((session.params as Record<string, unknown>)?.exchangeName);
+
+    if (exchangeOrderId) {
+      const trackedOrder = this.exchangeOrderTrackerService?.getByExchangeOrderId(
+        exchange,
+        exchangeOrderId,
+        accountLabel || undefined,
+      );
+
+      if (trackedOrder?.strategyKey === session.strategyKey) {
+        return trackedOrder;
+      }
+    }
+
+    const trackedOrders =
+      this.exchangeOrderTrackerService?.getTrackedOrders(session.strategyKey) ||
+      [];
+
+    return trackedOrders.find((order) => {
+      if (fill.orderId && order.orderId !== fill.orderId) {
+        return false;
+      }
+
+      const accountMatches = !accountLabel || order.accountLabel === accountLabel;
+
+      return (
+        accountMatches &&
+        ((exchangeOrderId && order.exchangeOrderId === exchangeOrderId) ||
+          (clientOrderId && order.clientOrderId === clientOrderId))
+      );
+    });
+  }
+
+  private async applyDualAccountFillProgress(
+    session: StrategyRuntimeSession,
+    fill: {
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      accountLabel?: string | null;
+      fillId?: string | null;
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      cumulativeQty?: string;
+      receivedAt?: string;
+    },
+    trackedOrder: TrackedOrder,
+    params: DualAccountVolumeStrategyParams,
+  ): Promise<DualAccountVolumeStrategyParams> {
+    if (trackedOrder.role === 'rebalance' || !params.activeCycle) {
+      return params;
+    }
+
+    const fillQty = new BigNumber(fill.qty || 0);
+
+    if (!fillQty.isFinite() || fillQty.isLessThanOrEqualTo(0)) {
+      return params;
+    }
+
+    const activeCycle = { ...params.activeCycle };
+
+    if (trackedOrder.orderId !== activeCycle.orderId) {
+      return params;
+    }
+
+    if (
+      trackedOrder.role === 'maker' &&
+      trackedOrder.accountLabel === activeCycle.makerAccountLabel
+    ) {
+      const exchange = this.readString(
+        (session.params as Record<string, unknown>)?.exchangeName,
+      );
+      const pair = this.readString(
+        (session.params as Record<string, unknown>)?.pair,
+        this.readString((session.params as Record<string, unknown>)?.symbol),
+      );
+      const makerFilledQty = new BigNumber(activeCycle.makerFilledQty || 0).plus(
+        fillQty,
+      );
+      const hedgePrice = new BigNumber(fill.price || activeCycle.price);
+      const nextParams: DualAccountVolumeStrategyParams = {
+        ...params,
+        activeCycle: {
+          ...activeCycle,
+          makerFilledQty: makerFilledQty.toFixed(),
+        },
+      };
+
+      if (!hedgePrice.isFinite() || hedgePrice.isLessThanOrEqualTo(0)) {
+        this.logger.warn(
+          `Skipping dual-account taker hedge for ${session.strategyKey}: invalid maker fill price ${fill.price || activeCycle.price}`,
+        );
+
+        return nextParams;
+      }
+
+      const ts = this.readString(fill.receivedAt, getRFC3339Timestamp());
+      const hedgeIntent = this.createIntent(
+        session.strategyKey,
+        session.strategyKey,
+        session.userId,
+        session.clientId,
+        exchange,
+        pair,
+        activeCycle.makerSide === 'buy' ? 'sell' : 'buy',
+        hedgePrice,
+        fillQty,
+        ts,
+        `dual-account-volume-taker-${
+          activeCycle.cycleId
+        }-${makerFilledQty.toFixed().replace('.', '_')}`,
+        params.executionCategory,
+        {
+          cycleId: activeCycle.cycleId,
+          tickId: activeCycle.tickId,
+          orderId: activeCycle.orderId,
+          role: 'taker',
+          makerAccountLabel: activeCycle.makerAccountLabel,
+          takerAccountLabel: activeCycle.takerAccountLabel,
+          makerOrderId: trackedOrder.exchangeOrderId,
+          triggerFillQty: fillQty.toFixed(),
+          makerFilledQty: makerFilledQty.toFixed(),
+          requestedQty: activeCycle.requestedQty,
+        },
+        false,
+        activeCycle.takerAccountLabel,
+        'IOC',
+      );
+
+      await this.publishIntents(session.strategyKey, [hedgeIntent]);
+
+      return nextParams;
+    }
+
+    if (
+      trackedOrder.role === 'taker' &&
+      trackedOrder.accountLabel === activeCycle.takerAccountLabel
+    ) {
+      return {
+        ...params,
+        activeCycle: {
+          ...activeCycle,
+          takerFilledQty: new BigNumber(activeCycle.takerFilledQty || 0)
+            .plus(fillQty)
+            .toFixed(),
+        },
+      };
+    }
+
+    return params;
+  }
+
+  private async finalizeSettledDualAccountCycle(
+    session: StrategyRuntimeSession,
+    params: DualAccountVolumeStrategyParams,
+  ): Promise<DualAccountVolumeStrategyParams> {
+    if (!params.activeCycle) {
+      return params;
+    }
+
+    const makerFilledQty = new BigNumber(params.activeCycle.makerFilledQty || 0);
+    const takerFilledQty = new BigNumber(params.activeCycle.takerFilledQty || 0);
+    const nextParams: DualAccountVolumeStrategyParams = {
+      ...params,
+      activeCycle: undefined,
+    };
+
+    if (!makerFilledQty.isFinite() || makerFilledQty.isLessThanOrEqualTo(0)) {
+      await this.persistStrategyParams(session.strategyKey, nextParams);
+
+      return nextParams;
+    }
+
+    if (
+      takerFilledQty.isFinite() &&
+      takerFilledQty.isGreaterThanOrEqualTo(makerFilledQty)
+    ) {
+      nextParams.completedCycles = Number(nextParams.completedCycles || 0) + 1;
+      await this.persistStrategyParams(session.strategyKey, nextParams);
+
+      return nextParams;
+    }
+
+    this.logger.warn(
+      `Dual-account cycle settled under-hedged for ${session.strategyKey}: cycle=${params.activeCycle.cycleId} makerFilledQty=${makerFilledQty.toFixed()} takerFilledQty=${takerFilledQty.toFixed()}`,
+    );
+    await this.persistStrategyParams(session.strategyKey, nextParams);
+
+    return nextParams;
   }
 
   private async applyFillToBalanceLedger(
@@ -5774,15 +6071,24 @@ export class StrategyService
     };
 
     if (Number.isFinite(Number(persisted.publishedCycles))) {
-      next.publishedCycles = Number(persisted.publishedCycles);
+      next.publishedCycles = Math.max(
+        Number(runtime.publishedCycles || 0),
+        Number(persisted.publishedCycles),
+      );
     }
 
     if (Number.isFinite(Number(persisted.completedCycles))) {
-      next.completedCycles = Number(persisted.completedCycles);
+      next.completedCycles = Math.max(
+        Number(runtime.completedCycles || 0),
+        Number(persisted.completedCycles),
+      );
     }
 
     if (Number.isFinite(Number(persisted.tradedQuoteVolume))) {
-      next.tradedQuoteVolume = Number(persisted.tradedQuoteVolume);
+      next.tradedQuoteVolume = Math.max(
+        Number(runtime.tradedQuoteVolume || 0),
+        Number(persisted.tradedQuoteVolume),
+      );
     }
 
     return next;

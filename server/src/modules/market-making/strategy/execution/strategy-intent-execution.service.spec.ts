@@ -242,7 +242,7 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('executes dual-account maker then taker and persists completed cycles', async () => {
+  it('tracks dual-account maker intents without executing inline taker hedges', async () => {
     const service = createService(true);
 
     await service.consumeIntents([
@@ -262,8 +262,7 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
-    ).toHaveBeenNthCalledWith(
-      1,
+    ).toHaveBeenCalledWith(
       'binance',
       'BTC/USDT',
       'buy',
@@ -273,157 +272,12 @@ describe('StrategyIntentExecutionService', () => {
       { postOnly: false, timeInForce: undefined },
       'maker',
     );
-    expect(
-      exchangeConnectorAdapterService.placeLimitOrder,
-    ).toHaveBeenNthCalledWith(
-      2,
-      'binance',
-      'BTC/USDT',
-      'sell',
-      '1',
-      '100',
-      buildSubmittedClientOrderId('dual-cycle-1', 1),
-      { postOnly: false, timeInForce: 'IOC' },
-      'taker',
+    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(
+      1,
     );
-    expect(strategyInstanceRepository.update).toHaveBeenCalledWith(
-      { strategyKey: 'u1-c1-pureMarketMaking' },
-      expect.objectContaining({
-        parameters: expect.objectContaining({
-          completedCycles: 1,
-          tradedQuoteVolume: '100',
-        }),
-      }),
-    );
-  });
-
-  it('cancels a dual-account maker that remains live after the settlement window', async () => {
-    exchangeConnectorAdapterService.placeLimitOrder
-      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
-      .mockResolvedValueOnce({ id: 'taker-order', status: 'closed' });
-    exchangeConnectorAdapterService.fetchOrder
-      .mockResolvedValueOnce({
-        id: 'taker-order',
-        status: 'closed',
-        filled: '1',
-      })
-      .mockResolvedValueOnce({
-        id: 'maker-order',
-        status: 'open',
-        filled: '0',
-      });
-    const service = createService(
-      true,
-      createConfigService(true, {
-        'strategy.dual_account_maker_settlement_timeout_ms': 1,
-      }),
-    );
-
-    await service.consumeIntents([
-      {
-        ...baseIntent,
-        intentId: 'dual-maker-live',
-        accountLabel: 'maker',
-        metadata: {
-          role: 'maker',
-          takerAccountLabel: 'taker',
-          makerDelayMs: 0,
-          cycleId: 'cycle-live',
-          orderId: 'dual-cycle-live',
-        },
-      },
-    ]);
-
-    expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledWith(
-      'binance',
-      'BTC/USDT',
-      'maker-order',
-      'maker',
-    );
-    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
-      'binance',
-      'BTC/USDT',
-      'maker-order',
-      'maker',
-    );
-    expect(strategyInstanceRepository.update).not.toHaveBeenCalledWith(
-      { strategyKey: 'u1-c1-pureMarketMaking' },
-      expect.objectContaining({
-        parameters: expect.objectContaining({ completedCycles: 1 }),
-      }),
-    );
-  });
-
-  it('cancels maker on dual-account taker failure', async () => {
-    exchangeConnectorAdapterService.placeLimitOrder
-      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
-      .mockRejectedValue(new Error('taker failed'));
-    const service = createService(true);
-
-    await expect(
-      service.consumeIntents([
-        {
-          ...baseIntent,
-          intentId: 'dual-maker-fail',
-          accountLabel: 'maker',
-          metadata: {
-            role: 'maker',
-            takerAccountLabel: 'taker',
-            makerDelayMs: 0,
-            cycleId: 'cycle-2',
-            orderId: 'dual-cycle-2',
-          },
-        },
-      ]),
-    ).rejects.toThrow('taker failed');
-
-    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
-      'binance',
-      'BTC/USDT',
-      'maker-order',
-      'maker',
-    );
+    expect(exchangeConnectorAdapterService.fetchOrder).not.toHaveBeenCalled();
+    expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
-  });
-
-  it('does not increment completed cycles when the dual-account taker only partially fills', async () => {
-    exchangeConnectorAdapterService.placeLimitOrder
-      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
-      .mockResolvedValueOnce({ id: 'taker-order', status: 'expired' });
-    exchangeConnectorAdapterService.fetchOrder
-      .mockResolvedValueOnce({
-        id: 'taker-order',
-        status: 'expired',
-        filled: '0.5',
-      })
-      .mockResolvedValueOnce({
-        id: 'maker-order',
-        status: 'closed',
-        filled: '1',
-      });
-    const service = createService(true);
-
-    await service.consumeIntents([
-      {
-        ...baseIntent,
-        intentId: 'dual-maker-partial',
-        accountLabel: 'maker',
-        metadata: {
-          role: 'maker',
-          takerAccountLabel: 'taker',
-          makerDelayMs: 0,
-          cycleId: 'cycle-partial',
-          orderId: 'dual-cycle-partial',
-        },
-      },
-    ]);
-
-    expect(strategyInstanceRepository.update).not.toHaveBeenCalledWith(
-      { strategyKey: 'u1-c1-pureMarketMaking' },
-      expect.objectContaining({
-        parameters: expect.objectContaining({ completedCycles: 1 }),
-      }),
-    );
   });
 
   it('fails IOC intents that return neither an exchange order id nor any fill', async () => {
@@ -450,10 +304,7 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('keeps dynamic maker/taker metadata when executing inline dual-account taker', async () => {
-    exchangeConnectorAdapterService.placeLimitOrder
-      .mockResolvedValueOnce({ id: 'maker-order', status: 'open' })
-      .mockResolvedValueOnce({ id: 'taker-order', status: 'filled' });
+  it('keeps dynamic maker/taker metadata on tracked maker intents without inline hedging', async () => {
     const service = createService(true);
 
     await service.consumeIntents([
@@ -475,21 +326,17 @@ describe('StrategyIntentExecutionService', () => {
       },
     ]);
 
-    expect(
-      exchangeConnectorAdapterService.placeLimitOrder,
-    ).toHaveBeenNthCalledWith(
-      2,
-      'binance',
-      'BTC/USDT',
-      'sell',
-      '1',
-      '100',
-      buildSubmittedClientOrderId('dual-cycle-3', 1),
-      { postOnly: false, timeInForce: 'IOC' },
-      'maker',
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'dual-cycle-3',
+        accountLabel: 'taker',
+        role: 'maker',
+      }),
+    );
+    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(
+      1,
     );
   });
-
 
   it('tracks rebalance intents without running the inline dual-account taker flow', async () => {
     const service = createService(true);

@@ -274,6 +274,7 @@ export class UserStreamTrackerService
         orderId: trackedOrder.orderId,
         exchangeOrderId: fill.exchangeOrderId,
         clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
+        accountLabel: fill.accountLabel,
         ...routedFill,
       });
       return;
@@ -299,6 +300,7 @@ export class UserStreamTrackerService
       orderId: resolution.orderId,
       exchangeOrderId: fill.exchangeOrderId,
       clientOrderId: fill.clientOrderId,
+      accountLabel: fill.accountLabel,
       ...routedFill,
     });
   }

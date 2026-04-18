@@ -68,6 +68,7 @@ export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   completedCycles?: number;
   orderBookReady?: boolean;
   consecutiveFallbackCycles?: number;
+  activeCycle?: DualAccountActiveCycleState;
 };
 
 export type DualAccountBestCapacityVolumeStrategyParams =
@@ -138,6 +139,19 @@ export type DualAccountRebalanceCandidate = {
 export type DualAccountBalanceSnapshot = {
   makerBalances: DualAccountPairBalances;
   takerBalances: DualAccountPairBalances;
+};
+
+export type DualAccountActiveCycleState = {
+  cycleId: string;
+  tickId: string;
+  orderId: string;
+  makerSide: 'buy' | 'sell';
+  makerAccountLabel: string;
+  takerAccountLabel: string;
+  price: string;
+  requestedQty: string;
+  makerFilledQty: string;
+  takerFilledQty: string;
 };
 
 export type PooledExecutorTarget = {

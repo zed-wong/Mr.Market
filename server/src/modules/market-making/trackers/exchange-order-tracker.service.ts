@@ -423,6 +423,7 @@ export class ExchangeOrderTrackerService
       orderId: previousOrder.orderId,
       exchangeOrderId: previousOrder.exchangeOrderId,
       clientOrderId: previousOrder.clientOrderId,
+      accountLabel: previousOrder.accountLabel,
       side: previousOrder.side,
       price: nextOrder.price || previousOrder.price,
       qty: fillDelta.qty,

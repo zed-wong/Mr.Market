@@ -1,5 +1,10 @@
 # Execution Flow Changelog
 
+## 2026-04-18
+
+- Switch dual-account volume hedging from maker-placement ACK coupling to maker fill-driven execution: persist `activeCycle`, start private order+trade watchers for both `accountLabel`s, emit taker IOC intents only from observed maker fill deltas, and finalize `completedCycles` only after tracked orders settle with fully hedged maker fill
+- Preserve `accountLabel` naming in dual-account runtime/fill routing while carrying it end-to-end through tracker recovery and user-stream dispatch, so the strategy can distinguish maker/taker account boundaries without renaming runtime fields to `keyId`
+
 ## 2026-04-16
 
 - Centralize strategy-definition capability derivation for admin direct MM: expose `directOrderCompatible`, `directExecutionMode`, and `launchSurfaces` on definition responses, and filter direct-launch surfaces by capability instead of controller-name allowlists

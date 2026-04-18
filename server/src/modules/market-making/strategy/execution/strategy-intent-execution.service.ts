@@ -305,13 +305,6 @@ export class StrategyIntentExecutionService {
             createdAt: getRFC3339Timestamp(),
             updatedAt: getRFC3339Timestamp(),
           });
-          if (this.isMakerIntent(intent)) {
-            await this.executeInlineDualAccountTaker(
-              intent,
-              String(result.id),
-              this.readMetadataString(intent, 'price') || intent.price,
-            );
-          }
         } else {
           this.logger.warn(
             `CREATE_LIMIT_ORDER returned no id for ${intent.strategyKey}: ${

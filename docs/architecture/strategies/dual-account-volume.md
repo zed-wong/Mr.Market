@@ -27,6 +27,7 @@ Stop conditions:
 ```
 completedCycles >= numTrades?        → stop
 targetQuoteVolume reached?           → stop
+no active tracked orders + settled activeCycle? → finalize previous cycle
 non-terminal tracked orders exist?   → skip (prevent overlap)
 order book unavailable?              → skip
 spread <= 0?                         → skip
@@ -58,21 +59,36 @@ side = resolveVolumeSide(postOnlySide, publishedCycles, buyBias)
 
 If no tradable side found → fall through to rebalance (step 5 below).
 
-### 4. Maker → Taker execution
+### 4. Maker Fill-Driven Hedge
 
-**Maker intent** (`consumeIntent`):
+**Maker intent publish**:
 
 - `CREATE_LIMIT_ORDER`, `postOnly=true`, routed to `makerAccountLabel`
 - Tracked with `role='maker'`
+- Persist `activeCycle` with maker/taker account labels, side, price, and requested qty
 
-On maker placement success → **inline taker** (`executeInlineDualAccountTaker`):
+**Private watcher / tracker path**:
 
-1. Sleep `makerDelayMs` (with variance)
-2. Verify maker price is still at top of book (cancel maker if not)
-3. Place taker IOC on `takerAccountLabel`, opposite side, same price, `timeInForce=IOC`
-4. After taker fill, wait `dualAccountMakerSettlementTimeoutMs` and confirm maker settled
-5. On taker success → `incrementCompletedCycles()`
-6. On taker failure → `cancelMakerAfterTakerFailure()`
+- Start `watchOrders` + `watchMyTrades` for both `makerAccountLabel` and `takerAccountLabel`
+- Normalize fills into positive deltas (`qty`, `cumulativeQty`, `accountLabel`)
+- Route recovered REST-polled deltas through the same executor fill path
+
+**On maker fill delta** (`StrategyService.handleSessionFill`):
+
+1. Update `activeCycle.makerFilledQty += fill.qty`
+2. Publish taker IOC on `takerAccountLabel`, opposite side, same price, `timeInForce=IOC`
+3. Hedge only the maker fill delta, not the original maker order qty
+
+**On taker fill delta**:
+
+1. Update `activeCycle.takerFilledQty += fill.qty`
+2. Increase `tradedQuoteVolume` by actual taker-leg filled notional only
+
+**Cycle finalization** (next tick, once all tracked orders are terminal):
+
+1. If `makerFilledQty <= 0` → clear `activeCycle`, do not increment
+2. If `takerFilledQty >= makerFilledQty` → increment `completedCycles`, clear `activeCycle`
+3. If `takerFilledQty < makerFilledQty` → clear `activeCycle`, log under-hedged warning, do not increment
 
 ### 5. Auto-rebalance
 
@@ -104,6 +120,7 @@ Key properties:
 
 - Increment `publishedCycles` (skip for rebalance-only ticks)
 - Update `orderBookReady` flag
+- Persist `activeCycle` for maker quotes only
 - Persist params to `StrategyInstance`
 - Update session cadence for next tick
 
@@ -117,8 +134,8 @@ Key properties:
 | `targetQuoteVolume`    | number                    | Taker-leg cumulative quote progress auto-stop threshold (0 = disabled) |
 | `postOnlySide`         | `'buy' \| 'sell' \| null` | Fixed maker side, null for auto                            |
 | `buyBias`              | number (0-1)              | Probability of buy when side is auto                       |
-| `makerDelayMs`         | number                    | Delay between maker fill and taker IOC                     |
-| `makerDelayVariance`   | number                    | Variance around maker delay                                |
+| `makerDelayMs`         | number                    | Legacy config field; no longer gates taker hedge trigger   |
+| `makerDelayVariance`   | number                    | Legacy config field paired with `makerDelayMs`             |
 | `tradeAmountVariance`  | number                    | Variance around trade amount                               |
 | `priceOffsetVariance`  | number                    | Variance around price offset                               |
 | `cadenceVariance`      | number                    | Variance around cycle interval                             |
@@ -136,26 +153,30 @@ Key properties:
 3. If not ready → queue in `pendingActivationStrategies`, wait for exchange-ready event
 4. On activation → restore session from persisted params
 5. **Dangling maker orders** (open orders without confirmed taker fills) are cancelled, not replayed
-6. Counters (`publishedCycles`, `completedCycles`) restored from persistence
+6. Counters (`publishedCycles`, `completedCycles`) and `activeCycle` are restored from persistence
 
 ## File Map
 
 | File                                                              | Responsibility                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `strategy/controllers/dual-account-volume-strategy.controller.ts` | Controller: cadence, decideActions, onActionsPublished, rerun                   |
-| `strategy/strategy.service.ts`                                    | Session actions builder, rebalance logic, account resolution, param persistence |
-| `strategy/execution/strategy-intent-execution.service.ts`         | Intent execution, inline taker, maker settlement confirmation                   |
+| `strategy/strategy.service.ts`                                    | Session actions builder, fill-driven hedging, rebalance logic, account resolution, param persistence |
+| `strategy/execution/strategy-intent-execution.service.ts`         | Intent execution, exchange ack handling, tracked-order upserts                  |
+| `trackers/user-stream-tracker.service.ts`                         | Dual-account fill delta normalization, routing, and dedup                       |
+| `trackers/exchange-order-tracker.service.ts`                      | Recovered fill delta routing when user stream is stale                          |
 | `admin/market-making/admin-direct-mm.service.ts`                  | Admin CRUD (start/stop/resume/remove)                                           |
 | `execution/exchange-connector-adapter.service.ts`                 | CCXT wrapper with multi-account routing                                         |
 
 ## Key Invariants
 
-- A cycle is complete only when both maker and taker legs succeed
-- `completedCycles` increments only on successful taker fill
+- A cycle is complete only after all tracked orders settle and `takerFilledQty >= makerFilledQty > 0`
+- `completedCycles` increments only during settled cycle finalization
 - `tradedQuoteVolume` accumulates only actual taker-leg filled quote, never doubled maker+taker turnover
 - `publishedCycles` increments only for non-rebalance ticks
 - Rebalance orders are single-leg IOC, never paired
 - Maker orders are always `postOnly=true`
 - Quantized maker prices must stay on the correct top-of-book side after precision rounding, otherwise the cycle is dropped before publish
 - Taker orders are always `timeInForce=IOC`
+- Taker intents are emitted only from observed maker fill deltas, never from maker placement ACK
+- Private order + trade watchers must be active for both accounts before fill-driven hedging is reliable
 - Both accounts must be exchange-ready before activation
