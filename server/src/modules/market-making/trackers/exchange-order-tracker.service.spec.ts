@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
-
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 
 describe('ExchangeOrderTrackerService', () => {

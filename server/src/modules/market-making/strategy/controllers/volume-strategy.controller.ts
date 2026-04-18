@@ -108,7 +108,9 @@ export class VolumeStrategyController implements StrategyController {
     );
   }
 
-  private resolveVolumeExecutionVenue(config: Record<string, unknown>): 'cex' | 'dex' {
+  private resolveVolumeExecutionVenue(
+    config: Record<string, unknown>,
+  ): 'cex' | 'dex' {
     if (config.executionCategory !== undefined) {
       const normalized = normalizeExecutionCategory(
         this.readString(config.executionCategory),
@@ -120,7 +122,9 @@ export class VolumeStrategyController implements StrategyController {
     return this.readString(config.executionVenue) === 'dex' ? 'dex' : 'cex';
   }
 
-  private resolveVolumeExecutionCategory(config: Record<string, unknown>): string {
+  private resolveVolumeExecutionCategory(
+    config: Record<string, unknown>,
+  ): string {
     return normalizeExecutionCategory(
       this.readString(config.executionCategory) ||
         this.readString(config.executionVenue),
@@ -136,8 +140,8 @@ export class VolumeStrategyController implements StrategyController {
       typeof value === 'number'
         ? value
         : typeof value === 'string' && value.trim().length > 0
-          ? Number(value)
-          : undefined;
+        ? Number(value)
+        : undefined;
 
     return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
   }

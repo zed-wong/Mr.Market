@@ -1,26 +1,44 @@
 import { BadRequestException } from '@nestjs/common';
 
-import { normalizeExecutionCategory, toLegacyExecutionVenue } from '../config/strategy-execution-category';
+import {
+  normalizeExecutionCategory,
+  toLegacyExecutionVenue,
+} from '../config/strategy-execution-category';
 import { StrategyControllerRegistry } from '../controllers/strategy-controller.registry';
 import { StrategyService } from '../strategy.service';
 import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
 
-function resolveVolumeExecutionVenue(config: Record<string, unknown>): 'cex' | 'dex' {
+function resolveVolumeExecutionVenue(
+  config: Record<string, unknown>,
+): 'cex' | 'dex' {
   if (config.executionCategory !== undefined) {
-    const normalized = normalizeExecutionCategory(String(config.executionCategory));
+    const normalized = normalizeExecutionCategory(
+      String(config.executionCategory),
+    );
+
     return toLegacyExecutionVenue(normalized);
   }
+
   return String(config.executionVenue || '') === 'dex' ? 'dex' : 'cex';
 }
 
-function resolveVolumeExecutionCategory(config: Record<string, unknown>): string {
+function resolveVolumeExecutionCategory(
+  config: Record<string, unknown>,
+): string {
   return normalizeExecutionCategory(
-    String(config.executionCategory || '') || String(config.executionVenue || ''),
+    String(config.executionCategory || '') ||
+      String(config.executionVenue || ''),
   );
 }
 
 function readNumber(value: unknown): number | undefined {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim().length > 0 ? Number(value) : undefined;
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim().length > 0
+      ? Number(value)
+      : undefined;
+
   return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
 }
 
@@ -28,10 +46,20 @@ function readString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-function createMockStart(strategyService: Record<string, jest.Mock>, strategyType: string) {
-  const startMap: Record<string, (config: Record<string, unknown>, svc: any) => Promise<void>> = {
+function createMockStart(
+  strategyService: Record<string, jest.Mock>,
+  strategyType: string,
+) {
+  const startMap: Record<
+    string,
+    (config: Record<string, unknown>, svc: any) => Promise<void>
+  > = {
     arbitrage: async (config, svc) => {
-      await svc.startArbitrageStrategyForUser(config, Number(config.checkIntervalSeconds || 10), Number(config.maxOpenOrders || 1));
+      await svc.startArbitrageStrategyForUser(
+        config,
+        Number(config.checkIntervalSeconds || 10),
+        Number(config.maxOpenOrders || 1),
+      );
     },
     pureMarketMaking: async (config, svc) => {
       await svc.executePureMarketMakingStrategy(config);
@@ -48,19 +76,30 @@ function createMockStart(strategyService: Record<string, jest.Mock>, strategyTyp
     volume: async (config, svc) => {
       const executionVenue = resolveVolumeExecutionVenue(config);
       const executionCategory = resolveVolumeExecutionCategory(config);
+
       await svc.executeVolumeStrategy(
         readString(config.exchangeName),
         readString(config.symbol),
-        readNumber(config.incrementPercentage) ?? readNumber(config.baseIncrementPercentage) ?? 0,
-        readNumber(config.intervalTime) ?? readNumber(config.baseIntervalTime) ?? 10,
-        readNumber(config.tradeAmount) ?? readNumber(config.baseTradeAmount) ?? 0,
+        readNumber(config.incrementPercentage) ??
+          readNumber(config.baseIncrementPercentage) ??
+          0,
+        readNumber(config.intervalTime) ??
+          readNumber(config.baseIntervalTime) ??
+          10,
+        readNumber(config.tradeAmount) ??
+          readNumber(config.baseTradeAmount) ??
+          0,
         readNumber(config.numTrades) ?? 1,
         readString(config.userId) || '',
         readString(config.clientId) || '',
         readNumber(config.pricePushRate) ?? 0,
-        config.postOnlySide === 'buy' || config.postOnlySide === 'sell' ? config.postOnlySide : undefined,
+        config.postOnlySide === 'buy' || config.postOnlySide === 'sell'
+          ? config.postOnlySide
+          : undefined,
         executionVenue,
-        config.dexId === 'uniswapV3' || config.dexId === 'pancakeV3' ? config.dexId : undefined,
+        config.dexId === 'uniswapV3' || config.dexId === 'pancakeV3'
+          ? config.dexId
+          : undefined,
         readNumber(config.chainId),
         readString(config.tokenIn),
         readString(config.tokenOut),
@@ -73,6 +112,7 @@ function createMockStart(strategyService: Record<string, jest.Mock>, strategyTyp
   };
 
   const fn = startMap[strategyType];
+
   return fn ? fn : undefined;
 }
 
@@ -97,8 +137,13 @@ describe('StrategyRuntimeDispatcherService', () => {
         'volume',
         'timeIndicator',
       ];
+
       if (!knownTypes.includes(strategyType)) return undefined;
-      const startFn = createMockStart(strategyService as unknown as Record<string, jest.Mock>, strategyType);
+      const startFn = createMockStart(
+        strategyService as unknown as Record<string, jest.Mock>,
+        strategyType,
+      );
+
       return { strategyType, ...(startFn ? { start: startFn } : {}) };
     }),
     listControllerTypes: jest.fn(() => [

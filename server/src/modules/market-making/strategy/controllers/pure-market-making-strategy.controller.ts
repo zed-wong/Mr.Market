@@ -17,8 +17,13 @@ export class PureMarketMakingStrategyController implements StrategyController {
     return Math.max(1000, Number(parameters?.orderRefreshTime || 1000));
   }
 
-  async start(config: Record<string, unknown>, service: StrategyService): Promise<void> {
-    await service.executePureMarketMakingStrategy(config as unknown as PureMarketMakingStrategyDto);
+  async start(
+    config: Record<string, unknown>,
+    service: StrategyService,
+  ): Promise<void> {
+    await service.executePureMarketMakingStrategy(
+      config as unknown as PureMarketMakingStrategyDto,
+    );
   }
 
   async decideActions(

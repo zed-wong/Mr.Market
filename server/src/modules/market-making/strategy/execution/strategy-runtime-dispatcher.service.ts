@@ -42,8 +42,9 @@ export class StrategyRuntimeDispatcherService {
       return 'timeIndicator';
     }
 
-    const knownTypes =
-      this.strategyControllerRegistry.listControllerTypes().join(', ');
+    const knownTypes = this.strategyControllerRegistry
+      .listControllerTypes()
+      .join(', ');
 
     throw new BadRequestException(
       `Unsupported controllerType ${controllerType}. Known: ${knownTypes}`,
@@ -62,7 +63,8 @@ export class StrategyRuntimeDispatcherService {
     strategyType: StrategyType,
     config: Record<string, unknown>,
   ): Promise<void> {
-    const controller = this.strategyControllerRegistry.getController(strategyType);
+    const controller =
+      this.strategyControllerRegistry.getController(strategyType);
 
     if (controller?.start) {
       await controller.start(config, this.strategyService);

@@ -421,8 +421,10 @@ export class AdminDirectMarketMakingService {
             order.strategySnapshot?.controllerType ||
             '',
           controllerType: this.readControllerType(order),
-          directExecutionMode:
-            this.resolveDirectExecutionMode(order, definitionMap),
+          directExecutionMode: this.resolveDirectExecutionMode(
+            order,
+            definitionMap,
+          ),
           createdAt: order.createdAt,
           lastTickAt,
           accountLabel: makerAccountName,
@@ -462,13 +464,12 @@ export class AdminDirectMarketMakingService {
         ? await this.strategyIntentStoreService.getQueueState(strategyKey)
         : null;
     const isDualAccount = this.isDualAccountMode(order);
-    const privateEvent =
-      !isDualAccount
-        ? this.userStreamTrackerService.getLatestEvent(
-            order.exchangeName,
-            primaryAccountLabel,
-          )
-        : null;
+    const privateEvent = !isDualAccount
+      ? this.userStreamTrackerService.getLatestEvent(
+          order.exchangeName,
+          primaryAccountLabel,
+        )
+      : null;
     const openOrders =
       this.exchangeOrderTrackerService.getLiveOrders(strategyKey);
     const intents =
@@ -1623,7 +1624,11 @@ export class AdminDirectMarketMakingService {
       return snapshotControllerType;
     }
 
-    return String(order.strategySnapshot?.resolvedConfig?.controllerType || '').trim() || 'pureMarketMaking';
+    return (
+      String(
+        order.strategySnapshot?.resolvedConfig?.controllerType || '',
+      ).trim() || 'pureMarketMaking'
+    );
   }
 
   private readPrimaryAccountLabel(order: MarketMakingOrder): string {
@@ -1706,9 +1711,11 @@ export class AdminDirectMarketMakingService {
 
   private isDualAccountMode(order: MarketMakingOrder): boolean {
     const config = order.strategySnapshot?.resolvedConfig;
+
     if (config && typeof config === 'object') {
       const makerLabel = config.makerAccountLabel;
       const takerLabel = config.takerAccountLabel;
+
       if (
         (typeof makerLabel === 'string' && makerLabel.trim()) ||
         (typeof takerLabel === 'string' && String(takerLabel).trim())
@@ -1739,12 +1746,11 @@ export class AdminDirectMarketMakingService {
     order: MarketMakingOrder,
     definitionMap: Map<string, StrategyDefinition>,
   ): 'single_account' | 'dual_account' | null {
-    const definition = definitionMap.get(
-      order.strategyDefinitionId || '',
-    );
+    const definition = definitionMap.get(order.strategyDefinitionId || '');
 
     if (definition) {
       const capabilities = getStrategyDefinitionCapabilities(definition);
+
       if (capabilities.directExecutionMode) {
         return capabilities.directExecutionMode;
       }

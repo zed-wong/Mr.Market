@@ -18,8 +18,13 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     return sanitizeVolumeCadenceMs(parameters?.baseIntervalTime);
   }
 
-  async start(config: Record<string, unknown>, service: StrategyService): Promise<void> {
-    await service.executeDualAccountVolumeStrategy(config as unknown as ExecuteDualAccountVolumeStrategyDto);
+  async start(
+    config: Record<string, unknown>,
+    service: StrategyService,
+  ): Promise<void> {
+    await service.executeDualAccountVolumeStrategy(
+      config as unknown as ExecuteDualAccountVolumeStrategyDto,
+    );
   }
 
   async decideActions(

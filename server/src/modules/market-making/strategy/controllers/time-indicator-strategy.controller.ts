@@ -17,8 +17,13 @@ export class TimeIndicatorStrategyController implements StrategyController {
     return Math.max(1000, Number(parameters?.tickIntervalMs || 60000));
   }
 
-  async start(config: Record<string, unknown>, service: StrategyService): Promise<void> {
-    await service.executeTimeIndicatorStrategy(config as unknown as TimeIndicatorStrategyDto);
+  async start(
+    config: Record<string, unknown>,
+    service: StrategyService,
+  ): Promise<void> {
+    await service.executeTimeIndicatorStrategy(
+      config as unknown as TimeIndicatorStrategyDto,
+    );
   }
 
   async decideActions(

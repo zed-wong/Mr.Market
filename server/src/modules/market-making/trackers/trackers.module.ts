@@ -6,8 +6,8 @@ import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity
 
 import { MarketdataModule } from '../../data/market-data/market-data.module';
 import { ExchangeInitModule } from '../../infrastructure/exchange-init/exchange-init.module';
-import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { BalanceRefreshScheduler } from '../balance-state/balance-refresh-scheduler';
+import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { BalanceStateRefreshService } from '../balance-state/balance-state-refresh.service';
 import { MarketMakingEventsModule } from '../events/market-making-events.module';
 import { ExecutionModule } from '../execution/execution.module';

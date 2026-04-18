@@ -8,8 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
-import { TickComponent } from './tick-component.interface';
 import { MarketMakingRuntimeTimingService } from './runtime-timing.service';
+import { TickComponent } from './tick-component.interface';
 
 type RegisteredTickComponent = {
   id: string;
@@ -151,6 +151,7 @@ export class ClockTickCoordinatorService
         try {
           const healthCheckStartedAtMs = Date.now();
           const isHealthy = await item.component.health();
+
           healthCheckDurationMs = Date.now() - healthCheckStartedAtMs;
           healthy = isHealthy;
 
@@ -160,6 +161,7 @@ export class ClockTickCoordinatorService
           }
 
           const onTickStartedAtMs = Date.now();
+
           await item.component.onTick(ts);
           onTickDurationMs = Date.now() - onTickStartedAtMs;
         } catch (error) {

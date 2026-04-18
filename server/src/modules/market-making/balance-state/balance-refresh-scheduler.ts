@@ -1,8 +1,13 @@
-import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 
-import { MARKET_MAKING_EVENT_NAMES } from '../events/market-making-events.types';
 import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
+import { MARKET_MAKING_EVENT_NAMES } from '../events/market-making-events.types';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 import {
   BalanceStateRefreshService,
@@ -182,8 +187,9 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
       .getRegisteredAccounts()
       .filter((account) => {
         const dueAt =
-          this.dueAtByKey.get(this.toKey(account.exchange, account.accountLabel))
-          ?? Number.POSITIVE_INFINITY;
+          this.dueAtByKey.get(
+            this.toKey(account.exchange, account.accountLabel),
+          ) ?? Number.POSITIVE_INFINITY;
 
         return dueAt <= nowMs;
       })
@@ -219,7 +225,10 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
 
   private markDue(exchange: string, accountLabel: string): void {
     if (
-      !this.balanceStateRefreshService.isRegisteredAccount(exchange, accountLabel)
+      !this.balanceStateRefreshService.isRegisteredAccount(
+        exchange,
+        accountLabel,
+      )
     ) {
       return;
     }

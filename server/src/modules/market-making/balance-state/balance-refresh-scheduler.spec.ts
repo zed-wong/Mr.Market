@@ -11,9 +11,9 @@ describe('BalanceRefreshScheduler', () => {
     jest.spyOn(Math, 'random').mockReturnValue(0);
     const marketMakingEventBus = new MarketMakingEventBus();
     const balanceStateRefreshService = {
-      getRegisteredAccounts: jest.fn().mockReturnValue([
-        { exchange: 'binance', accountLabel: 'maker' },
-      ]),
+      getRegisteredAccounts: jest
+        .fn()
+        .mockReturnValue([{ exchange: 'binance', accountLabel: 'maker' }]),
       isRegisteredAccount: jest.fn().mockReturnValue(true),
       refreshDueAccounts: jest.fn().mockResolvedValue(['binance:maker']),
     };
@@ -30,9 +30,9 @@ describe('BalanceRefreshScheduler', () => {
       staleAt: '2026-04-18T00:00:20.000Z',
     });
 
-    await expect(
-      scheduler.runNow('2026-04-18T00:00:21.000Z'),
-    ).resolves.toEqual(['binance:maker']);
+    await expect(scheduler.runNow('2026-04-18T00:00:21.000Z')).resolves.toEqual(
+      ['binance:maker'],
+    );
     expect(balanceStateRefreshService.refreshDueAccounts).toHaveBeenCalledWith(
       [{ exchange: 'binance', accountLabel: 'maker' }],
       '2026-04-18T00:00:21.000Z',
@@ -45,9 +45,9 @@ describe('BalanceRefreshScheduler', () => {
     jest.spyOn(Math, 'random').mockReturnValue(0);
     const marketMakingEventBus = new MarketMakingEventBus();
     const balanceStateRefreshService = {
-      getRegisteredAccounts: jest.fn().mockReturnValue([
-        { exchange: 'binance', accountLabel: 'maker' },
-      ]),
+      getRegisteredAccounts: jest
+        .fn()
+        .mockReturnValue([{ exchange: 'binance', accountLabel: 'maker' }]),
       isRegisteredAccount: jest.fn().mockReturnValue(true),
       refreshDueAccounts: jest.fn().mockResolvedValue(['binance:maker']),
     };
@@ -78,13 +78,11 @@ describe('BalanceRefreshScheduler', () => {
 
   it('does not overlap refresh passes', async () => {
     jest.spyOn(Math, 'random').mockReturnValue(0);
-    let resolveRefresh:
-      | ((value: string[]) => void)
-      | undefined;
+    let resolveRefresh: ((value: string[]) => void) | undefined;
     const balanceStateRefreshService = {
-      getRegisteredAccounts: jest.fn().mockReturnValue([
-        { exchange: 'binance', accountLabel: 'maker' },
-      ]),
+      getRegisteredAccounts: jest
+        .fn()
+        .mockReturnValue([{ exchange: 'binance', accountLabel: 'maker' }]),
       isRegisteredAccount: jest.fn().mockReturnValue(true),
       refreshDueAccounts: jest.fn(
         () =>
@@ -103,9 +101,9 @@ describe('BalanceRefreshScheduler', () => {
 
     const firstRun = scheduler.runNow('2026-04-18T00:02:00.000Z');
 
-    await expect(
-      scheduler.runNow('2026-04-18T00:02:00.500Z'),
-    ).resolves.toEqual([]);
+    await expect(scheduler.runNow('2026-04-18T00:02:00.500Z')).resolves.toEqual(
+      [],
+    );
 
     resolveRefresh?.(['binance:maker']);
 

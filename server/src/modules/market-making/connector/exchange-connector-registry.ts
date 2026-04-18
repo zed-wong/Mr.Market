@@ -10,7 +10,10 @@ import { ExchangeConnectorRuntime } from './exchange-connector';
 
 @Injectable()
 export class ExchangeConnectorRegistry {
-  private readonly runtimesByExchange = new Map<string, ExchangeConnectorRuntime>();
+  private readonly runtimesByExchange = new Map<
+    string,
+    ExchangeConnectorRuntime
+  >();
 
   constructor(
     private readonly exchangeOrderTrackerService: ExchangeOrderTrackerService,
@@ -22,7 +25,9 @@ export class ExchangeConnectorRegistry {
   ) {}
 
   get(exchange: string): ExchangeConnectorRuntime {
-    const normalizedExchange = String(exchange || '').trim().toLowerCase();
+    const normalizedExchange = String(exchange || '')
+      .trim()
+      .toLowerCase();
 
     if (!normalizedExchange) {
       throw new Error('exchange is required');

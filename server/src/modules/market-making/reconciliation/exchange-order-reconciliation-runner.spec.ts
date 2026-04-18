@@ -14,9 +14,7 @@ describe('ExchangeOrderReconciliationRunner', () => {
       exchangeOrderTrackerService as any,
     );
 
-    await expect(
-      runner.runNow('2026-04-18T00:00:01.000Z'),
-    ).resolves.toBe(2);
+    await expect(runner.runNow('2026-04-18T00:00:01.000Z')).resolves.toBe(2);
     expect(exchangeOrderTrackerService.pollDueOrders).toHaveBeenCalledWith(
       '2026-04-18T00:00:01.000Z',
     );
@@ -38,9 +36,7 @@ describe('ExchangeOrderReconciliationRunner', () => {
 
     const firstRun = runner.runNow('2026-04-18T00:00:01.000Z');
 
-    await expect(
-      runner.runNow('2026-04-18T00:00:01.500Z'),
-    ).resolves.toBe(0);
+    await expect(runner.runNow('2026-04-18T00:00:01.500Z')).resolves.toBe(0);
 
     resolvePoll?.(1);
 

@@ -95,15 +95,11 @@ describe('BalanceStateRefreshService', () => {
     jest
       .spyOn(Date, 'now')
       .mockReturnValue(Date.parse('2026-04-14T00:00:10.000Z'));
-    const service = new BalanceStateRefreshService(
-      undefined,
-      undefined,
-      {
-        getLastRecvTime: jest
-          .fn()
-          .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z')),
-      } as any,
-    );
+    const service = new BalanceStateRefreshService(undefined, undefined, {
+      getLastRecvTime: jest
+        .fn()
+        .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z')),
+    } as any);
 
     expect(service.getHealthState('binance', 'maker')).toBe('healthy');
     jest.restoreAllMocks();

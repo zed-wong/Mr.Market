@@ -5,8 +5,8 @@ import { RewardAllocation } from 'src/common/entities/ledger/reward-allocation.e
 import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 
-import { TrackersModule } from '../trackers/trackers.module';
 import { ExchangeConnectorRegistry } from '../connector/exchange-connector-registry';
+import { TrackersModule } from '../trackers/trackers.module';
 import { ExchangeOrderReconciliationRunner } from './exchange-order-reconciliation-runner';
 import { ReconciliationService } from './reconciliation.service';
 

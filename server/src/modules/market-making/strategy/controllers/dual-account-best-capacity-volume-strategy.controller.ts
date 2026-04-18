@@ -20,8 +20,13 @@ export class DualAccountBestCapacityVolumeStrategyController
     return sanitizeVolumeCadenceMs(parameters?.baseIntervalTime);
   }
 
-  async start(config: Record<string, unknown>, service: StrategyService): Promise<void> {
-    await service.executeDualAccountBestCapacityVolumeStrategy(config as unknown as ExecuteDualAccountBestCapacityVolumeStrategyDto);
+  async start(
+    config: Record<string, unknown>,
+    service: StrategyService,
+  ): Promise<void> {
+    await service.executeDualAccountBestCapacityVolumeStrategy(
+      config as unknown as ExecuteDualAccountBestCapacityVolumeStrategyDto,
+    );
   }
 
   async decideActions(

@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
@@ -48,9 +53,8 @@ export class ExchangeOrderReconciliationRunner
     const startedAtMs = Date.now();
 
     try {
-      const processedCount = await this.exchangeOrderTrackerService.pollDueOrders(
-        ts,
-      );
+      const processedCount =
+        await this.exchangeOrderTrackerService.pollDueOrders(ts);
 
       this.runtimeTimingService?.recordDuration(
         'order-reconciliation.pass',

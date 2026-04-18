@@ -480,7 +480,8 @@ export class UserStreamTrackerService
     this.exchangeOrderTrackerService?.upsertOrder(
       {
         ...trackedOrder,
-        clientOrderId: event.payload.clientOrderId || trackedOrder.clientOrderId,
+        clientOrderId:
+          event.payload.clientOrderId || trackedOrder.clientOrderId,
         cumulativeFilledQty:
           event.payload.cumulativeQty || trackedOrder.cumulativeFilledQty,
         status,
