@@ -3160,6 +3160,33 @@ describe('StrategyService', () => {
     expect(scoreFarTarget.isGreaterThan(scoreNearTarget)).toBe(true);
   });
 
+  it('marks repair mode when a dual-account cycle settles with mismatched fills', async () => {
+    const nextParams = await (service as any).finalizeSettledDualAccountCycle(
+      { strategyKey: 'dual-key' },
+      {
+        completedCycles: 0,
+        activeCycle: {
+          cycleId: 'cycle-mismatch',
+          tickId: 'tick-1',
+          orderId: 'order-1',
+          makerSide: 'buy',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          price: '100',
+          requestedQty: '1',
+          makerFilledQty: '0.4',
+          takerFilledQty: '0.2',
+          matchedFilledQty: '0.2',
+          matchedQuoteVolume: '20',
+        },
+      },
+    );
+
+    expect(nextParams.completedCycles).toBe(0);
+    expect(nextParams.repairRequired).toBe(true);
+    expect(nextParams.repairReason).toBe('paired_fill_mismatch');
+  });
+
   it('accumulates matched quote volume when a dual-account cycle settles with symmetric fills', async () => {
     const nextParams = await (service as any).finalizeSettledDualAccountCycle(
       { strategyKey: 'dual-key' },

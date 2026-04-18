@@ -1627,6 +1627,25 @@ export class StrategyService
     );
     const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
 
+    if (latestParams.repairRequired) {
+      const repairAction = await this.maybeBuildDualAccountRebalanceAction(
+        session.strategyKey,
+        latestParams,
+        'buy',
+        new BigNumber(0),
+        new BigNumber(0),
+        new BigNumber(0),
+        await this.resolveDualAccountFeeBufferRate(
+          latestParams.exchangeName,
+          latestParams.symbol,
+        ),
+        Number(latestParams.publishedCycles || 0),
+        ts,
+      );
+
+      return repairAction ? [repairAction] : [];
+    }
+
     const maxCompletedCycles = Number(latestParams.numTrades || 0);
 
     if (maxCompletedCycles > 0 && completedCycles >= maxCompletedCycles) {
@@ -5602,7 +5621,10 @@ export class StrategyService
       takerFilledQty.isFinite() ? takerFilledQty : new BigNumber(0),
     );
 
-    if (matchedFilledQty.isGreaterThan(0)) {
+    if (
+      matchedFilledQty.isGreaterThan(0) &&
+      makerFilledQty.isEqualTo(takerFilledQty)
+    ) {
       const matchedQuoteVolume = new BigNumber(
         params.activeCycle.matchedQuoteVolume || 0,
       );
@@ -5619,6 +5641,8 @@ export class StrategyService
         .plus(matchedQuoteVolume.isFinite() ? matchedQuoteVolume : 0)
         .toNumber();
       nextParams.activeCycle = undefined;
+      nextParams.repairRequired = false;
+      nextParams.repairReason = undefined;
       await this.persistStrategyParams(session.strategyKey, nextParams);
 
       return nextParams;
@@ -5631,6 +5655,8 @@ export class StrategyService
         params.activeCycle.cycleId
       } makerFilledQty=${makerFilledQty.toFixed()} takerFilledQty=${takerFilledQty.toFixed()}`,
     );
+    nextParams.repairRequired = true;
+    nextParams.repairReason = 'paired_fill_mismatch';
     await this.persistStrategyParams(session.strategyKey, nextParams);
 
     return nextParams;

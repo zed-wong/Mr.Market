@@ -711,12 +711,37 @@ export class StrategyIntentExecutionService {
           makerExchangeOrderId,
         );
 
+      await this.assertImmediateDualAccountMakerOwnsTopOfBook(
+        intent,
+        makerExchangeOrderId,
+        makerReadySnapshot,
+        'pre-taker',
+      );
+      await this.maybeSleepBeforeImmediateDualAccountTaker(
+        intent,
+        makerExchangeOrderId,
+      );
+
+      const makerDispatchSnapshot =
+        await this.assertImmediateDualAccountMakerStillEligible(
+          intent,
+          makerExchangeOrderId,
+          'post-delay',
+        );
+
+      await this.assertImmediateDualAccountMakerOwnsTopOfBook(
+        intent,
+        makerExchangeOrderId,
+        makerDispatchSnapshot,
+        'post-delay',
+      );
+
       const takerResult = await this.consumeIntent(takerIntent);
 
       await this.assertImmediateDualAccountPairedFill(
         intent,
         makerExchangeOrderId,
-        makerReadySnapshot,
+        makerDispatchSnapshot,
         takerIntent,
         takerResult,
       );
@@ -732,12 +757,20 @@ export class StrategyIntentExecutionService {
         return;
       }
 
-      await this.cancelMakerAfterImmediateDualAccountFailure(
-        intent,
-        makerExchangeOrderId,
-        makerClientOrderId,
-        error,
-      );
+      const mismatchAlreadyHandled =
+        error instanceof Error &&
+        error.message.includes(
+          'Immediate dual-account paired fill mismatch between maker and taker',
+        );
+
+      if (!mismatchAlreadyHandled) {
+        await this.cancelMakerAfterImmediateDualAccountFailure(
+          intent,
+          makerExchangeOrderId,
+          makerClientOrderId,
+          error,
+        );
+      }
 
       throw error;
     }

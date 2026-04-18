@@ -413,7 +413,7 @@ describe('StrategyIntentExecutionService', () => {
     expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledTimes(3);
     expect(
       exchangeConnectorAdapterService.fetchOrderBook,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(2);
     expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
@@ -643,8 +643,16 @@ describe('StrategyIntentExecutionService', () => {
       .mockResolvedValueOnce({
         id: 'maker-order-partial',
         status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-partial',
+        status: 'closed',
         filled: '0.4',
       });
+    exchangeConnectorAdapterService.fetchOrderBook
+      .mockResolvedValueOnce({ bids: [[100, 1]], asks: [[100, 1]] })
+      .mockResolvedValueOnce({ bids: [[100, 1]], asks: [[100, 1]] });
     const service = createService(
       true,
       createConfigService(true, {
@@ -670,7 +678,7 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       exchangeConnectorAdapterService.fetchOrderBook,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(2);
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       'dual-maker-partial:inline-taker',
       'DONE',
@@ -745,7 +753,7 @@ describe('StrategyIntentExecutionService', () => {
     nowSpy.mockRestore();
   });
 
-  it.skip('honors the configured random delay before immediate dual-account taker dispatch', async () => {
+  it('honors the configured random delay before immediate dual-account taker dispatch', async () => {
     exchangeConnectorAdapterService.placeLimitOrder
       .mockResolvedValueOnce({ id: 'maker-order-delay', status: 'open' })
       .mockResolvedValueOnce({

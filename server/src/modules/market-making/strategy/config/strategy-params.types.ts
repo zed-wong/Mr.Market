@@ -70,6 +70,8 @@ export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   orderBookReady?: boolean;
   consecutiveFallbackCycles?: number;
   activeCycle?: DualAccountActiveCycleState;
+  repairRequired?: boolean;
+  repairReason?: string;
 };
 
 export type DualAccountBestCapacityVolumeStrategyParams =
