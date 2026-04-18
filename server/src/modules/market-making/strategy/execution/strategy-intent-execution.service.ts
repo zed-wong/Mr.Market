@@ -12,8 +12,8 @@ import { Repository } from 'typeorm';
 import { DurabilityService } from '../../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../../execution/exchange-order-mapping.service';
-import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
 import type { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
+import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
 import { DexAdapterId } from '../config/strategy.dto';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
@@ -31,6 +31,10 @@ type ImmediateDualAccountOrderSnapshot = {
   status: TrackedOrder['status'] | null;
   cumulativeFilledQty: BigNumber;
   remainingQty: BigNumber;
+};
+
+type ImmediateDualAccountRetryableMakerError = Error & {
+  code: 'DUAL_ACCOUNT_MAKER_REPRICE_REQUIRED';
 };
 
 @Injectable()
@@ -599,6 +603,43 @@ export class StrategyIntentExecutionService {
       : undefined;
   }
 
+  private readInlineDualAccountRetryAttempt(
+    intent: StrategyOrderIntent,
+  ): number {
+    if (!intent.metadata || typeof intent.metadata !== 'object') {
+      return 0;
+    }
+
+    const rawValue = (intent.metadata as Record<string, unknown>)[
+      'inlineDualAccountRetryAttempt'
+    ];
+    const attempt = Number(rawValue);
+
+    return Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
+  }
+
+  private buildImmediateDualAccountRepriceRequiredError(
+    message: string,
+  ): ImmediateDualAccountRetryableMakerError {
+    const error = new Error(
+      `${message} repriceRequired=true`,
+    ) as ImmediateDualAccountRetryableMakerError;
+
+    error.code = 'DUAL_ACCOUNT_MAKER_REPRICE_REQUIRED';
+
+    return error;
+  }
+
+  private isImmediateDualAccountRepriceRequiredError(
+    error: unknown,
+  ): error is ImmediateDualAccountRetryableMakerError {
+    return (
+      error instanceof Error &&
+      (error as Partial<ImmediateDualAccountRetryableMakerError>).code ===
+        'DUAL_ACCOUNT_MAKER_REPRICE_REQUIRED'
+    );
+  }
+
   private resolveOrderIdForClientOrderId(intent: StrategyOrderIntent): string {
     const metadataOrderId =
       intent.metadata &&
@@ -632,6 +673,21 @@ export class StrategyIntentExecutionService {
       return;
     }
 
+    const inlineRetryAttempt = this.readInlineDualAccountRetryAttempt(intent);
+
+    if (inlineRetryAttempt > 0) {
+      this.logger.log(
+        [
+          'Skipping immediate dual-account taker after maker reprice',
+          `strategy=${intent.strategyKey}`,
+          `intent=${intent.intentId}`,
+          `retryAttempt=${inlineRetryAttempt}`,
+        ].join(' | '),
+      );
+
+      return;
+    }
+
     const makerExchangeOrderId = this.readOrderIdFromResult(makerResult);
 
     if (!makerExchangeOrderId) {
@@ -647,6 +703,7 @@ export class StrategyIntentExecutionService {
       takerAccountLabel,
       makerExchangeOrderId,
     );
+
     try {
       const makerReadySnapshot =
         await this.waitForImmediateDualAccountMakerReady(
@@ -689,6 +746,17 @@ export class StrategyIntentExecutionService {
         takerResult,
       );
     } catch (error) {
+      if (this.isImmediateDualAccountRepriceRequiredError(error)) {
+        await this.repriceImmediateDualAccountMaker(
+          intent,
+          makerExchangeOrderId,
+          makerClientOrderId,
+          error,
+        );
+
+        return;
+      }
+
       await this.cancelMakerAfterImmediateDualAccountFailure(
         intent,
         makerExchangeOrderId,
@@ -760,7 +828,10 @@ export class StrategyIntentExecutionService {
         );
       }
 
-      if (snapshot.status === 'open' && snapshot.remainingQty.isGreaterThan(0)) {
+      if (
+        snapshot.status === 'open' &&
+        snapshot.remainingQty.isGreaterThan(0)
+      ) {
         return snapshot;
       }
 
@@ -770,7 +841,9 @@ export class StrategyIntentExecutionService {
         );
       }
 
-      await this.sleep(StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS);
+      await this.sleep(
+        StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS,
+      );
     }
 
     throw new Error(
@@ -802,7 +875,9 @@ export class StrategyIntentExecutionService {
 
     if (!snapshot.status || snapshot.status !== 'open') {
       throw new Error(
-        `Dual-account maker not open before taker ${stage}: makerOrderId=${makerExchangeOrderId} status=${snapshot.status || 'unknown'}`,
+        `Dual-account maker not open before taker ${stage}: makerOrderId=${makerExchangeOrderId} status=${
+          snapshot.status || 'unknown'
+        }`,
       );
     }
 
@@ -833,8 +908,8 @@ export class StrategyIntentExecutionService {
           ? orderBook.bids[0]
           : undefined
         : Array.isArray(orderBook?.asks)
-          ? orderBook.asks[0]
-          : undefined;
+        ? orderBook.asks[0]
+        : undefined;
     const expectedPrice = new BigNumber(intent.price);
     const topPrice = this.toFiniteBigNumber(
       Array.isArray(rawLevel) ? rawLevel[0] : undefined,
@@ -845,11 +920,14 @@ export class StrategyIntentExecutionService {
 
     if (
       !topPrice ||
-      topPrice.minus(expectedPrice).abs().isGreaterThan(
-        StrategyIntentExecutionService.DUAL_ACCOUNT_PRICE_TOLERANCE,
-      )
+      topPrice
+        .minus(expectedPrice)
+        .abs()
+        .isGreaterThan(
+          StrategyIntentExecutionService.DUAL_ACCOUNT_PRICE_TOLERANCE,
+        )
     ) {
-      throw new Error(
+      throw this.buildImmediateDualAccountRepriceRequiredError(
         [
           `Dual-account maker lost top-of-book before taker ${stage}`,
           `makerOrderId=${makerExchangeOrderId}`,
@@ -860,10 +938,7 @@ export class StrategyIntentExecutionService {
       );
     }
 
-    if (
-      !topQty ||
-      !this.quantitiesMatch(topQty, makerSnapshot.remainingQty)
-    ) {
+    if (!topQty || !this.quantitiesMatch(topQty, makerSnapshot.remainingQty)) {
       throw new Error(
         [
           `Dual-account maker top level is not exclusively ours before taker ${stage}`,
@@ -935,9 +1010,7 @@ export class StrategyIntentExecutionService {
         errorMessage,
       );
 
-      throw new Error(
-        `${errorMessage}: makerOrderId=${makerExchangeOrderId}`,
-      );
+      throw new Error(`${errorMessage}: makerOrderId=${makerExchangeOrderId}`);
     }
 
     const makerFillDelta = await this.waitForImmediateDualAccountMakerFillDelta(
@@ -1008,7 +1081,9 @@ export class StrategyIntentExecutionService {
         return snapshot.cumulativeFilledQty;
       }
 
-      await this.sleep(StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS);
+      await this.sleep(
+        StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS,
+      );
     }
 
     return new BigNumber(0);
@@ -1051,7 +1126,9 @@ export class StrategyIntentExecutionService {
         return makerFillDelta;
       }
 
-      await this.sleep(StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS);
+      await this.sleep(
+        StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS,
+      );
     }
 
     const finalSnapshot = await this.loadImmediateDualAccountOrderSnapshot(
@@ -1134,7 +1211,8 @@ export class StrategyIntentExecutionService {
       const normalizedStatus = this.normalizeTrackedOrderStatus(latest.status);
       const nextStatus =
         normalizedStatus ||
-        (new BigNumber(filledQty).isGreaterThan(0) && intent.timeInForce === 'IOC'
+        (new BigNumber(filledQty).isGreaterThan(0) &&
+        intent.timeInForce === 'IOC'
           ? 'filled'
           : existingTrackedOrder?.status) ||
         'pending_create';
@@ -1157,8 +1235,7 @@ export class StrategyIntentExecutionService {
           qty: existingTrackedOrder?.qty || intent.qty,
           cumulativeFilledQty: filledQty,
           status: nextStatus,
-          createdAt:
-            existingTrackedOrder?.createdAt || getRFC3339Timestamp(),
+          createdAt: existingTrackedOrder?.createdAt || getRFC3339Timestamp(),
           updatedAt: getRFC3339Timestamp(),
         },
         'rest',
@@ -1177,6 +1254,72 @@ export class StrategyIntentExecutionService {
         ].join(' | '),
       );
     }
+  }
+
+  private async repriceImmediateDualAccountMaker(
+    intent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerClientOrderId: string,
+    error: ImmediateDualAccountRetryableMakerError,
+  ): Promise<void> {
+    this.logger.warn(
+      [
+        'Immediate dual-account maker lost top-of-book; repricing maker leg',
+        `strategy=${intent.strategyKey}`,
+        `intent=${intent.intentId}`,
+        `exchange=${intent.exchange}`,
+        `pair=${intent.pair}`,
+        `makerOrderId=${makerExchangeOrderId}`,
+        `account=${intent.accountLabel || 'default'}`,
+        `error=${error.message}`,
+      ].join(' | '),
+    );
+
+    await this.cancelMakerAfterImmediateDualAccountFailure(
+      intent,
+      makerExchangeOrderId,
+      makerClientOrderId,
+      error,
+    );
+
+    const repricedIntent =
+      this.buildImmediateDualAccountRepricedMakerIntent(intent);
+
+    this.logger.log(
+      [
+        'Reposting dual-account maker after top-of-book loss',
+        `strategy=${repricedIntent.strategyKey}`,
+        `intent=${repricedIntent.intentId}`,
+        `account=${repricedIntent.accountLabel || 'default'}`,
+        `side=${repricedIntent.side}`,
+        `qty=${repricedIntent.qty}`,
+        `price=${repricedIntent.price}`,
+      ].join(' | '),
+    );
+
+    await this.consumeIntent(repricedIntent);
+  }
+
+  private buildImmediateDualAccountRepricedMakerIntent(
+    intent: StrategyOrderIntent,
+  ): StrategyOrderIntent {
+    const metadata =
+      intent.metadata && typeof intent.metadata === 'object'
+        ? { ...(intent.metadata as Record<string, unknown>) }
+        : {};
+    const retryAttempt = this.readInlineDualAccountRetryAttempt(intent) + 1;
+
+    return {
+      ...intent,
+      intentId: `${intent.intentId}:reprice-${retryAttempt}`,
+      createdAt: getRFC3339Timestamp(),
+      status: 'NEW',
+      metadata: {
+        ...metadata,
+        inlineDualAccountRetryAttempt: retryAttempt,
+        inlineDualAccountRetryReason: 'lost_top_of_book',
+      },
+    };
   }
 
   private async cancelMakerAfterImmediateDualAccountFailure(
@@ -1207,7 +1350,10 @@ export class StrategyIntentExecutionService {
       false,
     );
 
-    if (makerSnapshot.status && this.isTrackedOrderTerminal(makerSnapshot.status)) {
+    if (
+      makerSnapshot.status &&
+      this.isTrackedOrderTerminal(makerSnapshot.status)
+    ) {
       return;
     }
 

@@ -61,9 +61,12 @@ describe('StrategyIntentExecutionService', () => {
       [...trackedOrders.values()].filter(
         (order) =>
           order.strategyKey === strategyKey &&
-          ['pending_create', 'open', 'partially_filled', 'pending_cancel'].includes(
-            String(order.status),
-          ),
+          [
+            'pending_create',
+            'open',
+            'partially_filled',
+            'pending_cancel',
+          ].includes(String(order.status)),
       ),
     ),
     getByExchangeOrderId: jest.fn(
@@ -167,10 +170,12 @@ describe('StrategyIntentExecutionService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     trackedOrders.clear();
-    exchangeConnectorAdapterService.placeLimitOrder.mockReset().mockResolvedValue({
-      id: 'order-1',
-      status: 'open',
-    });
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockReset()
+      .mockResolvedValue({
+        id: 'order-1',
+        status: 'open',
+      });
     exchangeConnectorAdapterService.cancelOrder.mockReset().mockResolvedValue({
       id: 'exchange-order-1',
       status: 'canceled',
@@ -183,12 +188,14 @@ describe('StrategyIntentExecutionService', () => {
     exchangeConnectorAdapterService.fetchOrderBook
       .mockReset()
       .mockResolvedValue({ bids: [[100, 1]], asks: [[101, 1]] });
-    exchangeConnectorAdapterService.quantizeOrder.mockReset().mockImplementation(
-      (_exchange: string, _pair: string, qty: string, price: string) => ({
-        qty,
-        price,
-      }),
-    );
+    exchangeConnectorAdapterService.quantizeOrder
+      .mockReset()
+      .mockImplementation(
+        (_exchange: string, _pair: string, qty: string, price: string) => ({
+          qty,
+          price,
+        }),
+      );
     exchangeOrderTrackerService.upsertOrder.mockClear();
     exchangeOrderTrackerService.upsertOrder.mockImplementation(
       (order: Record<string, unknown>) => {
@@ -204,21 +211,25 @@ describe('StrategyIntentExecutionService', () => {
         );
       },
     );
-    exchangeOrderTrackerService.getTrackedOrders.mockReset().mockImplementation(
-      (strategyKey: string) =>
+    exchangeOrderTrackerService.getTrackedOrders
+      .mockReset()
+      .mockImplementation((strategyKey: string) =>
         [...trackedOrders.values()].filter(
           (order) => order.strategyKey === strategyKey,
         ),
-    );
+      );
     exchangeOrderTrackerService.getActiveSlotOrders
       .mockReset()
       .mockImplementation((strategyKey: string) =>
         [...trackedOrders.values()].filter(
           (order) =>
             order.strategyKey === strategyKey &&
-            ['pending_create', 'open', 'partially_filled', 'pending_cancel'].includes(
-              String(order.status),
-            ),
+            [
+              'pending_create',
+              'open',
+              'partially_filled',
+              'pending_cancel',
+            ].includes(String(order.status)),
         ),
       );
     exchangeOrderTrackerService.getByExchangeOrderId
@@ -400,9 +411,9 @@ describe('StrategyIntentExecutionService', () => {
       exchangeConnectorAdapterService.placeLimitOrder,
     ).toHaveBeenCalledTimes(2);
     expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledTimes(3);
-    expect(exchangeConnectorAdapterService.fetchOrderBook).toHaveBeenCalledTimes(
-      2,
-    );
+    expect(
+      exchangeConnectorAdapterService.fetchOrderBook,
+    ).toHaveBeenCalledTimes(2);
     expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
@@ -612,11 +623,16 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('cancels the maker leg and skips taker submission when maker loses exclusive top-of-book', async () => {
-    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValueOnce({
-      id: 'maker-order-lost-book',
-      status: 'open',
-    });
+  it('reprices the maker leg when it loses exclusive top-of-book before taker dispatch', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-lost-book',
+        status: 'open',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-repriced',
+        status: 'open',
+      });
     exchangeConnectorAdapterService.fetchOrder
       .mockResolvedValueOnce({
         id: 'maker-order-lost-book',
@@ -652,16 +668,40 @@ describe('StrategyIntentExecutionService', () => {
           },
         },
       ]),
-    ).rejects.toThrow('Dual-account maker lost top-of-book before taker post-delay');
+    ).resolves.toBeUndefined();
 
-    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(
-      1,
-    );
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(2);
     expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
       'binance',
       'BTC/USDT',
       'maker-order-lost-book',
       'maker',
+    );
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenLastCalledWith(
+      'binance',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      expect.any(String),
+      {
+        postOnly: false,
+        timeInForce: undefined,
+      },
+      'maker',
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-lost-book:reprice-1',
+      'DONE',
+    );
+    expect(intentStoreService.updateIntentStatus).not.toHaveBeenCalledWith(
+      'dual-maker-lost-book',
+      'FAILED',
+      expect.stringContaining('lost top-of-book'),
     );
   });
 
@@ -673,18 +713,18 @@ describe('StrategyIntentExecutionService', () => {
         status: 'closed',
         filled: '1',
       });
-    exchangeConnectorAdapterService.fetchOrder
-      .mockResolvedValue({
-        id: 'maker-order-mismatch',
-        status: 'open',
-        filled: '0',
-      });
+    exchangeConnectorAdapterService.fetchOrder.mockResolvedValue({
+      id: 'maker-order-mismatch',
+      status: 'open',
+      filled: '0',
+    });
     const service = createService(
       true,
       createConfigService(true, {
         'strategy.dual_account_inline_taker_max_delay_ms': 0,
       }),
     );
+
     jest
       .spyOn(service as any, 'sleep')
       .mockImplementation(async () => undefined);
