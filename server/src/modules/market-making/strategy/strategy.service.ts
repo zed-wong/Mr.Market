@@ -5255,71 +5255,17 @@ export class StrategyService
       trackedOrder.role === 'maker' &&
       trackedOrder.accountLabel === activeCycle.makerAccountLabel
     ) {
-      const exchange = this.readString(
-        (session.params as Record<string, unknown>)?.exchangeName,
-      );
-      const pair = this.readString(
-        (session.params as Record<string, unknown>)?.pair,
-        this.readString((session.params as Record<string, unknown>)?.symbol),
-      );
       const makerFilledQty = new BigNumber(
         activeCycle.makerFilledQty || 0,
       ).plus(fillQty);
-      const hedgePrice = new BigNumber(fill.price || activeCycle.price);
-      const nextParams: DualAccountVolumeStrategyParams = {
+
+      return {
         ...params,
         activeCycle: {
           ...activeCycle,
           makerFilledQty: makerFilledQty.toFixed(),
         },
       };
-
-      if (!hedgePrice.isFinite() || hedgePrice.isLessThanOrEqualTo(0)) {
-        this.logger.warn(
-          `Skipping dual-account taker hedge for ${
-            session.strategyKey
-          }: invalid maker fill price ${fill.price || activeCycle.price}`,
-        );
-
-        return nextParams;
-      }
-
-      const ts = this.readString(fill.receivedAt, getRFC3339Timestamp());
-      const hedgeIntent = this.createIntent(
-        session.strategyKey,
-        session.strategyKey,
-        session.userId,
-        session.clientId,
-        exchange,
-        pair,
-        activeCycle.makerSide === 'buy' ? 'sell' : 'buy',
-        hedgePrice,
-        fillQty,
-        ts,
-        `dual-account-volume-taker-${activeCycle.cycleId}-${makerFilledQty
-          .toFixed()
-          .replace('.', '_')}`,
-        params.executionCategory,
-        {
-          cycleId: activeCycle.cycleId,
-          tickId: activeCycle.tickId,
-          orderId: activeCycle.orderId,
-          role: 'taker',
-          makerAccountLabel: activeCycle.makerAccountLabel,
-          takerAccountLabel: activeCycle.takerAccountLabel,
-          makerOrderId: trackedOrder.exchangeOrderId,
-          triggerFillQty: fillQty.toFixed(),
-          makerFilledQty: makerFilledQty.toFixed(),
-          requestedQty: activeCycle.requestedQty,
-        },
-        false,
-        activeCycle.takerAccountLabel,
-        'IOC',
-      );
-
-      await this.publishIntents(session.strategyKey, [hedgeIntent]);
-
-      return nextParams;
     }
 
     if (

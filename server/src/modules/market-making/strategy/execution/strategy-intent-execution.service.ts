@@ -283,6 +283,12 @@ export class StrategyIntentExecutionService {
             createdAt: getRFC3339Timestamp(),
             updatedAt: getRFC3339Timestamp(),
           });
+
+          await this.maybeExecuteImmediateDualAccountTaker(
+            intent,
+            result,
+            clientOrderId,
+          );
         } else {
           this.logger.warn(
             `CREATE_LIMIT_ORDER returned no id for ${intent.strategyKey}: ${
@@ -563,6 +569,176 @@ export class StrategyIntentExecutionService {
         : undefined;
 
     return metadataOrderId || intent.clientId;
+  }
+
+  private async maybeExecuteImmediateDualAccountTaker(
+    intent: StrategyOrderIntent,
+    makerResult: unknown,
+    makerClientOrderId: string,
+  ): Promise<void> {
+    if (intent.type !== 'CREATE_LIMIT_ORDER' || intent.timeInForce === 'IOC') {
+      return;
+    }
+
+    if (this.resolveIntentRole(intent) !== 'maker') {
+      return;
+    }
+
+    const takerAccountLabel = this.readMetadataString(
+      intent,
+      'takerAccountLabel',
+    );
+
+    if (!takerAccountLabel) {
+      return;
+    }
+
+    const makerExchangeOrderId = this.readOrderIdFromResult(makerResult);
+
+    if (!makerExchangeOrderId) {
+      this.logger.warn(
+        `Skipping immediate dual-account taker for ${intent.strategyKey}: maker ACK missing exchange order id`,
+      );
+
+      return;
+    }
+
+    const takerIntent = this.buildImmediateDualAccountTakerIntent(
+      intent,
+      takerAccountLabel,
+      makerExchangeOrderId,
+    );
+
+    try {
+      await this.consumeIntent(takerIntent);
+    } catch (error) {
+      const makerCancelled = await this.cancelMakerAfterTakerFailure(
+        intent,
+        makerExchangeOrderId,
+        makerClientOrderId,
+        error,
+      );
+
+      if (makerCancelled) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  private buildImmediateDualAccountTakerIntent(
+    intent: StrategyOrderIntent,
+    takerAccountLabel: string,
+    makerExchangeOrderId: string,
+  ): StrategyOrderIntent {
+    const metadata =
+      intent.metadata && typeof intent.metadata === 'object'
+        ? { ...(intent.metadata as Record<string, unknown>) }
+        : {};
+
+    return {
+      ...intent,
+      intentId: `${intent.intentId}:inline-taker`,
+      accountLabel: takerAccountLabel,
+      side: intent.side === 'buy' ? 'sell' : 'buy',
+      postOnly: false,
+      timeInForce: 'IOC',
+      status: 'NEW',
+      createdAt: getRFC3339Timestamp(),
+      metadata: {
+        ...metadata,
+        role: 'taker',
+        makerOrderId: makerExchangeOrderId,
+        makerIntentId: intent.intentId,
+        trigger: 'maker_ack',
+        triggerFillQty: intent.qty,
+      },
+    };
+  }
+
+  private async cancelMakerAfterTakerFailure(
+    intent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerClientOrderId: string,
+    takerError: unknown,
+  ): Promise<boolean> {
+    this.logger.warn(
+      [
+        'Immediate dual-account taker failed; cancelling maker leg',
+        `strategy=${intent.strategyKey}`,
+        `intent=${intent.intentId}`,
+        `exchange=${intent.exchange}`,
+        `pair=${intent.pair}`,
+        `makerOrderId=${makerExchangeOrderId}`,
+        `account=${intent.accountLabel || 'default'}`,
+        `error=${
+          takerError instanceof Error ? takerError.message : String(takerError)
+        }`,
+      ].join(' | '),
+    );
+
+    try {
+      const result = await this.runWithRetries(intent, () =>
+        this.exchangeConnectorAdapterService.cancelOrder(
+          intent.exchange,
+          intent.pair,
+          makerExchangeOrderId,
+          intent.accountLabel,
+        ),
+      );
+      const existingTrackedOrder =
+        this.exchangeOrderTrackerService?.getByExchangeOrderId(
+          intent.exchange,
+          makerExchangeOrderId,
+          intent.accountLabel,
+        );
+      const cancelStatus = this.readOrderStatusFromResult(result);
+
+      this.exchangeOrderTrackerService?.upsertOrder({
+        orderId: this.resolveOrderIdForClientOrderId(intent),
+        strategyKey: intent.strategyKey,
+        exchange: intent.exchange,
+        accountLabel: intent.accountLabel,
+        pair: intent.pair,
+        exchangeOrderId: makerExchangeOrderId,
+        clientOrderId:
+          existingTrackedOrder?.clientOrderId || makerClientOrderId,
+        slotKey: existingTrackedOrder?.slotKey || intent.slotKey,
+        role: existingTrackedOrder?.role || 'maker',
+        side: intent.side,
+        price: intent.price,
+        qty: intent.qty,
+        cumulativeFilledQty: existingTrackedOrder?.cumulativeFilledQty || '0',
+        status:
+          cancelStatus === 'canceled' || cancelStatus === 'cancelled'
+            ? 'cancelled'
+            : 'pending_cancel',
+        createdAt: existingTrackedOrder?.createdAt || getRFC3339Timestamp(),
+        updatedAt: getRFC3339Timestamp(),
+      });
+
+      return true;
+    } catch (cancelError) {
+      this.logger.error(
+        [
+          'Failed to cancel maker after immediate taker failure',
+          `strategy=${intent.strategyKey}`,
+          `intent=${intent.intentId}`,
+          `exchange=${intent.exchange}`,
+          `pair=${intent.pair}`,
+          `makerOrderId=${makerExchangeOrderId}`,
+          `account=${intent.accountLabel || 'default'}`,
+          `error=${
+            cancelError instanceof Error
+              ? cancelError.message
+              : String(cancelError)
+          }`,
+        ].join(' | '),
+      );
+
+      return false;
+    }
   }
 
   private assertImmediateOrderAck(

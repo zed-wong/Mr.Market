@@ -899,7 +899,7 @@ describe('StrategyService', () => {
     expect(executor?.getSession('client1')?.accountLabel).toBeUndefined();
   });
 
-  it('publishes taker IOC intents from maker fill deltas only', async () => {
+  it('updates dual-account fill progress without publishing taker intents from maker fill deltas', async () => {
     const params = {
       exchangeName: 'binance',
       symbol: 'BTC/USDT',
@@ -986,36 +986,7 @@ describe('StrategyService', () => {
       receivedAt: '2026-04-16T00:00:02.000Z',
     });
 
-    expect(executorOrchestratorService.dispatchActions).toHaveBeenNthCalledWith(
-      1,
-      'user1-client1-dualAccountVolume',
-      [
-        expect.objectContaining({
-          accountLabel: 'taker',
-          side: 'sell',
-          qty: '0.4',
-          price: '100',
-          timeInForce: 'IOC',
-          metadata: expect.objectContaining({
-            role: 'taker',
-            cycleId: 'cycle-1',
-            orderId: 'client1:cycle:1',
-          }),
-        }),
-      ],
-    );
-    expect(executorOrchestratorService.dispatchActions).toHaveBeenNthCalledWith(
-      2,
-      'user1-client1-dualAccountVolume',
-      [
-        expect.objectContaining({
-          accountLabel: 'taker',
-          side: 'sell',
-          qty: '0.6',
-          timeInForce: 'IOC',
-        }),
-      ],
-    );
+    expect(executorOrchestratorService.dispatchActions).not.toHaveBeenCalled();
 
     const executor = executorRegistry.getExecutor('binance', 'BTC/USDT');
 

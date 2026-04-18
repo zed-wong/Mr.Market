@@ -59,13 +59,14 @@ side = resolveVolumeSide(postOnlySide, publishedCycles, buyBias)
 
 If no tradable side found → fall through to rebalance (step 5 below).
 
-### 4. Maker Fill-Driven Hedge
+### 4. Maker ACK-Driven Paired Execution
 
 **Maker intent publish**:
 
 - `CREATE_LIMIT_ORDER`, `postOnly=true`, routed to `makerAccountLabel`
 - Tracked with `role='maker'`
 - Persist `activeCycle` with maker/taker account labels, side, price, and requested qty
+- Once the maker order is acknowledged with an exchange order id, execution immediately submits the taker IOC on `takerAccountLabel`, opposite side, same price, same qty
 
 **Private watcher / tracker path**:
 
@@ -76,8 +77,8 @@ If no tradable side found → fall through to rebalance (step 5 below).
 **On maker fill delta** (`StrategyService.handleSessionFill`):
 
 1. Update `activeCycle.makerFilledQty += fill.qty`
-2. Publish taker IOC on `takerAccountLabel`, opposite side, same price, `timeInForce=IOC`
-3. Hedge only the maker fill delta, not the original maker order qty
+2. Do not emit another taker order from the strategy layer
+3. Use fill progress only for settlement and under-hedge detection
 
 **On taker fill delta**:
 
@@ -126,23 +127,23 @@ Key properties:
 
 ## Configuration
 
-| Parameter              | Type                      | Description                                                |
-| ---------------------- | ------------------------- | ---------------------------------------------------------- |
-| `baseTradeAmount`      | number                    | Base quantity per cycle                                    |
-| `baseIntervalTime`     | number                    | Seconds between cycles                                     |
-| `numTrades`            | number                    | Completed cycles before auto-stop                          |
+| Parameter              | Type                      | Description                                                            |
+| ---------------------- | ------------------------- | ---------------------------------------------------------------------- |
+| `baseTradeAmount`      | number                    | Base quantity per cycle                                                |
+| `baseIntervalTime`     | number                    | Seconds between cycles                                                 |
+| `numTrades`            | number                    | Completed cycles before auto-stop                                      |
 | `targetQuoteVolume`    | number                    | Taker-leg cumulative quote progress auto-stop threshold (0 = disabled) |
-| `postOnlySide`         | `'buy' \| 'sell' \| null` | Fixed maker side, null for auto                            |
-| `buyBias`              | number (0-1)              | Probability of buy when side is auto                       |
-| `tradeAmountVariance`  | number                    | Variance around trade amount                               |
-| `priceOffsetVariance`  | number                    | Variance around price offset                               |
-| `cadenceVariance`      | number                    | Variance around cycle interval                             |
-| `dynamicRoleSwitching` | boolean                   | Auto-swap maker/taker based on balance capacity            |
-| `accountProfiles`      | object                    | Per-account multipliers, variances, activeHours            |
-| `makerAccountLabel`    | string                    | Maker account (injected at start)                          |
-| `takerAccountLabel`    | string                    | Taker account (injected at start)                          |
-| `makerApiKeyId`        | string                    | Maker API key ID (injected at start)                       |
-| `takerApiKeyId`        | string                    | Taker API key ID (injected at start)                       |
+| `postOnlySide`         | `'buy' \| 'sell' \| null` | Fixed maker side, null for auto                                        |
+| `buyBias`              | number (0-1)              | Probability of buy when side is auto                                   |
+| `tradeAmountVariance`  | number                    | Variance around trade amount                                           |
+| `priceOffsetVariance`  | number                    | Variance around price offset                                           |
+| `cadenceVariance`      | number                    | Variance around cycle interval                                         |
+| `dynamicRoleSwitching` | boolean                   | Auto-swap maker/taker based on balance capacity                        |
+| `accountProfiles`      | object                    | Per-account multipliers, variances, activeHours                        |
+| `makerAccountLabel`    | string                    | Maker account (injected at start)                                      |
+| `takerAccountLabel`    | string                    | Taker account (injected at start)                                      |
+| `makerApiKeyId`        | string                    | Maker API key ID (injected at start)                                   |
+| `takerApiKeyId`        | string                    | Taker API key ID (injected at start)                                   |
 
 ## Restart Recovery
 
@@ -155,19 +156,19 @@ Key properties:
 
 ## File Map
 
-| File                                                              | Responsibility                                                                  |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `strategy/controllers/dual-account-volume-strategy.controller.ts` | Controller: cadence, decideActions, onActionsPublished, rerun                   |
-| `strategy/strategy.service.ts`                                    | Session actions builder, fill-driven hedging, rebalance logic, account resolution, param persistence |
-| `strategy/execution/strategy-intent-execution.service.ts`         | Intent execution, exchange ack handling, tracked-order upserts                  |
-| `trackers/user-stream-tracker.service.ts`                         | Dual-account fill delta normalization, routing, and dedup                       |
-| `trackers/exchange-order-tracker.service.ts`                      | Tracked-order cache plus synchronous reads for strategy/runtime decisions        |
-| `reconciliation/exchange-order-reconciliation-runner.ts`          | Off-tick REST order recovery when user stream state is missing or delayed       |
-| `balance-state/balance-refresh-scheduler.ts`                      | Off-tick balance refresh triggered by stale cache or degraded stream health     |
-| `events/market-making-event-bus.service.ts`                       | Typed internal order/balance/stream-health event propagation foundation         |
-| `tick/runtime-timing.service.ts`                                  | Tick, executor, session, and network timing snapshots for runtime refactor work |
-| `admin/market-making/admin-direct-mm.service.ts`                  | Admin CRUD (start/stop/resume/remove)                                           |
-| `execution/exchange-connector-adapter.service.ts`                 | CCXT wrapper with multi-account routing                                         |
+| File                                                              | Responsibility                                                                                            |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `strategy/controllers/dual-account-volume-strategy.controller.ts` | Controller: cadence, decideActions, onActionsPublished, rerun                                             |
+| `strategy/strategy.service.ts`                                    | Session actions builder, fill progress accounting, rebalance logic, account resolution, param persistence |
+| `strategy/execution/strategy-intent-execution.service.ts`         | Intent execution, maker-ack-triggered taker IOC dispatch, tracked-order upserts                           |
+| `trackers/user-stream-tracker.service.ts`                         | Dual-account fill delta normalization, routing, and dedup                                                 |
+| `trackers/exchange-order-tracker.service.ts`                      | Tracked-order cache plus synchronous reads for strategy/runtime decisions                                 |
+| `reconciliation/exchange-order-reconciliation-runner.ts`          | Off-tick REST order recovery when user stream state is missing or delayed                                 |
+| `balance-state/balance-refresh-scheduler.ts`                      | Off-tick balance refresh triggered by stale cache or degraded stream health                               |
+| `events/market-making-event-bus.service.ts`                       | Typed internal order/balance/stream-health event propagation foundation                                   |
+| `tick/runtime-timing.service.ts`                                  | Tick, executor, session, and network timing snapshots for runtime refactor work                           |
+| `admin/market-making/admin-direct-mm.service.ts`                  | Admin CRUD (start/stop/resume/remove)                                                                     |
+| `execution/exchange-connector-adapter.service.ts`                 | CCXT wrapper with multi-account routing                                                                   |
 
 ## Key Invariants
 
@@ -179,7 +180,7 @@ Key properties:
 - Maker orders are always `postOnly=true`
 - Quantized maker prices must stay on the correct top-of-book side after precision rounding, otherwise the cycle is dropped before publish
 - Taker orders are always `timeInForce=IOC`
-- Taker intents are emitted only from observed maker fill deltas, never from maker placement ACK
-- Private order + trade watchers must be active for both accounts before fill-driven hedging is reliable
+- Taker IOC dispatch happens immediately after maker ACK, not from later maker fill deltas
+- Private order + trade watchers must be active for both accounts so maker/taker fill progress can settle the cycle correctly
 - Both accounts must be exchange-ready before activation
 - Strategy ticks must use cached balance/order state only; stale cache skips the current cycle until off-tick recovery catches up

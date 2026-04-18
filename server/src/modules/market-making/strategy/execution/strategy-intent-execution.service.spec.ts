@@ -241,7 +241,14 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('tracks dual-account maker intents without executing inline taker hedges', async () => {
+  it('executes an immediate inline taker IOC after a dual-account maker ack', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-1', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'taker-order-1',
+        status: 'closed',
+        filled: '1',
+      });
     const service = createService(true);
 
     await service.consumeIntents([
@@ -272,10 +279,41 @@ describe('StrategyIntentExecutionService', () => {
     );
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
-    ).toHaveBeenCalledTimes(1);
+    ).toHaveBeenNthCalledWith(
+      2,
+      'binance',
+      'BTC/USDT',
+      'sell',
+      '1',
+      '100',
+      buildSubmittedClientOrderId('dual-cycle-1', 1),
+      { postOnly: false, timeInForce: 'IOC' },
+      'taker',
+    );
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(2);
     expect(exchangeConnectorAdapterService.fetchOrder).not.toHaveBeenCalled();
     expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        orderId: 'dual-cycle-1',
+        accountLabel: 'maker',
+        role: 'maker',
+        exchangeOrderId: 'maker-order-1',
+      }),
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        orderId: 'dual-cycle-1',
+        accountLabel: 'taker',
+        role: 'taker',
+        exchangeOrderId: 'taker-order-1',
+      }),
+    );
   });
 
   it('fails IOC intents that return neither an exchange order id nor any fill', async () => {
@@ -302,7 +340,14 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('keeps dynamic maker/taker metadata on tracked maker intents without inline hedging', async () => {
+  it('keeps dynamic maker/taker metadata when the inline taker uses swapped accounts', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-3', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'taker-order-3',
+        status: 'closed',
+        filled: '1',
+      });
     const service = createService(true);
 
     await service.consumeIntents([
@@ -330,9 +375,16 @@ describe('StrategyIntentExecutionService', () => {
         role: 'maker',
       }),
     );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'dual-cycle-3',
+        accountLabel: 'maker',
+        role: 'taker',
+      }),
+    );
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
-    ).toHaveBeenCalledTimes(1);
+    ).toHaveBeenCalledTimes(2);
   });
 
   it('tracks rebalance intents without running the inline dual-account taker flow', async () => {
@@ -365,6 +417,47 @@ describe('StrategyIntentExecutionService', () => {
       exchangeConnectorAdapterService.placeLimitOrder,
     ).toHaveBeenCalledTimes(1);
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('cancels the maker leg when the inline taker fails', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-cancel', status: 'open' })
+      .mockRejectedValue(new Error('taker IOC rejected'));
+    const service = createService(true);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-cancel',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          cycleId: 'cycle-cancel',
+          orderId: 'dual-cycle-cancel',
+        },
+      },
+    ]);
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order-cancel',
+      'maker',
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        orderId: 'dual-cycle-cancel',
+        exchangeOrderId: 'maker-order-cancel',
+        accountLabel: 'maker',
+        role: 'maker',
+        status: 'cancelled',
+      }),
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-cancel',
+      'DONE',
+    );
   });
 
   it('deduplicates create intents when the slot already has an active tracked order', async () => {
