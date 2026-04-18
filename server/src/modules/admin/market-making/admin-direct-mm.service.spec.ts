@@ -4,6 +4,15 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AdminDirectMarketMakingService } from './admin-direct-mm.service';
 
 describe('AdminDirectMarketMakingService', () => {
+  const singleAccountLaunchConfig = {
+    launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
+    directExecutionMode: 'single_account',
+  };
+  const dualAccountLaunchConfig = {
+    launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
+    directExecutionMode: 'dual_account',
+  };
+
   const buildService = () => {
     const marketMakingRepository = {
       create: jest.fn((payload) => payload),
@@ -281,6 +290,7 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-1',
       enabled: true,
       controllerType: 'pureMarketMaking',
+      configSchema: singleAccountLaunchConfig,
     });
     const result = await service.directStart(directStartDto, 'admin-user');
 
@@ -340,6 +350,7 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-1',
       enabled: true,
       controllerType: 'pureMarketMaking',
+      configSchema: singleAccountLaunchConfig,
     });
     strategyConfigResolver.resolveForOrderSnapshot.mockRejectedValue(
       new Error('schema validation failed'),
@@ -363,6 +374,7 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-1',
       enabled: true,
       controllerType: 'pureMarketMaking',
+      configSchema: singleAccountLaunchConfig,
     });
     strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
       controllerType: 'pureMarketMaking',
@@ -401,6 +413,8 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: directStartDto.strategyDefinitionId,
       enabled: true,
+      controllerType: 'pureMarketMaking',
+      configSchema: singleAccountLaunchConfig,
     });
     growdataMarketMakingPairRepository.findOne.mockResolvedValue({
       exchange_id: 'binance',
@@ -424,6 +438,8 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: directStartDto.strategyDefinitionId,
       enabled: true,
+      controllerType: 'pureMarketMaking',
+      configSchema: singleAccountLaunchConfig,
     });
     growdataMarketMakingPairRepository.findOne.mockResolvedValue({
       exchange_id: 'binance',
@@ -454,6 +470,7 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: directStartDto.strategyDefinitionId,
       enabled: true,
+      configSchema: singleAccountLaunchConfig,
     });
     growdataMarketMakingPairRepository.findOne.mockResolvedValue({
       exchange_id: 'binance',
@@ -481,6 +498,8 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: directStartDto.strategyDefinitionId,
       enabled: true,
+      controllerType: 'pureMarketMaking',
+      configSchema: singleAccountLaunchConfig,
     });
     exchange.markets['BTC/USDT'].maker = 0.002;
 
@@ -640,6 +659,54 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
+  it('backfills missing best-capacity runtime fields before resuming a stopped order', async () => {
+    const { service, marketMakingRepository, marketMakingRuntimeService } =
+      buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'stopped',
+      exchangeName: 'mexc',
+      pair: 'XIN/USDT',
+      apiKeyId: '4',
+      strategySnapshot: {
+        controllerType: 'dualAccountBestCapacityVolume',
+        resolvedConfig: {
+          maxOrderAmount: 2,
+          interval: 30,
+          makerDelayMs: 250,
+          makerAccountLabel: '4',
+          takerAccountLabel: '8',
+        },
+      },
+    });
+
+    await expect(service.directResume('order-1')).resolves.toEqual({
+      orderId: 'order-1',
+      state: 'running',
+      warnings: ['[4] Low XIN balance', '[8] Low XIN balance'],
+    });
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategySnapshot: expect.objectContaining({
+          resolvedConfig: expect.objectContaining({
+            exchangeName: 'mexc',
+            pair: 'XIN/USDT',
+            symbol: 'XIN/USDT',
+            userId: 'admin-user',
+            clientId: 'order-1',
+            marketMakingOrderId: 'order-1',
+            makerAccountLabel: '4',
+            takerAccountLabel: '8',
+            makerApiKeyId: '4',
+          }),
+        }),
+      }),
+    );
+  });
+
   it('lists only admin direct orders', async () => {
     const {
       service,
@@ -717,6 +784,7 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-2',
       enabled: true,
       controllerType: 'dualAccountVolume',
+      configSchema: dualAccountLaunchConfig,
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountVolume',
@@ -757,6 +825,73 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
+  it('starts a best-capacity dual-account direct order and stores maker and taker metadata', async () => {
+    const {
+      service,
+      marketMakingRuntimeService,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      userOrdersService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-best',
+      enabled: true,
+      controllerType: 'dualAccountBestCapacityVolume',
+      configSchema: dualAccountLaunchConfig,
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'dualAccountBestCapacityVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'dualAccountBestCapacityVolume',
+      resolvedConfig: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseTradeAmount: 5,
+        baseIntervalTime: 10,
+        numTrades: 20,
+        baseIncrementPercentage: 0.2,
+        pricePushRate: 0,
+      },
+    });
+
+    const result = await service.directStart(dualAccountStartDto, 'admin-user');
+
+    expect(result).toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKeyId: 'api-key-1',
+        strategySnapshot: expect.objectContaining({
+          controllerType: 'dualAccountBestCapacityVolume',
+          resolvedConfig: expect.objectContaining({
+            symbol: 'BTC/USDT',
+            pair: 'BTC/USDT',
+            exchangeName: 'binance',
+            makerAccountLabel: 'api-key-1',
+            takerAccountLabel: 'api-key-2',
+            makerApiKeyId: 'api-key-1',
+            takerApiKeyId: 'api-key-2',
+          }),
+        }),
+      }),
+    );
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategySnapshot: expect.objectContaining({
+          resolvedConfig: expect.objectContaining({
+            symbol: 'BTC/USDT',
+            exchangeName: 'binance',
+          }),
+        }),
+      }),
+    );
+  });
+
   it('sanitizes reserved config override fields before resolving dual-account config', async () => {
     const { service, strategyDefinitionRepository, strategyConfigResolver } =
       buildService();
@@ -765,6 +900,7 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-2',
       enabled: true,
       controllerType: 'dualAccountVolume',
+      configSchema: dualAccountLaunchConfig,
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountVolume',
@@ -788,19 +924,23 @@ describe('AdminDirectMarketMakingService', () => {
 
     expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
       'strategy-2',
-      expect.objectContaining({
-        exchangeName: 'binance',
-        symbol: 'BTC/USDT',
-      }),
-    );
-    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
-      'strategy-2',
       expect.not.objectContaining({
         userId: 'spoofed-user',
         clientId: 'spoofed-client',
         marketMakingOrderId: 'spoofed-order',
+        pair: 'ETH/USDT',
         symbol: 'ETH/USDT',
         exchangeName: 'kraken',
+      }),
+    );
+    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
+      'strategy-2',
+      expect.objectContaining({
+        baseTradeAmount: 5,
+        baseIntervalTime: 10,
+        numTrades: 20,
+        baseIncrementPercentage: 0.2,
+        pricePushRate: 0,
       }),
     );
   });
@@ -817,6 +957,7 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-2',
       enabled: true,
       controllerType: 'dualAccountVolume',
+      configSchema: dualAccountLaunchConfig,
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountVolume',
@@ -852,6 +993,7 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-2',
       enabled: true,
       controllerType: 'dualAccountVolume',
+      configSchema: dualAccountLaunchConfig,
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountVolume',
@@ -942,6 +1084,7 @@ describe('AdminDirectMarketMakingService', () => {
         key: 'pure-market-making',
         name: 'Pure Market Making',
         controllerType: 'pureMarketMaking',
+        configSchema: singleAccountLaunchConfig,
         visibility: 'public',
         enabled: true,
       },
@@ -950,6 +1093,7 @@ describe('AdminDirectMarketMakingService', () => {
         key: 'dual-account-volume',
         name: 'Dual Account Volume',
         controllerType: 'dualAccountVolume',
+        configSchema: dualAccountLaunchConfig,
         visibility: 'admin',
         enabled: true,
       },
@@ -958,6 +1102,7 @@ describe('AdminDirectMarketMakingService', () => {
         key: 'internal-hidden',
         name: 'Hidden',
         controllerType: 'pureMarketMaking',
+        configSchema: { launchSurfaces: ['strategy_settings'] },
         visibility: 'private',
         enabled: true,
       },
@@ -1062,6 +1207,10 @@ describe('AdminDirectMarketMakingService', () => {
       dynamicRoleSwitching: true,
       targetQuoteVolume: '5000',
       makerDelayMs: null,
+      cadenceVariance: null,
+      tradeAmountVariance: null,
+      priceOffsetVariance: null,
+      makerDelayVariance: null,
       publishedCycles: 7,
       completedCycles: 6,
       tradedQuoteVolume: '3456.78',
@@ -1289,6 +1438,10 @@ describe('AdminDirectMarketMakingService', () => {
       dynamicRoleSwitching: null,
       targetQuoteVolume: null,
       makerDelayMs: null,
+      cadenceVariance: null,
+      tradeAmountVariance: null,
+      priceOffsetVariance: null,
+      makerDelayVariance: null,
       publishedCycles: null,
       completedCycles: null,
       tradedQuoteVolume: null,

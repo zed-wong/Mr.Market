@@ -48,6 +48,11 @@ import {
   CampaignJoinRequestDto,
   DirectStartMarketMakingDto,
 } from './admin-direct-mm.dto';
+import {
+  attachStrategyDefinitionCapabilities,
+  getStrategyDefinitionCapabilities,
+  type StrategyDirectExecutionMode,
+} from '../strategy/strategy-definition-capabilities';
 
 const DIRECT_ORDER_STALE_MS = 15_000;
 const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
@@ -118,6 +123,7 @@ export class AdminDirectMarketMakingService {
     adminUserId?: string,
   ): Promise<{ orderId: string; state: string; warnings: string[] }> {
     const directUserId = adminUserId || 'admin-direct';
+    this.logger.log(`strategyDefinitionId:${dto.strategyDefinitionId}`);
     const definition = await this.strategyDefinitionRepository.findOne({
       where: { id: dto.strategyDefinitionId, enabled: true },
     });
@@ -128,24 +134,23 @@ export class AdminDirectMarketMakingService {
 
     const controllerType =
       this.strategyConfigResolver.getDefinitionControllerType(definition);
+    const capabilities = getStrategyDefinitionCapabilities(definition);
 
     if (
-      controllerType !== 'pureMarketMaking' &&
-      controllerType !== 'dualAccountVolume'
+      !capabilities.directOrderCompatible ||
+      !capabilities.directExecutionMode
     ) {
       throw new BadRequestException('Strategy definition not found');
     }
 
     const executionAccounts = await this.resolveExecutionAccounts(
       dto,
-      controllerType,
+      capabilities.directExecutionMode,
     );
     const orderId = randomUUID();
     const configOverrides = this.sanitizeConfigOverrides(dto.configOverrides);
     const resolverInput = {
       ...configOverrides,
-      symbol: dto.pair,
-      exchangeName: dto.exchangeName,
     };
 
     this.logger.log(
@@ -164,28 +169,17 @@ export class AdminDirectMarketMakingService {
         resolverInput,
       );
 
-    if (controllerType === 'dualAccountVolume') {
-      resolvedConfig.resolvedConfig.makerAccountLabel =
-        executionAccounts.primary.accountLabel;
-      resolvedConfig.resolvedConfig.takerAccountLabel =
-        executionAccounts.secondary?.accountLabel;
-      resolvedConfig.resolvedConfig.makerApiKeyId =
-        executionAccounts.primary.apiKeyId;
-      resolvedConfig.resolvedConfig.takerApiKeyId =
-        executionAccounts.secondary?.apiKeyId;
-    } else {
-      resolvedConfig.resolvedConfig.accountLabel =
-        executionAccounts.primary.accountLabel;
-    }
-
-    resolvedConfig.resolvedConfig.userId = directUserId;
-    resolvedConfig.resolvedConfig.clientId = orderId;
-    resolvedConfig.resolvedConfig.marketMakingOrderId = orderId;
-    resolvedConfig.resolvedConfig.pair = dto.pair;
-    resolvedConfig.resolvedConfig.exchangeName = dto.exchangeName;
+    this.applyDirectRuntimeFields(
+      resolvedConfig.resolvedConfig,
+      dto,
+      directUserId,
+      orderId,
+      executionAccounts,
+      capabilities.directExecutionMode,
+    );
 
     const warnings =
-      controllerType === 'dualAccountVolume'
+      capabilities.directExecutionMode === 'dual_account'
         ? await this.runDualAccountBalancePreCheck(
             dto.exchangeName,
             dto.pair,
@@ -280,29 +274,30 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException('Only stopped orders can be resumed');
     }
 
+    this.backfillOrderRuntimeSnapshot(order);
+
     const controllerType = this.readControllerType(order);
     const resolvedConfig = order.strategySnapshot?.resolvedConfig || {};
-    const warnings =
-      controllerType === 'dualAccountVolume'
-        ? await this.runDualAccountBalancePreCheck(
-            order.exchangeName,
-            order.pair,
-            {
-              primary: {
-                accountLabel: this.readMakerAccountLabel(order),
-              },
-              secondary: {
-                accountLabel: this.readTakerAccountLabel(order),
-              },
+    const warnings = this.isDualAccountControllerType(controllerType)
+      ? await this.runDualAccountBalancePreCheck(
+          order.exchangeName,
+          order.pair,
+          {
+            primary: {
+              accountLabel: this.readMakerAccountLabel(order),
             },
-            resolvedConfig,
-          )
-        : await this.runSingleAccountPreCheck(
-            order.exchangeName,
-            order.pair,
-            this.readPrimaryAccountLabel(order),
-            resolvedConfig,
-          );
+            secondary: {
+              accountLabel: this.readTakerAccountLabel(order),
+            },
+          },
+          resolvedConfig,
+        )
+      : await this.runSingleAccountPreCheck(
+          order.exchangeName,
+          order.pair,
+          this.readPrimaryAccountLabel(order),
+          resolvedConfig,
+        );
 
     try {
       await this.marketMakingRuntimeService.startOrder(order);
@@ -497,10 +492,9 @@ export class AdminDirectMarketMakingService {
       this.readTakerApiKeyId(order),
       this.readTakerAccountLabel(order),
     );
-    const takerAccountLabel =
-      controllerType === 'dualAccountVolume'
-        ? this.readTakerAccountLabel(order)
-        : '';
+    const takerAccountLabel = this.isDualAccountControllerType(controllerType)
+      ? this.readTakerAccountLabel(order)
+      : '';
     const accountsToFetch: Array<{ label: string; tag: string }> = [
       { label: primaryAccountLabel, tag: takerAccountLabel ? 'maker' : '' },
     ];
@@ -541,8 +535,10 @@ export class AdminDirectMarketMakingService {
         symbol: order.pair,
       }),
       state:
-        this.balanceStateRefreshService?.getHealthState(order.exchangeName, label) ||
-        'silent',
+        this.balanceStateRefreshService?.getHealthState(
+          order.exchangeName,
+          label,
+        ) || 'silent',
       lastEventAt:
         this.userStreamTrackerService.getLatestEvent(order.exchangeName, label)
           ?.receivedAt || null,
@@ -653,12 +649,16 @@ export class AdminDirectMarketMakingService {
 
     const orderConfig = {
       orderAmount: this.readConfigString(
-        resolvedConfig.orderAmount ?? resolvedConfig.baseTradeAmount,
+        resolvedConfig.orderAmount ??
+          resolvedConfig.maxOrderAmount ??
+          resolvedConfig.baseTradeAmount,
       ),
       bidSpread: this.readConfigString(resolvedConfig.bidSpread),
       askSpread: this.readConfigString(resolvedConfig.askSpread),
       numberOfLayers: this.readConfigString(resolvedConfig.numberOfLayers),
-      baseIntervalTime: this.readConfigNumber(resolvedConfig.baseIntervalTime),
+      baseIntervalTime: this.readConfigNumber(
+        resolvedConfig.interval ?? resolvedConfig.baseIntervalTime,
+      ),
       numTrades: this.readConfigNumber(resolvedConfig.numTrades),
       baseIncrementPercentage: this.readConfigString(
         resolvedConfig.baseIncrementPercentage,
@@ -670,9 +670,19 @@ export class AdminDirectMarketMakingService {
           ? resolvedConfig.dynamicRoleSwitching
           : null,
       targetQuoteVolume: this.readConfigString(
-        resolvedConfig.targetQuoteVolume,
+        resolvedConfig.dailyVolumeTarget ?? resolvedConfig.targetQuoteVolume,
       ),
       makerDelayMs: this.readConfigNumber(resolvedConfig.makerDelayMs),
+      cadenceVariance: this.readConfigString(resolvedConfig.cadenceVariance),
+      tradeAmountVariance: this.readConfigString(
+        resolvedConfig.tradeAmountVariance,
+      ),
+      priceOffsetVariance: this.readConfigString(
+        resolvedConfig.priceOffsetVariance,
+      ),
+      makerDelayVariance: this.readConfigString(
+        resolvedConfig.makerDelayVariance,
+      ),
       publishedCycles: this.readConfigNumber(resolvedConfig.publishedCycles),
       completedCycles: this.readConfigNumber(resolvedConfig.completedCycles),
       tradedQuoteVolume: this.readConfigString(
@@ -966,16 +976,20 @@ export class AdminDirectMarketMakingService {
       order: { updatedAt: 'DESC' },
     });
 
-    return definitions.filter((definition) => {
-      const controllerType = String(
-        definition.controllerType || definition.executorType || '',
-      ).trim();
-      const visibility = String(definition.visibility || 'public').trim();
+    return definitions
+      .map((definition) => attachStrategyDefinitionCapabilities(definition))
+      .filter((definition) => {
+        const controllerType = String(
+          definition.controllerType || definition.executorType || '',
+        ).trim();
+        const visibility = String(definition.visibility || 'public').trim();
 
-      return (
-        ['public', 'admin'].includes(visibility) && controllerType.length > 0
-      );
-    });
+        return (
+          ['public', 'admin'].includes(visibility) &&
+          controllerType.length > 0 &&
+          definition.directOrderCompatible
+        );
+      });
   }
 
   mapCCXTError(error: unknown): HttpException {
@@ -1019,12 +1033,12 @@ export class AdminDirectMarketMakingService {
 
   private async resolveExecutionAccounts(
     dto: DirectStartMarketMakingDto,
-    controllerType: 'pureMarketMaking' | 'dualAccountVolume',
+    directExecutionMode: StrategyDirectExecutionMode,
   ): Promise<{
     primary: DirectExecutionAccount;
     secondary?: DirectExecutionAccount;
   }> {
-    if (controllerType === 'dualAccountVolume') {
+    if (directExecutionMode === 'dual_account') {
       const maker = await this.validateExecutionAccount(
         dto.makerApiKeyId,
         dto.exchangeName,
@@ -1081,6 +1095,91 @@ export class AdminDirectMarketMakingService {
       apiKeyName: String(apiKey.name || '').trim(),
       apiKey,
     };
+  }
+
+  private applyDirectRuntimeFields(
+    resolvedConfig: Record<string, unknown>,
+    dto: Pick<DirectStartMarketMakingDto, 'exchangeName' | 'pair'>,
+    userId: string,
+    orderId: string,
+    executionAccounts: {
+      primary: DirectExecutionAccount;
+      secondary?: DirectExecutionAccount;
+    },
+    directExecutionMode: StrategyDirectExecutionMode,
+  ): void {
+    if (directExecutionMode === 'dual_account') {
+      resolvedConfig.makerAccountLabel = executionAccounts.primary.accountLabel;
+      resolvedConfig.takerAccountLabel =
+        executionAccounts.secondary?.accountLabel;
+      resolvedConfig.makerApiKeyId = executionAccounts.primary.apiKeyId;
+      resolvedConfig.takerApiKeyId = executionAccounts.secondary?.apiKeyId;
+    } else {
+      resolvedConfig.accountLabel = executionAccounts.primary.accountLabel;
+    }
+
+    resolvedConfig.userId = userId;
+    resolvedConfig.clientId = orderId;
+    resolvedConfig.marketMakingOrderId = orderId;
+    resolvedConfig.pair = dto.pair;
+    resolvedConfig.symbol = dto.pair;
+    resolvedConfig.exchangeName = dto.exchangeName;
+  }
+
+  private backfillOrderRuntimeSnapshot(order: MarketMakingOrder): void {
+    if (!order.strategySnapshot?.resolvedConfig) {
+      return;
+    }
+
+    const resolvedConfig = order.strategySnapshot.resolvedConfig as Record<
+      string,
+      unknown
+    >;
+
+    if (!String(resolvedConfig.exchangeName || '').trim()) {
+      resolvedConfig.exchangeName = order.exchangeName;
+    }
+    if (!String(resolvedConfig.pair || '').trim()) {
+      resolvedConfig.pair = order.pair;
+    }
+    if (!String(resolvedConfig.symbol || '').trim()) {
+      resolvedConfig.symbol = order.pair;
+    }
+    if (!String(resolvedConfig.userId || '').trim()) {
+      resolvedConfig.userId = order.userId || 'admin-direct';
+    }
+    if (!String(resolvedConfig.clientId || '').trim()) {
+      resolvedConfig.clientId = order.orderId;
+    }
+    if (!String(resolvedConfig.marketMakingOrderId || '').trim()) {
+      resolvedConfig.marketMakingOrderId = order.orderId;
+    }
+
+    if (this.isDualAccountControllerType(this.readControllerType(order))) {
+      if (!String(resolvedConfig.makerAccountLabel || '').trim()) {
+        resolvedConfig.makerAccountLabel = this.readMakerAccountLabel(order);
+      }
+      if (!String(resolvedConfig.takerAccountLabel || '').trim()) {
+        resolvedConfig.takerAccountLabel = this.readTakerAccountLabel(order);
+      }
+      if (
+        resolvedConfig.makerApiKeyId === undefined &&
+        String(order.apiKeyId || '').trim()
+      ) {
+        resolvedConfig.makerApiKeyId = order.apiKeyId;
+      }
+      if (
+        resolvedConfig.takerApiKeyId === undefined &&
+        String(this.readTakerApiKeyId(order) || '').trim()
+      ) {
+        resolvedConfig.takerApiKeyId = this.readTakerApiKeyId(order);
+      }
+      return;
+    }
+
+    if (!String(resolvedConfig.accountLabel || '').trim()) {
+      resolvedConfig.accountLabel = this.readAccountLabel(order);
+    }
   }
 
   private async runSingleAccountPreCheck(
@@ -1169,7 +1268,10 @@ export class AdminDirectMarketMakingService {
       const balance = await exchange.fetchBalance();
       const orderAmount = new BigNumber(
         String(
-          resolvedConfig.orderAmount ?? resolvedConfig.baseTradeAmount ?? 0,
+          resolvedConfig.orderAmount ??
+            resolvedConfig.maxOrderAmount ??
+            resolvedConfig.baseTradeAmount ??
+            0,
         ),
       );
       const warnings: string[] = [];
@@ -1339,7 +1441,10 @@ export class AdminDirectMarketMakingService {
 
     const orderAmount = new BigNumber(
       String(
-        resolvedConfig.orderAmount ?? resolvedConfig.baseTradeAmount ?? '',
+        resolvedConfig.orderAmount ??
+          resolvedConfig.maxOrderAmount ??
+          resolvedConfig.baseTradeAmount ??
+          '',
       ),
     );
 
@@ -1492,14 +1597,25 @@ export class AdminDirectMarketMakingService {
 
   private readControllerType(
     order: MarketMakingOrder,
-  ): 'pureMarketMaking' | 'dualAccountVolume' {
-    return order.strategySnapshot?.controllerType === 'dualAccountVolume'
-      ? 'dualAccountVolume'
-      : 'pureMarketMaking';
+  ):
+    | 'pureMarketMaking'
+    | 'dualAccountVolume'
+    | 'dualAccountBestCapacityVolume' {
+    if (order.strategySnapshot?.controllerType === 'dualAccountVolume') {
+      return 'dualAccountVolume';
+    }
+
+    if (
+      order.strategySnapshot?.controllerType === 'dualAccountBestCapacityVolume'
+    ) {
+      return 'dualAccountBestCapacityVolume';
+    }
+
+    return 'pureMarketMaking';
   }
 
   private readPrimaryAccountLabel(order: MarketMakingOrder): string {
-    return this.readControllerType(order) === 'dualAccountVolume'
+    return this.isDualAccountControllerType(this.readControllerType(order))
       ? this.readMakerAccountLabel(order)
       : this.readAccountLabel(order);
   }
@@ -1507,7 +1623,7 @@ export class AdminDirectMarketMakingService {
   private async readPrimaryDisplayLabel(
     order: MarketMakingOrder,
   ): Promise<string> {
-    if (this.readControllerType(order) === 'dualAccountVolume') {
+    if (this.isDualAccountControllerType(this.readControllerType(order))) {
       return this.readPrimaryAccountLabel(order);
     }
 
@@ -1574,6 +1690,15 @@ export class AdminDirectMarketMakingService {
     const normalizedApiKeyId = String(apiKeyId).trim();
 
     return normalizedApiKeyId.length > 0 ? normalizedApiKeyId : '';
+  }
+
+  private isDualAccountControllerType(
+    controllerType: string,
+  ): controllerType is 'dualAccountVolume' | 'dualAccountBestCapacityVolume' {
+    return (
+      controllerType === 'dualAccountVolume' ||
+      controllerType === 'dualAccountBestCapacityVolume'
+    );
   }
 
   private readConfigString(value: unknown): string | null {

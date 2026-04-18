@@ -565,7 +565,8 @@ export class StrategyService
   async executeDualAccountBestCapacityVolumeStrategy(
     params: ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ): Promise<void> {
-    const normalizedParams = this.normalizeDualAccountStrategyParams(params);
+    const normalizedParams =
+      this.normalizeDualAccountBestCapacityStrategyParams(params);
     const strategyKey = createStrategyKey({
       type: 'dualAccountBestCapacityVolume',
       user_id: params.userId,
@@ -1456,7 +1457,9 @@ export class StrategyService
     );
     const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
 
-    if (completedCycles >= Number(latestParams.numTrades || 0)) {
+    const maxCompletedCycles = Number(latestParams.numTrades || 0);
+
+    if (maxCompletedCycles > 0 && completedCycles >= maxCompletedCycles) {
       const activeBeforeStop = this.sessions.get(session.strategyKey);
 
       if (!this.isSameActiveSession(activeBeforeStop, session)) {
@@ -2901,18 +2904,20 @@ export class StrategyService
       return null;
     }
 
-    const requestedQty = new BigNumber(
-      this.applyVariance(
-        params.baseTradeAmount,
-        profile.tradeAmountVariance ?? params.tradeAmountVariance,
-        profile.tradeAmountMultiplier,
-        tradeAmountVarianceSample,
-      ),
-    );
+    const requestedQty = this.isBestCapacityConfig(params)
+      ? new BigNumber(params.maxOrderAmount || 0)
+      : new BigNumber(
+          this.applyVariance(
+            params.baseTradeAmount,
+            profile.tradeAmountVariance ?? params.tradeAmountVariance,
+            profile.tradeAmountMultiplier,
+            tradeAmountVarianceSample,
+          ),
+        );
 
     if (!requestedQty.isFinite() || requestedQty.isLessThanOrEqualTo(0)) {
       this.logger.warn(
-        `Dual-account volume ${strategyKey}: invalid qty ${params.baseTradeAmount} for side=${side}`,
+        `Dual-account volume ${strategyKey}: invalid qty ${(params.maxOrderAmount ?? params.baseTradeAmount) || 0} for side=${side}`,
       );
 
       return null;
@@ -6138,10 +6143,11 @@ export class StrategyService
   private resolveNextDualAccountCadenceMs(
     params: DualAccountVolumeStrategyParams,
   ): number {
-    const cadenceSeconds = this.applyVariance(
-      params.baseIntervalTime || 10,
-      params.cadenceVariance,
-    );
+    const baseCadenceSeconds =
+      params.interval ?? params.baseIntervalTime ?? 10;
+    const cadenceSeconds = this.isBestCapacityConfig(params)
+      ? baseCadenceSeconds
+      : this.applyVariance(baseCadenceSeconds, params.cadenceVariance);
 
     return Math.max(1000, cadenceSeconds * 1000);
   }
@@ -6150,6 +6156,10 @@ export class StrategyService
     params: DualAccountVolumeStrategyParams,
     accountLabel: string,
   ): number {
+    if (this.isBestCapacityConfig(params)) {
+      return Math.max(0, Math.round(params.makerDelayMs || 0));
+    }
+
     const profile = this.resolveDualAccountBehaviorProfile(
       params,
       accountLabel,
@@ -6184,9 +6194,7 @@ export class StrategyService
   }
 
   private normalizeDualAccountStrategyParams(
-    params:
-      | ExecuteDualAccountVolumeStrategyDto
-      | ExecuteDualAccountBestCapacityVolumeStrategyDto,
+    params: ExecuteDualAccountVolumeStrategyDto,
   ): DualAccountVolumeStrategyParams {
     const makerAccountLabel = String(params.makerAccountLabel || '').trim();
     const takerAccountLabel = String(params.takerAccountLabel || '').trim();
@@ -6243,6 +6251,67 @@ export class StrategyService
       inventoryBaseQty: 0,
       inventoryCostQuote: 0,
     };
+  }
+
+  private normalizeDualAccountBestCapacityStrategyParams(
+    params: ExecuteDualAccountBestCapacityVolumeStrategyDto,
+  ): DualAccountVolumeStrategyParams {
+    const makerAccountLabel = String(params.makerAccountLabel || '').trim();
+    const takerAccountLabel = String(params.takerAccountLabel || '').trim();
+
+    if (!makerAccountLabel || !takerAccountLabel) {
+      throw new Error(
+        'Dual account best-capacity strategy requires makerAccountLabel and takerAccountLabel',
+      );
+    }
+
+    if (makerAccountLabel === takerAccountLabel) {
+      throw new Error(
+        'Dual account best-capacity strategy requires different maker and taker account labels',
+      );
+    }
+
+    const maxOrderAmount = Number(params.maxOrderAmount || 0);
+    const interval = Number(params.interval || 10);
+    const dailyVolumeTarget =
+      params.dailyVolumeTarget !== undefined
+        ? Number(params.dailyVolumeTarget)
+        : undefined;
+
+    return {
+      exchangeName: String(params.exchangeName || '').trim(),
+      symbol: String(params.symbol || '').trim(),
+      baseIncrementPercentage: 0,
+      baseIntervalTime: interval,
+      baseTradeAmount: maxOrderAmount,
+      maxOrderAmount,
+      interval,
+      numTrades: 0,
+      userId: params.userId,
+      clientId: params.clientId,
+      pricePushRate: 0,
+      executionCategory: 'clob_cex',
+      executionVenue: 'cex',
+      makerAccountLabel,
+      takerAccountLabel,
+      makerDelayMs: Number(params.makerDelayMs || 0),
+      dailyVolumeTarget,
+      targetQuoteVolume: dailyVolumeTarget,
+      publishedCycles: 0,
+      completedCycles: 0,
+      orderBookReady: false,
+      consecutiveFallbackCycles: 0,
+      tradedQuoteVolume: 0,
+      realizedPnlQuote: 0,
+      inventoryBaseQty: 0,
+      inventoryCostQuote: 0,
+    };
+  }
+
+  private isBestCapacityConfig(
+    params: DualAccountVolumeStrategyParams,
+  ): boolean {
+    return Number.isFinite(Number(params.maxOrderAmount));
   }
 
   private maybeWarnDualAccountBestCapacityIgnoredFields(

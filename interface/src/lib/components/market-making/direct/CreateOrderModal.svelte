@@ -30,6 +30,10 @@
     export let dynamicRoleSwitching = true;
     export let targetQuoteVolume = "";
     export let makerDelayMs = "";
+    export let cadenceVariance = "";
+    export let tradeAmountVariance = "";
+    export let priceOffsetVariance = "";
+    export let makerDelayVariance = "";
 
     export let onSubmit: () => void;
     export let onClose: () => void;
@@ -41,6 +45,11 @@
     let showAdvanced = false;
 
     $: baseCoin = startPair ? startPair.split("/")[0] : "";
+    $: isDualAccountStrategy =
+        selectedControllerType === "dualAccountVolume" ||
+        selectedControllerType === "dualAccountBestCapacityVolume";
+    $: isBestCapacityStrategy =
+        selectedControllerType === "dualAccountBestCapacityVolume";
 
     $: orderAmountError = orderAmount && isNaN(Number(orderAmount));
     $: orderAmountBelowMinimum =
@@ -56,6 +65,14 @@
     $: targetQuoteVolumeError =
         targetQuoteVolume && isNaN(Number(targetQuoteVolume));
     $: makerDelayMsError = makerDelayMs && isNaN(Number(makerDelayMs));
+    $: cadenceVarianceError =
+        cadenceVariance && isNaN(Number(cadenceVariance));
+    $: tradeAmountVarianceError =
+        tradeAmountVariance && isNaN(Number(tradeAmountVariance));
+    $: priceOffsetVarianceError =
+        priceOffsetVariance && isNaN(Number(priceOffsetVariance));
+    $: makerDelayVarianceError =
+        makerDelayVariance && isNaN(Number(makerDelayVariance));
     $: makerAccountOptions = filteredApiKeys;
     $: takerAccountOptions = filteredApiKeys.filter(
         (key) => String(key.key_id) !== String(startMakerApiKeyId),
@@ -63,6 +80,7 @@
     $: hasDistinctDualAccounts = makerAccountOptions.length >= 2;
     $: dualRequiredMissing =
         isDualAccountStrategy &&
+        !isBestCapacityStrategy &&
         (!intervalTime || !numTrades || !pricePushRate);
     $: dualAccountSelectionMissing =
         isDualAccountStrategy &&
@@ -76,6 +94,7 @@
         isDualAccountStrategy && !hasDistinctDualAccounts;
     $: submitDisabled =
         isStarting ||
+        !startStrategyDefinitionId ||
         orderAmountError ||
         orderAmountBelowMinimum ||
         dualRequiredMissing ||
@@ -117,7 +136,6 @@
     ) {
         startTakerApiKeyId = String(takerAccountOptions[0]?.key_id ?? "");
     }
-    $: isDualAccountStrategy = selectedControllerType === "dualAccountVolume";
     $: renderedMinOrderAmount = displayMinOrderAmount || minOrderAmount;
     $: orderAmountPlaceholder = renderedMinOrderAmount
         ? $_("admin_direct_mm_order_amount_placeholder_with_min", {
@@ -485,7 +503,9 @@
                                 <span
                                     class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
                                     >{$_(
-                                        "admin_direct_mm_order_amount",
+                                        isBestCapacityStrategy
+                                            ? "admin_direct_mm_max_order_amount"
+                                            : "admin_direct_mm_order_amount",
                                     )}{baseCoin ? ` (${baseCoin})` : ""}</span
                                 >
                                 <div class="relative">
@@ -527,7 +547,9 @@
                                         class="text-xs text-base-content/40 mt-1 block"
                                         >{renderedMinOrderAmount
                                             ? $_(
-                                                  "admin_direct_mm_order_amount_hint_with_min",
+                                                  isBestCapacityStrategy
+                                                      ? "admin_direct_mm_max_order_amount_hint_with_min"
+                                                      : "admin_direct_mm_order_amount_hint_with_min",
                                                   {
                                                       values: {
                                                           amount: renderedMinOrderAmount,
@@ -535,7 +557,9 @@
                                                   },
                                               )
                                             : $_(
-                                                  "admin_direct_mm_order_amount_hint",
+                                                  isBestCapacityStrategy
+                                                      ? "admin_direct_mm_max_order_amount_hint"
+                                                      : "admin_direct_mm_order_amount_hint",
                                               )}</span
                                     >
                                 {/if}
@@ -544,6 +568,7 @@
                     </div>
 
                     <!-- Spread -->
+                    {#if !isBestCapacityStrategy}
                     <div class="bg-base-200/40 rounded-xl p-4">
                         <span
                             class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
@@ -575,6 +600,7 @@
                             >
                         {/if}
                     </div>
+                    {/if}
 
                     {#if isDualAccountStrategy}
                         <!-- Volume Parameters -->
@@ -616,7 +642,9 @@
                                     <span
                                         class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
                                         >{$_(
-                                            "admin_direct_mm_interval_time",
+                                            isBestCapacityStrategy
+                                                ? "admin_direct_mm_interval_optional"
+                                                : "admin_direct_mm_interval_time",
                                         )}</span
                                     >
                                     <div class="relative">
@@ -644,12 +672,89 @@
                                         <span
                                             class="text-xs text-base-content/40 mt-1 block"
                                             >{$_(
-                                                "admin_direct_mm_interval_time_hint",
+                                                isBestCapacityStrategy
+                                                    ? "admin_direct_mm_interval_optional_hint"
+                                                    : "admin_direct_mm_interval_time_hint",
                                             )}</span
                                         >
                                     {/if}
                                 </div>
 
+                                {#if isBestCapacityStrategy}
+                                <!-- Daily Volume Target -->
+                                <div class="flex-1">
+                                    <span
+                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                                        >{$_(
+                                            "admin_direct_mm_daily_volume_target_config",
+                                        )}</span
+                                    >
+                                    <input
+                                        type="text"
+                                        inputmode="decimal"
+                                        placeholder="e.g. 50000"
+                                        class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
+                              {targetQuoteVolumeError ? 'border-error' : ''}"
+                                        bind:value={targetQuoteVolume}
+                                    />
+                                    {#if targetQuoteVolumeError}
+                                        <span
+                                            class="text-xs text-error mt-1 block"
+                                            >{$_(
+                                                "admin_direct_mm_invalid_number",
+                                            )}</span
+                                        >
+                                    {:else}
+                                        <span
+                                            class="text-xs text-base-content/40 mt-1 block"
+                                            >{$_(
+                                                "admin_direct_mm_daily_volume_target_config_hint",
+                                            )}</span
+                                        >
+                                    {/if}
+                                </div>
+
+                                <!-- Maker Delay -->
+                                <div class="flex-1">
+                                    <span
+                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                                        >{$_(
+                                            "admin_direct_mm_maker_delay_optional",
+                                        )}</span
+                                    >
+                                    <div class="relative">
+                                        <input
+                                            type="text"
+                                            inputmode="decimal"
+                                            placeholder="e.g. 500"
+                                            class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 pr-10
+                              {makerDelayMsError ? 'border-error' : ''}"
+                                            bind:value={makerDelayMs}
+                                        />
+                                        <span
+                                            class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
+                                            >ms</span
+                                        >
+                                    </div>
+                                    {#if makerDelayMsError}
+                                        <span
+                                            class="text-xs text-error mt-1 block"
+                                            >{$_(
+                                                "admin_direct_mm_invalid_number",
+                                            )}</span
+                                        >
+                                    {:else}
+                                        <span
+                                            class="text-xs text-base-content/40 mt-1 block"
+                                            >{$_(
+                                                "admin_direct_mm_maker_delay_optional_hint",
+                                            )}</span
+                                        >
+                                    {/if}
+                                </div>
+                                {/if}
+
+                                {#if !isBestCapacityStrategy}
                                 <!-- Num Trades -->
                                 <div class="flex-1">
                                     <span
@@ -751,10 +856,12 @@
                                         >
                                     </select>
                                 </div>
+                                {/if}
                             </div>
                         </div>
 
                         <!-- Advanced Config (collapsible) -->
+                        {#if !isBestCapacityStrategy}
                         <div>
                             <button
                                 class="flex items-center gap-1.5 mb-1 cursor-pointer"
@@ -885,6 +992,8 @@
                                 </div>
                             {/if}
                         </div>
+                        {/if}
+
                     {/if}
                 {/if}
 

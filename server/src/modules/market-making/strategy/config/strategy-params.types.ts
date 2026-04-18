@@ -46,6 +46,9 @@ export type VolumeStrategyParams =
 export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   executionCategory: 'clob_cex';
   executionVenue: 'cex';
+  maxOrderAmount?: number;
+  interval?: number;
+  dailyVolumeTarget?: number;
   makerAccountLabel: string;
   takerAccountLabel: string;
   makerDelayMs: number;

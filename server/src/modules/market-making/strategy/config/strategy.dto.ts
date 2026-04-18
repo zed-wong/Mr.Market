@@ -645,7 +645,69 @@ export class ExecuteDualAccountVolumeStrategyDto {
   clientId: string;
 }
 
-export class ExecuteDualAccountBestCapacityVolumeStrategyDto extends ExecuteDualAccountVolumeStrategyDto {}
+export class ExecuteDualAccountBestCapacityVolumeStrategyDto {
+  @ApiProperty({ description: 'Name of the exchange used for both accounts' })
+  @IsString()
+  exchangeName: string;
+
+  @ApiProperty({ description: 'Trading pair to execute', example: 'BTC/USDT' })
+  @IsString()
+  symbol: string;
+
+  @ApiProperty({
+    description:
+      'Maximum base amount to trade per cycle; live capacity may reduce the executed amount',
+    example: 0.5,
+  })
+  @IsNumber()
+  @IsPositive()
+  maxOrderAmount: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional target quote volume cap for the session; the strategy stops once reached',
+    example: 10000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  dailyVolumeTarget?: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional cadence between cycles in seconds',
+    example: 30,
+  })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  interval?: number;
+
+  @ApiProperty({ description: 'Maker exchange account label' })
+  @IsString()
+  makerAccountLabel: string;
+
+  @ApiProperty({ description: 'Taker exchange account label' })
+  @IsString()
+  takerAccountLabel: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional delay in milliseconds between maker acceptance and taker IOC submission',
+    example: 250,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  makerDelayMs?: number;
+
+  @ApiProperty({ description: 'User ID' })
+  @IsString()
+  userId: string;
+
+  @ApiProperty({ description: 'Client ID' })
+  @IsString()
+  clientId: string;
+}
 
 export class StopVolumeStrategyDto {
   @ApiProperty({ description: 'User ID' })

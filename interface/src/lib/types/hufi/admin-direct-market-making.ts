@@ -1,4 +1,7 @@
-export type DirectOrderControllerType = 'pureMarketMaking' | 'dualAccountVolume';
+export type DirectOrderControllerType =
+  | 'pureMarketMaking'
+  | 'dualAccountVolume'
+  | 'dualAccountBestCapacityVolume';
 
 export type DirectOrderRuntimeState =
   | 'created'
@@ -89,6 +92,10 @@ export interface DirectOrderStatus {
     dynamicRoleSwitching: boolean | null;
     targetQuoteVolume: string | null;
     makerDelayMs: number | null;
+    cadenceVariance: string | null;
+    tradeAmountVariance: string | null;
+    priceOffsetVariance: string | null;
+    makerDelayVariance: string | null;
     publishedCycles: number | null;
     completedCycles: number | null;
     tradedQuoteVolume: string | null;

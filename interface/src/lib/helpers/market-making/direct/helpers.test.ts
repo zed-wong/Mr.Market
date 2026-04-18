@@ -59,6 +59,20 @@ describe('normalizeConfigOverrides', () => {
       baseIncrementPercentage: 0.4,
     });
   });
+
+  it('maps best-capacity dual-account quick fields to base trade amount and increment percentage', () => {
+    expect(
+      normalizeConfigOverrides(
+        'dualAccountBestCapacityVolume',
+        [{ key: 'makerDelayMs', value: '250' }],
+        '5',
+        '0.4',
+      ),
+    ).toEqual({
+      makerDelayMs: 250,
+      maxOrderAmount: 5,
+    });
+  });
 });
 
 

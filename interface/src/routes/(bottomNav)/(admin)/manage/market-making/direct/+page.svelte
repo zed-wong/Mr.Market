@@ -139,6 +139,10 @@
     let dynamicRoleSwitching = false;
     let targetQuoteVolume = "";
     let makerDelayMs = "250";
+    let cadenceVariance = "";
+    let tradeAmountVariance = "";
+    let priceOffsetVariance = "";
+    let makerDelayVariance = "";
     let configRows: OverrideRow[] = [{ key: "", value: "" }];
     let exchangeMarketsById: Record<string, ExchangeMarketMetadata[]> = {};
     let loadingExchangeMarketIds: string[] = [];
@@ -220,7 +224,8 @@
             (strategy) => strategy.id === startStrategyDefinitionId,
         ) || null;
     $: selectedControllerType = selectedStrategy?.controllerType || "";
-    $: isDualAccountStrategy = selectedControllerType === "dualAccountVolume";
+    $: isDualAccountStrategy =
+        selectedStrategy?.directExecutionMode === "dual_account";
     $: filteredApiKeys = apiKeys.filter(
         (key) =>
             key.permissions === "read-trade" &&
@@ -316,6 +321,10 @@
         dynamicRoleSwitching = false;
         targetQuoteVolume = "";
         makerDelayMs = "250";
+        cadenceVariance = "";
+        tradeAmountVariance = "";
+        priceOffsetVariance = "";
+        makerDelayVariance = "";
     }
 
     function applyOrderStatusToStartForm(
@@ -346,6 +355,10 @@
             status.orderConfig.makerDelayMs !== null
                 ? String(status.orderConfig.makerDelayMs)
                 : "250";
+        cadenceVariance = status.orderConfig.cadenceVariance || "";
+        tradeAmountVariance = status.orderConfig.tradeAmountVariance || "";
+        priceOffsetVariance = status.orderConfig.priceOffsetVariance || "";
+        makerDelayVariance = status.orderConfig.makerDelayVariance || "";
         configRows = [{ key: "", value: "" }];
         showStartForm = true;
         prefillingFromOrderId = order.orderId;
@@ -369,8 +382,15 @@
             missingSingleAccount ||
             missingDualAccount
         ) {
+            const missing: string[] = [];
+            if (!token) missing.push("token");
+            if (!startExchangeName) missing.push("exchange");
+            if (!startPair) missing.push("pair");
+            if (!startStrategyDefinitionId) missing.push("strategy");
+            if (missingSingleAccount) missing.push("API key");
+            if (missingDualAccount) missing.push("maker/taker API keys");
             toast.error($_("admin_direct_mm_error_missing_fields"), {
-                description: $_("admin_direct_mm_recovery_required_fields"),
+                description: `${$_("admin_direct_mm_recovery_required_fields")} (${missing.join(", ")})`,
             });
             return;
         }
@@ -428,6 +448,10 @@
                     dynamicRoleSwitching,
                     targetQuoteVolume,
                     makerDelayMs,
+                    cadenceVariance,
+                    tradeAmountVariance,
+                    priceOffsetVariance,
+                    makerDelayVariance,
                 },
             );
             const payload = isDualAccountStrategy
@@ -902,6 +926,10 @@
     bind:dynamicRoleSwitching
     bind:targetQuoteVolume
     bind:makerDelayMs
+    bind:cadenceVariance
+    bind:tradeAmountVariance
+    bind:priceOffsetVariance
+    bind:makerDelayVariance
     onSubmit={handleStartOrder}
     onClose={resetStartForm}
 />

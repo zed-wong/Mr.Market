@@ -144,6 +144,10 @@ export interface DualAccountVolumeFields {
   dynamicRoleSwitching: boolean;
   targetQuoteVolume: string;
   makerDelayMs: string;
+  cadenceVariance: string;
+  tradeAmountVariance: string;
+  priceOffsetVariance: string;
+  makerDelayVariance: string;
 }
 
 function normalizeMarketSymbol(symbol: unknown): string {
@@ -369,6 +373,9 @@ export function normalizeConfigOverrides(
   orderSpread: string,
   dualFields?: DualAccountVolumeFields,
 ): Record<string, unknown> {
+  const isDualAccountStrategy =
+    controllerType === "dualAccountVolume" ||
+    controllerType === "dualAccountBestCapacityVolume";
   const reservedFields = new Set([
     "userId",
     "clientId",
@@ -388,7 +395,9 @@ export function normalizeConfigOverrides(
     const num = Number(orderAmount);
     const value = isNaN(num) ? orderAmount : num;
 
-    if (controllerType === "dualAccountVolume") {
+    if (controllerType === "dualAccountBestCapacityVolume") {
+      accumulator["maxOrderAmount"] = value;
+    } else if (isDualAccountStrategy) {
       accumulator["baseTradeAmount"] = value;
     } else {
       accumulator["orderAmount"] = value;
@@ -398,14 +407,33 @@ export function normalizeConfigOverrides(
     const num = Number(orderSpread);
     const value = isNaN(num) ? orderSpread : num;
 
-    if (controllerType === "dualAccountVolume") {
+    if (controllerType === "dualAccountBestCapacityVolume") {
+      // Best-capacity strategy does not use spread configuration.
+    } else if (isDualAccountStrategy) {
       accumulator["baseIncrementPercentage"] = value;
     } else {
       accumulator["bidSpread"] = value;
       accumulator["askSpread"] = value;
     }
   }
-  if (controllerType === "dualAccountVolume" && dualFields) {
+  if (isDualAccountStrategy && dualFields) {
+    if (controllerType === "dualAccountBestCapacityVolume") {
+      if (dualFields.intervalTime) {
+        const num = Number(dualFields.intervalTime);
+        if (!isNaN(num)) accumulator["interval"] = num;
+      }
+      if (dualFields.targetQuoteVolume) {
+        const num = Number(dualFields.targetQuoteVolume);
+        if (!isNaN(num)) accumulator["dailyVolumeTarget"] = num;
+      }
+      if (dualFields.makerDelayMs) {
+        const num = Number(dualFields.makerDelayMs);
+        if (!isNaN(num)) accumulator["makerDelayMs"] = num;
+      }
+
+      return accumulator;
+    }
+
     if (dualFields.intervalTime) {
       const num = Number(dualFields.intervalTime);
       if (!isNaN(num)) accumulator["baseIntervalTime"] = num;
@@ -431,6 +459,22 @@ export function normalizeConfigOverrides(
     if (dualFields.makerDelayMs) {
       const num = Number(dualFields.makerDelayMs);
       if (!isNaN(num)) accumulator["makerDelayMs"] = num;
+    }
+    if (dualFields.cadenceVariance) {
+      const num = Number(dualFields.cadenceVariance);
+      if (!isNaN(num)) accumulator["cadenceVariance"] = num;
+    }
+    if (dualFields.tradeAmountVariance) {
+      const num = Number(dualFields.tradeAmountVariance);
+      if (!isNaN(num)) accumulator["tradeAmountVariance"] = num;
+    }
+    if (dualFields.priceOffsetVariance) {
+      const num = Number(dualFields.priceOffsetVariance);
+      if (!isNaN(num)) accumulator["priceOffsetVariance"] = num;
+    }
+    if (dualFields.makerDelayVariance) {
+      const num = Number(dualFields.makerDelayVariance);
+      if (!isNaN(num)) accumulator["makerDelayVariance"] = num;
     }
   }
   return accumulator;
