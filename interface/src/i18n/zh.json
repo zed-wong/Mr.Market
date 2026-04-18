@@ -748,6 +748,7 @@
   "admin_direct_mm_total": "总计",
   "admin_direct_mm_close": "关闭",
   "admin_direct_mm_na": "N/A",
+"admin_direct_mm_copy_address": "复制地址",
   "admin_direct_mm_seconds_ago": "{seconds}s ago",
   "admin_direct_mm_start_success": "{exchange} {pair} 的订单已启动。",
   "admin_direct_mm_error_missing_fields": "缺少必填字段。",

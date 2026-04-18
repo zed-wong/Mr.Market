@@ -836,6 +836,7 @@
   "admin_direct_mm_total": "Total",
   "admin_direct_mm_close": "Close",
   "admin_direct_mm_na": "N/A",
+"admin_direct_mm_copy_address": "Copy address",
   "admin_direct_mm_seconds_ago": "{seconds}s ago",
   "admin_direct_mm_start_success": "Order started on {exchange} {pair}.",
   "admin_direct_mm_error_missing_fields": "Missing required fields.",
