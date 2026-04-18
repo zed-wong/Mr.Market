@@ -61,10 +61,12 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
     if (state) {
       state.refCount += 1;
+
       return;
     }
 
     const generation = ++this.generationCounter;
+
     this.activeWatchers.set(key, { refCount: 1, generation });
     void this.runOrderWatcher(key, generation, params);
   }
@@ -79,6 +81,7 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
     if (state.refCount <= 1) {
       this.activeWatchers.delete(key);
+
       return;
     }
 
@@ -91,10 +94,12 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
     if (state) {
       state.refCount += 1;
+
       return;
     }
 
     const generation = ++this.generationCounter;
+
     this.activeTradeWatchers.set(key, { refCount: 1, generation });
     void this.runTradeWatcher(key, generation, params);
   }
@@ -109,6 +114,7 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
     if (state.refCount <= 1) {
       this.activeTradeWatchers.delete(key);
+
       return;
     }
 
@@ -121,10 +127,12 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
     if (state) {
       state.refCount += 1;
+
       return;
     }
 
     const generation = ++this.generationCounter;
+
     this.activeBalanceWatchers.set(key, { refCount: 1, generation });
     void this.runBalanceWatcher(key, generation, params);
   }
@@ -139,6 +147,7 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
     if (state.refCount <= 1) {
       this.activeBalanceWatchers.delete(key);
+
       return;
     }
 
@@ -184,25 +193,26 @@ export class UserStreamIngestionService implements OnModuleDestroy {
       balance: this.activeBalanceWatchers.has(balanceKey),
       orderRefCount: this.activeWatchers.get(watcherKey)?.refCount || 0,
       tradeRefCount: this.activeTradeWatchers.get(watcherKey)?.refCount || 0,
-      balanceRefCount: this.activeBalanceWatchers.get(balanceKey)?.refCount || 0,
+      balanceRefCount:
+        this.activeBalanceWatchers.get(balanceKey)?.refCount || 0,
     };
   }
 
   private isCurrentGeneration(key: string, generation: number): boolean {
     const state = this.activeWatchers.get(key);
+
     return Boolean(state && state.generation === generation);
   }
 
   private isCurrentTradeGeneration(key: string, generation: number): boolean {
     const state = this.activeTradeWatchers.get(key);
+
     return Boolean(state && state.generation === generation);
   }
 
-  private isCurrentBalanceGeneration(
-    key: string,
-    generation: number,
-  ): boolean {
+  private isCurrentBalanceGeneration(key: string, generation: number): boolean {
     const state = this.activeBalanceWatchers.get(key);
+
     return Boolean(state && state.generation === generation);
   }
 
@@ -222,11 +232,14 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
         if (typeof exchange.watchOrders !== 'function') {
           this.logger.warn(
-            `Exchange ${params.exchange} does not support watchOrders() for account ${
+            `Exchange ${
+              params.exchange
+            } does not support watchOrders() for account ${
               params.accountLabel || 'default'
             }`,
           );
           this.activeWatchers.delete(key);
+
           return;
         }
 
@@ -297,11 +310,14 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
         if (typeof exchange.watchMyTrades !== 'function') {
           this.logger.warn(
-            `Exchange ${params.exchange} does not support watchMyTrades() for account ${
+            `Exchange ${
+              params.exchange
+            } does not support watchMyTrades() for account ${
               params.accountLabel || 'default'
             }`,
           );
           this.activeTradeWatchers.delete(key);
+
           return;
         }
 
@@ -374,17 +390,22 @@ export class UserStreamIngestionService implements OnModuleDestroy {
 
         if (typeof exchange.watchBalance !== 'function') {
           this.logger.warn(
-            `Exchange ${params.exchange} does not support watchBalance() for account ${
+            `Exchange ${
+              params.exchange
+            } does not support watchBalance() for account ${
               params.accountLabel || 'default'
             }`,
           );
           this.activeBalanceWatchers.delete(key);
+
           return;
         }
 
         const watchedBalance = await exchange.watchBalance();
 
-        for (const event of this.getNormalizer(params.exchange).normalizeBalance(
+        for (const event of this.getNormalizer(
+          params.exchange,
+        ).normalizeBalance(
           params.exchange,
           params.accountLabel || 'default',
           watchedBalance,
@@ -484,8 +505,8 @@ export class UserStreamIngestionService implements OnModuleDestroy {
                 typeof payload.clientOrderId === 'string'
                   ? payload.clientOrderId
                   : typeof payload.clientOid === 'string'
-                    ? payload.clientOid
-                    : undefined,
+                  ? payload.clientOid
+                  : undefined,
               side:
                 payload.side === 'buy' || payload.side === 'sell'
                   ? payload.side
@@ -536,20 +557,20 @@ export class UserStreamIngestionService implements OnModuleDestroy {
                 typeof payload.orderId === 'string'
                   ? payload.orderId
                   : typeof payload.id === 'string'
-                    ? payload.id
-                    : undefined,
+                  ? payload.id
+                  : undefined,
               clientOrderId:
                 typeof payload.clientOrderId === 'string'
                   ? payload.clientOrderId
                   : typeof payload.clientOid === 'string'
-                    ? payload.clientOid
-                    : undefined,
+                  ? payload.clientOid
+                  : undefined,
               fillId:
                 typeof payload.tradeId === 'string'
                   ? payload.tradeId
                   : typeof payload.id === 'string'
-                    ? payload.id
-                    : undefined,
+                  ? payload.id
+                  : undefined,
               side:
                 payload.side === 'buy' || payload.side === 'sell'
                   ? payload.side
@@ -559,9 +580,9 @@ export class UserStreamIngestionService implements OnModuleDestroy {
                 typeof payload.amount === 'number'
                   ? String(payload.amount)
                   : typeof payload.qty === 'string' ||
-                      typeof payload.qty === 'number'
-                    ? String(payload.qty)
-                    : undefined,
+                    typeof payload.qty === 'number'
+                  ? String(payload.qty)
+                  : undefined,
               cumulativeQty:
                 typeof payload.filled === 'string' ||
                 typeof payload.filled === 'number'
@@ -631,6 +652,7 @@ export class UserStreamIngestionService implements OnModuleDestroy {
     }
 
     const exponentialSteps = consecutiveFailures - 2;
+
     return Math.min(1000 * 2 ** exponentialSteps, 30_000);
   }
 

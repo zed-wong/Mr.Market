@@ -17,10 +17,13 @@ export class BalanceStateCacheService {
   private readonly balances = new Map<string, BalanceEntry>();
 
   applyBalanceUpdate(input: BalanceEntry): void {
-    this.balances.set(this.toKey(input.exchange, input.accountLabel, input.asset), {
-      ...input,
-      asset: input.asset.toUpperCase(),
-    });
+    this.balances.set(
+      this.toKey(input.exchange, input.accountLabel, input.asset),
+      {
+        ...input,
+        asset: input.asset.toUpperCase(),
+      },
+    );
   }
 
   getBalance(

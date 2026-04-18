@@ -29,32 +29,36 @@ describe('UserStreamIngestionService', () => {
       getExchange: jest.fn().mockReturnValue({ watchOrders }),
     } as unknown as ExchangeInitService;
 
-    const service = new UserStreamIngestionService(exchangeInitService, {
-      queueAccountEvent,
-    } as unknown as UserStreamTrackerService, {
-      getNormalizer: jest.fn().mockReturnValue({
-        normalizeOrder: jest
-          .fn()
-          .mockImplementation(
-            (
-              exchange: string,
-              accountLabel: string,
-              rawPayload: Record<string, unknown>,
-              receivedAt: string,
-            ) => ({
-              exchange,
-              accountLabel,
-              kind: 'order',
-              payload: {
-                exchangeOrderId: rawPayload.id,
-                clientOrderId: rawPayload.clientOrderId,
-                raw: rawPayload,
-              },
-              receivedAt,
-            }),
-          ),
-      }),
-    } as unknown as UserStreamNormalizerRegistryService);
+    const service = new UserStreamIngestionService(
+      exchangeInitService,
+      {
+        queueAccountEvent,
+      } as unknown as UserStreamTrackerService,
+      {
+        getNormalizer: jest.fn().mockReturnValue({
+          normalizeOrder: jest
+            .fn()
+            .mockImplementation(
+              (
+                exchange: string,
+                accountLabel: string,
+                rawPayload: Record<string, unknown>,
+                receivedAt: string,
+              ) => ({
+                exchange,
+                accountLabel,
+                kind: 'order',
+                payload: {
+                  exchangeOrderId: rawPayload.id,
+                  clientOrderId: rawPayload.clientOrderId,
+                  raw: rawPayload,
+                },
+                receivedAt,
+              }),
+            ),
+        }),
+      } as unknown as UserStreamNormalizerRegistryService,
+    );
 
     service.startOrderWatcher({
       exchange: 'binance',
@@ -257,9 +261,10 @@ describe('UserStreamIngestionService', () => {
     });
 
     await waitFor(() => queueAccountEvent.mock.calls.length === 2);
-    expect(
-      queueAccountEvent.mock.calls.map(([event]) => event.kind),
-    ).toEqual(['balance', 'balance']);
+    expect(queueAccountEvent.mock.calls.map(([event]) => event.kind)).toEqual([
+      'balance',
+      'balance',
+    ]);
     expect(queueAccountEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         accountLabel: 'maker',

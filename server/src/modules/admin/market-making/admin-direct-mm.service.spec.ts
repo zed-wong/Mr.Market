@@ -1244,9 +1244,7 @@ describe('AdminDirectMarketMakingService', () => {
       'admin-user-order-2-dualAccountVolume',
     );
     expect(userStreamTrackerService.getLatestEvent).toHaveBeenCalledTimes(2);
-    expect(userStreamIngestionService.getWatcherState).toHaveBeenCalledTimes(
-      2,
-    );
+    expect(userStreamIngestionService.getWatcherState).toHaveBeenCalledTimes(2);
     expect(result.controllerType).toBe('dualAccountVolume');
     expect(result.privateStreamEventAt).toBeNull();
     expect(result.userStreamRuntime).toEqual({

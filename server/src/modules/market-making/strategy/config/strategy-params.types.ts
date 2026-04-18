@@ -10,6 +10,7 @@ import type { StrategyExecutionCategory } from './strategy-execution-category';
 export type BaseVolumeStrategyParams = {
   exchangeName: string;
   symbol: string;
+  pair?: string;
   baseIncrementPercentage: number;
   baseIntervalTime: number;
   baseTradeAmount: number;

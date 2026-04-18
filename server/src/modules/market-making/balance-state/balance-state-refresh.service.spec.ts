@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ServiceUnavailableException } from '@nestjs/common';
-
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { BalanceStateCacheService } from './balance-state-cache.service';
@@ -70,18 +69,16 @@ describe('BalanceStateRefreshService', () => {
     service.registerAccount('mexc', 'maker');
     service.registerAccount('binance', 'maker');
 
-    await expect(service.onTick('2026-04-14T00:00:00.000Z')).resolves.toBeUndefined();
+    await expect(
+      service.onTick('2026-04-14T00:00:00.000Z'),
+    ).resolves.toBeUndefined();
 
-    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenNthCalledWith(
-      1,
-      'mexc',
-      'maker',
-    );
-    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenNthCalledWith(
-      2,
-      'binance',
-      'maker',
-    );
+    expect(
+      exchangeConnectorAdapterService.fetchBalance,
+    ).toHaveBeenNthCalledWith(1, 'mexc', 'maker');
+    expect(
+      exchangeConnectorAdapterService.fetchBalance,
+    ).toHaveBeenNthCalledWith(2, 'binance', 'maker');
     expect(loggerWarnSpy).toHaveBeenCalledWith(
       expect.stringContaining('Balance refresh failed for mexc:maker'),
       expect.any(String),
@@ -91,7 +88,9 @@ describe('BalanceStateRefreshService', () => {
   });
 
   it('reports healthy when recent user-stream events exist', () => {
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:10.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:00:10.000Z'));
     const service = new BalanceStateRefreshService(
       undefined,
       undefined,

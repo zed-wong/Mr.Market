@@ -28,12 +28,15 @@
     import type { GrowInfo } from "$lib/types/hufi/grow";
 
     import {
+        buildGenericSchemaConfigOverrides,
         formatOrderAmountForDisplay,
         getErrorMessage,
         getRecoveryHint,
         isDualDirectOrderControllerType,
+        isSchemaDrivenDirectOrderControllerType,
         normalizeConfigOverrides,
         resolveMinOrderAmount,
+        type StrategySchema,
         type ExchangeMarketMetadata,
     } from "$lib/helpers/market-making/direct/helpers";
     import { filterExecutableApiKeys } from "$lib/helpers/market-making/direct/api-key-filter";
@@ -140,10 +143,8 @@
     let postOnlySide = "buy";
     let dynamicRoleSwitching = false;
     let targetQuoteVolume = "";
-    let cadenceVariance = "";
-    let tradeAmountVariance = "";
-    let priceOffsetVariance = "";
     let configRows: OverrideRow[] = [{ key: "", value: "" }];
+    let genericConfig: Record<string, unknown> = {};
     let exchangeMarketsById: Record<string, ExchangeMarketMetadata[]> = {};
     let loadingExchangeMarketIds: string[] = [];
     let loadedExchangeMarketIds: string[] = [];
@@ -224,9 +225,13 @@
             (strategy) => strategy.id === startStrategyDefinitionId,
         ) || null;
     $: selectedControllerType = selectedStrategy?.controllerType || "";
+    $: selectedStrategySchema =
+        (selectedStrategy?.configSchema as StrategySchema) || {};
     $: isDualAccountStrategy =
         selectedStrategy?.directExecutionMode === "dual_account" ||
         isDualDirectOrderControllerType(selectedControllerType);
+    $: isSchemaDrivenStrategy =
+        isSchemaDrivenDirectOrderControllerType(selectedControllerType);
     $: filteredApiKeys = filterExecutableApiKeys(apiKeys, startExchangeName);
     $: selectedApiKey =
         filteredApiKeys.find((key) => String(key.key_id) === String(startApiKeyId)) || null;
@@ -309,6 +314,7 @@
         startMakerApiKeyId = "";
         startTakerApiKeyId = "";
         configRows = [{ key: "", value: "" }];
+        genericConfig = {};
         orderAmount = "";
         orderSpread = "";
         intervalTime = "30";
@@ -317,9 +323,6 @@
         postOnlySide = "buy";
         dynamicRoleSwitching = false;
         targetQuoteVolume = "";
-        cadenceVariance = "";
-        tradeAmountVariance = "";
-        priceOffsetVariance = "";
     }
 
     function applyOrderStatusToStartForm(
@@ -346,10 +349,8 @@
         postOnlySide = status.orderConfig.postOnlySide || "buy";
         dynamicRoleSwitching = status.orderConfig.dynamicRoleSwitching ?? false;
         targetQuoteVolume = status.orderConfig.targetQuoteVolume || "";
-        cadenceVariance = status.orderConfig.cadenceVariance || "";
-        tradeAmountVariance = status.orderConfig.tradeAmountVariance || "";
-        priceOffsetVariance = status.orderConfig.priceOffsetVariance || "";
         configRows = [{ key: "", value: "" }];
+        genericConfig = {};
         showStartForm = true;
         prefillingFromOrderId = order.orderId;
     }
@@ -425,23 +426,25 @@
         }, 2000);
 
         try {
-            const configOverrides = normalizeConfigOverrides(
-                selectedControllerType,
-                configRows,
-                orderAmount,
-                orderSpread,
-                {
-                    intervalTime,
-                    numTrades,
-                    pricePushRate,
-                    postOnlySide,
-                    dynamicRoleSwitching,
-                    targetQuoteVolume,
-                    cadenceVariance,
-                    tradeAmountVariance,
-                    priceOffsetVariance,
-                },
-            );
+            const configOverrides = isSchemaDrivenStrategy
+                ? buildGenericSchemaConfigOverrides(
+                      selectedStrategySchema,
+                      genericConfig,
+                  )
+                : normalizeConfigOverrides(
+                      selectedControllerType,
+                      configRows,
+                      orderAmount,
+                      orderSpread,
+                      {
+                          intervalTime,
+                          numTrades,
+                          pricePushRate,
+                          postOnlySide,
+                          dynamicRoleSwitching,
+                          targetQuoteVolume,
+                      },
+                  );
             const payload = isDualAccountStrategy
                 ? {
                       exchangeName: startExchangeName,
@@ -896,6 +899,8 @@
     {filteredApiKeys}
     {strategies}
     {prefillingFromOrderId}
+    {selectedStrategySchema}
+    bind:genericConfig
     bind:startExchangeName
     bind:startPair
     bind:startStrategyDefinitionId
@@ -913,9 +918,6 @@
     bind:postOnlySide
     bind:dynamicRoleSwitching
     bind:targetQuoteVolume
-    bind:cadenceVariance
-    bind:tradeAmountVariance
-    bind:priceOffsetVariance
     onSubmit={handleStartOrder}
     onClose={resetStartForm}
 />

@@ -75,7 +75,9 @@ export class ExchangeConnectorAdapterService {
     return await this.withRateLimit(
       this.toRateLimitKey(exchangeName, accountLabel),
       'write',
-      `placeLimitOrder ${exchangeName}:${accountLabel || 'default'} ${pair} ${side}`,
+      `placeLimitOrder ${exchangeName}:${
+        accountLabel || 'default'
+      } ${pair} ${side}`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(
           exchangeName,
@@ -149,7 +151,9 @@ export class ExchangeConnectorAdapterService {
     return await this.withRateLimit(
       this.toRateLimitKey(exchangeName, accountLabel),
       'stateRead',
-      `fetchOpenOrders ${exchangeName}:${accountLabel || 'default'} ${pair || 'all'}`,
+      `fetchOpenOrders ${exchangeName}:${accountLabel || 'default'} ${
+        pair || 'all'
+      }`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(
           exchangeName,
@@ -218,7 +222,10 @@ export class ExchangeConnectorAdapterService {
     return await exchange.watchMyTrades(pair);
   }
 
-  async watchBalance(exchangeName: string, accountLabel?: string): Promise<any> {
+  async watchBalance(
+    exchangeName: string,
+    accountLabel?: string,
+  ): Promise<any> {
     const exchange = this.exchangeInitService.getExchange(
       exchangeName,
       accountLabel,

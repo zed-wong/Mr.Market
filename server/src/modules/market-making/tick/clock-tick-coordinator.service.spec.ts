@@ -1,5 +1,4 @@
 import { ConfigService } from '@nestjs/config';
-
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ClockTickCoordinatorService } from './clock-tick-coordinator.service';

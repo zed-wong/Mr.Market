@@ -578,11 +578,13 @@ export class StrategyIntentExecutionService {
     }
 
     const filledQty = this.readFilledQtyFromResult(result);
+
     if (filledQty?.isGreaterThan(0)) {
       return;
     }
 
     const status = this.readOrderStatusFromResult(result);
+
     if (status) {
       throw new Error(`IOC order not acknowledged: status=${status}`);
     }

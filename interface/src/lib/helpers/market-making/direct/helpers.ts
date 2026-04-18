@@ -150,6 +150,33 @@ export interface DualAccountVolumeFields {
   priceOffsetVariance: string;
 }
 
+export interface StrategySchemaProperty {
+  type?: string;
+  enum?: string[];
+  description?: string;
+}
+
+export interface StrategySchema {
+  type?: string;
+  required?: string[];
+  properties?: Record<string, StrategySchemaProperty>;
+}
+
+const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
+  "userId",
+  "clientId",
+  "marketMakingOrderId",
+  "pair",
+  "symbol",
+  "exchangeName",
+  "accountLabel",
+  "makerAccountLabel",
+  "takerAccountLabel",
+  "makerApiKeyId",
+  "takerApiKeyId",
+  "apiKeyId",
+]);
+
 function normalizeMarketSymbol(symbol: unknown): string {
   return String(symbol || "")
     .split(":")[0]
@@ -351,6 +378,17 @@ export function isBestCapacityDirectOrderControllerType(
   return controllerType === "dualAccountBestCapacityVolume";
 }
 
+export function isSchemaDrivenDirectOrderControllerType(
+  controllerType: unknown,
+): boolean {
+  if (!controllerType) return false;
+  return !(
+    controllerType === "pureMarketMaking" ||
+    controllerType === "dualAccountVolume" ||
+    controllerType === "dualAccountBestCapacityVolume"
+  );
+}
+
 export function aggregateBalancesByAsset(
   balances: InventoryBalanceSummary[],
 ): InventoryBalanceSummary[] {
@@ -387,18 +425,10 @@ export function normalizeConfigOverrides(
   dualFields?: DualAccountVolumeFields,
 ): Record<string, unknown> {
   const isDualAccountStrategy = isDualDirectOrderControllerType(controllerType);
-  const reservedFields = new Set([
-    "userId",
-    "clientId",
-    "marketMakingOrderId",
-    "pair",
-    "symbol",
-    "exchangeName",
-  ]);
   const accumulator = configRows.reduce<Record<string, unknown>>((acc, row) => {
     const key = row.key.trim();
 
-    if (!key || reservedFields.has(key)) return acc;
+    if (!key || DIRECT_RESERVED_CONFIG_FIELDS.has(key)) return acc;
     acc[key] = parseConfigValue(row.value);
     return acc;
   }, {});
@@ -477,4 +507,28 @@ export function normalizeConfigOverrides(
     }
   }
   return accumulator;
+}
+
+export function buildGenericSchemaConfigOverrides(
+  schema: StrategySchema | undefined,
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  const properties = schema?.properties || {};
+
+  return Object.entries(config).reduce<Record<string, unknown>>(
+    (acc, [key, value]) => {
+      if (
+        DIRECT_RESERVED_CONFIG_FIELDS.has(key) ||
+        !(key in properties) ||
+        value === "" ||
+        value === undefined
+      ) {
+        return acc;
+      }
+
+      acc[key] = value;
+      return acc;
+    },
+    {},
+  );
 }

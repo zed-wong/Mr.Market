@@ -27,6 +27,8 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
 import { BalanceStateRefreshService } from 'src/modules/market-making/balance-state/balance-state-refresh.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
+import type { StrategyType } from 'src/modules/market-making/strategy/config/strategy-controller.types';
+import { normalizeControllerType } from 'src/modules/market-making/strategy/config/strategy-controller-aliases';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import {
@@ -38,21 +40,21 @@ import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
 import { UserStreamIngestionService } from 'src/modules/market-making/trackers/user-stream-ingestion.service';
 import { UserStreamTrackerService } from 'src/modules/market-making/trackers/user-stream-tracker.service';
-import { UserStreamCapabilityService } from 'src/modules/market-making/user-stream';
 import { mapStrategySnapshotToMarketMakingOrderFields } from 'src/modules/market-making/user-orders/market-making-order-snapshot.utils';
 import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
+import { UserStreamCapabilityService } from 'src/modules/market-making/user-stream';
 import { In, Not, Repository } from 'typeorm';
 
-import {
-  CampaignJoinRequestDto,
-  DirectStartMarketMakingDto,
-} from './admin-direct-mm.dto';
 import {
   attachStrategyDefinitionCapabilities,
   getStrategyDefinitionCapabilities,
   type StrategyDirectExecutionMode,
 } from '../strategy/strategy-definition-capabilities';
+import {
+  CampaignJoinRequestDto,
+  DirectStartMarketMakingDto,
+} from './admin-direct-mm.dto';
 
 const DIRECT_ORDER_STALE_MS = 15_000;
 const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
@@ -70,6 +72,8 @@ type RuntimeSessionLike = {
   nextRunAtMs: number;
   accountLabel?: string;
 };
+
+type DirectOrderControllerType = string;
 
 type AdminCampaign = Record<string, unknown> & { joined: boolean };
 
@@ -123,6 +127,7 @@ export class AdminDirectMarketMakingService {
     adminUserId?: string,
   ): Promise<{ orderId: string; state: string; warnings: string[] }> {
     const directUserId = adminUserId || 'admin-direct';
+
     this.logger.log(`strategyDefinitionId:${dto.strategyDefinitionId}`);
     const definition = await this.strategyDefinitionRepository.findOne({
       where: { id: dto.strategyDefinitionId, enabled: true },
@@ -574,6 +579,7 @@ export class AdminDirectMarketMakingService {
             order.exchangeName,
             label,
           );
+
           balance = await exchange.fetchBalance();
           this.balanceStateCacheService?.applyBalanceSnapshot(
             order.exchangeName,
@@ -590,6 +596,7 @@ export class AdminDirectMarketMakingService {
             label,
             asset,
           );
+
           inventoryBalances.push({
             asset,
             free: String(cached?.free ?? balance?.free?.[asset] ?? 0),
@@ -1080,9 +1087,7 @@ export class AdminDirectMarketMakingService {
     }
 
     if (String(apiKey.permissions || '').trim() !== 'read-trade') {
-      throw new BadRequestException(
-        'API key must have read-trade permissions',
-      );
+      throw new BadRequestException('API key must have read-trade permissions');
     }
 
     const accountLabel = String(apiKey.key_id || '').trim();
@@ -1176,6 +1181,7 @@ export class AdminDirectMarketMakingService {
       ) {
         resolvedConfig.takerApiKeyId = this.readTakerApiKeyId(order);
       }
+
       return;
     }
 
@@ -1280,9 +1286,7 @@ export class AdminDirectMarketMakingService {
       const baseFree = new BigNumber(balance?.free?.[baseAsset] ?? 0);
       const quoteFree = new BigNumber(balance?.free?.[quoteAsset] ?? 0);
       const quoteRequirement =
-        quoteAsset &&
-        orderAmount.isFinite() &&
-        orderAmount.isGreaterThan(0)
+        quoteAsset && orderAmount.isFinite() && orderAmount.isGreaterThan(0)
           ? (
               await this.resolveTickerPrice(exchangeName, pair, accountLabel)
             )?.multipliedBy(orderAmount) || null
@@ -1291,10 +1295,7 @@ export class AdminDirectMarketMakingService {
       if (baseAsset && baseFree.isZero()) {
         warnings.push(`Low ${baseAsset} balance`);
       }
-      if (
-        quoteAsset &&
-        quoteFree.isLessThan(quoteRequirement || orderAmount)
-      ) {
+      if (quoteAsset && quoteFree.isLessThan(quoteRequirement || orderAmount)) {
         warnings.push(`Low ${quoteAsset} balance`);
       }
 
@@ -1594,7 +1595,7 @@ export class AdminDirectMarketMakingService {
     }
 
     return createStrategyKey({
-      type: controllerType,
+      type: normalizeControllerType(controllerType) as StrategyType,
       user_id:
         String(
           order.userId || order.strategySnapshot?.resolvedConfig?.userId || '',
@@ -1610,18 +1611,13 @@ export class AdminDirectMarketMakingService {
 
   private readControllerType(
     order: MarketMakingOrder,
-  ):
-    | 'pureMarketMaking'
-    | 'dualAccountVolume'
-    | 'dualAccountBestCapacityVolume' {
-    if (order.strategySnapshot?.controllerType === 'dualAccountVolume') {
-      return 'dualAccountVolume';
-    }
+  ): DirectOrderControllerType {
+    const snapshotControllerType = String(
+      order.strategySnapshot?.controllerType || '',
+    ).trim();
 
-    if (
-      order.strategySnapshot?.controllerType === 'dualAccountBestCapacityVolume'
-    ) {
-      return 'dualAccountBestCapacityVolume';
+    if (snapshotControllerType) {
+      return snapshotControllerType;
     }
 
     return 'pureMarketMaking';

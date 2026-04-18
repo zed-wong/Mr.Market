@@ -1,7 +1,4 @@
-export type DirectOrderControllerType =
-  | 'pureMarketMaking'
-  | 'dualAccountVolume'
-  | 'dualAccountBestCapacityVolume';
+export type DirectOrderControllerType = string;
 
 export type DirectOrderRuntimeState =
   | 'created'

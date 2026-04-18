@@ -10,7 +10,6 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import { StrategyInstance } from '../market-making/strategy-instances.entity';
 import { MixinUser } from '../mixin/mixin-user.entity';
 
 @Entity()
@@ -45,7 +44,7 @@ export class Contribution {
   @ManyToOne('StrategyInstance', 'contributions', {
     onDelete: 'CASCADE',
   })
-  strategy: StrategyInstance;
+  strategy: unknown;
 
   @ManyToOne(() => MixinUser, (mixinUser) => mixinUser.contributions, {
     onDelete: 'CASCADE',

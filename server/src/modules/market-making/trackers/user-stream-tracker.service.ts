@@ -160,7 +160,10 @@ export class UserStreamTrackerService
           continue;
         }
 
-        this.latestByKey.set(this.toKey(event.exchange, event.accountLabel), event);
+        this.latestByKey.set(
+          this.toKey(event.exchange, event.accountLabel),
+          event,
+        );
 
         if (event.kind === 'balance') {
           this.balanceStateCacheService?.applyBalanceUpdate({
@@ -234,8 +237,8 @@ export class UserStreamTrackerService
       ? resolvedExecutor?.getSession(resolution.orderId) ||
         executor?.getSession(resolution.orderId)
       : trackedOrder?.orderId && executor
-        ? executor.getSession(trackedOrder.orderId)
-        : undefined;
+      ? executor.getSession(trackedOrder.orderId)
+      : undefined;
 
     if (
       resolvedSession?.accountLabel &&
@@ -248,6 +251,7 @@ export class UserStreamTrackerService
         },
         'account_boundary_violation',
       );
+
       return;
     }
 
@@ -277,11 +281,13 @@ export class UserStreamTrackerService
         accountLabel: fill.accountLabel,
         ...routedFill,
       });
+
       return;
     }
 
     if (!resolution) {
       this.recordOrphanedFill(fill, 'unresolved_order');
+
       return;
     }
 
@@ -293,6 +299,7 @@ export class UserStreamTrackerService
         },
         'missing_executor',
       );
+
       return;
     }
 
@@ -305,7 +312,9 @@ export class UserStreamTrackerService
     });
   }
 
-  private extractFillCandidate(event: UserStreamEvent): RoutedFillCandidate | null {
+  private extractFillCandidate(
+    event: UserStreamEvent,
+  ): RoutedFillCandidate | null {
     const eventType = event.kind.toLowerCase();
     const payload = this.normalizeEventPayload(event);
     const status = this.normalizeStatus(
@@ -362,7 +371,11 @@ export class UserStreamTrackerService
       'qty',
       'trade.amount',
     ]);
-    const qtyKind = deltaQty ? 'delta' : cumulativeQty ? 'cumulative' : undefined;
+    const qtyKind = deltaQty
+      ? 'delta'
+      : cumulativeQty
+      ? 'cumulative'
+      : undefined;
     const qtyValue = deltaQty || cumulativeQty;
 
     return {
@@ -396,7 +409,9 @@ export class UserStreamTrackerService
     };
   }
 
-  private normalizeEventPayload(event: UserStreamEvent): Record<string, unknown> {
+  private normalizeEventPayload(
+    event: UserStreamEvent,
+  ): Record<string, unknown> {
     if (event.kind === 'order' || event.kind === 'trade') {
       return {
         ...(event.payload.raw || {}),
@@ -587,6 +602,7 @@ export class UserStreamTrackerService
 
     if (previous === fingerprint) {
       this.duplicateFillSuppressionCount += 1;
+
       return true;
     }
 
@@ -596,6 +612,7 @@ export class UserStreamTrackerService
       this.wasTradeFillAlreadyObserved(orderKey, fill.cumulativeQty)
     ) {
       this.duplicateFillSuppressionCount += 1;
+
       return true;
     }
 

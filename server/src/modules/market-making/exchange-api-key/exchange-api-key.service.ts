@@ -29,7 +29,6 @@ import {
   SpotOrderStatus,
   STATE_TEXT_MAP,
 } from 'src/common/types/orders/states';
-
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import {
   ExchangeDepositDto,

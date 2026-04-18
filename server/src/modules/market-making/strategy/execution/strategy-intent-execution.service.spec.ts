@@ -270,9 +270,9 @@ describe('StrategyIntentExecutionService', () => {
       { postOnly: false, timeInForce: undefined },
       'maker',
     );
-    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(
-      1,
-    );
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(1);
     expect(exchangeConnectorAdapterService.fetchOrder).not.toHaveBeenCalled();
     expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
@@ -330,9 +330,9 @@ describe('StrategyIntentExecutionService', () => {
         role: 'maker',
       }),
     );
-    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(
-      1,
-    );
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('tracks rebalance intents without running the inline dual-account taker flow', async () => {
@@ -361,7 +361,9 @@ describe('StrategyIntentExecutionService', () => {
         accountLabel: 'maker',
       }),
     );
-    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(1);
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(1);
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
   });
 
@@ -868,15 +870,16 @@ describe('StrategyIntentExecutionService', () => {
   });
   it('reserves clientOrderId before placement so repeated order ids advance after restart', async () => {
     const metadata = { orderId: 'mm-order-repeat' };
+
     exchangeConnectorAdapterService.placeLimitOrder
       .mockRejectedValueOnce(
-        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+        new Error('mexc {"msg":"duplicate client order id","code":400}'),
       )
       .mockRejectedValueOnce(
-        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+        new Error('mexc {"msg":"duplicate client order id","code":400}'),
       )
       .mockRejectedValueOnce(
-        new Error('mexc {\"msg\":\"duplicate client order id\",\"code\":400}'),
+        new Error('mexc {"msg":"duplicate client order id","code":400}'),
       );
     exchangeOrderMappingService.countMappingsForOrder.mockResolvedValueOnce(0);
 
@@ -892,7 +895,9 @@ describe('StrategyIntentExecutionService', () => {
       ]),
     ).rejects.toThrow('duplicate client order id');
 
-    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(3);
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).toHaveBeenCalledTimes(3);
     expect(exchangeOrderMappingService.createMapping).not.toHaveBeenCalled();
     expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
       orderId: 'mm-order-repeat',
@@ -929,5 +934,4 @@ describe('StrategyIntentExecutionService', () => {
       undefined,
     );
   });
-
 });

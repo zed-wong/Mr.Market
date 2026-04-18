@@ -231,6 +231,7 @@ export class CampaignService {
       });
 
       const results = data.results ?? [];
+
       allResults.push(...results);
 
       if (!data.has_more || results.length < limit) {

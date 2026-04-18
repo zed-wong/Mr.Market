@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
+import { StrategyControllerRegistry } from '../controllers/strategy-controller.registry';
 import { StrategyService } from '../strategy.service';
 import { StrategyRuntimeDispatcherService } from './strategy-runtime-dispatcher.service';
 
@@ -13,10 +14,27 @@ describe('StrategyRuntimeDispatcherService', () => {
     executeVolumeStrategy: jest.fn(),
     stopStrategyForUser: jest.fn(),
   } as unknown as StrategyService;
+  const strategyControllerRegistry = {
+    getController: jest.fn((strategyType: string) =>
+      [
+        'arbitrage',
+        'pureMarketMaking',
+        'dualAccountVolume',
+        'dualAccountBestCapacityVolume',
+        'volume',
+        'timeIndicator',
+      ].includes(strategyType)
+        ? ({ strategyType } as const)
+        : undefined,
+    ),
+  } as unknown as StrategyControllerRegistry;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new StrategyRuntimeDispatcherService(strategyService);
+    service = new StrategyRuntimeDispatcherService(
+      strategyService,
+      strategyControllerRegistry,
+    );
   });
 
   it('maps controller type to strategy type', () => {

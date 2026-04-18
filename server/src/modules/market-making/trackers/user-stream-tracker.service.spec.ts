@@ -67,7 +67,9 @@ describe('UserStreamTrackerService', () => {
     await service.onTick('2026-02-11T00:00:01.000Z');
 
     expect(fillRoutingService.resolveOrderForFill).not.toHaveBeenCalled();
-    expect(service.getLatestEvent('binance', 'read-only')?.kind).toBe('balance');
+    expect(service.getLatestEvent('binance', 'read-only')?.kind).toBe(
+      'balance',
+    );
     expect(service.getOrphanedFills()).toEqual([]);
   });
 

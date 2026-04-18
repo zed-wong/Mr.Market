@@ -42,7 +42,11 @@ export class BalanceStateRefreshService
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.clockTickCoordinatorService?.register('balance-state-refresh', this, 4);
+    this.clockTickCoordinatorService?.register(
+      'balance-state-refresh',
+      this,
+      4,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -80,8 +84,10 @@ export class BalanceStateRefreshService
   }
 
   getHealthState(exchange: string, accountLabel: string): StreamHealthState {
-    const lastEventMs =
-      this.userStreamTrackerService?.getLastRecvTime(exchange, accountLabel);
+    const lastEventMs = this.userStreamTrackerService?.getLastRecvTime(
+      exchange,
+      accountLabel,
+    );
     const lastRefreshAt = this.getLastRefreshTime(exchange, accountLabel);
     const lastRefreshMs = lastRefreshAt ? Date.parse(lastRefreshAt) : undefined;
 
@@ -144,6 +150,7 @@ export class BalanceStateRefreshService
       }
 
       const refreshTs = getRFC3339Timestamp();
+
       this.balanceStateCacheService?.applyBalanceSnapshot(
         account.exchange,
         account.accountLabel,
@@ -159,8 +166,10 @@ export class BalanceStateRefreshService
   }
 
   private shouldRefresh(exchange: string, accountLabel: string): boolean {
-    const lastEventMs =
-      this.userStreamTrackerService?.getLastRecvTime(exchange, accountLabel);
+    const lastEventMs = this.userStreamTrackerService?.getLastRecvTime(
+      exchange,
+      accountLabel,
+    );
 
     return (
       !lastEventMs ||

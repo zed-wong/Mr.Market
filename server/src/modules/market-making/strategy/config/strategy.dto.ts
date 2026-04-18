@@ -483,6 +483,15 @@ export class ExecuteDualAccountVolumeStrategyDto {
   @IsString()
   symbol: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Fallback trading pair alias used by persisted admin-direct rows',
+    example: 'BTC/USDT',
+  })
+  @IsOptional()
+  @IsString()
+  pair?: string;
+
   @ApiProperty({ description: 'Base amount to trade per cycle' })
   @IsNumber()
   @IsPositive()
@@ -511,7 +520,8 @@ export class ExecuteDualAccountVolumeStrategyDto {
   pricePushRate: number;
 
   @ApiPropertyOptional({
-    description: 'The first maker order side, or inventory_balance to choose from live balances',
+    description:
+      'The first maker order side, or inventory_balance to choose from live balances',
     example: 'buy',
   })
   @IsOptional()
@@ -611,6 +621,14 @@ export class ExecuteDualAccountVolumeStrategyDto {
   @ApiProperty({ description: 'Client ID' })
   @IsString()
   clientId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Owning market-making order id for admin-direct runtime binding',
+  })
+  @IsOptional()
+  @IsString()
+  marketMakingOrderId?: string;
 }
 
 export class ExecuteDualAccountBestCapacityVolumeStrategyDto {
@@ -621,6 +639,15 @@ export class ExecuteDualAccountBestCapacityVolumeStrategyDto {
   @ApiProperty({ description: 'Trading pair to execute', example: 'BTC/USDT' })
   @IsString()
   symbol: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fallback trading pair alias used by persisted admin-direct rows',
+    example: 'BTC/USDT',
+  })
+  @IsOptional()
+  @IsString()
+  pair?: string;
 
   @ApiProperty({
     description:
@@ -665,6 +692,14 @@ export class ExecuteDualAccountBestCapacityVolumeStrategyDto {
   @ApiProperty({ description: 'Client ID' })
   @IsString()
   clientId: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Owning market-making order id for admin-direct runtime binding',
+  })
+  @IsOptional()
+  @IsString()
+  marketMakingOrderId?: string;
 }
 
 export class StopVolumeStrategyDto {

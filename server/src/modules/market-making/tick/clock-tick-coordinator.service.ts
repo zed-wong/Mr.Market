@@ -89,6 +89,7 @@ export class ClockTickCoordinatorService
   async tickOnce(): Promise<void> {
     if (this.tickInProgress) {
       const now = Date.now();
+
       this.skippedTickCount += 1;
       this.skippedTickBurstStartedAtMs =
         this.skippedTickBurstStartedAtMs ?? now;
@@ -135,7 +136,8 @@ export class ClockTickCoordinatorService
 
           await item.component.onTick(ts);
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           const trace = error instanceof Error ? error.stack : undefined;
 
           this.logger.error(

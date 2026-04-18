@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import { UserStreamEventNormalizer } from './user-stream-event-normalizer.interface';
 import { BinanceUserStreamEventNormalizerService } from './normalizers/binance-user-stream-event-normalizer.service';
 import { GenericCcxtUserStreamEventNormalizerService } from './normalizers/generic-ccxt-user-stream-event-normalizer.service';
 import { MexcUserStreamEventNormalizerService } from './normalizers/mexc-user-stream-event-normalizer.service';
+import { UserStreamEventNormalizer } from './user-stream-event-normalizer.interface';
 
 @Injectable()
 export class UserStreamNormalizerRegistryService {
@@ -14,7 +14,9 @@ export class UserStreamNormalizerRegistryService {
   ) {}
 
   getNormalizer(exchange: string): UserStreamEventNormalizer {
-    const normalized = String(exchange || '').trim().toLowerCase();
+    const normalized = String(exchange || '')
+      .trim()
+      .toLowerCase();
 
     if (normalized === 'binance') {
       return this.binanceNormalizer;

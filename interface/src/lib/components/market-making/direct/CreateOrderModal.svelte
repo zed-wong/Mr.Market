@@ -6,6 +6,8 @@
     import {
         isBestCapacityDirectOrderControllerType,
         isDualDirectOrderControllerType,
+        isSchemaDrivenDirectOrderControllerType,
+        type StrategySchema,
     } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
@@ -16,6 +18,8 @@
     export let strategies: MarketMakingStrategy[] = [];
     export let selectedControllerType = "";
     export let prefillingFromOrderId: string | null = null;
+    export let selectedStrategySchema: StrategySchema = {};
+    export let genericConfig: Record<string, unknown> = {};
 
     export let startExchangeName = "";
     export let startPair = "";
@@ -33,9 +37,6 @@
     export let postOnlySide = "";
     export let dynamicRoleSwitching = true;
     export let targetQuoteVolume = "";
-    export let cadenceVariance = "";
-    export let tradeAmountVariance = "";
-    export let priceOffsetVariance = "";
 
     export let onSubmit: () => void;
     export let onClose: () => void;
@@ -51,6 +52,8 @@
         isDualDirectOrderControllerType(selectedControllerType);
     $: isBestCapacityStrategy =
         isBestCapacityDirectOrderControllerType(selectedControllerType);
+    $: isSchemaDrivenStrategy =
+        isSchemaDrivenDirectOrderControllerType(selectedControllerType);
 
     $: orderAmountError = orderAmount && isNaN(Number(orderAmount));
     $: orderAmountBelowMinimum =
@@ -65,12 +68,6 @@
     $: pricePushRateError = pricePushRate && isNaN(Number(pricePushRate));
     $: targetQuoteVolumeError =
         targetQuoteVolume && isNaN(Number(targetQuoteVolume));
-    $: cadenceVarianceError =
-        cadenceVariance && isNaN(Number(cadenceVariance));
-    $: tradeAmountVarianceError =
-        tradeAmountVariance && isNaN(Number(tradeAmountVariance));
-    $: priceOffsetVarianceError =
-        priceOffsetVariance && isNaN(Number(priceOffsetVariance));
     $: makerAccountOptions = filteredApiKeys;
     $: takerAccountOptions = filteredApiKeys.filter(
         (key) => String(key.key_id) !== String(startMakerApiKeyId),
@@ -157,6 +154,7 @@
             pairDropdownOpen = false;
         }, 150);
     }
+    import SchemaConfigForm from "$lib/components/admin/settings/strategies/SchemaConfigForm.svelte";
 </script>
 
 <svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
@@ -333,6 +331,19 @@
                     {/if}
                 {/if}
 
+                {#if isSchemaDrivenStrategy}
+                    <div class="bg-base-200/40 rounded-xl p-4">
+                        <span
+                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-3"
+                            >{$_("admin_direct_mm_strategy_label")}</span
+                        >
+                        <SchemaConfigForm
+                            schema={selectedStrategySchema}
+                            bind:config={genericConfig}
+                        />
+                    </div>
+                {/if}
+
                 <!-- Trading Pair -->
                 <div class="bg-base-200/40 rounded-xl p-4">
                     <span
@@ -417,53 +428,19 @@
                         class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
                         >{$_("admin_direct_mm_strategy")}</span
                     >
-                    {#if strategies.length <= 3}
-                        <div class="flex flex-col gap-1.5">
-                            {#each strategies as strategy}
-                                <button
-                                    class="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors border
-                    {startStrategyDefinitionId === strategy.id
-                                        ? 'bg-primary/5 text-primary font-semibold border-primary/20'
-                                        : 'text-base-content bg-slate-100 hover:bg-base-300 border-transparent'}"
-                                    on:click={() =>
-                                        (startStrategyDefinitionId =
-                                            strategy.id)}
-                                >
-                                    <span>{strategy.name}</span>
-                                    {#if startStrategyDefinitionId === strategy.id}
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke-width="2.5"
-                                            stroke="currentColor"
-                                            class="w-4 h-4 text-primary"
-                                        >
-                                            <path
-                                                stroke-linecap="round"
-                                                stroke-linejoin="round"
-                                                d="m4.5 12.75 6 6 9-13.5"
-                                            />
-                                        </svg>
-                                    {/if}
-                                </button>
-                            {/each}
-                        </div>
-                    {:else}
-                        <select
-                            class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
-                            bind:value={startStrategyDefinitionId}
+                    <select
+                        class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                        bind:value={startStrategyDefinitionId}
+                    >
+                        <option value="" disabled selected hidden
+                            >{$_("admin_direct_mm_select_strategy")}</option
                         >
-                            <option value="" disabled selected hidden
-                                >{$_("admin_direct_mm_select_strategy")}</option
+                        {#each strategies as strategy}
+                            <option value={strategy.id}
+                                >{strategy.name}</option
                             >
-                            {#each strategies as strategy}
-                                <option value={strategy.id}
-                                    >{strategy.name}</option
-                                >
-                            {/each}
-                        </select>
-                    {/if}
+                        {/each}
+                    </select>
                 </div>
 
                 {#if startStrategyDefinitionId}

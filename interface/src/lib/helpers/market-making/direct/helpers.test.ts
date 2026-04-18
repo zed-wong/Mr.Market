@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   aggregateBalancesByAsset,
+  buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
   isBestCapacityDirectOrderControllerType,
   isDualDirectOrderControllerType,
+  isSchemaDrivenDirectOrderControllerType,
   normalizeConfigOverrides,
   readPositiveOrderAmount,
   resolveInventorySkewAllocation,
@@ -124,6 +126,13 @@ describe('direct controller helpers', () => {
       false,
     );
   });
+
+  it('detects controller types that should use schema-driven direct forms', () => {
+    expect(isSchemaDrivenDirectOrderControllerType('arbitrage')).toBe(true);
+    expect(isSchemaDrivenDirectOrderControllerType('pureMarketMaking')).toBe(
+      false,
+    );
+  });
 });
 
 
@@ -190,6 +199,31 @@ describe('formatOrderAmountForDisplay', () => {
 
   it('trims fallback display decimals when no amount step is available', () => {
     expect(formatOrderAmountForDisplay('1.230000')).toBe('1.23');
+  });
+});
+
+describe('buildGenericSchemaConfigOverrides', () => {
+  it('keeps schema-declared user fields and strips runtime-owned fields', () => {
+    expect(
+      buildGenericSchemaConfigOverrides(
+        {
+          properties: {
+            threshold: { type: 'number' },
+            mode: { type: 'string' },
+          },
+        },
+        {
+          threshold: 5,
+          mode: 'safe',
+          exchangeName: 'binance',
+          makerAccountLabel: 'maker',
+          ignored: true,
+        },
+      ),
+    ).toEqual({
+      threshold: 5,
+      mode: 'safe',
+    });
   });
 });
 

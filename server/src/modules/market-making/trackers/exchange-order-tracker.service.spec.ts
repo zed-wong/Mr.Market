@@ -186,9 +186,9 @@ describe('ExchangeOrderTrackerService', () => {
     await service.onTick('2026-02-11T00:00:02.000Z');
 
     expect(adapter.fetchOrder).not.toHaveBeenCalled();
-    expect(
-      service.getByExchangeOrderId('binance', 'ex-1')?.status,
-    ).toBe('cancelled');
+    expect(service.getByExchangeOrderId('binance', 'ex-1')?.status).toBe(
+      'cancelled',
+    );
   });
 
   it('routes recovered REST fill deltas through the executor exactly once', async () => {

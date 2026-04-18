@@ -336,7 +336,10 @@ describe('ExchangeConnectorAdapterService', () => {
     );
 
     await Promise.resolve();
-    const otherAccountMarketRead = service.fetchOrderBook('binance', 'BTC/USDT');
+    const otherAccountMarketRead = service.fetchOrderBook(
+      'binance',
+      'BTC/USDT',
+    );
     const sameAccountWrite = service.placeLimitOrder(
       'binance',
       'BTC/USDT',

@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 
 import {
   UserStreamBalanceEvent,
-  UserStreamEvent,
   UserStreamOrderEvent,
   UserStreamTradeEvent,
 } from '../user-stream-event.types';
@@ -18,7 +17,11 @@ export class GenericCcxtUserStreamEventNormalizerService
     rawPayload: unknown,
     receivedAt: string,
   ): UserStreamOrderEvent | null {
-    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+    if (
+      !rawPayload ||
+      typeof rawPayload !== 'object' ||
+      Array.isArray(rawPayload)
+    ) {
       return null;
     }
 
@@ -33,7 +36,8 @@ export class GenericCcxtUserStreamEventNormalizerService
           typeof payload.symbol === 'string' && payload.symbol
             ? payload.symbol
             : undefined,
-        exchangeOrderId: typeof payload.id === 'string' ? payload.id : undefined,
+        exchangeOrderId:
+          typeof payload.id === 'string' ? payload.id : undefined,
         clientOrderId:
           typeof payload.clientOrderId === 'string'
             ? payload.clientOrderId
@@ -46,7 +50,8 @@ export class GenericCcxtUserStreamEventNormalizerService
             : undefined,
         status: typeof payload.status === 'string' ? payload.status : undefined,
         cumulativeQty:
-          typeof payload.filled === 'string' || typeof payload.filled === 'number'
+          typeof payload.filled === 'string' ||
+          typeof payload.filled === 'number'
             ? String(payload.filled)
             : undefined,
         price:
@@ -65,7 +70,11 @@ export class GenericCcxtUserStreamEventNormalizerService
     rawPayload: unknown,
     receivedAt: string,
   ): UserStreamTradeEvent | null {
-    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+    if (
+      !rawPayload ||
+      typeof rawPayload !== 'object' ||
+      Array.isArray(rawPayload)
+    ) {
       return null;
     }
 
@@ -103,13 +112,15 @@ export class GenericCcxtUserStreamEventNormalizerService
             ? payload.side
             : undefined,
         qty:
-          typeof payload.amount === 'string' || typeof payload.amount === 'number'
+          typeof payload.amount === 'string' ||
+          typeof payload.amount === 'number'
             ? String(payload.amount)
             : typeof payload.qty === 'string' || typeof payload.qty === 'number'
             ? String(payload.qty)
             : undefined,
         cumulativeQty:
-          typeof payload.filled === 'string' || typeof payload.filled === 'number'
+          typeof payload.filled === 'string' ||
+          typeof payload.filled === 'number'
             ? String(payload.filled)
             : undefined,
         price:
@@ -128,7 +139,11 @@ export class GenericCcxtUserStreamEventNormalizerService
     rawPayload: unknown,
     receivedAt: string,
   ): UserStreamBalanceEvent[] {
-    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+    if (
+      !rawPayload ||
+      typeof rawPayload !== 'object' ||
+      Array.isArray(rawPayload)
+    ) {
       return [];
     }
 
@@ -146,11 +161,17 @@ export class GenericCcxtUserStreamEventNormalizerService
       payload: {
         asset,
         free:
-          balance.free?.[asset] !== undefined ? String(balance.free[asset]) : undefined,
+          balance.free?.[asset] !== undefined
+            ? String(balance.free[asset])
+            : undefined,
         used:
-          balance.used?.[asset] !== undefined ? String(balance.used[asset]) : undefined,
+          balance.used?.[asset] !== undefined
+            ? String(balance.used[asset])
+            : undefined,
         total:
-          balance.total?.[asset] !== undefined ? String(balance.total[asset]) : undefined,
+          balance.total?.[asset] !== undefined
+            ? String(balance.total[asset])
+            : undefined,
         source: 'ws',
       },
       receivedAt,

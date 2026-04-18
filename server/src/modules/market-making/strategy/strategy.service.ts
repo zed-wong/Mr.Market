@@ -20,10 +20,10 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
-import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
-import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { BalanceStateRefreshService } from '../balance-state/balance-state-refresh.service';
+import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
+import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { TickComponent } from '../tick/tick-component.interface';
@@ -34,23 +34,6 @@ import {
 import { OrderBookIngestionService } from '../trackers/order-book-ingestion.service';
 import { UserStreamIngestionService } from '../trackers/user-stream-ingestion.service';
 import { ExecutorAction } from './config/executor-action.types';
-import type {
-  DualAccountActiveCycleState,
-  AmmDexVolumeStrategyParams,
-  CexVolumeStrategyParams,
-  ConnectorHealthStatus,
-  DualAccountBalanceSnapshot,
-  DualAccountBestCapacityCandidate,
-  DualAccountBehaviorProfile,
-  DualAccountExecutionPlan,
-  DualAccountPairBalances,
-  DualAccountRebalanceCandidate,
-  DualAccountResolvedAccounts,
-  DualAccountTradeabilityPlan,
-  DualAccountVolumeStrategyParams,
-  PooledExecutorTarget,
-  VolumeStrategyParams,
-} from './config/strategy-params.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
@@ -70,6 +53,23 @@ import {
   StrategyExecutionCategory,
 } from './config/strategy-execution-category';
 import { StrategyOrderIntent } from './config/strategy-intent.types';
+import type {
+  AmmDexVolumeStrategyParams,
+  CexVolumeStrategyParams,
+  ConnectorHealthStatus,
+  DualAccountActiveCycleState,
+  DualAccountBalanceSnapshot,
+  DualAccountBehaviorProfile,
+  DualAccountBestCapacityCandidate,
+  DualAccountExecutionPlan,
+  DualAccountPairBalances,
+  DualAccountRebalanceCandidate,
+  DualAccountResolvedAccounts,
+  DualAccountTradeabilityPlan,
+  DualAccountVolumeStrategyParams,
+  PooledExecutorTarget,
+  VolumeStrategyParams,
+} from './config/strategy-params.types';
 import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
@@ -315,6 +315,25 @@ export class StrategyService
 
     const orderId = String(strategy.marketMakingOrderId || '').trim();
 
+    if (!orderId) {
+      const isLegacyDualAdminDirect =
+        (strategy.strategyType === 'dualAccountVolume' ||
+          strategy.strategyType === 'dualAccountBestCapacityVolume') &&
+        String(strategy.userId || '').trim() === 'admin-direct';
+
+      if (isLegacyDualAdminDirect) {
+        await this.strategyInstanceRepository.update(
+          { strategyKey: strategy.strategyKey },
+          { status: 'failed', updatedAt: new Date() },
+        );
+        this.logger.warn(
+          `Skipping orphan admin-direct dual-account strategy ${strategy.strategyKey}: missing marketMakingOrderId binding`,
+        );
+
+        return false;
+      }
+    }
+
     if (!orderId || !this.marketMakingOrderRepository) {
       return true;
     }
@@ -553,15 +572,26 @@ export class StrategyService
       params.clientId,
       'dualAccountVolume',
       normalizedParams,
+      params.marketMakingOrderId || params.clientId,
     );
-    await this.upsertSession(
-      strategyKey,
-      'dualAccountVolume',
-      params.userId,
-      params.clientId,
-      cadenceMs,
-      normalizedParams,
-    );
+    try {
+      await this.upsertSession(
+        strategyKey,
+        'dualAccountVolume',
+        params.userId,
+        params.clientId,
+        cadenceMs,
+        normalizedParams,
+        params.marketMakingOrderId || params.clientId,
+      );
+    } catch (error) {
+      await this.rollbackFailedStrategyStart(
+        strategyKey,
+        params.userId,
+        params.clientId,
+      );
+      throw error;
+    }
   }
 
   async executeDualAccountBestCapacityVolumeStrategy(
@@ -582,15 +612,26 @@ export class StrategyService
       params.clientId,
       'dualAccountBestCapacityVolume',
       normalizedParams,
+      params.marketMakingOrderId || params.clientId,
     );
-    await this.upsertSession(
-      strategyKey,
-      'dualAccountBestCapacityVolume',
-      params.userId,
-      params.clientId,
-      cadenceMs,
-      normalizedParams,
-    );
+    try {
+      await this.upsertSession(
+        strategyKey,
+        'dualAccountBestCapacityVolume',
+        params.userId,
+        params.clientId,
+        cadenceMs,
+        normalizedParams,
+        params.marketMakingOrderId || params.clientId,
+      );
+    } catch (error) {
+      await this.rollbackFailedStrategyStart(
+        strategyKey,
+        params.userId,
+        params.clientId,
+      );
+      throw error;
+    }
   }
 
   async stopStrategyForUser(
@@ -1049,21 +1090,30 @@ export class StrategyService
     strategy: StrategyInstance,
     nextRunAtMs: number,
   ): Promise<void> {
-    await this.restoreRuntimeStateForStrategy(strategy);
-    await this.upsertSession(
-      strategy.strategyKey,
-      strategy.strategyType as StrategyType,
-      strategy.userId,
-      strategy.clientId,
-      this.getCadenceMs(strategy.parameters, strategy.strategyType),
-      strategy.parameters,
-      strategy.marketMakingOrderId ||
-        (strategy.strategyType === 'pureMarketMaking'
-          ? strategy.clientId
-          : undefined),
-      nextRunAtMs,
-      this.generateRunId(),
-    );
+    try {
+      await this.restoreRuntimeStateForStrategy(strategy);
+      await this.upsertSession(
+        strategy.strategyKey,
+        strategy.strategyType as StrategyType,
+        strategy.userId,
+        strategy.clientId,
+        this.getCadenceMs(strategy.parameters, strategy.strategyType),
+        strategy.parameters,
+        strategy.marketMakingOrderId ||
+          (strategy.strategyType === 'pureMarketMaking'
+            ? strategy.clientId
+            : undefined),
+        nextRunAtMs,
+        this.generateRunId(),
+      );
+    } catch (error) {
+      await this.rollbackFailedStrategyStart(
+        strategy.strategyKey,
+        strategy.userId,
+        strategy.clientId,
+      );
+      throw error;
+    }
   }
 
   private async upsertStrategyInstance(
@@ -1107,6 +1157,48 @@ export class StrategyService
     await this.strategyInstanceRepository.save(instance);
   }
 
+  private async rollbackFailedStrategyStart(
+    strategyKey: string,
+    userId: string,
+    clientId: string,
+  ): Promise<void> {
+    this.pendingActivationStrategies.delete(strategyKey);
+
+    const activeSession = this.sessions.get(strategyKey);
+
+    await this.removeSession(strategyKey, activeSession);
+    await this.cancelTrackedOrdersForStrategy(strategyKey);
+    await this.strategyIntentStoreService?.cancelPendingIntents(
+      strategyKey,
+      'strategy start failed before session activation',
+    );
+    this.latestIntentsByStrategy.delete(strategyKey);
+
+    const instance = await this.strategyInstanceRepository.findOne({
+      where: { strategyKey },
+    });
+
+    if (!instance) {
+      return;
+    }
+
+    const hasOrderBinding = String(instance.marketMakingOrderId || '').trim();
+    const matchesCaller =
+      String(instance.userId || '').trim() === String(userId || '').trim() &&
+      String(instance.clientId || '').trim() === String(clientId || '').trim();
+
+    if (!hasOrderBinding && matchesCaller) {
+      await this.strategyInstanceRepository.delete({ strategyKey });
+
+      return;
+    }
+
+    await this.strategyInstanceRepository.update(
+      { strategyKey },
+      { status: 'failed', updatedAt: new Date() },
+    );
+  }
+
   public async fetchStartPrice(
     strategyType: StrategyType,
     parameters: Record<string, any>,
@@ -1124,7 +1216,9 @@ export class StrategyService
       }
 
       const referenceExchange = String(parameters.exchangeName || '').trim();
-      const referencePair = String(parameters.symbol || '').trim();
+      const referencePair = this.resolveRuntimePair(
+        parameters as VolumeStrategyParams,
+      );
 
       if (
         this.strategyMarketDataProviderService &&
@@ -1445,7 +1539,9 @@ export class StrategyService
       runtimeParams,
       persistedParams,
     );
-    const activeTrackedOrders = this.getCancelableTrackedOrders(session.strategyKey);
+    const activeTrackedOrders = this.getCancelableTrackedOrders(
+      session.strategyKey,
+    );
 
     if (activeTrackedOrders.length === 0) {
       latestParams = await this.finalizeSettledDualAccountCycle(
@@ -2389,8 +2485,11 @@ export class StrategyService
           new BigNumber(0),
         )
       : new BigNumber(1);
-    const candidates: Omit<DualAccountBestCapacityCandidate, 'candidateRank'>[] =
-      ([
+    const candidates: Omit<
+      DualAccountBestCapacityCandidate,
+      'candidateRank'
+    >[] = (
+      [
         {
           side: 'buy' as const,
           makerAccountLabel: params.makerAccountLabel,
@@ -2447,10 +2546,11 @@ export class StrategyService
           ),
           roleAssignment: 'swapped' as const,
         },
-      ] as const).filter(
-        (candidate) =>
-          candidate.capacity.isFinite() && candidate.capacity.isGreaterThan(0),
-      );
+      ] as const
+    ).filter(
+      (candidate) =>
+        candidate.capacity.isFinite() && candidate.capacity.isGreaterThan(0),
+    );
 
     candidates.sort((left, right) => {
       const capacityComparison = right.capacity.comparedTo(left.capacity);
@@ -2484,27 +2584,33 @@ export class StrategyService
     bestBid: BigNumber,
     bestAsk: BigNumber,
     feeBufferRate: BigNumber,
-  ): Promise<(DualAccountExecutionPlan & { candidate: DualAccountBestCapacityCandidate }) | null> {
+  ): Promise<
+    | (DualAccountExecutionPlan & {
+        candidate: DualAccountBestCapacityCandidate;
+      })
+    | null
+  > {
     const tradeAmountVarianceSample = Math.random();
 
     for (const candidate of candidates) {
-      const execution = await this.evaluateDualAccountExecutionForSideWithAccounts(
-        strategyKey,
-        params,
-        candidate.side,
-        {
-          makerAccountLabel: candidate.makerAccountLabel,
-          takerAccountLabel: candidate.takerAccountLabel,
-          makerBalances: candidate.makerBalances,
-          takerBalances: candidate.takerBalances,
-          capacity: candidate.capacity,
-        },
-        price,
-        tradeAmountVarianceSample,
-        bestBid,
-        bestAsk,
-        feeBufferRate,
-      );
+      const execution =
+        await this.evaluateDualAccountExecutionForSideWithAccounts(
+          strategyKey,
+          params,
+          candidate.side,
+          {
+            makerAccountLabel: candidate.makerAccountLabel,
+            takerAccountLabel: candidate.takerAccountLabel,
+            makerBalances: candidate.makerBalances,
+            takerBalances: candidate.takerBalances,
+            capacity: candidate.capacity,
+          },
+          price,
+          tradeAmountVarianceSample,
+          bestBid,
+          bestAsk,
+          feeBufferRate,
+        );
 
       if (execution) {
         return {
@@ -2917,7 +3023,9 @@ export class StrategyService
 
     if (!requestedQty.isFinite() || requestedQty.isLessThanOrEqualTo(0)) {
       this.logger.warn(
-        `Dual-account volume ${strategyKey}: invalid qty ${(params.maxOrderAmount ?? params.baseTradeAmount) || 0} for side=${side}`,
+        `Dual-account volume ${strategyKey}: invalid qty ${
+          (params.maxOrderAmount ?? params.baseTradeAmount) || 0
+        } for side=${side}`,
       );
 
       return null;
@@ -4597,9 +4705,9 @@ export class StrategyService
       const exchange = String(
         (params as unknown as VolumeStrategyParams).exchangeName || '',
       ).trim();
-      const pair = String(
-        (params as unknown as VolumeStrategyParams).symbol || '',
-      ).trim();
+      const pair = this.resolveRuntimePair(
+        params as unknown as VolumeStrategyParams,
+      );
       const orderId = String(clientId || '').trim();
 
       if (exchange && pair && orderId) {
@@ -4877,10 +4985,7 @@ export class StrategyService
 
       session.params = nextParams;
       session.tradedQuoteVolume = Number(nextParams.tradedQuoteVolume || 0);
-      await this.persistStrategyParams(
-        session.strategyKey,
-        nextParams,
-      );
+      await this.persistStrategyParams(session.strategyKey, nextParams);
       session.nextRunAtMs = Math.min(session.nextRunAtMs, Date.now());
 
       return;
@@ -4963,14 +5068,17 @@ export class StrategyService
     const exchangeOrderId = this.readString(fill.exchangeOrderId);
     const clientOrderId = this.readString(fill.clientOrderId);
     const accountLabel = this.readString(fill.accountLabel);
-    const exchange = this.readString((session.params as Record<string, unknown>)?.exchangeName);
+    const exchange = this.readString(
+      (session.params as Record<string, unknown>)?.exchangeName,
+    );
 
     if (exchangeOrderId) {
-      const trackedOrder = this.exchangeOrderTrackerService?.getByExchangeOrderId(
-        exchange,
-        exchangeOrderId,
-        accountLabel || undefined,
-      );
+      const trackedOrder =
+        this.exchangeOrderTrackerService?.getByExchangeOrderId(
+          exchange,
+          exchangeOrderId,
+          accountLabel || undefined,
+        );
 
       if (trackedOrder?.strategyKey === session.strategyKey) {
         return trackedOrder;
@@ -4986,7 +5094,8 @@ export class StrategyService
         return false;
       }
 
-      const accountMatches = !accountLabel || order.accountLabel === accountLabel;
+      const accountMatches =
+        !accountLabel || order.accountLabel === accountLabel;
 
       return (
         accountMatches &&
@@ -5039,9 +5148,9 @@ export class StrategyService
         (session.params as Record<string, unknown>)?.pair,
         this.readString((session.params as Record<string, unknown>)?.symbol),
       );
-      const makerFilledQty = new BigNumber(activeCycle.makerFilledQty || 0).plus(
-        fillQty,
-      );
+      const makerFilledQty = new BigNumber(
+        activeCycle.makerFilledQty || 0,
+      ).plus(fillQty);
       const hedgePrice = new BigNumber(fill.price || activeCycle.price);
       const nextParams: DualAccountVolumeStrategyParams = {
         ...params,
@@ -5053,7 +5162,9 @@ export class StrategyService
 
       if (!hedgePrice.isFinite() || hedgePrice.isLessThanOrEqualTo(0)) {
         this.logger.warn(
-          `Skipping dual-account taker hedge for ${session.strategyKey}: invalid maker fill price ${fill.price || activeCycle.price}`,
+          `Skipping dual-account taker hedge for ${
+            session.strategyKey
+          }: invalid maker fill price ${fill.price || activeCycle.price}`,
         );
 
         return nextParams;
@@ -5071,9 +5182,9 @@ export class StrategyService
         hedgePrice,
         fillQty,
         ts,
-        `dual-account-volume-taker-${
-          activeCycle.cycleId
-        }-${makerFilledQty.toFixed().replace('.', '_')}`,
+        `dual-account-volume-taker-${activeCycle.cycleId}-${makerFilledQty
+          .toFixed()
+          .replace('.', '_')}`,
         params.executionCategory,
         {
           cycleId: activeCycle.cycleId,
@@ -5123,8 +5234,12 @@ export class StrategyService
       return params;
     }
 
-    const makerFilledQty = new BigNumber(params.activeCycle.makerFilledQty || 0);
-    const takerFilledQty = new BigNumber(params.activeCycle.takerFilledQty || 0);
+    const makerFilledQty = new BigNumber(
+      params.activeCycle.makerFilledQty || 0,
+    );
+    const takerFilledQty = new BigNumber(
+      params.activeCycle.takerFilledQty || 0,
+    );
     const nextParams: DualAccountVolumeStrategyParams = {
       ...params,
       activeCycle: undefined,
@@ -5147,7 +5262,11 @@ export class StrategyService
     }
 
     this.logger.warn(
-      `Dual-account cycle settled under-hedged for ${session.strategyKey}: cycle=${params.activeCycle.cycleId} makerFilledQty=${makerFilledQty.toFixed()} takerFilledQty=${takerFilledQty.toFixed()}`,
+      `Dual-account cycle settled under-hedged for ${
+        session.strategyKey
+      }: cycle=${
+        params.activeCycle.cycleId
+      } makerFilledQty=${makerFilledQty.toFixed()} takerFilledQty=${takerFilledQty.toFixed()}`,
     );
     await this.persistStrategyParams(session.strategyKey, nextParams);
 
@@ -5342,6 +5461,7 @@ export class StrategyService
       exchangeName,
       accountLabel,
     );
+
     this.balanceStateCacheService?.applyBalanceSnapshot(
       exchangeName,
       normalizedAccountLabel,
@@ -5995,8 +6115,7 @@ export class StrategyService
     const currentInventoryQty = new BigNumber(session.inventoryBaseQty || 0);
     const currentInventoryCost = new BigNumber(session.inventoryCostQuote || 0);
     const currentRealizedPnl = new BigNumber(session.realizedPnlQuote || 0);
-    const includeTradedQuoteVolume =
-      options?.includeTradedQuoteVolume ?? true;
+    const includeTradedQuoteVolume = options?.includeTradedQuoteVolume ?? true;
     const currentTradedVolume = new BigNumber(session.tradedQuoteVolume || 0);
     const fillNotional = price.multipliedBy(qty);
 
@@ -6355,6 +6474,16 @@ export class StrategyService
       merged.symbol = this.readString(persisted.symbol, runtime.symbol);
     }
 
+    if (typeof persisted.pair === 'string') {
+      merged.pair = this.readString(
+        persisted.pair,
+        runtime.pair || merged.symbol,
+      );
+      if (!this.readString(merged.symbol)) {
+        merged.symbol = merged.pair;
+      }
+    }
+
     if (Number.isFinite(Number(persisted.baseIncrementPercentage))) {
       merged.baseIncrementPercentage = Number(
         persisted.baseIncrementPercentage,
@@ -6432,8 +6561,7 @@ export class StrategyService
   private resolveNextDualAccountCadenceMs(
     params: DualAccountVolumeStrategyParams,
   ): number {
-    const baseCadenceSeconds =
-      params.interval ?? params.baseIntervalTime ?? 10;
+    const baseCadenceSeconds = params.interval ?? params.baseIntervalTime ?? 10;
     const cadenceSeconds = this.isBestCapacityConfig(params)
       ? baseCadenceSeconds
       : this.applyVariance(baseCadenceSeconds, params.cadenceVariance);
@@ -6479,9 +6607,12 @@ export class StrategyService
       );
     }
 
+    const pair = this.resolveStrategyInputPair(params.symbol, params.pair);
+
     return {
       exchangeName: String(params.exchangeName || '').trim(),
-      symbol: String(params.symbol || '').trim(),
+      symbol: pair,
+      pair,
       baseIncrementPercentage: Number(params.baseIncrementPercentage || 0),
       baseIntervalTime: Number(params.baseIntervalTime || 10),
       baseTradeAmount: Number(params.baseTradeAmount || 0),
@@ -6543,10 +6674,12 @@ export class StrategyService
       params.dailyVolumeTarget !== undefined
         ? Number(params.dailyVolumeTarget)
         : undefined;
+    const pair = this.resolveStrategyInputPair(params.symbol, params.pair);
 
     return {
       exchangeName: String(params.exchangeName || '').trim(),
-      symbol: String(params.symbol || '').trim(),
+      symbol: pair,
+      pair,
       baseIncrementPercentage: 0,
       baseIntervalTime: interval,
       baseTradeAmount: maxOrderAmount,
@@ -6577,6 +6710,16 @@ export class StrategyService
     params: DualAccountVolumeStrategyParams,
   ): boolean {
     return Number.isFinite(Number(params.maxOrderAmount));
+  }
+
+  private resolveStrategyInputPair(symbol: unknown, pair: unknown): string {
+    return this.readString(symbol, this.readString(pair));
+  }
+
+  private resolveRuntimePair(
+    params: Pick<VolumeStrategyParams, 'symbol' | 'pair'>,
+  ): string {
+    return this.readString(params.symbol, this.readString(params.pair));
   }
 
   private maybeWarnDualAccountBestCapacityIgnoredFields(

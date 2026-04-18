@@ -832,38 +832,34 @@ describe('StrategyService', () => {
       },
     });
 
-    expect(userStreamIngestionService.startOrderWatcher).toHaveBeenNthCalledWith(
-      1,
-      {
-        exchange: 'binance',
-        accountLabel: 'maker',
-        symbol: 'BTC/USDT',
-      },
-    );
-    expect(userStreamIngestionService.startOrderWatcher).toHaveBeenNthCalledWith(
-      2,
-      {
-        exchange: 'binance',
-        accountLabel: 'taker',
-        symbol: 'BTC/USDT',
-      },
-    );
-    expect(userStreamIngestionService.startTradeWatcher).toHaveBeenNthCalledWith(
-      1,
-      {
-        exchange: 'binance',
-        accountLabel: 'maker',
-        symbol: 'BTC/USDT',
-      },
-    );
-    expect(userStreamIngestionService.startTradeWatcher).toHaveBeenNthCalledWith(
-      2,
-      {
-        exchange: 'binance',
-        accountLabel: 'taker',
-        symbol: 'BTC/USDT',
-      },
-    );
+    expect(
+      userStreamIngestionService.startOrderWatcher,
+    ).toHaveBeenNthCalledWith(1, {
+      exchange: 'binance',
+      accountLabel: 'maker',
+      symbol: 'BTC/USDT',
+    });
+    expect(
+      userStreamIngestionService.startOrderWatcher,
+    ).toHaveBeenNthCalledWith(2, {
+      exchange: 'binance',
+      accountLabel: 'taker',
+      symbol: 'BTC/USDT',
+    });
+    expect(
+      userStreamIngestionService.startTradeWatcher,
+    ).toHaveBeenNthCalledWith(1, {
+      exchange: 'binance',
+      accountLabel: 'maker',
+      symbol: 'BTC/USDT',
+    });
+    expect(
+      userStreamIngestionService.startTradeWatcher,
+    ).toHaveBeenNthCalledWith(2, {
+      exchange: 'binance',
+      accountLabel: 'taker',
+      symbol: 'BTC/USDT',
+    });
 
     const executor = executorRegistry.getExecutor('binance', 'BTC/USDT');
 
@@ -2563,6 +2559,7 @@ describe('StrategyService', () => {
     const dateNowSpy = jest
       .spyOn(Date, 'now')
       .mockReturnValue(new Date('2026-03-11T01:00:00.000Z').getTime());
+
     exchangeConnectorAdapterService.fetchBalance
       .mockResolvedValueOnce({
         free: { BTC: 5, USDT: 500 },
@@ -3120,7 +3117,9 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
-    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(2);
+    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(
+      2,
+    );
     jest.restoreAllMocks();
   });
 
@@ -3173,7 +3172,9 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
-    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(2);
+    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(
+      2,
+    );
     jest.restoreAllMocks();
   });
 

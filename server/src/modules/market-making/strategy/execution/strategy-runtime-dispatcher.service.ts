@@ -14,13 +14,17 @@ import {
   toLegacyExecutionVenue,
 } from '../config/strategy-execution-category';
 import { TimeIndicatorStrategyDto } from '../config/timeIndicator.dto';
+import { StrategyControllerRegistry } from '../controllers/strategy-controller.registry';
 import { StrategyService } from '../strategy.service';
 
 type RuntimeStrategyConfig = Record<string, unknown>;
 
 @Injectable()
 export class StrategyRuntimeDispatcherService {
-  constructor(private readonly strategyService: StrategyService) {}
+  constructor(
+    private readonly strategyService: StrategyService,
+    private readonly strategyControllerRegistry: StrategyControllerRegistry,
+  ) {}
 
   private resolveVolumeExecutionVenue(
     config: RuntimeStrategyConfig,
@@ -47,6 +51,14 @@ export class StrategyRuntimeDispatcherService {
 
   toStrategyType(controllerType: string): StrategyType {
     const normalizedControllerType = normalizeControllerType(controllerType);
+
+    if (
+      this.strategyControllerRegistry.getController(
+        normalizedControllerType as StrategyType,
+      )
+    ) {
+      return normalizedControllerType as StrategyType;
+    }
 
     if (normalizedControllerType === 'arbitrage') {
       return 'arbitrage';

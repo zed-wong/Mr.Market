@@ -2,240 +2,448 @@
 
 ## Goal
 
-Refactor the market-making runtime so the shared tick loop becomes a lightweight decision/orchestration layer, while order reconciliation, balance refresh, and stream-driven state updates run independently. This plan is sequenced to build foundation primitives first, then layer increasingly independent components on top — each step is shippable and tested before the next begins.
+Refactor the market-making runtime so the shared tick loop becomes a lightweight decision/orchestration layer, while order reconciliation, balance refresh, and stream-driven state updates run independently. The runtime must stay consistent with the current pooled-executor architecture, close the biggest Hummingbot foundation gaps in the right order, and keep each phase shippable with tests before the next phase starts.
 
-## Design principles (aligned with Hummingbot)
+## Why this refactor now
 
-1. **Strategy tick = pure decision**: No network I/O in strategy `onTick()`. Read cached state, decide actions, publish intents.
-2. **WS primary, REST fallback**: Stream events update state immediately; REST polls only when streams degrade.
-3. **Per-connector component grouping**: Order tracker, balance fetcher, and stream tracker belong to the same exchange connector — grouped, not scattered services.
-4. **Event-driven state propagation**: State changes propagate via typed events, not polling in the tick loop.
-5. **Deterministic strategy view**: Strategies read snapshots; async state mutations are atomic from the strategy's perspective.
+Current evidence across the active runtime work points to the same bottleneck shape:
 
-## Phase 1: Instrumentation + Event Bus Foundation
+- `StrategyService.onTick()` still mixes decision-making with exchange I/O.
+- `ExchangeOrderTrackerService.onTick()` and `BalanceStateRefreshService.onTick()` still perform recovery/polling work inside the shared tick path.
+- The current pooled executor boundary is still `(exchange, pair)`, which works for multi-tenant pooling but blocks Hummingbot-style multi-connector coordination.
+- The active dual-account runtime work already added WS ingestion, balance cache, stream-health classification, and delayed REST fallback logic; this refactor should build on those primitives instead of layering more work into the tick loop.
 
-### Step 1.1 — Add per-component tick timing
+This plan converts the runtime toward the Hummingbot model without discarding Mr.Market's multi-tenant pooling constraints.
 
-- Add per-component tick timing logs/metrics in `ClockTickCoordinatorService`.
-- Add per-executor timing in `strategy.service.ts`.
-- Add timing around `fetchOrder()` and `fetchBalance()` paths.
-- Outcome: confirm where the current 1.3s–1.9s tick time is spent before refactoring.
+## Existing baseline to preserve
+
+These behaviors are already correct and should remain intact during the refactor:
+
+- `ExecutorRegistry` and `ExchangePairExecutor` remain the pooled execution layer per `(exchange, pair)`.
+- `StrategyService` remains the top-level strategy runtime coordinator.
+- `UserStreamIngestionService` / `UserStreamTrackerService` remain the normalized private-stream ingestion path.
+- `BalanceStateCacheService` remains the read model for balances.
+- `ExchangeOrderTrackerService` remains the tracked-order source of truth.
+- `StrategyIntentExecutionService` remains the side-effect path for exchange actions.
+- Ledger mutation must continue to flow only through the existing balance ledger and fill routing path.
+
+The refactor should reorganize responsibilities, not reset the runtime model.
+
+## Design principles (Hummingbot-aligned, Mr.Market-safe)
+
+1. **Strategy tick = pure decision**  
+   `onTick()` reads cached snapshots, decides actions, publishes intents. No direct REST calls inside decision paths.
+
+2. **WS primary, REST fallback**  
+   User streams update order/balance state immediately. REST exists only as recovery and silent-stream fallback.
+
+3. **Per-connector grouping**  
+   Order tracker, reconciliation runner, user stream tracker, and balance scheduler should be grouped by connector/exchange ownership.
+
+4. **Event-driven propagation**  
+   State changes should be broadcast by typed events instead of discovered by unrelated polling loops.
+
+5. **Deterministic strategy reads**  
+   Strategies should read stable cached views at tick boundaries even if async state updates arrive between ticks.
+
+6. **Keep pooled execution**  
+   Nothing in this plan should break multi-tenant sharing of market data or executor reuse per `(exchange, pair)`.
+
+## Current architectural gaps this plan closes
+
+This refactor intentionally addresses the highest-priority gaps from `docs/architecture/hummingbot-gap-analysis.md`:
+
+- **#1 Multi-Leg Executor** — unblocked later by connector grouping and cross-connector events.
+- **#3 Cross-Connector Event Bus** — added as a foundational primitive first.
+- **#19 In-Flight Order State Machine communication gap** — order transitions become event-driven and decoupled from shared tick cadence.
+- **#20 User Stream Tracker parity** — stream-first updates become the authoritative path.
+- **#38 Dual Update Mechanism (WS + REST fallback)** — formalized instead of half-living in tick loops.
+
+## Success criteria
+
+The refactor is successful only if all of the following are true:
+
+- Shared tick duration is comfortably below `tick_size_ms` under normal runtime load.
+- `StrategyService.onTick()` performs no direct `fetchOrder()` / `fetchBalance()` network I/O.
+- Stream-driven order updates apply without waiting for the next shared tick.
+- REST reconciliation continues to recover missed states without blocking unrelated sessions.
+- Balance refresh happens independently of strategy cadence.
+- The resulting architecture makes it straightforward to attach one strategy to multiple exchange connectors later.
+
+## Phased implementation plan
+
+---
+
+## Phase 1 — Instrumentation + event foundation
+
+### Step 1.1 — Add timing instrumentation before behavior changes
+
+Add timing at the current bottlenecks so the refactor can be measured instead of guessed.
+
+**Required work**
+
+- Add per-component tick timing to `server/src/modules/market-making/tick/clock-tick-coordinator.service.ts`.
+- Add per-executor / per-session timing around `StrategyService.onTick()`.
+- Add dedicated timing around current `fetchOrder()` and `fetchBalance()` paths used by trackers/strategy runtime.
+- Emit structured logs/metrics that let us distinguish:
+  - coordinator overhead
+  - strategy decision time
+  - order reconciliation time
+  - balance refresh time
+  - user-stream drain time
+
+**Outcome**
+
+A baseline proving where the current 1.3s–1.9s tick cost is spent before any decoupling work lands.
 
 ### Step 1.2 — Introduce `MarketMakingEventBus`
 
-Create a lightweight typed event bus (`server/src/modules/market-making/events/`) to enable decoupled communication between components. This is prerequisite for all subsequent steps — without it, components can't notify each other without going through the tick loop.
+Add a lightweight typed event bus under `server/src/modules/market-making/events/` so components can publish state changes without going through the shared tick coordinator.
 
-```
-eventBus.emit('order.state-changed', { exchangeOrderId, newState, fill })
-eventBus.emit('balance.updated', { exchange, accountLabel, balances })
-eventBus.emit('stream.health-changed', { exchange, accountLabel, health })
+**Transport**
+
+Use NestJS `EventEmitter2` as the internal transport. Keep the public surface strongly typed.
+
+**Initial events**
+
+```ts
+eventBus.emit('order.state-changed', {
+  exchange,
+  accountLabel,
+  orderId,
+  exchangeOrderId,
+  previousState,
+  newState,
+  fillDelta,
+})
+
+eventBus.emit('order.fill-recovered', {
+  exchange,
+  accountLabel,
+  orderId,
+  exchangeOrderId,
+  fillDelta,
+})
+
+eventBus.emit('balance.updated', {
+  exchange,
+  accountLabel,
+  source,
+  balances,
+})
+
+eventBus.emit('balance.stale', {
+  exchange,
+  accountLabel,
+  staleAt,
+})
+
+eventBus.emit('stream.health-changed', {
+  exchange,
+  accountLabel,
+  previousHealth,
+  health,
+})
 ```
 
-Events to define:
+**Producer / consumer map**
 
 | Event | Producer | Consumer |
 |---|---|---|
-| `order.state-changed` | ExchangeOrderTracker, UserStreamTracker | Strategy (via cached snapshot) |
-| `balance.stale` | BalanceStateCache expiry timer | BalanceRefreshScheduler |
-| `stream.health-changed` | UserStreamTracker | ExchangeOrderTracker (adaptive polling) |
-| `order.fill-recovered` | ExchangeOrderTracker (REST) | Strategy executor |
+| `order.state-changed` | `ExchangeOrderTrackerService`, `UserStreamTrackerService` | strategy runtime, reconciliation metrics, executor hooks |
+| `order.fill-recovered` | REST reconciliation | strategy fill-progress path |
+| `balance.updated` | `BalanceStateCacheService` | strategy runtime, diagnostics |
+| `balance.stale` | `BalanceStateCacheService` | balance refresh scheduler |
+| `stream.health-changed` | `UserStreamTrackerService` | reconciliation runner, balance scheduler |
 
-NestJS `EventEmitter2` (already in the NestJS ecosystem) as transport — wildcards for namespace subscriptions, typed payloads.
+**Why now**
 
-**Why this first**: Every subsequent step that decouples a component from the tick loop needs a way to notify listeners. Without the event bus, we'd end up with direct service-to-service calls that recreate the same coupling in a different form.
+Every later phase depends on decoupled notification. Without this bus, moving work out of the tick loop would just replace one coupling mechanism with another.
 
-### Step 1.3 — Make strategy consume cached state snapshots
+### Step 1.3 — Enforce cached-state-only strategy reads
 
-Before removing network I/O from the tick, the strategy must have a read model that doesn't require on-demand network calls.
+Before any polling is extracted, ensure the strategy can operate purely from cached state.
 
-- `ExchangeOrderTracker` already maintains in-memory tracked orders — ensure it exposes a synchronous `getLiveOrders()` / `getActiveSlotOrders()` that works from cache only (no fallback fetch).
-- `BalanceStateCacheService` already caches balances — ensure strategy reads from cache, not from `fetchBalance()` on-demand.
-- If any strategy path still calls `fetchBalance()` or `fetchOrder()` directly, route them through the cache with an explicit staleness boundary.
+**Required work**
 
----
+- Audit `StrategyService` and related controller helpers for any direct `fetchBalance()` or `fetchOrder()` usage.
+- Route balance reads through `BalanceStateCacheService` only.
+- Ensure `ExchangeOrderTrackerService` exposes synchronous cache reads such as `getLiveOrders()` / `getActiveSlotOrders()` without fallback fetches.
+- Introduce explicit staleness semantics where the strategy must choose between:
+  - cached state accepted
+  - skip current tick because required state is stale
 
-## Phase 2: Make user-stream the primary order-state driver
+**Gate**
 
-**Order matters**: establish WS as the primary path *before* splitting REST reconciliation out of the tick, so there's no state vacuum when we decouple.
-
-### Step 2.1 — Immediate stream-driven order updates
-
-Currently `UserStreamTrackerService.onTick()` flushes queued events. Change to event-driven:
-
-- `queueAccountEvent()` already calls `setImmediate` to schedule drain — make this the primary update path.
-- When a stream event arrives, immediately apply order state change to `ExchangeOrderTracker` (dedup still applies).
-- Remove the requirement that order state only updates during `onTick()`. Stream events should update `ExchangeOrderTracker.upsertOrder()` synchronously in the stream handler, not deferred to the next tick.
-- `UserStreamTracker.onTick()` becomes a housekeeping-only fallback that drains anything left in the queue (e.g., if a `setImmediate` callback was lost).
-
-### Step 2.2 — Restrict REST polling to fallback/recovery only
-
-- In `ExchangeOrderTrackerService.onTick()`, the adaptive polling (5s when stream degraded, 120s when healthy) is correct in intent but runs in the tick loop. Leave the logic intact for now — just add a `staleOrderIds` event so that when REST recovers an order state, it emits `order.state-changed` on the bus, pushing to strategy immediately rather than waiting for next tick.
-
-### Step 2.3 — Balance stream-first updates
-
-- `UserStreamTracker` already forwards balance events to `BalanceStateCacheService.applyBalanceUpdate()` — make this the authoritative path.
-- When `BalanceStateCache` receives a stream-driven update, emit `balance.updated` on the event bus.
-- Strategy reads from `BalanceStateCache` only — never calls `fetchBalance()` directly.
+No strategy decision path may perform network I/O after this step.
 
 ---
 
-## Phase 3: Extract components out of the tick loop
+## Phase 2 — Make user streams the primary state driver
 
-### Step 3.1 — Split order reconciliation into `ExchangeOrderReconciliationRunner`
+This phase must land before pulling reconciliation out of the tick loop so there is no state visibility gap.
 
-Extract from `ExchangeOrderTrackerService.onTick()` the REST polling logic into an independent runner:
+### Step 2.1 — Apply order updates immediately from stream handlers
 
-- New class: `ExchangeOrderReconciliationRunner` (owned by `ExchangeOrderTrackerService`, but invoked on its own timer, not via `TickComponent.onTick()`).
-- Replaces `MAX_ORDERS_PER_TICK = 2` with time-window-based rate limiting: poll up to N orders per `reconciliationIntervalMs` window, with per-exchange rate-limit awareness.
-- Uses `shortPollIntervalMs` (5s, stream degraded) and `longPollIntervalMs` (120s, stream healthy) — same adaptive logic as current, but decoupled from tick cadence.
-- On state change, emits `order.state-changed` on event bus instead of relying on next strategy tick to pick it up.
-- `ExchangeOrderTrackerService.onTick()` becomes lightweight housekeeping: collect metrics, emit periodic health, prune stale entries.
+Current behavior still relies too much on `UserStreamTrackerService.onTick()` queue draining. Shift the primary path to immediate event-driven application.
 
-### Step 3.2 — Move balance refresh to independent scheduler
+**Required work**
 
-Extract from `BalanceStateRefreshService.onTick()`:
+- Keep `queueAccountEvent()` / batching for safety, but make stream-arrival handling schedule state application immediately.
+- Apply order-state transitions into `ExchangeOrderTrackerService` as soon as normalized events arrive.
+- Preserve dedup rules so duplicate order/trade payloads do not double-advance state.
+- Reduce `UserStreamTrackerService.onTick()` to housekeeping and fallback draining only.
 
-- New class: `BalanceRefreshScheduler` runs per-account refresh timers.
-- Each account gets its own refresh timer with jitter and rate limiting.
-- Refresh is triggered by: (a) `balance.stale` event from `BalanceStateCache`, (b) `stream.health-changed` event when stream degrades, (c) periodic timer fallback (current `STALE_MS = 15s` as baseline).
-- On refresh completion, updates `BalanceStateCache` and emits `balance.updated`.
-- `BalanceStateRefreshService.onTick()` becomes no-op or metric-only.
+**Expected behavior after step**
 
-### Step 3.3 — Slim strategy tick into pure decision loop
+Order state should settle from WS without waiting for the next shared strategy tick.
 
-After steps 3.1 and 3.2, `strategy-service.onTick()` is already mostly free of network I/O. Final cleanup:
+### Step 2.2 — Emit events when REST reconciliation recovers order state
 
-- Remove any remaining direct `fetchOrder()` / `fetchBalance()` calls from strategy paths.
-- Strategy subscribes to `order.state-changed` and `balance.updated` events to know when its cached state may have changed — but still makes decisions only on `onTick()` boundaries (event-driven notification + tick-driven decision = no races).
-- Ensure `ExecutorOrchestratorService.dispatchActions()` is the only side-effect channel (intent publishing).
+REST should still recover missed fills/cancels, but it should no longer rely on the next strategy tick to make the recovered state visible.
+
+**Required work**
+
+- Keep the current adaptive reconciliation logic temporarily where it lives.
+- Whenever REST reconciliation changes tracked order state, emit:
+  - `order.state-changed`
+  - `order.fill-recovered` when fill delta is discovered
+- Add enough metadata for downstream consumers to distinguish WS-originated transitions from REST-recovered transitions.
+
+### Step 2.3 — Make balance cache updates event-driven and stream-first
+
+The active runtime already introduced stream-fed balance cache updates. Formalize that as the authoritative path.
+
+**Required work**
+
+- Treat `BalanceStateCacheService.applyBalanceUpdate()` as the canonical update path for live balances.
+- Emit `balance.updated` whenever a stream or REST refresh changes cached balances.
+- Emit `balance.stale` when cache freshness crosses the allowed threshold.
+- Remove any remaining strategy-time direct balance fetches.
+
+**Expected behavior after phase**
+
+Order and balance state become event-propagated cached state, with shared tick reading snapshots instead of discovering updates itself.
 
 ---
 
-## Phase 4: Connector abstraction (long-term foundation)
+## Phase 3 — Extract reconciliation and refresh work out of the shared tick
 
-This phase prepares the architecture for Multi-Leg Executor (gap #1 in hummingbot-gap-analysis) by grouping per-exchange components under a unified connector interface.
+### Step 3.1 — Create `ExchangeOrderReconciliationRunner`
 
-### Step 4.1 — Define `ExchangeConnector` interface
+Extract REST polling logic from `ExchangeOrderTrackerService.onTick()` into an independent runner.
 
-```
-ExchangeConnector {
+**New component**
+
+- `server/src/modules/market-making/reconciliation/exchange-order-reconciliation-runner.ts`
+
+**Responsibilities**
+
+- Own reconciliation timers separate from shared strategy tick cadence.
+- Poll tracked orders with adaptive intervals based on stream health.
+- Respect exchange-aware rate-limiting constraints.
+- Emit order-state / recovered-fill events through the event bus.
+
+**Behavioral rules**
+
+- Replace `MAX_ORDERS_PER_TICK = 2` style coupling with time-window or budget-based polling.
+- Keep the current healthy/degraded interval policy (`~120s` vs `~5s`) unless measurements require different numbers.
+- Ensure one slow account or one slow exchange does not stretch the shared strategy tick.
+
+**After extraction**
+
+`ExchangeOrderTrackerService.onTick()` should become cache housekeeping, pruning, and metrics only.
+
+### Step 3.2 — Create `BalanceRefreshScheduler`
+
+Extract REST balance refresh out of `BalanceStateRefreshService.onTick()`.
+
+**New component**
+
+- `server/src/modules/market-making/balance-state/balance-refresh-scheduler.ts`
+
+**Responsibilities**
+
+- Run per-account refresh timers.
+- Refresh balances when:
+  - cache becomes stale
+  - stream health degrades
+  - periodic fallback timer fires
+- Apply refreshed balances through `BalanceStateCacheService`
+- Emit `balance.updated` after refresh completion
+
+**Operational requirements**
+
+- Add jitter so multiple accounts do not synchronize refresh bursts.
+- Keep per-account / per-exchange rate limiting explicit.
+- Avoid any dependency on shared tick cadence.
+
+**After extraction**
+
+`BalanceStateRefreshService.onTick()` should become metric-only or disappear entirely if no longer needed.
+
+### Step 3.3 — Make `StrategyService.onTick()` a pure decision loop
+
+Once reconciliation and refresh are independent, clean the remaining network side effects out of the strategy runtime.
+
+**Required work**
+
+- Remove any remaining direct exchange fetches from strategy/controller paths.
+- Let strategy runtime subscribe to event-bus signals only to know that cached state changed; actual decisions still happen on tick boundaries.
+- Keep `StrategyIntentExecutionService` / dispatcher as the sole exchange side-effect channel for strategy actions.
+
+**Acceptance rule**
+
+A test spy should be able to prove that strategy tick execution performs zero direct network calls.
+
+---
+
+## Phase 4 — Group runtime components by connector
+
+This phase is the architectural bridge toward multi-leg strategies without rewriting pooled execution first.
+
+### Step 4.1 — Define `ExchangeConnector` grouping abstraction
+
+Introduce a connector-scoped grouping for the runtime services that belong to the same exchange.
+
+```ts
+interface ExchangeConnectorRuntime {
   exchange: string
   orderTracker: ExchangeOrderTrackerService
   reconciliationRunner: ExchangeOrderReconciliationRunner
   userStreamTracker: UserStreamTrackerService
   balanceCache: BalanceStateCacheService
-  balanceScheduler: BalanceRefreshScheduler
+  balanceRefreshScheduler: BalanceRefreshScheduler
   orderBookTracker: OrderBookTrackerService
 }
 ```
 
-- Each `ExchangeConnector` owns all the per-exchange lifecycle components.
-- `ExchangeConnectorRegistry` holds connector instances keyed by `exchange`.
-- This is a *grouping refactoring* — no behavioral change. Existing services are moved under the connector umbrella.
-- New strategies that need two exchanges (XEMM, Spot-Perp Arb) can hold references to multiple `ExchangeConnector` instances — unblocking the Multi-Leg Executor pattern from Hummingbot where strategy holds `N × MarketTradingPairTuple`.
+**New files**
 
-### Step 4.2 — Make event bus connector-scoped
+- `server/src/modules/market-making/connector/exchange-connector.ts`
+- `server/src/modules/market-making/connector/exchange-connector-registry.ts`
 
-- Events become namespaced by connector: `binance:order.state-changed`, `okx:balance.updated`.
-- Strategies subscribe to specific connector events based on which exchanges they operate on.
-- This enables a strategy to listen to fills on Binance and immediately hedge on OKX — the core XEMM pattern.
+**Important constraint**
 
----
+This is a grouping refactor only. Do not change strategy behavior in this step.
 
-## Phase 5: Validation and rollout
+**Why it matters**
 
-### Step 5.1 — Unit tests (per step)
+A future multi-leg strategy should be able to hold references to multiple exchange connector runtimes the same way Hummingbot strategies hold multiple `MarketTradingPairTuple` references.
 
-Each step above should include tests:
+### Step 4.2 — Namespace events by connector ownership
 
-| Step | Tests |
-|---|---|
-| 1.2 Event bus | Event emit/subscribe, wildcard matching, async delivery ordering |
-| 2.1 Stream-first updates | Order state applies from stream without tick, dedup still works |
-| 2.2 REST fallback | REST reconciliation emits event bus events, strategy gets notified |
-| 3.1 Reconciliation runner | Polls outside tick, respects rate limits, adaptive intervals |
-| 3.2 Balance scheduler | Refreshes on stale event + periodic timer, not in tick |
-| 3.3 Pure decision | Strategy tick has zero network calls (enforced by test spy) |
-| 4.1 Connector grouping | Connector owns all per-exchange components, registry lookup works |
+Once connector grouping exists, scope events by connector/exchange ownership.
 
-### Step 5.2 — Integration tests
+**Example namespacing**
 
-- Dual-account best-capacity progression under delayed REST responses.
-- Stream degradation → REST fallback → stream recovery → back to stream-primary.
-- Tick overlap: confirm strategy tick completes in <200ms after refactoring.
-- Kill switch still triggers under high fill rate when using event bus.
-
-### Step 5.3 — Performance regression baseline
-
-- Run targeted server tests before and after each phase.
-- Target: shared tick duration comfortably below `tick_size_ms` (no overlap warnings).
-
----
-
-## Key files
-
-| File | Role |
-|---|---|
-| `tick/clock-tick-coordinator.service.ts` | Tick loop coordinator — will become thinner |
-| `tick/tick-component.interface.ts` | Tick component interface — may need async `init()` / `destroy()` |
-| `trackers/exchange-order-tracker.service.ts` | Order state source of truth — onTick logic extracted to runner |
-| `trackers/user-stream-tracker.service.ts` | Stream event processor — becomes primary order update path |
-| `trackers/user-stream-ingestion.service.ts` | WebSocket ingestion — triggers immediate state updates |
-| `balance-state/balance-state-refresh.service.ts` | REST balance polling — extracted to scheduler |
-| `balance-state/balance-state-cache.service.ts` | Balance read model — emits staleness events |
-| `strategy/strategy.service.ts` | Strategy decision loop — becomes pure consumer |
-| `events/market-making.event.ts` | Current event types — will expand significantly |
-| New: `events/market-making-event-bus.ts` | Typed event bus implementation |
-| New: `reconciliation/exchange-order-reconciliation-runner.ts` | Decoupled REST reconciliation |
-| New: `balance-state/balance-refresh-scheduler.ts` | Decoupled balance refresh |
-| New: `connector/exchange-connector.ts` | Per-exchange component grouping |
-| New: `connector/exchange-connector-registry.ts` | Connector lookup |
-
----
-
-## Implementation order (summary)
-
+```ts
+'binance.order.state-changed'
+'binance.balance.updated'
+'okx.order.state-changed'
 ```
+
+or equivalent structured metadata if the typed event bus keeps flat event names.
+
+**Purpose**
+
+This is the bridge toward cross-connector strategy subscriptions, which are required for XEMM / spot-perp style hedging.
+
+---
+
+## Phase 5 — Validation, rollout, and guardrails
+
+### Step 5.1 — Unit tests per phase
+
+| Step | Required test coverage |
+|---|---|
+| 1.2 Event bus | typed emit/subscribe, wildcard or namespace subscription behavior, delivery ordering |
+| 1.3 Cached reads | strategy path rejects or skips stale uncached reads, no direct fetch usage |
+| 2.1 Stream-first orders | stream order updates apply without waiting for tick, dedup still holds |
+| 2.2 REST recovery events | reconciliation emits state/fill events and downstream consumers observe them |
+| 2.3 Balance events | stream + REST cache updates emit `balance.updated`, stale transitions emit `balance.stale` |
+| 3.1 Reconciliation runner | polls off-tick, respects adaptive intervals and rate budget |
+| 3.2 Balance scheduler | refreshes on stale event / degraded stream / periodic fallback |
+| 3.3 Pure strategy tick | zero direct network calls during tick |
+| 4.1 Connector grouping | registry lookup, lifecycle ownership, component wiring |
+
+### Step 5.2 — Integration coverage
+
+Add or extend targeted integration/system coverage for:
+
+- dual-account best-capacity progression under delayed REST reconciliation
+- stream degradation -> REST fallback -> stream recovery
+- high fill rate with event-driven propagation and kill-switch behavior intact
+- shared tick under load staying below the configured tick size budget
+
+### Step 5.3 — Rollout measurement
+
+For each phase:
+
+- capture before/after timing data from the added instrumentation
+- run targeted server tests for the touched modules
+- verify no new tick-overlap warnings appear
+- verify no regression in dual-account execution progress, fill accounting, or restart recovery
+
+## Key files and ownership map
+
+| File | Role in refactor |
+|---|---|
+| `server/src/modules/market-making/tick/clock-tick-coordinator.service.ts` | add baseline timing and confirm tick becomes orchestration-only |
+| `server/src/modules/market-making/strategy/strategy.service.ts` | remove direct network I/O from decision path |
+| `server/src/modules/market-making/trackers/user-stream-tracker.service.ts` | make stream updates immediate and primary |
+| `server/src/modules/market-making/trackers/user-stream-ingestion.service.ts` | keep normalized ingestion as source of private events |
+| `server/src/modules/market-making/trackers/exchange-order-tracker.service.ts` | remain tracked-order cache, lose heavy polling duties |
+| `server/src/modules/market-making/balance-state/balance-state-cache.service.ts` | remain balance read model and emit freshness events |
+| `server/src/modules/market-making/balance-state/balance-state-refresh.service.ts` | polling logic extracted to scheduler |
+| `server/src/modules/market-making/events/*` | new typed event-bus surface |
+| `server/src/modules/market-making/reconciliation/*` | new off-tick REST reconciliation runner |
+| `server/src/modules/market-making/connector/*` | new connector grouping abstraction |
+
+## Recommended implementation order summary
+
+```text
 Phase 1: Foundation
-  1.1  Add tick timing instrumentation
-  1.2  Introduce MarketMakingEventBus
-  1.3  Make strategy consume cached state only
+  1.1 Add timing instrumentation
+  1.2 Introduce MarketMakingEventBus
+  1.3 Enforce cached-state-only strategy reads
 
-Phase 2: Stream-first (before decoupling tick)
-  2.1  Immediate stream-driven order updates
-  2.2  REST polling emits events instead of inline state
-  2.3  Balance stream-first + cache staleness events
+Phase 2: Stream-first state propagation
+  2.1 Immediate stream-driven order updates
+  2.2 Emit events from REST recovery
+  2.3 Balance cache emits update/stale events
 
-Phase 3: Decouple from tick loop
-  3.1  ExchangeOrderReconciliationRunner (extract from tracker onTick)
-  3.2  BalanceRefreshScheduler (extract from balance onTick)
-  3.3  Slim strategy tick to pure decision
+Phase 3: Decouple from shared tick
+  3.1 Extract ExchangeOrderReconciliationRunner
+  3.2 Extract BalanceRefreshScheduler
+  3.3 Reduce strategy tick to pure decision
 
-Phase 4: Connector abstraction (long-term)
-  4.1  ExchangeConnector interface + grouping
-  4.2  Connector-scoped event bus namespaces
+Phase 4: Connector grouping
+  4.1 Add ExchangeConnector runtime grouping
+  4.2 Namespace event subscriptions by connector
 
 Phase 5: Validation
-  5.1  Unit tests per step
-  5.2  Integration tests
-  5.3  Performance regression
+  5.1 Unit coverage per phase
+  5.2 Integration/system validation
+  5.3 Performance regression checks
 ```
 
 ## Expected outcome
 
-| Metric | Before | After |
+| Metric | Before | After target |
 |---|---|---|
-| Strategy tick duration | 1.3s–1.9s (network-bound) | <200ms (pure decision) |
-| Tick overlap warnings | Frequent under load | None |
-| Order state settle latency | Up to tick_size_ms (1s) | Near-instant on stream event |
-| Dual-account stall | Tracked order blocks cycle | Independent reconciliation |
-| Multi-venue strategy support | Blocked (single executor per exchange:pair) | Unblocked (connector abstraction) |
+| Shared strategy tick duration | ~1.3s–1.9s under load | comfortably below `tick_size_ms`; target <200ms decision time |
+| Tick overlap warnings | recurring under load | eliminated in normal operation |
+| Order state propagation latency | can wait for next tick | near-immediate on WS event |
+| Balance freshness maintenance | tied to shared tick work | independent per-account refresh |
+| Cross-connector strategy foundation | blocked | unblocked by connector grouping + event bus |
 
-## Long-term implications
+## Long-term implication
 
-This refactoring positions the runtime for the gap-analysis priorities:
+If implemented in this order, Mr.Market keeps its pooled multi-tenant executor model while gaining the missing Hummingbot-style runtime primitives:
 
-- **Connector abstraction (Phase 4)** directly unblocks Multi-Leg Executor (gap #1), XEMM (gap #5), Spot-Perp Arb (gap #7).
-- **Event bus** provides the Cross-Connector Event Bus (gap #3) that Hummingbot implements via `c_add_markets()`.
-- **Stream-first + REST fallback** implements the Dual Update Mechanism (gap #38) properly.
-- **Decoupled reconciliation** solves the In-Flight Order State Machine (gap #19) communication gap — state changes propagate immediately.
+- event-driven cross-component state propagation
+- stream-primary plus REST-fallback order/balance maintenance
+- off-tick reconciliation and refresh loops
+- connector-scoped runtime ownership
+- a clean architectural runway toward XEMM, spot-perp arbitrage, and future multi-leg execution

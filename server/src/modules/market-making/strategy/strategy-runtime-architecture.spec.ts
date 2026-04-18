@@ -169,10 +169,7 @@ const createMappingRepository = (rows: any[] = []) => ({
         (value.clientOrderId && row.clientOrderId === value.clientOrderId),
     );
     const row = {
-      id:
-        matchIndex >= 0
-          ? rows[matchIndex].id
-          : `mapping-${rows.length + 1}`,
+      id: matchIndex >= 0 ? rows[matchIndex].id : `mapping-${rows.length + 1}`,
       createdAt:
         matchIndex >= 0
           ? rows[matchIndex].createdAt
@@ -453,9 +450,7 @@ describe('Strategy runtime architecture', () => {
       receivedAt: '2026-03-11T00:00:01.000Z',
     });
 
-    await fixture.userStreamTrackerService.onTick(
-      '2026-03-11T00:00:01.500Z',
-    );
+    await fixture.userStreamTrackerService.onTick('2026-03-11T00:00:01.500Z');
 
     expect(onFill).toHaveBeenCalledTimes(1);
     expect(onFill).toHaveBeenCalledWith(
@@ -521,9 +516,7 @@ describe('Strategy runtime architecture', () => {
       receivedAt: '2026-03-11T00:00:01.000Z',
     });
 
-    await fixture.userStreamTrackerService.onTick(
-      '2026-03-11T00:00:01.500Z',
-    );
+    await fixture.userStreamTrackerService.onTick('2026-03-11T00:00:01.500Z');
 
     expect(onFill).toHaveBeenCalledTimes(1);
     expect(onFill).toHaveBeenCalledWith(

@@ -65,6 +65,7 @@ describe('StrategyService balance cache helpers', () => {
 
   it('reads pair balances from the fresh balance cache before falling back to REST', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
+
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
@@ -74,7 +75,9 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
     const exchangeConnectorAdapterService = {
       fetchBalance: jest.fn(),
     };
@@ -100,6 +103,7 @@ describe('StrategyService balance cache helpers', () => {
 
   it('falls back to REST when cached balances are stale and refreshes the cache', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
+
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
@@ -109,7 +113,9 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:01:00.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:01:00.000Z'));
     const exchangeConnectorAdapterService = {
       fetchBalance: jest.fn().mockResolvedValue({
         free: { BTC: 2, USDT: 300 },
@@ -148,6 +154,7 @@ describe('StrategyService balance cache helpers', () => {
 
   it('uses maker inventory balance to choose buy or sell when postOnlySide=inventory_balance', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
+
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
@@ -157,7 +164,9 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
     const service = createService({ balanceStateCacheService });
 
     await expect(
