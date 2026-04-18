@@ -10,8 +10,6 @@
   import { isFirstTimeMarketMaking } from "$lib/stores/market_making";
   import Bar from "$lib/components/grow/marketMaking/baseSection/bar.svelte";
   import BaseIntro from "$lib/components/grow/marketMaking/baseSection/baseIntro.svelte";
-  import { _ } from "svelte-i18n";
-
   const MARKET_MAKING_INTRO_KEY = "market-making-intro-seen";
 
   if (browser) {
@@ -23,8 +21,12 @@
       localStorage.setItem(MARKET_MAKING_INTRO_KEY, "true");
     }
   }
+
+  const noMarketMakingCreated = true;
 </script>
 
+<!-- If not connected, show start market making, button redirect to connect wallet -->
+<!-- If connected and first time user, show start market making, button go to market-making -->
 {#if $isFirstTimeMarketMaking}
   <div class="flex flex-col grow space-y-0">
     <Slogan />
@@ -45,17 +47,12 @@
       />
 
       <Bar />
-      <BaseIntro />
-
-      <div class="mt-4 p-4 bg-base-200 rounded-2xl">
-        <div class="flex items-center justify-between mb-3">
-          <span class="font-semibold text-base text-base-content">{$_("hufi_your_orders")}</span>
-        </div>
-        <div class="flex flex-col items-center justify-center py-8 text-base-content/50">
-          <span class="text-sm mb-3">{$_("hufi_no_orders_yet")}</span>
-          <a href="/market-making/hufi" class="btn btn-sm btn-primary text-base-100">{$_("hufi_browse_campaigns")}</a>
-        </div>
-      </div>
+      {#if noMarketMakingCreated}
+        <BaseIntro />
+      {:else}
+        <!-- Show created market making + create new btn -->
+        <slot />
+      {/if}
     </div>
   {/await}
 {/if}

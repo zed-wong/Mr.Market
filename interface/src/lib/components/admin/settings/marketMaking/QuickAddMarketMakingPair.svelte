@@ -26,6 +26,7 @@
 
     let addDialog = false;
     let symbolQuery = "";
+    let selectedExchangeFilter = "";
     let marketsByExchange: Record<string, any[]> = {};
     let isLoadingMarkets = false;
     let loadingExchangeIds: string[] = [];
@@ -98,12 +99,23 @@
         ),
     );
 
+    $: exchangesWithSpot = new Set(
+        configuredExchanges
+            .filter((exchange) =>
+                (marketsByExchange[exchange.exchange_id] || []).some((m: any) => m?.spot !== false),
+            )
+            .map((exchange) => exchange.exchange_id),
+    );
+
     $: filteredMarkets = symbolQuery.trim().length
         ? (() => {
               const seenKeys = new Set<string>();
               const queryRaw = symbolQuery.trim();
               const query = normalizePairText(queryRaw);
-              const results = configuredExchanges
+              const exchanges = selectedExchangeFilter
+                  ? configuredExchanges.filter((e) => e.exchange_id === selectedExchangeFilter)
+                  : configuredExchanges;
+              const results = exchanges
                   .flatMap((exchange) =>
                       (marketsByExchange[exchange.exchange_id] || []).map(
                           (market) => ({
@@ -114,8 +126,7 @@
                       ),
                   )
                   .filter((market) => {
-                      if (market?.spot === false) return false;
-                      if ((market?.symbol || "").includes(":")) return false;
+                      if (exchangesWithSpot.has(market.exchange_id) && market?.spot === false) return false;
                        const symbol = normalizePairText(
                            market.display_symbol || market.symbol || "",
                        );
@@ -755,33 +766,46 @@
             {:else}
                 <div class="space-y-4">
                     {#if !isFocusedAddFlow}
-                        <label
-                            class="input input-lg text-sm w-full rounded-full bg-base-200 border-0.5 border-base-200 focus-within:border-base-200 focus-within:outline-none flex items-center gap-2"
-                        >
-                            <svg
-                                class="h-[1em] opacity-50"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
+                        <div class="flex gap-2">
+                            <label
+                                class="input input-lg text-sm flex-1 rounded-full bg-base-200 border-0.5 border-base-200 focus-within:border-base-200 focus-within:outline-none flex items-center gap-2"
                             >
-                                <g
-                                    stroke-linejoin="round"
-                                    stroke-linecap="round"
-                                    stroke-width="2.5"
-                                    fill="none"
-                                    stroke="currentColor"
+                                <svg
+                                    class="h-[1em] opacity-50"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
                                 >
-                                    <circle cx="11" cy="11" r="8"></circle>
-                                    <path d="m21 21-4.3-4.3"></path>
-                                </g>
-                            </svg>
-                            <input
-                                id="quick-symbol-input"
-                                type="search"
-                                class="grow"
-                                bind:value={symbolQuery}
-                                placeholder={$_("search_pair_placeholder")}
-                            />
-                        </label>
+                                    <g
+                                        stroke-linejoin="round"
+                                        stroke-linecap="round"
+                                        stroke-width="2.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                    >
+                                        <circle cx="11" cy="11" r="8"></circle>
+                                        <path d="m21 21-4.3-4.3"></path>
+                                    </g>
+                                </svg>
+                                <input
+                                    id="quick-symbol-input"
+                                    type="search"
+                                    class="grow"
+                                    bind:value={symbolQuery}
+                                    placeholder={$_("search_pair_placeholder")}
+                                />
+                            </label>
+                            {#if configuredExchanges.length > 1}
+                                <select
+                                    class="select select-lg text-sm rounded-full bg-base-200 border-0.5 border-base-200"
+                                    bind:value={selectedExchangeFilter}
+                                >
+                                    <option value="">{$_("all_exchanges")}</option>
+                                    {#each configuredExchanges as exchange}
+                                        <option value={exchange.exchange_id}>{exchange.name}</option>
+                                    {/each}
+                                </select>
+                            {/if}
+                        </div>
                     {/if}
 
                     {#if showAssetPicker}

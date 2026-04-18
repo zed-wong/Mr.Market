@@ -114,6 +114,7 @@
 
     <MarketMakingPairList
         {marketMakingPairs}
+        {configuredExchanges}
         on:refresh={() => RefreshMarketMakingPairs()}
     />
 </div>

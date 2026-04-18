@@ -13,6 +13,7 @@ import { toast } from "svelte-sonner";
     } from "$lib/helpers/mrm/admin/growdata";
 
     export let marketMakingPairs: MarketMakingPair[] = [];
+    export let configuredExchanges: { exchange_id: string; name: string }[] = [];
 
     const dispatch = createEventDispatcher();
 
@@ -24,7 +25,9 @@ import { toast } from "svelte-sonner";
     // Pagination
     let currentPage = 1;
     const itemsPerPage = 10;
-    $: exchangeOptions = [...new Set(marketMakingPairs.map(p => p.exchange_id))].filter(Boolean);
+    $: exchangeOptions = configuredExchanges.length
+        ? configuredExchanges.map((e) => ({ id: e.exchange_id, name: e.name }))
+        : [...new Set(marketMakingPairs.map((p) => p.exchange_id))].filter(Boolean).map((id) => ({ id, name: id }));
     $: sortedPairs = [...marketMakingPairs]
         .filter(p => {
             if (searchQuery && !p.symbol.toLowerCase().includes(searchQuery.toLowerCase()) && !p.exchange_id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -119,7 +122,7 @@ import { toast } from "svelte-sonner";
         >
             <option value="">{$_("all_exchanges")}</option>
             {#each exchangeOptions as ex}
-                <option value={ex} class="capitalize">{ex}</option>
+                <option value={ex.id} class="capitalize">{ex.name}</option>
             {/each}
         </select>
     </div>
