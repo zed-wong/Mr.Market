@@ -389,6 +389,35 @@ export function isSchemaDrivenDirectOrderControllerType(
   );
 }
 
+export function isKnownDirectStrategyControllerType(
+  controllerType: unknown,
+): boolean {
+  return (
+    controllerType === "pureMarketMaking" ||
+    controllerType === "dualAccountVolume" ||
+    controllerType === "dualAccountBestCapacityVolume"
+  );
+}
+
+export function isDualAccountOrder(
+  order: { directExecutionMode?: string | null; controllerType?: string; makerAccountLabel?: string; takerAccountLabel?: string },
+): boolean {
+  if (order.directExecutionMode === "dual_account") {
+    return true;
+  }
+  if (order.directExecutionMode === "single_account") {
+    return false;
+  }
+  if (
+    order.makerAccountLabel &&
+    order.takerAccountLabel
+  ) {
+    return true;
+  }
+
+  return isDualDirectOrderControllerType(order.controllerType);
+}
+
 export function aggregateBalancesByAsset(
   balances: InventoryBalanceSummary[],
 ): InventoryBalanceSummary[] {

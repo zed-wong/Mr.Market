@@ -20,6 +20,14 @@ export class ArbitrageStrategyController implements StrategyController {
     );
   }
 
+  async start(config: Record<string, unknown>, service: StrategyService): Promise<void> {
+    await service.startArbitrageStrategyForUser(
+      config as unknown as ArbitrageStrategyDto,
+      Number(config.checkIntervalSeconds || 10),
+      Number(config.maxOpenOrders || 1),
+    );
+  }
+
   async decideActions(
     session: StrategyRuntimeSession,
     ts: string,

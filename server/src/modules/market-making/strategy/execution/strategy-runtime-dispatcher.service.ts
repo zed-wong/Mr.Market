@@ -1,23 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
-import {
-  ArbitrageStrategyDto,
-  DexAdapterId,
-  ExecuteDualAccountBestCapacityVolumeStrategyDto,
-  ExecuteDualAccountVolumeStrategyDto,
-  PureMarketMakingStrategyDto,
-} from '../config/strategy.dto';
 import type { StrategyType } from '../config/strategy-controller.types';
 import { normalizeControllerType } from '../config/strategy-controller-aliases';
-import {
-  normalizeExecutionCategory,
-  toLegacyExecutionVenue,
-} from '../config/strategy-execution-category';
-import { TimeIndicatorStrategyDto } from '../config/timeIndicator.dto';
 import { StrategyControllerRegistry } from '../controllers/strategy-controller.registry';
 import { StrategyService } from '../strategy.service';
-
-type RuntimeStrategyConfig = Record<string, unknown>;
 
 @Injectable()
 export class StrategyRuntimeDispatcherService {
@@ -25,29 +11,6 @@ export class StrategyRuntimeDispatcherService {
     private readonly strategyService: StrategyService,
     private readonly strategyControllerRegistry: StrategyControllerRegistry,
   ) {}
-
-  private resolveVolumeExecutionVenue(
-    config: RuntimeStrategyConfig,
-  ): 'cex' | 'dex' {
-    if (config.executionCategory !== undefined) {
-      const normalized = normalizeExecutionCategory(
-        this.readString(config.executionCategory),
-      );
-
-      return toLegacyExecutionVenue(normalized);
-    }
-
-    return this.readString(config.executionVenue) === 'dex' ? 'dex' : 'cex';
-  }
-
-  private resolveVolumeExecutionCategory(
-    config: RuntimeStrategyConfig,
-  ): string {
-    return normalizeExecutionCategory(
-      this.readString(config.executionCategory) ||
-        this.readString(config.executionVenue),
-    );
-  }
 
   toStrategyType(controllerType: string): StrategyType {
     const normalizedControllerType = normalizeControllerType(controllerType);
@@ -79,8 +42,11 @@ export class StrategyRuntimeDispatcherService {
       return 'timeIndicator';
     }
 
+    const knownTypes =
+      this.strategyControllerRegistry.listControllerTypes().join(', ');
+
     throw new BadRequestException(
-      `Unsupported controllerType ${controllerType}. Allowed: arbitrage, pureMarketMaking, dualAccountVolume, dualAccountBestCapacityVolume, volume, timeIndicator`,
+      `Unsupported controllerType ${controllerType}. Known: ${knownTypes}`,
     );
   }
 
@@ -94,79 +60,18 @@ export class StrategyRuntimeDispatcherService {
 
   async startByStrategyType(
     strategyType: StrategyType,
-    config: RuntimeStrategyConfig,
+    config: Record<string, unknown>,
   ): Promise<void> {
-    if (strategyType === 'arbitrage') {
-      await this.strategyService.startArbitrageStrategyForUser(
-        config as unknown as ArbitrageStrategyDto,
-        Number(config.checkIntervalSeconds || 10),
-        Number(config.maxOpenOrders || 1),
-      );
+    const controller = this.strategyControllerRegistry.getController(strategyType);
+
+    if (controller?.start) {
+      await controller.start(config, this.strategyService);
 
       return;
     }
 
-    if (strategyType === 'pureMarketMaking') {
-      await this.strategyService.executePureMarketMakingStrategy(
-        config as unknown as PureMarketMakingStrategyDto,
-      );
-
-      return;
-    }
-
-    if (strategyType === 'dualAccountVolume') {
-      await this.strategyService.executeDualAccountVolumeStrategy(
-        config as unknown as ExecuteDualAccountVolumeStrategyDto,
-      );
-
-      return;
-    }
-
-    if (strategyType === 'dualAccountBestCapacityVolume') {
-      await this.strategyService.executeDualAccountBestCapacityVolumeStrategy(
-        config as unknown as ExecuteDualAccountBestCapacityVolumeStrategyDto,
-      );
-
-      return;
-    }
-
-    if (strategyType === 'timeIndicator') {
-      await this.strategyService.executeTimeIndicatorStrategy(
-        config as unknown as TimeIndicatorStrategyDto,
-      );
-
-      return;
-    }
-
-    const executionVenue = this.resolveVolumeExecutionVenue(config);
-    const executionCategory = this.resolveVolumeExecutionCategory(config);
-
-    await this.strategyService.executeVolumeStrategy(
-      this.readString(config.exchangeName),
-      this.readString(config.symbol),
-      this.readNumber(config.incrementPercentage) ??
-        this.readNumber(config.baseIncrementPercentage) ??
-        0,
-      this.readNumber(config.intervalTime) ??
-        this.readNumber(config.baseIntervalTime) ??
-        10,
-      this.readNumber(config.tradeAmount) ??
-        this.readNumber(config.baseTradeAmount) ??
-        0,
-      this.readNumber(config.numTrades) ?? 1,
-      this.readString(config.userId) || '',
-      this.readString(config.clientId) || '',
-      this.readNumber(config.pricePushRate) ?? 0,
-      this.readSide(config.postOnlySide),
-      executionVenue,
-      this.readDexAdapterId(config.dexId),
-      this.readNumber(config.chainId),
-      this.readString(config.tokenIn),
-      this.readString(config.tokenOut),
-      this.readNumber(config.feeTier),
-      this.readNumber(config.slippageBps),
-      this.readString(config.recipient),
-      executionCategory,
+    throw new BadRequestException(
+      `No start handler registered for strategy type ${strategyType}`,
     );
   }
 
@@ -180,28 +85,5 @@ export class StrategyRuntimeDispatcherService {
       clientId,
       strategyType,
     );
-  }
-
-  private readString(value: unknown): string | undefined {
-    return typeof value === 'string' ? value : undefined;
-  }
-
-  private readNumber(value: unknown): number | undefined {
-    const parsed =
-      typeof value === 'number'
-        ? value
-        : typeof value === 'string' && value.trim().length > 0
-        ? Number(value)
-        : undefined;
-
-    return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
-  }
-
-  private readSide(value: unknown): 'buy' | 'sell' | undefined {
-    return value === 'buy' || value === 'sell' ? value : undefined;
-  }
-
-  private readDexAdapterId(value: unknown): DexAdapterId | undefined {
-    return value === 'uniswapV3' || value === 'pancakeV3' ? value : undefined;
   }
 }

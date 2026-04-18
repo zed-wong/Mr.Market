@@ -281,9 +281,8 @@ export class AdminDirectMarketMakingService {
 
     this.backfillOrderRuntimeSnapshot(order);
 
-    const controllerType = this.readControllerType(order);
     const resolvedConfig = order.strategySnapshot?.resolvedConfig || {};
-    const warnings = this.isDualAccountControllerType(controllerType)
+    const warnings = this.isDualAccountMode(order)
       ? await this.runDualAccountBalancePreCheck(
           order.exchangeName,
           order.pair,
@@ -422,6 +421,8 @@ export class AdminDirectMarketMakingService {
             order.strategySnapshot?.controllerType ||
             '',
           controllerType: this.readControllerType(order),
+          directExecutionMode:
+            this.resolveDirectExecutionMode(order, definitionMap),
           createdAt: order.createdAt,
           lastTickAt,
           accountLabel: makerAccountName,
@@ -460,8 +461,9 @@ export class AdminDirectMarketMakingService {
       order.state === 'running'
         ? await this.strategyIntentStoreService.getQueueState(strategyKey)
         : null;
+    const isDualAccount = this.isDualAccountMode(order);
     const privateEvent =
-      controllerType === 'pureMarketMaking'
+      !isDualAccount
         ? this.userStreamTrackerService.getLatestEvent(
             order.exchangeName,
             primaryAccountLabel,
@@ -497,7 +499,7 @@ export class AdminDirectMarketMakingService {
       this.readTakerApiKeyId(order),
       this.readTakerAccountLabel(order),
     );
-    const takerAccountLabel = this.isDualAccountControllerType(controllerType)
+    const takerAccountLabel = this.isDualAccountMode(order)
       ? this.readTakerAccountLabel(order)
       : '';
     const accountsToFetch: Array<{ label: string; tag: string }> = [
@@ -699,6 +701,7 @@ export class AdminDirectMarketMakingService {
       state: order.state,
       runtimeState,
       controllerType,
+      directExecutionMode: this.resolveDirectExecutionModeFromOrder(order),
       accountLabel: makerAccountName,
       makerAccountLabel: this.readMakerAccountLabel(order),
       takerAccountLabel: this.readTakerAccountLabel(order),
@@ -1162,7 +1165,7 @@ export class AdminDirectMarketMakingService {
       resolvedConfig.marketMakingOrderId = order.orderId;
     }
 
-    if (this.isDualAccountControllerType(this.readControllerType(order))) {
+    if (this.isDualAccountMode(order)) {
       if (!String(resolvedConfig.makerAccountLabel || '').trim()) {
         resolvedConfig.makerAccountLabel = this.readMakerAccountLabel(order);
       }
@@ -1620,11 +1623,11 @@ export class AdminDirectMarketMakingService {
       return snapshotControllerType;
     }
 
-    return 'pureMarketMaking';
+    return String(order.strategySnapshot?.resolvedConfig?.controllerType || '').trim() || 'pureMarketMaking';
   }
 
   private readPrimaryAccountLabel(order: MarketMakingOrder): string {
-    return this.isDualAccountControllerType(this.readControllerType(order))
+    return this.isDualAccountMode(order)
       ? this.readMakerAccountLabel(order)
       : this.readAccountLabel(order);
   }
@@ -1632,7 +1635,7 @@ export class AdminDirectMarketMakingService {
   private async readPrimaryDisplayLabel(
     order: MarketMakingOrder,
   ): Promise<string> {
-    if (this.isDualAccountControllerType(this.readControllerType(order))) {
+    if (this.isDualAccountMode(order)) {
       return this.readPrimaryAccountLabel(order);
     }
 
@@ -1701,13 +1704,53 @@ export class AdminDirectMarketMakingService {
     return normalizedApiKeyId.length > 0 ? normalizedApiKeyId : '';
   }
 
-  private isDualAccountControllerType(
-    controllerType: string,
-  ): controllerType is 'dualAccountVolume' | 'dualAccountBestCapacityVolume' {
+  private isDualAccountMode(order: MarketMakingOrder): boolean {
+    const config = order.strategySnapshot?.resolvedConfig;
+    if (config && typeof config === 'object') {
+      const makerLabel = config.makerAccountLabel;
+      const takerLabel = config.takerAccountLabel;
+      if (
+        (typeof makerLabel === 'string' && makerLabel.trim()) ||
+        (typeof takerLabel === 'string' && String(takerLabel).trim())
+      ) {
+        return true;
+      }
+    }
+
+    const controllerType = this.readControllerType(order);
+
     return (
       controllerType === 'dualAccountVolume' ||
       controllerType === 'dualAccountBestCapacityVolume'
     );
+  }
+
+  private resolveDirectExecutionModeFromOrder(
+    order: MarketMakingOrder,
+  ): 'single_account' | 'dual_account' | null {
+    if (this.isDualAccountMode(order)) {
+      return 'dual_account';
+    }
+
+    return 'single_account';
+  }
+
+  private resolveDirectExecutionMode(
+    order: MarketMakingOrder,
+    definitionMap: Map<string, StrategyDefinition>,
+  ): 'single_account' | 'dual_account' | null {
+    const definition = definitionMap.get(
+      order.strategyDefinitionId || '',
+    );
+
+    if (definition) {
+      const capabilities = getStrategyDefinitionCapabilities(definition);
+      if (capabilities.directExecutionMode) {
+        return capabilities.directExecutionMode;
+      }
+    }
+
+    return this.resolveDirectExecutionModeFromOrder(order);
   }
 
   private readConfigString(value: unknown): string | null {

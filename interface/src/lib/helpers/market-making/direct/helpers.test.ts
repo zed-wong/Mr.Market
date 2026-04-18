@@ -5,6 +5,7 @@ import {
   buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
   isBestCapacityDirectOrderControllerType,
+  isDualAccountOrder,
   isDualDirectOrderControllerType,
   isSchemaDrivenDirectOrderControllerType,
   normalizeConfigOverrides,
@@ -132,6 +133,65 @@ describe('direct controller helpers', () => {
     expect(isSchemaDrivenDirectOrderControllerType('pureMarketMaking')).toBe(
       false,
     );
+  });
+});
+
+describe('isDualAccountOrder', () => {
+  it('returns true when directExecutionMode is dual_account', () => {
+    expect(
+      isDualAccountOrder({
+        directExecutionMode: 'dual_account',
+        controllerType: 'unknownNewStrategy',
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false when directExecutionMode is single_account', () => {
+    expect(
+      isDualAccountOrder({
+        directExecutionMode: 'single_account',
+        controllerType: 'dualAccountVolume',
+      }),
+    ).toBe(false);
+  });
+
+  it('falls back to controller type when directExecutionMode is null', () => {
+    expect(
+      isDualAccountOrder({
+        directExecutionMode: null,
+        controllerType: 'dualAccountVolume',
+      }),
+    ).toBe(true);
+  });
+
+  it('falls back to controller type when directExecutionMode is undefined', () => {
+    expect(
+      isDualAccountOrder({
+        controllerType: 'dualAccountBestCapacityVolume',
+        makerAccountLabel: '',
+        takerAccountLabel: '',
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true when both maker and taker account labels are present', () => {
+    expect(
+      isDualAccountOrder({
+        directExecutionMode: undefined,
+        controllerType: 'someNewStrategy',
+        makerAccountLabel: 'maker',
+        takerAccountLabel: 'taker',
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for single-account controller types without explicit mode', () => {
+    expect(
+      isDualAccountOrder({
+        directExecutionMode: undefined,
+        controllerType: 'pureMarketMaking',
+      }),
+    ).toBe(false);
   });
 });
 

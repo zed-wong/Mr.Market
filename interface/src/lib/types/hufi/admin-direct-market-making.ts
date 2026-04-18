@@ -1,5 +1,7 @@
 export type DirectOrderControllerType = string;
 
+export type StrategyDirectExecutionMode = 'single_account' | 'dual_account';
+
 export type DirectOrderRuntimeState =
   | 'created'
   | 'running'
@@ -18,6 +20,7 @@ export interface DirectOrderSummary {
   strategyDefinitionId?: string;
   strategyName: string;
   controllerType: DirectOrderControllerType;
+  directExecutionMode?: StrategyDirectExecutionMode | null;
   createdAt: string;
   lastTickAt: string | null;
   accountLabel: string;
@@ -36,6 +39,7 @@ export interface DirectOrderStatus {
   state: string;
   runtimeState: DirectOrderRuntimeState;
   controllerType: DirectOrderControllerType;
+  directExecutionMode?: StrategyDirectExecutionMode | null;
   accountLabel: string;
   makerAccountLabel: string;
   takerAccountLabel: string;

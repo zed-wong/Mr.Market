@@ -5,7 +5,7 @@
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
     import {
         isBestCapacityDirectOrderControllerType,
-        isDualDirectOrderControllerType,
+        isDualAccountOrder,
         isSchemaDrivenDirectOrderControllerType,
         type StrategySchema,
     } from "$lib/helpers/market-making/direct/helpers";
@@ -17,6 +17,7 @@
     export let filteredApiKeys: AdminSingleKey[] = [];
     export let strategies: MarketMakingStrategy[] = [];
     export let selectedControllerType = "";
+    export let directExecutionMode: "single_account" | "dual_account" | null | undefined;
     export let prefillingFromOrderId: string | null = null;
     export let selectedStrategySchema: StrategySchema = {};
     export let genericConfig: Record<string, unknown> = {};
@@ -48,8 +49,10 @@
     let showAdvanced = false;
 
     $: baseCoin = startPair ? startPair.split("/")[0] : "";
-    $: isDualAccountStrategy =
-        isDualDirectOrderControllerType(selectedControllerType);
+    $: isDualAccountStrategy = isDualAccountOrder({
+        directExecutionMode,
+        controllerType: selectedControllerType,
+    });
     $: isBestCapacityStrategy =
         isBestCapacityDirectOrderControllerType(selectedControllerType);
     $: isSchemaDrivenStrategy =

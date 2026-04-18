@@ -443,6 +443,9 @@
                           postOnlySide,
                           dynamicRoleSwitching,
                           targetQuoteVolume,
+                          cadenceVariance: "",
+                          tradeAmountVariance: "",
+                          priceOffsetVariance: "",
                       },
                   );
             const payload = isDualAccountStrategy
@@ -905,6 +908,7 @@
     bind:startPair
     bind:startStrategyDefinitionId
     {selectedControllerType}
+    directExecutionMode={selectedStrategy?.directExecutionMode ?? null}
     bind:startApiKeyId
     bind:startMakerApiKeyId
     bind:startTakerApiKeyId

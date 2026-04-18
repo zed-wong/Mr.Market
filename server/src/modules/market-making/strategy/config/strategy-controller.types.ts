@@ -48,4 +48,8 @@ export interface StrategyController {
     actions: ExecutorAction[],
     service: StrategyService,
   ): Promise<void>;
+  start?(
+    config: Record<string, unknown>,
+    service: StrategyService,
+  ): Promise<void>;
 }

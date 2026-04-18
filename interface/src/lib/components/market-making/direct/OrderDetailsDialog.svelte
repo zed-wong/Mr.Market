@@ -11,7 +11,8 @@
         resolveInventorySkewAllocation,
         aggregateBalancesByAsset,
         isBestCapacityDirectOrderControllerType,
-        isDualDirectOrderControllerType,
+        isDualAccountOrder,
+        isKnownDirectStrategyControllerType,
     } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
@@ -88,10 +89,15 @@
     $: isStale = runtimeState === "stale";
     $: isResumable = runtimeState === "stopped" || runtimeState === "created";
     $: resolvedControllerType = data?.controllerType || order?.controllerType;
-    $: isDualAccountStrategy =
-        isDualDirectOrderControllerType(resolvedControllerType);
+    $: isDualAccountStrategy = isDualAccountOrder({
+        directExecutionMode: data?.directExecutionMode,
+        controllerType: resolvedControllerType,
+        makerAccountLabel: data?.makerAccountLabel,
+        takerAccountLabel: data?.takerAccountLabel,
+    });
     $: isBestCapacityStrategy =
         isBestCapacityDirectOrderControllerType(resolvedControllerType);
+    $: isKnownStrategy = isKnownDirectStrategyControllerType(resolvedControllerType);
     $: skewBalances = data
         ? isDualAccountStrategy
             ? aggregateBalancesByAsset(data.inventoryBalances)
@@ -758,7 +764,7 @@
                                     </div>
                                 {/if}
                             </div>
-                        {:else}
+                        {:else if isKnownStrategy}
                             <div class="border border-base-300 rounded-xl p-4">
                                 <div
                                     class="flex items-center justify-between h-6 mb-1"
@@ -816,6 +822,26 @@
                                         )}</span
                                     >
                                 </div>
+                            </div>
+                        {:else}
+                            <div class="border border-base-300 rounded-xl p-4">
+                                {#each Object.entries(data?.orderConfig || {}) as [key, value]}
+                                    {#if value !== null && value !== undefined && value !== '' && key !== 'realizedPnlQuote' && key !== 'publishedCycles' && key !== 'completedCycles' && key !== 'tradedQuoteVolume'}
+                                        <div
+                                            class="flex items-center justify-between h-6 mb-1"
+                                        >
+                                            <span class="text-xs text-base-content/60"
+                                                >{key}</span
+                                            >
+                                            <span
+                                                class="text-xs font-semibold text-base-content"
+                                                >{typeof value === 'number'
+                                                    ? value
+                                                    : String(value)}</span
+                                            >
+                                        </div>
+                                    {/if}
+                                {/each}
                             </div>
                         {/if}
                     </div>
