@@ -42,6 +42,8 @@ Use dated files, but keep the document role clear.
   Role: active. Current feature branch (`dualAccountBestCapacityVolume`). 4-way best-capacity volume strategy
 - **`2026-04-18-codebase-health-audit.md`**
   Role: active. Health audit findings and remediation checklist from 2026-04-18
+- **`2026-04-18-admin-direct-best-capacity-session-failure-plan.md`**
+  Role: active implementation plan for fixing admin-direct `dualAccountBestCapacityVolume` partial-start failures, pair/symbol normalization gaps, and orphan runtime row rollback
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress-log.md`**
