@@ -10,3 +10,11 @@ export interface ErrorResponse {
   type: 'error';
   error: string;
 }
+
+export interface AggregatedBalances {
+  [exchange: string]: {
+    free: Record<string, string>;
+    used: Record<string, string>;
+    total: Record<string, string>;
+  };
+}

@@ -17,6 +17,7 @@ import {
 } from 'src/common/helpers/crypto';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import {
+  AggregatedBalances,
   ErrorResponse,
   SuccessResponse,
 } from 'src/common/types/exchange/exchange';
@@ -28,7 +29,7 @@ import {
   SpotOrderStatus,
   STATE_TEXT_MAP,
 } from 'src/common/types/orders/states';
-import { AggregatedBalances } from 'src/common/types/rebalance/map';
+
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import {
   ExchangeDepositDto,
