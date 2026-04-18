@@ -105,7 +105,7 @@ describe('AuthService', () => {
 
       expect(signSpy).toHaveBeenCalledWith(
         { username: 'admin' },
-        { expiresIn: '120m' },
+        { expiresIn: '7d' },
       );
       expect(result).toBe('signed_token');
     });
