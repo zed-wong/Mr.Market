@@ -335,6 +335,39 @@ describe('StrategyService', () => {
     await service.executeMMCycle(strategyParamsDto);
   });
 
+  it('starts balance watchers for pure market making sessions', async () => {
+    await registerPooledSession({
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      cadenceMs: 1000,
+      params: {
+        userId: 'user-1',
+        clientId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        accountLabel: 'maker',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+      marketMakingOrderId: 'order-1',
+    });
+
+    expect(userStreamIngestionService.startBalanceWatcher).toHaveBeenCalledWith(
+      {
+        exchange: 'binance',
+        accountLabel: 'maker',
+      },
+    );
+  });
+
   it('restores tracked PMM orders and cancels orphan exchange orders on startup', async () => {
     const strategy = {
       strategyKey: 'order-1-pureMarketMaking',

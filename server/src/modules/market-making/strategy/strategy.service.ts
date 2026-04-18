@@ -97,6 +97,8 @@ type DualAccountCapacityDiagnostics = {
   rebalanceNeeded: boolean;
 };
 
+type BalanceReadPolicy = 'cache-or-rest' | 'fresh-cache-only';
+
 @Injectable()
 export class StrategyService
   implements
@@ -122,6 +124,7 @@ export class StrategyService
     string,
     ConnectorHealthStatus
   >();
+  private strategyDecisionDepth = 0;
   private detachExchangeReadyListener?: () => void;
 
   private generateRunId(): string {
@@ -1313,7 +1316,18 @@ export class StrategyService
       );
 
       if (controller) {
-        const actions = await controller.decideActions(session, ts, this);
+        this.strategyDecisionDepth += 1;
+
+        let actions: ExecutorAction[];
+
+        try {
+          actions = await controller.decideActions(session, ts, this);
+        } finally {
+          this.strategyDecisionDepth = Math.max(
+            0,
+            this.strategyDecisionDepth - 1,
+          );
+        }
 
         if (actions.length > 0) {
           await this.publishIntents(session.strategyKey, actions);
@@ -1817,10 +1831,19 @@ export class StrategyService
       params,
       'execution',
     );
+
+    if (!balanceSnapshot) {
+      this.logger.warn(
+        `Skipping dual-account volume cycle for ${strategyKey}: balance cache unavailable or stale`,
+      );
+
+      return [];
+    }
+
     const preferredSide = await this.resolveDualAccountPreferredSide(
       params,
       publishedCycles,
-      balanceSnapshot?.makerBalances || undefined,
+      balanceSnapshot.makerBalances,
     );
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
@@ -4529,35 +4552,58 @@ export class StrategyService
     }
     const { base, quote } = parsedSymbol;
 
-    let balances;
+    let freeBase = 0;
+    let freeQuote = 0;
 
-    try {
-      balances = this.runtimeTimingService
-        ? await this.runtimeTimingService.measureAsync(
-            'strategy.fetch-balance',
-            {
-              accountLabel: 'default',
-              exchange: exchangeName,
-              pair: symbol,
-              reason: 'indicator-balance-check',
-            },
-            () => ex.fetchBalance(),
-            { warnThresholdMs: 500 },
-          )
-        : await ex.fetchBalance();
-    } catch (e: unknown) {
-      const { message } = this.toErrorDetails(e);
+    if (this.shouldUseCachedStateOnly()) {
+      const availableBalances = await this.getAvailableBalancesForPair(
+        exchangeName,
+        symbol,
+        undefined,
+        'fresh-cache-only',
+      );
 
-      this.logger.error(`[${exchangeName}] fetchBalance failed: ${message}`);
+      if (!availableBalances) {
+        this.logger.warn(
+          `[${exchangeName}:${symbol}] Skipping time-indicator tick: balance cache unavailable or stale.`,
+        );
 
-      return [];
+        return [];
+      }
+
+      freeBase = Number(availableBalances.base.toFixed());
+      freeQuote = Number(availableBalances.quote.toFixed());
+    } else {
+      let balances;
+
+      try {
+        balances = this.runtimeTimingService
+          ? await this.runtimeTimingService.measureAsync(
+              'strategy.fetch-balance',
+              {
+                accountLabel: 'default',
+                exchange: exchangeName,
+                pair: symbol,
+                reason: 'indicator-balance-check',
+              },
+              () => ex.fetchBalance(),
+              { warnThresholdMs: 500 },
+            )
+          : await ex.fetchBalance();
+      } catch (e: unknown) {
+        const { message } = this.toErrorDetails(e);
+
+        this.logger.error(`[${exchangeName}] fetchBalance failed: ${message}`);
+
+        return [];
+      }
+
+      freeBase = balances.free?.[base] ?? 0;
+      freeQuote = balances.free?.[quote] ?? 0;
     }
 
     const amountBaseRaw =
       params.orderMode === 'base' ? params.orderSize : params.orderSize / last;
-
-    const freeBase = balances.free?.[base] ?? 0;
-    const freeQuote = balances.free?.[quote] ?? 0;
 
     if (side === 'sell' && freeBase < amountBaseRaw * 1.01) {
       this.logger.warn(
@@ -4876,18 +4922,18 @@ export class StrategyService
     params: StrategyRuntimeSession['params'],
   ): void {
     if (
+      strategyType !== 'pureMarketMaking' &&
+      strategyType !== 'timeIndicator' &&
       strategyType !== 'dualAccountVolume' &&
       strategyType !== 'dualAccountBestCapacityVolume'
     ) {
       return;
     }
 
-    const dualParams = params as DualAccountVolumeStrategyParams;
-
-    for (const accountLabel of [
-      dualParams.makerAccountLabel,
-      dualParams.takerAccountLabel,
-    ]) {
+    for (const accountLabel of this.resolveRequiredAccountLabels(
+      strategyType,
+      params,
+    )) {
       this.userStreamIngestionService?.startBalanceWatcher({
         exchange,
         accountLabel: accountLabel || 'default',
@@ -4905,18 +4951,18 @@ export class StrategyService
     params: StrategyRuntimeSession['params'],
   ): void {
     if (
+      strategyType !== 'pureMarketMaking' &&
+      strategyType !== 'timeIndicator' &&
       strategyType !== 'dualAccountVolume' &&
       strategyType !== 'dualAccountBestCapacityVolume'
     ) {
       return;
     }
 
-    const dualParams = params as DualAccountVolumeStrategyParams;
-
-    for (const accountLabel of [
-      dualParams.makerAccountLabel,
-      dualParams.takerAccountLabel,
-    ]) {
+    for (const accountLabel of this.resolveRequiredAccountLabels(
+      strategyType,
+      params,
+    )) {
       this.userStreamIngestionService?.stopBalanceWatcher({
         exchange,
         accountLabel: accountLabel || 'default',
@@ -4983,6 +5029,12 @@ export class StrategyService
     this.logger.error(
       `onTick runSession failed for strategyKey=${strategyKey} ts=${ts}: ${errorMessage}`,
       errorTrace,
+    );
+  }
+
+  private shouldUseCachedStateOnly(): boolean {
+    return (
+      this.strategyDecisionDepth > 0 && Boolean(this.balanceStateCacheService)
     );
   }
 
@@ -5484,6 +5536,7 @@ export class StrategyService
     exchangeName: string,
     pair: string,
     accountLabel?: string,
+    readPolicy: BalanceReadPolicy = 'cache-or-rest',
   ): Promise<{
     base: BigNumber;
     quote: BigNumber;
@@ -5517,6 +5570,19 @@ export class StrategyService
         quote: new BigNumber(cachedQuote.free || 0),
         assets,
       };
+    }
+
+    const effectiveReadPolicy =
+      readPolicy === 'fresh-cache-only' || this.shouldUseCachedStateOnly()
+        ? 'fresh-cache-only'
+        : 'cache-or-rest';
+
+    if (effectiveReadPolicy === 'fresh-cache-only') {
+      this.logger.warn(
+        `Skipping balance-dependent strategy read for ${exchangeName} ${pair} account=${normalizedAccountLabel}: balance cache missing or stale`,
+      );
+
+      return null;
     }
 
     const balance: Awaited<

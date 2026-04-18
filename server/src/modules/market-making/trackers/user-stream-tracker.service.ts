@@ -185,6 +185,8 @@ export class UserStreamTrackerService
           event,
         );
 
+        this.applyTrackedOrderStateEvent(event);
+
         if (event.kind === 'balance') {
           this.balanceStateCacheService?.applyBalanceUpdate({
             exchange: event.exchange,
@@ -444,6 +446,47 @@ export class UserStreamTrackerService
       receivedAt: event.receivedAt,
       payload,
     };
+  }
+
+  private applyTrackedOrderStateEvent(event: UserStreamEvent): void {
+    if (event.kind !== 'order' || !event.payload.exchangeOrderId) {
+      return;
+    }
+
+    const fillCandidate = this.extractFillCandidate(event);
+
+    if (fillCandidate?.qty || fillCandidate?.cumulativeQty) {
+      return;
+    }
+
+    const status = this.normalizeStatus(event.payload.status);
+
+    if (!status) {
+      return;
+    }
+
+    const trackedOrder = this.exchangeOrderTrackerService?.getByExchangeOrderId(
+      event.exchange,
+      event.payload.exchangeOrderId,
+      event.accountLabel,
+    );
+
+    if (!trackedOrder) {
+      return;
+    }
+
+    this.exchangeOrderTrackerService?.upsertOrder(
+      {
+        ...trackedOrder,
+        clientOrderId: event.payload.clientOrderId || trackedOrder.clientOrderId,
+        cumulativeFilledQty:
+          event.payload.cumulativeQty || trackedOrder.cumulativeFilledQty,
+        status,
+        createdAt: trackedOrder.createdAt,
+        updatedAt: event.receivedAt,
+      },
+      'ws',
+    );
   }
 
   private normalizeEventPayload(

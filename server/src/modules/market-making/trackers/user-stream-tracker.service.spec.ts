@@ -1007,6 +1007,56 @@ describe('UserStreamTrackerService', () => {
     );
   });
 
+  it('applies non-fill order state updates immediately without waiting for tick', async () => {
+    const upsertOrder = jest.fn();
+    const service = new UserStreamTrackerService(
+      undefined,
+      undefined,
+      {
+        getByExchangeOrderId: jest.fn().mockReturnValue({
+          orderId: 'legacy-order',
+          strategyKey: 'strategy-1',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'ex-1',
+          clientOrderId: 'legacy-client-oid',
+          side: 'buy',
+          price: '100',
+          qty: '1',
+          status: 'open',
+          updatedAt: '2026-03-11T00:00:00.000Z',
+        }),
+        upsertOrder,
+        markUserStreamActivity: jest.fn(),
+      } as unknown as ExchangeOrderTrackerService,
+      undefined,
+    );
+
+    service.queueAccountEvent({
+      exchange: 'binance',
+      accountLabel: 'default',
+      kind: 'order',
+      payload: {
+        exchangeOrderId: 'ex-1',
+        clientOrderId: 'legacy-client-oid',
+        status: 'cancelled',
+        raw: {},
+      },
+      receivedAt: '2026-03-11T00:00:10.000Z',
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-1',
+        status: 'cancelled',
+        updatedAt: '2026-03-11T00:00:10.000Z',
+      }),
+      'ws',
+    );
+  });
+
   it('ignores cumulative filled updates that move backwards', async () => {
     const onFill = jest.fn();
     const service = new UserStreamTrackerService(
