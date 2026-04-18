@@ -28,6 +28,7 @@ import {
   StrategyDefinitionDto,
   UpdateStrategyDefinitionDto,
 } from './admin-strategy.dto';
+import { attachStrategyDefinitionCapabilities } from './strategy-definition-capabilities';
 
 @Injectable()
 export class AdminStrategyService {
@@ -383,13 +384,19 @@ export class AdminStrategyService {
       createdBy: dto.createdBy,
     });
 
-    return this.strategyDefinitionRepository.save(definition);
+    return attachStrategyDefinitionCapabilities(
+      await this.strategyDefinitionRepository.save(definition),
+    );
   }
 
   async listStrategyDefinitions(): Promise<StrategyDefinition[]> {
-    return this.strategyDefinitionRepository.find({
+    const definitions = await this.strategyDefinitionRepository.find({
       order: { key: 'ASC' },
     });
+
+    return definitions.map((definition) =>
+      attachStrategyDefinitionCapabilities(definition),
+    );
   }
 
   async getStrategyDefinition(id: string): Promise<StrategyDefinition> {
@@ -401,7 +408,7 @@ export class AdminStrategyService {
       throw new BadRequestException(`Strategy definition ${id} does not exist`);
     }
 
-    return definition;
+    return attachStrategyDefinitionCapabilities(definition);
   }
 
   async updateStrategyDefinition(
@@ -418,7 +425,9 @@ export class AdminStrategyService {
     definition.controllerType =
       dto.controllerType || dto.executorType || definition.controllerType;
 
-    return this.strategyDefinitionRepository.save(definition);
+    return attachStrategyDefinitionCapabilities(
+      await this.strategyDefinitionRepository.save(definition),
+    );
   }
 
   async setStrategyDefinitionEnabled(
@@ -429,7 +438,9 @@ export class AdminStrategyService {
 
     definition.enabled = enabled;
 
-    return this.strategyDefinitionRepository.save(definition);
+    return attachStrategyDefinitionCapabilities(
+      await this.strategyDefinitionRepository.save(definition),
+    );
   }
 
   async removeStrategyDefinition(dto: RemoveStrategyDefinitionDto): Promise<{

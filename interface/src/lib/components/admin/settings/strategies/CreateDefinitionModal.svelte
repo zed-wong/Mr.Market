@@ -27,6 +27,11 @@
         { value: "pureMarketMaking", label: "Market Making" },
         { value: "arbitrage", label: "Arbitrage" },
         { value: "volume", label: "Volume" },
+        {
+            value: "dualAccountBestCapacityVolume",
+            label: "Dual Account Best Capacity",
+        },
+        { value: "dualAccountVolume", label: "Dual Account Volume" },
         { value: "timeIndicator", label: "Time Indicator" },
     ];
 

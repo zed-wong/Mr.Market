@@ -349,16 +349,46 @@ export async function seedCustomConfig(
 export async function seedStrategyDefinitions(
   repository: Repository<StrategyDefinition>,
 ) {
-  const existingKeys = (
-    await repository.find({
-      select: ['key'],
-    })
-  ).map((d) => d.key);
+  const existingDefinitions = await repository.find({
+    select: ['id', 'key'],
+  });
+  const existingByKey = new Map(
+    existingDefinitions.map((definition) => [definition.key, definition]),
+  );
 
   let inserted = 0;
+  let updated = 0;
 
   for (const definition of defaultStrategyDefinitions) {
-    if (existingKeys.includes(String(definition.key))) {
+    const key = String(definition.key);
+    const existing = existingByKey.get(key);
+
+    if (existing) {
+      await repository.save({
+        id: existing.id,
+        key,
+        name: String(definition.name),
+        description: definition.description
+          ? String(definition.description)
+          : undefined,
+        controllerType: String(
+          definition.controllerType || definition.executorType,
+        ),
+        configSchema: (definition.configSchema || {}) as Record<
+          string,
+          unknown
+        >,
+        defaultConfig: (definition.defaultConfig || {}) as Record<
+          string,
+          unknown
+        >,
+        enabled: definition.enabled !== false,
+        visibility: String(definition.visibility || 'public'),
+        createdBy: definition.createdBy
+          ? String(definition.createdBy)
+          : undefined,
+      });
+      updated++;
       continue;
     }
 
@@ -392,7 +422,7 @@ export async function seedStrategyDefinitions(
   }
 
   log.success(
-    `Strategy Definitions: ${inserted} inserted, ${existingKeys.length} existing`,
+    `Strategy Definitions: ${inserted} inserted, ${updated} updated, ${existingDefinitions.length} existing before sync`,
   );
 }
 

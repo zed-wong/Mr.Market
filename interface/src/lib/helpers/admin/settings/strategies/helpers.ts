@@ -47,6 +47,10 @@ export function getControllerTypeLabel(type: string): string {
       return "Arbitrage";
     case "volume":
       return "Volume";
+    case "dualAccountBestCapacityVolume":
+      return "Dual Account Best Capacity";
+    case "dualAccountVolume":
+      return "Dual Account Volume";
     case "timeIndicator":
       return "Time Indicator";
     default:
@@ -62,6 +66,10 @@ export function getControllerTypeClasses(type: string): string {
       return "bg-amber-50 text-amber-600";
     case "volume":
       return "bg-emerald-50 text-emerald-600";
+    case "dualAccountBestCapacityVolume":
+      return "bg-cyan-50 text-cyan-600";
+    case "dualAccountVolume":
+      return "bg-teal-50 text-teal-600";
     case "timeIndicator":
       return "bg-violet-50 text-violet-600";
     default:

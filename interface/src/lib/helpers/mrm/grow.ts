@@ -62,6 +62,9 @@ export interface MarketMakingStrategy {
   controllerType: string;
   defaultConfig: Record<string, unknown>;
   configSchema: Record<string, unknown>;
+  directOrderCompatible?: boolean;
+  directExecutionMode?: "single_account" | "dual_account" | null;
+  launchSurfaces?: string[];
 }
 
 export const getEnabledMarketMakingStrategies = async (): Promise<

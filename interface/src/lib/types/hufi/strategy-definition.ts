@@ -1,4 +1,5 @@
 export type StrategyDefinitionVisibility = "public" | "admin";
+export type StrategyDirectExecutionMode = "single_account" | "dual_account";
 
 export type StrategyDefinition = {
   id: string;
@@ -11,6 +12,9 @@ export type StrategyDefinition = {
   defaultConfig: Record<string, unknown>;
   enabled: boolean;
   visibility: StrategyDefinitionVisibility;
+  directOrderCompatible?: boolean;
+  directExecutionMode?: StrategyDirectExecutionMode | null;
+  launchSurfaces?: string[];
   createdBy?: string;
   createdAt: string;
   updatedAt: string;

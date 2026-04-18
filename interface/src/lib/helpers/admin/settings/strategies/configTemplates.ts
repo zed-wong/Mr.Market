@@ -7,6 +7,8 @@
 
 export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
   pureMarketMaking: {
+    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
+    directExecutionMode: "single_account",
     type: "object",
     required: [
       "bidSpread",
@@ -206,6 +208,8 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
     },
   },
   dualAccountVolume: {
+    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
+    directExecutionMode: "dual_account",
     type: "object",
     required: [
       "exchangeName",
@@ -261,6 +265,30 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
       makerDelayMs: {
         type: "number",
         description: "Delay before the taker IOC leg submits",
+      },
+    },
+  },
+  dualAccountBestCapacityVolume: {
+    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
+    directExecutionMode: "dual_account",
+    type: "object",
+    required: ["maxOrderAmount"],
+    properties: {
+      maxOrderAmount: {
+        type: "number",
+        description: "Maximum base amount to trade per cycle; live balance/capacity can reduce the executed amount",
+      },
+      interval: {
+        type: "number",
+        description: "Optional seconds between execution cycles",
+      },
+      makerDelayMs: {
+        type: "number",
+        description: "Optional delay before the taker IOC leg submits",
+      },
+      dailyVolumeTarget: {
+        type: "number",
+        description: "Optional quote-volume cap for the session",
       },
     },
   },

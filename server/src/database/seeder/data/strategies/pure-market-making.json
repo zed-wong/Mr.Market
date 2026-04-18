@@ -1,5 +1,7 @@
 {
   "configSchema": {
+    "launchSurfaces": ["strategy_settings", "admin_direct_mm"],
+    "directExecutionMode": "single_account",
     "type": "object",
     "required": [
       "userId",
