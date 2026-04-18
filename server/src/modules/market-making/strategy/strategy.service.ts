@@ -2159,6 +2159,12 @@ export class StrategyService
         `requestedQty=${requestedQty.toFixed()}`,
         `effectiveQty=${adjustedQuote.qty.toFixed()}`,
         `selectedCapacity=${selectedCapacity.toFixed()}`,
+        `matchedQuoteProgress=${new BigNumber(
+          params.totalMatchedQuoteVolume || 0,
+        ).toFixed()}`,
+        `targetQuoteVolume=${new BigNumber(
+          params.targetQuoteVolume || 0,
+        ).toFixed()}`,
         `maker=${resolvedAccounts.makerAccountLabel}`,
         `taker=${resolvedAccounts.takerAccountLabel}`,
         `decisionDurationMs=${decisionDurationMs}`,
@@ -2575,6 +2581,26 @@ export class StrategyService
               .multipliedBy(retainFactor),
             snapshot.takerBalances.base,
           ),
+          futureOppositeCapacity: BigNumber.min(
+            snapshot.makerBalances.base,
+            snapshot.takerBalances.quote
+              .dividedBy(price)
+              .multipliedBy(retainFactor),
+          ),
+          imbalanceRatio: this.computeDualAccountImbalanceRatio(
+            BigNumber.min(
+              snapshot.makerBalances.quote
+                .dividedBy(price)
+                .multipliedBy(retainFactor),
+              snapshot.takerBalances.base,
+            ),
+            BigNumber.min(
+              snapshot.makerBalances.base,
+              snapshot.takerBalances.quote
+                .dividedBy(price)
+                .multipliedBy(retainFactor),
+            ),
+          ),
           roleAssignment: 'configured' as const,
         },
         {
@@ -2588,6 +2614,26 @@ export class StrategyService
               .dividedBy(price)
               .multipliedBy(retainFactor),
             snapshot.makerBalances.base,
+          ),
+          futureOppositeCapacity: BigNumber.min(
+            snapshot.takerBalances.base,
+            snapshot.makerBalances.quote
+              .dividedBy(price)
+              .multipliedBy(retainFactor),
+          ),
+          imbalanceRatio: this.computeDualAccountImbalanceRatio(
+            BigNumber.min(
+              snapshot.takerBalances.quote
+                .dividedBy(price)
+                .multipliedBy(retainFactor),
+              snapshot.makerBalances.base,
+            ),
+            BigNumber.min(
+              snapshot.takerBalances.base,
+              snapshot.makerBalances.quote
+                .dividedBy(price)
+                .multipliedBy(retainFactor),
+            ),
           ),
           roleAssignment: 'swapped' as const,
         },
@@ -2603,6 +2649,26 @@ export class StrategyService
               .dividedBy(price)
               .multipliedBy(retainFactor),
           ),
+          futureOppositeCapacity: BigNumber.min(
+            snapshot.makerBalances.quote
+              .dividedBy(price)
+              .multipliedBy(retainFactor),
+            snapshot.takerBalances.base,
+          ),
+          imbalanceRatio: this.computeDualAccountImbalanceRatio(
+            BigNumber.min(
+              snapshot.makerBalances.base,
+              snapshot.takerBalances.quote
+                .dividedBy(price)
+                .multipliedBy(retainFactor),
+            ),
+            BigNumber.min(
+              snapshot.makerBalances.quote
+                .dividedBy(price)
+                .multipliedBy(retainFactor),
+              snapshot.takerBalances.base,
+            ),
+          ),
           roleAssignment: 'configured' as const,
         },
         {
@@ -2617,6 +2683,26 @@ export class StrategyService
               .dividedBy(price)
               .multipliedBy(retainFactor),
           ),
+          futureOppositeCapacity: BigNumber.min(
+            snapshot.takerBalances.quote
+              .dividedBy(price)
+              .multipliedBy(retainFactor),
+            snapshot.makerBalances.base,
+          ),
+          imbalanceRatio: this.computeDualAccountImbalanceRatio(
+            BigNumber.min(
+              snapshot.takerBalances.base,
+              snapshot.makerBalances.quote
+                .dividedBy(price)
+                .multipliedBy(retainFactor),
+            ),
+            BigNumber.min(
+              snapshot.takerBalances.quote
+                .dividedBy(price)
+                .multipliedBy(retainFactor),
+              snapshot.makerBalances.base,
+            ),
+          ),
           roleAssignment: 'swapped' as const,
         },
       ] as const
@@ -2626,6 +2712,18 @@ export class StrategyService
     );
 
     candidates.sort((left, right) => {
+      const scoreComparison = this.scoreDualAccountBestCapacityCandidate(
+        params,
+        right,
+        price,
+      ).comparedTo(
+        this.scoreDualAccountBestCapacityCandidate(params, left, price),
+      );
+
+      if (scoreComparison !== 0) {
+        return scoreComparison;
+      }
+
       const capacityComparison = right.capacity.comparedTo(left.capacity);
 
       if (capacityComparison !== 0) {
@@ -2647,6 +2745,53 @@ export class StrategyService
       ...candidate,
       candidateRank: index + 1,
     }));
+  }
+
+  private computeDualAccountImbalanceRatio(
+    primaryCapacity: BigNumber,
+    oppositeCapacity: BigNumber,
+  ): BigNumber {
+    const smallerCapacity = BigNumber.min(primaryCapacity, oppositeCapacity);
+    const largerCapacity = BigNumber.max(primaryCapacity, oppositeCapacity);
+
+    if (smallerCapacity.isLessThanOrEqualTo(0)) {
+      return largerCapacity.isGreaterThan(0)
+        ? new BigNumber(Number.MAX_SAFE_INTEGER)
+        : new BigNumber(1);
+    }
+
+    return largerCapacity.dividedBy(smallerCapacity);
+  }
+
+  private scoreDualAccountBestCapacityCandidate(
+    params: Pick<
+      DualAccountVolumeStrategyParams,
+      'targetQuoteVolume' | 'totalMatchedQuoteVolume'
+    >,
+    candidate: Pick<
+      DualAccountBestCapacityCandidate,
+      'capacity' | 'futureOppositeCapacity' | 'imbalanceRatio'
+    >,
+    price: BigNumber,
+  ): BigNumber {
+    const candidateQuoteCapacity = candidate.capacity.multipliedBy(price);
+    const targetQuoteVolume = new BigNumber(params.targetQuoteVolume || 0);
+    const matchedQuoteVolume = new BigNumber(
+      params.totalMatchedQuoteVolume || 0,
+    );
+    const remainingTargetQuote = targetQuoteVolume.isGreaterThan(0)
+      ? BigNumber.maximum(targetQuoteVolume.minus(matchedQuoteVolume), 0)
+      : candidateQuoteCapacity;
+    const targetProgressScore = BigNumber.min(
+      candidateQuoteCapacity,
+      remainingTargetQuote,
+    );
+
+    return candidate.capacity
+      .multipliedBy(1000)
+      .plus(candidate.futureOppositeCapacity.multipliedBy(100))
+      .plus(targetProgressScore.multipliedBy(10))
+      .minus(candidate.imbalanceRatio.multipliedBy(10));
   }
 
   private async resolveBestExecutableDualAccountCandidate(
@@ -2718,7 +2863,7 @@ export class StrategyService
     }
     const { makerBalances, takerBalances } = snapshot;
 
-    const candidates = (
+    const passiveCandidates = (
       await Promise.all([
         this.buildDualAccountRebalanceCandidate(
           strategyKey,
@@ -2782,17 +2927,126 @@ export class StrategyService
         candidate !== null,
     );
 
-    if (candidates.length === 0) {
+    const aggressiveCandidates = (
+      await Promise.all([
+        this.buildDualAccountRebalanceCandidate(
+          strategyKey,
+          params,
+          preferredSide,
+          price,
+          price,
+          params.makerAccountLabel,
+          'buy',
+          makerBalances,
+          takerBalances,
+          feeBufferRate,
+          publishedCycles,
+          ts,
+        ),
+        this.buildDualAccountRebalanceCandidate(
+          strategyKey,
+          params,
+          preferredSide,
+          price,
+          price,
+          params.takerAccountLabel,
+          'buy',
+          makerBalances,
+          takerBalances,
+          feeBufferRate,
+          publishedCycles,
+          ts,
+        ),
+        this.buildDualAccountRebalanceCandidate(
+          strategyKey,
+          params,
+          preferredSide,
+          price,
+          price,
+          params.makerAccountLabel,
+          'sell',
+          makerBalances,
+          takerBalances,
+          feeBufferRate,
+          publishedCycles,
+          ts,
+        ),
+        this.buildDualAccountRebalanceCandidate(
+          strategyKey,
+          params,
+          preferredSide,
+          price,
+          price,
+          params.takerAccountLabel,
+          'sell',
+          makerBalances,
+          takerBalances,
+          feeBufferRate,
+          publishedCycles,
+          ts,
+        ),
+      ])
+    ).filter(
+      (candidate): candidate is DualAccountRebalanceCandidate =>
+        candidate !== null,
+    );
+
+    const selectBestRebalanceCandidate = (
+      candidates: DualAccountRebalanceCandidate[],
+    ): DualAccountRebalanceCandidate | null => {
+      if (candidates.length === 0) {
+        return null;
+      }
+
+      return candidates.reduce((best, candidate) => {
+        const bestScore = best.restoredCapacityScore.minus(
+          best.rebalanceCostScore,
+        );
+        const candidateScore = candidate.restoredCapacityScore.minus(
+          candidate.rebalanceCostScore,
+        );
+
+        if (candidateScore.isGreaterThan(bestScore)) {
+          return candidate;
+        }
+
+        return best;
+      });
+    };
+
+    const selectedPassive = selectBestRebalanceCandidate(passiveCandidates);
+    const selectedAggressive =
+      selectBestRebalanceCandidate(aggressiveCandidates);
+
+    if (!selectedPassive && !selectedAggressive) {
       return null;
     }
 
-    const selected = candidates.reduce((best, candidate) =>
-      candidate.futureExecution.capacity.isGreaterThan(
-        best.futureExecution.capacity,
-      )
-        ? candidate
-        : best,
-    );
+    const passiveNetScore = selectedPassive
+      ? selectedPassive.restoredCapacityScore.minus(
+          selectedPassive.rebalanceCostScore,
+        )
+      : null;
+    const aggressiveNetScore = selectedAggressive
+      ? selectedAggressive.restoredCapacityScore.minus(
+          selectedAggressive.rebalanceCostScore,
+        )
+      : null;
+
+    const selected =
+      selectedPassive &&
+      (!selectedAggressive ||
+        !aggressiveNetScore ||
+        !passiveNetScore ||
+        aggressiveNetScore.isLessThanOrEqualTo(
+          passiveNetScore.multipliedBy(1.05),
+        ))
+        ? selectedPassive
+        : selectedAggressive;
+
+    if (!selected) {
+      return null;
+    }
 
     this.logger.log(
       `Dual-account volume ${strategyKey}: scheduling rebalance account=${
@@ -2890,6 +3144,15 @@ export class StrategyService
     const orderId = `${params.clientId}:rebalance:${publishedCycles}:${accountLabel}:${side}:${ts}`;
     const cycleId = `${strategyKey}:rebalance:${ts}:${accountLabel}:${side}`;
 
+    const rebalanceNotional = adjustedQuote.qty.multipliedBy(
+      adjustedQuote.price,
+    );
+    const rebalanceCostScore = rebalanceNotional.multipliedBy(feeBufferRate);
+    const restoredCapacityScore = futureExecution.capacity;
+    const mode = executionPrice.isEqualTo(futurePrice)
+      ? 'passive'
+      : 'aggressive';
+
     return {
       action: this.createIntent(
         strategyKey,
@@ -2929,6 +3192,9 @@ export class StrategyService
       futureExecution,
       accountLabel,
       side,
+      restoredCapacityScore,
+      rebalanceCostScore,
+      mode,
     };
   }
 
@@ -3040,11 +3306,6 @@ export class StrategyService
 
       return null;
     }
-
-    const profile = this.resolveDualAccountBehaviorProfile(
-      params,
-      resolvedAccounts.makerAccountLabel,
-    );
 
     return await this.evaluateDualAccountExecutionForSideWithAccounts(
       strategyKey,
@@ -5167,6 +5428,8 @@ export class StrategyService
       requestedQty,
       makerFilledQty: '0',
       takerFilledQty: '0',
+      matchedFilledQty: '0',
+      matchedQuoteVolume: '0',
     };
   }
 
@@ -5261,10 +5524,10 @@ export class StrategyService
 
       return {
         ...params,
-        activeCycle: {
+        activeCycle: this.updateMatchedDualAccountCycleMetrics({
           ...activeCycle,
           makerFilledQty: makerFilledQty.toFixed(),
-        },
+        }),
       };
     }
 
@@ -5274,16 +5537,39 @@ export class StrategyService
     ) {
       return {
         ...params,
-        activeCycle: {
+        activeCycle: this.updateMatchedDualAccountCycleMetrics({
           ...activeCycle,
           takerFilledQty: new BigNumber(activeCycle.takerFilledQty || 0)
             .plus(fillQty)
             .toFixed(),
-        },
+        }),
       };
     }
 
     return params;
+  }
+
+  private updateMatchedDualAccountCycleMetrics(
+    activeCycle: DualAccountActiveCycleState,
+  ): DualAccountActiveCycleState {
+    const makerFilledQty = new BigNumber(activeCycle.makerFilledQty || 0);
+    const takerFilledQty = new BigNumber(activeCycle.takerFilledQty || 0);
+    const matchedFilledQty = BigNumber.min(makerFilledQty, takerFilledQty);
+    const price = new BigNumber(activeCycle.price || 0);
+    const matchedQuoteVolume =
+      matchedFilledQty.isFinite() && price.isFinite()
+        ? matchedFilledQty.multipliedBy(price)
+        : new BigNumber(0);
+
+    return {
+      ...activeCycle,
+      matchedFilledQty: matchedFilledQty.isFinite()
+        ? matchedFilledQty.toFixed()
+        : '0',
+      matchedQuoteVolume: matchedQuoteVolume.isFinite()
+        ? matchedQuoteVolume.toFixed()
+        : '0',
+    };
   }
 
   private async finalizeSettledDualAccountCycle(
@@ -5311,11 +5597,28 @@ export class StrategyService
       return nextParams;
     }
 
-    if (
-      takerFilledQty.isFinite() &&
-      takerFilledQty.isGreaterThanOrEqualTo(makerFilledQty)
-    ) {
+    const matchedFilledQty = BigNumber.min(
+      makerFilledQty,
+      takerFilledQty.isFinite() ? takerFilledQty : new BigNumber(0),
+    );
+
+    if (matchedFilledQty.isGreaterThan(0)) {
+      const matchedQuoteVolume = new BigNumber(
+        params.activeCycle.matchedQuoteVolume || 0,
+      );
+
       nextParams.completedCycles = Number(nextParams.completedCycles || 0) + 1;
+      nextParams.totalMatchedBaseVolume = new BigNumber(
+        nextParams.totalMatchedBaseVolume || 0,
+      )
+        .plus(matchedFilledQty)
+        .toNumber();
+      nextParams.totalMatchedQuoteVolume = new BigNumber(
+        nextParams.totalMatchedQuoteVolume || 0,
+      )
+        .plus(matchedQuoteVolume.isFinite() ? matchedQuoteVolume : 0)
+        .toNumber();
+      nextParams.activeCycle = undefined;
       await this.persistStrategyParams(session.strategyKey, nextParams);
 
       return nextParams;

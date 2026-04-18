@@ -3127,6 +3127,69 @@ describe('StrategyService', () => {
     jest.restoreAllMocks();
   });
 
+  it('scores best-capacity candidates with target quote progress awareness', () => {
+    const scoreNearTarget = (
+      service as any
+    ).scoreDualAccountBestCapacityCandidate(
+      {
+        targetQuoteVolume: 100,
+        totalMatchedQuoteVolume: 95,
+      },
+      {
+        capacity: new BigNumber(1),
+        futureOppositeCapacity: new BigNumber(1),
+        imbalanceRatio: new BigNumber(1),
+      },
+      new BigNumber(100),
+    );
+    const scoreFarTarget = (
+      service as any
+    ).scoreDualAccountBestCapacityCandidate(
+      {
+        targetQuoteVolume: 1000,
+        totalMatchedQuoteVolume: 0,
+      },
+      {
+        capacity: new BigNumber(1),
+        futureOppositeCapacity: new BigNumber(1),
+        imbalanceRatio: new BigNumber(1),
+      },
+      new BigNumber(100),
+    );
+
+    expect(scoreFarTarget.isGreaterThan(scoreNearTarget)).toBe(true);
+  });
+
+  it('accumulates matched quote volume when a dual-account cycle settles with symmetric fills', async () => {
+    const nextParams = await (service as any).finalizeSettledDualAccountCycle(
+      { strategyKey: 'dual-key' },
+      {
+        completedCycles: 0,
+        totalMatchedBaseVolume: 0,
+        totalMatchedQuoteVolume: 0,
+        activeCycle: {
+          cycleId: 'cycle-1',
+          tickId: 'tick-1',
+          orderId: 'order-1',
+          makerSide: 'buy',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          price: '100',
+          requestedQty: '1',
+          makerFilledQty: '0.4',
+          takerFilledQty: '0.4',
+          matchedFilledQty: '0.4',
+          matchedQuoteVolume: '40',
+        },
+      },
+    );
+
+    expect(nextParams.completedCycles).toBe(1);
+    expect(nextParams.totalMatchedBaseVolume).toBe(0.4);
+    expect(nextParams.totalMatchedQuoteVolume).toBe(40);
+    expect(nextParams.activeCycle).toBeUndefined();
+  });
+
   it('reuses one dual-account balance snapshot when preferred side falls back to the opposite side', async () => {
     strategyMarketDataProviderService.getTrackedBestBidAsk = jest
       .fn()
