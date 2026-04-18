@@ -199,11 +199,9 @@ describe('StrategyControllerRegistry', () => {
         ...session.params,
         makerAccountLabel: 'maker',
         takerAccountLabel: 'taker',
-        makerDelayMs: 250,
         tradeAmountVariance: 0.1,
         priceOffsetVariance: 0.2,
         cadenceVariance: 0.3,
-        makerDelayVariance: 0.4,
         buyBias: 0.6,
         accountProfiles: {
           maker: {
@@ -256,11 +254,9 @@ describe('StrategyControllerRegistry', () => {
       expect.objectContaining({
         makerAccountLabel: 'maker',
         takerAccountLabel: 'taker',
-        makerDelayMs: 250,
         tradeAmountVariance: 0.1,
         priceOffsetVariance: 0.2,
         cadenceVariance: 0.3,
-        makerDelayVariance: 0.4,
         buyBias: 0.6,
         accountProfiles: {
           maker: {

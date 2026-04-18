@@ -317,7 +317,6 @@ describe('StrategyConfigResolverService', () => {
       {
         tradeAmountVariance: 0.15,
         priceOffsetVariance: 0.2,
-        makerDelayVariance: 0.5,
       },
     );
 
@@ -328,7 +327,6 @@ describe('StrategyConfigResolverService', () => {
         symbol: 'BTC/USDT',
         tradeAmountVariance: 0.15,
         priceOffsetVariance: 0.2,
-        makerDelayVariance: 0.5,
       }),
     });
   });

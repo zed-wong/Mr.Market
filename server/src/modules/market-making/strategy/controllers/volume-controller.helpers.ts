@@ -27,8 +27,6 @@ type NormalizedVolumeRerunConfig = {
   tradeAmountVariance?: number;
   priceOffsetVariance?: number;
   cadenceVariance?: number;
-  makerDelayMs?: number;
-  makerDelayVariance?: number;
   buyBias?: number;
   accountProfiles?: Record<string, unknown>;
 };
@@ -80,8 +78,6 @@ export function normalizeVolumeRerunConfig(
     tradeAmountVariance: readFiniteNumber(parameters.tradeAmountVariance),
     priceOffsetVariance: readFiniteNumber(parameters.priceOffsetVariance),
     cadenceVariance: readFiniteNumber(parameters.cadenceVariance),
-    makerDelayMs: readFiniteNumber(parameters.makerDelayMs),
-    makerDelayVariance: readFiniteNumber(parameters.makerDelayVariance),
     buyBias: readFiniteNumber(parameters.buyBias),
     accountProfiles: readRecord(parameters.accountProfiles),
   };

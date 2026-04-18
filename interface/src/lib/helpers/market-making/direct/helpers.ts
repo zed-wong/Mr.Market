@@ -145,11 +145,9 @@ export interface DualAccountVolumeFields {
   postOnlySide: string;
   dynamicRoleSwitching: boolean;
   targetQuoteVolume: string;
-  makerDelayMs: string;
   cadenceVariance: string;
   tradeAmountVariance: string;
   priceOffsetVariance: string;
-  makerDelayVariance: string;
 }
 
 function normalizeMarketSymbol(symbol: unknown): string {
@@ -439,10 +437,6 @@ export function normalizeConfigOverrides(
         const num = Number(dualFields.targetQuoteVolume);
         if (!isNaN(num)) accumulator["dailyVolumeTarget"] = num;
       }
-      if (dualFields.makerDelayMs) {
-        const num = Number(dualFields.makerDelayMs);
-        if (!isNaN(num)) accumulator["makerDelayMs"] = num;
-      }
 
       return accumulator;
     }
@@ -469,10 +463,6 @@ export function normalizeConfigOverrides(
       const num = Number(dualFields.targetQuoteVolume);
       if (!isNaN(num)) accumulator["targetQuoteVolume"] = num;
     }
-    if (dualFields.makerDelayMs) {
-      const num = Number(dualFields.makerDelayMs);
-      if (!isNaN(num)) accumulator["makerDelayMs"] = num;
-    }
     if (dualFields.cadenceVariance) {
       const num = Number(dualFields.cadenceVariance);
       if (!isNaN(num)) accumulator["cadenceVariance"] = num;
@@ -484,10 +474,6 @@ export function normalizeConfigOverrides(
     if (dualFields.priceOffsetVariance) {
       const num = Number(dualFields.priceOffsetVariance);
       if (!isNaN(num)) accumulator["priceOffsetVariance"] = num;
-    }
-    if (dualFields.makerDelayVariance) {
-      const num = Number(dualFields.makerDelayVariance);
-      if (!isNaN(num)) accumulator["makerDelayVariance"] = num;
     }
   }
   return accumulator;

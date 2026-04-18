@@ -921,10 +921,6 @@
   "admin_direct_mm_target_quote_volume_hint": "累计报价量达到上限后停止",
   "admin_direct_mm_daily_volume_target_config": "每日成交量目标",
   "admin_direct_mm_daily_volume_target_config_hint": "可选的本次会话报价成交量上限",
-  "admin_direct_mm_maker_delay": "Maker 延迟",
-  "admin_direct_mm_maker_delay_hint": "Taker IOC 提交前的延迟毫秒数",
-  "admin_direct_mm_maker_delay_optional": "Maker 延迟",
-  "admin_direct_mm_maker_delay_optional_hint": "可选的 Taker IOC 提交前延迟毫秒数",
   "admin_direct_mm_variance_parameters": "随机化",
   "admin_direct_mm_variance_parameters_hint": "每个周期的随机化参数，使执行更自然",
   "admin_direct_mm_cadence_variance": "间隔随机化",
@@ -932,7 +928,5 @@
   "admin_direct_mm_trade_amount_variance": "交易量随机化",
   "admin_direct_mm_trade_amount_variance_hint": "交易量的随机比例",
   "admin_direct_mm_price_offset_variance": "价格偏移随机化",
-  "admin_direct_mm_price_offset_variance_hint": "Maker 价格偏移的随机比例",
-  "admin_direct_mm_maker_delay_variance": "Maker 延迟随机化",
-  "admin_direct_mm_maker_delay_variance_hint": "Maker 延迟的随机比例"
+  "admin_direct_mm_price_offset_variance_hint": "Maker 价格偏移的随机比例"
 }

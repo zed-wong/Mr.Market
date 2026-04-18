@@ -4,6 +4,7 @@
 
 - Switch dual-account volume hedging from maker-placement ACK coupling to maker fill-driven execution: persist `activeCycle`, start private order+trade watchers for both `accountLabel`s, emit taker IOC intents only from observed maker fill deltas, and finalize `completedCycles` only after tracked orders settle with fully hedged maker fill
 - Preserve `accountLabel` naming in dual-account runtime/fill routing while carrying it end-to-end through tracker recovery and user-stream dispatch, so the strategy can distinguish maker/taker account boundaries without renaming runtime fields to `keyId`
+- Remove the deprecated dual-account maker-delay / inline-hedge chain end-to-end: delete the dead execution helpers and settlement timeout config, drop `makerDelay*` from server/frontend schemas and admin direct status surfaces, and keep dual-account execution purely maker fill-driven
 
 ## 2026-04-16
 

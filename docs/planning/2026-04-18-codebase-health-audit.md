@@ -14,7 +14,7 @@
 ## P1 — Lint (server: 181 errors, 27 warnings; interface: 4 errors)
 
 - [ ] Run `bun run lint --fix` on server — ~140/181 are auto-fixable formatting
-- [ ] Remove 4 unused destructured vars in `CreateOrderModal.svelte` (lines 71-77): `cadenceVarianceError`, `tradeAmountVarianceError`, `priceOffsetVarianceError`, `makerDelayVarianceError`
+- [ ] Remove 3 unused destructured vars in `CreateOrderModal.svelte`: `cadenceVarianceError`, `tradeAmountVarianceError`, `priceOffsetVarianceError`
 - [ ] Remove unused `UserStreamEvent` import in `generic-ccxt-user-stream-event-normalizer.service.ts:5`
 - [ ] Fix 4 `@typescript-eslint/no-explicit-any` warnings on server
 

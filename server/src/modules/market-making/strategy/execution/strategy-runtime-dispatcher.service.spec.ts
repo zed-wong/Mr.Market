@@ -86,7 +86,6 @@ describe('StrategyRuntimeDispatcherService', () => {
       pricePushRate: 0,
       makerAccountLabel: 'maker',
       takerAccountLabel: 'taker',
-      makerDelayMs: 250,
     });
 
     expect(
@@ -113,7 +112,6 @@ describe('StrategyRuntimeDispatcherService', () => {
       pricePushRate: 0,
       makerAccountLabel: 'maker',
       takerAccountLabel: 'taker',
-      makerDelayMs: 250,
     });
 
     expect(

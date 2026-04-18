@@ -335,7 +335,6 @@ Start by reusing the same config surface as dual-account volume wherever possibl
 
 - `makerAccountLabel`
 - `takerAccountLabel`
-- `makerDelayMs`
 - `baseTradeAmount`
 - variances
 - account profiles
@@ -361,7 +360,6 @@ That is the smallest diff.
 
 - `server/src/modules/market-making/strategy/strategy.service.spec.ts`
 - `server/src/modules/admin/market-making/admin-direct-mm.service.spec.ts`
-- `server/test/system/market-making/user-orders/admin-direct-dual-account-volume.sandbox.system.spec.ts`
 - or a new best-capacity system spec if that is cleaner
 
 ### Required coverage

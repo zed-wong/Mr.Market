@@ -672,16 +672,12 @@ export class AdminDirectMarketMakingService {
       targetQuoteVolume: this.readConfigString(
         resolvedConfig.dailyVolumeTarget ?? resolvedConfig.targetQuoteVolume,
       ),
-      makerDelayMs: this.readConfigNumber(resolvedConfig.makerDelayMs),
       cadenceVariance: this.readConfigString(resolvedConfig.cadenceVariance),
       tradeAmountVariance: this.readConfigString(
         resolvedConfig.tradeAmountVariance,
       ),
       priceOffsetVariance: this.readConfigString(
         resolvedConfig.priceOffsetVariance,
-      ),
-      makerDelayVariance: this.readConfigString(
-        resolvedConfig.makerDelayVariance,
       ),
       publishedCycles: this.readConfigNumber(resolvedConfig.publishedCycles),
       completedCycles: this.readConfigNumber(resolvedConfig.completedCycles),

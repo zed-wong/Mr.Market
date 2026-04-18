@@ -134,8 +134,6 @@ Key properties:
 | `targetQuoteVolume`    | number                    | Taker-leg cumulative quote progress auto-stop threshold (0 = disabled) |
 | `postOnlySide`         | `'buy' \| 'sell' \| null` | Fixed maker side, null for auto                            |
 | `buyBias`              | number (0-1)              | Probability of buy when side is auto                       |
-| `makerDelayMs`         | number                    | Legacy config field; no longer gates taker hedge trigger   |
-| `makerDelayVariance`   | number                    | Legacy config field paired with `makerDelayMs`             |
 | `tradeAmountVariance`  | number                    | Variance around trade amount                               |
 | `priceOffsetVariance`  | number                    | Variance around price offset                               |
 | `cadenceVariance`      | number                    | Variance around cycle interval                             |

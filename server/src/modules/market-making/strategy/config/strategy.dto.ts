@@ -63,18 +63,6 @@ export class DualAccountBehaviorProfileDto {
   @Min(0)
   cadenceVariance?: number;
 
-  @ApiPropertyOptional({ example: 1.2 })
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  makerDelayMultiplier?: number;
-
-  @ApiPropertyOptional({ example: 0.5 })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  makerDelayVariance?: number;
-
   @ApiPropertyOptional({ example: 0.6 })
   @IsOptional()
   @IsNumber()
@@ -559,16 +547,6 @@ export class ExecuteDualAccountVolumeStrategyDto {
 
   @ApiPropertyOptional({
     description:
-      'Delay in milliseconds between maker acceptance and taker IOC submission',
-    example: 250,
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  makerDelayMs?: number;
-
-  @ApiPropertyOptional({
-    description:
       'Trade-size variance percentage applied around baseTradeAmount',
     example: 0.15,
   })
@@ -596,16 +574,6 @@ export class ExecuteDualAccountVolumeStrategyDto {
   @IsNumber()
   @Min(0)
   cadenceVariance?: number;
-
-  @ApiPropertyOptional({
-    description:
-      'Maker delay variance percentage applied around makerDelayMs for each cycle',
-    example: 0.5,
-  })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  makerDelayVariance?: number;
 
   @ApiPropertyOptional({
     description: 'Probability of placing a buy when postOnlySide is not fixed',
@@ -689,16 +657,6 @@ export class ExecuteDualAccountBestCapacityVolumeStrategyDto {
   @ApiProperty({ description: 'Taker exchange account label' })
   @IsString()
   takerAccountLabel: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Optional delay in milliseconds between maker acceptance and taker IOC submission',
-    example: 250,
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  makerDelayMs?: number;
 
   @ApiProperty({ description: 'User ID' })
   @IsString()

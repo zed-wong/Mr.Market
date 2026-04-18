@@ -1734,10 +1734,6 @@ export class StrategyService
 
     const tickId = ts;
     const cycleId = `${strategyKey}:cycle:${publishedCycles}:${tickId}`;
-    const makerDelayMs = this.resolveDualAccountMakerDelayMs(
-      params,
-      resolvedAccounts.makerAccountLabel,
-    );
     const accountBuyBias = profile.buyBias ?? params.buyBias;
     const fallbackApplied = side !== preferredSide;
     const capacityDiagnostics = balanceSnapshot
@@ -1792,7 +1788,6 @@ export class StrategyService
         `estimatedTotalFee=${estimatedTotalFee.toFixed()}`,
         `netEdgeEstimate=${netEdgeEstimate.toFixed()}`,
         `rebalanceNeeded=${capacityDiagnostics?.rebalanceNeeded ?? false}`,
-        `makerDelayMs=${makerDelayMs}`,
         `decisionDurationMs=${decisionDurationMs}`,
       ].join(' | '),
     );
@@ -1826,7 +1821,6 @@ export class StrategyService
           configuredMakerAccountLabel: params.makerAccountLabel,
           configuredTakerAccountLabel: params.takerAccountLabel,
           dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
-          makerDelayMs,
           activeHours: profile.activeHours,
           buyBias: accountBuyBias,
           requestedQty: requestedQty.toFixed(),
@@ -1974,10 +1968,6 @@ export class StrategyService
       candidate,
     } = resolvedExecution;
     const cycleId = `${strategyKey}:cycle:${publishedCycles}:${ts}`;
-    const makerDelayMs = this.resolveDualAccountMakerDelayMs(
-      params,
-      resolvedAccounts.makerAccountLabel,
-    );
     const accountBuyBias = profile.buyBias ?? params.buyBias;
     const selectedCapacity = candidate.capacity;
     const estimatedLegNotional = adjustedQuote.qty.multipliedBy(
@@ -2057,7 +2047,6 @@ export class StrategyService
           configuredMakerAccountLabel: params.makerAccountLabel,
           configuredTakerAccountLabel: params.takerAccountLabel,
           dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
-          makerDelayMs,
           activeHours: profile.activeHours,
           buyBias: accountBuyBias,
           requestedQty: requestedQty.toFixed(),
@@ -6406,12 +6395,6 @@ export class StrategyService
       );
     }
 
-    if (Number.isFinite(Number(persisted.makerDelayVariance))) {
-      merged.makerDelayVariance = this.readNonNegativeNumber(
-        persisted.makerDelayVariance,
-      );
-    }
-
     if (Number.isFinite(Number(persisted.buyBias))) {
       merged.buyBias = this.readUnitIntervalNumber(persisted.buyBias);
     }
@@ -6456,27 +6439,6 @@ export class StrategyService
       : this.applyVariance(baseCadenceSeconds, params.cadenceVariance);
 
     return Math.max(1000, cadenceSeconds * 1000);
-  }
-
-  private resolveDualAccountMakerDelayMs(
-    params: DualAccountVolumeStrategyParams,
-    accountLabel: string,
-  ): number {
-    if (this.isBestCapacityConfig(params)) {
-      return Math.max(0, Math.round(params.makerDelayMs || 0));
-    }
-
-    const profile = this.resolveDualAccountBehaviorProfile(
-      params,
-      accountLabel,
-    );
-    const delayMs = this.applyVariance(
-      params.makerDelayMs || 0,
-      profile.makerDelayVariance ?? params.makerDelayVariance,
-      profile.makerDelayMultiplier,
-    );
-
-    return Math.max(0, Math.round(delayMs));
   }
 
   private resolveDualAccountBehaviorProfile(
@@ -6532,7 +6494,6 @@ export class StrategyService
       postOnlySide: params.postOnlySide,
       makerAccountLabel,
       takerAccountLabel,
-      makerDelayMs: Number(params.makerDelayMs || 0),
       tradeAmountVariance: this.readNonNegativeNumber(
         params.tradeAmountVariance,
       ),
@@ -6540,7 +6501,6 @@ export class StrategyService
         params.priceOffsetVariance,
       ),
       cadenceVariance: this.readNonNegativeNumber(params.cadenceVariance),
-      makerDelayVariance: this.readNonNegativeNumber(params.makerDelayVariance),
       buyBias: this.readUnitIntervalNumber(params.buyBias),
       accountProfiles: params.accountProfiles,
       dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
@@ -6600,7 +6560,6 @@ export class StrategyService
       executionVenue: 'cex',
       makerAccountLabel,
       takerAccountLabel,
-      makerDelayMs: Number(params.makerDelayMs || 0),
       dailyVolumeTarget,
       targetQuoteVolume: dailyVolumeTarget,
       publishedCycles: 0,
@@ -6664,8 +6623,6 @@ export class StrategyService
       priceOffsetVariance: profile.priceOffsetVariance,
       cadenceMultiplier: profile.cadenceMultiplier,
       cadenceVariance: profile.cadenceVariance,
-      makerDelayMultiplier: profile.makerDelayMultiplier,
-      makerDelayVariance: profile.makerDelayVariance,
       buyBias: profile.buyBias,
       activeHours: profile.activeHours,
     };

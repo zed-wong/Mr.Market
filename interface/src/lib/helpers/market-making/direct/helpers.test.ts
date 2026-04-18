@@ -32,12 +32,11 @@ describe('normalizeConfigOverrides', () => {
     expect(
       normalizeConfigOverrides(
         'dualAccountVolume',
-        [{ key: 'makerDelayMs', value: '250' }],
+        [],
         '5',
         '0.4',
       ),
     ).toEqual({
-      makerDelayMs: 250,
       baseTradeAmount: 5,
       baseIncrementPercentage: 0.4,
     });
@@ -57,11 +56,9 @@ describe('normalizeConfigOverrides', () => {
           postOnlySide: 'buy',
           dynamicRoleSwitching: false,
           targetQuoteVolume: '',
-          makerDelayMs: '250',
           cadenceVariance: '0.25',
           tradeAmountVariance: '0.15',
           priceOffsetVariance: '0.2',
-          makerDelayVariance: '0.5',
         },
       ),
     ).toEqual({
@@ -71,11 +68,9 @@ describe('normalizeConfigOverrides', () => {
       numTrades: 100,
       pricePushRate: 0,
       postOnlySide: 'buy',
-      makerDelayMs: 250,
       cadenceVariance: 0.25,
       tradeAmountVariance: 0.15,
       priceOffsetVariance: 0.2,
-      makerDelayVariance: 0.5,
     });
   });
 
@@ -86,13 +81,11 @@ describe('normalizeConfigOverrides', () => {
         [
           { key: 'userId', value: 'spoofed-user' },
           { key: 'exchangeName', value: 'kraken' },
-          { key: 'makerDelayMs', value: '250' },
         ],
         '5',
         '0.4',
       ),
     ).toEqual({
-      makerDelayMs: 250,
       baseTradeAmount: 5,
       baseIncrementPercentage: 0.4,
     });
@@ -102,12 +95,11 @@ describe('normalizeConfigOverrides', () => {
     expect(
       normalizeConfigOverrides(
         'dualAccountBestCapacityVolume',
-        [{ key: 'makerDelayMs', value: '250' }],
+        [],
         '5',
         '0.4',
       ),
     ).toEqual({
-      makerDelayMs: 250,
       maxOrderAmount: 5,
     });
   });

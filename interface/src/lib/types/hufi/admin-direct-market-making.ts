@@ -91,11 +91,9 @@ export interface DirectOrderStatus {
     postOnlySide: string | null;
     dynamicRoleSwitching: boolean | null;
     targetQuoteVolume: string | null;
-    makerDelayMs: number | null;
     cadenceVariance: string | null;
     tradeAmountVariance: string | null;
     priceOffsetVariance: string | null;
-    makerDelayVariance: string | null;
     publishedCycles: number | null;
     completedCycles: number | null;
     tradedQuoteVolume: string | null;

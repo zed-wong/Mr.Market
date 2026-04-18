@@ -49,11 +49,6 @@
         "enum": ["buy", "sell"],
         "description": "Maker side for the first cycle"
       },
-      "makerDelayMs": {
-        "type": "number",
-        "description": "Delay before the taker IOC leg submits",
-        "minimum": 0
-      },
       "tradeAmountVariance": {
         "type": "number",
         "description": "Fractional variance applied to trade amount",
@@ -62,11 +57,6 @@
       "priceOffsetVariance": {
         "type": "number",
         "description": "Fractional variance applied to maker price offset",
-        "minimum": 0
-      },
-      "makerDelayVariance": {
-        "type": "number",
-        "description": "Fractional variance applied to maker delay",
         "minimum": 0
       },
       "dynamicRoleSwitching": {
@@ -95,7 +85,6 @@
     "baseIncrementPercentage": 0.5,
     "pricePushRate": 0,
     "postOnlySide": "buy",
-    "makerDelayMs": 250,
     "cadenceVariance": 0.25
   }
 }

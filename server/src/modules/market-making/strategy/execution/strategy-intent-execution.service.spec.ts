@@ -90,7 +90,6 @@ describe('StrategyIntentExecutionService', () => {
           'strategy.execute_intents': executeIntents,
           'strategy.intent_max_retries': 2,
           'strategy.intent_retry_base_delay_ms': 1,
-          'strategy.dual_account_maker_settlement_timeout_ms': 0,
           ...(overrides || {}),
         };
 
@@ -253,7 +252,6 @@ describe('StrategyIntentExecutionService', () => {
         metadata: {
           role: 'maker',
           takerAccountLabel: 'taker',
-          makerDelayMs: 0,
           cycleId: 'cycle-1',
           orderId: 'dual-cycle-1',
         },
@@ -319,7 +317,6 @@ describe('StrategyIntentExecutionService', () => {
           configuredMakerAccountLabel: 'maker',
           configuredTakerAccountLabel: 'taker',
           dynamicRoleSwitching: true,
-          makerDelayMs: 0,
           cycleId: 'cycle-3',
           orderId: 'dual-cycle-3',
         },

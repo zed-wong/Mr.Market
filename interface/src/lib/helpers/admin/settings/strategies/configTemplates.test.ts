@@ -12,7 +12,6 @@ describe("CONFIG_SCHEMA_TEMPLATES", () => {
       expect.objectContaining({
         tradeAmountVariance: expect.any(Object),
         priceOffsetVariance: expect.any(Object),
-        makerDelayVariance: expect.any(Object),
       }),
     );
   });

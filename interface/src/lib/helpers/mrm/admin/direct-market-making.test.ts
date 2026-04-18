@@ -37,7 +37,6 @@ describe("admin direct market making helper", () => {
         takerApiKeyId: "taker-key",
         configOverrides: {
           baseTradeAmount: 0.001,
-          makerDelayMs: 1000,
         },
       },
       "token",
@@ -55,7 +54,6 @@ describe("admin direct market making helper", () => {
           takerApiKeyId: "taker-key",
           configOverrides: {
             baseTradeAmount: 0.001,
-            makerDelayMs: 1000,
           },
         }),
       }),

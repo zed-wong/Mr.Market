@@ -1037,10 +1037,6 @@
   "admin_direct_mm_target_quote_volume_hint": "Stop once cumulative executed quote volume reaches this cap",
   "admin_direct_mm_daily_volume_target_config": "Daily Volume Target",
   "admin_direct_mm_daily_volume_target_config_hint": "Optional quote-volume cap for the session",
-  "admin_direct_mm_maker_delay": "Maker Delay",
-  "admin_direct_mm_maker_delay_hint": "Delay in milliseconds before the taker IOC leg submits",
-  "admin_direct_mm_maker_delay_optional": "Maker Delay",
-  "admin_direct_mm_maker_delay_optional_hint": "Optional delay in milliseconds before the taker IOC leg submits",
   "admin_direct_mm_variance_parameters": "Variance",
   "admin_direct_mm_variance_parameters_hint": "Randomization applied to each cycle for natural-looking execution",
   "admin_direct_mm_cadence_variance": "Cadence Variance",
@@ -1048,7 +1044,5 @@
   "admin_direct_mm_trade_amount_variance": "Trade Amount Variance",
   "admin_direct_mm_trade_amount_variance_hint": "Fractional variance applied to trade amount",
   "admin_direct_mm_price_offset_variance": "Price Offset Variance",
-  "admin_direct_mm_price_offset_variance_hint": "Fractional variance applied to maker price offset",
-  "admin_direct_mm_maker_delay_variance": "Maker Delay Variance",
-  "admin_direct_mm_maker_delay_variance_hint": "Fractional variance applied to maker delay"
+  "admin_direct_mm_price_offset_variance_hint": "Fractional variance applied to maker price offset"
 }

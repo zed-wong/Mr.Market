@@ -757,20 +757,6 @@
                                         >
                                     </div>
                                 {/if}
-                                <div
-                                    class="flex items-center justify-between h-6"
-                                >
-                                    <span class="text-xs text-base-content/60"
-                                        >{$_(
-                                            "admin_direct_mm_maker_delay",
-                                        )}</span
-                                    >
-                                    <span
-                                        class="text-xs font-semibold text-base-content"
-                                        >{data?.orderConfig?.makerDelayMs ??
-                                            $_("admin_direct_mm_na")}</span
-                                    >
-                                </div>
                             </div>
                         {:else}
                             <div class="border border-base-300 rounded-xl p-4">

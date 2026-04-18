@@ -33,11 +33,9 @@
     export let postOnlySide = "";
     export let dynamicRoleSwitching = true;
     export let targetQuoteVolume = "";
-    export let makerDelayMs = "";
     export let cadenceVariance = "";
     export let tradeAmountVariance = "";
     export let priceOffsetVariance = "";
-    export let makerDelayVariance = "";
 
     export let onSubmit: () => void;
     export let onClose: () => void;
@@ -67,15 +65,12 @@
     $: pricePushRateError = pricePushRate && isNaN(Number(pricePushRate));
     $: targetQuoteVolumeError =
         targetQuoteVolume && isNaN(Number(targetQuoteVolume));
-    $: makerDelayMsError = makerDelayMs && isNaN(Number(makerDelayMs));
     $: cadenceVarianceError =
         cadenceVariance && isNaN(Number(cadenceVariance));
     $: tradeAmountVarianceError =
         tradeAmountVariance && isNaN(Number(tradeAmountVariance));
     $: priceOffsetVarianceError =
         priceOffsetVariance && isNaN(Number(priceOffsetVariance));
-    $: makerDelayVarianceError =
-        makerDelayVariance && isNaN(Number(makerDelayVariance));
     $: makerAccountOptions = filteredApiKeys;
     $: takerAccountOptions = filteredApiKeys.filter(
         (key) => String(key.key_id) !== String(startMakerApiKeyId),
@@ -717,44 +712,6 @@
                                     {/if}
                                 </div>
 
-                                <!-- Maker Delay -->
-                                <div class="flex-1">
-                                    <span
-                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                        >{$_(
-                                            "admin_direct_mm_maker_delay_optional",
-                                        )}</span
-                                    >
-                                    <div class="relative">
-                                        <input
-                                            type="text"
-                                            inputmode="decimal"
-                                            placeholder="e.g. 500"
-                                            class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 pr-10
-                              {makerDelayMsError ? 'border-error' : ''}"
-                                            bind:value={makerDelayMs}
-                                        />
-                                        <span
-                                            class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
-                                            >ms</span
-                                        >
-                                    </div>
-                                    {#if makerDelayMsError}
-                                        <span
-                                            class="text-xs text-error mt-1 block"
-                                            >{$_(
-                                                "admin_direct_mm_invalid_number",
-                                            )}</span
-                                        >
-                                    {:else}
-                                        <span
-                                            class="text-xs text-base-content/40 mt-1 block"
-                                            >{$_(
-                                                "admin_direct_mm_maker_delay_optional_hint",
-                                            )}</span
-                                        >
-                                    {/if}
-                                </div>
                                 {/if}
 
                                 {#if !isBestCapacityStrategy}
@@ -954,44 +911,6 @@
                                         {/if}
                                     </div>
 
-                                    <!-- Maker Delay -->
-                                    <div class="flex-1">
-                                        <span
-                                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                            >{$_(
-                                                "admin_direct_mm_maker_delay",
-                                            )}</span
-                                        >
-                                        <div class="relative">
-                                            <input
-                                                type="text"
-                                                inputmode="decimal"
-                                                placeholder="e.g. 500"
-                                                class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 pr-10
-                                  {makerDelayMsError ? 'border-error' : ''}"
-                                                bind:value={makerDelayMs}
-                                            />
-                                            <span
-                                                class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
-                                                >ms</span
-                                            >
-                                        </div>
-                                        {#if makerDelayMsError}
-                                            <span
-                                                class="text-xs text-error mt-1 block"
-                                                >{$_(
-                                                    "admin_direct_mm_invalid_number",
-                                                )}</span
-                                            >
-                                        {:else}
-                                            <span
-                                                class="text-xs text-base-content/40 mt-1 block"
-                                                >{$_(
-                                                    "admin_direct_mm_maker_delay_hint",
-                                                )}</span
-                                            >
-                                        {/if}
-                                    </div>
                                 </div>
                             {/if}
                         </div>

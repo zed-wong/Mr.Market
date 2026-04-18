@@ -51,11 +51,9 @@ export type DualAccountVolumeStrategyParams = CexVolumeStrategyParams & {
   dailyVolumeTarget?: number;
   makerAccountLabel: string;
   takerAccountLabel: string;
-  makerDelayMs: number;
   tradeAmountVariance?: number;
   priceOffsetVariance?: number;
   cadenceVariance?: number;
-  makerDelayVariance?: number;
   buyBias?: number;
   accountProfiles?: DualAccountBehaviorProfilesDto;
   dynamicRoleSwitching?: boolean;
@@ -81,8 +79,6 @@ export type DualAccountBehaviorProfile = {
   priceOffsetVariance?: number;
   cadenceMultiplier?: number;
   cadenceVariance?: number;
-  makerDelayMultiplier?: number;
-  makerDelayVariance?: number;
   buyBias?: number;
   activeHours?: number[];
 };

@@ -262,10 +262,6 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         type: "number",
         description: "Stop once cumulative executed quote volume reaches this cap",
       },
-      makerDelayMs: {
-        type: "number",
-        description: "Delay before the taker IOC leg submits",
-      },
       tradeAmountVariance: {
         type: "number",
         description: "Fractional variance applied to trade amount",
@@ -273,10 +269,6 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
       priceOffsetVariance: {
         type: "number",
         description: "Fractional variance applied to maker price offset",
-      },
-      makerDelayVariance: {
-        type: "number",
-        description: "Fractional variance applied to maker delay",
       },
     },
   },
@@ -293,10 +285,6 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
       interval: {
         type: "number",
         description: "Optional seconds between execution cycles",
-      },
-      makerDelayMs: {
-        type: "number",
-        description: "Optional delay before the taker IOC leg submits",
       },
       dailyVolumeTarget: {
         type: "number",
