@@ -92,6 +92,8 @@ export class GenericCcxtUserStreamEventNormalizerService
         exchangeOrderId:
           typeof payload.orderId === 'string'
             ? payload.orderId
+            : typeof payload.order === 'string'
+            ? payload.order
             : typeof payload.id === 'string'
             ? payload.id
             : undefined,

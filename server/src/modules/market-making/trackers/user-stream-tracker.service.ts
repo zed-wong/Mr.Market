@@ -385,9 +385,11 @@ export class UserStreamTrackerService
     const exchangeOrderId = this.pickString(payload, [
       'exchangeOrderId',
       'orderId',
+      'order',
       'id',
       'order.id',
       'trade.orderId',
+      'trade.order',
     ]);
     const pair = this.pickString(payload, [
       'pair',
