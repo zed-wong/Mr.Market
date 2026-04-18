@@ -711,37 +711,12 @@ export class StrategyIntentExecutionService {
           makerExchangeOrderId,
         );
 
-      await this.assertImmediateDualAccountMakerOwnsTopOfBook(
-        intent,
-        makerExchangeOrderId,
-        makerReadySnapshot,
-        'pre-taker',
-      );
-      await this.maybeSleepBeforeImmediateDualAccountTaker(
-        intent,
-        makerExchangeOrderId,
-      );
-
-      const makerDispatchSnapshot =
-        await this.assertImmediateDualAccountMakerStillEligible(
-          intent,
-          makerExchangeOrderId,
-          'post-delay',
-        );
-
-      await this.assertImmediateDualAccountMakerOwnsTopOfBook(
-        intent,
-        makerExchangeOrderId,
-        makerDispatchSnapshot,
-        'post-delay',
-      );
-
       const takerResult = await this.consumeIntent(takerIntent);
 
       await this.assertImmediateDualAccountPairedFill(
         intent,
         makerExchangeOrderId,
-        makerDispatchSnapshot,
+        makerReadySnapshot,
         takerIntent,
         takerResult,
       );
@@ -1024,6 +999,12 @@ export class StrategyIntentExecutionService {
       const errorMessage =
         'Immediate dual-account paired fill mismatch between maker and taker';
 
+      await this.cancelRemainingImmediateDualAccountMaker(
+        makerIntent,
+        makerExchangeOrderId,
+        errorMessage,
+      );
+
       await this.strategyIntentStoreService?.updateIntentStatus(
         takerIntent.intentId,
         'FAILED',
@@ -1034,6 +1015,11 @@ export class StrategyIntentExecutionService {
         `${errorMessage}: makerOrderId=${makerExchangeOrderId} makerDelta=${makerFillDelta.toFixed()} takerFilled=${takerFilledQty.toFixed()}`,
       );
     }
+
+    await this.strategyIntentStoreService?.updateIntentStatus(
+      takerIntent.intentId,
+      'DONE',
+    );
   }
 
   private async resolveImmediateDualAccountTakerFillQty(
@@ -1179,6 +1165,48 @@ export class StrategyIntentExecutionService {
         : new BigNumber(0),
       remainingQty,
     };
+  }
+
+  private async cancelRemainingImmediateDualAccountMaker(
+    intent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    reason: string,
+  ): Promise<void> {
+    const makerSnapshot = await this.loadImmediateDualAccountOrderSnapshot(
+      intent,
+      makerExchangeOrderId,
+      intent.accountLabel,
+      false,
+    );
+
+    if (
+      makerSnapshot.status &&
+      this.isTrackedOrderTerminal(makerSnapshot.status)
+    ) {
+      return;
+    }
+
+    this.logger.warn(
+      [
+        'Cancelling remaining immediate dual-account maker exposure',
+        `strategy=${intent.strategyKey}`,
+        `intent=${intent.intentId}`,
+        `exchange=${intent.exchange}`,
+        `pair=${intent.pair}`,
+        `makerOrderId=${makerExchangeOrderId}`,
+        `account=${intent.accountLabel || 'default'}`,
+        `reason=${reason}`,
+      ].join(' | '),
+    );
+
+    await this.runWithRetries(intent, () =>
+      this.exchangeConnectorAdapterService.cancelOrder(
+        intent.exchange,
+        intent.pair,
+        makerExchangeOrderId,
+        intent.accountLabel,
+      ),
+    );
   }
 
   private async refreshTrackedOrderFromExchange(
