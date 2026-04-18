@@ -2,7 +2,7 @@
 
 **Goal:** Reduce the number of code changes required to add a new strategy, and remove the extra hand-wiring currently needed before a new strategy can run through admin direct market making.
 
-**Status:** Planning only. No implementation in this doc.
+**Status:** Phase 1 and Phase 2 mostly complete. Phase 3 (Task 7) remaining.
 
 **Date:** 2026-04-18
 
@@ -72,7 +72,19 @@ That means a new strategy schema is often described twice:
 
 ---
 
-## Current Add-Strategy Flow
+## Progress
+
+### 2026-04-18 Implementation
+
+- **Task 1: DONE** — Replaced `isDualAccountControllerType()` with data-driven `isDualAccountMode()` that detects dual-account by config data (maker/taker labels) instead of hardcoded controller type unions. Added `directExecutionMode` to `DirectOrderSummary` and `DirectOrderStatus` API responses. Backend `readControllerType()` now also checks `resolvedConfig.controllerType` as fallback.
+- **Task 2: DONE** (pre-existing) — Schema-driven fallback form exists in `CreateOrderModal` via `SchemaConfigForm`.
+- **Task 3: DONE** (pre-existing) — `buildGenericSchemaConfigOverrides()` handles generic config submission.
+- **Task 4: DONE** — Added generic config key-value rendering in `OrderDetailsDialog` for unknown strategy types. Added `isKnownDirectStrategyControllerType` to distinguish known strategies from schema-driven ones. Account routing uses `isDualAccountOrder()` with capability awareness.
+- **Task 5: DONE** — Added `start()` method to `StrategyController` interface and all 6 implementations. Simplified `StrategyRuntimeDispatcherService.startByStrategyType()` to delegate through registry. Removed 140+ lines of if-chain dispatch logic and dead helper methods.
+- **Task 6: DONE** — Backend strategy definition capabilities (`directOrderCompatible`, `directExecutionMode`, `launchSurfaces`) are exposed through API responses. Frontend direct page uses `directExecutionMode` for dual-account routing. `isDualAccountOrder()` capability checks are propagated through `CreateOrderModal` and `OrderDetailsDialog`.
+- **Task 7: REMAINING** — `CONFIG_SCHEMA_TEMPLATES` (394 lines) in frontend still duplicates backend seed data. Not blocking: new strategies work through schema-driven fallback without touching template map. Requires either an API endpoint for seed definitions or build-time template generation.
+
+---
 
 For a new direct-compatible strategy, the effective current flow is:
 
