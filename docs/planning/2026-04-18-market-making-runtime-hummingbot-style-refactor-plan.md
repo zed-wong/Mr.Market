@@ -10,6 +10,7 @@ Refactor the market-making runtime so the shared tick loop becomes a lightweight
 - Phase 1.3 / 2.1 / 2.3 landed: strategy session ticks now enforce cached-state-only balance reads, balance watchers cover the active strategy types, and non-fill order-state transitions apply immediately from the user stream.
 - Phase 2.2 / 3.1 / 3.2 landed: REST order recovery emits state/fill events through `ExchangeOrderTrackerService`, off-tick order polling lives in `ExchangeOrderReconciliationRunner`, and off-tick balance refresh lives in `BalanceRefreshScheduler`.
 - Phase 3.3 / 4.1 / 4.2 landed: shared strategy tick execution no longer performs direct `fetchBalance()` / `fetchOrder()` calls in runtime decisions, connector-scoped runtime grouping exists via `ExchangeConnectorRegistry`, and flat typed events now support exchange-scoped subscriptions through structured metadata.
+- Runtime follow-up guardrail landed: dual-account maker-ack execution now waits for the maker order to be open/unfilled, validates exclusive top-of-book ownership before and after an optional sub-`1s` jitter window, and fails/cancels the cycle if maker/taker fill progression is not paired.
 
 ## Why this refactor now
 

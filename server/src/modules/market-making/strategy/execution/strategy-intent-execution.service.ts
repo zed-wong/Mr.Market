@@ -13,6 +13,7 @@ import { DurabilityService } from '../../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../../execution/exchange-order-mapping.service';
 import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
+import type { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
 import { DexAdapterId } from '../config/strategy.dto';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
@@ -25,8 +26,24 @@ class IntentCancelledError extends Error {
   }
 }
 
+type ImmediateDualAccountOrderSnapshot = {
+  trackedOrder?: TrackedOrder;
+  status: TrackedOrder['status'] | null;
+  cumulativeFilledQty: BigNumber;
+  remainingQty: BigNumber;
+};
+
 @Injectable()
 export class StrategyIntentExecutionService {
+  private static readonly DUAL_ACCOUNT_ORDER_POLL_MS = 100;
+  private static readonly DUAL_ACCOUNT_ORDER_READY_TIMEOUT_MS = 1_500;
+  private static readonly DUAL_ACCOUNT_FILL_SYNC_TIMEOUT_MS = 1_500;
+  private static readonly DUAL_ACCOUNT_PRICE_TOLERANCE = new BigNumber(
+    '0.00000001',
+  );
+  private static readonly DUAL_ACCOUNT_QTY_TOLERANCE = new BigNumber(
+    '0.00000001',
+  );
   private readonly logger = new CustomLogger(
     StrategyIntentExecutionService.name,
   );
@@ -34,6 +51,7 @@ export class StrategyIntentExecutionService {
   private readonly executeIntents: boolean;
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
+  private readonly dualAccountInlineTakerMaxDelayMs: number;
   private readonly nextClientOrderSeqByOrderId = new Map<string, number>();
   private readonly stoppedExecutionReason =
     'strategy stopped before intent execution';
@@ -87,6 +105,27 @@ export class StrategyIntentExecutionService {
     if (this.retryBaseDelayMs !== parsedRetryBaseDelayMs) {
       this.logger.warn(
         `Invalid strategy.intent_retry_base_delay_ms value: ${parsedRetryBaseDelayMs}. Falling back to ${this.retryBaseDelayMs}`,
+      );
+    }
+
+    const parsedDualAccountInlineTakerMaxDelayMs = Number(
+      this.configService.get(
+        'strategy.dual_account_inline_taker_max_delay_ms',
+        1_000,
+      ),
+    );
+
+    this.dualAccountInlineTakerMaxDelayMs =
+      Number.isFinite(parsedDualAccountInlineTakerMaxDelayMs) &&
+      parsedDualAccountInlineTakerMaxDelayMs >= 0
+        ? Math.floor(parsedDualAccountInlineTakerMaxDelayMs)
+        : 1_000;
+    if (
+      this.dualAccountInlineTakerMaxDelayMs !==
+      parsedDualAccountInlineTakerMaxDelayMs
+    ) {
+      this.logger.warn(
+        `Invalid strategy.dual_account_inline_taker_max_delay_ms value: ${parsedDualAccountInlineTakerMaxDelayMs}. Falling back to ${this.dualAccountInlineTakerMaxDelayMs}`,
       );
     }
   }
@@ -608,20 +647,54 @@ export class StrategyIntentExecutionService {
       takerAccountLabel,
       makerExchangeOrderId,
     );
-
     try {
-      await this.consumeIntent(takerIntent);
+      const makerReadySnapshot =
+        await this.waitForImmediateDualAccountMakerReady(
+          intent,
+          makerExchangeOrderId,
+        );
+
+      await this.assertImmediateDualAccountMakerOwnsTopOfBook(
+        intent,
+        makerExchangeOrderId,
+        makerReadySnapshot,
+        'pre-taker',
+      );
+      await this.maybeSleepBeforeImmediateDualAccountTaker(
+        intent,
+        makerExchangeOrderId,
+      );
+
+      const makerDispatchSnapshot =
+        await this.assertImmediateDualAccountMakerStillEligible(
+          intent,
+          makerExchangeOrderId,
+          'post-delay',
+        );
+
+      await this.assertImmediateDualAccountMakerOwnsTopOfBook(
+        intent,
+        makerExchangeOrderId,
+        makerDispatchSnapshot,
+        'post-delay',
+      );
+
+      const takerResult = await this.consumeIntent(takerIntent);
+
+      await this.assertImmediateDualAccountPairedFill(
+        intent,
+        makerExchangeOrderId,
+        makerDispatchSnapshot,
+        takerIntent,
+        takerResult,
+      );
     } catch (error) {
-      const makerCancelled = await this.cancelMakerAfterTakerFailure(
+      await this.cancelMakerAfterImmediateDualAccountFailure(
         intent,
         makerExchangeOrderId,
         makerClientOrderId,
         error,
       );
-
-      if (makerCancelled) {
-        return;
-      }
 
       throw error;
     }
@@ -657,15 +730,464 @@ export class StrategyIntentExecutionService {
     };
   }
 
-  private async cancelMakerAfterTakerFailure(
+  private async waitForImmediateDualAccountMakerReady(
+    intent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+  ): Promise<ImmediateDualAccountOrderSnapshot> {
+    const deadline =
+      Date.now() +
+      StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_READY_TIMEOUT_MS;
+
+    while (Date.now() <= deadline) {
+      if (!(await this.ensureStrategyStillRunning(intent))) {
+        throw new IntentCancelledError(this.stoppedExecutionReason);
+      }
+
+      const snapshot = await this.loadImmediateDualAccountOrderSnapshot(
+        intent,
+        makerExchangeOrderId,
+        intent.accountLabel,
+        true,
+      );
+
+      if (
+        snapshot.cumulativeFilledQty.isGreaterThan(
+          StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+        )
+      ) {
+        throw new Error(
+          `Dual-account maker already filled before taker dispatch: makerOrderId=${makerExchangeOrderId} filled=${snapshot.cumulativeFilledQty.toFixed()}`,
+        );
+      }
+
+      if (snapshot.status === 'open' && snapshot.remainingQty.isGreaterThan(0)) {
+        return snapshot;
+      }
+
+      if (snapshot.status && this.isTrackedOrderTerminal(snapshot.status)) {
+        throw new Error(
+          `Dual-account maker became terminal before taker dispatch: makerOrderId=${makerExchangeOrderId} status=${snapshot.status}`,
+        );
+      }
+
+      await this.sleep(StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS);
+    }
+
+    throw new Error(
+      `Timed out waiting for dual-account maker readiness: makerOrderId=${makerExchangeOrderId}`,
+    );
+  }
+
+  private async assertImmediateDualAccountMakerStillEligible(
+    intent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    stage: string,
+  ): Promise<ImmediateDualAccountOrderSnapshot> {
+    const snapshot = await this.loadImmediateDualAccountOrderSnapshot(
+      intent,
+      makerExchangeOrderId,
+      intent.accountLabel,
+      true,
+    );
+
+    if (
+      snapshot.cumulativeFilledQty.isGreaterThan(
+        StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+      )
+    ) {
+      throw new Error(
+        `Dual-account maker filled before taker ${stage}: makerOrderId=${makerExchangeOrderId} filled=${snapshot.cumulativeFilledQty.toFixed()}`,
+      );
+    }
+
+    if (!snapshot.status || snapshot.status !== 'open') {
+      throw new Error(
+        `Dual-account maker not open before taker ${stage}: makerOrderId=${makerExchangeOrderId} status=${snapshot.status || 'unknown'}`,
+      );
+    }
+
+    if (snapshot.remainingQty.isLessThanOrEqualTo(0)) {
+      throw new Error(
+        `Dual-account maker has no remaining quantity before taker ${stage}: makerOrderId=${makerExchangeOrderId}`,
+      );
+    }
+
+    return snapshot;
+  }
+
+  private async assertImmediateDualAccountMakerOwnsTopOfBook(
+    intent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerSnapshot: ImmediateDualAccountOrderSnapshot,
+    stage: string,
+  ): Promise<void> {
+    const orderBook = await this.runWithRetries(intent, () =>
+      this.exchangeConnectorAdapterService.fetchOrderBook(
+        intent.exchange,
+        intent.pair,
+      ),
+    );
+    const rawLevel =
+      intent.side === 'buy'
+        ? Array.isArray(orderBook?.bids)
+          ? orderBook.bids[0]
+          : undefined
+        : Array.isArray(orderBook?.asks)
+          ? orderBook.asks[0]
+          : undefined;
+    const expectedPrice = new BigNumber(intent.price);
+    const topPrice = this.toFiniteBigNumber(
+      Array.isArray(rawLevel) ? rawLevel[0] : undefined,
+    );
+    const topQty = this.toFiniteBigNumber(
+      Array.isArray(rawLevel) ? rawLevel[1] : undefined,
+    );
+
+    if (
+      !topPrice ||
+      topPrice.minus(expectedPrice).abs().isGreaterThan(
+        StrategyIntentExecutionService.DUAL_ACCOUNT_PRICE_TOLERANCE,
+      )
+    ) {
+      throw new Error(
+        [
+          `Dual-account maker lost top-of-book before taker ${stage}`,
+          `makerOrderId=${makerExchangeOrderId}`,
+          `makerSide=${intent.side}`,
+          `expectedPrice=${intent.price}`,
+          `topPrice=${topPrice?.toFixed() || 'n/a'}`,
+        ].join(' '),
+      );
+    }
+
+    if (
+      !topQty ||
+      !this.quantitiesMatch(topQty, makerSnapshot.remainingQty)
+    ) {
+      throw new Error(
+        [
+          `Dual-account maker top level is not exclusively ours before taker ${stage}`,
+          `makerOrderId=${makerExchangeOrderId}`,
+          `makerSide=${intent.side}`,
+          `expectedQty=${makerSnapshot.remainingQty.toFixed()}`,
+          `topQty=${topQty?.toFixed() || 'n/a'}`,
+        ].join(' '),
+      );
+    }
+  }
+
+  private async maybeSleepBeforeImmediateDualAccountTaker(
+    intent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+  ): Promise<void> {
+    const delayMs = this.resolveImmediateDualAccountTakerDelayMs();
+
+    if (delayMs <= 0) {
+      return;
+    }
+
+    this.logger.log(
+      [
+        'Delaying immediate dual-account taker dispatch',
+        `strategy=${intent.strategyKey}`,
+        `intent=${intent.intentId}`,
+        `makerOrderId=${makerExchangeOrderId}`,
+        `delayMs=${delayMs}`,
+      ].join(' | '),
+    );
+
+    await this.sleep(delayMs);
+  }
+
+  private resolveImmediateDualAccountTakerDelayMs(): number {
+    if (this.dualAccountInlineTakerMaxDelayMs <= 0) {
+      return 0;
+    }
+
+    return Math.floor(
+      Math.random() * (this.dualAccountInlineTakerMaxDelayMs + 1),
+    );
+  }
+
+  private async assertImmediateDualAccountPairedFill(
+    makerIntent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerBeforeTakerSnapshot: ImmediateDualAccountOrderSnapshot,
+    takerIntent: StrategyOrderIntent,
+    takerResult: unknown,
+  ): Promise<void> {
+    const takerFilledQty = await this.resolveImmediateDualAccountTakerFillQty(
+      takerIntent,
+      takerResult,
+    );
+
+    if (
+      takerFilledQty.isLessThanOrEqualTo(
+        StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+      )
+    ) {
+      const errorMessage =
+        'Immediate dual-account taker did not fill any quantity';
+
+      await this.strategyIntentStoreService?.updateIntentStatus(
+        takerIntent.intentId,
+        'FAILED',
+        errorMessage,
+      );
+
+      throw new Error(
+        `${errorMessage}: makerOrderId=${makerExchangeOrderId}`,
+      );
+    }
+
+    const makerFillDelta = await this.waitForImmediateDualAccountMakerFillDelta(
+      makerIntent,
+      makerExchangeOrderId,
+      makerBeforeTakerSnapshot.cumulativeFilledQty,
+      takerFilledQty,
+    );
+
+    if (!this.quantitiesMatch(makerFillDelta, takerFilledQty)) {
+      const errorMessage =
+        'Immediate dual-account paired fill mismatch between maker and taker';
+
+      await this.strategyIntentStoreService?.updateIntentStatus(
+        takerIntent.intentId,
+        'FAILED',
+        `${errorMessage}: makerDelta=${makerFillDelta.toFixed()} takerFilled=${takerFilledQty.toFixed()}`,
+      );
+
+      throw new Error(
+        `${errorMessage}: makerOrderId=${makerExchangeOrderId} makerDelta=${makerFillDelta.toFixed()} takerFilled=${takerFilledQty.toFixed()}`,
+      );
+    }
+  }
+
+  private async resolveImmediateDualAccountTakerFillQty(
+    takerIntent: StrategyOrderIntent,
+    takerResult: unknown,
+  ): Promise<BigNumber> {
+    const immediateFilledQty = this.readFilledQtyFromResult(takerResult);
+
+    if (
+      immediateFilledQty &&
+      immediateFilledQty.isGreaterThan(
+        StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+      )
+    ) {
+      return immediateFilledQty;
+    }
+
+    const takerExchangeOrderId = this.readOrderIdFromResult(takerResult);
+
+    if (!takerExchangeOrderId) {
+      return new BigNumber(0);
+    }
+
+    const deadline =
+      Date.now() +
+      StrategyIntentExecutionService.DUAL_ACCOUNT_FILL_SYNC_TIMEOUT_MS;
+
+    while (Date.now() <= deadline) {
+      const snapshot = await this.loadImmediateDualAccountOrderSnapshot(
+        takerIntent,
+        takerExchangeOrderId,
+        takerIntent.accountLabel,
+        true,
+      );
+
+      if (
+        snapshot.cumulativeFilledQty.isGreaterThan(
+          StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+        )
+      ) {
+        return snapshot.cumulativeFilledQty;
+      }
+
+      if (snapshot.status && this.isTrackedOrderTerminal(snapshot.status)) {
+        return snapshot.cumulativeFilledQty;
+      }
+
+      await this.sleep(StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS);
+    }
+
+    return new BigNumber(0);
+  }
+
+  private async waitForImmediateDualAccountMakerFillDelta(
+    makerIntent: StrategyOrderIntent,
+    makerExchangeOrderId: string,
+    makerFilledBeforeTaker: BigNumber,
+    takerFilledQty: BigNumber,
+  ): Promise<BigNumber> {
+    const deadline =
+      Date.now() +
+      StrategyIntentExecutionService.DUAL_ACCOUNT_FILL_SYNC_TIMEOUT_MS;
+
+    while (Date.now() <= deadline) {
+      const snapshot = await this.loadImmediateDualAccountOrderSnapshot(
+        makerIntent,
+        makerExchangeOrderId,
+        makerIntent.accountLabel,
+        true,
+      );
+      const makerFillDelta = BigNumber.maximum(
+        snapshot.cumulativeFilledQty.minus(makerFilledBeforeTaker),
+        0,
+      );
+
+      if (this.quantitiesMatch(makerFillDelta, takerFilledQty)) {
+        return makerFillDelta;
+      }
+
+      if (
+        makerFillDelta.isGreaterThan(
+          takerFilledQty.plus(
+            StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+          ),
+        ) ||
+        (snapshot.status && this.isTrackedOrderTerminal(snapshot.status))
+      ) {
+        return makerFillDelta;
+      }
+
+      await this.sleep(StrategyIntentExecutionService.DUAL_ACCOUNT_ORDER_POLL_MS);
+    }
+
+    const finalSnapshot = await this.loadImmediateDualAccountOrderSnapshot(
+      makerIntent,
+      makerExchangeOrderId,
+      makerIntent.accountLabel,
+      true,
+    );
+
+    return BigNumber.maximum(
+      finalSnapshot.cumulativeFilledQty.minus(makerFilledBeforeTaker),
+      0,
+    );
+  }
+
+  private async loadImmediateDualAccountOrderSnapshot(
+    intent: StrategyOrderIntent,
+    exchangeOrderId: string,
+    accountLabel?: string,
+    refreshFromExchange = false,
+  ): Promise<ImmediateDualAccountOrderSnapshot> {
+    if (refreshFromExchange) {
+      await this.refreshTrackedOrderFromExchange(
+        intent,
+        exchangeOrderId,
+        accountLabel,
+      );
+    }
+
+    const trackedOrder = this.exchangeOrderTrackerService?.getByExchangeOrderId(
+      intent.exchange,
+      exchangeOrderId,
+      accountLabel,
+    );
+    const cumulativeFilledQty = new BigNumber(
+      trackedOrder?.cumulativeFilledQty || 0,
+    );
+    const remainingQty = BigNumber.maximum(
+      new BigNumber(intent.qty || 0).minus(cumulativeFilledQty),
+      0,
+    );
+
+    return {
+      trackedOrder,
+      status: trackedOrder?.status || null,
+      cumulativeFilledQty: cumulativeFilledQty.isFinite()
+        ? cumulativeFilledQty
+        : new BigNumber(0),
+      remainingQty,
+    };
+  }
+
+  private async refreshTrackedOrderFromExchange(
+    intent: StrategyOrderIntent,
+    exchangeOrderId: string,
+    accountLabel?: string,
+  ): Promise<void> {
+    try {
+      const latest = await this.exchangeConnectorAdapterService.fetchOrder(
+        intent.exchange,
+        intent.pair,
+        exchangeOrderId,
+        accountLabel,
+      );
+
+      if (!latest) {
+        return;
+      }
+
+      const existingTrackedOrder =
+        this.exchangeOrderTrackerService?.getByExchangeOrderId(
+          intent.exchange,
+          exchangeOrderId,
+          accountLabel,
+        );
+      const filledQty =
+        this.normalizeFilledValue(latest.filled) ||
+        existingTrackedOrder?.cumulativeFilledQty ||
+        '0';
+      const normalizedStatus = this.normalizeTrackedOrderStatus(latest.status);
+      const nextStatus =
+        normalizedStatus ||
+        (new BigNumber(filledQty).isGreaterThan(0) && intent.timeInForce === 'IOC'
+          ? 'filled'
+          : existingTrackedOrder?.status) ||
+        'pending_create';
+
+      this.exchangeOrderTrackerService?.upsertOrder(
+        {
+          orderId:
+            existingTrackedOrder?.orderId ||
+            this.resolveOrderIdForClientOrderId(intent),
+          strategyKey: intent.strategyKey,
+          exchange: intent.exchange,
+          accountLabel,
+          pair: intent.pair,
+          exchangeOrderId,
+          clientOrderId: existingTrackedOrder?.clientOrderId,
+          slotKey: existingTrackedOrder?.slotKey || intent.slotKey,
+          role: existingTrackedOrder?.role || this.resolveIntentRole(intent),
+          side: existingTrackedOrder?.side || intent.side,
+          price: existingTrackedOrder?.price || intent.price,
+          qty: existingTrackedOrder?.qty || intent.qty,
+          cumulativeFilledQty: filledQty,
+          status: nextStatus,
+          createdAt:
+            existingTrackedOrder?.createdAt || getRFC3339Timestamp(),
+          updatedAt: getRFC3339Timestamp(),
+        },
+        'rest',
+      );
+    } catch (error) {
+      this.logger.warn(
+        [
+          'Failed to refresh tracked order during immediate dual-account validation',
+          `strategy=${intent.strategyKey}`,
+          `intent=${intent.intentId}`,
+          `exchange=${intent.exchange}`,
+          `pair=${intent.pair}`,
+          `account=${accountLabel || 'default'}`,
+          `exchangeOrderId=${exchangeOrderId}`,
+          `error=${error instanceof Error ? error.message : String(error)}`,
+        ].join(' | '),
+      );
+    }
+  }
+
+  private async cancelMakerAfterImmediateDualAccountFailure(
     intent: StrategyOrderIntent,
     makerExchangeOrderId: string,
     makerClientOrderId: string,
     takerError: unknown,
-  ): Promise<boolean> {
+  ): Promise<void> {
     this.logger.warn(
       [
-        'Immediate dual-account taker failed; cancelling maker leg',
+        'Immediate dual-account cycle failed; cancelling maker leg',
         `strategy=${intent.strategyKey}`,
         `intent=${intent.intentId}`,
         `exchange=${intent.exchange}`,
@@ -677,6 +1199,17 @@ export class StrategyIntentExecutionService {
         }`,
       ].join(' | '),
     );
+
+    const makerSnapshot = await this.loadImmediateDualAccountOrderSnapshot(
+      intent,
+      makerExchangeOrderId,
+      intent.accountLabel,
+      false,
+    );
+
+    if (makerSnapshot.status && this.isTrackedOrderTerminal(makerSnapshot.status)) {
+      return;
+    }
 
     try {
       const result = await this.runWithRetries(intent, () =>
@@ -717,12 +1250,10 @@ export class StrategyIntentExecutionService {
         createdAt: existingTrackedOrder?.createdAt || getRFC3339Timestamp(),
         updatedAt: getRFC3339Timestamp(),
       });
-
-      return true;
     } catch (cancelError) {
       this.logger.error(
         [
-          'Failed to cancel maker after immediate taker failure',
+          'Failed to cancel maker after immediate dual-account failure',
           `strategy=${intent.strategyKey}`,
           `intent=${intent.intentId}`,
           `exchange=${intent.exchange}`,
@@ -736,8 +1267,6 @@ export class StrategyIntentExecutionService {
           }`,
         ].join(' | '),
       );
-
-      return false;
     }
   }
 
@@ -892,6 +1421,7 @@ export class StrategyIntentExecutionService {
   private normalizeTrackedOrderStatus(
     status: unknown,
   ):
+    | 'pending_create'
     | 'open'
     | 'partially_filled'
     | 'pending_cancel'
@@ -905,6 +1435,9 @@ export class StrategyIntentExecutionService {
 
     if (!normalized) {
       return null;
+    }
+    if (normalized === 'pending_create') {
+      return 'pending_create';
     }
     if (normalized === 'open' || normalized === 'new') {
       return 'open';
@@ -944,6 +1477,24 @@ export class StrategyIntentExecutionService {
     }
 
     return undefined;
+  }
+
+  private quantitiesMatch(
+    left: BigNumber,
+    right: BigNumber,
+    tolerance = StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+  ): boolean {
+    return left.minus(right).abs().isLessThanOrEqualTo(tolerance);
+  }
+
+  private toFiniteBigNumber(value: unknown): BigNumber | undefined {
+    try {
+      const parsed = new BigNumber(value as BigNumber.Value);
+
+      return parsed.isFinite() ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private toBoolean(value: unknown, defaultValue: boolean): boolean {

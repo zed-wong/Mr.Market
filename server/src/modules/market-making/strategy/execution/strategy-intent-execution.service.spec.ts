@@ -12,13 +12,19 @@ const createExecutionHistoryRepository = () => ({
 });
 
 describe('StrategyIntentExecutionService', () => {
+  const trackedOrders = new Map<string, Record<string, unknown>>();
+  const toTrackedOrderKey = (
+    exchange: string,
+    accountLabel: string | undefined,
+    exchangeOrderId: string,
+  ) => `${exchange}:${accountLabel || 'default'}:${exchangeOrderId}`;
   const exchangeConnectorAdapterService = {
     placeLimitOrder: jest
       .fn()
       .mockResolvedValue({ id: 'order-1', status: 'open' }),
     fetchOrder: jest
       .fn()
-      .mockResolvedValue({ id: 'order-1', status: 'closed', filled: '1' }),
+      .mockResolvedValue({ id: 'order-1', status: 'open', filled: '0' }),
     quantizeOrder: jest.fn(
       (_exchange: string, _pair: string, qty: string, price: string) => ({
         qty,
@@ -34,10 +40,38 @@ describe('StrategyIntentExecutionService', () => {
   };
 
   const exchangeOrderTrackerService = {
-    upsertOrder: jest.fn(),
-    getTrackedOrders: jest.fn().mockReturnValue([]),
-    getActiveSlotOrders: jest.fn().mockReturnValue([]),
-    getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
+    upsertOrder: jest.fn((order: Record<string, unknown>) => {
+      trackedOrders.set(
+        toTrackedOrderKey(
+          String(order.exchange),
+          typeof order.accountLabel === 'string'
+            ? order.accountLabel
+            : undefined,
+          String(order.exchangeOrderId),
+        ),
+        order,
+      );
+    }),
+    getTrackedOrders: jest.fn((strategyKey: string) =>
+      [...trackedOrders.values()].filter(
+        (order) => order.strategyKey === strategyKey,
+      ),
+    ),
+    getActiveSlotOrders: jest.fn((strategyKey: string) =>
+      [...trackedOrders.values()].filter(
+        (order) =>
+          order.strategyKey === strategyKey &&
+          ['pending_create', 'open', 'partially_filled', 'pending_cancel'].includes(
+            String(order.status),
+          ),
+      ),
+    ),
+    getByExchangeOrderId: jest.fn(
+      (exchange: string, exchangeOrderId: string, accountLabel?: string) =>
+        trackedOrders.get(
+          toTrackedOrderKey(exchange, accountLabel, exchangeOrderId),
+        ),
+    ),
   };
 
   const exchangeOrderMappingService = {
@@ -132,27 +166,78 @@ describe('StrategyIntentExecutionService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
+    trackedOrders.clear();
+    exchangeConnectorAdapterService.placeLimitOrder.mockReset().mockResolvedValue({
       id: 'order-1',
       status: 'open',
     });
-    exchangeConnectorAdapterService.cancelOrder.mockResolvedValue({
+    exchangeConnectorAdapterService.cancelOrder.mockReset().mockResolvedValue({
       id: 'exchange-order-1',
       status: 'canceled',
     });
-    exchangeConnectorAdapterService.fetchOrder.mockResolvedValue({
+    exchangeConnectorAdapterService.fetchOrder.mockReset().mockResolvedValue({
       id: 'order-1',
-      status: 'closed',
-      filled: '1',
+      status: 'open',
+      filled: '0',
     });
-    exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
+    exchangeConnectorAdapterService.fetchOrderBook
+      .mockReset()
+      .mockResolvedValue({ bids: [[100, 1]], asks: [[101, 1]] });
+    exchangeConnectorAdapterService.quantizeOrder.mockReset().mockImplementation(
       (_exchange: string, _pair: string, qty: string, price: string) => ({
         qty,
         price,
       }),
     );
-    exchangeOrderMappingService.countMappingsForOrder.mockResolvedValue(0);
-    exchangeOrderTrackerService.getByExchangeOrderId.mockReturnValue(undefined);
+    exchangeOrderTrackerService.upsertOrder.mockClear();
+    exchangeOrderTrackerService.upsertOrder.mockImplementation(
+      (order: Record<string, unknown>) => {
+        trackedOrders.set(
+          toTrackedOrderKey(
+            String(order.exchange),
+            typeof order.accountLabel === 'string'
+              ? order.accountLabel
+              : undefined,
+            String(order.exchangeOrderId),
+          ),
+          order,
+        );
+      },
+    );
+    exchangeOrderTrackerService.getTrackedOrders.mockReset().mockImplementation(
+      (strategyKey: string) =>
+        [...trackedOrders.values()].filter(
+          (order) => order.strategyKey === strategyKey,
+        ),
+    );
+    exchangeOrderTrackerService.getActiveSlotOrders
+      .mockReset()
+      .mockImplementation((strategyKey: string) =>
+        [...trackedOrders.values()].filter(
+          (order) =>
+            order.strategyKey === strategyKey &&
+            ['pending_create', 'open', 'partially_filled', 'pending_cancel'].includes(
+              String(order.status),
+            ),
+        ),
+      );
+    exchangeOrderTrackerService.getByExchangeOrderId
+      .mockReset()
+      .mockImplementation(
+        (exchange: string, exchangeOrderId: string, accountLabel?: string) =>
+          trackedOrders.get(
+            toTrackedOrderKey(exchange, accountLabel, exchangeOrderId),
+          ),
+      );
+    exchangeOrderMappingService.countMappingsForOrder
+      .mockReset()
+      .mockResolvedValue(0);
+    exchangeOrderMappingService.reserveMapping
+      .mockReset()
+      .mockResolvedValue(undefined);
+    exchangeOrderMappingService.createMapping
+      .mockReset()
+      .mockResolvedValue(undefined);
     strategyInstanceRepository.findOne.mockResolvedValue({
       strategyKey: 'u1-c1-pureMarketMaking',
       status: 'running',
@@ -249,7 +334,28 @@ describe('StrategyIntentExecutionService', () => {
         status: 'closed',
         filled: '1',
       });
-    const service = createService(true);
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-1',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-1',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-1',
+        status: 'closed',
+        filled: '1',
+      });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+    );
 
     await service.consumeIntents([
       {
@@ -293,11 +399,13 @@ describe('StrategyIntentExecutionService', () => {
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
     ).toHaveBeenCalledTimes(2);
-    expect(exchangeConnectorAdapterService.fetchOrder).not.toHaveBeenCalled();
+    expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledTimes(3);
+    expect(exchangeConnectorAdapterService.fetchOrderBook).toHaveBeenCalledTimes(
+      2,
+    );
     expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
-    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenNthCalledWith(
-      1,
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         orderId: 'dual-cycle-1',
         accountLabel: 'maker',
@@ -305,8 +413,7 @@ describe('StrategyIntentExecutionService', () => {
         exchangeOrderId: 'maker-order-1',
       }),
     );
-    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenNthCalledWith(
-      2,
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         orderId: 'dual-cycle-1',
         accountLabel: 'taker',
@@ -348,7 +455,28 @@ describe('StrategyIntentExecutionService', () => {
         status: 'closed',
         filled: '1',
       });
-    const service = createService(true);
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-3',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-3',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-3',
+        status: 'closed',
+        filled: '1',
+      });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+    );
 
     await service.consumeIntents([
       {
@@ -423,21 +551,39 @@ describe('StrategyIntentExecutionService', () => {
     exchangeConnectorAdapterService.placeLimitOrder
       .mockResolvedValueOnce({ id: 'maker-order-cancel', status: 'open' })
       .mockRejectedValue(new Error('taker IOC rejected'));
-    const service = createService(true);
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-cancel',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-cancel',
+        status: 'open',
+        filled: '0',
+      });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+    );
 
-    await service.consumeIntents([
-      {
-        ...baseIntent,
-        intentId: 'dual-maker-cancel',
-        accountLabel: 'maker',
-        metadata: {
-          role: 'maker',
-          takerAccountLabel: 'taker',
-          cycleId: 'cycle-cancel',
-          orderId: 'dual-cycle-cancel',
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-cancel',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            cycleId: 'cycle-cancel',
+            orderId: 'dual-cycle-cancel',
+          },
         },
-      },
-    ]);
+      ]),
+    ).rejects.toThrow('taker IOC rejected');
 
     expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
       'binance',
@@ -455,9 +601,189 @@ describe('StrategyIntentExecutionService', () => {
       }),
     );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
-      'dual-maker-cancel',
-      'DONE',
+      'dual-maker-cancel:inline-taker',
+      'FAILED',
+      'taker IOC rejected',
     );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-cancel',
+      'FAILED',
+      'taker IOC rejected',
+    );
+  });
+
+  it('cancels the maker leg and skips taker submission when maker loses exclusive top-of-book', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValueOnce({
+      id: 'maker-order-lost-book',
+      status: 'open',
+    });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-lost-book',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-lost-book',
+        status: 'open',
+        filled: '0',
+      });
+    exchangeConnectorAdapterService.fetchOrderBook
+      .mockResolvedValueOnce({ bids: [[100, 1]], asks: [[101, 1]] })
+      .mockResolvedValueOnce({ bids: [[99.99, 1]], asks: [[101, 1]] });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+    );
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-lost-book',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            cycleId: 'cycle-lost-book',
+            orderId: 'dual-cycle-lost-book',
+          },
+        },
+      ]),
+    ).rejects.toThrow('Dual-account maker lost top-of-book before taker post-delay');
+
+    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order-lost-book',
+      'maker',
+    );
+  });
+
+  it('fails the cycle and cancels the maker when taker fill is not paired by maker fill', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-mismatch', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'taker-order-mismatch',
+        status: 'closed',
+        filled: '1',
+      });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValue({
+        id: 'maker-order-mismatch',
+        status: 'open',
+        filled: '0',
+      });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 0,
+      }),
+    );
+    jest
+      .spyOn(service as any, 'sleep')
+      .mockImplementation(async () => undefined);
+    const nowSpy = jest.spyOn(Date, 'now');
+    let nowMs = 0;
+
+    nowSpy.mockImplementation(() => {
+      nowMs += 250;
+
+      return nowMs;
+    });
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          intentId: 'dual-maker-mismatch',
+          accountLabel: 'maker',
+          metadata: {
+            role: 'maker',
+            takerAccountLabel: 'taker',
+            cycleId: 'cycle-mismatch',
+            orderId: 'dual-cycle-mismatch',
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Immediate dual-account paired fill mismatch between maker and taker',
+    );
+
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'dual-maker-mismatch:inline-taker',
+      'FAILED',
+      expect.stringContaining(
+        'Immediate dual-account paired fill mismatch between maker and taker',
+      ),
+    );
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'maker-order-mismatch',
+      'maker',
+    );
+
+    nowSpy.mockRestore();
+  });
+
+  it('honors the configured random delay before immediate dual-account taker dispatch', async () => {
+    exchangeConnectorAdapterService.placeLimitOrder
+      .mockResolvedValueOnce({ id: 'maker-order-delay', status: 'open' })
+      .mockResolvedValueOnce({
+        id: 'taker-order-delay',
+        status: 'closed',
+        filled: '1',
+      });
+    exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-delay',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-delay',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-delay',
+        status: 'closed',
+        filled: '1',
+      });
+    const service = createService(
+      true,
+      createConfigService(true, {
+        'strategy.dual_account_inline_taker_max_delay_ms': 1_000,
+      }),
+    );
+    const sleepSpy = jest
+      .spyOn(service as any, 'sleep')
+      .mockImplementation(async () => undefined);
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        intentId: 'dual-maker-delay',
+        accountLabel: 'maker',
+        metadata: {
+          role: 'maker',
+          takerAccountLabel: 'taker',
+          cycleId: 'cycle-delay',
+          orderId: 'dual-cycle-delay',
+        },
+      },
+    ]);
+
+    expect(sleepSpy).toHaveBeenCalledWith(500);
+
+    randomSpy.mockRestore();
   });
 
   it('deduplicates create intents when the slot already has an active tracked order', async () => {
@@ -848,6 +1174,9 @@ describe('StrategyIntentExecutionService', () => {
         intentId: 'intent-a',
         metadata: { orderId: 'mm-order-1' },
       },
+    ]);
+    trackedOrders.clear();
+    await service.consumeIntents([
       {
         ...baseIntent,
         intentId: 'intent-b',
@@ -928,6 +1257,7 @@ describe('StrategyIntentExecutionService', () => {
     );
 
     jest.clearAllMocks();
+    trackedOrders.clear();
     exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
       id: 'order-after-restart',
       status: 'open',
@@ -998,6 +1328,7 @@ describe('StrategyIntentExecutionService', () => {
     });
 
     jest.clearAllMocks();
+    trackedOrders.clear();
     exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
       id: 'order-after-restart',
       status: 'open',

@@ -66,7 +66,9 @@ If no tradable side found → fall through to rebalance (step 5 below).
 - `CREATE_LIMIT_ORDER`, `postOnly=true`, routed to `makerAccountLabel`
 - Tracked with `role='maker'`
 - Persist `activeCycle` with maker/taker account labels, side, price, and requested qty
-- Once the maker order is acknowledged with an exchange order id, execution immediately submits the taker IOC on `takerAccountLabel`, opposite side, same price, same qty
+- Once the maker order is acknowledged with an exchange order id, execution must first confirm the maker is still open, unfilled, and exclusively owns the top level at its price before submitting the taker IOC
+- An optional random delay of up to `1s` may be inserted between maker readiness and taker submission; the maker must be revalidated after that delay before the taker is allowed to fire
+- If the maker loses top-of-book ownership, becomes filled/cancelled, or no longer has matching remaining size before taker dispatch, the runtime cancels the maker leg and aborts the cycle instead of letting the taker hit unrelated liquidity
 
 **Private watcher / tracker path**:
 
@@ -84,6 +86,13 @@ If no tradable side found → fall through to rebalance (step 5 below).
 
 1. Update `activeCycle.takerFilledQty += fill.qty`
 2. Increase `tradedQuoteVolume` by actual taker-leg filled notional only
+
+**Paired-fill validation**:
+
+1. A taker IOC is only considered valid if it actually fills
+2. After taker execution, maker filled delta must match taker filled qty for the same cycle
+3. If taker fills but maker fill does not advance by the same amount, treat the cycle as an execution anomaly, mark the taker leg failed for visibility, and cancel any remaining maker quantity best-effort
+4. This is the strictest enforceable self-match guard on a CEX; the exchange still does not expose true counterparty targeting, so the runtime relies on exclusive top-of-book validation plus paired fill reconciliation
 
 **Cycle finalization** (next tick, once all tracked orders are terminal):
 
