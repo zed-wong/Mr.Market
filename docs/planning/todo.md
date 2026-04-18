@@ -126,7 +126,7 @@ Deferred strategy follow-ups
 Admin page
 - [ ] 0. Design a manage strategy page that allows admin to add/remove/create template strategies and custom strategies
 - [ ] 1. Add a setup guide for initialization that is step by step, allowing admin to have basic understanding of how setting works, and makes it easier to set up all the things
-- [ ] 2. Support sorting and filter in manage market making pairs/spot trading pairs
+- [x] 2. Support sorting and filter in manage market making pairs/spot trading pairs
 - [ ] 3. Update Admin login page UI design to be consistent with other pages
 - [ ] 4. Merge manage exchange and api keys into one page, has consistent logic and don't make user confuse
 
@@ -160,12 +160,12 @@ Admin exchanges management
 - [ ] 8. Mr.Market users can see joined hufi campaigns with evm wallets under /market-making/hufi
 - [ ] 9. Mr.Market users can see their created campaigns with evm wallets under /market-making/hufi
 
-- [ ] 10. HuFi Learn more page should introduce each types of campaigns
-- [ ] 11. HuFi campaigns page should have a filter button put on top of the page, allowing user open dialog to filter campaigns (by campaign type, create/end date, DESC or ASC, reward amount)
-- [ ] 12. For different types of campaigns, should have different types of actions in details page
+- [x] 10. HuFi Learn more page should introduce each types of campaigns
+- [x] 11. HuFi campaigns page should have a filter button put on top of the page, allowing user open dialog to filter campaigns (by campaign type, create/end date, DESC or ASC, reward amount)
+- [x] 12. For different types of campaigns, should have different types of actions in details page
 
 ### Current UI follow-ups
 
 - [ ] 13. Test join campaign process manually
-- [ ] 14. Show user created order in `/market-making/+page.svelte`
+- [x] 14. Show user created order in `/market-making/+page.svelte`
 - [ ] 15. Show created order details in detail page

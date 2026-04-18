@@ -2,6 +2,11 @@
 
 ## 2026-04-18
 
+- Add campaign filter dialog to HuFi campaigns page: filter by campaign type, sort by start date or reward amount (ASC/DESC), with filter button at top of campaign list and i18n support for en/zh
+- Add campaign types section to HuFi learn-more page introducing Market Making, Threshold, and Holding campaign types with card-based layout
+- Add campaign-type-specific actions in campaign detail page: show type-specific target info (volume/balance/threshold) in dialog and type-aware button labels
+- Add "Your Orders" section to market-making page replacing hardcoded empty state, with link to browse campaigns
+- Add search and exchange filter to admin manage market-making pairs and spot-trading pairs lists
 - Tighten dual-account paired execution so the taker cannot blindly hit third-party liquidity after maker ACK: wait for the maker order to become open/unfilled, require it to still own the full top-of-book level at its price, optionally jitter taker dispatch by up to `1s`, revalidate before sending the taker IOC, and fail the cycle with maker cancel if paired-fill validation does not show matching maker/taker fills
 - Fix MEXC private-trade fill routing for CCXT unified trade payloads: treat trade `order` as the tracked `exchangeOrderId` instead of falling back to trade `id`, update user-stream fallback extraction accordingly, and add regression coverage so `...X1` trade ids no longer become orphaned unresolved-order fills
 - Switch dual-account paired execution back to maker-ack-driven taker dispatch: `StrategyIntentExecutionService` now submits the taker IOC immediately after maker ACK, best-effort cancels the maker leg if that taker submission fails, and dual-account fill routing now uses private-stream maker fills for progress accounting instead of triggering new taker intents

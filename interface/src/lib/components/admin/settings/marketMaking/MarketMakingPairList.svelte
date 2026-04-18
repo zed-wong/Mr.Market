@@ -18,15 +18,25 @@ import { toast } from "svelte-sonner";
 
     let isUpdating = "";
     let isDeleting = "";
+    let searchQuery = "";
+    let filterExchange = "";
 
     // Pagination
     let currentPage = 1;
     const itemsPerPage = 10;
-    $: sortedPairs = [...marketMakingPairs].sort((a, b) => {
-        const exchangeCompare = a.exchange_id.localeCompare(b.exchange_id);
-        if (exchangeCompare !== 0) return exchangeCompare;
-        return a.symbol.localeCompare(b.symbol);
-    });
+    $: exchangeOptions = [...new Set(marketMakingPairs.map(p => p.exchange_id))].filter(Boolean);
+    $: sortedPairs = [...marketMakingPairs]
+        .filter(p => {
+            if (searchQuery && !p.symbol.toLowerCase().includes(searchQuery.toLowerCase()) && !p.exchange_id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+            if (filterExchange && p.exchange_id !== filterExchange) return false;
+            return true;
+        })
+        .sort((a, b) => {
+            const exchangeCompare = a.exchange_id.localeCompare(b.exchange_id);
+            if (exchangeCompare !== 0) return exchangeCompare;
+            return a.symbol.localeCompare(b.symbol);
+        });
+    $: if (searchQuery || filterExchange !== undefined) currentPage = 1;
     $: totalPages = Math.ceil(sortedPairs.length / itemsPerPage);
     $: paginatedPairs = sortedPairs.slice(
         (currentPage - 1) * itemsPerPage,
@@ -97,6 +107,22 @@ import { toast } from "svelte-sonner";
         </button>
     </div>
 {:else}
+    <div class="flex flex-col sm:flex-row gap-3 mb-4">
+        <input
+            class="input input-bordered input-sm flex-1 bg-base-100 text-sm"
+            placeholder={$_("search_pairs")}
+            bind:value={searchQuery}
+        />
+        <select
+            class="select select-bordered select-sm bg-base-100 text-sm capitalize"
+            bind:value={filterExchange}
+        >
+            <option value="">{$_("all_exchanges")}</option>
+            {#each exchangeOptions as ex}
+                <option value={ex} class="capitalize">{ex}</option>
+            {/each}
+        </select>
+    </div>
     <div
         class="card bg-base-100 shadow-sm border border-base-200 overflow-hidden"
     >

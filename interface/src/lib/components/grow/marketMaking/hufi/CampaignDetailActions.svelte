@@ -88,6 +88,16 @@
         parseFloat(baseAmountInput) > 0 &&
         parseFloat(quoteAmountInput) > 0,
     );
+    $: campaignTargetValue = campaign.type === 'THRESHOLD'
+        ? campaign.details?.minimum_balance_target
+        : campaign.type === 'HOLDING'
+            ? campaign.details?.daily_balance_target
+            : campaign.details?.daily_volume_target;
+    $: campaignTargetLabel = campaign.type === 'THRESHOLD'
+        ? $_("hufi_campaign_target_min_balance")
+        : campaign.type === 'HOLDING'
+            ? $_("hufi_campaign_target_daily_balance")
+            : $_("hufi_campaign_target_volume");
     $: isContinueDisabled = !hasValidAmounts || !selectedPairInfo;
 
     const paymentPoller = createMarketMakingPaymentPoller({
@@ -257,7 +267,7 @@
                 d="M12 4.5v15m7.5-7.5h-15"
             />
         </svg>
-        {$_("hufi_campaign_create_mmaking")}
+        {$_(campaign.type === 'THRESHOLD' ? "hufi_campaign_join_threshold" : campaign.type === 'HOLDING' ? "hufi_campaign_join_holding" : "hufi_campaign_create_mmaking")}
     </button>
 </div>
 
@@ -298,17 +308,23 @@
         <div class="space-y-4">
             <div class="bg-gray-50 rounded-lg p-4 space-y-3">
                 <div class="flex justify-between items-center">
-                    <span class="text-sm text-gray-600">{$_("exchange")}</span>
+                    <span class="text-sm text-base-content/60">{$_("exchange")}</span>
                     <span class="text-sm font-semibold capitalize"
                         >{campaign.exchange_name}</span
                     >
                 </div>
                 <div class="flex justify-between items-center">
-                    <span class="text-sm text-gray-600"
+                    <span class="text-sm text-base-content/60"
                         >{$_("trading_pair")}</span
                     >
                     <span class="text-sm font-semibold">{campaign.symbol}</span>
                 </div>
+                {#if campaignTargetValue}
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-base-content/60">{campaignTargetLabel}</span>
+                        <span class="text-sm font-semibold">{campaignTargetValue.toLocaleString()}</span>
+                    </div>
+                {/if}
             </div>
 
             {#if supportStatusReady && !hasMarketMakingSupport}

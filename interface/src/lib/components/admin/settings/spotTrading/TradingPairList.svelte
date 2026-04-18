@@ -14,17 +14,32 @@ import { toast } from "svelte-sonner";
 
   let isUpdating = "";
   let isDeleting = "";
+  let searchQuery = "";
+  let filterExchange = "";
 
   // Pagination
   let currentPage = 1;
   const itemsPerPage = 10;
-  $: totalPages = Math.ceil(tradingPairs.length / itemsPerPage);
-  $: paginatedPairs = tradingPairs.slice(
+  $: exchangeOptions = [...new Set(tradingPairs.map(p => p.exchange_id))].filter(Boolean);
+  $: filteredPairs = tradingPairs
+    .filter(p => {
+      if (searchQuery && !p.symbol.toLowerCase().includes(searchQuery.toLowerCase()) && !p.exchange_id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (filterExchange && p.exchange_id !== filterExchange) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const exchangeCompare = a.exchange_id.localeCompare(b.exchange_id);
+      if (exchangeCompare !== 0) return exchangeCompare;
+      return a.symbol.localeCompare(b.symbol);
+    });
+  $: if (searchQuery || filterExchange !== undefined) currentPage = 1;
+  $: totalPages = Math.ceil(filteredPairs.length / itemsPerPage);
+  $: paginatedPairs = filteredPairs.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage,
   );
-  $: startIndex = (currentPage - 1) * itemsPerPage + 1;
-  $: endIndex = Math.min(currentPage * itemsPerPage, tradingPairs.length);
+  $: startIndex = filteredPairs.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  $: endIndex = Math.min(currentPage * itemsPerPage, filteredPairs.length);
 
   async function UpdateSpotTradingPair(id: string, enable: boolean) {
     if (!id) return;
@@ -61,6 +76,22 @@ import { toast } from "svelte-sonner";
   }
 </script>
 
+<div class="flex flex-col sm:flex-row gap-3 mb-4">
+  <input
+    class="input input-bordered input-sm flex-1 bg-base-100 text-sm"
+    placeholder={$_("search_pairs")}
+    bind:value={searchQuery}
+  />
+  <select
+    class="select select-bordered select-sm bg-base-100 text-sm capitalize"
+    bind:value={filterExchange}
+  >
+    <option value="">{$_("all_exchanges")}</option>
+    {#each exchangeOptions as ex}
+      <option value={ex} class="capitalize">{ex}</option>
+    {/each}
+  </select>
+</div>
 <div class="card bg-base-100 shadow-sm border border-base-200 overflow-hidden">
   <div class="overflow-x-auto">
     <table class="table table-lg">
@@ -260,7 +291,7 @@ import { toast } from "svelte-sonner";
       {$_("showing")}
       {startIndex}-{endIndex}
       {$_("of")}
-      {tradingPairs.length}
+      {filteredPairs.length}
       {$_("entries")}
     </div>
     <div class="flex items-center gap-2">
@@ -286,7 +317,7 @@ import { toast } from "svelte-sonner";
       </button>
       <button
         class="btn btn-ghost btn-sm btn-square"
-        disabled={currentPage === totalPages || tradingPairs.length === 0}
+        disabled={currentPage === totalPages || filteredPairs.length === 0}
         on:click={() => (currentPage = Math.min(totalPages, currentPage + 1))}
       >
         <svg
