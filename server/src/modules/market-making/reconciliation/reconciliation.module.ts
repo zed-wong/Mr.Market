@@ -6,6 +6,8 @@ import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 
 import { TrackersModule } from '../trackers/trackers.module';
+import { ExchangeConnectorRegistry } from '../connector/exchange-connector-registry';
+import { ExchangeOrderReconciliationRunner } from './exchange-order-reconciliation-runner';
 import { ReconciliationService } from './reconciliation.service';
 
 @Module({
@@ -18,7 +20,15 @@ import { ReconciliationService } from './reconciliation.service';
     ]),
     TrackersModule,
   ],
-  providers: [ReconciliationService],
-  exports: [ReconciliationService],
+  providers: [
+    ReconciliationService,
+    ExchangeOrderReconciliationRunner,
+    ExchangeConnectorRegistry,
+  ],
+  exports: [
+    ReconciliationService,
+    ExchangeOrderReconciliationRunner,
+    ExchangeConnectorRegistry,
+  ],
 })
 export class ReconciliationModule {}

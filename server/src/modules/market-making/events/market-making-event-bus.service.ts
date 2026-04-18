@@ -15,6 +15,13 @@ import { MARKET_MAKING_EVENT_NAMES } from './market-making-events.types';
 type MarketMakingEventListener<TEventName extends MarketMakingEventName> = (
   payload: MarketMakingEventPayloadMap[TEventName],
 ) => void;
+type ExchangeScopedMarketMakingEventName = {
+  [TEventName in MarketMakingEventName]: MarketMakingEventPayloadMap[TEventName] extends {
+    exchange: string;
+  }
+    ? TEventName
+    : never;
+}[MarketMakingEventName];
 
 @Injectable()
 export class MarketMakingEventBus {
@@ -64,6 +71,20 @@ export class MarketMakingEventBus {
         listener as unknown as (...args: unknown[]) => void,
       );
     };
+  }
+
+  onExchangeEvent<TEventName extends ExchangeScopedMarketMakingEventName>(
+    exchange: string,
+    eventName: TEventName,
+    listener: MarketMakingEventListener<TEventName>,
+  ): () => void {
+    return this.on(eventName, (payload) => {
+      if (payload.exchange !== exchange) {
+        return;
+      }
+
+      listener(payload);
+    });
   }
 
   private emit<TEventName extends MarketMakingEventName>(

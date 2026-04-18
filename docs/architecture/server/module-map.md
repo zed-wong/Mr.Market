@@ -315,13 +315,13 @@ This section explains each module with three questions:
 #### `market-making/tick/tick.module.ts`
 
 - What: provides the clock tick coordinator contract plus shared runtime timing recording.
-- Why: strategy and trackers run as deterministic periodic components, and the refactor needs per-tick/per-component/per-network timing evidence before behavior changes.
-- Where: used by strategy service and tracker services registered as tick components, and by `/metrics/runtime`.
+- Why: the runtime still needs deterministic strategy cadence plus per-tick/per-component/per-network timing evidence even after reconciliation and refresh leave the shared tick path.
+- Where: used by strategy service and by `/metrics/runtime`.
 
 #### `market-making/trackers/trackers.module.ts`
 
-- What: tracks order books, user-stream events, and exchange order status, including a thin order-book ingestion layer that subscribes market-making sessions to the shared market-data stream and a typed market-making event bus for order/balance/stream-health propagation.
-- Why: execution and reconciliation require current exchange-side state without falling back to per-tick REST/ticker requests, and the runtime refactor needs those cache transitions observable without coupling everything to the shared tick loop.
+- What: tracks order books, user-stream events, exchange order state, cached balances, and the balance refresh scheduler, including a thin order-book ingestion layer that subscribes market-making sessions to the shared market-data stream and a typed market-making event bus for order/balance/stream-health propagation.
+- Why: execution and reconciliation require current exchange-side state without falling back to per-tick REST/ticker requests, and the runtime refactor needs those cache transitions observable while off-tick workers handle recovery and refresh.
 - Where: used by strategy runtime and pause/withdraw drain logic.
 
 #### `market-making/execution/execution.module.ts`
@@ -362,9 +362,15 @@ This section explains each module with three questions:
 
 #### `market-making/reconciliation/reconciliation.module.ts`
 
-- What: periodic consistency checks for ledger, intents, and order states.
-- Why: long-running async systems need reconciliation against drift.
-- Where: used in scheduled maintenance checks and anomaly detection.
+- What: periodic consistency checks for ledger/intents plus the off-tick `ExchangeOrderReconciliationRunner`.
+- Why: long-running async systems need reconciliation against drift, and tracked orders need REST recovery that no longer stretches the shared strategy tick.
+- Where: used in scheduled maintenance checks, anomaly detection, and runtime order-state recovery.
+
+#### `market-making/connector/*`
+
+- What: connector-scoped runtime grouping via `ExchangeConnectorRuntime` and `ExchangeConnectorRegistry`.
+- Why: multi-connector strategies need one place to look up the order tracker, user stream tracker, reconciliation runner, balance cache, balance refresh scheduler, and order book tracker for a given exchange.
+- Where: used as the architectural bridge toward future multi-leg / cross-connector strategies.
 
 #### `market-making/rewards/rewards.module.ts`
 

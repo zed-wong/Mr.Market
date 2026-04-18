@@ -114,7 +114,7 @@ describe('ExchangeOrderTrackerService', () => {
     ).toEqual(['pending-create', 'open-order', 'pending-cancel']);
   });
 
-  it('reconciles order status on tick via adapter poller', async () => {
+  it('reconciles order status through the off-tick poller', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'closed' }),
     };
@@ -137,14 +137,14 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
 
-    await service.onTick('2026-02-11T00:00:01.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z');
 
     const tracked = service.getByExchangeOrderId('binance', 'ex-1');
 
     expect(tracked?.status).toBe('filled');
   });
 
-  it('self-heals stopped market-making orders without re-polling them on later ticks', async () => {
+  it('self-heals stopped market-making orders without re-polling them on later reconciliation passes', async () => {
     const adapter = {
       fetchOrder: jest.fn(),
     };
@@ -184,8 +184,8 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
 
-    await service.onTick('2026-02-11T00:00:01.000Z');
-    await service.onTick('2026-02-11T00:00:02.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:02.000Z');
 
     expect(adapter.fetchOrder).not.toHaveBeenCalled();
     expect(service.getByExchangeOrderId('binance', 'ex-1')?.status).toBe(
@@ -236,8 +236,8 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
 
-    await service.onTick('2026-02-11T00:00:01.000Z');
-    await service.onTick('2026-02-11T00:00:02.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:02.000Z');
 
     expect(onFill).toHaveBeenCalledTimes(1);
     expect(onFill).toHaveBeenCalledWith(
@@ -366,7 +366,7 @@ describe('ExchangeOrderTrackerService', () => {
     ).toBe('sell');
   });
 
-  it('marks user stream activity and uses slow poll interval', async () => {
+  it('marks user stream activity and uses the slow off-tick poll interval', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
     };
@@ -392,18 +392,18 @@ describe('ExchangeOrderTrackerService', () => {
 
     service.markUserStreamActivity('binance', 'default');
 
-    await service.onTick('2026-02-11T00:00:01.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z');
 
     expect(adapter.fetchOrder).toHaveBeenCalledTimes(1);
 
     adapter.fetchOrder.mockClear();
 
-    await service.onTick('2026-02-11T00:00:02.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:02.000Z');
 
     expect(adapter.fetchOrder).toHaveBeenCalledTimes(0);
   });
 
-  it('uses fast poll interval when user stream is silent', async () => {
+  it('uses the fast off-tick poll interval when user stream is silent', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
     };
@@ -426,7 +426,7 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
 
-    await service.onTick('2026-02-11T00:00:01.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z');
 
     expect(adapter.fetchOrder).toHaveBeenCalledTimes(1);
 
@@ -434,12 +434,12 @@ describe('ExchangeOrderTrackerService', () => {
 
     jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 6_000);
 
-    await service.onTick('2026-02-11T00:00:07.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:07.000Z');
 
     expect(adapter.fetchOrder).toHaveBeenCalledTimes(1);
   });
 
-  it('polls at most MAX_ORDERS_PER_TICK orders per tick', async () => {
+  it('polls within the configured reconciliation budget per pass', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'x', status: 'open' }),
     };
@@ -464,9 +464,12 @@ describe('ExchangeOrderTrackerService', () => {
       });
     }
 
-    await service.onTick('2026-02-11T00:00:01.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z', {
+      totalBudget: 3,
+      perExchangeBudget: 3,
+    });
 
-    expect(adapter.fetchOrder).toHaveBeenCalledTimes(2);
+    expect(adapter.fetchOrder).toHaveBeenCalledTimes(3);
   });
 
   it('prioritizes pending_create and pending_cancel orders', async () => {
@@ -527,7 +530,10 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-02-11T00:00:00.000Z',
     });
 
-    await service.onTick('2026-02-11T00:00:01.000Z');
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z', {
+      totalBudget: 3,
+      perExchangeBudget: 3,
+    });
 
     expect(fetchedIds[0]).toBe('pending-1');
   });
@@ -626,7 +632,7 @@ describe('ExchangeOrderTrackerService', () => {
       updatedAt: '2026-04-18T00:00:00.000Z',
     });
 
-    await service.onTick('2026-04-18T00:00:01.000Z');
+    await service.pollDueOrders('2026-04-18T00:00:01.000Z');
 
     expect(emitOrderFillRecoveredSpy).toHaveBeenCalledWith(
       expect.objectContaining({

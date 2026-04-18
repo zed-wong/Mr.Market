@@ -21,14 +21,16 @@ describe('BalanceStateRefreshService', () => {
       getLastRecvTime: jest.fn().mockReturnValue(undefined),
     };
     const service = new BalanceStateRefreshService(
-      undefined,
       exchangeConnectorAdapterService as any,
       balanceStateCacheService,
       userStreamTrackerService as any,
     );
 
     service.registerAccount('binance', 'maker');
-    await service.onTick('2026-04-14T00:00:00.000Z');
+    await service.refreshDueAccounts(
+      service.getRegisteredAccounts(),
+      '2026-04-14T00:00:00.000Z',
+    );
 
     expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledWith(
       'binance',
@@ -45,7 +47,7 @@ describe('BalanceStateRefreshService', () => {
     expect(service.getLastRefreshTime('binance', 'maker')).toBeTruthy();
   });
 
-  it('keeps ticking when a balance refresh fails', async () => {
+  it('keeps refreshing later accounts when one balance refresh fails', async () => {
     const exchangeConnectorAdapterService = {
       fetchBalance: jest
         .fn()
@@ -60,7 +62,6 @@ describe('BalanceStateRefreshService', () => {
       .spyOn(CustomLogger.prototype, 'warn')
       .mockImplementation(() => undefined);
     const service = new BalanceStateRefreshService(
-      undefined,
       exchangeConnectorAdapterService as any,
       balanceStateCacheService,
       userStreamTrackerService as any,
@@ -70,8 +71,11 @@ describe('BalanceStateRefreshService', () => {
     service.registerAccount('binance', 'maker');
 
     await expect(
-      service.onTick('2026-04-14T00:00:00.000Z'),
-    ).resolves.toBeUndefined();
+      service.refreshDueAccounts(
+        service.getRegisteredAccounts(),
+        '2026-04-14T00:00:00.000Z',
+      ),
+    ).resolves.toEqual(['binance:maker']);
 
     expect(
       exchangeConnectorAdapterService.fetchBalance,
@@ -92,7 +96,6 @@ describe('BalanceStateRefreshService', () => {
       .spyOn(Date, 'now')
       .mockReturnValue(Date.parse('2026-04-14T00:00:10.000Z'));
     const service = new BalanceStateRefreshService(
-      undefined,
       undefined,
       undefined,
       {
@@ -117,7 +120,6 @@ describe('BalanceStateRefreshService', () => {
         ),
     };
     const service = new BalanceStateRefreshService(
-      undefined,
       exchangeConnectorAdapterService as any,
       new BalanceStateCacheService(),
       {
@@ -130,10 +132,16 @@ describe('BalanceStateRefreshService', () => {
     service.registerAccount('mexc', 'maker');
 
     nowSpy.mockReturnValue(Date.parse('2026-04-14T00:00:35.000Z'));
-    await service.onTick('2026-04-14T00:00:35.000Z');
+    await service.refreshDueAccounts(
+      service.getRegisteredAccounts(),
+      '2026-04-14T00:00:35.000Z',
+    );
 
     nowSpy.mockReturnValue(Date.parse('2026-04-14T00:00:40.000Z'));
-    await service.onTick('2026-04-14T00:00:40.000Z');
+    await service.refreshDueAccounts(
+      service.getRegisteredAccounts(),
+      '2026-04-14T00:00:40.000Z',
+    );
 
     expect(service.getHealthState('mexc', 'maker')).toBe('reconnecting');
     jest.restoreAllMocks();

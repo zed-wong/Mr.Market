@@ -4,6 +4,13 @@
 
 Refactor the market-making runtime so the shared tick loop becomes a lightweight decision/orchestration layer, while order reconciliation, balance refresh, and stream-driven state updates run independently. The runtime must stay consistent with the current pooled-executor architecture, close the biggest Hummingbot foundation gaps in the right order, and keep each phase shippable with tests before the next phase starts.
 
+## Implementation status (2026-04-18)
+
+- Phase 1.1 / 1.2 landed: runtime timing instrumentation, typed `MarketMakingEventBus`, and runtime timing metrics endpoint are in place.
+- Phase 1.3 / 2.1 / 2.3 landed: strategy session ticks now enforce cached-state-only balance reads, balance watchers cover the active strategy types, and non-fill order-state transitions apply immediately from the user stream.
+- Phase 2.2 / 3.1 / 3.2 landed: REST order recovery emits state/fill events through `ExchangeOrderTrackerService`, off-tick order polling lives in `ExchangeOrderReconciliationRunner`, and off-tick balance refresh lives in `BalanceRefreshScheduler`.
+- Phase 3.3 / 4.1 / 4.2 landed: shared strategy tick execution no longer performs direct `fetchBalance()` / `fetchOrder()` calls in runtime decisions, connector-scoped runtime grouping exists via `ExchangeConnectorRegistry`, and flat typed events now support exchange-scoped subscriptions through structured metadata.
+
 ## Why this refactor now
 
 Current evidence across the active runtime work points to the same bottleneck shape:

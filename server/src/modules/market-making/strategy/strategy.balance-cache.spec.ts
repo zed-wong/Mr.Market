@@ -194,12 +194,41 @@ describe('StrategyService balance cache helpers', () => {
     jest.restoreAllMocks();
   });
 
-  it('enables cache-only reads while a strategy session is deciding actions', async () => {
+  it('prevents strategy session ticks from falling back to REST balance reads', async () => {
+    const balanceStateCacheService = new BalanceStateCacheService();
+    const exchangeConnectorAdapterService = {
+      fetchBalance: jest.fn().mockResolvedValue({
+        free: { BTC: 2, USDT: 300 },
+      }),
+    };
+
+    balanceStateCacheService.applyBalanceSnapshot(
+      'binance',
+      'default',
+      {
+        free: { BTC: 1, USDT: 100 },
+      },
+      '2026-04-14T00:00:00.000Z',
+      'ws',
+    );
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:01:00.000Z'));
+
     const service = createService({
+      balanceStateCacheService,
+      exchangeConnectorAdapterService,
       strategyControllerRegistry: {
         getController: jest.fn().mockReturnValue({
           decideActions: jest.fn(async () => {
             expect((service as any).shouldUseCachedStateOnly()).toBe(true);
+            await expect(
+              (service as any).getAvailableBalancesForPair(
+                'binance',
+                'BTC/USDT',
+                'default',
+              ),
+            ).resolves.toBeNull();
 
             return [];
           }),
@@ -223,6 +252,8 @@ describe('StrategyService balance cache helpers', () => {
 
     expect((service as any).shouldUseCachedStateOnly()).toBe(false);
     expect((service as any).strategyDecisionDepth).toBe(0);
+    expect(exchangeConnectorAdapterService.fetchBalance).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
   });
 
   it('uses maker inventory balance to choose buy or sell when postOnlySide=inventory_balance', async () => {

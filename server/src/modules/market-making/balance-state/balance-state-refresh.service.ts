@@ -1,7 +1,5 @@
 import {
   Injectable,
-  OnModuleDestroy,
-  OnModuleInit,
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -9,13 +7,11 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
-import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
-import { TickComponent } from '../tick/tick-component.interface';
 import { UserStreamTrackerService } from '../trackers/user-stream-tracker.service';
 import { BalanceStateCacheService } from './balance-state-cache.service';
 
-type RegisteredBalanceAccount = {
+export type RegisteredBalanceAccount = {
   exchange: string;
   accountLabel: string;
 };
@@ -23,17 +19,13 @@ type RegisteredBalanceAccount = {
 type StreamHealthState = 'healthy' | 'degraded' | 'silent' | 'reconnecting';
 
 @Injectable()
-export class BalanceStateRefreshService
-  implements TickComponent, OnModuleInit, OnModuleDestroy
-{
+export class BalanceStateRefreshService {
   private static readonly SILENT_MS = 30_000;
   private readonly logger = new CustomLogger(BalanceStateRefreshService.name);
   private readonly accounts = new Map<string, RegisteredBalanceAccount>();
   private readonly lastRefreshAtByKey = new Map<string, string>();
 
   constructor(
-    @Optional()
-    private readonly clockTickCoordinatorService?: ClockTickCoordinatorService,
     @Optional()
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
     @Optional()
@@ -43,18 +35,6 @@ export class BalanceStateRefreshService
     @Optional()
     private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
   ) {}
-
-  async onModuleInit(): Promise<void> {
-    this.clockTickCoordinatorService?.register(
-      'balance-state-refresh',
-      this,
-      4,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    this.clockTickCoordinatorService?.unregister('balance-state-refresh');
-  }
 
   async start(): Promise<void> {
     return;
@@ -69,14 +49,26 @@ export class BalanceStateRefreshService
   }
 
   registerAccount(exchange: string, accountLabel: string): void {
-    this.accounts.set(this.toKey(exchange, accountLabel), {
+    const normalizedAccountLabel = accountLabel || 'default';
+
+    this.accounts.set(this.toKey(exchange, normalizedAccountLabel), {
       exchange,
-      accountLabel,
+      accountLabel: normalizedAccountLabel,
     });
   }
 
   releaseAccount(exchange: string, accountLabel: string): void {
-    this.accounts.delete(this.toKey(exchange, accountLabel));
+    this.accounts.delete(this.toKey(exchange, accountLabel || 'default'));
+  }
+
+  isRegisteredAccount(exchange: string, accountLabel: string): boolean {
+    return this.accounts.has(this.toKey(exchange, accountLabel || 'default'));
+  }
+
+  getRegisteredAccounts(): RegisteredBalanceAccount[] {
+    return [...this.accounts.values()].map((account) => ({
+      ...account,
+    }));
   }
 
   getLastRefreshTime(
@@ -118,84 +110,82 @@ export class BalanceStateRefreshService
     return 'silent';
   }
 
-  async onTick(_: string): Promise<void> {
-    for (const account of this.accounts.values()) {
-      if (!this.shouldRefresh(account.exchange, account.accountLabel)) {
-        continue;
+  async refreshDueAccounts(
+    accounts: RegisteredBalanceAccount[],
+    refreshTs = getRFC3339Timestamp(),
+  ): Promise<string[]> {
+    const refreshedKeys: string[] = [];
+
+    for (const account of accounts) {
+      if (
+        await this.refreshAccount(
+          account.exchange,
+          account.accountLabel,
+          refreshTs,
+        )
+      ) {
+        refreshedKeys.push(this.toKey(account.exchange, account.accountLabel));
       }
-
-      let balance: unknown;
-
-      try {
-        balance = this.runtimeTimingService
-          ? await this.runtimeTimingService.measureAsync(
-              'balance-refresh.fetch-balance',
-              {
-                accountLabel: account.accountLabel,
-                exchange: account.exchange,
-                health: this.getHealthState(
-                  account.exchange,
-                  account.accountLabel,
-                ),
-              },
-              () =>
-                this.exchangeConnectorAdapterService?.fetchBalance(
-                  account.exchange,
-                  account.accountLabel,
-                ) as Promise<unknown>,
-              { warnThresholdMs: 500 },
-            )
-          : await this.exchangeConnectorAdapterService?.fetchBalance(
-              account.exchange,
-              account.accountLabel,
-            );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const trace = error instanceof Error ? error.stack : undefined;
-        const key = this.toKey(account.exchange, account.accountLabel);
-
-        this.logger.warn(
-          `Balance refresh failed for ${key}: ${message}`,
-          trace,
-        );
-
-        if (!(error instanceof ServiceUnavailableException)) {
-          this.lastRefreshAtByKey.delete(key);
-        }
-
-        continue;
-      }
-
-      if (!balance) {
-        continue;
-      }
-
-      const refreshTs = getRFC3339Timestamp();
-
-      this.balanceStateCacheService?.applyBalanceSnapshot(
-        account.exchange,
-        account.accountLabel,
-        balance,
-        refreshTs,
-        'rest',
-      );
-      this.lastRefreshAtByKey.set(
-        this.toKey(account.exchange, account.accountLabel),
-        refreshTs,
-      );
     }
+
+    return refreshedKeys;
   }
 
-  private shouldRefresh(exchange: string, accountLabel: string): boolean {
-    const lastEventMs = this.userStreamTrackerService?.getLastRecvTime(
+  async refreshAccount(
+    exchange: string,
+    accountLabel: string,
+    refreshTs = getRFC3339Timestamp(),
+  ): Promise<boolean> {
+    let balance: unknown;
+
+    try {
+      balance = this.runtimeTimingService
+        ? await this.runtimeTimingService.measureAsync(
+            'balance-refresh.fetch-balance',
+            {
+              accountLabel,
+              exchange,
+              health: this.getHealthState(exchange, accountLabel),
+            },
+            () =>
+              this.exchangeConnectorAdapterService?.fetchBalance(
+                exchange,
+                accountLabel,
+              ) as Promise<unknown>,
+            { warnThresholdMs: 500 },
+          )
+        : await this.exchangeConnectorAdapterService?.fetchBalance(
+            exchange,
+            accountLabel,
+          );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const trace = error instanceof Error ? error.stack : undefined;
+      const key = this.toKey(exchange, accountLabel);
+
+      this.logger.warn(`Balance refresh failed for ${key}: ${message}`, trace);
+
+      if (!(error instanceof ServiceUnavailableException)) {
+        this.lastRefreshAtByKey.delete(key);
+      }
+
+      return false;
+    }
+
+    if (!balance) {
+      return false;
+    }
+
+    this.balanceStateCacheService?.applyBalanceSnapshot(
       exchange,
       accountLabel,
+      balance,
+      refreshTs,
+      'rest',
     );
+    this.lastRefreshAtByKey.set(this.toKey(exchange, accountLabel), refreshTs);
 
-    return (
-      !lastEventMs ||
-      Date.now() - lastEventMs > BalanceStateCacheService.STALE_MS
-    );
+    return true;
   }
 
   private toKey(exchange: string, accountLabel: string): string {

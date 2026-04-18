@@ -78,4 +78,45 @@ describe('MarketMakingEventBus', () => {
       }),
     );
   });
+
+  it('supports exchange-scoped listeners while keeping flat event names', () => {
+    const bus = new MarketMakingEventBus();
+    const listener = jest.fn();
+
+    const detach = bus.onExchangeEvent(
+      'binance',
+      MARKET_MAKING_EVENT_NAMES.orderStateChanged,
+      listener,
+    );
+
+    bus.emitOrderStateChanged({
+      exchange: 'mexc',
+      accountLabel: 'maker',
+      strategyKey: 'strategy-1',
+      orderId: 'order-1',
+      exchangeOrderId: 'ex-1',
+      newState: 'open',
+      source: 'ws',
+      updatedAt: '2026-04-18T00:00:00.000Z',
+    });
+    bus.emitOrderStateChanged({
+      exchange: 'binance',
+      accountLabel: 'maker',
+      strategyKey: 'strategy-1',
+      orderId: 'order-1',
+      exchangeOrderId: 'ex-2',
+      newState: 'filled',
+      source: 'rest',
+      updatedAt: '2026-04-18T00:00:01.000Z',
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-2',
+      }),
+    );
+
+    detach();
+  });
 });

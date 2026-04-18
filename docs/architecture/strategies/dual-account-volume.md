@@ -161,7 +161,9 @@ Key properties:
 | `strategy/strategy.service.ts`                                    | Session actions builder, fill-driven hedging, rebalance logic, account resolution, param persistence |
 | `strategy/execution/strategy-intent-execution.service.ts`         | Intent execution, exchange ack handling, tracked-order upserts                  |
 | `trackers/user-stream-tracker.service.ts`                         | Dual-account fill delta normalization, routing, and dedup                       |
-| `trackers/exchange-order-tracker.service.ts`                      | Recovered fill delta routing when user stream is stale                          |
+| `trackers/exchange-order-tracker.service.ts`                      | Tracked-order cache plus synchronous reads for strategy/runtime decisions        |
+| `reconciliation/exchange-order-reconciliation-runner.ts`          | Off-tick REST order recovery when user stream state is missing or delayed       |
+| `balance-state/balance-refresh-scheduler.ts`                      | Off-tick balance refresh triggered by stale cache or degraded stream health     |
 | `events/market-making-event-bus.service.ts`                       | Typed internal order/balance/stream-health event propagation foundation         |
 | `tick/runtime-timing.service.ts`                                  | Tick, executor, session, and network timing snapshots for runtime refactor work |
 | `admin/market-making/admin-direct-mm.service.ts`                  | Admin CRUD (start/stop/resume/remove)                                           |
@@ -180,3 +182,4 @@ Key properties:
 - Taker intents are emitted only from observed maker fill deltas, never from maker placement ACK
 - Private order + trade watchers must be active for both accounts before fill-driven hedging is reliable
 - Both accounts must be exchange-ready before activation
+- Strategy ticks must use cached balance/order state only; stale cache skips the current cycle until off-tick recovery catches up

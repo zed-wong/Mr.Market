@@ -2,6 +2,7 @@
 
 ## 2026-04-18
 
+- Finish the 2026-04-18 Hummingbot-style runtime refactor plan: strategy session ticks now enforce cached-state-only balance reads, non-fill order-state updates apply immediately from the user stream, REST order polling moved to `ExchangeOrderReconciliationRunner`, balance refresh moved to `BalanceRefreshScheduler` driven by `balance.stale` / `stream.health-changed`, and connector-scoped runtime lookup now lives behind `ExchangeConnectorRegistry` plus exchange-filtered event subscriptions
 - Start Phase 1 of `docs/planning/2026-04-18-market-making-runtime-hummingbot-style-refactor-plan.md`: add a typed `MarketMakingEventBus`, add a shared `MarketMakingRuntimeTimingService`, expose runtime timing snapshots at `GET /metrics/runtime`, and emit foundational order/balance/stream-health events from the cache + tracker layer without changing strategy behavior yet
 - Switch dual-account volume hedging from maker-placement ACK coupling to maker fill-driven execution: persist `activeCycle`, start private order+trade watchers for both `accountLabel`s, emit taker IOC intents only from observed maker fill deltas, and finalize `completedCycles` only after tracked orders settle with fully hedged maker fill
 - Preserve `accountLabel` naming in dual-account runtime/fill routing while carrying it end-to-end through tracker recovery and user-stream dispatch, so the strategy can distinguish maker/taker account boundaries without renaming runtime fields to `keyId`

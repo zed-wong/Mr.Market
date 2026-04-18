@@ -1,6 +1,5 @@
 import {
   Injectable,
-  OnModuleDestroy,
   OnModuleInit,
   Optional,
   ServiceUnavailableException,
@@ -19,7 +18,6 @@ import { ExchangeConnectorAdapterService } from '../execution/exchange-connector
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
-import { TickComponent } from '../tick/tick-component.interface';
 
 export type TrackedOrderState =
   | 'pending_create'
@@ -58,9 +56,7 @@ type FillLogEntry = {
 type TrackedOrderUpdateSource = 'ws' | 'rest' | 'bootstrap' | 'system';
 
 @Injectable()
-export class ExchangeOrderTrackerService
-  implements TickComponent, OnModuleInit, OnModuleDestroy
-{
+export class ExchangeOrderTrackerService implements OnModuleInit {
   private readonly logger = new CustomLogger(ExchangeOrderTrackerService.name);
   private static readonly terminalStates = new Set<TrackedOrderState>([
     'filled',
@@ -99,7 +95,8 @@ export class ExchangeOrderTrackerService
   private static readonly STREAM_HEALTHY_THRESHOLD_MS = 30_000;
   private static readonly SLOW_POLL_INTERVAL_MS = 120_000;
   private static readonly FAST_POLL_INTERVAL_MS = 5_000;
-  private static readonly MAX_ORDERS_PER_TICK = 2;
+  static readonly DEFAULT_RECONCILIATION_BUDGET = 4;
+  static readonly DEFAULT_PER_EXCHANGE_RECONCILIATION_BUDGET = 2;
 
   private readonly orders = new Map<string, TrackedOrder>();
   private readonly fillLog = new Map<string, FillLogEntry[]>();
@@ -130,15 +127,6 @@ export class ExchangeOrderTrackerService
 
   async onModuleInit(): Promise<void> {
     await this.hydratePersistedOrders();
-    this.clockTickCoordinatorService?.register(
-      'exchange-order-tracker',
-      this,
-      3,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    this.clockTickCoordinatorService?.unregister('exchange-order-tracker');
   }
 
   async start(): Promise<void> {
@@ -175,6 +163,7 @@ export class ExchangeOrderTrackerService
       const fillDelta = this.computeFillDelta(existingOrder, nextOrder);
 
       this.orders.set(key, nextOrder);
+      this.updatePollingStateForOrder(key, nextOrder.status);
       void this.persistOrder(nextOrder, key);
       this.emitOrderStateChanged(existingOrder, nextOrder, source, fillDelta);
 
@@ -190,6 +179,7 @@ export class ExchangeOrderTrackerService
     };
 
     this.orders.set(key, createdOrder);
+    this.updatePollingStateForOrder(key, createdOrder.status);
     void this.persistOrder(createdOrder, key);
     this.emitOrderStateChanged(undefined, createdOrder, source);
   }
@@ -246,44 +236,32 @@ export class ExchangeOrderTrackerService
     );
   }
 
-  async onTick(ts: string): Promise<void> {
-    const now = Date.now();
+  async onTick(_: string): Promise<void> {
+    this.prunePollingState();
+  }
 
-    const activeOrders = [...this.orders.values()].filter(
-      (order) =>
-        order.status === 'pending_create' ||
-        order.status === 'open' ||
-        order.status === 'partially_filled' ||
-        order.status === 'pending_cancel',
+  async pollDueOrders(
+    ts: string,
+    options: {
+      nowMs?: number;
+      totalBudget?: number;
+      perExchangeBudget?: number;
+    } = {},
+  ): Promise<number> {
+    this.prunePollingState();
+
+    const now = options.nowMs ?? Date.now();
+    const dueOrders = this.selectDueOrders(
+      now,
+      options.totalBudget ??
+        ExchangeOrderTrackerService.DEFAULT_RECONCILIATION_BUDGET,
+      options.perExchangeBudget ??
+        ExchangeOrderTrackerService.DEFAULT_PER_EXCHANGE_RECONCILIATION_BUDGET,
     );
-
-    const dueOrders = activeOrders
-      .filter((order) => this.isPollDue(order, now))
-      .sort((a, b) => {
-        const aPriority =
-          a.status === 'pending_create' || a.status === 'pending_cancel'
-            ? 0
-            : 1;
-        const bPriority =
-          b.status === 'pending_create' || b.status === 'pending_cancel'
-            ? 0
-            : 1;
-
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority;
-        }
-
-        const aKey = this.toKey(a.exchange, a.accountLabel, a.exchangeOrderId);
-        const bKey = this.toKey(b.exchange, b.accountLabel, b.exchangeOrderId);
-
-        return (
-          (this.lastPolledAtByOrderKey.get(aKey) ?? 0) -
-          (this.lastPolledAtByOrderKey.get(bKey) ?? 0)
-        );
-      })
-      .slice(0, ExchangeOrderTrackerService.MAX_ORDERS_PER_TICK);
+    let processedCount = 0;
 
     for (const order of dueOrders) {
+      processedCount += 1;
       const orderKey = this.toKey(
         order.exchange,
         order.accountLabel,
@@ -383,6 +361,8 @@ export class ExchangeOrderTrackerService
         await this.routeRecoveredFill(order, nextOrder, fillDelta, ts);
       }
     }
+
+    return processedCount;
   }
 
   private isUserStreamHealthy(
@@ -417,6 +397,95 @@ export class ExchangeOrderTrackerService
       : ExchangeOrderTrackerService.FAST_POLL_INTERVAL_MS;
 
     return lastPolled === undefined || now - lastPolled >= interval;
+  }
+
+  private selectDueOrders(
+    now: number,
+    totalBudget: number,
+    perExchangeBudget: number,
+  ): TrackedOrder[] {
+    const normalizedTotalBudget = Math.max(1, totalBudget);
+    const normalizedPerExchangeBudget = Math.max(1, perExchangeBudget);
+    const dueOrders = [...this.orders.values()]
+      .filter((order) => this.isOrderPollable(order))
+      .filter((order) => this.isPollDue(order, now))
+      .sort((a, b) => {
+        const aPriority =
+          a.status === 'pending_create' || a.status === 'pending_cancel'
+            ? 0
+            : 1;
+        const bPriority =
+          b.status === 'pending_create' || b.status === 'pending_cancel'
+            ? 0
+            : 1;
+
+        if (aPriority !== bPriority) {
+          return aPriority - bPriority;
+        }
+
+        const aKey = this.toKey(a.exchange, a.accountLabel, a.exchangeOrderId);
+        const bKey = this.toKey(b.exchange, b.accountLabel, b.exchangeOrderId);
+
+        return (
+          (this.lastPolledAtByOrderKey.get(aKey) ?? 0) -
+          (this.lastPolledAtByOrderKey.get(bKey) ?? 0)
+        );
+      });
+    const perExchangeCounts = new Map<string, number>();
+    const selected: TrackedOrder[] = [];
+
+    for (const order of dueOrders) {
+      const exchangeCount = perExchangeCounts.get(order.exchange) ?? 0;
+
+      if (exchangeCount >= normalizedPerExchangeBudget) {
+        continue;
+      }
+
+      selected.push(order);
+      perExchangeCounts.set(order.exchange, exchangeCount + 1);
+
+      if (selected.length >= normalizedTotalBudget) {
+        break;
+      }
+    }
+
+    return selected;
+  }
+
+  private isOrderPollable(order: TrackedOrder): boolean {
+    return (
+      order.status === 'pending_create' ||
+      order.status === 'open' ||
+      order.status === 'partially_filled' ||
+      order.status === 'pending_cancel'
+    );
+  }
+
+  private prunePollingState(): void {
+    const activeKeys = new Set<string>();
+
+    for (const order of this.orders.values()) {
+      if (this.isOrderPollable(order)) {
+        activeKeys.add(
+          this.toKey(order.exchange, order.accountLabel, order.exchangeOrderId),
+        );
+      }
+    }
+
+    for (const key of this.lastPolledAtByOrderKey.keys()) {
+      if (!activeKeys.has(key)) {
+        this.lastPolledAtByOrderKey.delete(key);
+      }
+    }
+  }
+
+  private updatePollingStateForOrder(
+    orderKey: string,
+    status: TrackedOrderState,
+  ): void {
+    if (ExchangeOrderTrackerService.terminalStates.has(status)) {
+      this.lastPolledAtByOrderKey.delete(orderKey);
+    }
   }
 
   private recordFill(

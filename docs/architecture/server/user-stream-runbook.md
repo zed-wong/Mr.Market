@@ -17,7 +17,7 @@ This runbook covers the market-making user stream path for `order`, `trade`, and
    - `activeWatcherCount`
    - `queueDepth`
    - `duplicateFillSuppressionCount`
-5. Check `balanceCacheStatus` for each required asset/account. If entries are stale or missing, sizing falls back to REST.
+5. Check `balanceCacheStatus` for each required asset/account. If entries are stale or missing, tick-time sizing skips the current cycle and the background refresh scheduler should recover the cache.
 
 ## Expected Operating Modes
 
@@ -31,12 +31,12 @@ This runbook covers the market-making user stream path for `order`, `trade`, and
 
 - One or more watch methods are unavailable.
 - Fill routing still works through the available stream plus REST order reconciliation.
-- Balance freshness may depend more heavily on `BalanceStateRefreshService`.
+- Balance freshness may depend more heavily on `BalanceRefreshScheduler` driving `BalanceStateRefreshService`.
 
 ### Rest-only
 
 - No private/user stream is available.
-- Order recovery and balance refresh rely on REST polling only.
+- Order recovery and balance refresh rely on off-tick REST workers only.
 - This mode is slower but should remain safe.
 
 ## Common Failure Modes
@@ -64,14 +64,14 @@ This runbook covers the market-making user stream path for `order`, `trade`, and
 ### Stale balance cache
 
 - Symptom: `balanceCacheStatus[].stale = true`.
-- Strategy sizing falls back to REST backfill when possible.
-- If stale persists, inspect `watchBalance` support and `BalanceStateRefreshService` timing.
+- Strategy sizing skips the affected tick instead of doing inline REST backfill.
+- If stale persists, inspect `watchBalance` support and `BalanceRefreshScheduler` / `BalanceStateRefreshService` timing.
 
 ## Recovery Guidance
 
 1. Do not rely on private WS replay after restart.
 2. Let watcher loops reconnect automatically first.
-3. If the stream remains silent, confirm REST balance refresh and order reconciliation are still healthy.
+3. If the stream remains silent, confirm off-tick REST balance refresh and order reconciliation are still healthy.
 4. If a specific exchange payload changed, update the exchange normalizer instead of adding parsing logic in ingestion or strategy code.
 
 ## Implementation Notes
