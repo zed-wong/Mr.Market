@@ -321,8 +321,8 @@ describe('UserStreamTrackerService', () => {
 
     await service.onTick('2026-04-18T00:00:01.000Z');
 
-    nowSpy.mockReturnValue(Date.parse('2026-04-18T00:00:20.000Z'));
-    await service.onTick('2026-04-18T00:00:20.000Z');
+    nowSpy.mockReturnValue(Date.parse('2026-04-18T00:01:05.000Z'));
+    await service.onTick('2026-04-18T00:01:05.000Z');
 
     expect(emitStreamHealthChangedSpy).toHaveBeenNthCalledWith(
       1,
@@ -339,7 +339,7 @@ describe('UserStreamTrackerService', () => {
         exchange: 'binance',
         accountLabel: 'maker',
         previousHealth: 'healthy',
-        health: 'degraded',
+        health: 'silent',
       }),
     );
   });
