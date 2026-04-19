@@ -167,5 +167,5 @@ Admin exchanges management
 ### Current UI follow-ups
 
 - [ ] 13. Test join campaign process manually
-- [x] 14. Show user created order in `/market-making/+page.svelte`
+- [ ] 14. Show user created order in `/market-making/+page.svelte`
 - [ ] 15. Show created order details in detail page
