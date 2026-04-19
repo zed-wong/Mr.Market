@@ -42,6 +42,77 @@ describe('BalanceStateCacheService', () => {
     });
   });
 
+  it('fully overwrites account balances when a new snapshot arrives', () => {
+    const service = new BalanceStateCacheService();
+
+    service.applyBalanceSnapshot(
+      'binance',
+      'maker',
+      {
+        free: { BTC: 1, USDT: 100 },
+      },
+      '2026-04-18T00:00:00.000Z',
+      'ws',
+    );
+    service.applyBalanceSnapshot(
+      'binance',
+      'maker',
+      {
+        free: { USDT: 250 },
+      },
+      '2026-04-18T00:00:05.000Z',
+      'ws',
+    );
+
+    expect(service.getBalance('binance', 'maker', 'BTC')).toBeUndefined();
+    expect(service.getBalance('binance', 'maker', 'USDT')).toEqual(
+      expect.objectContaining({ free: '250' }),
+    );
+  });
+
+  it('tracks account snapshot freshness and diagnostics', () => {
+    const service = new BalanceStateCacheService();
+
+    service.applyBalanceSnapshot(
+      'binance',
+      'maker',
+      { free: { USDT: 100 } },
+      '2026-04-18T00:00:00.000Z',
+      'rest',
+    );
+
+    expect(
+      service.hasFreshAccountSnapshot(
+        'binance',
+        'maker',
+        Date.parse('2026-04-18T00:00:10.000Z'),
+      ),
+    ).toBe(true);
+    expect(service.getSnapshotTimestamp('binance', 'maker')).toBe(
+      '2026-04-18T00:00:00.000Z',
+    );
+    expect(
+      service.getSnapshotDiagnostic(
+        'binance',
+        'maker',
+        Date.parse('2026-04-18T00:00:20.000Z'),
+      ),
+    ).toEqual({
+      present: true,
+      fresh: true,
+      ageMs: 20000,
+      freshnessTimestamp: '2026-04-18T00:00:00.000Z',
+      source: 'rest',
+    });
+    expect(
+      service.hasFreshAccountSnapshot(
+        'binance',
+        'maker',
+        Date.parse('2026-04-18T00:00:20.000Z'),
+      ),
+    ).toBe(true);
+  });
+
   it('emits balance.stale only once per account until a fresh update arrives', () => {
     const marketMakingEventBus = new MarketMakingEventBus();
     const emitBalanceStaleSpy = jest.spyOn(
@@ -61,10 +132,10 @@ describe('BalanceStateCacheService', () => {
 
     const entry = service.getBalance('binance', 'maker', 'USDT');
 
-    expect(service.isFresh(entry, Date.parse('2026-04-18T00:00:20.000Z'))).toBe(
+    expect(service.isFresh(entry, Date.parse('2026-04-18T00:01:20.000Z'))).toBe(
       false,
     );
-    expect(service.isFresh(entry, Date.parse('2026-04-18T00:00:25.000Z'))).toBe(
+    expect(service.isFresh(entry, Date.parse('2026-04-18T00:01:25.000Z'))).toBe(
       false,
     );
     expect(emitBalanceStaleSpy).toHaveBeenCalledTimes(1);
@@ -81,7 +152,7 @@ describe('BalanceStateCacheService', () => {
     expect(
       service.isFresh(
         service.getBalance('binance', 'maker', 'USDT'),
-        Date.parse('2026-04-18T00:00:50.000Z'),
+        Date.parse('2026-04-18T00:01:50.000Z'),
       ),
     ).toBe(false);
     expect(emitBalanceStaleSpy).toHaveBeenCalledTimes(2);

@@ -1,17 +1,3 @@
-export type UserStreamBalanceEvent = {
-  kind: 'balance';
-  exchange: string;
-  accountLabel: string;
-  receivedAt: string;
-  payload: {
-    asset: string;
-    free?: string;
-    used?: string;
-    total?: string;
-    source: 'ws' | 'rest';
-  };
-};
-
 export type UserStreamOrderEvent = {
   kind: 'order';
   exchange: string;
@@ -47,7 +33,4 @@ export type UserStreamTradeEvent = {
   };
 };
 
-export type UserStreamEvent =
-  | UserStreamBalanceEvent
-  | UserStreamOrderEvent
-  | UserStreamTradeEvent;
+export type UserStreamEvent = UserStreamOrderEvent | UserStreamTradeEvent;

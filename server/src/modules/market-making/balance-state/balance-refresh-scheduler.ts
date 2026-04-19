@@ -20,7 +20,7 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
   private static readonly LOOP_MS = 1_000;
   private static readonly INITIAL_JITTER_MS = 500;
   private static readonly RETRY_DELAY_MS = 5_000;
-  private static readonly PERIODIC_REFRESH_MS = 120_000;
+  private static readonly PERIODIC_REFRESH_MS = 60_000;
   private static readonly MAX_ACCOUNTS_PER_PASS = 4;
   private static readonly MAX_ACCOUNTS_PER_EXCHANGE_PER_PASS = 1;
 

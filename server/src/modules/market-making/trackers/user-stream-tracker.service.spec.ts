@@ -8,15 +8,8 @@ import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 import { UserStreamTrackerService } from './user-stream-tracker.service';
 
 describe('UserStreamTrackerService', () => {
-  it('applies normalized balance events into the balance cache', async () => {
-    const balanceStateCacheService = new BalanceStateCacheService();
-    const service = new UserStreamTrackerService(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      balanceStateCacheService,
-    );
+  it('tracks balance events as latest non-fill account activity', async () => {
+    const service = new UserStreamTrackerService();
 
     service.queueAccountEvent({
       exchange: 'binance',
@@ -30,18 +23,20 @@ describe('UserStreamTrackerService', () => {
         source: 'ws',
       },
       receivedAt: '2026-04-14T00:00:00.000Z',
-    });
+    } as any);
 
     await service.onTick('2026-04-14T00:00:01.000Z');
 
-    expect(
-      balanceStateCacheService.getBalance('binance', 'maker', 'USDT'),
-    ).toEqual(
+    expect(service.getLatestEvent('binance', 'maker')).toEqual(
       expect.objectContaining({
-        free: '100',
-        used: '5',
-        total: '105',
-        source: 'ws',
+        kind: 'balance',
+        payload: expect.objectContaining({
+          asset: 'USDT',
+          free: '100',
+          used: '5',
+          total: '105',
+          source: 'ws',
+        }),
       }),
     );
   });
@@ -936,6 +931,26 @@ describe('UserStreamTrackerService', () => {
 
     const lastRecvTime = service.getLastRecvTime('binance', 'default');
 
+    expect(typeof lastRecvTime).toBe('number');
+    expect(lastRecvTime).toBeGreaterThan(0);
+  });
+
+  it('tracks lastRecvTime when websocket activity is marked without queueing an event', () => {
+    const markUserStreamActivity = jest.fn();
+    const service = new UserStreamTrackerService(
+      undefined,
+      undefined,
+      {
+        markUserStreamActivity,
+      } as unknown as ExchangeOrderTrackerService,
+      undefined,
+    );
+
+    service.markActivity('binance', 'default');
+
+    const lastRecvTime = service.getLastRecvTime('binance', 'default');
+
+    expect(markUserStreamActivity).toHaveBeenCalledWith('binance', 'default');
     expect(typeof lastRecvTime).toBe('number');
     expect(lastRecvTime).toBeGreaterThan(0);
   });

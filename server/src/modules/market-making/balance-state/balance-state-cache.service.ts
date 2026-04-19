@@ -13,10 +13,21 @@ export type BalanceEntry = {
   freshnessTimestamp: string;
 };
 
+export type AccountSnapshotMetadata = {
+  exchange: string;
+  accountLabel: string;
+  lastSnapshotAt: string;
+  lastSnapshotSource: 'ws' | 'rest';
+};
+
 @Injectable()
 export class BalanceStateCacheService {
-  static readonly STALE_MS = 15_000;
+  static readonly STALE_MS = 60_000;
   private readonly balances = new Map<string, BalanceEntry>();
+  private readonly snapshotMetadataByAccount = new Map<
+    string,
+    AccountSnapshotMetadata
+  >();
   private readonly staleAccounts = new Set<string>();
 
   constructor(
@@ -49,6 +60,83 @@ export class BalanceStateCacheService {
     return this.balances.get(
       this.toKey(exchange, accountLabel, asset.toUpperCase()),
     );
+  }
+
+
+  hasFreshAccountSnapshot(
+    exchange: string,
+    accountLabel: string,
+    nowMs = Date.now(),
+  ): boolean {
+    const metadata = this.getSnapshotMetadata(exchange, accountLabel);
+
+    if (!metadata) {
+      return false;
+    }
+
+    const freshnessMs = Date.parse(metadata.lastSnapshotAt);
+    const fresh =
+      Number.isFinite(freshnessMs) &&
+      nowMs - freshnessMs <= BalanceStateCacheService.STALE_MS;
+
+    if (!fresh) {
+      const sampleEntry = this.getAnyBalanceForAccount(exchange, accountLabel);
+
+      this.emitBalanceStale(
+        sampleEntry || {
+          exchange,
+          accountLabel: accountLabel || 'default',
+          asset: '__SNAPSHOT__',
+          source: metadata.lastSnapshotSource,
+          freshnessTimestamp: metadata.lastSnapshotAt,
+        },
+        freshnessMs,
+      );
+    }
+
+    return fresh;
+  }
+
+  getSnapshotTimestamp(
+    exchange: string,
+    accountLabel: string,
+  ): string | undefined {
+    return this.getSnapshotMetadata(exchange, accountLabel)?.lastSnapshotAt;
+  }
+
+  getSnapshotDiagnostic(
+    exchange: string,
+    accountLabel: string,
+    nowMs = Date.now(),
+  ): {
+    present: boolean;
+    fresh: boolean;
+    ageMs: number | null;
+    freshnessTimestamp?: string;
+    source?: 'ws' | 'rest';
+  } {
+    const metadata = this.getSnapshotMetadata(exchange, accountLabel);
+
+    if (!metadata) {
+      return {
+        present: false,
+        fresh: false,
+        ageMs: null,
+      };
+    }
+
+    const freshnessMs = Date.parse(metadata.lastSnapshotAt);
+    const ageMs = Number.isFinite(freshnessMs) ? nowMs - freshnessMs : null;
+    const fresh =
+      ageMs !== null && ageMs <= BalanceStateCacheService.STALE_MS;
+
+    return {
+      present: true,
+      fresh,
+      ageMs,
+      freshnessTimestamp: metadata.lastSnapshotAt,
+      source: metadata.lastSnapshotSource,
+    };
   }
 
   getEntryDiagnostic(
@@ -96,6 +184,8 @@ export class BalanceStateCacheService {
     freshnessTimestamp: string,
     source: 'ws' | 'rest',
   ): void {
+    const normalizedAccountLabel = accountLabel || 'default';
+    const accountKey = this.toAccountKey(exchange, normalizedAccountLabel);
     const assets = new Set<string>([
       ...Object.keys(balance?.free || {}),
       ...Object.keys(balance?.used || {}),
@@ -103,10 +193,18 @@ export class BalanceStateCacheService {
     ]);
     const entries: BalanceEntry[] = [];
 
+    this.deleteAccountBalances(exchange, normalizedAccountLabel);
+    this.snapshotMetadataByAccount.set(accountKey, {
+      exchange,
+      accountLabel: normalizedAccountLabel,
+      lastSnapshotAt: freshnessTimestamp,
+      lastSnapshotSource: source,
+    });
+
     for (const asset of assets) {
       const entry = this.normalizeEntry({
         exchange,
-        accountLabel,
+        accountLabel: normalizedAccountLabel,
         asset,
         free:
           balance?.free?.[asset] !== undefined
@@ -124,18 +222,17 @@ export class BalanceStateCacheService {
         freshnessTimestamp,
       });
 
-      this.balances.set(this.toKey(exchange, accountLabel, entry.asset), entry);
+      this.balances.set(
+        this.toKey(exchange, normalizedAccountLabel, entry.asset),
+        entry,
+      );
       entries.push(entry);
     }
 
-    if (entries.length === 0) {
-      return;
-    }
-
-    this.clearStaleAccount(exchange, accountLabel);
+    this.clearStaleAccount(exchange, normalizedAccountLabel);
     this.marketMakingEventBus?.emitBalanceUpdated({
       exchange,
-      accountLabel,
+      accountLabel: normalizedAccountLabel,
       source,
       balances: entries.map((entry) => this.toEventEntry(entry)),
       updatedAt: freshnessTimestamp,
@@ -200,6 +297,44 @@ export class BalanceStateCacheService {
           ).toISOString()
         : entry.freshnessTimestamp,
     });
+  }
+
+
+  private getSnapshotMetadata(
+    exchange: string,
+    accountLabel: string,
+  ): AccountSnapshotMetadata | undefined {
+    return this.snapshotMetadataByAccount.get(
+      this.toAccountKey(exchange, accountLabel),
+    );
+  }
+
+  private getAnyBalanceForAccount(
+    exchange: string,
+    accountLabel: string,
+  ): BalanceEntry | undefined {
+    const normalizedAccountLabel = accountLabel || 'default';
+
+    for (const entry of this.balances.values()) {
+      if (
+        entry.exchange === exchange &&
+        entry.accountLabel === normalizedAccountLabel
+      ) {
+        return entry;
+      }
+    }
+
+    return undefined;
+  }
+
+  private deleteAccountBalances(exchange: string, accountLabel: string): void {
+    const normalizedAccountLabel = accountLabel || 'default';
+
+    for (const key of [...this.balances.keys()]) {
+      if (key.startsWith(`${exchange}:${normalizedAccountLabel}:`)) {
+        this.balances.delete(key);
+      }
+    }
   }
 
   private clearStaleAccount(exchange: string, accountLabel: string): void {

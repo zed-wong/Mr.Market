@@ -108,16 +108,22 @@ export class UserStreamTrackerService
 
   queueAccountEvent(event: UserStreamEvent): void {
     this.queue.push(event);
+    this.markActivity(event.exchange, event.accountLabel);
+    this.scheduleDrain();
+  }
+
+  markActivity(exchange: string, accountLabel: string): void {
+    const normalizedAccountLabel = accountLabel || 'default';
+
     this.lastRecvTimeByKey.set(
-      this.toKey(event.exchange, event.accountLabel),
+      this.toKey(exchange, normalizedAccountLabel),
       Date.now(),
     );
     this.exchangeOrderTrackerService?.markUserStreamActivity(
-      event.exchange,
-      event.accountLabel,
+      exchange,
+      normalizedAccountLabel,
     );
-    this.updateStreamHealth(event.exchange, event.accountLabel);
-    this.scheduleDrain();
+    this.updateStreamHealth(exchange, normalizedAccountLabel);
   }
 
   getLatestEvent(
@@ -186,20 +192,6 @@ export class UserStreamTrackerService
         );
 
         this.applyTrackedOrderStateEvent(event);
-
-        if (event.kind === 'balance') {
-          this.balanceStateCacheService?.applyBalanceUpdate({
-            exchange: event.exchange,
-            accountLabel: event.accountLabel,
-            asset: event.payload.asset,
-            free: event.payload.free,
-            used: event.payload.used,
-            total: event.payload.total,
-            source: event.payload.source,
-            freshnessTimestamp: event.receivedAt,
-          });
-          continue;
-        }
 
         const fill = this.extractFillCandidate(event);
 
@@ -495,22 +487,18 @@ export class UserStreamTrackerService
   private normalizeEventPayload(
     event: UserStreamEvent,
   ): Record<string, unknown> {
-    if (event.kind === 'order' || event.kind === 'trade') {
-      return {
-        ...(event.payload.raw || {}),
-        pair: event.payload.pair,
-        exchangeOrderId: event.payload.exchangeOrderId,
-        clientOrderId: event.payload.clientOrderId,
-        side: event.payload.side,
-        price: event.payload.price,
-        cumulativeQty: event.payload.cumulativeQty,
-        status: event.kind === 'order' ? event.payload.status : undefined,
-        fillId: event.kind === 'trade' ? event.payload.fillId : undefined,
-        qty: event.kind === 'trade' ? event.payload.qty : undefined,
-      };
-    }
-
-    return { ...event.payload };
+    return {
+      ...(event.payload.raw || {}),
+      pair: event.payload.pair,
+      exchangeOrderId: event.payload.exchangeOrderId,
+      clientOrderId: event.payload.clientOrderId,
+      side: event.payload.side,
+      price: event.payload.price,
+      cumulativeQty: event.payload.cumulativeQty,
+      status: event.kind === 'order' ? event.payload.status : undefined,
+      fillId: event.kind === 'trade' ? event.payload.fillId : undefined,
+      qty: event.kind === 'trade' ? event.payload.qty : undefined,
+    };
   }
 
   private normalizeStatus(

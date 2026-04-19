@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
 import {
-  UserStreamBalanceEvent,
   UserStreamOrderEvent,
   UserStreamTradeEvent,
 } from '../user-stream-event.types';
@@ -135,48 +134,4 @@ export class GenericCcxtUserStreamEventNormalizerService
     };
   }
 
-  normalizeBalance(
-    exchange: string,
-    accountLabel: string,
-    rawPayload: unknown,
-    receivedAt: string,
-  ): UserStreamBalanceEvent[] {
-    if (
-      !rawPayload ||
-      typeof rawPayload !== 'object' ||
-      Array.isArray(rawPayload)
-    ) {
-      return [];
-    }
-
-    const balance = rawPayload as Record<string, any>;
-    const assets = new Set<string>([
-      ...Object.keys(balance.free || {}),
-      ...Object.keys(balance.used || {}),
-      ...Object.keys(balance.total || {}),
-    ]);
-
-    return [...assets].map((asset) => ({
-      exchange,
-      accountLabel,
-      kind: 'balance',
-      payload: {
-        asset,
-        free:
-          balance.free?.[asset] !== undefined
-            ? String(balance.free[asset])
-            : undefined,
-        used:
-          balance.used?.[asset] !== undefined
-            ? String(balance.used[asset])
-            : undefined,
-        total:
-          balance.total?.[asset] !== undefined
-            ? String(balance.total[asset])
-            : undefined,
-        source: 'ws',
-      },
-      receivedAt,
-    }));
-  }
 }

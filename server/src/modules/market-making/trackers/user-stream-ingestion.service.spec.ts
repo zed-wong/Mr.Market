@@ -213,8 +213,9 @@ describe('UserStreamIngestionService', () => {
     );
   });
 
-  it('queues balance events when watchBalance returns account balances', async () => {
+  it('applies watchBalance snapshots directly into the balance cache', async () => {
     const queueAccountEvent = jest.fn();
+    const markActivity = jest.fn();
     const balanceStateCacheService = {
       applyBalanceSnapshot: jest.fn(),
     } as unknown as BalanceStateCacheService;
@@ -235,36 +236,13 @@ describe('UserStreamIngestionService', () => {
           watchBalance,
         }),
       } as unknown as ExchangeInitService,
-      { queueAccountEvent } as unknown as UserStreamTrackerService,
+      {
+        queueAccountEvent,
+        markActivity,
+      } as unknown as UserStreamTrackerService,
       balanceStateCacheService,
       {
-        getNormalizer: jest.fn().mockReturnValue({
-          normalizeBalance: jest.fn().mockReturnValue([
-            {
-              exchange: 'binance',
-              accountLabel: 'maker',
-              kind: 'balance',
-              payload: {
-                asset: 'BTC',
-                free: '1',
-                used: '0.1',
-                source: 'ws',
-              },
-              receivedAt: '2026-04-14T00:00:00.000Z',
-            },
-            {
-              exchange: 'binance',
-              accountLabel: 'maker',
-              kind: 'balance',
-              payload: {
-                asset: 'USDT',
-                free: '100',
-                source: 'ws',
-              },
-              receivedAt: '2026-04-14T00:00:00.000Z',
-            },
-          ]),
-        }),
+        getNormalizer: jest.fn(),
       } as unknown as UserStreamNormalizerRegistryService,
     );
 
@@ -276,14 +254,12 @@ describe('UserStreamIngestionService', () => {
     await waitFor(
       () =>
         (balanceStateCacheService.applyBalanceSnapshot as jest.Mock).mock
-          .calls.length > 0,
+          .calls.length >= 2,
     );
-    await waitFor(() => queueAccountEvent.mock.calls.length === 2);
-    expect(queueAccountEvent.mock.calls.map(([event]) => event.kind)).toEqual([
-      'balance',
-      'balance',
-    ]);
-    expect(balanceStateCacheService.applyBalanceSnapshot).toHaveBeenCalledWith(
+    expect(queueAccountEvent).not.toHaveBeenCalled();
+    expect(markActivity).toHaveBeenCalledWith('binance', 'maker');
+    expect(balanceStateCacheService.applyBalanceSnapshot).toHaveBeenNthCalledWith(
+      1,
       'binance',
       'maker',
       {
@@ -292,16 +268,16 @@ describe('UserStreamIngestionService', () => {
       expect.any(String),
       'rest',
     );
-    expect(queueAccountEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        accountLabel: 'maker',
-        payload: expect.objectContaining({
-          asset: 'BTC',
-          free: '1',
-          used: '0.1',
-          source: 'ws',
-        }),
-      }),
+    expect(balanceStateCacheService.applyBalanceSnapshot).toHaveBeenNthCalledWith(
+      2,
+      'binance',
+      'maker',
+      {
+        free: { BTC: 1, USDT: 100 },
+        used: { BTC: 0.1 },
+      },
+      expect.any(String),
+      'ws',
     );
   });
 
@@ -327,21 +303,7 @@ describe('UserStreamIngestionService', () => {
         applyBalanceSnapshot: jest.fn(),
       } as unknown as BalanceStateCacheService,
       {
-        getNormalizer: jest.fn().mockReturnValue({
-          normalizeBalance: jest.fn().mockReturnValue([
-            {
-              exchange: 'binance',
-              accountLabel: 'maker',
-              kind: 'balance',
-              payload: {
-                asset: 'BTC',
-                free: '1',
-                source: 'ws',
-              },
-              receivedAt: '2026-04-14T00:00:00.000Z',
-            },
-          ]),
-        }),
+        getNormalizer: jest.fn(),
       } as unknown as UserStreamNormalizerRegistryService,
     );
     const logger = Reflect.get(service, 'logger') as CustomLogger;
@@ -355,7 +317,7 @@ describe('UserStreamIngestionService', () => {
     });
 
     await waitFor(() => watchBalance.mock.calls.length === 1);
-    await waitFor(() => queueAccountEvent.mock.calls.length === 1);
+    expect(queueAccountEvent).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining(
         'Initial fetchBalance failed for binance:maker: seed failed',

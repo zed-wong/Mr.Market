@@ -15,10 +15,4 @@ export interface UserStreamEventNormalizer {
     receivedAt: string,
   ): UserStreamEvent | null;
 
-  normalizeBalance(
-    exchange: string,
-    accountLabel: string,
-    raw: unknown,
-    receivedAt: string,
-  ): UserStreamEvent[];
 }

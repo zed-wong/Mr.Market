@@ -105,7 +105,7 @@ describe('BalanceStateRefreshService', () => {
     jest.restoreAllMocks();
   });
 
-  it('retains the reconnecting state when the refresh timeout is transient', async () => {
+  it('reports healthy after a recent refresh even when the next refresh times out', async () => {
     const nowSpy = jest.spyOn(Date, 'now');
     const exchangeConnectorAdapterService = {
       fetchBalance: jest
@@ -139,7 +139,7 @@ describe('BalanceStateRefreshService', () => {
       '2026-04-14T00:00:40.000Z',
     );
 
-    expect(service.getHealthState('mexc', 'maker')).toBe('reconnecting');
+    expect(service.getHealthState('mexc', 'maker')).toBe('healthy');
     jest.restoreAllMocks();
   });
 });

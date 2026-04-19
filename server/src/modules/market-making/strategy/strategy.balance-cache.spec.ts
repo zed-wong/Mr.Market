@@ -1,11 +1,19 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import BigNumber from 'bignumber.js';
 
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
-import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
-import { StrategyService } from './strategy.service';
+
+jest.mock('src/common/entities/market-making/strategy-instances.entity', () => ({
+  StrategyInstance: class StrategyInstance {},
+}));
+
+jest.mock('src/common/entities/orders/user-orders.entity', () => ({
+  MarketMakingOrder: class MarketMakingOrder {},
+}));
+
+const { StrategyService } = require('./strategy.service');
 
 describe('StrategyService balance cache helpers', () => {
+
   const strategyRepo = {
     find: jest.fn(),
     findOne: jest.fn(),
@@ -39,7 +47,7 @@ describe('StrategyService balance cache helpers', () => {
     exchangeInitService?: Record<string, any>;
     strategyControllerRegistry?: Record<string, any>;
     balanceStateCacheService?: BalanceStateCacheService;
-    exchangeConnectorAdapterService?: Partial<ExchangeConnectorAdapterService>;
+    exchangeConnectorAdapterService?: Record<string, any>;
     strategyMarketDataProviderService?: Record<string, any>;
   } = {}) =>
     new StrategyService(
@@ -67,7 +75,7 @@ describe('StrategyService balance cache helpers', () => {
     jest.clearAllMocks();
   });
 
-  it('reads pair balances from the fresh balance cache before falling back to REST', async () => {
+  it('reads pair balances from a fresh account snapshot', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
 
     balanceStateCacheService.applyBalanceSnapshot(
@@ -105,30 +113,22 @@ describe('StrategyService balance cache helpers', () => {
     jest.restoreAllMocks();
   });
 
-  it('falls back to REST when cached balances are stale and refreshes the cache', async () => {
+  it('treats missing assets in a fresh snapshot as zero', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
 
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
       {
-        free: { BTC: 1, USDT: 100 },
+        free: { USDT: 200 },
       },
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
     jest
       .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:01:00.000Z'));
-    const exchangeConnectorAdapterService = {
-      fetchBalance: jest.fn().mockResolvedValue({
-        free: { BTC: 2, USDT: 300 },
-      }),
-    };
-    const service = createService({
-      balanceStateCacheService,
-      exchangeConnectorAdapterService,
-    });
+      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    const service = createService({ balanceStateCacheService });
 
     const balances = await (service as any).getAvailableBalancesForPair(
       'binance',
@@ -137,26 +137,14 @@ describe('StrategyService balance cache helpers', () => {
     );
 
     expect(balances).toEqual({
-      base: new BigNumber(2),
-      quote: new BigNumber(300),
+      base: new BigNumber(0),
+      quote: new BigNumber(200),
       assets: { base: 'BTC', quote: 'USDT' },
     });
-    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledWith(
-      'binance',
-      'maker',
-    );
-    expect(
-      balanceStateCacheService.getBalance('binance', 'maker', 'USDT'),
-    ).toEqual(
-      expect.objectContaining({
-        free: '300',
-        source: 'rest',
-      }),
-    );
     jest.restoreAllMocks();
   });
 
-  it('skips stale balance reads during tick execution instead of falling back to REST', async () => {
+  it('returns null when account snapshots are stale instead of falling back to REST', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
 
     balanceStateCacheService.applyBalanceSnapshot(
@@ -170,7 +158,7 @@ describe('StrategyService balance cache helpers', () => {
     );
     jest
       .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:01:00.000Z'));
+      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
     const exchangeConnectorAdapterService = {
       fetchBalance: jest.fn().mockResolvedValue({
         free: { BTC: 2, USDT: 300 },
@@ -180,8 +168,6 @@ describe('StrategyService balance cache helpers', () => {
       balanceStateCacheService,
       exchangeConnectorAdapterService,
     });
-
-    (service as any).strategyDecisionDepth = 1;
 
     const balances = await (service as any).getAvailableBalancesForPair(
       'binance',
@@ -194,7 +180,7 @@ describe('StrategyService balance cache helpers', () => {
     jest.restoreAllMocks();
   });
 
-  it('prevents strategy session ticks from falling back to REST balance reads', async () => {
+  it('does not call fetchBalance during controller decisions', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
     const exchangeConnectorAdapterService = {
       fetchBalance: jest.fn().mockResolvedValue({
@@ -213,7 +199,7 @@ describe('StrategyService balance cache helpers', () => {
     );
     jest
       .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:01:00.000Z'));
+      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
 
     const service = createService({
       balanceStateCacheService,
@@ -221,7 +207,6 @@ describe('StrategyService balance cache helpers', () => {
       strategyControllerRegistry: {
         getController: jest.fn().mockReturnValue({
           decideActions: jest.fn(async () => {
-            expect((service as any).shouldUseCachedStateOnly()).toBe(true);
             await expect(
               (service as any).getAvailableBalancesForPair(
                 'binance',
@@ -250,8 +235,6 @@ describe('StrategyService balance cache helpers', () => {
       ),
     ).resolves.toBeUndefined();
 
-    expect((service as any).shouldUseCachedStateOnly()).toBe(false);
-    expect((service as any).strategyDecisionDepth).toBe(0);
     expect(exchangeConnectorAdapterService.fetchBalance).not.toHaveBeenCalled();
     jest.restoreAllMocks();
   });
@@ -313,7 +296,7 @@ describe('StrategyService balance cache helpers', () => {
     jest.restoreAllMocks();
   });
 
-  it('uses cached balances during tick-time time-indicator decisions without calling exchange fetchBalance', async () => {
+  it('skips time-indicator decisions when the cache is stale without calling exchange fetchBalance', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
     const exchange = {
       id: 'binance',
@@ -350,7 +333,7 @@ describe('StrategyService balance cache helpers', () => {
     );
     jest
       .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
     const service = createService({
       exchangeInitService: {
         getExchange: jest.fn().mockReturnValue(exchange),
@@ -359,7 +342,6 @@ describe('StrategyService balance cache helpers', () => {
       balanceStateCacheService,
     });
 
-    (service as any).strategyDecisionDepth = 1;
     jest.spyOn(service as any, 'fetchCandles').mockResolvedValue([
       [0, 0, 0, 0, 90],
       [0, 0, 0, 0, 95],
@@ -404,13 +386,7 @@ describe('StrategyService balance cache helpers', () => {
         } as any,
         '2026-03-11T00:00:00.000Z',
       ),
-    ).resolves.toEqual([
-      expect.objectContaining({
-        type: 'CREATE_LIMIT_ORDER',
-        side: 'buy',
-        pair: 'BTC/USDT',
-      }),
-    ]);
+    ).resolves.toEqual([]);
     expect(exchange.fetchBalance).not.toHaveBeenCalled();
     jest.restoreAllMocks();
   });

@@ -429,23 +429,30 @@ export class UserStreamIngestionService implements OnModuleDestroy {
         }
 
         const watchedBalance = await exchange.watchBalance();
-        const normalizedEvents = this.getNormalizer(params.exchange)
-          .normalizeBalance(
+        const receivedAt = getRFC3339Timestamp();
+
+        this.userStreamTrackerService.markActivity(
+          params.exchange,
+          params.accountLabel || 'default',
+        );
+
+        if (watchedBalance && typeof watchedBalance === 'object') {
+          this.balanceStateCacheService?.applyBalanceSnapshot(
             params.exchange,
             params.accountLabel || 'default',
-            watchedBalance,
-            getRFC3339Timestamp(),
+            watchedBalance as Record<string, any>,
+            receivedAt,
+            'ws',
           );
+        }
 
         this.logger.log(
           `watchBalance received payload for ${params.exchange}:${
             params.accountLabel || 'default'
-          } normalizedEventCount=${normalizedEvents.length}`,
+          } appliedSnapshot=${
+            watchedBalance && typeof watchedBalance === 'object'
+          }`,
         );
-
-        for (const event of normalizedEvents) {
-          this.userStreamTrackerService.queueAccountEvent(event);
-        }
 
         consecutiveFailures = 0;
       } catch (error) {
@@ -666,50 +673,6 @@ export class UserStreamIngestionService implements OnModuleDestroy {
             },
             receivedAt,
           };
-        },
-        normalizeBalance: (
-          normalizedExchange,
-          accountLabel,
-          rawPayload,
-          receivedAt,
-        ) => {
-          if (
-            !rawPayload ||
-            typeof rawPayload !== 'object' ||
-            Array.isArray(rawPayload)
-          ) {
-            return [];
-          }
-
-          const balance = rawPayload as Record<string, any>;
-          const assets = new Set<string>([
-            ...Object.keys(balance.free || {}),
-            ...Object.keys(balance.used || {}),
-            ...Object.keys(balance.total || {}),
-          ]);
-
-          return [...assets].map((asset) => ({
-            exchange: normalizedExchange,
-            accountLabel,
-            kind: 'balance' as const,
-            payload: {
-              asset,
-              free:
-                balance.free?.[asset] !== undefined
-                  ? String(balance.free[asset])
-                  : undefined,
-              used:
-                balance.used?.[asset] !== undefined
-                  ? String(balance.used[asset])
-                  : undefined,
-              total:
-                balance.total?.[asset] !== undefined
-                  ? String(balance.total[asset])
-                  : undefined,
-              source: 'ws' as const,
-            },
-            receivedAt,
-          }));
         },
       }
     );

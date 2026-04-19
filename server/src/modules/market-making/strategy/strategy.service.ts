@@ -97,7 +97,6 @@ type DualAccountCapacityDiagnostics = {
   rebalanceNeeded: boolean;
 };
 
-type BalanceReadPolicy = 'cache-or-rest' | 'fresh-cache-only';
 
 @Injectable()
 export class StrategyService
@@ -124,7 +123,6 @@ export class StrategyService
     string,
     ConnectorHealthStatus
   >();
-  private strategyDecisionDepth = 0;
   private detachExchangeReadyListener?: () => void;
 
   private generateRunId(): string {
@@ -1316,18 +1314,7 @@ export class StrategyService
       );
 
       if (controller) {
-        this.strategyDecisionDepth += 1;
-
-        let actions: ExecutorAction[];
-
-        try {
-          actions = await controller.decideActions(session, ts, this);
-        } finally {
-          this.strategyDecisionDepth = Math.max(
-            0,
-            this.strategyDecisionDepth - 1,
-          );
-        }
+        const actions = await controller.decideActions(session, ts, this);
 
         if (actions.length > 0) {
           await this.publishIntents(session.strategyKey, actions);
@@ -4832,55 +4819,21 @@ export class StrategyService
     }
     const { base, quote } = parsedSymbol;
 
-    let freeBase = 0;
-    let freeQuote = 0;
+    const availableBalances = await this.getAvailableBalancesForPair(
+      exchangeName,
+      symbol,
+    );
 
-    if (this.shouldUseCachedStateOnly()) {
-      const availableBalances = await this.getAvailableBalancesForPair(
-        exchangeName,
-        symbol,
-        undefined,
-        'fresh-cache-only',
+    if (!availableBalances) {
+      this.logger.warn(
+        `[${exchangeName}:${symbol}] Skipping time-indicator tick: balance cache unavailable or stale.`,
       );
 
-      if (!availableBalances) {
-        this.logger.warn(
-          `[${exchangeName}:${symbol}] Skipping time-indicator tick: balance cache unavailable or stale.`,
-        );
-
-        return [];
-      }
-
-      freeBase = Number(availableBalances.base.toFixed());
-      freeQuote = Number(availableBalances.quote.toFixed());
-    } else {
-      let balances;
-
-      try {
-        balances = this.runtimeTimingService
-          ? await this.runtimeTimingService.measureAsync(
-              'strategy.fetch-balance',
-              {
-                accountLabel: 'default',
-                exchange: exchangeName,
-                pair: symbol,
-                reason: 'indicator-balance-check',
-              },
-              () => ex.fetchBalance(),
-              { warnThresholdMs: 500 },
-            )
-          : await ex.fetchBalance();
-      } catch (e: unknown) {
-        const { message } = this.toErrorDetails(e);
-
-        this.logger.error(`[${exchangeName}] fetchBalance failed: ${message}`);
-
-        return [];
-      }
-
-      freeBase = balances.free?.[base] ?? 0;
-      freeQuote = balances.free?.[quote] ?? 0;
+      return [];
     }
+
+    const freeBase = Number(availableBalances.base.toFixed());
+    const freeQuote = Number(availableBalances.quote.toFixed());
 
     const amountBaseRaw =
       params.orderMode === 'base' ? params.orderSize : params.orderSize / last;
@@ -5312,11 +5265,6 @@ export class StrategyService
     );
   }
 
-  private shouldUseCachedStateOnly(): boolean {
-    return (
-      this.strategyDecisionDepth > 0 && Boolean(this.balanceStateCacheService)
-    );
-  }
 
   private async handleSessionFill(
     session: StrategyRuntimeSession,
@@ -5811,7 +5759,6 @@ export class StrategyService
     exchangeName: string,
     pair: string,
     accountLabel?: string,
-    readPolicy: BalanceReadPolicy = 'cache-or-rest',
   ): Promise<{
     base: BigNumber;
     quote: BigNumber;
@@ -5824,6 +5771,40 @@ export class StrategyService
     }
 
     const normalizedAccountLabel = accountLabel || 'default';
+    const nowMs = Date.now();
+    const snapshotFresh =
+      this.balanceStateCacheService?.hasFreshAccountSnapshot(
+        exchangeName,
+        normalizedAccountLabel,
+        nowMs,
+      ) ?? false;
+    const snapshotDiagnostic =
+      this.balanceStateCacheService?.getSnapshotDiagnostic(
+        exchangeName,
+        normalizedAccountLabel,
+        nowMs,
+      );
+
+    if (!snapshotFresh) {
+      this.logger.warn(
+        [
+          `Balance cache diagnostic for ${exchangeName} ${pair} account=${normalizedAccountLabel}`,
+          `snapshotPresent=${snapshotDiagnostic?.present ?? false}`,
+          `snapshotFresh=${snapshotDiagnostic?.fresh ?? false}`,
+          `snapshotAgeMs=${snapshotDiagnostic?.ageMs ?? 'missing'}`,
+          `snapshotSource=${snapshotDiagnostic?.source ?? 'missing'}`,
+          `snapshotFreshnessTs=${snapshotDiagnostic?.freshnessTimestamp ?? 'missing'}`,
+          `baseAsset=${assets.base}`,
+          `quoteAsset=${assets.quote}`,
+        ].join(' | '),
+      );
+      this.logger.warn(
+        `Skipping balance-dependent strategy read for ${exchangeName} ${pair} account=${normalizedAccountLabel}: balance cache missing or stale`,
+      );
+
+      return null;
+    }
+
     const cachedBase = this.balanceStateCacheService?.getBalance(
       exchangeName,
       normalizedAccountLabel,
@@ -5834,101 +5815,10 @@ export class StrategyService
       normalizedAccountLabel,
       assets.quote,
     );
-    const nowMs = Date.now();
-    const baseDiagnostic = this.balanceStateCacheService?.getEntryDiagnostic(
-      cachedBase,
-      nowMs,
-    );
-    const quoteDiagnostic = this.balanceStateCacheService?.getEntryDiagnostic(
-      cachedQuote,
-      nowMs,
-    );
-    const cachedFresh =
-      (this.balanceStateCacheService?.isFresh(cachedBase, nowMs) ?? false) &&
-      (this.balanceStateCacheService?.isFresh(cachedQuote, nowMs) ?? false);
-
-    if (cachedFresh) {
-      return {
-        base: new BigNumber(cachedBase.free || 0),
-        quote: new BigNumber(cachedQuote.free || 0),
-        assets,
-      };
-    }
-
-    const effectiveReadPolicy =
-      readPolicy === 'fresh-cache-only' || this.shouldUseCachedStateOnly()
-        ? 'fresh-cache-only'
-        : 'cache-or-rest';
-
-    this.logger.warn(
-      [
-        `Balance cache diagnostic for ${exchangeName} ${pair} account=${normalizedAccountLabel}`,
-        `requestedReadPolicy=${readPolicy}`,
-        `effectiveReadPolicy=${effectiveReadPolicy}`,
-        `cacheOnlyDuringDecision=${this.shouldUseCachedStateOnly()}`,
-        `baseAsset=${assets.base}`,
-        `basePresent=${baseDiagnostic?.present ?? false}`,
-        `baseFresh=${baseDiagnostic?.fresh ?? false}`,
-        `baseAgeMs=${baseDiagnostic?.ageMs ?? 'missing'}`,
-        `baseSource=${baseDiagnostic?.source ?? 'missing'}`,
-        `baseFreshnessTs=${baseDiagnostic?.freshnessTimestamp ?? 'missing'}`,
-        `baseFree=${baseDiagnostic?.free ?? 'missing'}`,
-        `quoteAsset=${assets.quote}`,
-        `quotePresent=${quoteDiagnostic?.present ?? false}`,
-        `quoteFresh=${quoteDiagnostic?.fresh ?? false}`,
-        `quoteAgeMs=${quoteDiagnostic?.ageMs ?? 'missing'}`,
-        `quoteSource=${quoteDiagnostic?.source ?? 'missing'}`,
-        `quoteFreshnessTs=${quoteDiagnostic?.freshnessTimestamp ?? 'missing'}`,
-        `quoteFree=${quoteDiagnostic?.free ?? 'missing'}`,
-      ].join(' | '),
-    );
-
-    if (effectiveReadPolicy === 'fresh-cache-only') {
-      this.logger.warn(
-        `Skipping balance-dependent strategy read for ${exchangeName} ${pair} account=${normalizedAccountLabel}: balance cache missing or stale`,
-      );
-
-      return null;
-    }
-
-    const balance: Awaited<
-      ReturnType<ExchangeConnectorAdapterService['fetchBalance']>
-    > = this.runtimeTimingService
-      ? await this.runtimeTimingService.measureAsync(
-          'strategy.fetch-balance',
-          {
-            accountLabel: normalizedAccountLabel,
-            exchange: exchangeName,
-            pair,
-            reason: 'stale-cache',
-          },
-          () =>
-            this.exchangeConnectorAdapterService?.fetchBalance(
-              exchangeName,
-              accountLabel,
-            ) as Promise<
-              Awaited<
-                ReturnType<ExchangeConnectorAdapterService['fetchBalance']>
-              >
-            >,
-          { warnThresholdMs: 500 },
-        )
-      : await this.exchangeConnectorAdapterService?.fetchBalance(
-          exchangeName,
-          accountLabel,
-        );
-
-    this.balanceStateCacheService?.applyBalanceSnapshot(
-      exchangeName,
-      normalizedAccountLabel,
-      balance || {},
-      getRFC3339Timestamp(),
-      'rest',
-    );
 
     return {
-      base: new BigNumber(balance?.free?.[assets.base] || 0),
-      quote: new BigNumber(balance?.free?.[assets.quote] || 0),
+      base: new BigNumber(cachedBase?.free || 0),
+      quote: new BigNumber(cachedQuote?.free || 0),
       assets,
     };
   }
