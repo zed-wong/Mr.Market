@@ -1846,10 +1846,24 @@ export class StrategyService
       return [];
     }
 
+    const cycleRoles = this.resolveDualAccountCycleRoles(params);
+    const alternatingParams = {
+      ...params,
+      makerAccountLabel: cycleRoles.makerAccountLabel,
+      takerAccountLabel: cycleRoles.takerAccountLabel,
+    };
+    const rotatedBalanceSnapshot =
+      cycleRoles.makerAccountLabel === params.makerAccountLabel &&
+      cycleRoles.takerAccountLabel === params.takerAccountLabel
+        ? balanceSnapshot
+        : {
+            makerBalances: balanceSnapshot.takerBalances,
+            takerBalances: balanceSnapshot.makerBalances,
+          };
     const preferredSide = await this.resolveDualAccountPreferredSide(
-      params,
+      alternatingParams,
       publishedCycles,
-      balanceSnapshot.makerBalances,
+      rotatedBalanceSnapshot.makerBalances,
     );
 
     if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
@@ -1862,13 +1876,13 @@ export class StrategyService
 
     const resolvedExecution = await this.resolveDualAccountExecutionPlan(
       strategyKey,
-      params,
+      alternatingParams,
       preferredSide,
       price,
       bestBidBn,
       bestAskBn,
       feeBufferRate,
-      balanceSnapshot,
+      rotatedBalanceSnapshot,
     );
     const decisionDurationMs = Date.now() - decisionStartedAtMs;
 
@@ -1913,10 +1927,10 @@ export class StrategyService
     const fallbackApplied = side !== preferredSide;
     const capacityDiagnostics = balanceSnapshot
       ? this.buildDualAccountCapacityDiagnostics(
-          params,
+          alternatingParams,
           adjustedQuote.price,
           feeBufferRate,
-          balanceSnapshot,
+          rotatedBalanceSnapshot,
           preferredSide,
           side,
           adjustedQuote.qty,
@@ -1996,6 +2010,8 @@ export class StrategyService
           configuredMakerAccountLabel: params.makerAccountLabel,
           configuredTakerAccountLabel: params.takerAccountLabel,
           dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
+      cycleMode: params.cycleMode || 'alternating',
+      makerProtectionMode: params.makerProtectionMode || 'alive_only',
           activeHours: profile.activeHours,
           buyBias: accountBuyBias,
           requestedQty: requestedQty.toFixed(),
@@ -2228,6 +2244,8 @@ export class StrategyService
           configuredMakerAccountLabel: params.makerAccountLabel,
           configuredTakerAccountLabel: params.takerAccountLabel,
           dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
+      cycleMode: params.cycleMode || 'alternating',
+      makerProtectionMode: params.makerProtectionMode || 'alive_only',
           activeHours: profile.activeHours,
           buyBias: accountBuyBias,
           requestedQty: requestedQty.toFixed(),
@@ -5345,6 +5363,49 @@ export class StrategyService
         : Math.min(session.nextRunAtMs, Date.now());
   }
 
+  private resolveDualAccountCycleRoles(
+    params: DualAccountVolumeStrategyParams,
+  ): { makerAccountLabel: string; takerAccountLabel: string } {
+    if (params.cycleMode === 'static') {
+      return {
+        makerAccountLabel: params.makerAccountLabel,
+        takerAccountLabel: params.takerAccountLabel,
+      };
+    }
+
+    return {
+      makerAccountLabel:
+        this.readString(
+          params.nextMakerAccountLabel,
+          params.makerAccountLabel,
+        ) || params.makerAccountLabel,
+      takerAccountLabel:
+        this.readString(
+          params.nextTakerAccountLabel,
+          params.takerAccountLabel,
+        ) || params.takerAccountLabel,
+    };
+  }
+
+  private advanceDualAccountCycleRolesAfterSuccess(
+    params: DualAccountVolumeStrategyParams,
+    activeCycle: DualAccountActiveCycleState,
+  ): DualAccountVolumeStrategyParams {
+    if (params.cycleMode === 'static') {
+      return {
+        ...params,
+        nextMakerAccountLabel: params.makerAccountLabel,
+        nextTakerAccountLabel: params.takerAccountLabel,
+      };
+    }
+
+    return {
+      ...params,
+      nextMakerAccountLabel: activeCycle.takerAccountLabel,
+      nextTakerAccountLabel: activeCycle.makerAccountLabel,
+    };
+  }
+
   private buildActiveDualAccountCycleState(
     action?: ExecutorAction,
   ): DualAccountActiveCycleState | undefined {
@@ -5589,6 +5650,10 @@ export class StrategyService
         .plus(matchedQuoteVolume.isFinite() ? matchedQuoteVolume : 0)
         .toNumber();
       nextParams.activeCycle = undefined;
+      Object.assign(
+        nextParams,
+        this.advanceDualAccountCycleRolesAfterSuccess(nextParams, params.activeCycle),
+      );
       nextParams.repairRequired = false;
       nextParams.repairReason = undefined;
       await this.persistStrategyParams(session.strategyKey, nextParams);
@@ -7034,6 +7099,10 @@ export class StrategyService
           : undefined,
       publishedCycles: 0,
       completedCycles: 0,
+      cycleMode: params.cycleMode || 'alternating',
+      makerProtectionMode: params.makerProtectionMode || 'alive_only',
+      nextMakerAccountLabel: params.makerAccountLabel,
+      nextTakerAccountLabel: params.takerAccountLabel,
       orderBookReady: false,
       consecutiveFallbackCycles: 0,
       tradedQuoteVolume: 0,
@@ -7090,6 +7159,10 @@ export class StrategyService
       targetQuoteVolume: dailyVolumeTarget,
       publishedCycles: 0,
       completedCycles: 0,
+      cycleMode: params.cycleMode || 'alternating',
+      makerProtectionMode: params.makerProtectionMode || 'alive_only',
+      nextMakerAccountLabel: params.makerAccountLabel,
+      nextTakerAccountLabel: params.takerAccountLabel,
       orderBookReady: false,
       consecutiveFallbackCycles: 0,
       tradedQuoteVolume: 0,

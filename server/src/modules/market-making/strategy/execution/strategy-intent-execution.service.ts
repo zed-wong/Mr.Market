@@ -618,27 +618,6 @@ export class StrategyIntentExecutionService {
     return Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
   }
 
-  private buildImmediateDualAccountRepriceRequiredError(
-    message: string,
-  ): ImmediateDualAccountRetryableMakerError {
-    const error = new Error(
-      `${message} repriceRequired=true`,
-    ) as ImmediateDualAccountRetryableMakerError;
-
-    error.code = 'DUAL_ACCOUNT_MAKER_REPRICE_REQUIRED';
-
-    return error;
-  }
-
-  private isImmediateDualAccountRepriceRequiredError(
-    error: unknown,
-  ): error is ImmediateDualAccountRetryableMakerError {
-    return (
-      error instanceof Error &&
-      (error as Partial<ImmediateDualAccountRetryableMakerError>).code ===
-        'DUAL_ACCOUNT_MAKER_REPRICE_REQUIRED'
-    );
-  }
 
   private resolveOrderIdForClientOrderId(intent: StrategyOrderIntent): string {
     const metadataOrderId =
@@ -673,21 +652,6 @@ export class StrategyIntentExecutionService {
       return;
     }
 
-    const inlineRetryAttempt = this.readInlineDualAccountRetryAttempt(intent);
-
-    if (inlineRetryAttempt > 0) {
-      this.logger.log(
-        [
-          'Skipping immediate dual-account taker after maker reprice',
-          `strategy=${intent.strategyKey}`,
-          `intent=${intent.intentId}`,
-          `retryAttempt=${inlineRetryAttempt}`,
-        ].join(' | '),
-      );
-
-      return;
-    }
-
     const makerExchangeOrderId = this.readOrderIdFromResult(makerResult);
 
     if (!makerExchangeOrderId) {
@@ -698,12 +662,6 @@ export class StrategyIntentExecutionService {
       return;
     }
 
-    const takerIntent = this.buildImmediateDualAccountTakerIntent(
-      intent,
-      takerAccountLabel,
-      makerExchangeOrderId,
-    );
-
     try {
       const makerReadySnapshot =
         await this.waitForImmediateDualAccountMakerReady(
@@ -711,10 +669,9 @@ export class StrategyIntentExecutionService {
           makerExchangeOrderId,
         );
 
-      await this.assertImmediateDualAccountMakerOwnsTopOfBook(
+      await this.assertImmediateDualAccountMakerStillEligible(
         intent,
         makerExchangeOrderId,
-        makerReadySnapshot,
         'pre-taker',
       );
       await this.maybeSleepBeforeImmediateDualAccountTaker(
@@ -728,14 +685,28 @@ export class StrategyIntentExecutionService {
           makerExchangeOrderId,
           'post-delay',
         );
+      const takerQty = makerDispatchSnapshot.remainingQty;
 
-      await this.assertImmediateDualAccountMakerOwnsTopOfBook(
+      if (
+        takerQty.isLessThanOrEqualTo(
+          StrategyIntentExecutionService.DUAL_ACCOUNT_QTY_TOLERANCE,
+        )
+      ) {
+        await this.cancelRemainingImmediateDualAccountMaker(
+          intent,
+          makerExchangeOrderId,
+          'maker_remaining_qty_not_positive_before_taker',
+        );
+
+        return;
+      }
+
+      const takerIntent = this.buildImmediateDualAccountTakerIntent(
         intent,
+        takerAccountLabel,
         makerExchangeOrderId,
-        makerDispatchSnapshot,
-        'post-delay',
+        takerQty,
       );
-
       const takerResult = await this.consumeIntent(takerIntent);
 
       await this.assertImmediateDualAccountPairedFill(
@@ -746,17 +717,6 @@ export class StrategyIntentExecutionService {
         takerResult,
       );
     } catch (error) {
-      if (this.isImmediateDualAccountRepriceRequiredError(error)) {
-        await this.repriceImmediateDualAccountMaker(
-          intent,
-          makerExchangeOrderId,
-          makerClientOrderId,
-          error,
-        );
-
-        return;
-      }
-
       const mismatchAlreadyHandled =
         error instanceof Error &&
         error.message.includes(
@@ -780,6 +740,7 @@ export class StrategyIntentExecutionService {
     intent: StrategyOrderIntent,
     takerAccountLabel: string,
     makerExchangeOrderId: string,
+    takerQty: BigNumber,
   ): StrategyOrderIntent {
     const metadata =
       intent.metadata && typeof intent.metadata === 'object'
@@ -795,13 +756,14 @@ export class StrategyIntentExecutionService {
       timeInForce: 'IOC',
       status: 'NEW',
       createdAt: getRFC3339Timestamp(),
+      qty: takerQty.toFixed(),
       metadata: {
         ...metadata,
         role: 'taker',
         makerOrderId: makerExchangeOrderId,
         makerIntentId: intent.intentId,
         trigger: 'maker_ack',
-        triggerFillQty: intent.qty,
+        triggerFillQty: takerQty.toFixed(),
       },
     };
   }
@@ -898,66 +860,6 @@ export class StrategyIntentExecutionService {
     return snapshot;
   }
 
-  private async assertImmediateDualAccountMakerOwnsTopOfBook(
-    intent: StrategyOrderIntent,
-    makerExchangeOrderId: string,
-    makerSnapshot: ImmediateDualAccountOrderSnapshot,
-    stage: string,
-  ): Promise<void> {
-    const orderBook = await this.runWithRetries(intent, () =>
-      this.exchangeConnectorAdapterService.fetchOrderBook(
-        intent.exchange,
-        intent.pair,
-      ),
-    );
-    const rawLevel =
-      intent.side === 'buy'
-        ? Array.isArray(orderBook?.bids)
-          ? orderBook.bids[0]
-          : undefined
-        : Array.isArray(orderBook?.asks)
-        ? orderBook.asks[0]
-        : undefined;
-    const expectedPrice = new BigNumber(intent.price);
-    const topPrice = this.toFiniteBigNumber(
-      Array.isArray(rawLevel) ? rawLevel[0] : undefined,
-    );
-    const topQty = this.toFiniteBigNumber(
-      Array.isArray(rawLevel) ? rawLevel[1] : undefined,
-    );
-
-    if (
-      !topPrice ||
-      topPrice
-        .minus(expectedPrice)
-        .abs()
-        .isGreaterThan(
-          StrategyIntentExecutionService.DUAL_ACCOUNT_PRICE_TOLERANCE,
-        )
-    ) {
-      throw this.buildImmediateDualAccountRepriceRequiredError(
-        [
-          `Dual-account maker lost top-of-book before taker ${stage}`,
-          `makerOrderId=${makerExchangeOrderId}`,
-          `makerSide=${intent.side}`,
-          `expectedPrice=${intent.price}`,
-          `topPrice=${topPrice?.toFixed() || 'n/a'}`,
-        ].join(' '),
-      );
-    }
-
-    if (!topQty || !this.quantitiesMatch(topQty, makerSnapshot.remainingQty)) {
-      throw new Error(
-        [
-          `Dual-account maker top level is not exclusively ours before taker ${stage}`,
-          `makerOrderId=${makerExchangeOrderId}`,
-          `makerSide=${intent.side}`,
-          `expectedQty=${makerSnapshot.remainingQty.toFixed()}`,
-          `topQty=${topQty?.toFixed() || 'n/a'}`,
-        ].join(' '),
-      );
-    }
-  }
 
   private async maybeSleepBeforeImmediateDualAccountTaker(
     intent: StrategyOrderIntent,
@@ -1317,71 +1219,6 @@ export class StrategyIntentExecutionService {
     }
   }
 
-  private async repriceImmediateDualAccountMaker(
-    intent: StrategyOrderIntent,
-    makerExchangeOrderId: string,
-    makerClientOrderId: string,
-    error: ImmediateDualAccountRetryableMakerError,
-  ): Promise<void> {
-    this.logger.warn(
-      [
-        'Immediate dual-account maker lost top-of-book; repricing maker leg',
-        `strategy=${intent.strategyKey}`,
-        `intent=${intent.intentId}`,
-        `exchange=${intent.exchange}`,
-        `pair=${intent.pair}`,
-        `makerOrderId=${makerExchangeOrderId}`,
-        `account=${intent.accountLabel || 'default'}`,
-        `error=${error.message}`,
-      ].join(' | '),
-    );
-
-    await this.cancelMakerAfterImmediateDualAccountFailure(
-      intent,
-      makerExchangeOrderId,
-      makerClientOrderId,
-      error,
-    );
-
-    const repricedIntent =
-      this.buildImmediateDualAccountRepricedMakerIntent(intent);
-
-    this.logger.log(
-      [
-        'Reposting dual-account maker after top-of-book loss',
-        `strategy=${repricedIntent.strategyKey}`,
-        `intent=${repricedIntent.intentId}`,
-        `account=${repricedIntent.accountLabel || 'default'}`,
-        `side=${repricedIntent.side}`,
-        `qty=${repricedIntent.qty}`,
-        `price=${repricedIntent.price}`,
-      ].join(' | '),
-    );
-
-    await this.consumeIntent(repricedIntent);
-  }
-
-  private buildImmediateDualAccountRepricedMakerIntent(
-    intent: StrategyOrderIntent,
-  ): StrategyOrderIntent {
-    const metadata =
-      intent.metadata && typeof intent.metadata === 'object'
-        ? { ...(intent.metadata as Record<string, unknown>) }
-        : {};
-    const retryAttempt = this.readInlineDualAccountRetryAttempt(intent) + 1;
-
-    return {
-      ...intent,
-      intentId: `${intent.intentId}:reprice-${retryAttempt}`,
-      createdAt: getRFC3339Timestamp(),
-      status: 'NEW',
-      metadata: {
-        ...metadata,
-        inlineDualAccountRetryAttempt: retryAttempt,
-        inlineDualAccountRetryReason: 'lost_top_of_book',
-      },
-    };
-  }
 
   private async cancelMakerAfterImmediateDualAccountFailure(
     intent: StrategyOrderIntent,

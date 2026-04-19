@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import BigNumber from 'bignumber.js';
 
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
@@ -13,7 +14,6 @@ jest.mock('src/common/entities/orders/user-orders.entity', () => ({
 const { StrategyService } = require('./strategy.service');
 
 describe('StrategyService balance cache helpers', () => {
-
   const strategyRepo = {
     find: jest.fn(),
     findOne: jest.fn(),
@@ -81,18 +81,12 @@ describe('StrategyService balance cache helpers', () => {
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
-      {
-        free: { BTC: 1.5, USDT: 200 },
-      },
+      { free: { BTC: 1.5, USDT: 200 } },
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest
-      .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
-    const exchangeConnectorAdapterService = {
-      fetchBalance: jest.fn(),
-    };
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    const exchangeConnectorAdapterService = { fetchBalance: jest.fn() };
     const service = createService({
       balanceStateCacheService,
       exchangeConnectorAdapterService,
@@ -119,15 +113,11 @@ describe('StrategyService balance cache helpers', () => {
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
-      {
-        free: { USDT: 200 },
-      },
+      { free: { USDT: 200 } },
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest
-      .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
     const service = createService({ balanceStateCacheService });
 
     const balances = await (service as any).getAvailableBalancesForPair(
@@ -150,19 +140,13 @@ describe('StrategyService balance cache helpers', () => {
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
-      {
-        free: { BTC: 1, USDT: 100 },
-      },
+      { free: { BTC: 1, USDT: 100 } },
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest
-      .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
     const exchangeConnectorAdapterService = {
-      fetchBalance: jest.fn().mockResolvedValue({
-        free: { BTC: 2, USDT: 300 },
-      }),
+      fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 2, USDT: 300 } }),
     };
     const service = createService({
       balanceStateCacheService,
@@ -183,23 +167,17 @@ describe('StrategyService balance cache helpers', () => {
   it('does not call fetchBalance during controller decisions', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
     const exchangeConnectorAdapterService = {
-      fetchBalance: jest.fn().mockResolvedValue({
-        free: { BTC: 2, USDT: 300 },
-      }),
+      fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 2, USDT: 300 } }),
     };
 
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'default',
-      {
-        free: { BTC: 1, USDT: 100 },
-      },
+      { free: { BTC: 1, USDT: 100 } },
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest
-      .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
 
     const service = createService({
       balanceStateCacheService,
@@ -214,7 +192,6 @@ describe('StrategyService balance cache helpers', () => {
                 'default',
               ),
             ).resolves.toBeNull();
-
             return [];
           }),
         }),
@@ -245,15 +222,11 @@ describe('StrategyService balance cache helpers', () => {
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
-      {
-        free: { BTC: 0.1, USDT: 500 },
-      },
+      { free: { BTC: 0.1, USDT: 500 } },
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest
-      .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
     const service = createService({ balanceStateCacheService });
 
     await expect(
@@ -273,9 +246,7 @@ describe('StrategyService balance cache helpers', () => {
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'maker',
-      {
-        free: { BTC: 10, USDT: 50 },
-      },
+      { free: { BTC: 10, USDT: 50 } },
       '2026-04-14T00:00:06.000Z',
       'ws',
     );
@@ -301,39 +272,24 @@ describe('StrategyService balance cache helpers', () => {
     const exchange = {
       id: 'binance',
       markets: {
-        'BTC/USDT': {
-          limits: {
-            amount: { min: 0.001 },
-            cost: { min: 10 },
-          },
-        },
+        'BTC/USDT': { limits: { amount: { min: 0.001 }, cost: { min: 10 } } },
       },
       timeframes: { '5m': true },
       loadMarkets: jest.fn(),
       fetchOpenOrders: jest.fn().mockResolvedValue([]),
-      fetchBalance: jest.fn().mockResolvedValue({
-        free: { BTC: 10, USDT: 1000 },
-      }),
-      amountToPrecision: jest.fn((_symbol: string, value: number) =>
-        value.toFixed(4),
-      ),
-      priceToPrecision: jest.fn((_symbol: string, value: number) =>
-        value.toFixed(2),
-      ),
+      fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 10, USDT: 1000 } }),
+      amountToPrecision: jest.fn((_symbol: string, value: number) => value.toFixed(4)),
+      priceToPrecision: jest.fn((_symbol: string, value: number) => value.toFixed(2)),
     };
 
     balanceStateCacheService.applyBalanceSnapshot(
       'binance',
       'default',
-      {
-        free: { BTC: 10, USDT: 1000 },
-      },
+      { free: { BTC: 10, USDT: 1000 } },
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest
-      .spyOn(Date, 'now')
-      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
     const service = createService({
       exchangeInitService: {
         getExchange: jest.fn().mockReturnValue(exchange),
@@ -351,8 +307,7 @@ describe('StrategyService balance cache helpers', () => {
       [0, 0, 0, 0, 100],
       [0, 0, 0, 0, 100],
     ]);
-    jest
-      .spyOn(service as any, 'calcEma')
+    jest.spyOn(service as any, 'calcEma')
       .mockReturnValueOnce([90, 95, 99, 101, 103, 104, 105])
       .mockReturnValueOnce([100, 100, 100, 100, 100, 100, 100]);
     jest.spyOn(service as any, 'calcRsi').mockReturnValue([50, 50, 50, 50]);
@@ -389,5 +344,59 @@ describe('StrategyService balance cache helpers', () => {
     ).resolves.toEqual([]);
     expect(exchange.fetchBalance).not.toHaveBeenCalled();
     jest.restoreAllMocks();
+  });
+
+  it('rotates dual-account maker and taker roles after a matched cycle when cycleMode=alternating', () => {
+    const service = createService();
+
+    const nextParams = (service as any).advanceDualAccountCycleRolesAfterSuccess(
+      {
+        makerAccountLabel: 'maker-a',
+        takerAccountLabel: 'maker-b',
+        cycleMode: 'alternating',
+      },
+      {
+        cycleId: 'cycle-1',
+        tickId: 'tick-1',
+        orderId: 'order-1',
+        makerSide: 'sell',
+        makerAccountLabel: 'maker-a',
+        takerAccountLabel: 'maker-b',
+        price: '100',
+        requestedQty: '1',
+        makerFilledQty: '1',
+        takerFilledQty: '1',
+      },
+    );
+
+    expect(nextParams.nextMakerAccountLabel).toBe('maker-b');
+    expect(nextParams.nextTakerAccountLabel).toBe('maker-a');
+  });
+
+  it('keeps configured roles when cycleMode=static', () => {
+    const service = createService();
+
+    const nextParams = (service as any).advanceDualAccountCycleRolesAfterSuccess(
+      {
+        makerAccountLabel: 'maker-a',
+        takerAccountLabel: 'maker-b',
+        cycleMode: 'static',
+      },
+      {
+        cycleId: 'cycle-1',
+        tickId: 'tick-1',
+        orderId: 'order-1',
+        makerSide: 'sell',
+        makerAccountLabel: 'maker-a',
+        takerAccountLabel: 'maker-b',
+        price: '100',
+        requestedQty: '1',
+        makerFilledQty: '1',
+        takerFilledQty: '1',
+      },
+    );
+
+    expect(nextParams.nextMakerAccountLabel).toBe('maker-a');
+    expect(nextParams.nextTakerAccountLabel).toBe('maker-b');
   });
 });

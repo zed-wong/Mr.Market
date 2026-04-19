@@ -557,6 +557,24 @@ export class ExecuteDualAccountVolumeStrategyDto {
 
   @ApiPropertyOptional({
     description:
+      'Cycle role mode: alternating swaps maker/taker after successful matched cycles, static preserves configured roles',
+    example: 'alternating',
+  })
+  @IsOptional()
+  @IsIn(['alternating', 'static'])
+  cycleMode?: 'alternating' | 'static';
+
+  @ApiPropertyOptional({
+    description:
+      'Maker protection mode: alive_only only requires the maker order to remain open, strict_top preserves the legacy top-of-book guard',
+    example: 'alive_only',
+  })
+  @IsOptional()
+  @IsIn(['alive_only', 'strict_top'])
+  makerProtectionMode?: 'alive_only' | 'strict_top';
+
+  @ApiPropertyOptional({
+    description:
       'Trade-size variance percentage applied around baseTradeAmount',
     example: 0.15,
   })
@@ -684,6 +702,24 @@ export class ExecuteDualAccountBestCapacityVolumeStrategyDto {
   @ApiProperty({ description: 'Taker exchange account label' })
   @IsString()
   takerAccountLabel: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Cycle role mode: alternating swaps maker/taker after successful matched cycles, static preserves configured roles',
+    example: 'alternating',
+  })
+  @IsOptional()
+  @IsIn(['alternating', 'static'])
+  cycleMode?: 'alternating' | 'static';
+
+  @ApiPropertyOptional({
+    description:
+      'Maker protection mode: alive_only only requires the maker order to remain open, strict_top preserves the legacy top-of-book guard',
+    example: 'alive_only',
+  })
+  @IsOptional()
+  @IsIn(['alive_only', 'strict_top'])
+  makerProtectionMode?: 'alive_only' | 'strict_top';
 
   @ApiProperty({ description: 'User ID' })
   @IsString()

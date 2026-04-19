@@ -1,3 +1,8 @@
+import 'reflect-metadata';
+jest.mock('src/common/entities/market-making/strategy-execution-history.entity', () => ({
+  StrategyExecutionHistory: class StrategyExecutionHistory {},
+}));
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
 import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
@@ -413,7 +418,7 @@ describe('StrategyIntentExecutionService', () => {
     expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledTimes(3);
     expect(
       exchangeConnectorAdapterService.fetchOrderBook,
-    ).toHaveBeenCalledTimes(2);
+    ).not.toHaveBeenCalled();
     expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
@@ -623,7 +628,7 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
-  it('treats matched partial maker and taker fills as success without top-of-book checks', async () => {
+  it('treats matched partial maker and taker fills as success while only requiring the maker to remain open', async () => {
     exchangeConnectorAdapterService.placeLimitOrder
       .mockResolvedValueOnce({
         id: 'maker-order-partial',
@@ -650,9 +655,6 @@ describe('StrategyIntentExecutionService', () => {
         status: 'closed',
         filled: '0.4',
       });
-    exchangeConnectorAdapterService.fetchOrderBook
-      .mockResolvedValueOnce({ bids: [[100, 1]], asks: [[100, 1]] })
-      .mockResolvedValueOnce({ bids: [[100, 1]], asks: [[100, 1]] });
     const service = createService(
       true,
       createConfigService(true, {
@@ -678,7 +680,7 @@ describe('StrategyIntentExecutionService', () => {
 
     expect(
       exchangeConnectorAdapterService.fetchOrderBook,
-    ).toHaveBeenCalledTimes(2);
+    ).not.toHaveBeenCalled();
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       'dual-maker-partial:inline-taker',
       'DONE',
