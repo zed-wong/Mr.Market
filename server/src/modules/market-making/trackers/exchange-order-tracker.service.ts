@@ -164,7 +164,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
       this.orders.set(key, nextOrder);
       this.updatePollingStateForOrder(key, nextOrder.status);
-      void this.persistOrder(nextOrder, key);
+      void this.persistOrder(nextOrder, key).catch(() => {});
       this.emitOrderStateChanged(existingOrder, nextOrder, source, fillDelta);
 
       return;
@@ -180,7 +180,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
     this.orders.set(key, createdOrder);
     this.updatePollingStateForOrder(key, createdOrder.status);
-    void this.persistOrder(createdOrder, key);
+    void this.persistOrder(createdOrder, key).catch(() => {});
     this.emitOrderStateChanged(undefined, createdOrder, source);
   }
 
@@ -787,26 +787,37 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       return;
     }
 
-    await this.trackedOrderRepository.save(
-      this.trackedOrderRepository.create({
-        trackingKey,
-        orderId: order.orderId,
-        strategyKey: order.strategyKey,
-        exchange: order.exchange,
-        accountLabel: order.accountLabel,
-        pair: order.pair,
-        exchangeOrderId: order.exchangeOrderId,
-        clientOrderId: order.clientOrderId,
-        slotKey: order.slotKey,
-        role: order.role,
-        side: order.side,
-        price: order.price,
-        qty: order.qty,
-        cumulativeFilledQty: order.cumulativeFilledQty,
-        status: order.status,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt,
-      }),
-    );
+    const entity = {
+      trackingKey,
+      orderId: order.orderId,
+      strategyKey: order.strategyKey,
+      exchange: order.exchange,
+      accountLabel: order.accountLabel,
+      pair: order.pair,
+      exchangeOrderId: order.exchangeOrderId,
+      clientOrderId: order.clientOrderId,
+      slotKey: order.slotKey,
+      role: order.role,
+      side: order.side,
+      price: order.price,
+      qty: order.qty,
+      cumulativeFilledQty: order.cumulativeFilledQty,
+      status: order.status,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+
+    try {
+      // upsert (INSERT ... ON CONFLICT DO UPDATE) is used instead of save()
+      // because save() does a non-atomic SELECT then INSERT, which races when
+      // multiple persistOrder calls for the same trackingKey are in-flight.
+      // Note: upsert overwrites ALL columns on conflict including createdAt,
+      // which is safe because the in-memory model preserves createdAt via mergeOrder().
+      await this.trackedOrderRepository.upsert(entity, ['trackingKey']);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist tracked order ${trackingKey}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }
