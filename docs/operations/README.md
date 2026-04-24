@@ -90,4 +90,4 @@ docs/operations/
 ## Related Docs
 
 - [Architecture Docs](../architecture/README.md) - Module map, business flows, entity ownership
-- [Planning Docs](../planning/README.md) - Active plans and implementation todo
+- [Planning Docs](../plans/README.md) - Active plans and implementation todo

@@ -6,7 +6,7 @@
 
 This file keeps the detailed unchecked checklist and also adds short summary sections so the current work is easier to scan.
 
-Completed work should stay in `progress-log.md`, not here.
+Completed work should stay in `progress.md`, not here.
 
 ## Backend
 

@@ -16,7 +16,7 @@ This directory is organized by document responsibility, not by author or date.
 - `architecture/server/module-map.md` - backend module map
 - `operations/testing/market-making.md` - current system-test scope
 - `planning/2026-03-18-market-making-testing-roadmap.md` - active market-making testing roadmap
-- `planning/todo.md` - current open work
+- `plans/todo.md` - current open work
 
 ## Notes
 

@@ -34,6 +34,6 @@ i18n/                            # Language JSONs, en.json is default
 # Conventions
 - Use **bun** (not npm/yarn/pnpm). Keep dependencies minimal.
 - No agent signatures in commit messages.
-- Keep docs updated: `docs/planning/progress-log.md`, `docs/architecture/server/`, `docs/architecture/strategies/`.
+- Keep docs updated: `docs/plans/progress.md`, `docs/architecture/server/`, `docs/architecture/strategies/`.
 - Never read `.env` files.
 - Always keep the architecture 100% perfect at present, don't do compatibility unless mentioned

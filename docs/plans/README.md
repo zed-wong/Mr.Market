@@ -24,7 +24,7 @@ Use dated files, but keep the document role clear.
 - `YYYY-MM-DD-*-checklist.md`
   Use for point-in-time status snapshots: completed work, remaining work, and blockers.
   Do not use for long design background.
-- `progress-log.md`
+- `progress.md`
   Use for rolling chronological change notes.
   Do not create a new dated plan when a short progress entry is enough.
 
@@ -46,7 +46,7 @@ Use dated files, but keep the document role clear.
   Role: active implementation plan for fixing admin-direct `dualAccountBestCapacityVolume` partial-start failures, pair/symbol normalization gaps, and orphan runtime row rollback
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
-- **`progress-log.md`**
+- **`progress.md`**
   Role: rolling chronological implementation log
 
 ## Archived
@@ -57,7 +57,7 @@ Use dated files, but keep the document role clear.
 
 - If work is continuing within the same phase and the same document role, update the existing dated doc.
 - If the team introduces a new phase boundary or a materially different implementation approach, create a new dated doc.
-- If the change is just a short status update, add it to `progress-log.md`.
+- If the change is just a short status update, add it to `progress.md`.
 - If a dated doc stops guiding current work, move it to `../archive/plans/`.
 
 ## Notes

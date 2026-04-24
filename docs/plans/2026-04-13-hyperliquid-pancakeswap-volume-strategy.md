@@ -314,7 +314,6 @@ PancakeSwap V3 is considered ready for controlled production use only if:
 | DEX constants | `server/src/common/constants/defi-addresses.ts` | Update PancakeSwap V3 addresses only if they are stale |
 | DEX adapter tests | `server/src/modules/defi/adapters/pancakeV3.adapter.ts` and related specs | Add/adjust quote-path validation if needed |
 | Strategy docs | `docs/architecture/strategies/dual-account-volume.md` | Update only if Hyperliquid-specific constraints change the documented runtime contract |
-| Planning docs | this file, `docs/planning/README.md`, `docs/planning/progress-log.md` | Keep state and role aligned with reality |
 
 The intended default is no broad refactor. Only change code where validation proves a concrete incompatibility.
 
