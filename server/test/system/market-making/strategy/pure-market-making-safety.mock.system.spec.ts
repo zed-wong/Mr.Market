@@ -2,6 +2,7 @@
 import type { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
 import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
@@ -99,6 +100,7 @@ describe('Pure market making safety gaps (mock system)', () => {
     fetchOpenOrders: jest.Mock;
     fetchOrder: jest.Mock;
     loadTradingRules: jest.Mock;
+    quantizeOrder: jest.Mock;
   };
   let exchangeOrderMappingService: {
     findByClientOrderId: jest.Mock;
@@ -130,6 +132,12 @@ describe('Pure market making safety gaps (mock system)', () => {
         priceStep: 0.01,
         makerFee: 0.001,
       }),
+      quantizeOrder: jest.fn(
+        (_exchange: string, _pair: string, qty: string, price: string) => ({
+          qty,
+          price,
+        }),
+      ),
     };
     exchangeOrderMappingService = {
       findByClientOrderId: jest.fn().mockResolvedValue(null),
@@ -154,6 +162,7 @@ describe('Pure market making safety gaps (mock system)', () => {
 
     strategyService = new StrategyService(
       {
+        isReady: jest.fn().mockReturnValue(true),
         getExchange: jest.fn().mockReturnValue({
           id: 'binance',
           fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
@@ -183,7 +192,26 @@ describe('Pure market making safety gaps (mock system)', () => {
       strategyIntentStoreService as any,
       undefined,
       undefined,
-      undefined,
+      {
+        hasFreshAccountSnapshot: jest.fn().mockReturnValue(true),
+        getSnapshotDiagnostic: jest.fn().mockReturnValue({
+          present: true,
+          fresh: true,
+          ageMs: 0,
+          freshnessTimestamp: '2026-04-09T00:00:00.000Z',
+          source: 'ws',
+        }),
+        getBalance: jest.fn(
+          (_exchange: string, accountLabel: string, asset: string) => ({
+            exchange: _exchange,
+            accountLabel,
+            asset,
+            free: asset === 'BTC' ? '10' : '100000',
+            source: 'ws',
+            freshnessTimestamp: '2026-04-09T00:00:00.000Z',
+          }),
+        ),
+      } as unknown as BalanceStateCacheService,
       undefined,
       {
         adjust: jest.fn().mockResolvedValue(undefined),
@@ -279,12 +307,25 @@ describe('Pure market making safety gaps (mock system)', () => {
       'binance',
       'BTC/USDT',
       'ex-orphan',
+      undefined,
     );
 
     executorOrchestratorService.dispatchActions.mockClear();
     await executor!.onTick(getRFC3339Timestamp());
 
-    expect(executorOrchestratorService.dispatchActions).not.toHaveBeenCalled();
+    expect(executorOrchestratorService.dispatchActions).toHaveBeenCalledWith(
+      strategy.strategyKey,
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'CANCEL_ORDER',
+          mixinOrderId: 'ex-buy',
+        }),
+        expect.objectContaining({
+          type: 'CANCEL_ORDER',
+          mixinOrderId: 'ex-sell',
+        }),
+      ]),
+    );
     expect(
       exchangeOrderTrackerService.getOpenOrders(strategy.strategyKey),
     ).toHaveLength(2);
@@ -314,6 +355,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       'binance',
       'BTC/USDT',
       'ex-2',
+      undefined,
     );
     expect(executorRegistry.getExecutor('binance', 'BTC/USDT')).toBeUndefined();
   });
@@ -337,7 +379,7 @@ describe('Pure market making safety gaps (mock system)', () => {
     expect(executorOrchestratorService.dispatchActions).not.toHaveBeenCalled();
 
     (strategyService as any).setConnectorHealthStatus('binance', 'CONNECTED');
-    executor.getSession('order-3')!.nextRunAtMs = Date.now();
+    executor.getSession('order-3')!.nextRunAtMs = 0;
     await executor!.onTick(getRFC3339Timestamp());
 
     expect(executorOrchestratorService.dispatchActions).toHaveBeenCalled();
@@ -380,6 +422,7 @@ describe('Pure market making safety gaps (mock system)', () => {
       'binance',
       'BTC/USDT',
       'ex-4',
+      undefined,
     );
   });
 });

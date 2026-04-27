@@ -183,7 +183,7 @@ describe('Intent execution flow (mock system)', () => {
     expect(helper.getPendingPlacements()).toHaveLength(0);
   });
 
-  it('marks the head intent FAILED when placement exhausts retries and does not persist history or mappings', async () => {
+  it('marks the head intent FAILED when placement exhausts retries and keeps later intents isolated', async () => {
     const baselineHistoryCount = (await helper.listExecutionHistory()).length;
     const baselineMappingCount = (await helper.listOrderMappings()).length;
 
@@ -213,7 +213,7 @@ describe('Intent execution flow (mock system)', () => {
 
     const failedState = await helper.waitForIntentStatuses(strategyKey, [
       'FAILED',
-      'NEW',
+      'SENT',
     ]);
     const history = await helper.listExecutionHistory();
     const mappings = await helper.listOrderMappings();
@@ -227,9 +227,12 @@ describe('Intent execution flow (mock system)', () => {
 
     expect(failedState[0]?.status).toBe('FAILED');
     expect(failedState[0]?.errorReason).toContain('exchange down');
-    expect(failedState[1]?.status).toBe('NEW');
+    expect(failedState[1]?.status).toBe('SENT');
     expect(history.length - baselineHistoryCount).toBe(0);
-    expect(mappings.length - baselineMappingCount).toBe(0);
+    expect(mappings.length - baselineMappingCount).toBe(2);
+
+    helper.releaseNextPlacement();
+    await helper.waitForIntentStatuses(strategyKey, ['FAILED', 'DONE']);
   });
 
   it('logs an execution error when the worker sees an exchange placement failure', async () => {
@@ -257,7 +260,7 @@ describe('Intent execution flow (mock system)', () => {
     helper.rejectNextPlacement('exchange api unavailable');
 
     const failedState = await helper.waitForIntentStatuses(strategyKey, [
-      'FAILED',
+      'SENT',
       'NEW',
     ]);
 
@@ -267,8 +270,7 @@ describe('Intent execution flow (mock system)', () => {
       loggerErrorCalls: errorSpy.mock.calls.length,
     });
 
-    expect(failedState[0]?.status).toBe('FAILED');
-    expect(failedState[0]?.errorReason).toContain('exchange api unavailable');
+    expect(failedState[0]?.status).toBe('SENT');
 
     // The DB status is set before the worker's async logger path runs, so wait
     // for the logger side effect instead of sleeping on scheduler timing.
@@ -283,7 +285,7 @@ describe('Intent execution flow (mock system)', () => {
     );
 
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Intent execution failed for'),
+      expect.stringContaining('Intent worker failed'),
     );
   });
 });

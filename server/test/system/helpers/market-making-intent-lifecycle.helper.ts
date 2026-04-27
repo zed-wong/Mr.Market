@@ -17,6 +17,7 @@ import {
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
+import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
 import { ExchangeConnectorAdapterService } from 'src/modules/market-making/execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
 import { StrategyMarketDataProviderService } from 'src/modules/market-making/strategy/data/strategy-market-data-provider.service';
@@ -142,10 +143,42 @@ export class MarketMakingIntentLifecycleHelper {
       ),
       cancelOrder: jest.fn(),
       fetchOrder: jest.fn(),
+      loadTradingRules: jest.fn().mockResolvedValue({
+        amountMin: 0.001,
+        costMin: 10,
+        makerFee: 0.001,
+      }),
+      quantizeOrder: jest.fn(
+        (_exchange: string, _pair: string, qty: string, price: string) => ({
+          qty,
+          price,
+        }),
+      ),
     };
     const exchangeInitServiceMock = {
       getExchange: jest.fn(),
+      isReady: jest.fn().mockReturnValue(true),
       getSupportedExchanges: jest.fn(() => ['binance']),
+    };
+    const balanceStateCacheServiceMock = {
+      hasFreshAccountSnapshot: jest.fn().mockReturnValue(true),
+      getSnapshotDiagnostic: jest.fn().mockReturnValue({
+        present: true,
+        fresh: true,
+        ageMs: 0,
+        freshnessTimestamp: '2026-04-09T00:00:00.000Z',
+        source: 'ws',
+      }),
+      getBalance: jest.fn(
+        (_exchange: string, accountLabel: string, asset: string) => ({
+          exchange: _exchange,
+          accountLabel,
+          asset,
+          free: asset === 'BTC' ? '10' : '100000',
+          source: 'ws',
+          freshnessTimestamp: '2026-04-09T00:00:00.000Z',
+        }),
+      ),
     };
     const strategyMarketDataProviderServiceMock = {
       getReferencePrice: jest.fn(async () => 100),
@@ -191,6 +224,10 @@ export class MarketMakingIntentLifecycleHelper {
         {
           provide: ExchangeInitService,
           useValue: exchangeInitServiceMock,
+        },
+        {
+          provide: BalanceStateCacheService,
+          useValue: balanceStateCacheServiceMock,
         },
         {
           provide: StrategyMarketDataProviderService,

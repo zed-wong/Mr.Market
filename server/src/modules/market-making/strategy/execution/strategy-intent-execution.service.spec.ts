@@ -363,6 +363,11 @@ describe('StrategyIntentExecutionService', () => {
       })
       .mockResolvedValueOnce({
         id: 'maker-order-1',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-1',
         status: 'closed',
         filled: '1',
       });
@@ -415,7 +420,7 @@ describe('StrategyIntentExecutionService', () => {
     expect(
       exchangeConnectorAdapterService.placeLimitOrder,
     ).toHaveBeenCalledTimes(2);
-    expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledTimes(3);
+    expect(exchangeConnectorAdapterService.fetchOrder).toHaveBeenCalledTimes(4);
     expect(
       exchangeConnectorAdapterService.fetchOrderBook,
     ).not.toHaveBeenCalled();
@@ -472,6 +477,11 @@ describe('StrategyIntentExecutionService', () => {
         filled: '1',
       });
     exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-3',
+        status: 'open',
+        filled: '0',
+      })
       .mockResolvedValueOnce({
         id: 'maker-order-3',
         status: 'open',
@@ -652,6 +662,11 @@ describe('StrategyIntentExecutionService', () => {
       })
       .mockResolvedValueOnce({
         id: 'maker-order-partial',
+        status: 'open',
+        filled: '0',
+      })
+      .mockResolvedValueOnce({
+        id: 'maker-order-partial',
         status: 'closed',
         filled: '0.4',
       });
@@ -764,6 +779,11 @@ describe('StrategyIntentExecutionService', () => {
         filled: '1',
       });
     exchangeConnectorAdapterService.fetchOrder
+      .mockResolvedValueOnce({
+        id: 'maker-order-delay',
+        status: 'open',
+        filled: '0',
+      })
       .mockResolvedValueOnce({
         id: 'maker-order-delay',
         status: 'open',

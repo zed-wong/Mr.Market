@@ -24,6 +24,7 @@ import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-ke
 import { FeeService } from 'src/modules/market-making/fee/fee.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { NetworkMappingService } from 'src/modules/market-making/network-mapping/network-mapping.service';
+import { StrategyControllerRegistry } from 'src/modules/market-making/strategy/controllers/strategy-controller.registry';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from 'src/modules/market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
@@ -193,6 +194,27 @@ export class MarketMakingPaymentHelper {
         StrategyConfigResolverService,
         StrategyRuntimeDispatcherService,
         UserOrdersService,
+        {
+          provide: StrategyControllerRegistry,
+          useValue: {
+            getController: jest.fn((strategyType: string) =>
+              strategyType === 'pureMarketMaking'
+                ? {
+                    start: async (
+                      config: Record<string, unknown>,
+                      strategyService: typeof this.strategyServiceStub,
+                    ) =>
+                      await strategyService.executePureMarketMakingStrategy(
+                        config,
+                      ),
+                  }
+                : undefined,
+            ),
+            listControllerTypes: jest.fn().mockReturnValue([
+              'pureMarketMaking',
+            ]),
+          },
+        },
         {
           provide: CampaignService,
           useValue: {},

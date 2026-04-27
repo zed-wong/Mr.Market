@@ -8,34 +8,31 @@ import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 import { UserStreamTrackerService } from './user-stream-tracker.service';
 
 describe('UserStreamTrackerService', () => {
-  it('tracks balance events as latest non-fill account activity', async () => {
+  it('tracks open order events as latest non-fill account activity', async () => {
     const service = new UserStreamTrackerService();
 
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'maker',
-      kind: 'balance',
+      kind: 'order',
       payload: {
-        asset: 'USDT',
-        free: '100',
-        used: '5',
-        total: '105',
-        source: 'ws',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'order-1',
+        status: 'open',
+        raw: {},
       },
       receivedAt: '2026-04-14T00:00:00.000Z',
-    } as any);
+    });
 
     await service.onTick('2026-04-14T00:00:01.000Z');
 
     expect(service.getLatestEvent('binance', 'maker')).toEqual(
       expect.objectContaining({
-        kind: 'balance',
+        kind: 'order',
         payload: expect.objectContaining({
-          asset: 'USDT',
-          free: '100',
-          used: '5',
-          total: '105',
-          source: 'ws',
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'order-1',
+          status: 'open',
         }),
       }),
     );
@@ -55,17 +52,20 @@ describe('UserStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'read-only',
-      kind: 'balance',
-      payload: { asset: 'USDT', free: '100', source: 'ws' },
+      kind: 'order',
+      payload: {
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'read-only-order',
+        status: 'open',
+        raw: {},
+      },
       receivedAt: '2026-02-11T00:00:00.000Z',
     });
 
     await service.onTick('2026-02-11T00:00:01.000Z');
 
     expect(fillRoutingService.resolveOrderForFill).not.toHaveBeenCalled();
-    expect(service.getLatestEvent('binance', 'read-only')?.kind).toBe(
-      'balance',
-    );
+    expect(service.getLatestEvent('binance', 'read-only')?.kind).toBe('order');
     expect(service.getOrphanedFills()).toEqual([]);
   });
 
@@ -280,8 +280,13 @@ describe('UserStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      kind: 'balance',
-      payload: { asset: 'USDT', free: '100', source: 'ws' },
+      kind: 'order',
+      payload: {
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'queued-order',
+        status: 'open',
+        raw: {},
+      },
       receivedAt: '2026-02-11T00:00:00.000Z',
     });
 
@@ -299,6 +304,7 @@ describe('UserStreamTrackerService', () => {
       undefined,
       {
         markUserStreamActivity: jest.fn(),
+        getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
       } as unknown as ExchangeOrderTrackerService,
       undefined,
       undefined,
@@ -310,11 +316,12 @@ describe('UserStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'maker',
-      kind: 'balance',
+      kind: 'order',
       payload: {
-        asset: 'USDT',
-        free: '100',
-        source: 'ws',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'health-order',
+        status: 'open',
+        raw: {},
       },
       receivedAt: '2026-04-18T00:00:00.000Z',
     });
@@ -924,8 +931,13 @@ describe('UserStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      kind: 'balance',
-      payload: { asset: 'USDT', free: '100', source: 'ws' },
+      kind: 'order',
+      payload: {
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'activity-order',
+        status: 'open',
+        raw: {},
+      },
       receivedAt: '2026-02-11T00:00:00.000Z',
     });
 
@@ -968,8 +980,13 @@ describe('UserStreamTrackerService', () => {
     service.queueAccountEvent({
       exchange: 'binance',
       accountLabel: 'default',
-      kind: 'balance',
-      payload: { asset: 'USDT', free: '100', source: 'ws' },
+      kind: 'order',
+      payload: {
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'silent-order',
+        status: 'open',
+        raw: {},
+      },
       receivedAt: '2026-02-11T00:00:00.000Z',
     });
 

@@ -8,6 +8,7 @@ import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
+import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
@@ -82,6 +83,12 @@ describe('StrategyService', () => {
   let balanceLedgerService: {
     adjust: jest.Mock;
   };
+  let balanceStateCacheService: {
+    hasFreshAccountSnapshot: jest.Mock;
+    getSnapshotDiagnostic: jest.Mock;
+    getBalance: jest.Mock;
+  };
+  let cachedBalancesByAccount: Record<string, Record<string, string>>;
   let exchangeOrderTrackerService: {
     getOpenOrders: jest.Mock;
     getLiveOrders: jest.Mock;
@@ -127,6 +134,22 @@ describe('StrategyService', () => {
   };
   const mockMarketMakingOrderRepository = {
     findOne: jest.fn(),
+  };
+
+  const setCachedBalances = (
+    balancesByAccount: Record<string, Record<string, number | string>>,
+  ) => {
+    cachedBalancesByAccount = Object.fromEntries(
+      Object.entries(balancesByAccount).map(([accountLabel, balances]) => [
+        accountLabel,
+        Object.fromEntries(
+          Object.entries(balances).map(([asset, free]) => [
+            asset.toUpperCase(),
+            String(free),
+          ]),
+        ),
+      ]),
+    );
   };
 
   const registerPooledSession = async ({
@@ -178,6 +201,34 @@ describe('StrategyService', () => {
     };
     balanceLedgerService = {
       adjust: jest.fn().mockResolvedValue({ applied: true }),
+    };
+    setCachedBalances({
+      default: { BTC: 10, USDT: 1000 },
+      maker: { BTC: 10, USDT: 1000 },
+      taker: { BTC: 10, USDT: 1000 },
+    });
+    balanceStateCacheService = {
+      hasFreshAccountSnapshot: jest.fn().mockReturnValue(true),
+      getSnapshotDiagnostic: jest.fn().mockReturnValue({
+        present: true,
+        fresh: true,
+        ageMs: 0,
+        freshnessTimestamp: '2026-03-11T00:00:00.000Z',
+        source: 'ws',
+      }),
+      getBalance: jest.fn(
+        (_exchange: string, _accountLabel: string, asset: string) => ({
+          exchange: _exchange,
+          accountLabel: _accountLabel,
+          asset,
+          free:
+            cachedBalancesByAccount[_accountLabel || 'default']?.[
+              asset.toUpperCase()
+            ] || '0',
+          source: 'ws',
+          freshnessTimestamp: '2026-03-11T00:00:00.000Z',
+        }),
+      ),
     };
     exchangeOrderTrackerService = {
       getOpenOrders: jest.fn().mockReturnValue([]),
@@ -252,6 +303,10 @@ describe('StrategyService', () => {
         {
           provide: BalanceLedgerService,
           useValue: balanceLedgerService,
+        },
+        {
+          provide: BalanceStateCacheService,
+          useValue: balanceStateCacheService,
         },
         {
           provide: StrategyControllerRegistry,
@@ -2471,13 +2526,10 @@ describe('StrategyService', () => {
       bestBid: 100,
       bestAsk: 101,
     });
-    exchangeConnectorAdapterService.fetchBalance
-      .mockResolvedValueOnce({
-        free: { BTC: 5, USDT: 10 },
-      })
-      .mockResolvedValueOnce({
-        free: { BTC: 0.1, USDT: 5000 },
-      });
+    setCachedBalances({
+      maker: { BTC: 5, USDT: 10 },
+      taker: { BTC: 0.1, USDT: 5000 },
+    });
 
     const actions = await service.buildDualAccountVolumeActions(
       'dual-key',
@@ -2515,13 +2567,10 @@ describe('StrategyService', () => {
   });
 
   it('builds best-capacity dual-account actions using the highest executable candidate', async () => {
-    exchangeConnectorAdapterService.fetchBalance
-      .mockResolvedValueOnce({
-        free: { BTC: 5, USDT: 500 },
-      })
-      .mockResolvedValueOnce({
-        free: { BTC: 1, USDT: 5000 },
-      });
+    setCachedBalances({
+      maker: { BTC: 5, USDT: 500 },
+      taker: { BTC: 1, USDT: 5000 },
+    });
 
     const actions = await service.buildDualAccountBestCapacityVolumeActions(
       'dual-best-key',
@@ -2564,13 +2613,10 @@ describe('StrategyService', () => {
       .spyOn(Date, 'now')
       .mockReturnValue(new Date('2026-03-11T01:00:00.000Z').getTime());
 
-    exchangeConnectorAdapterService.fetchBalance
-      .mockResolvedValueOnce({
-        free: { BTC: 5, USDT: 500 },
-      })
-      .mockResolvedValueOnce({
-        free: { BTC: 1, USDT: 5000 },
-      });
+    setCachedBalances({
+      maker: { BTC: 5, USDT: 500 },
+      taker: { BTC: 1, USDT: 5000 },
+    });
 
     const actions = await service.buildDualAccountBestCapacityVolumeActions(
       'dual-best-hours',
@@ -2618,12 +2664,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
-      async (_exchange: string, accountLabel?: string) =>
-        accountLabel === 'maker'
-          ? { free: { BTC: 10, USDT: 0 } }
-          : { free: { BTC: 0, USDT: 1000 } },
-    );
+    setCachedBalances({
+      maker: { BTC: 10, USDT: 0 },
+      taker: { BTC: 0, USDT: 1000 },
+    });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const actions = await service.buildDualAccountVolumeActions(
@@ -2672,13 +2716,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance
-      .mockResolvedValueOnce({
-        free: { BTC: 10, USDT: 25 },
-      })
-      .mockResolvedValueOnce({
-        free: { BTC: 0.15, USDT: 1000 },
-      });
+    setCachedBalances({
+      maker: { BTC: 10, USDT: 25 },
+      taker: { BTC: 0.15, USDT: 1000 },
+    });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const actions = await service.buildDualAccountVolumeActions(
@@ -2727,13 +2768,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance
-      .mockResolvedValueOnce({
-        free: { BTC: 10, USDT: 100.2 },
-      })
-      .mockResolvedValueOnce({
-        free: { BTC: 10, USDT: 1000 },
-      });
+    setCachedBalances({
+      maker: { BTC: 10, USDT: 100.2 },
+      taker: { BTC: 10, USDT: 1000 },
+    });
     jest.spyOn(Math, 'random').mockReturnValue(0);
 
     const actions = await service.buildDualAccountVolumeActions(
@@ -2789,13 +2827,10 @@ describe('StrategyService', () => {
       makerFee: 0.001,
       takerFee: 0.002,
     });
-    exchangeConnectorAdapterService.fetchBalance
-      .mockResolvedValueOnce({
-        free: { BTC: 10, USDT: 100.3 },
-      })
-      .mockResolvedValueOnce({
-        free: { BTC: 10, USDT: 1000 },
-      });
+    setCachedBalances({
+      maker: { BTC: 10, USDT: 100.3 },
+      taker: { BTC: 10, USDT: 1000 },
+    });
     jest.spyOn(Math, 'random').mockReturnValue(0);
 
     const actions = await service.buildDualAccountVolumeActions(
@@ -2842,11 +2877,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
-      async () => ({
-        free: { BTC: 0.04, USDT: 5 },
-      }),
-    );
+    setCachedBalances({
+      maker: { BTC: 0.04, USDT: 5 },
+      taker: { BTC: 0.04, USDT: 5 },
+    });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const actions = await service.buildDualAccountVolumeActions(
@@ -2884,12 +2918,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
-      async (_exchange: string, accountLabel?: string) =>
-        accountLabel === 'maker'
-          ? { free: { BTC: 1, USDT: 0.02 } }
-          : { free: { BTC: 0.0005, USDT: 100 } },
-    );
+    setCachedBalances({
+      maker: { BTC: 1, USDT: 0.02 },
+      taker: { BTC: 0.0005, USDT: 100 },
+    });
     exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
       (_exchange: string, _symbol: string, qty: string, price: string) => {
         if (Number(qty) < 0.001) {
@@ -2953,12 +2985,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
-      async (_exchange: string, accountLabel?: string) =>
-        accountLabel === 'maker'
-          ? { free: { BTC: 10, USDT: 0 } }
-          : { free: { BTC: 10, USDT: 1000 } },
-    );
+    setCachedBalances({
+      maker: { BTC: 10, USDT: 0 },
+      taker: { BTC: 10, USDT: 1000 },
+    });
     exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
       (_exchange: string, _symbol: string, qty: string, price: string) => ({
         qty,
@@ -3014,12 +3044,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
-      async (_exchange: string, accountLabel?: string) =>
-        accountLabel === 'maker'
-          ? { free: { BTC: 0, USDT: 0 } }
-          : { free: { BTC: 0.15, USDT: 0 } },
-    );
+    setCachedBalances({
+      maker: { BTC: 0, USDT: 0 },
+      taker: { BTC: 0.15, USDT: 0 },
+    });
     exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
       (_exchange: string, _symbol: string, qty: string, price: string) => {
         if (Number(qty) <= 0) {
@@ -3071,12 +3099,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
-      async (_exchange: string, accountLabel?: string) =>
-        accountLabel === 'maker'
-          ? { free: { BTC: 0, USDT: 1000 } }
-          : { free: { BTC: 0, USDT: 500 } },
-    );
+    setCachedBalances({
+      maker: { BTC: 0, USDT: 1000 },
+      taker: { BTC: 0, USDT: 500 },
+    });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const actions = await service.buildDualAccountVolumeActions(
@@ -3121,9 +3147,7 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
-    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(
-      2,
-    );
+    expect(balanceStateCacheService.getBalance).toHaveBeenCalled();
     jest.restoreAllMocks();
   });
 
@@ -3224,12 +3248,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
-      async (_exchange: string, accountLabel?: string) =>
-        accountLabel === 'maker'
-          ? { free: { BTC: 1, USDT: 10 } }
-          : { free: { BTC: 0, USDT: 1000 } },
-    );
+    setCachedBalances({
+      maker: { BTC: 1, USDT: 10 },
+      taker: { BTC: 0, USDT: 1000 },
+    });
     jest.spyOn(Math, 'random').mockReturnValue(0);
 
     const actions = await service.buildDualAccountVolumeActions(
@@ -3266,7 +3288,7 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
-    expect(exchangeConnectorAdapterService.fetchBalance).toHaveBeenCalledTimes(
+    expect(balanceStateCacheService.hasFreshAccountSnapshot).toHaveBeenCalledTimes(
       2,
     );
     jest.restoreAllMocks();
@@ -3279,12 +3301,10 @@ describe('StrategyService', () => {
         bestBid: 100,
         bestAsk: 101,
       });
-    exchangeConnectorAdapterService.fetchBalance.mockImplementation(
-      async (_exchange: string, accountLabel?: string) =>
-        accountLabel === 'maker'
-          ? { free: { BTC: 0, USDT: 0.02 } }
-          : { free: { BTC: 0.0005, USDT: 0.03 } },
-    );
+    setCachedBalances({
+      maker: { BTC: 0, USDT: 0.02 },
+      taker: { BTC: 0.0005, USDT: 0.03 },
+    });
     exchangeConnectorAdapterService.quantizeOrder.mockImplementation(
       (_exchange: string, _symbol: string, qty: string, price: string) => {
         if (Number(qty) < 0.001) {
@@ -4103,8 +4123,8 @@ describe('StrategyService', () => {
       }),
     ]);
 
-    exchangeConnectorAdapterService.fetchBalance.mockResolvedValueOnce({
-      free: { BTC: 0, USDT: 1 },
+    setCachedBalances({
+      default: { BTC: 0, USDT: 1 },
     });
 
     await expect(
@@ -4151,8 +4171,8 @@ describe('StrategyService', () => {
         },
       ]),
     };
-    exchangeConnectorAdapterService.fetchBalance.mockResolvedValueOnce({
-      free: { BTC: 0, USDT: 1000 },
+    setCachedBalances({
+      default: { BTC: 0, USDT: 1000 },
     });
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
