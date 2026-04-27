@@ -1,5 +1,13 @@
 # Execution Flow Changelog
 
+## 2026-04-27
+
+- Update `docs/plans/2026-04-26-improve-architecture-plan.md` with the market-making bounded-context type ownership policy: new market-making statuses and contracts belong under `server/src/common/types/market-making/`, while `server/src/common/types/orders/` remains only for genuinely generic cross-product order types or temporary compatibility exports.
+
+## 2026-04-24
+
+- Add `docs/product/hufi-whitepaper-source-of-truth.md` as the source-of-truth design frame for the HuFi whitepaper, founder-funded campaign model, guided-vs-advanced product decision, instance/strategy ownership model, HuFi 100 research agenda, stablecoin research agenda, roadmap boundaries, and claims discipline.
+
 ## 2026-04-18
 
 - Add campaign filter dialog to HuFi campaigns page: filter by campaign type, sort by start date or reward amount (ASC/DESC), with filter button at top of campaign list and i18n support for en/zh

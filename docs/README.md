@@ -7,15 +7,15 @@ This directory is organized by document responsibility, not by author or date.
 - `product/` - product intent, business framing, and HuFi-facing concept docs
 - `architecture/` - current system architecture, runtime flows, module maps, and decisions
 - `operations/` - testing, runtime safety, integrations, UI implementation guidance, and day-to-day execution docs
-- `planning/` - active dated plans, current todo items, and progress tracking
+- `plans/` - active dated plans, current todo items, and progress tracking
 - `archive/` - historical plans that are no longer the active source of truth
 
 ## Start Here
 
+- `product/hufi-whitepaper-source-of-truth.md` - source-of-truth design frame for the HuFi whitepaper, HuFi 100 vision, stablecoin research agenda, and roadmap boundaries
+- `product/liquidity-layer-technical-implementation.md` - system constraints for the liquidity-layer thesis
 - `architecture/market-making-flow.md` - primary market-making runtime flow
 - `architecture/server/module-map.md` - backend module map
-- `operations/testing/market-making.md` - current system-test scope
-- `planning/2026-03-18-market-making-testing-roadmap.md` - active market-making testing roadmap
 - `plans/todo.md` - current open work
 
 ## Notes

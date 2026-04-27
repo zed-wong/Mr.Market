@@ -44,6 +44,8 @@ Use dated files, but keep the document role clear.
   Role: active. Health audit findings and remediation checklist from 2026-04-18
 - **`2026-04-18-admin-direct-best-capacity-session-failure-plan.md`**
   Role: active implementation plan for fixing admin-direct `dualAccountBestCapacityVolume` partial-start failures, pair/symbol normalization gaps, and orphan runtime row rollback
+- **`2026-04-26-improve-architecture-plan.md`**
+  Role: active architecture improvement plan for order-bound strategy config, order-level quota, fill ledger, fee accounting, and executor lifecycle
 - **`todo.md`**
   Role: current open work list with short summaries plus detailed checklist sections
 - **`progress.md`**
