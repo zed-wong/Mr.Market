@@ -8,6 +8,7 @@ import { ExecutorOrchestratorService } from './executor-orchestrator.service';
 describe('ExecutorOrchestratorService', () => {
   const strategyIntentStoreService = {
     upsertIntent: jest.fn().mockResolvedValue(undefined),
+    batchUpsertIntents: jest.fn().mockResolvedValue(undefined),
   };
   const strategyIntentExecutionService = {
     consumeIntents: jest.fn().mockResolvedValue(undefined),
@@ -56,14 +57,17 @@ describe('ExecutorOrchestratorService', () => {
       baseAction,
     ]);
 
-    expect(strategyIntentStoreService.upsertIntent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        intentId: 'intent-1',
-        status: 'NEW',
-        executionCategory: 'clob_cex',
-        metadata: expect.objectContaining({ source: 'test' }),
-      }),
+    expect(strategyIntentStoreService.batchUpsertIntents).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          intentId: 'intent-1',
+          status: 'NEW',
+          executionCategory: 'clob_cex',
+          metadata: expect.objectContaining({ source: 'test' }),
+        }),
+      ]),
     );
+    expect(strategyIntentStoreService.upsertIntent).not.toHaveBeenCalled();
     expect(
       strategyIntentExecutionService.consumeIntents,
     ).not.toHaveBeenCalled();
@@ -80,6 +84,12 @@ describe('ExecutorOrchestratorService', () => {
 
     await service.dispatchActions('u1-c1-pureMarketMaking', [baseAction]);
 
+    expect(strategyIntentStoreService.batchUpsertIntents).toHaveBeenCalledWith([
+      expect.objectContaining({
+        intentId: 'intent-1',
+        status: 'NEW',
+      }),
+    ]);
     expect(strategyIntentExecutionService.consumeIntents).toHaveBeenCalledWith([
       expect.objectContaining({
         intentId: 'intent-1',
@@ -99,12 +109,40 @@ describe('ExecutorOrchestratorService', () => {
       { ...baseAction, intentId: 'intent-acked', status: 'ACKED' },
     ]);
 
-    expect(strategyIntentStoreService.upsertIntent).toHaveBeenCalledWith(
+    expect(strategyIntentStoreService.batchUpsertIntents).toHaveBeenCalledWith([
       expect.objectContaining({
         intentId: 'intent-acked',
         status: 'ACKED',
       }),
+    ]);
+    expect(strategyIntentStoreService.upsertIntent).not.toHaveBeenCalled();
+  });
+
+  it('persists multiple actions in a single batch call', async () => {
+    const service = new ExecutorOrchestratorService(
+      createConfigService('worker'),
+      strategyIntentStoreService as unknown as StrategyIntentStoreService,
+      strategyIntentExecutionService as unknown as StrategyIntentExecutionService,
     );
+    const actions: ExecutorAction[] = [
+      { ...baseAction, intentId: 'intent-1' },
+      { ...baseAction, intentId: 'intent-2' },
+      { ...baseAction, intentId: 'intent-3' },
+    ];
+
+    await service.dispatchActions('u1-c1-pureMarketMaking', actions);
+
+    expect(strategyIntentStoreService.batchUpsertIntents).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(strategyIntentStoreService.batchUpsertIntents).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ intentId: 'intent-1', status: 'NEW' }),
+        expect.objectContaining({ intentId: 'intent-2', status: 'NEW' }),
+        expect.objectContaining({ intentId: 'intent-3', status: 'NEW' }),
+      ]),
+    );
+    expect(strategyIntentStoreService.upsertIntent).not.toHaveBeenCalled();
   });
 
   it('returns empty list for empty action set', async () => {
@@ -118,5 +156,8 @@ describe('ExecutorOrchestratorService', () => {
 
     expect(intents).toEqual([]);
     expect(strategyIntentStoreService.upsertIntent).not.toHaveBeenCalled();
+    expect(
+      strategyIntentStoreService.batchUpsertIntents,
+    ).not.toHaveBeenCalled();
   });
 });

@@ -38,18 +38,35 @@ const createIntentRepository = (rows: any[] = []) => ({
   findOneBy: jest.fn(async ({ intentId }: { intentId: string }) => {
     return rows.find((row) => row.intentId === intentId) || null;
   }),
-  save: jest.fn(async (payload: any) => {
-    const index = rows.findIndex((row) => row.intentId === payload.intentId);
+  save: jest.fn(async (payload: any | any[]) => {
+    const items = Array.isArray(payload) ? payload : [payload];
 
-    if (index >= 0) {
-      rows[index] = { ...payload };
-    } else {
-      rows.push({ ...payload });
+    for (const item of items) {
+      const index = rows.findIndex((row) => row.intentId === item.intentId);
+
+      if (index >= 0) {
+        rows[index] = { ...item };
+      } else {
+        rows.push({ ...item });
+      }
     }
 
     return payload;
   }),
-  find: jest.fn(async () => rows.map((row) => ({ ...row }))),
+  find: jest.fn(async (options?: { where?: { intentId?: any } }) => {
+    const intentIdFilter = options?.where?.intentId;
+    const expectedIntentIds = Array.isArray(intentIdFilter?._value)
+      ? intentIdFilter._value
+      : typeof intentIdFilter === 'string'
+      ? [intentIdFilter]
+      : undefined;
+
+    return rows
+      .filter(
+        (row) => !expectedIntentIds || expectedIntentIds.includes(row.intentId),
+      )
+      .map((row) => ({ ...row }));
+  }),
   createQueryBuilder: jest.fn(() => {
     const state = {
       status: 'NEW',

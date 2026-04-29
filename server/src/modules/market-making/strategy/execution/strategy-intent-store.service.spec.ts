@@ -54,6 +54,7 @@ const createRepository = (rows: StrategyOrderIntentEntity[] = []) => ({
       options?:
         | {
             where?: {
+              intentId?: { _value?: string[] } | string;
               strategyKey?: string;
               status?: { _value?: string[] } | string;
             };
@@ -61,6 +62,12 @@ const createRepository = (rows: StrategyOrderIntentEntity[] = []) => ({
         | undefined,
     ) => {
       const strategyKey = options?.where?.strategyKey;
+      const intentIdFilter = options?.where?.intentId;
+      const expectedIntentIds = Array.isArray((intentIdFilter as any)?._value)
+        ? (intentIdFilter as any)._value
+        : typeof intentIdFilter === 'string'
+        ? [intentIdFilter]
+        : undefined;
       const statusFilter = options?.where?.status;
       const expectedStatuses = Array.isArray((statusFilter as any)?._value)
         ? (statusFilter as any)._value
@@ -71,6 +78,10 @@ const createRepository = (rows: StrategyOrderIntentEntity[] = []) => ({
       return rows
         .filter((row) => {
           if (strategyKey && row.strategyKey !== strategyKey) {
+            return false;
+          }
+
+          if (expectedIntentIds && !expectedIntentIds.includes(row.intentId)) {
             return false;
           }
 
@@ -201,6 +212,70 @@ describe('StrategyIntentStoreService', () => {
         createdAt: '2026-03-11T00:00:00.000Z',
       }),
     );
+  });
+
+  describe('batchUpsertIntents', () => {
+    it('persists multiple intents in a single save call', async () => {
+      const rows: StrategyOrderIntentEntity[] = [];
+      const repository = createRepository(rows);
+      const service = new StrategyIntentStoreService(repository as any);
+
+      const intents = [
+        createIntent({ intentId: 'intent-1', strategyKey: 's1' }),
+        createIntent({ intentId: 'intent-2', strategyKey: 's1' }),
+        createIntent({ intentId: 'intent-3', strategyKey: 's1' }),
+      ];
+
+      await service.batchUpsertIntents(intents as any);
+
+      expect(rows).toHaveLength(3);
+      expect(rows.map((row) => row.intentId)).toEqual([
+        'intent-1',
+        'intent-2',
+        'intent-3',
+      ]);
+      expect(repository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('merges existing intents preserving createdAt', async () => {
+      const rows: StrategyOrderIntentEntity[] = [
+        createIntent({
+          intentId: 'intent-1',
+          strategyKey: 's1',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        }),
+      ];
+      const repository = createRepository(rows);
+      const service = new StrategyIntentStoreService(repository as any);
+
+      const intents = [
+        createIntent({
+          intentId: 'intent-1',
+          strategyKey: 's1-updated',
+          createdAt: '2026-03-11T00:00:00.000Z',
+        }),
+        createIntent({ intentId: 'intent-2', strategyKey: 's1' }),
+      ];
+
+      await service.batchUpsertIntents(intents as any);
+
+      expect(rows).toHaveLength(2);
+      const updated = rows.find((row) => row.intentId === 'intent-1');
+
+      expect(updated?.createdAt).toBe('2026-01-01T00:00:00.000Z');
+      expect(updated?.strategyKey).toBe('s1-updated');
+      expect(repository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles empty array with no DB calls', async () => {
+      const repository = createRepository([]);
+      const service = new StrategyIntentStoreService(repository as any);
+
+      await service.batchUpsertIntents([]);
+
+      expect(repository.find).not.toHaveBeenCalled();
+      expect(repository.save).not.toHaveBeenCalled();
+    });
   });
 
   it('updates intent status when the row exists', async () => {

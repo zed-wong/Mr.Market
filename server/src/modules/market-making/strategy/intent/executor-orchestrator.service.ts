@@ -29,9 +29,7 @@ export class ExecutorOrchestratorService {
 
     const intents = actions.map((action) => this.toIntent(action));
 
-    for (const intent of intents) {
-      await this.strategyIntentStoreService?.upsertIntent(intent);
-    }
+    await this.strategyIntentStoreService?.batchUpsertIntents(intents);
 
     const intentExecutionDriver = String(
       this.configService.get('strategy.intent_execution_driver', 'worker') ||

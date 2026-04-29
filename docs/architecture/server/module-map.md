@@ -296,8 +296,8 @@ This section explains each module with three questions:
 
 #### `market-making/strategy/strategy.module.ts`
 
-- What: core strategy runtime boundary, including controller registry, intent orchestration, intent store, and intent worker/executor.
-- Why: strategy logic must be modular, durable, and execution-mode aware.
+- What: core strategy runtime boundary, including controller registry, intent orchestration, batch intent store, and pooled executor/worker services.
+- Why: strategy logic must be modular, durable, execution-mode aware, and fast enough that independent exchange:pair executor ticks do not block each other.
 - Where: used by admin start/stop flows, queue-driven order flows, and tick-driven runtime processing.
 
 #### `market-making/strategy/dex/dex.module.ts`

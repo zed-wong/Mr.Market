@@ -38,38 +38,28 @@ export class StrategyIntentStoreService {
   ) {}
 
   async upsertIntent(intent: StrategyOrderIntent): Promise<void> {
-    const existing = await this.strategyOrderIntentRepository.findOneBy({
-      intentId: intent.intentId,
+    await this.batchUpsertIntents([intent]);
+  }
+
+  async batchUpsertIntents(intents: StrategyOrderIntent[]): Promise<void> {
+    if (intents.length === 0) {
+      return;
+    }
+
+    const existingRows = await this.strategyOrderIntentRepository.find({
+      where: { intentId: In(intents.map((intent) => intent.intentId)) },
+    });
+    const existingByIntentId = new Map(
+      existingRows.map((row) => [row.intentId, row]),
+    );
+    const payloads = intents.map((intent) => {
+      const existing = existingByIntentId.get(intent.intentId);
+      const payload = this.toIntentEntity(intent, existing?.createdAt);
+
+      return existing ? { ...existing, ...payload } : payload;
     });
 
-    const payload: StrategyOrderIntentEntity = {
-      intentId: intent.intentId,
-      strategyInstanceId: intent.strategyInstanceId,
-      strategyKey: intent.strategyKey,
-      userId: intent.userId,
-      clientId: intent.clientId,
-      type: intent.type,
-      exchange: intent.exchange,
-      accountLabel: intent.accountLabel,
-      pair: intent.pair,
-      side: intent.side,
-      price: intent.price,
-      qty: intent.qty,
-      mixinOrderId: intent.mixinOrderId,
-      executionCategory: intent.executionCategory,
-      postOnly: intent.postOnly,
-      timeInForce: intent.timeInForce,
-      slotKey: intent.slotKey,
-      metadata: intent.metadata,
-      status: intent.status,
-      errorReason: undefined,
-      createdAt: existing?.createdAt || intent.createdAt,
-      updatedAt: getRFC3339Timestamp(),
-    };
-
-    await this.strategyOrderIntentRepository.save(
-      existing ? { ...existing, ...payload } : payload,
-    );
+    await this.strategyOrderIntentRepository.save(payloads);
   }
 
   async updateIntentStatus(
@@ -225,5 +215,35 @@ export class StrategyIntentStoreService {
     await this.strategyOrderIntentRepository.save(pendingIntents);
 
     return pendingIntents.length;
+  }
+
+  private toIntentEntity(
+    intent: StrategyOrderIntent,
+    existingCreatedAt?: string,
+  ): StrategyOrderIntentEntity {
+    return {
+      intentId: intent.intentId,
+      strategyInstanceId: intent.strategyInstanceId,
+      strategyKey: intent.strategyKey,
+      userId: intent.userId,
+      clientId: intent.clientId,
+      type: intent.type,
+      exchange: intent.exchange,
+      accountLabel: intent.accountLabel,
+      pair: intent.pair,
+      side: intent.side,
+      price: intent.price,
+      qty: intent.qty,
+      mixinOrderId: intent.mixinOrderId,
+      executionCategory: intent.executionCategory,
+      postOnly: intent.postOnly,
+      timeInForce: intent.timeInForce,
+      slotKey: intent.slotKey,
+      metadata: intent.metadata,
+      status: intent.status,
+      errorReason: undefined,
+      createdAt: existingCreatedAt || intent.createdAt,
+      updatedAt: getRFC3339Timestamp(),
+    };
   }
 }

@@ -97,7 +97,6 @@ type DualAccountCapacityDiagnostics = {
   rebalanceNeeded: boolean;
 };
 
-
 @Injectable()
 export class StrategyService
   implements
@@ -251,37 +250,40 @@ export class StrategyService
     const executors = this.executorRegistry?.getActiveExecutors() || [];
     const strategyTickStartedAtMs = Date.now();
 
-    for (const executor of executors) {
-      const executorStartedAtMs = Date.now();
-      const activeSessionCount = executor.getActiveSessions().length;
-      const dueSessionCount = executor.getDueSessionCount(executorStartedAtMs);
+    await Promise.all(
+      executors.map(async (executor) => {
+        const executorStartedAtMs = Date.now();
+        const activeSessionCount = executor.getActiveSessions().length;
+        const dueSessionCount =
+          executor.getDueSessionCount(executorStartedAtMs);
 
-      try {
-        await executor.onTick(ts);
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        const errorTrace = error instanceof Error ? error.stack : undefined;
+        try {
+          await executor.onTick(ts);
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const errorTrace = error instanceof Error ? error.stack : undefined;
 
-        this.logger.error(
-          `onTick executor failed for exchange=${executor.exchange} pair=${executor.pair} ts=${ts}: ${errorMessage}`,
-          errorTrace,
-        );
-      } finally {
-        this.runtimeTimingService?.recordDuration(
-          'strategy.executor.tick',
-          Date.now() - executorStartedAtMs,
-          {
-            activeSessionCount,
-            dueSessionCount,
-            exchange: executor.exchange,
-            pair: executor.pair,
-            tickTs: ts,
-          },
-          { warnThresholdMs: 250 },
-        );
-      }
-    }
+          this.logger.error(
+            `onTick executor failed for exchange=${executor.exchange} pair=${executor.pair} ts=${ts}: ${errorMessage}`,
+            errorTrace,
+          );
+        } finally {
+          this.runtimeTimingService?.recordDuration(
+            'strategy.executor.tick',
+            Date.now() - executorStartedAtMs,
+            {
+              activeSessionCount,
+              dueSessionCount,
+              exchange: executor.exchange,
+              pair: executor.pair,
+              tickTs: ts,
+            },
+            { warnThresholdMs: 250 },
+          );
+        }
+      }),
+    );
 
     this.runtimeTimingService?.recordDuration(
       'strategy.tick',
@@ -2010,8 +2012,8 @@ export class StrategyService
           configuredMakerAccountLabel: params.makerAccountLabel,
           configuredTakerAccountLabel: params.takerAccountLabel,
           dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
-      cycleMode: params.cycleMode || 'alternating',
-      makerProtectionMode: params.makerProtectionMode || 'alive_only',
+          cycleMode: params.cycleMode || 'alternating',
+          makerProtectionMode: params.makerProtectionMode || 'alive_only',
           activeHours: profile.activeHours,
           buyBias: accountBuyBias,
           requestedQty: requestedQty.toFixed(),
@@ -2244,8 +2246,8 @@ export class StrategyService
           configuredMakerAccountLabel: params.makerAccountLabel,
           configuredTakerAccountLabel: params.takerAccountLabel,
           dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
-      cycleMode: params.cycleMode || 'alternating',
-      makerProtectionMode: params.makerProtectionMode || 'alive_only',
+          cycleMode: params.cycleMode || 'alternating',
+          makerProtectionMode: params.makerProtectionMode || 'alive_only',
           activeHours: profile.activeHours,
           buyBias: accountBuyBias,
           requestedQty: requestedQty.toFixed(),
@@ -5283,7 +5285,6 @@ export class StrategyService
     );
   }
 
-
   private async handleSessionFill(
     session: StrategyRuntimeSession,
     fill: {
@@ -5652,7 +5653,10 @@ export class StrategyService
       nextParams.activeCycle = undefined;
       Object.assign(
         nextParams,
-        this.advanceDualAccountCycleRolesAfterSuccess(nextParams, params.activeCycle),
+        this.advanceDualAccountCycleRolesAfterSuccess(
+          nextParams,
+          params.activeCycle,
+        ),
       );
       nextParams.repairRequired = false;
       nextParams.repairReason = undefined;
@@ -5858,7 +5862,9 @@ export class StrategyService
           `snapshotFresh=${snapshotDiagnostic?.fresh ?? false}`,
           `snapshotAgeMs=${snapshotDiagnostic?.ageMs ?? 'missing'}`,
           `snapshotSource=${snapshotDiagnostic?.source ?? 'missing'}`,
-          `snapshotFreshnessTs=${snapshotDiagnostic?.freshnessTimestamp ?? 'missing'}`,
+          `snapshotFreshnessTs=${
+            snapshotDiagnostic?.freshnessTimestamp ?? 'missing'
+          }`,
           `baseAsset=${assets.base}`,
           `quoteAsset=${assets.quote}`,
         ].join(' | '),

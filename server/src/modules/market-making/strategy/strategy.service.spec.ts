@@ -390,6 +390,42 @@ describe('StrategyService', () => {
     await service.executeMMCycle(strategyParamsDto);
   });
 
+  it('ticks all executors in parallel rather than serially', async () => {
+    const callOrder: string[] = [];
+    const executorA = {
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      getActiveSessions: () => [],
+      getDueSessionCount: () => 0,
+      onTick: jest.fn(async () => {
+        callOrder.push('a-start');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        callOrder.push('a-end');
+      }),
+    };
+    const executorB = {
+      exchange: 'okx',
+      pair: 'ETH/USDT',
+      getActiveSessions: () => [],
+      getDueSessionCount: () => 0,
+      onTick: jest.fn(async () => {
+        callOrder.push('b-start');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        callOrder.push('b-end');
+      }),
+    };
+
+    jest
+      .spyOn(executorRegistry, 'getActiveExecutors')
+      .mockReturnValue([executorA, executorB] as any);
+
+    await service.onTick('2026-04-29T00:00:00.000Z');
+
+    expect(executorA.onTick).toHaveBeenCalled();
+    expect(executorB.onTick).toHaveBeenCalled();
+    expect(callOrder).toEqual(['a-start', 'b-start', 'a-end', 'b-end']);
+  });
+
   it('starts balance watchers for pure market making sessions', async () => {
     await registerPooledSession({
       strategyKey: 'order-1-pureMarketMaking',
@@ -3288,9 +3324,9 @@ describe('StrategyService', () => {
         }),
       }),
     ]);
-    expect(balanceStateCacheService.hasFreshAccountSnapshot).toHaveBeenCalledTimes(
-      2,
-    );
+    expect(
+      balanceStateCacheService.hasFreshAccountSnapshot,
+    ).toHaveBeenCalledTimes(2);
     jest.restoreAllMocks();
   });
 

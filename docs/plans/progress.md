@@ -2,6 +2,7 @@
 
 ## 2026-04-29
 
+- Parallelize pooled exchange:pair executor ticks and batch strategy intent persistence from the orchestrator path, so one strategy tick no longer serially waits on each active executor and each action batch only enters the intent store once.
 - Remove high-confidence backend dead code: deprecated loop-based time-indicator strategy service, orphan campaign sync/score services, unused signal/spot-check/DEX-pricing helpers, unused snapshots/health fixtures, and production-src test fixtures now inlined into their specs.
 - Remove low-risk backend local dead code: unused controller/service loggers, stale constructor-injected fields, unused market-data/fee/tracker locals, and wire snapshot failed-job cleanup to its existing retention constant.
 - Remove selected backend cleanup leftovers: admin direct display-label helper, admin strategy legacy start fallback and unused performance injection, health API-key startup stub, plaintext API-key decrypt fallback, and unused spec locals.
