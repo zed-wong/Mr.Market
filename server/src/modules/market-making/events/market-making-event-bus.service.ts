@@ -3,11 +3,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import type {
   MarketMakingBalanceStaleEvent,
-  MarketMakingBalanceUpdatedEvent,
   MarketMakingEventName,
   MarketMakingEventPayloadMap,
-  MarketMakingOrderFillRecoveredEvent,
-  MarketMakingOrderStateChangedEvent,
   MarketMakingStreamHealthChangedEvent,
 } from './market-making-events.types';
 import { MARKET_MAKING_EVENT_NAMES } from './market-making-events.types';
@@ -34,18 +31,6 @@ export class MarketMakingEventBus {
         wildcard: true,
         delimiter: '.',
       });
-  }
-
-  emitOrderStateChanged(payload: MarketMakingOrderStateChangedEvent): void {
-    this.emit(MARKET_MAKING_EVENT_NAMES.orderStateChanged, payload);
-  }
-
-  emitOrderFillRecovered(payload: MarketMakingOrderFillRecoveredEvent): void {
-    this.emit(MARKET_MAKING_EVENT_NAMES.orderFillRecovered, payload);
-  }
-
-  emitBalanceUpdated(payload: MarketMakingBalanceUpdatedEvent): void {
-    this.emit(MARKET_MAKING_EVENT_NAMES.balanceUpdated, payload);
   }
 
   emitBalanceStale(payload: MarketMakingBalanceStaleEvent): void {

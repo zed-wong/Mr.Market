@@ -43,13 +43,6 @@ export class BalanceStateCacheService {
       entry,
     );
     this.clearStaleAccount(entry.exchange, entry.accountLabel);
-    this.marketMakingEventBus?.emitBalanceUpdated({
-      exchange: entry.exchange,
-      accountLabel: entry.accountLabel,
-      source: entry.source,
-      balances: [this.toEventEntry(entry)],
-      updatedAt: entry.freshnessTimestamp,
-    });
   }
 
   getBalance(
@@ -230,13 +223,6 @@ export class BalanceStateCacheService {
     }
 
     this.clearStaleAccount(exchange, normalizedAccountLabel);
-    this.marketMakingEventBus?.emitBalanceUpdated({
-      exchange,
-      accountLabel: normalizedAccountLabel,
-      source,
-      balances: entries.map((entry) => this.toEventEntry(entry)),
-      updatedAt: freshnessTimestamp,
-    });
   }
 
   isFresh(entry: BalanceEntry | undefined, nowMs = Date.now()): boolean {
@@ -266,17 +252,6 @@ export class BalanceStateCacheService {
       ...input,
       accountLabel: input.accountLabel || 'default',
       asset: input.asset.toUpperCase(),
-    };
-  }
-
-  private toEventEntry(entry: BalanceEntry) {
-    return {
-      asset: entry.asset,
-      free: entry.free,
-      used: entry.used,
-      total: entry.total,
-      source: entry.source,
-      freshnessTimestamp: entry.freshnessTimestamp,
     };
   }
 

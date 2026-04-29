@@ -1,82 +1,39 @@
-import { EventEmitter2 } from '@nestjs/event-emitter';
-
 import { MarketMakingEventBus } from './market-making-event-bus.service';
 import { MARKET_MAKING_EVENT_NAMES } from './market-making-events.types';
 
 describe('MarketMakingEventBus', () => {
-  it('delivers typed events to direct subscribers', () => {
+  it('delivers typed events to direct subscribers and supports detach', () => {
     const bus = new MarketMakingEventBus();
     const listener = jest.fn();
 
     const detach = bus.on(
-      MARKET_MAKING_EVENT_NAMES.orderStateChanged,
+      MARKET_MAKING_EVENT_NAMES.balanceStale,
       listener,
     );
 
-    bus.emitOrderStateChanged({
+    bus.emitBalanceStale({
       exchange: 'binance',
       accountLabel: 'maker',
-      strategyKey: 'strategy-1',
-      orderId: 'order-1',
-      exchangeOrderId: 'ex-1',
-      previousState: 'open',
-      newState: 'filled',
-      source: 'ws',
-      updatedAt: '2026-04-18T00:00:00.000Z',
+      staleAt: '2026-04-18T00:01:00.000Z',
     });
 
     expect(listener).toHaveBeenCalledWith(
       expect.objectContaining({
         exchange: 'binance',
-        newState: 'filled',
+        staleAt: '2026-04-18T00:01:00.000Z',
       }),
     );
 
     detach();
-    bus.emitOrderStateChanged({
+    listener.mockClear();
+
+    bus.emitBalanceStale({
       exchange: 'binance',
       accountLabel: 'maker',
-      strategyKey: 'strategy-1',
-      orderId: 'order-1',
-      exchangeOrderId: 'ex-1',
-      previousState: 'filled',
-      newState: 'cancelled',
-      source: 'system',
-      updatedAt: '2026-04-18T00:00:01.000Z',
+      staleAt: '2026-04-18T00:02:00.000Z',
     });
 
-    expect(listener).toHaveBeenCalledTimes(1);
-  });
-
-  it('supports namespace subscriptions through the underlying emitter', () => {
-    const eventEmitter = new EventEmitter2({
-      wildcard: true,
-      delimiter: '.',
-    });
-    const bus = new MarketMakingEventBus(eventEmitter);
-    const wildcardListener = jest.fn();
-
-    eventEmitter.on('order.*', wildcardListener);
-
-    bus.emitOrderFillRecovered({
-      exchange: 'binance',
-      accountLabel: 'maker',
-      strategyKey: 'strategy-1',
-      orderId: 'order-1',
-      exchangeOrderId: 'ex-1',
-      fillDelta: {
-        qty: '0.5',
-        cumulativeQty: '0.5',
-      },
-      source: 'rest',
-      recoveredAt: '2026-04-18T00:00:00.000Z',
-    });
-
-    expect(wildcardListener).toHaveBeenCalledWith(
-      expect.objectContaining({
-        exchangeOrderId: 'ex-1',
-      }),
-    );
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it('supports exchange-scoped listeners while keeping flat event names', () => {
@@ -85,35 +42,29 @@ describe('MarketMakingEventBus', () => {
 
     const detach = bus.onExchangeEvent(
       'binance',
-      MARKET_MAKING_EVENT_NAMES.orderStateChanged,
+      MARKET_MAKING_EVENT_NAMES.streamHealthChanged,
       listener,
     );
 
-    bus.emitOrderStateChanged({
+    bus.emitStreamHealthChanged({
       exchange: 'mexc',
       accountLabel: 'maker',
-      strategyKey: 'strategy-1',
-      orderId: 'order-1',
-      exchangeOrderId: 'ex-1',
-      newState: 'open',
-      source: 'ws',
-      updatedAt: '2026-04-18T00:00:00.000Z',
+      previousHealth: 'healthy',
+      health: 'degraded',
+      changedAt: '2026-04-18T00:00:00.000Z',
     });
-    bus.emitOrderStateChanged({
+    bus.emitStreamHealthChanged({
       exchange: 'binance',
       accountLabel: 'maker',
-      strategyKey: 'strategy-1',
-      orderId: 'order-1',
-      exchangeOrderId: 'ex-2',
-      newState: 'filled',
-      source: 'rest',
-      updatedAt: '2026-04-18T00:00:01.000Z',
+      previousHealth: 'healthy',
+      health: 'silent',
+      changedAt: '2026-04-18T00:00:01.000Z',
     });
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith(
       expect.objectContaining({
-        exchangeOrderId: 'ex-2',
+        health: 'silent',
       }),
     );
 

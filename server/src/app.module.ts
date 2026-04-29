@@ -77,7 +77,7 @@ import { StrategyModule } from './modules/market-making/strategy/strategy.module
 import { TickModule } from './modules/market-making/tick/tick.module';
 import { TrackersModule } from './modules/market-making/trackers/trackers.module';
 import { UserOrdersModule } from './modules/market-making/user-orders/user-orders.module';
-import { EventListenersModule } from './modules/mixin/listeners/events.module';
+
 import { MixinModule } from './modules/mixin/mixin.module';
 import { Web3Module } from './modules/web3/web3.module';
 
@@ -182,7 +182,6 @@ function buildRedisConfig(configService: ConfigService) {
     CoingeckoModule,
     HealthModule,
     MixinModule,
-    EventListenersModule,
     AuthModule,
     AdminModule,
     CampaignModule,

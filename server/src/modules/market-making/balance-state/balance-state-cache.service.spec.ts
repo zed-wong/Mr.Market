@@ -6,42 +6,6 @@ describe('BalanceStateCacheService', () => {
     jest.restoreAllMocks();
   });
 
-  it('emits balance.updated when a snapshot is applied', () => {
-    const marketMakingEventBus = new MarketMakingEventBus();
-    const emitBalanceUpdatedSpy = jest.spyOn(
-      marketMakingEventBus,
-      'emitBalanceUpdated',
-    );
-    const service = new BalanceStateCacheService(marketMakingEventBus);
-
-    service.applyBalanceSnapshot(
-      'binance',
-      'maker',
-      {
-        free: { BTC: 1.5, USDT: 200 },
-      },
-      '2026-04-18T00:00:00.000Z',
-      'ws',
-    );
-
-    expect(emitBalanceUpdatedSpy).toHaveBeenCalledWith({
-      exchange: 'binance',
-      accountLabel: 'maker',
-      source: 'ws',
-      balances: [
-        expect.objectContaining({
-          asset: 'BTC',
-          free: '1.5',
-        }),
-        expect.objectContaining({
-          asset: 'USDT',
-          free: '200',
-        }),
-      ],
-      updatedAt: '2026-04-18T00:00:00.000Z',
-    });
-  });
-
   it('fully overwrites account balances when a new snapshot arrives', () => {
     const service = new BalanceStateCacheService();
 

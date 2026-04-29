@@ -13,7 +13,6 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
-import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
@@ -120,8 +119,6 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
     @Optional()
-    private readonly marketMakingEventBus?: MarketMakingEventBus,
-    @Optional()
     private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
   ) {}
 
@@ -165,7 +162,6 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       this.orders.set(key, nextOrder);
       this.updatePollingStateForOrder(key, nextOrder.status);
       void this.persistOrder(nextOrder, key).catch(() => {});
-      this.emitOrderStateChanged(existingOrder, nextOrder, source, fillDelta);
 
       return;
     }
@@ -181,7 +177,6 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     this.orders.set(key, createdOrder);
     this.updatePollingStateForOrder(key, createdOrder.status);
     void this.persistOrder(createdOrder, key).catch(() => {});
-    this.emitOrderStateChanged(undefined, createdOrder, source);
   }
 
   getLiveOrders(strategyKey: string): TrackedOrder[] {
@@ -348,16 +343,6 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       }
 
       if (fillDelta) {
-        this.marketMakingEventBus?.emitOrderFillRecovered({
-          exchange: order.exchange,
-          accountLabel: order.accountLabel || 'default',
-          strategyKey: order.strategyKey,
-          orderId: order.orderId,
-          exchangeOrderId: order.exchangeOrderId,
-          fillDelta,
-          source: 'rest',
-          recoveredAt: ts,
-        });
         await this.routeRecoveredFill(order, nextOrder, fillDelta, ts);
       }
     }
@@ -713,34 +698,6 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       qty: nextFilledQty.minus(previousFilledQty).toFixed(),
       cumulativeQty: nextFilledQty.toFixed(),
     };
-  }
-
-  private emitOrderStateChanged(
-    previousOrder: TrackedOrder | undefined,
-    nextOrder: TrackedOrder,
-    source: TrackedOrderUpdateSource,
-    fillDelta?: { qty: string; cumulativeQty: string } | null,
-  ): void {
-    if (
-      previousOrder &&
-      previousOrder.status === nextOrder.status &&
-      !fillDelta
-    ) {
-      return;
-    }
-
-    this.marketMakingEventBus?.emitOrderStateChanged({
-      exchange: nextOrder.exchange,
-      accountLabel: nextOrder.accountLabel || 'default',
-      strategyKey: nextOrder.strategyKey,
-      orderId: nextOrder.orderId,
-      exchangeOrderId: nextOrder.exchangeOrderId,
-      previousState: previousOrder?.status,
-      newState: nextOrder.status,
-      fillDelta: fillDelta || undefined,
-      source,
-      updatedAt: nextOrder.updatedAt,
-    });
   }
 
   private async hydratePersistedOrders(): Promise<void> {
