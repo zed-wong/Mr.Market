@@ -33,10 +33,6 @@ type ImmediateDualAccountOrderSnapshot = {
   remainingQty: BigNumber;
 };
 
-type ImmediateDualAccountRetryableMakerError = Error & {
-  code: 'DUAL_ACCOUNT_MAKER_REPRICE_REQUIRED';
-};
-
 @Injectable()
 export class StrategyIntentExecutionService {
   private static readonly DUAL_ACCOUNT_ORDER_POLL_MS = 100;
@@ -662,11 +658,10 @@ export class StrategyIntentExecutionService {
     }
 
     try {
-      const makerReadySnapshot =
-        await this.waitForImmediateDualAccountMakerReady(
-          intent,
-          makerExchangeOrderId,
-        );
+      await this.waitForImmediateDualAccountMakerReady(
+        intent,
+        makerExchangeOrderId,
+      );
 
       await this.assertImmediateDualAccountMakerStillEligible(
         intent,
@@ -1178,29 +1173,26 @@ export class StrategyIntentExecutionService {
           : existingTrackedOrder?.status) ||
         'pending_create';
 
-      this.exchangeOrderTrackerService?.upsertOrder(
-        {
-          orderId:
-            existingTrackedOrder?.orderId ||
-            this.resolveOrderIdForClientOrderId(intent),
-          strategyKey: intent.strategyKey,
-          exchange: intent.exchange,
-          accountLabel,
-          pair: intent.pair,
-          exchangeOrderId,
-          clientOrderId: existingTrackedOrder?.clientOrderId,
-          slotKey: existingTrackedOrder?.slotKey || intent.slotKey,
-          role: existingTrackedOrder?.role || this.resolveIntentRole(intent),
-          side: existingTrackedOrder?.side || intent.side,
-          price: existingTrackedOrder?.price || intent.price,
-          qty: existingTrackedOrder?.qty || intent.qty,
-          cumulativeFilledQty: filledQty,
-          status: nextStatus,
-          createdAt: existingTrackedOrder?.createdAt || getRFC3339Timestamp(),
-          updatedAt: getRFC3339Timestamp(),
-        },
-        'rest',
-      );
+      this.exchangeOrderTrackerService?.upsertOrder({
+        orderId:
+          existingTrackedOrder?.orderId ||
+          this.resolveOrderIdForClientOrderId(intent),
+        strategyKey: intent.strategyKey,
+        exchange: intent.exchange,
+        accountLabel,
+        pair: intent.pair,
+        exchangeOrderId,
+        clientOrderId: existingTrackedOrder?.clientOrderId,
+        slotKey: existingTrackedOrder?.slotKey || intent.slotKey,
+        role: existingTrackedOrder?.role || this.resolveIntentRole(intent),
+        side: existingTrackedOrder?.side || intent.side,
+        price: existingTrackedOrder?.price || intent.price,
+        qty: existingTrackedOrder?.qty || intent.qty,
+        cumulativeFilledQty: filledQty,
+        status: nextStatus,
+        createdAt: existingTrackedOrder?.createdAt || getRFC3339Timestamp(),
+        updatedAt: getRFC3339Timestamp(),
+      });
     } catch (error) {
       this.logger.warn(
         [

@@ -51,8 +51,6 @@ type FillLogEntry = {
   qty: string;
 };
 
-type TrackedOrderUpdateSource = 'ws' | 'rest' | 'bootstrap' | 'system';
-
 @Injectable()
 export class ExchangeOrderTrackerService implements OnModuleInit {
   private readonly logger = new CustomLogger(ExchangeOrderTrackerService.name);
@@ -135,10 +133,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     return true;
   }
 
-  upsertOrder(
-    order: TrackedOrder,
-    source: TrackedOrderUpdateSource = 'system',
-  ): void {
+  upsertOrder(order: TrackedOrder): void {
     const key = this.toKey(
       order.exchange,
       order.accountLabel,
@@ -332,7 +327,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
       const fillDelta = this.recordFill(order, nextOrder, ts);
 
-      this.upsertOrder(nextOrder, 'rest');
+      this.upsertOrder(nextOrder);
 
       if (ExchangeOrderTrackerService.terminalStates.has(normalizedStatus)) {
         this.lastPolledAtByOrderKey.delete(orderKey);
