@@ -1,17 +1,20 @@
 import 'reflect-metadata';
+
 import BigNumber from 'bignumber.js';
 
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
+import { StrategyService } from './strategy.service';
 
-jest.mock('src/common/entities/market-making/strategy-instances.entity', () => ({
-  StrategyInstance: class StrategyInstance {},
-}));
+jest.mock(
+  'src/common/entities/market-making/strategy-instances.entity',
+  () => ({
+    StrategyInstance: class StrategyInstance {},
+  }),
+);
 
 jest.mock('src/common/entities/orders/user-orders.entity', () => ({
   MarketMakingOrder: class MarketMakingOrder {},
 }));
-
-const { StrategyService } = require('./strategy.service');
 
 describe('StrategyService balance cache helpers', () => {
   const strategyRepo = {
@@ -85,7 +88,9 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
     const exchangeConnectorAdapterService = { fetchBalance: jest.fn() };
     const service = createService({
       balanceStateCacheService,
@@ -117,7 +122,9 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
     const service = createService({ balanceStateCacheService });
 
     const balances = await (service as any).getAvailableBalancesForPair(
@@ -144,9 +151,13 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
     const exchangeConnectorAdapterService = {
-      fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 2, USDT: 300 } }),
+      fetchBalance: jest
+        .fn()
+        .mockResolvedValue({ free: { BTC: 2, USDT: 300 } }),
     };
     const service = createService({
       balanceStateCacheService,
@@ -167,7 +178,9 @@ describe('StrategyService balance cache helpers', () => {
   it('does not call fetchBalance during controller decisions', async () => {
     const balanceStateCacheService = new BalanceStateCacheService();
     const exchangeConnectorAdapterService = {
-      fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 2, USDT: 300 } }),
+      fetchBalance: jest
+        .fn()
+        .mockResolvedValue({ free: { BTC: 2, USDT: 300 } }),
     };
 
     balanceStateCacheService.applyBalanceSnapshot(
@@ -177,7 +190,9 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
 
     const service = createService({
       balanceStateCacheService,
@@ -192,6 +207,7 @@ describe('StrategyService balance cache helpers', () => {
                 'default',
               ),
             ).resolves.toBeNull();
+
             return [];
           }),
         }),
@@ -226,7 +242,9 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:00:05.000Z'));
     const service = createService({ balanceStateCacheService });
 
     await expect(
@@ -277,9 +295,15 @@ describe('StrategyService balance cache helpers', () => {
       timeframes: { '5m': true },
       loadMarkets: jest.fn(),
       fetchOpenOrders: jest.fn().mockResolvedValue([]),
-      fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 10, USDT: 1000 } }),
-      amountToPrecision: jest.fn((_symbol: string, value: number) => value.toFixed(4)),
-      priceToPrecision: jest.fn((_symbol: string, value: number) => value.toFixed(2)),
+      fetchBalance: jest
+        .fn()
+        .mockResolvedValue({ free: { BTC: 10, USDT: 1000 } }),
+      amountToPrecision: jest.fn((_symbol: string, value: number) =>
+        value.toFixed(4),
+      ),
+      priceToPrecision: jest.fn((_symbol: string, value: number) =>
+        value.toFixed(2),
+      ),
     };
 
     balanceStateCacheService.applyBalanceSnapshot(
@@ -289,7 +313,9 @@ describe('StrategyService balance cache helpers', () => {
       '2026-04-14T00:00:00.000Z',
       'ws',
     );
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-14T00:01:05.000Z'));
     const service = createService({
       exchangeInitService: {
         getExchange: jest.fn().mockReturnValue(exchange),
@@ -307,7 +333,8 @@ describe('StrategyService balance cache helpers', () => {
       [0, 0, 0, 0, 100],
       [0, 0, 0, 0, 100],
     ]);
-    jest.spyOn(service as any, 'calcEma')
+    jest
+      .spyOn(service as any, 'calcEma')
       .mockReturnValueOnce([90, 95, 99, 101, 103, 104, 105])
       .mockReturnValueOnce([100, 100, 100, 100, 100, 100, 100]);
     jest.spyOn(service as any, 'calcRsi').mockReturnValue([50, 50, 50, 50]);
@@ -349,7 +376,9 @@ describe('StrategyService balance cache helpers', () => {
   it('rotates dual-account maker and taker roles after a matched cycle when cycleMode=alternating', () => {
     const service = createService();
 
-    const nextParams = (service as any).advanceDualAccountCycleRolesAfterSuccess(
+    const nextParams = (
+      service as any
+    ).advanceDualAccountCycleRolesAfterSuccess(
       {
         makerAccountLabel: 'maker-a',
         takerAccountLabel: 'maker-b',
@@ -376,7 +405,9 @@ describe('StrategyService balance cache helpers', () => {
   it('keeps configured roles when cycleMode=static', () => {
     const service = createService();
 
-    const nextParams = (service as any).advanceDualAccountCycleRolesAfterSuccess(
+    const nextParams = (
+      service as any
+    ).advanceDualAccountCycleRolesAfterSuccess(
       {
         makerAccountLabel: 'maker-a',
         takerAccountLabel: 'maker-b',

@@ -210,9 +210,9 @@ export class MarketMakingPaymentHelper {
                   }
                 : undefined,
             ),
-            listControllerTypes: jest.fn().mockReturnValue([
-              'pureMarketMaking',
-            ]),
+            listControllerTypes: jest
+              .fn()
+              .mockReturnValue(['pureMarketMaking']),
           },
         },
         {

@@ -9,10 +9,7 @@ import { UniswapV3Adapter } from './adapters/uniswapV3.adapter';
 export class DexAdapterRegistry {
   private readonly adapters: Record<DexId, DexAdapter>;
 
-  constructor(
-    uniV3: UniswapV3Adapter,
-    cakeV3: PancakeV3Adapter,
-  ) {
+  constructor(uniV3: UniswapV3Adapter, cakeV3: PancakeV3Adapter) {
     this.adapters = {
       [uniV3.id]: uniV3,
       [cakeV3.id]: cakeV3,

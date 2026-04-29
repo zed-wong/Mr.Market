@@ -55,7 +55,6 @@ export class BalanceStateCacheService {
     );
   }
 
-
   hasFreshAccountSnapshot(
     exchange: string,
     accountLabel: string,
@@ -120,8 +119,7 @@ export class BalanceStateCacheService {
 
     const freshnessMs = Date.parse(metadata.lastSnapshotAt);
     const ageMs = Number.isFinite(freshnessMs) ? nowMs - freshnessMs : null;
-    const fresh =
-      ageMs !== null && ageMs <= BalanceStateCacheService.STALE_MS;
+    const fresh = ageMs !== null && ageMs <= BalanceStateCacheService.STALE_MS;
 
     return {
       present: true,
@@ -155,8 +153,7 @@ export class BalanceStateCacheService {
 
     const freshnessMs = Date.parse(entry.freshnessTimestamp);
     const ageMs = Number.isFinite(freshnessMs) ? nowMs - freshnessMs : null;
-    const fresh =
-      ageMs !== null && ageMs <= BalanceStateCacheService.STALE_MS;
+    const fresh = ageMs !== null && ageMs <= BalanceStateCacheService.STALE_MS;
 
     return {
       present: true,
@@ -273,7 +270,6 @@ export class BalanceStateCacheService {
         : entry.freshnessTimestamp,
     });
   }
-
 
   private getSnapshotMetadata(
     exchange: string,

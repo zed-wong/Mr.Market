@@ -3,11 +3,11 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
+import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import {
   UserStreamEventNormalizer,
   UserStreamNormalizerRegistryService,
 } from '../user-stream';
-import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { UserStreamTrackerService } from './user-stream-tracker.service';
 
 type WatchOrdersCapableExchange = {

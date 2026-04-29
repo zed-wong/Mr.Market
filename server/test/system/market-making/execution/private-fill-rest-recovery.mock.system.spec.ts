@@ -139,9 +139,7 @@ describe('Private fill REST recovery parity (mock system)', () => {
       filled: '0.5',
     });
 
-    await exchangeOrderTrackerService.pollDueOrders(
-      '2026-04-09T00:00:01.000Z',
-    );
+    await exchangeOrderTrackerService.pollDueOrders('2026-04-09T00:00:01.000Z');
 
     const trackedOrder = exchangeOrderTrackerService.getByExchangeOrderId(
       'binance',
@@ -182,9 +180,7 @@ describe('Private fill REST recovery parity (mock system)', () => {
       filled: '0.5',
     });
 
-    await exchangeOrderTrackerService.pollDueOrders(
-      '2026-04-09T00:00:02.000Z',
-    );
+    await exchangeOrderTrackerService.pollDueOrders('2026-04-09T00:00:02.000Z');
 
     expect(balanceLedgerService.adjust).not.toHaveBeenCalled();
   });

@@ -294,9 +294,7 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
         .map((account) => {
           const key = this.toKey(account.exchange, account.accountLabel);
 
-          return `${key}(dueAt=${
-            this.dueAtByKey.get(key) ?? 'unset'
-          })`;
+          return `${key}(dueAt=${this.dueAtByKey.get(key) ?? 'unset'})`;
         })
         .join(', ')} selected=${selected
         .map((account) => this.toKey(account.exchange, account.accountLabel))
@@ -310,9 +308,9 @@ export class BalanceRefreshScheduler implements OnModuleInit, OnModuleDestroy {
     nowMs: number,
   ): void {
     this.logger.log(
-      `markDue key=${key} existingDueAt=${
-        existingDueAt ?? 'unset'
-      } newDueAt=${this.dueAtByKey.get(key) ?? 'unset'} nowMs=${nowMs}`,
+      `markDue key=${key} existingDueAt=${existingDueAt ?? 'unset'} newDueAt=${
+        this.dueAtByKey.get(key) ?? 'unset'
+      } nowMs=${nowMs}`,
     );
   }
 }

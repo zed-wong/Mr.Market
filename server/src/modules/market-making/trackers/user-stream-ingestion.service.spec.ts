@@ -253,12 +253,14 @@ describe('UserStreamIngestionService', () => {
 
     await waitFor(
       () =>
-        (balanceStateCacheService.applyBalanceSnapshot as jest.Mock).mock
-          .calls.length >= 2,
+        (balanceStateCacheService.applyBalanceSnapshot as jest.Mock).mock.calls
+          .length >= 2,
     );
     expect(queueAccountEvent).not.toHaveBeenCalled();
     expect(markActivity).toHaveBeenCalledWith('binance', 'maker');
-    expect(balanceStateCacheService.applyBalanceSnapshot).toHaveBeenNthCalledWith(
+    expect(
+      balanceStateCacheService.applyBalanceSnapshot,
+    ).toHaveBeenNthCalledWith(
       1,
       'binance',
       'maker',
@@ -268,7 +270,9 @@ describe('UserStreamIngestionService', () => {
       expect.any(String),
       'rest',
     );
-    expect(balanceStateCacheService.applyBalanceSnapshot).toHaveBeenNthCalledWith(
+    expect(
+      balanceStateCacheService.applyBalanceSnapshot,
+    ).toHaveBeenNthCalledWith(
       2,
       'binance',
       'maker',

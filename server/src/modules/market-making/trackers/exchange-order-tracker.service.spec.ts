@@ -518,5 +518,4 @@ describe('ExchangeOrderTrackerService', () => {
 
     expect(fetchedIds[0]).toBe('pending-1');
   });
-
-  });
+});

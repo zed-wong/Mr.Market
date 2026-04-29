@@ -769,7 +769,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       await this.trackedOrderRepository.upsert(entity, ['trackingKey']);
     } catch (error) {
       this.logger.warn(
-        `Failed to persist tracked order ${trackingKey}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to persist tracked order ${trackingKey}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }

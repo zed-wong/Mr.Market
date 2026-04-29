@@ -618,7 +618,6 @@ export class StrategyIntentExecutionService {
     return Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
   }
 
-
   private resolveOrderIdForClientOrderId(intent: StrategyOrderIntent): string {
     const metadataOrderId =
       intent.metadata &&
@@ -859,7 +858,6 @@ export class StrategyIntentExecutionService {
 
     return snapshot;
   }
-
 
   private async maybeSleepBeforeImmediateDualAccountTaker(
     intent: StrategyOrderIntent,
@@ -1218,7 +1216,6 @@ export class StrategyIntentExecutionService {
       );
     }
   }
-
 
   private async cancelMakerAfterImmediateDualAccountFailure(
     intent: StrategyOrderIntent,

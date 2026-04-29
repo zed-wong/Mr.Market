@@ -6,10 +6,7 @@ describe('MarketMakingEventBus', () => {
     const bus = new MarketMakingEventBus();
     const listener = jest.fn();
 
-    const detach = bus.on(
-      MARKET_MAKING_EVENT_NAMES.balanceStale,
-      listener,
-    );
+    const detach = bus.on(MARKET_MAKING_EVENT_NAMES.balanceStale, listener);
 
     bus.emitBalanceStale({
       exchange: 'binance',

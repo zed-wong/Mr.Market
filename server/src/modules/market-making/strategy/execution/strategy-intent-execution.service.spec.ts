@@ -1,7 +1,10 @@
 import 'reflect-metadata';
-jest.mock('src/common/entities/market-making/strategy-execution-history.entity', () => ({
-  StrategyExecutionHistory: class StrategyExecutionHistory {},
-}));
+jest.mock(
+  'src/common/entities/market-making/strategy-execution-history.entity',
+  () => ({
+    StrategyExecutionHistory: class StrategyExecutionHistory {},
+  }),
+);
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';

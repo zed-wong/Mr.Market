@@ -14,5 +14,4 @@ export interface UserStreamEventNormalizer {
     raw: unknown,
     receivedAt: string,
   ): UserStreamEvent | null;
-
 }
