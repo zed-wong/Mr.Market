@@ -3,14 +3,10 @@ import { ApiBody, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger'; // Im
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from 'src/modules/auth/auth.service';
 
-import { CustomLogger } from '../infrastructure/logger/logger.service';
-
 // Add @ApiTags to categorize the endpoint in Swagger
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  private readonly logger = new CustomLogger(AuthController.name);
-
   constructor(private authService: AuthService) {}
 
   @Post('login')

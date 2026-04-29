@@ -10,8 +10,8 @@ export class DexAdapterRegistry {
   private readonly adapters: Record<DexId, DexAdapter>;
 
   constructor(
-    private readonly uniV3: UniswapV3Adapter,
-    private readonly cakeV3: PancakeV3Adapter,
+    uniV3: UniswapV3Adapter,
+    cakeV3: PancakeV3Adapter,
   ) {
     this.adapters = {
       [uniV3.id]: uniV3,

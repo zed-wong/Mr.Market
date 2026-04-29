@@ -51,7 +51,6 @@ describe('Private fill REST recovery parity (mock system)', () => {
     };
     executorRegistry = new ExecutorRegistry();
     exchangeOrderTrackerService = new ExchangeOrderTrackerService(
-      undefined as any,
       exchangeConnectorAdapterService as any,
       executorRegistry,
     );

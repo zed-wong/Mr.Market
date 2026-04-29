@@ -1,12 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { CoingeckoController } from './coingecko.controller';
-import {
-  coinFullInfoFixture,
-  coinMarketChartResponseFixture,
-  coinMarketDataFixture,
-} from './coingecko.fixtures';
 import { CoingeckoProxyService } from './coingecko.service';
+
+const coinMarketDataFixture = [
+  { id: 'ethereum', symbol: 'eth', current_price: 2000 },
+  { id: 'bitcoin', symbol: 'btc', current_price: 60000 },
+  { id: 'mixin', symbol: 'xin', current_price: 250 },
+];
+
+const coinFullInfoFixture = {
+  id: 'ethereum',
+  symbol: 'eth',
+  name: 'Ethereum',
+};
+
+const coinMarketChartResponseFixture = {
+  prices: [
+    [1609459200000, 730.0],
+    [1612137600000, 1400.0],
+    [1614556800000, 1500.0],
+  ],
+  market_caps: [
+    [1609459200000, 83000000.0],
+    [1612137600000, 160000000.0],
+    [1614556800000, 180000000.0],
+  ],
+  total_volumes: [
+    [1609459200000, 10000000.0],
+    [1612137600000, 22000000.0],
+    [1614556800000, 25000000.0],
+  ],
+};
 
 describe('CoingeckoController', () => {
   let controller: CoingeckoController;

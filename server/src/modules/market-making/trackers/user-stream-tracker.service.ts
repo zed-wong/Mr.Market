@@ -73,8 +73,6 @@ export class UserStreamTrackerService
     @Optional()
     private readonly executorRegistry?: ExecutorRegistry,
     @Optional()
-    private readonly balanceStateCacheService?: BalanceStateCacheService,
-    @Optional()
     private readonly marketMakingEventBus?: MarketMakingEventBus,
     @Optional()
     private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,

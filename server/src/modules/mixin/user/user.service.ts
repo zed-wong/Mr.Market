@@ -1,23 +1,15 @@
-import { KeystoreClientReturnType } from '@mixin.dev/mixin-node-sdk';
 import { Injectable } from '@nestjs/common';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { mapApiResponseToMixinUser } from 'src/common/helpers/mixin/user';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
-import { MixinClientService } from '../client/mixin-client.service';
 import { UserRepository } from './user.repository';
 
 @Injectable()
 export class UserService {
-  private client: KeystoreClientReturnType;
   private readonly logger = new CustomLogger(UserService.name);
 
-  constructor(
-    private userRepository: UserRepository,
-    private mixinClientService: MixinClientService,
-  ) {
-    this.client = this.mixinClientService.client;
-  }
+  constructor(private userRepository: UserRepository) {}
 
   async addUser(user: Partial<MixinUser>) {
     try {

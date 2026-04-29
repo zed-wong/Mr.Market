@@ -41,7 +41,6 @@ export class FeeService {
       | 'withdraw_to_mixin'
       | 'withdraw_external',
   ) {
-    const [base_symbol, quote_symbol] = pair.split('/');
     let base_fee, quote_fee, direction_info;
     let base_exchange_fee: number | undefined;
     let quote_exchange_fee: number | undefined;

@@ -116,10 +116,7 @@ describe('ExchangeOrderTrackerService', () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'closed' }),
     };
-    const service = new ExchangeOrderTrackerService(
-      undefined as any,
-      adapter as any,
-    );
+    const service = new ExchangeOrderTrackerService(adapter as any);
 
     service.upsertOrder({
       orderId: 'u1-c1',
@@ -160,7 +157,6 @@ describe('ExchangeOrderTrackerService', () => {
       }),
     };
     const service = new ExchangeOrderTrackerService(
-      undefined as any,
       adapter as any,
       undefined as any,
       undefined as any,
@@ -213,7 +209,6 @@ describe('ExchangeOrderTrackerService', () => {
       }),
     };
     const service = new ExchangeOrderTrackerService(
-      undefined as any,
       adapter as any,
       executorRegistry as any,
     );
@@ -368,10 +363,7 @@ describe('ExchangeOrderTrackerService', () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
     };
-    const service = new ExchangeOrderTrackerService(
-      undefined as any,
-      adapter as any,
-    );
+    const service = new ExchangeOrderTrackerService(adapter as any);
 
     service.upsertOrder({
       orderId: 'o1',
@@ -405,10 +397,7 @@ describe('ExchangeOrderTrackerService', () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
     };
-    const service = new ExchangeOrderTrackerService(
-      undefined as any,
-      adapter as any,
-    );
+    const service = new ExchangeOrderTrackerService(adapter as any);
 
     service.upsertOrder({
       orderId: 'o1',
@@ -441,10 +430,7 @@ describe('ExchangeOrderTrackerService', () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'x', status: 'open' }),
     };
-    const service = new ExchangeOrderTrackerService(
-      undefined as any,
-      adapter as any,
-    );
+    const service = new ExchangeOrderTrackerService(adapter as any);
 
     for (let i = 0; i < 5; i++) {
       service.upsertOrder({
@@ -483,10 +469,7 @@ describe('ExchangeOrderTrackerService', () => {
           },
         ),
     };
-    const service = new ExchangeOrderTrackerService(
-      undefined as any,
-      adapter as any,
-    );
+    const service = new ExchangeOrderTrackerService(adapter as any);
 
     service.upsertOrder({
       orderId: 'o1',

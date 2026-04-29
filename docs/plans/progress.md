@@ -1,5 +1,10 @@
 # Execution Flow Changelog
 
+## 2026-04-29
+
+- Remove high-confidence backend dead code: deprecated loop-based time-indicator strategy service, orphan campaign sync/score services, unused signal/spot-check/DEX-pricing helpers, unused snapshots/health fixtures, and production-src test fixtures now inlined into their specs.
+- Remove low-risk backend local dead code: unused controller/service loggers, stale constructor-injected fields, unused market-data/fee/tracker locals, and wire snapshot failed-job cleanup to its existing retention constant.
+
 ## 2026-04-27
 
 - Update `docs/plans/2026-04-26-improve-architecture-plan.md` with the market-making bounded-context type ownership policy: new market-making statuses and contracts belong under `server/src/common/types/market-making/`, while `server/src/common/types/orders/` remains only for genuinely generic cross-product order types or temporary compatibility exports.

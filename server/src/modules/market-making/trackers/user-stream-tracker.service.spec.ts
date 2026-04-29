@@ -1,6 +1,5 @@
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
-import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
 import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
@@ -306,7 +305,6 @@ describe('UserStreamTrackerService', () => {
         markUserStreamActivity: jest.fn(),
         getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
       } as unknown as ExchangeOrderTrackerService,
-      undefined,
       undefined,
       marketMakingEventBus,
     );

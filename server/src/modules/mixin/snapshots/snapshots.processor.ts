@@ -38,8 +38,8 @@ export class SnapshotsProcessor implements OnModuleInit {
           this.COMPLETED_JOB_RETENTION,
           'completed',
         );
-        await this.snapshotsQueue.clean(this.COMPLETED_JOB_RETENTION, 'failed');
-        this.logger.log('Cleaned up old completed polling jobs');
+        await this.snapshotsQueue.clean(this.FAILED_JOB_RETENTION, 'failed');
+        this.logger.log('Cleaned up old snapshot polling jobs');
       } catch (error) {
         this.logger.error(
           `Failed to clean up old jobs: ${error.message}`,
@@ -64,7 +64,7 @@ export class SnapshotsProcessor implements OnModuleInit {
     this.isPolling = true;
     this.logger.debug('Polling for snapshots...');
     try {
-      const { snapshots, newSnapshots, newestTimestamp } =
+      const { snapshots, newSnapshots } =
         await this.snapshotsService.fetchSnapshots();
 
       this.logger.debug(

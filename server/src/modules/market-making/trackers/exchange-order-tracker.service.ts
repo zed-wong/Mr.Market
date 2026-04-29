@@ -15,7 +15,6 @@ import { Repository } from 'typeorm';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
-import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 
 export type TrackedOrderState =
@@ -104,8 +103,6 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
   constructor(
     @Optional()
-    private readonly clockTickCoordinatorService?: ClockTickCoordinatorService,
-    @Optional()
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
     @Optional()
     private readonly executorRegistry?: ExecutorRegistry,
@@ -157,7 +154,6 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       }
 
       const nextOrder = this.mergeOrder(existingOrder, order, nextStatus);
-      const fillDelta = this.computeFillDelta(existingOrder, nextOrder);
 
       this.orders.set(key, nextOrder);
       this.updatePollingStateForOrder(key, nextOrder.status);

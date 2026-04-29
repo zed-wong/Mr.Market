@@ -15,7 +15,6 @@ type MarketDataListener = (data: any) => void;
 @Injectable()
 export class MarketdataService {
   private exchange: ccxt.Exchange;
-  private exchanges = new Map<string, ccxt.Exchange>();
   private readonly logger = new CustomLogger(MarketdataService.name);
   private activeSubscriptions = new Map<string, boolean>(); // Track active subscriptions
   private readonly orderBookListeners = new Map<

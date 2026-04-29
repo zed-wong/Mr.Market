@@ -3,8 +3,23 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { CustomConfigEntity } from '../../../common/entities/admin/custom-config.entity';
-import createMockCustomConfigEntity from './custom-config.fixture';
 import { CustomConfigRepository } from './custom-config.repository';
+
+function createMockCustomConfigEntity(
+  overrides?: Partial<CustomConfigEntity>,
+): CustomConfigEntity {
+  return {
+    config_id: 1,
+    max_balance_mixin_bot: '1000',
+    max_balance_single_api_key: '2000',
+    funding_account: 'XYZ123',
+    spot_fee: '0.02',
+    market_making_fee: '0.001',
+    enable_spot_fee: true,
+    enable_market_making_fee: true,
+    ...overrides,
+  };
+}
 
 describe('CustomConfigRepository', () => {
   let customConfigRepository: CustomConfigRepository;
