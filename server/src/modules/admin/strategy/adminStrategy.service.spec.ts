@@ -8,7 +8,6 @@ import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
-import { PerformanceService } from '../../market-making/performance/performance.service';
 import { StrategyConfigResolverService } from '../../market-making/strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from '../../market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { StrategyService } from '../../market-making/strategy/strategy.service';
@@ -140,12 +139,6 @@ describe('AdminStrategyService', () => {
                   },
                 };
               }),
-          },
-        },
-        {
-          provide: PerformanceService,
-          useValue: {
-            get: jest.fn(), // Mock the method directly here
           },
         },
         {

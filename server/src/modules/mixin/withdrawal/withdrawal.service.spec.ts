@@ -2,17 +2,13 @@
 import { SafeSnapshot } from '@mixin.dev/mixin-node-sdk';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import type { Queue } from 'bull';
 import { Withdrawal } from 'src/common/entities/mixin/withdrawal.entity';
-import { Repository } from 'typeorm';
 
 import { MixinClientService } from '../client/mixin-client.service';
 import { WithdrawalService } from './withdrawal.service';
 
 describe('WithdrawalService', () => {
   let service: WithdrawalService;
-  let repository: Repository<Withdrawal>;
-  let queue: Queue;
 
   const mockWithdrawalRepository = {
     findOne: jest.fn(),
@@ -64,10 +60,6 @@ describe('WithdrawalService', () => {
     }).compile();
 
     service = module.get<WithdrawalService>(WithdrawalService);
-    repository = module.get<Repository<Withdrawal>>(
-      getRepositoryToken(Withdrawal),
-    );
-    queue = module.get<Queue>('BullQueue_withdrawals');
   });
 
   afterEach(() => {

@@ -22,28 +22,7 @@ export class HealthService {
   constructor(
     @InjectQueue('snapshots') private snapshotsQueue: Queue,
     private exchangeInitService: ExchangeInitService,
-  ) {
-    // Enable this with api keys in .env
-    // this.checkApiKeys()
-  }
-
-  private checkApiKeys() {
-    if (!process.env.BITFINEX_API_KEY || !process.env.BITFINEX_SECRET) {
-      throw new InternalServerErrorException(
-        `Bitfinex API key or Secret is invalid`,
-      );
-    }
-    if (!process.env.MEXC_API_KEY || !process.env.MEXC_SECRET) {
-      throw new InternalServerErrorException(
-        `MEXC API key or Secret is invalid`,
-      );
-    }
-    if (!process.env.BINANCE_API_KEY || !process.env.BINANCE_SECRET) {
-      throw new InternalServerErrorException(
-        `Binance API key or Secret is invalid`,
-      );
-    }
-  }
+  ) {}
 
   async ping(): Promise<string> {
     return 'pong';

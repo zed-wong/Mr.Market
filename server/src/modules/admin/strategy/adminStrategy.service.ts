@@ -13,7 +13,6 @@ import {
 import { In, Repository } from 'typeorm';
 
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
-import { PerformanceService } from '../../market-making/performance/performance.service';
 import { StrategyConfigResolverService } from '../../market-making/strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from '../../market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { StrategyService } from '../../market-making/strategy/strategy.service';
@@ -36,7 +35,6 @@ export class AdminStrategyService {
     private readonly strategyService: StrategyService,
     private readonly strategyConfigResolver: StrategyConfigResolverService,
     private readonly strategyRuntimeDispatcher: StrategyRuntimeDispatcherService,
-    private readonly performanceService: PerformanceService,
     private readonly exchangeInitService: ExchangeInitService,
     private readonly web3Service: Web3Service,
     @InjectRepository(StrategyDefinition)
@@ -58,49 +56,6 @@ export class AdminStrategyService {
       dualAccountVolumeParams,
       dualAccountBestCapacityVolumeParams,
     } = startStrategyDto;
-
-    const definitionControllerType =
-      strategyType === 'marketMaking' ? 'pureMarketMaking' : strategyType;
-    const legacyConfig =
-      strategyType === 'arbitrage'
-        ? {
-            ...arbitrageParams,
-            checkIntervalSeconds: startStrategyDto.checkIntervalSeconds,
-            maxOpenOrders: startStrategyDto.maxOpenOrders,
-          }
-        : strategyType === 'marketMaking'
-        ? marketMakingParams
-        : strategyType === 'dualAccountVolume'
-        ? dualAccountVolumeParams
-        : strategyType === 'dualAccountBestCapacityVolume'
-        ? dualAccountBestCapacityVolumeParams
-        : volumeParams;
-
-    if (legacyConfig?.userId && legacyConfig?.clientId) {
-      const definition = await this.strategyDefinitionRepository.findOne({
-        where: {
-          controllerType: definitionControllerType,
-          enabled: true,
-        },
-        order: { createdAt: 'ASC' },
-      });
-
-      if (definition) {
-        const marketMakingOrderId =
-          definitionControllerType === 'pureMarketMaking' && marketMakingParams
-            ? marketMakingParams.marketMakingOrderId ||
-              marketMakingParams.clientId
-            : undefined;
-
-        return this.startStrategyInstance({
-          definitionId: definition.id,
-          userId: legacyConfig.userId,
-          clientId: legacyConfig.clientId,
-          marketMakingOrderId,
-          config: legacyConfig as Record<string, unknown>,
-        });
-      }
-    }
 
     if (strategyType === 'arbitrage' && arbitrageParams) {
       await this.strategyRuntimeDispatcher.startByStrategyType('arbitrage', {

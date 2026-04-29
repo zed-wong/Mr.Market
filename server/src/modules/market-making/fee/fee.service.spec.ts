@@ -26,8 +26,6 @@ jest.mock('@mixin.dev/mixin-node-sdk', () => ({
 describe('FeeService', () => {
   let service: FeeService;
   let exchangeInitService: ExchangeInitService;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let configService: ConfigService;
   let testingModule: TestingModule;
 
   beforeEach(async () => {
@@ -80,7 +78,6 @@ describe('FeeService', () => {
     service = testingModule.get<FeeService>(FeeService);
     exchangeInitService =
       testingModule.get<ExchangeInitService>(ExchangeInitService);
-    configService = testingModule.get<ConfigService>(ConfigService);
   });
 
   afterEach(() => {

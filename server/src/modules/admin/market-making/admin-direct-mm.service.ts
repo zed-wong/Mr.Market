@@ -1637,29 +1637,6 @@ export class AdminDirectMarketMakingService {
       : this.readAccountLabel(order);
   }
 
-  private async readPrimaryDisplayLabel(
-    order: MarketMakingOrder,
-  ): Promise<string> {
-    if (this.isDualAccountMode(order)) {
-      return this.readPrimaryAccountLabel(order);
-    }
-
-    if (!order.apiKeyId) {
-      return this.readAccountLabel(order);
-    }
-
-    try {
-      const apiKey = await this.exchangeApiKeyService.readAPIKey(
-        order.apiKeyId,
-      );
-      const apiKeyName = String(apiKey?.name || '').trim();
-
-      return apiKeyName || this.readAccountLabel(order);
-    } catch {
-      return this.readAccountLabel(order);
-    }
-  }
-
   private async readApiKeyName(
     apiKeyId: string | null | undefined,
     fallback: string,

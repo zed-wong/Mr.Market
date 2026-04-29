@@ -91,21 +91,12 @@ export class ExchangeApiKeyService {
       const keyId = key.key_id;
       const exchangeName = key.exchange;
       const apiKey = key.api_key;
-      let apiSecret = key.api_secret;
+      let apiSecret: string;
 
-      // Decrypt secret if it looks like it's encrypted (base64)
-      // We assume stored secrets are always encrypted if this feature is on.
-      const privateKey =
-        this.configService.get<string>('admin.encryption_private_key') || '';
-
-      if (privateKey) {
-        try {
-          apiSecret = decrypt(apiSecret, privateKey);
-        } catch (e) {
-          // If decryption fails, maybe it's plain text (legacy)?
-          // Or wrong key. For now, log and continue.
-          this.logger.warn(`Failed to decrypt key ${keyId}: ${e.message}`);
-        }
+      try {
+        apiSecret = this.readStoredApiSecret(key);
+      } catch {
+        continue;
       }
 
       if (!this.exchangeInstances[keyId]) {
@@ -125,6 +116,26 @@ export class ExchangeApiKeyService {
       api_secret: '********',
       state: this.resolveApiKeyState(k),
     }));
+  }
+
+  private readStoredApiSecret(key: APIKeysConfig): string {
+    const privateKey =
+      this.configService.get<string>('admin.encryption_private_key') || '';
+
+    if (!privateKey) {
+      return key.api_secret;
+    }
+
+    try {
+      return decrypt(key.api_secret, privateKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      this.logger.warn(`Failed to decrypt key ${key.key_id}: ${message}`);
+      throw new InternalServerErrorException(
+        'Failed to decrypt API secret. The stored key might be invalid or corrupted.',
+      );
+    }
   }
 
   private resolveApiKeyState(key: APIKeysConfig): string {
@@ -168,25 +179,20 @@ export class ExchangeApiKeyService {
 
   async readDecryptedAPIKeys(): Promise<APIKeysConfig[]> {
     const keys = await this.exchangeRepository.readAllAPIKeys();
-    const privateKey =
-      this.configService.get<string>('admin.encryption_private_key') || '';
+    const decryptedKeys: APIKeysConfig[] = [];
 
-    return keys.map((key) => {
-      let apiSecret = key.api_secret;
-
-      if (privateKey) {
-        try {
-          apiSecret = decrypt(apiSecret, privateKey);
-        } catch (e) {
-          this.logger.warn(`Failed to decrypt key ${key.key_id}: ${e.message}`);
-        }
+    for (const key of keys) {
+      try {
+        decryptedKeys.push({
+          ...key,
+          api_secret: this.readStoredApiSecret(key),
+        });
+      } catch {
+        continue;
       }
+    }
 
-      return {
-        ...key,
-        api_secret: apiSecret,
-      };
-    });
+    return decryptedKeys;
   }
 
   async seedApiKeysFromEnv(
@@ -815,22 +821,9 @@ export class ExchangeApiKeyService {
       return null;
     }
 
-    const privateKey =
-      this.configService.get<string>('admin.encryption_private_key') || '';
-
-    let apiSecret = key.api_secret;
-
-    if (privateKey) {
-      try {
-        apiSecret = decrypt(apiSecret, privateKey);
-      } catch (e) {
-        this.logger.warn(`Failed to decrypt key ${key.key_id}: ${e.message}`);
-      }
-    }
-
     return {
       ...key,
-      api_secret: apiSecret,
+      api_secret: this.readStoredApiSecret(key),
     };
   }
 

@@ -24,8 +24,6 @@ const debugLog = (...args: unknown[]) => {
  */
 describe('CampaignService', () => {
   let service: CampaignService;
-  let configService: ConfigService;
-  let web3Service: Web3Service;
 
   // Mock configuration for tests - using real HuFi URLs
   const mockConfig = {
@@ -68,8 +66,6 @@ describe('CampaignService', () => {
     }).compile();
 
     service = module.get<CampaignService>(CampaignService);
-    configService = module.get<ConfigService>(ConfigService);
-    web3Service = module.get<Web3Service>(Web3Service);
   });
 
   it('should be defined', () => {
