@@ -653,7 +653,6 @@ describe('UserStreamTrackerService', () => {
         status: 'filled',
         updatedAt: '2026-03-11T00:00:10.000Z',
       }),
-      'ws',
     );
   });
 
@@ -1083,7 +1082,6 @@ describe('UserStreamTrackerService', () => {
         status: 'cancelled',
         updatedAt: '2026-03-11T00:00:10.000Z',
       }),
-      'ws',
     );
   });
 

@@ -282,18 +282,15 @@ export class UserStreamTrackerService
     }
 
     if (trackedOrder && fill.status) {
-      this.exchangeOrderTrackerService?.upsertOrder(
-        {
-          ...trackedOrder,
-          clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
-          cumulativeFilledQty:
-            fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
-          status: fill.status,
-          createdAt: trackedOrder.createdAt,
-          updatedAt: fill.receivedAt,
-        },
-        'ws',
-      );
+      this.exchangeOrderTrackerService?.upsertOrder({
+        ...trackedOrder,
+        clientOrderId: fill.clientOrderId || trackedOrder.clientOrderId,
+        cumulativeFilledQty:
+          fill.cumulativeQty || trackedOrder.cumulativeFilledQty,
+        status: fill.status,
+        createdAt: trackedOrder.createdAt,
+        updatedAt: fill.receivedAt,
+      });
     }
 
     const routedFill = this.normalizeFillForDispatch(fill, trackedOrder);
@@ -467,19 +464,15 @@ export class UserStreamTrackerService
       return;
     }
 
-    this.exchangeOrderTrackerService?.upsertOrder(
-      {
-        ...trackedOrder,
-        clientOrderId:
-          event.payload.clientOrderId || trackedOrder.clientOrderId,
-        cumulativeFilledQty:
-          event.payload.cumulativeQty || trackedOrder.cumulativeFilledQty,
-        status,
-        createdAt: trackedOrder.createdAt,
-        updatedAt: event.receivedAt,
-      },
-      'ws',
-    );
+    this.exchangeOrderTrackerService?.upsertOrder({
+      ...trackedOrder,
+      clientOrderId: event.payload.clientOrderId || trackedOrder.clientOrderId,
+      cumulativeFilledQty:
+        event.payload.cumulativeQty || trackedOrder.cumulativeFilledQty,
+      status,
+      createdAt: trackedOrder.createdAt,
+      updatedAt: event.receivedAt,
+    });
   }
 
   private normalizeEventPayload(
