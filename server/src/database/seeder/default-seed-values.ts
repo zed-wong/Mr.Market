@@ -9,7 +9,6 @@ import {
   StrategyDefinition,
   type StrategyDefinitionCapabilities,
   StrategyDefinitionVisibility,
-  type StrategyDirectExecutionMode,
 } from 'src/common/entities/market-making/strategy-definition.entity';
 
 import { TOP_EXCHANGES as EXCHANGES } from './data/exchanges';
@@ -23,57 +22,19 @@ import volumeSeedDefinition from './data/strategies/volume.json';
 type SeededStrategyDefinitionConfig = {
   configSchema: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
+  capabilities?: StrategyDefinitionCapabilities;
 };
 
-function splitSeedConfig(
-  seed: SeededStrategyDefinitionConfig,
-): SeededStrategyDefinitionConfig & {
-  capabilities?: StrategyDefinitionCapabilities;
-} {
-  const { launchSurfaces, directExecutionMode, ...configSchema } =
-    seed.configSchema;
-  const resolvedDirectExecutionMode: StrategyDirectExecutionMode | null =
-    directExecutionMode === 'single_account' ||
-    directExecutionMode === 'dual_account'
-      ? directExecutionMode
-      : null;
-  const capabilities =
-    Array.isArray(launchSurfaces) || directExecutionMode
-      ? {
-          launchSurfaces: Array.isArray(launchSurfaces)
-            ? launchSurfaces.filter(
-                (surface): surface is string => typeof surface === 'string',
-              )
-            : [],
-          directExecutionMode: resolvedDirectExecutionMode,
-        }
-      : undefined;
-
-  return {
-    configSchema,
-    defaultConfig: seed.defaultConfig,
-    capabilities,
-  };
-}
-
-const pureMarketMakingSeed = splitSeedConfig(
-  pureMarketMakingSeedDefinition as SeededStrategyDefinitionConfig,
-);
-const arbitrageSeed = splitSeedConfig(
-  arbitrageSeedDefinition as SeededStrategyDefinitionConfig,
-);
-const volumeSeed = splitSeedConfig(
-  volumeSeedDefinition as SeededStrategyDefinitionConfig,
-);
-const dualAccountVolumeSeed = splitSeedConfig(
-  dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig,
-);
-const dualAccountBestCapacityVolumeSeed = splitSeedConfig(
-  dualAccountBestCapacityVolumeSeedDefinition as SeededStrategyDefinitionConfig,
-);
-const timeIndicatorSeed = splitSeedConfig(
-  timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig,
-);
+const pureMarketMakingSeed =
+  pureMarketMakingSeedDefinition as SeededStrategyDefinitionConfig;
+const arbitrageSeed = arbitrageSeedDefinition as SeededStrategyDefinitionConfig;
+const volumeSeed = volumeSeedDefinition as SeededStrategyDefinitionConfig;
+const dualAccountVolumeSeed =
+  dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig;
+const dualAccountBestCapacityVolumeSeed =
+  dualAccountBestCapacityVolumeSeedDefinition as SeededStrategyDefinitionConfig;
+const timeIndicatorSeed =
+  timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig;
 
 // Export exchanges from data file
 export const defaultExchanges: GrowdataExchange[] = EXCHANGES.map((e) => ({

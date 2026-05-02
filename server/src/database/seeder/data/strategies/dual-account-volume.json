@@ -1,7 +1,9 @@
 {
-  "configSchema": {
+  "capabilities": {
     "launchSurfaces": ["strategy_settings", "admin_direct_mm"],
-    "directExecutionMode": "dual_account",
+    "directExecutionMode": "dual_account"
+  },
+  "configSchema": {
     "type": "object",
     "required": [
       "exchangeName",

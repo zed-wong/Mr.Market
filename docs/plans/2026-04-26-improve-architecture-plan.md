@@ -238,7 +238,7 @@ Suggested fields:
 ```text
 id
 orderId
-definitionId
+strategyDefinitionId
 controllerType
 configVersion
 configHash

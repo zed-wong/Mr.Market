@@ -167,8 +167,8 @@ export class NormalizeStrategyDefinitionEntities1776200000000
         "enabled",
         CASE WHEN "visibility" = 'public' THEN 'public' ELSE 'admin' END,
         "createdBy",
-        COALESCE("createdAt", datetime('now')),
-        COALESCE("updatedAt", datetime('now'))
+        COALESCE("createdAt", strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        COALESCE("updatedAt", strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       FROM "strategy_definitions"`,
     );
 
@@ -251,8 +251,8 @@ export class NormalizeStrategyDefinitionEntities1776200000000
         "startPrice",
         "parameters",
         "status",
-        COALESCE("createdAt", datetime('now')),
-        COALESCE("updatedAt", datetime('now'))
+        COALESCE("createdAt", strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        COALESCE("updatedAt", strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       FROM "strategy_instances"`,
     );
 
@@ -535,7 +535,7 @@ export class NormalizeStrategyDefinitionEntities1776200000000
         "orderId",
         "status",
         "metadata",
-        COALESCE("executedAt", datetime('now'))
+        COALESCE("executedAt", strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       FROM "strategy_execution_history"`,
     );
     await queryRunner.query(`DROP TABLE "strategy_execution_history"`);

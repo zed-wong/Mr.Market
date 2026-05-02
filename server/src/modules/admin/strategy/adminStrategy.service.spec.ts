@@ -14,9 +14,7 @@ import { StrategyService } from '../../market-making/strategy/strategy.service';
 import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,
-  StartStrategyDto,
   StartStrategyInstanceDto,
-  StopStrategyDto,
   StopStrategyInstanceDto,
 } from './admin-strategy.dto';
 import { AdminStrategyService } from './adminStrategy.service';
@@ -175,126 +173,6 @@ describe('AdminStrategyService', () => {
     web3Service = module.get<Web3Service>(Web3Service);
   });
 
-  describe('startStrategy', () => {
-    it('should start an arbitrage strategy', async () => {
-      const startStrategyDto: StartStrategyDto = {
-        strategyType: 'arbitrage',
-        arbitrageParams: {
-          userId: 'user123',
-          clientId: 'client123',
-          pair: 'ETH/USDT',
-          amountToTrade: 1.0,
-          minProfitability: 0.01,
-          exchangeAName: 'binance',
-          exchangeBName: 'mexc',
-          checkIntervalSeconds: 10,
-          maxOpenOrders: 5,
-        },
-        checkIntervalSeconds: 10,
-        maxOpenOrders: 5,
-      };
-
-      await service.startStrategy(startStrategyDto);
-
-      expect(startByStrategyTypeSpy).toHaveBeenCalledWith(
-        'arbitrage',
-        expect.objectContaining({ pair: 'ETH/USDT' }),
-      );
-    });
-
-    it('should start a market making strategy', async () => {
-      const startStrategyDto: StartStrategyDto = {
-        strategyType: 'marketMaking',
-        marketMakingParams: {
-          userId: 'user123',
-          clientId: 'client123',
-          pair: 'BTC/USD',
-          exchangeName: 'binance',
-          bidSpread: 0.1,
-          askSpread: 0.1,
-          orderAmount: 0.1,
-          orderRefreshTime: 1000,
-          numberOfLayers: 1,
-          priceSourceType: PriceSourceType.MID_PRICE,
-          amountChangePerLayer: 1,
-          amountChangeType: 'percentage',
-        },
-      };
-
-      await service.startStrategy(startStrategyDto);
-
-      expect(startByStrategyTypeSpy).toHaveBeenCalledWith(
-        'pureMarketMaking',
-        startStrategyDto.marketMakingParams,
-      );
-    });
-
-    it('should start a volume strategy', async () => {
-      const startStrategyDto: StartStrategyDto = {
-        strategyType: 'volume',
-        volumeParams: {
-          exchangeName: 'Binance',
-          symbol: 'BTCUSDT',
-          incrementPercentage: 0.1,
-          intervalTime: 60,
-          tradeAmount: 100,
-          numTrades: 5,
-          userId: 'user123',
-          clientId: 'client123',
-          pricePushRate: 0,
-          postOnlySide: 'buy',
-        },
-      };
-
-      await service.startStrategy(startStrategyDto);
-
-      expect(startByStrategyTypeSpy).toHaveBeenCalledWith(
-        'volume',
-        expect.objectContaining({
-          exchangeName: startStrategyDto.volumeParams.exchangeName,
-          symbol: startStrategyDto.volumeParams.symbol,
-          incrementPercentage:
-            startStrategyDto.volumeParams.incrementPercentage,
-          intervalTime: startStrategyDto.volumeParams.intervalTime,
-          tradeAmount: startStrategyDto.volumeParams.tradeAmount,
-          numTrades: startStrategyDto.volumeParams.numTrades,
-          userId: startStrategyDto.volumeParams.userId,
-          clientId: startStrategyDto.volumeParams.clientId,
-          pricePushRate: startStrategyDto.volumeParams.pricePushRate,
-          postOnlySide: startStrategyDto.volumeParams.postOnlySide,
-        }),
-      );
-    });
-
-    it('should throw BadRequestException for invalid strategy parameters', async () => {
-      const startStrategyDto: StartStrategyDto = {
-        strategyType: 'arbitrage', // No arbitrageParams provided
-      };
-
-      await expect(service.startStrategy(startStrategyDto)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-  });
-
-  describe('stopStrategy', () => {
-    it('should stop a strategy', async () => {
-      const stopStrategyDto: StopStrategyDto = {
-        strategyType: 'arbitrage',
-        userId: 'user123',
-        clientId: 'client123',
-      };
-
-      await service.stopStrategy(stopStrategyDto);
-
-      expect(stopByStrategyTypeSpy).toHaveBeenCalledWith(
-        'arbitrage',
-        stopStrategyDto.userId,
-        stopStrategyDto.clientId,
-      );
-    });
-  });
-
   describe('verifyContribution', () => {
     it('should confirm and update contribution if verified', async () => {
       const contribution = {
@@ -420,6 +298,7 @@ describe('AdminStrategyService', () => {
       mockStrategyDefinitionRepository.findOne.mockResolvedValue({
         id: 'def-1',
         key: 'pure-market-making',
+        name: 'Pure Market Making',
         enabled: true,
         controllerType: 'pureMarketMaking',
         defaultConfig: {
@@ -471,6 +350,13 @@ describe('AdminStrategyService', () => {
         'pureMarketMaking',
         'def-1',
         'client123',
+        expect.objectContaining({
+          strategyDefinitionId: 'def-1',
+          definitionKey: 'pure-market-making',
+          definitionName: 'Pure Market Making',
+          controllerType: 'pureMarketMaking',
+          resolvedAt: expect.any(String),
+        }),
       );
       expect(result).toEqual(
         expect.objectContaining({

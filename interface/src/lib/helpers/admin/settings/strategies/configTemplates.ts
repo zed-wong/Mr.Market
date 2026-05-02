@@ -1,14 +1,13 @@
-// Schema templates per controllerType, derived from server DTOs.
-//
-// Fields injected at runtime by the execution engine are EXCLUDED:
-//   - pair, exchangeName, accountLabel — set from the direct order form
-//   - userId, clientId, marketMakingOrderId — set by the server
-// See admin-direct-mm.service.ts directStart() for context.
+// Schema templates per controllerType, mirrored from server seed definitions.
 
 export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
   pureMarketMaking: {
     type: "object",
     required: [
+      "userId",
+      "clientId",
+      "pair",
+      "exchangeName",
       "bidSpread",
       "askSpread",
       "orderAmount",
@@ -19,6 +18,26 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
       "amountChangeType",
     ],
     properties: {
+      userId: {
+        type: "string",
+        description: "User ID",
+      },
+      clientId: {
+        type: "string",
+        description: "Client ID",
+      },
+      marketMakingOrderId: {
+        type: "string",
+        description: "Bound market-making order ID",
+      },
+      pair: {
+        type: "string",
+        description: "Trading pair (e.g. BTC/USDT)",
+      },
+      exchangeName: {
+        type: "string",
+        description: "Exchange name",
+      },
       oracleExchangeName: {
         type: "string",
         description: "Oracle exchange for price data (defaults to order exchange)",
@@ -85,17 +104,33 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         type: "number",
         description: "Spread adjustment factor for inventory skew",
       },
+      currentBaseRatio: {
+        type: "number",
+        description: "Current base inventory ratio",
+      },
     },
+    additionalProperties: false,
   },
   arbitrage: {
     type: "object",
     required: [
+      "userId",
+      "clientId",
+      "pair",
       "amountToTrade",
       "minProfitability",
       "exchangeAName",
       "exchangeBName",
     ],
     properties: {
+      userId: {
+        type: "string",
+        description: "User ID",
+      },
+      clientId: {
+        type: "string",
+        description: "Client ID",
+      },
       pair: {
         type: "string",
         description: "Trading pair (e.g. BTC/USDT)",
@@ -125,25 +160,36 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         description: "Max concurrent arbitrage orders",
       },
     },
+    additionalProperties: false,
   },
   volume: {
     type: "object",
     required: [
+      "userId",
+      "clientId",
       "incrementPercentage",
       "intervalTime",
       "tradeAmount",
       "numTrades",
-      "pricePushRate",
     ],
     properties: {
-      pair: {
+      userId: {
         type: "string",
-        description: "Trading pair (e.g. BTC/USDT) — for CEX",
+        description: "User ID",
+      },
+      clientId: {
+        type: "string",
+        description: "Client ID",
       },
       executionCategory: {
         type: "string",
         enum: ["clob_cex", "amm_dex"],
         description: "clob_cex for exchange, amm_dex for DEX",
+      },
+      executionVenue: {
+        type: "string",
+        enum: ["cex", "dex"],
+        description: "Legacy execution venue alias",
       },
       exchangeName: {
         type: "string",
@@ -178,6 +224,10 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         type: "number",
         description: "Slippage tolerance (basis points)",
       },
+      recipient: {
+        type: "string",
+        description: "Recipient address for DEX execution",
+      },
       incrementPercentage: {
         type: "number",
         description: "Offset from mid price (percent)",
@@ -204,6 +254,7 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         description: "Side for first trade",
       },
     },
+    additionalProperties: false,
   },
   dualAccountVolume: {
     type: "object",
@@ -266,7 +317,12 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         type: "number",
         description: "Fractional variance applied to maker price offset",
       },
+      cadenceVariance: {
+        type: "number",
+        description: "Fractional variance applied to execution cadence",
+      },
     },
+    additionalProperties: false,
   },
   dualAccountBestCapacityVolume: {
     type: "object",
@@ -285,10 +341,13 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         description: "Optional quote-volume cap for the session",
       },
     },
+    additionalProperties: false,
   },
   timeIndicator: {
     type: "object",
     required: [
+      "userId",
+      "clientId",
       "exchangeName",
       "symbol",
       "timeframe",
@@ -296,13 +355,20 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
       "emaFast",
       "emaSlow",
       "rsiPeriod",
-      "rsiBuyBelow",
-      "rsiSellAbove",
       "indicatorMode",
       "orderMode",
       "orderSize",
+      "tickIntervalMs",
     ],
     properties: {
+      userId: {
+        type: "string",
+        description: "User ID",
+      },
+      clientId: {
+        type: "string",
+        description: "Client ID",
+      },
       exchangeName: {
         type: "string",
         description: "CCXT exchange name",
@@ -384,23 +450,6 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         description: "Take-profit percent (optional)",
       },
     },
-  },
-};
-
-export const STRATEGY_CAPABILITY_TEMPLATES: Record<
-  string,
-  { launchSurfaces: string[]; directExecutionMode?: "single_account" | "dual_account" | null }
-> = {
-  pureMarketMaking: {
-    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
-    directExecutionMode: "single_account",
-  },
-  dualAccountVolume: {
-    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
-    directExecutionMode: "dual_account",
-  },
-  dualAccountBestCapacityVolume: {
-    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
-    directExecutionMode: "dual_account",
+    additionalProperties: false,
   },
 };

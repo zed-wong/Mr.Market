@@ -353,16 +353,16 @@ interface StrategyDefinition {
   configSchema: Record<string, unknown>; // JSON schema
   defaultConfig: Record<string, unknown>;
   enabled: boolean;
-  visibility: "system" | "instance";
+  visibility: "public" | "admin";
 }
 ```
 
 ### Snapshot Resolution Flow
 
 ```typescript
-async resolveForOrderSnapshot(definitionId: string, overrides?: Record<string, unknown>) {
+async resolveForOrderSnapshot(strategyDefinitionId: string, overrides?: Record<string, unknown>) {
   // 1. Load definition
-  const definition = await this.findOne({ where: { id: definitionId } });
+  const definition = await this.findOne({ where: { id: strategyDefinitionId } });
   const controllerType = this.getDefinitionControllerType(definition);
 
   // 2. Merge defaults + overrides, then normalize runtime-only fields

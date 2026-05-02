@@ -63,7 +63,7 @@
 
     <div class="flex flex-wrap items-center gap-3">
       <button
-        class="btn bg-blue-600 hover:bg-blue-700 text-white border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
+        class="btn bg-base-content hover:bg-base-content text-base-100 border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
         on:click={onNewClick}
       >
         <svg
@@ -84,7 +84,7 @@
         {$_("admin_strategy_new_definition")}
       </button>
       <button
-        class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-4 rounded-lg text-sm font-semibold shadow-sm"
+        class="btn bg-base-300 hover:bg-base-300 text-base-content border-none min-h-[42px] h-[42px] px-4 rounded-lg text-sm font-semibold shadow-sm"
         on:click={onRefresh}
       >
         <svg
@@ -195,13 +195,13 @@
             </td>
             <td class="py-4 px-4 flex justify-end items-center gap-2" on:click|stopPropagation={() => {}}>
               <button
-                class="bg-indigo-50 text-blue-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                class="bg-base-300 text-base-content px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-base-300 transition-colors whitespace-nowrap"
                 on:click={() => onEdit(definition)}
               >
                 {$_("admin_strategy_edit")}
               </button>
               <button
-                class="bg-red-50 text-red-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors whitespace-nowrap"
+                class="bg-base-300 text-base-content px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-base-300 transition-colors whitespace-nowrap"
                 on:click={() => onRemove(definition)}
               >
                 {$_("admin_strategy_remove")}

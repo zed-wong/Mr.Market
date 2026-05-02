@@ -16,6 +16,14 @@ import {
 import { getRFC3339Timestamp } from '../../helpers/utils';
 import { Contribution } from '../campaign/contribution.entity';
 
+export type StrategyInstanceDefinitionSnapshot = {
+  strategyDefinitionId: string;
+  definitionKey: string;
+  definitionName: string;
+  controllerType: string;
+  resolvedAt: string;
+};
+
 @Entity('strategy_instances')
 export class StrategyInstance {
   @PrimaryGeneratedColumn()
@@ -36,6 +44,9 @@ export class StrategyInstance {
   @Column({ nullable: true })
   @Index()
   strategyDefinitionId?: string;
+
+  @Column('simple-json', { nullable: true })
+  strategyDefinitionSnapshot?: StrategyInstanceDefinitionSnapshot;
 
   @Column({ nullable: true })
   marketMakingOrderId?: string;

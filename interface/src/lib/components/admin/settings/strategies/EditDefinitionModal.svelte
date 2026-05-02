@@ -18,8 +18,7 @@
     let description = "";
     let configSchema: Record<string, unknown> = {};
     let defaultConfig: Record<string, unknown> = {};
-    let visibility: StrategyDefinitionVisibility = "public";
-    let createdBy = "";
+    let visibility: StrategyDefinitionVisibility = "admin";
 
     let schemaOpen = false;
 
@@ -30,8 +29,7 @@
             (definition.configSchema as Record<string, unknown>) || {};
         defaultConfig =
             (definition.defaultConfig as Record<string, unknown>) || {};
-        visibility = definition.visibility || "public";
-        createdBy = definition.createdBy || "";
+        visibility = definition.visibility || "admin";
         schemaOpen = false;
     }
 
@@ -57,7 +55,6 @@
                     description: description.trim() || undefined,
                     defaultConfig,
                     visibility,
-                    createdBy: createdBy.trim() || undefined,
                 },
                 getToken(),
             );
@@ -243,17 +240,6 @@
                             <option value="public">Public</option>
                             <option value="admin">Admin</option>
                         </select>
-                    </div>
-                    <div class="flex-1 bg-base-200/40 rounded-xl p-4">
-                        <span
-                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                            >{$_("admin_strategy_created_by")}</span
-                        >
-                        <input
-                            type="text"
-                            class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
-                            bind:value={createdBy}
-                        />
                     </div>
                 </div>
 

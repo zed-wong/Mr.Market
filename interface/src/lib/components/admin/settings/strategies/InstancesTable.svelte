@@ -45,7 +45,7 @@
         </button>
       </div>
       <button
-        class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-4 rounded-lg text-sm font-semibold shadow-sm"
+        class="btn bg-base-300 hover:bg-base-300 text-base-content border-none min-h-[42px] h-[42px] px-4 rounded-lg text-sm font-semibold shadow-sm"
         on:click={onRefresh}
       >
         <svg
@@ -151,7 +151,7 @@
             <td class="py-4 px-4 flex justify-end items-center">
               {#if isRunning}
                 <button
-                  class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-red-600 hover:bg-red-50 transition-colors"
+                  class="w-6 h-6 flex items-center justify-center rounded-full bg-base-100 shadow-sm border border-base-300 text-base-content hover:bg-base-300 transition-colors"
                   aria-label={$_("admin_strategy_stop_instance")}
                   on:click={() => onStop(instance)}
                 >

@@ -13,6 +13,7 @@ import {
   getInfoFromChainId,
   getTokenSymbolByContractAddress,
 } from 'src/common/helpers/blockchain-utils';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { In, Repository } from 'typeorm';
 
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
@@ -24,9 +25,7 @@ import { Web3Service } from '../../web3/web3.service';
 import {
   GetDepositAddressDto,
   RemoveStrategyDefinitionDto,
-  StartStrategyDto,
   StartStrategyInstanceDto,
-  StopStrategyDto,
   StopStrategyInstanceDto,
   StrategyDefinitionDto,
   UpdateStrategyDefinitionDto,
@@ -51,79 +50,6 @@ export class AdminStrategyService {
     private mixinuserrepository: Repository<MixinUser>,
   ) {}
 
-  async startStrategy(startStrategyDto: StartStrategyDto) {
-    const {
-      strategyType,
-      arbitrageParams,
-      marketMakingParams,
-      volumeParams,
-      dualAccountVolumeParams,
-      dualAccountBestCapacityVolumeParams,
-    } = startStrategyDto;
-
-    if (strategyType === 'arbitrage' && arbitrageParams) {
-      await this.strategyRuntimeDispatcher.startByStrategyType('arbitrage', {
-        ...arbitrageParams,
-        checkIntervalSeconds: startStrategyDto.checkIntervalSeconds,
-        maxOpenOrders: startStrategyDto.maxOpenOrders,
-      });
-
-      return;
-    } else if (strategyType === 'marketMaking' && marketMakingParams) {
-      await this.strategyRuntimeDispatcher.startByStrategyType(
-        'pureMarketMaking',
-        marketMakingParams as unknown as Record<string, unknown>,
-      );
-
-      return;
-    } else if (strategyType === 'volume' && volumeParams) {
-      await this.strategyRuntimeDispatcher.startByStrategyType(
-        'volume',
-        volumeParams as unknown as Record<string, unknown>,
-      );
-
-      return;
-    } else if (
-      strategyType === 'dualAccountVolume' &&
-      dualAccountVolumeParams
-    ) {
-      await this.strategyRuntimeDispatcher.startByStrategyType(
-        'dualAccountVolume',
-        dualAccountVolumeParams as unknown as Record<string, unknown>,
-      );
-
-      return;
-    } else if (
-      strategyType === 'dualAccountBestCapacityVolume' &&
-      dualAccountBestCapacityVolumeParams
-    ) {
-      await this.strategyRuntimeDispatcher.startByStrategyType(
-        'dualAccountBestCapacityVolume',
-        dualAccountBestCapacityVolumeParams as unknown as Record<
-          string,
-          unknown
-        >,
-      );
-
-      return;
-    } else {
-      throw new BadRequestException('Invalid strategy parameters');
-    }
-  }
-
-  async stopStrategy(stopStrategyDto: StopStrategyDto) {
-    const { userId, clientId } = stopStrategyDto;
-    const strategyType =
-      this.strategyRuntimeDispatcher.mapStrategyTypeToController(
-        stopStrategyDto.strategyType,
-      );
-
-    return this.strategyRuntimeDispatcher.stopByStrategyType(
-      strategyType,
-      userId,
-      clientId,
-    );
-  }
   async getDepositAddress(getDepositAddressDto: GetDepositAddressDto) {
     const { exchangeName, tokenSymbol, network, accountLabel } =
       getDepositAddressDto;
@@ -448,6 +374,13 @@ export class AdminStrategyService {
       clientId: string;
       marketMakingOrderId?: string;
       strategyDefinitionId?: string;
+      strategyDefinitionSnapshot?: {
+        strategyDefinitionId: string;
+        definitionKey: string;
+        definitionName: string;
+        controllerType: string;
+        resolvedAt: string;
+      };
       definitionKey?: string;
       definitionName?: string;
       controllerType?: string;
@@ -477,7 +410,7 @@ export class AdminStrategyService {
         : undefined;
       const controllerType = definition
         ? this.strategyConfigResolver.getDefinitionControllerType(definition)
-        : undefined;
+        : instance.strategyDefinitionSnapshot?.controllerType;
 
       return {
         id: instance.id,
@@ -488,8 +421,12 @@ export class AdminStrategyService {
         clientId: instance.clientId,
         marketMakingOrderId: instance.marketMakingOrderId,
         strategyDefinitionId: instance.strategyDefinitionId,
-        definitionKey: definition?.key,
-        definitionName: definition?.name,
+        strategyDefinitionSnapshot: instance.strategyDefinitionSnapshot,
+        definitionKey:
+          definition?.key || instance.strategyDefinitionSnapshot?.definitionKey,
+        definitionName:
+          definition?.name ||
+          instance.strategyDefinitionSnapshot?.definitionName,
         controllerType,
         createdAt: instance.createdAt,
         updatedAt: instance.updatedAt,
@@ -522,6 +459,13 @@ export class AdminStrategyService {
       strategyType === 'pureMarketMaking'
         ? dto.marketMakingOrderId || dto.clientId
         : undefined,
+      {
+        strategyDefinitionId: definition.id,
+        definitionKey: definition.key,
+        definitionName: definition.name,
+        controllerType,
+        resolvedAt: getRFC3339Timestamp(),
+      },
     );
 
     return {

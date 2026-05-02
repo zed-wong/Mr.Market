@@ -29,6 +29,7 @@ import { Repository } from 'typeorm';
 import { validate as isUuid } from 'uuid';
 
 import { normalizeControllerType } from '../strategy/config/strategy-controller-aliases';
+import { assertStrategyConfigOverridesSafe } from '../strategy/config/strategy-config-override.guard';
 import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
 
 const RESERVED_CONFIG_OVERRIDE_FIELDS = new Set([
@@ -38,8 +39,6 @@ const RESERVED_CONFIG_OVERRIDE_FIELDS = new Set([
   'pair',
   'exchangeName',
 ]);
-
-const UNSAFE_CONFIG_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 @Injectable()
 export class UserOrdersService {
@@ -293,7 +292,10 @@ export class UserOrdersService {
     ) {
       throw new BadRequestException('configOverrides must be an object');
     }
-    this.assertConfigOverridesSafe(configOverrides);
+    assertStrategyConfigOverridesSafe(
+      configOverrides,
+      RESERVED_CONFIG_OVERRIDE_FIELDS,
+    );
 
     const pair = await this.growdataRepository.findMarketMakingPairById(
       marketMakingPairId,
@@ -438,68 +440,6 @@ export class UserOrdersService {
       pair: params.pair.replaceAll('-ERC20', ''),
       exchangeName: params.exchangeName,
     };
-  }
-
-  private assertConfigOverridesSafe(
-    configOverrides?: Record<string, unknown>,
-  ): void {
-    if (!configOverrides) {
-      return;
-    }
-
-    for (const field of RESERVED_CONFIG_OVERRIDE_FIELDS) {
-      if (Object.prototype.hasOwnProperty.call(configOverrides, field)) {
-        throw new BadRequestException(
-          `configOverrides cannot override system field: ${field}`,
-        );
-      }
-    }
-
-    this.assertNoUnsafeConfigKeys(configOverrides, 'configOverrides');
-  }
-
-  private assertNoUnsafeConfigKeys(value: unknown, path: string): void {
-    if (value === null || value === undefined) {
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach((item, index) =>
-        this.assertNoUnsafeConfigKeys(item, `${path}[${index}]`),
-      );
-
-      return;
-    }
-
-    if (typeof value !== 'object') {
-      return;
-    }
-
-    if (!this.isPlainObject(value)) {
-      throw new BadRequestException(
-        `${path} must contain only plain JSON objects`,
-      );
-    }
-
-    for (const [key, nestedValue] of Object.entries(value)) {
-      if (UNSAFE_CONFIG_KEYS.has(key)) {
-        throw new BadRequestException(
-          `configOverrides contains unsafe key: ${path}.${key}`,
-        );
-      }
-
-      this.assertNoUnsafeConfigKeys(nestedValue, `${path}.${key}`);
-    }
-  }
-
-  private isPlainObject(value: unknown): value is Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return false;
-    }
-
-    const prototype = Object.getPrototypeOf(value);
-
-    return prototype === Object.prototype || prototype === null;
   }
 
   // Methods moved from StrategyService

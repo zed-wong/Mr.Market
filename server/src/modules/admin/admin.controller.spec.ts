@@ -6,10 +6,6 @@ import { GrowdataExchangeDto } from './growdata/adminGrow.dto';
 import { AdminGrowService } from './growdata/adminGrow.service';
 import { SpotdataTradingPairDto } from './spot/admin-spot.dto';
 import { AdminSpotService } from './spot/admin-spot.service';
-import {
-  StartStrategyDto,
-  StopStrategyDto,
-} from './strategy/admin-strategy.dto';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
 
 describe('AdminController', () => {
@@ -25,8 +21,6 @@ describe('AdminController', () => {
         {
           provide: AdminStrategyService,
           useValue: {
-            startStrategy: jest.fn(),
-            stopStrategy: jest.fn(),
             getDepositAddress: jest.fn(),
             getSupportedNetworks: jest.fn(),
             getChainInfo: jest.fn(),
@@ -89,44 +83,6 @@ describe('AdminController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
-  });
-
-  // Tests for AdminStrategyService
-  it('should call startStrategy on AdminStrategyService', async () => {
-    const startStrategyDto: StartStrategyDto = {
-      strategyType: 'arbitrage',
-      arbitrageParams: {
-        userId: 'user123',
-        clientId: 'client123',
-        pair: 'ETH/USDT',
-        amountToTrade: 1.0,
-        minProfitability: 0.01,
-        exchangeAName: 'binance',
-        exchangeBName: 'mexc',
-        checkIntervalSeconds: 10,
-        maxOpenOrders: 5,
-      },
-      checkIntervalSeconds: 10,
-      maxOpenOrders: 5,
-    };
-
-    await controller.startStrategy(startStrategyDto);
-    expect(adminStrategyService.startStrategy).toHaveBeenCalledWith(
-      startStrategyDto,
-    );
-  });
-
-  it('should call stopStrategy on AdminStrategyService', async () => {
-    const stopStrategyDto: StopStrategyDto = {
-      userId: '123',
-      clientId: '456',
-      strategyType: 'arbitrage',
-    };
-
-    await controller.stopStrategy(stopStrategyDto);
-    expect(adminStrategyService.stopStrategy).toHaveBeenCalledWith(
-      stopStrategyDto,
-    );
   });
 
   // Tests for AdminGrowService

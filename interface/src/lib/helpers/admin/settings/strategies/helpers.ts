@@ -61,19 +61,19 @@ export function getControllerTypeLabel(type: string): string {
 export function getControllerTypeClasses(type: string): string {
   switch (type) {
     case "pureMarketMaking":
-      return "bg-indigo-50 text-blue-600";
+      return "bg-base-300 text-base-content";
     case "arbitrage":
-      return "bg-amber-50 text-amber-600";
+      return "bg-base-300 text-base-content";
     case "volume":
-      return "bg-emerald-50 text-emerald-600";
+      return "bg-base-300 text-base-content";
     case "dualAccountBestCapacityVolume":
-      return "bg-cyan-50 text-cyan-600";
+      return "bg-base-300 text-base-content";
     case "dualAccountVolume":
-      return "bg-teal-50 text-teal-600";
+      return "bg-base-300 text-base-content";
     case "timeIndicator":
-      return "bg-violet-50 text-violet-600";
+      return "bg-base-300 text-base-content";
     default:
-      return "bg-slate-100 text-slate-600";
+      return "bg-base-300 text-base-content";
   }
 }
 
@@ -97,17 +97,17 @@ export function getStatusLabel(status: string): string {
 export function getStatusClasses(status: string): string {
   switch (status) {
     case "running":
-      return "bg-green-50 text-green-600";
+      return "bg-base-300 text-base-content";
     case "stopped":
-      return "bg-slate-100 text-slate-500";
+      return "bg-base-300 text-base-content";
     case "failed":
-      return "bg-red-50 text-red-600";
+      return "bg-base-300 text-base-content";
     case "created":
-      return "bg-amber-50 text-amber-600";
+      return "bg-base-300 text-base-content";
     case "stale":
-      return "bg-orange-50 text-orange-600";
+      return "bg-base-300 text-base-content";
     default:
-      return "bg-slate-100 text-slate-500";
+      return "bg-base-300 text-base-content";
   }
 }
 

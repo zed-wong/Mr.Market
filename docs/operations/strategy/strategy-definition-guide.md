@@ -99,7 +99,7 @@ export class StrategyDefinition {
   @Column({ nullable: true })
   description?: string;
 
-  @Column({ name: "executorType" })
+  @Column()
   controllerType: string; // Maps to built-in controller
 
   @Column("simple-json")
@@ -179,19 +179,23 @@ Controller registry location: `server/src/modules/market-making/strategy/control
 // server/src/modules/market-making/strategy/dex/strategy-config-resolver.service.ts
 
 async resolveForOrderSnapshot(
-  definitionId: string,
+  strategyDefinitionId: string,
   overrides?: Record<string, unknown>,
 ): Promise<{
+  strategyDefinitionId: string;
+  definitionKey: string;
+  definitionName: string;
   controllerType: string;
   resolvedConfig: Record<string, unknown>;
+  resolvedAt: string;
 }> {
   // 1. Load definition from DB
   const definition = await this.strategyDefinitionRepository.findOne({
-    where: { id: definitionId },
+    where: { id: strategyDefinitionId },
   });
 
   if (!definition) {
-    throw new BadRequestException(`Strategy definition ${definitionId} not found`);
+    throw new BadRequestException(`Strategy definition ${strategyDefinitionId} not found`);
   }
 
   const controllerType = this.getDefinitionControllerType(definition);

@@ -32,9 +32,7 @@ import {
   GetDepositAddressDto,
   GetSupportedNetworksDto,
   GetTokenSymbolDto,
-  StartStrategyDto,
   StartStrategyInstanceDto,
-  StopStrategyDto,
   StopStrategyInstanceDto,
   StrategyDefinitionDto,
   UpdateStrategyDefinitionDto,
@@ -51,51 +49,6 @@ export class AdminController {
     private readonly adminGrowService: AdminGrowService,
     private readonly adminSpotService: AdminSpotService,
   ) {}
-
-  // Admin strategy endpoints
-  @Post('strategy/start')
-  @ApiOperation({
-    summary: 'Start a trading strategy',
-    description:
-      'Start a strategy such as arbitrage, market making, or volume trading for the user.',
-  })
-  @ApiBody({
-    description: 'Request body containing strategy parameters',
-    type: StartStrategyDto,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Successfully started the strategy',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid strategy parameters',
-  })
-  async startStrategy(@Body() startStrategyDto: StartStrategyDto) {
-    return this.adminStrategyService.startStrategy(startStrategyDto);
-  }
-
-  @Post('strategy/stop')
-  @ApiOperation({
-    summary: 'Stop a trading strategy',
-    description:
-      'Stop a running strategy for the user based on strategy type and other parameters.',
-  })
-  @ApiBody({
-    description: 'Request body containing strategy stop parameters',
-    type: StopStrategyDto,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Successfully stopped the strategy',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid strategy parameters',
-  })
-  async stopStrategy(@Body() stopStrategyDto: StopStrategyDto) {
-    return this.adminStrategyService.stopStrategy(stopStrategyDto);
-  }
 
   @Post('strategy/definitions')
   @ApiOperation({ summary: 'Create a strategy definition' })

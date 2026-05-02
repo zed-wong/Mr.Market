@@ -12,6 +12,17 @@ describe('AdminDirectMarketMakingService', () => {
     launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
     directExecutionMode: 'dual_account',
   };
+  const buildStrategySnapshot = (
+    resolvedConfig: Record<string, unknown>,
+    controllerType = 'pureMarketMaking',
+  ) => ({
+    strategyDefinitionId: 'strategy-1',
+    definitionKey: 'pure-market-making',
+    definitionName: 'Pure Market Making',
+    controllerType,
+    resolvedConfig,
+    resolvedAt: '2026-04-01T00:00:00.000Z',
+  });
 
   const buildService = () => {
     const marketMakingRepository = {
@@ -270,7 +281,6 @@ describe('AdminDirectMarketMakingService', () => {
       numTrades: 20,
       baseIncrementPercentage: 0.2,
       pricePushRate: 0,
-      symbol: 'BTC/USDT',
     },
   };
 
@@ -807,7 +817,9 @@ describe('AdminDirectMarketMakingService', () => {
         pair: 'BTC/USDT',
         state: 'running',
         strategyDefinitionId: 'strategy-1',
-        strategySnapshot: { resolvedConfig: { accountLabel: 'api-key-1' } },
+        strategySnapshot: buildStrategySnapshot({
+          accountLabel: 'api-key-1',
+        }),
         source: 'admin_direct',
         apiKeyId: 'api-key-1',
         createdAt: '2026-04-01T00:00:00.000Z',
@@ -978,7 +990,43 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('sanitizes reserved config override fields before resolving dual-account config', async () => {
+  it('rejects reserved config override fields before resolving dual-account config', async () => {
+    const { service, strategyDefinitionRepository, strategyConfigResolver } =
+      buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-2',
+      enabled: true,
+      controllerType: 'dualAccountVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'dualAccountVolume',
+    );
+
+    await expect(
+      service.directStart(
+        {
+          ...dualAccountStartDto,
+          configOverrides: {
+            ...dualAccountStartDto.configOverrides,
+            userId: 'spoofed-user',
+            clientId: 'spoofed-client',
+            marketMakingOrderId: 'spoofed-order',
+            pair: 'ETH/USDT',
+            symbol: 'ETH/USDT',
+            exchangeName: 'kraken',
+          },
+        },
+        'admin-user',
+      ),
+    ).rejects.toThrow('configOverrides cannot override system field: userId');
+
+    expect(strategyConfigResolver.resolveForOrderSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('passes safe dual-account config overrides to the resolver', async () => {
     const { service, strategyDefinitionRepository, strategyConfigResolver } =
       buildService();
 
@@ -998,28 +1046,11 @@ describe('AdminDirectMarketMakingService', () => {
         ...dualAccountStartDto,
         configOverrides: {
           ...dualAccountStartDto.configOverrides,
-          userId: 'spoofed-user',
-          clientId: 'spoofed-client',
-          marketMakingOrderId: 'spoofed-order',
-          pair: 'ETH/USDT',
-          symbol: 'ETH/USDT',
-          exchangeName: 'kraken',
         },
       },
       'admin-user',
     );
 
-    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
-      'strategy-2',
-      expect.not.objectContaining({
-        userId: 'spoofed-user',
-        clientId: 'spoofed-client',
-        marketMakingOrderId: 'spoofed-order',
-        pair: 'ETH/USDT',
-        symbol: 'ETH/USDT',
-        exchangeName: 'kraken',
-      }),
-    );
     expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
       'strategy-2',
       expect.objectContaining({
@@ -1546,7 +1577,9 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       source: 'admin_direct',
       createdAt: '2026-04-01T00:00:00.000Z',
-      strategySnapshot: { resolvedConfig: { accountLabel: 'api-key-1' } },
+      strategySnapshot: buildStrategySnapshot({
+        accountLabel: 'api-key-1',
+      }),
     });
 
     const result = await service.getDirectOrderStatus('order-1');
@@ -1596,7 +1629,9 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       source: 'admin_direct',
       createdAt: '2026-04-01T00:00:00.000Z',
-      strategySnapshot: { resolvedConfig: { accountLabel: 'api-key-1' } },
+      strategySnapshot: buildStrategySnapshot({
+        accountLabel: 'api-key-1',
+      }),
     });
     executorRegistry.findExecutorByOrderId.mockReturnValue({
       getSession: () => ({
@@ -1628,7 +1663,9 @@ describe('AdminDirectMarketMakingService', () => {
       state: 'running',
       source: 'admin_direct',
       createdAt: '2026-04-01T00:00:00.000Z',
-      strategySnapshot: { resolvedConfig: { accountLabel: 'api-key-1' } },
+      strategySnapshot: buildStrategySnapshot({
+        accountLabel: 'api-key-1',
+      }),
     });
     executorRegistry.findExecutorByOrderId.mockReturnValue({
       getSession: () => ({

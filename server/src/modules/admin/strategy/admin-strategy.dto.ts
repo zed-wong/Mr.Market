@@ -1,102 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDecimal, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
 import {
+  IsArray,
+  IsDecimal,
+  IsEnum,
+  IsIn,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
+import {
+  STRATEGY_LAUNCH_SURFACES,
   StrategyDefinitionVisibility,
   type StrategyDefinitionCapabilities,
 } from 'src/common/entities/market-making/strategy-definition.entity';
-
-import {
-  ArbitrageStrategyDto,
-  ExecuteDualAccountBestCapacityVolumeStrategyDto,
-  ExecuteDualAccountVolumeStrategyDto,
-  ExecuteVolumeStrategyDto,
-  PureMarketMakingStrategyDto,
-} from '../../market-making/strategy/config/strategy.dto';
-
-// Unified DTO for starting strategies that handles all types
-export class StartStrategyDto {
-  @ApiProperty({
-    description: 'Type of strategy to start',
-    example: 'arbitrage',
-  })
-  strategyType:
-    | 'arbitrage'
-    | 'marketMaking'
-    | 'volume'
-    | 'dualAccountVolume'
-    | 'dualAccountBestCapacityVolume';
-
-  @ApiPropertyOptional({
-    description: 'Parameters for arbitrage strategy (required for arbitrage)',
-    type: ArbitrageStrategyDto,
-  })
-  arbitrageParams?: ArbitrageStrategyDto;
-
-  @ApiPropertyOptional({
-    description:
-      'Parameters for market making strategy (required for market making)',
-    type: PureMarketMakingStrategyDto,
-  })
-  marketMakingParams?: PureMarketMakingStrategyDto;
-
-  @ApiPropertyOptional({
-    description: 'Parameters for volume strategy (required for volume)',
-    type: ExecuteVolumeStrategyDto,
-  })
-  volumeParams?: ExecuteVolumeStrategyDto;
-
-  @ApiPropertyOptional({
-    description:
-      'Parameters for dual-account volume strategy (required for dualAccountVolume)',
-    type: ExecuteDualAccountVolumeStrategyDto,
-  })
-  dualAccountVolumeParams?: ExecuteDualAccountVolumeStrategyDto;
-
-  @ApiPropertyOptional({
-    description:
-      'Parameters for dual-account best-capacity volume strategy (required for dualAccountBestCapacityVolume)',
-    type: ExecuteDualAccountBestCapacityVolumeStrategyDto,
-  })
-  dualAccountBestCapacityVolumeParams?: ExecuteDualAccountBestCapacityVolumeStrategyDto;
-
-  @ApiPropertyOptional({
-    description: 'Check interval in seconds (arbitrage-specific)',
-    example: 10,
-  })
-  checkIntervalSeconds?: number;
-
-  @ApiPropertyOptional({
-    description: 'Max open orders (arbitrage-specific)',
-    example: 5,
-  })
-  maxOpenOrders?: number;
-}
-
-// Stop Strategy DTO for stopping a strategy
-export class StopStrategyDto {
-  @ApiProperty({
-    description: 'User ID associated with the strategy',
-    example: '123',
-  })
-  userId: string;
-
-  @ApiProperty({
-    description: 'Client ID associated with the strategy',
-    example: '456',
-  })
-  clientId: string;
-
-  @ApiProperty({
-    description: 'Type of strategy to stop',
-    example: 'arbitrage',
-  })
-  strategyType:
-    | 'arbitrage'
-    | 'marketMaking'
-    | 'volume'
-    | 'dualAccountVolume'
-    | 'dualAccountBestCapacityVolume';
-}
 
 export class GetDepositAddressDto {
   @ApiProperty({
@@ -170,23 +90,53 @@ export class JoinStrategyDto {
   amount: number;
 }
 
+export class StrategyDefinitionCapabilitiesDto
+  implements StrategyDefinitionCapabilities
+{
+  @ApiProperty({
+    description: 'Surfaces where this definition can be launched',
+    example: ['strategy_settings', 'admin_direct_mm'],
+    enum: STRATEGY_LAUNCH_SURFACES,
+    isArray: true,
+  })
+  @IsArray()
+  @IsIn(STRATEGY_LAUNCH_SURFACES, { each: true })
+  launchSurfaces: StrategyDefinitionCapabilities['launchSurfaces'];
+
+  @ApiPropertyOptional({
+    description: 'Execution-account model for direct launch surfaces',
+    example: 'single_account',
+    enum: ['single_account', 'dual_account'],
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(['single_account', 'dual_account'])
+  directExecutionMode?: StrategyDefinitionCapabilities['directExecutionMode'];
+}
+
 export class StrategyDefinitionDto {
   @ApiProperty({
     description: 'Stable definition key',
     example: 'pure-market-making',
   })
+  @IsString()
+  @IsNotEmpty()
   key: string;
 
   @ApiProperty({
     description: 'Display name',
     example: 'Pure Market Making',
   })
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
   @ApiPropertyOptional({
     description: 'Optional human-readable description',
     example: 'Layered bid/ask quoting around an oracle mid price.',
   })
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @ApiProperty({
@@ -194,6 +144,8 @@ export class StrategyDefinitionDto {
       'Controller type that maps to local strategy intent-generation implementation',
     example: 'pureMarketMaking',
   })
+  @IsString()
+  @IsNotEmpty()
   controllerType: string;
 
   @ApiProperty({
@@ -207,6 +159,7 @@ export class StrategyDefinitionDto {
       },
     },
   })
+  @IsObject()
   configSchema: Record<string, unknown>;
 
   @ApiProperty({
@@ -216,6 +169,7 @@ export class StrategyDefinitionDto {
       exchangeName: 'binance',
     },
   })
+  @IsObject()
   defaultConfig: Record<string, unknown>;
 
   @ApiPropertyOptional({
@@ -225,6 +179,9 @@ export class StrategyDefinitionDto {
       directExecutionMode: 'single_account',
     },
   })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => StrategyDefinitionCapabilitiesDto)
   capabilities?: StrategyDefinitionCapabilities;
 
   @ApiPropertyOptional({
@@ -240,26 +197,43 @@ export class StrategyDefinitionDto {
     description: 'Creator identity',
     example: 'seed',
   })
+  @IsOptional()
+  @IsString()
   createdBy?: string;
 }
 
 export class UpdateStrategyDefinitionDto {
   @ApiPropertyOptional({ description: 'Display name' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
   name?: string;
 
   @ApiPropertyOptional({ description: 'Optional description' })
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @ApiPropertyOptional({ description: 'Controller type' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
   controllerType?: string;
 
   @ApiPropertyOptional({ description: 'JSON schema' })
+  @IsOptional()
+  @IsObject()
   configSchema?: Record<string, unknown>;
 
   @ApiPropertyOptional({ description: 'Default config values' })
+  @IsOptional()
+  @IsObject()
   defaultConfig?: Record<string, unknown>;
 
   @ApiPropertyOptional({ description: 'Strategy launch capabilities' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => StrategyDefinitionCapabilitiesDto)
   capabilities?: StrategyDefinitionCapabilities;
 
   @ApiPropertyOptional({

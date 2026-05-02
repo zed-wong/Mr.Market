@@ -1,12 +1,13 @@
 export type StrategyDefinitionVisibility = "public" | "admin";
 export type StrategyDirectExecutionMode = "single_account" | "dual_account";
+export type StrategyLaunchSurface = "strategy_settings" | "admin_direct_mm";
 
 export type StrategyDefinitionCapabilities = {
-  launchSurfaces: string[];
+  launchSurfaces: StrategyLaunchSurface[];
   directExecutionMode?: StrategyDirectExecutionMode | null;
 };
 
-export type StrategyDefinition = {
+export type StrategyDefinitionEntity = {
   id: string;
   key: string;
   name: string;
@@ -17,13 +18,18 @@ export type StrategyDefinition = {
   capabilities?: StrategyDefinitionCapabilities;
   enabled: boolean;
   visibility: StrategyDefinitionVisibility;
-  directOrderCompatible?: boolean;
-  directExecutionMode?: StrategyDirectExecutionMode | null;
-  launchSurfaces?: string[];
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
 };
+
+export type StrategyDefinitionView = StrategyDefinitionEntity & {
+  directOrderCompatible?: boolean;
+  directExecutionMode?: StrategyDirectExecutionMode | null;
+  launchSurfaces?: StrategyLaunchSurface[];
+};
+
+export type StrategyDefinition = StrategyDefinitionView;
 
 export type StrategyDefinitionPayload = {
   key: string;
@@ -50,6 +56,14 @@ export type StopStrategyInstancePayload = {
   clientId: string;
 };
 
+export type StrategyInstanceDefinitionSnapshot = {
+  strategyDefinitionId: string;
+  definitionKey: string;
+  definitionName: string;
+  controllerType: string;
+  resolvedAt: string;
+};
+
 export type StrategyInstanceView = {
   id: number;
   strategyKey: string;
@@ -58,6 +72,7 @@ export type StrategyInstanceView = {
   userId: string;
   clientId: string;
   strategyDefinitionId?: string;
+  strategyDefinitionSnapshot?: StrategyInstanceDefinitionSnapshot;
   definitionKey?: string;
   definitionName?: string;
   controllerType?: string;

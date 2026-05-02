@@ -15,9 +15,14 @@ export enum StrategyDefinitionVisibility {
 }
 
 export type StrategyDirectExecutionMode = 'single_account' | 'dual_account';
+export const STRATEGY_LAUNCH_SURFACES = [
+  'strategy_settings',
+  'admin_direct_mm',
+] as const;
+export type StrategyLaunchSurface = (typeof STRATEGY_LAUNCH_SURFACES)[number];
 
 export type StrategyDefinitionCapabilities = {
-  launchSurfaces: string[];
+  launchSurfaces: StrategyLaunchSurface[];
   directExecutionMode?: StrategyDirectExecutionMode | null;
 };
 

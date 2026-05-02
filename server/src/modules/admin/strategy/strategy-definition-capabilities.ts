@@ -2,6 +2,7 @@ import {
   StrategyDefinition,
   type StrategyDefinitionCapabilities,
   type StrategyDirectExecutionMode,
+  type StrategyLaunchSurface,
 } from 'src/common/entities/market-making/strategy-definition.entity';
 
 export type { StrategyDirectExecutionMode };
@@ -9,19 +10,18 @@ export type { StrategyDirectExecutionMode };
 export type ResolvedStrategyDefinitionCapabilities = {
   directOrderCompatible: boolean;
   directExecutionMode: StrategyDirectExecutionMode | null;
-  launchSurfaces: string[];
+  launchSurfaces: StrategyLaunchSurface[];
 };
 
 function readLaunchSurfaces(
   metadata: StrategyDefinitionCapabilities | undefined,
-): string[] {
+): StrategyLaunchSurface[] {
   if (!metadata || !Array.isArray(metadata.launchSurfaces)) {
     return [];
   }
 
-  return metadata.launchSurfaces.filter(
-    (surface): surface is string =>
-      typeof surface === 'string' && surface.trim().length > 0,
+  return metadata.launchSurfaces.filter((surface): surface is StrategyLaunchSurface =>
+    surface === 'strategy_settings' || surface === 'admin_direct_mm',
   );
 }
 

@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
-import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import {
+  StrategyInstance,
+  type StrategyInstanceDefinitionSnapshot,
+} from 'src/common/entities/market-making/strategy-instances.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import {
@@ -753,6 +756,7 @@ export class StrategyService
     strategyType: StrategyType,
     strategyDefinitionId: string,
     marketMakingOrderId?: string,
+    strategyDefinitionSnapshot?: StrategyInstanceDefinitionSnapshot,
   ): Promise<void> {
     const strategyKey =
       strategyType === 'pureMarketMaking'
@@ -767,6 +771,7 @@ export class StrategyService
       { strategyKey },
       {
         strategyDefinitionId,
+        strategyDefinitionSnapshot,
         marketMakingOrderId: marketMakingOrderId || undefined,
         updatedAt: getRFC3339Timestamp(),
       },

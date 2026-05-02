@@ -51,7 +51,7 @@
       <div class="px-7 pt-6 pb-5">
         <div class="flex items-start justify-between">
           <div
-            class="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center"
+            class="w-10 h-10 rounded-full bg-base-300 flex items-center justify-center"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -61,7 +61,7 @@
               stroke-width="1.5"
               stroke-linecap="round"
               stroke-linejoin="round"
-              class="w-5 h-5 text-amber-600"
+              class="w-5 h-5 text-base-content"
             >
               <rect
                 width="14"
@@ -117,7 +117,7 @@
             {$_("admin_strategy_cancel")}
           </button>
           <button
-            class="btn bg-amber-500 hover:bg-amber-600 text-white font-semibold px-6 gap-2"
+            class="btn bg-base-300 hover:bg-base-300 text-base-content font-semibold px-6 gap-2"
             on:click={handleStop}
             disabled={isStopping}
           >

@@ -96,7 +96,7 @@
 
         {#if !canRemove}
           <div
-            class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800"
+            class="bg-base-300 border border-base-300 rounded-xl px-4 py-3 text-sm text-base-content"
           >
             <span class="font-semibold">{$_("admin_strategy_cannot_remove_title")}</span>
             <ul class="mt-2 space-y-1 text-xs list-disc list-inside opacity-80">

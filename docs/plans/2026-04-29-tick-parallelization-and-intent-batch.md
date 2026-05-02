@@ -274,7 +274,7 @@ async batchUpsertIntents(intents: StrategyOrderIntent[]): Promise<void> {
 
     const payload: StrategyOrderIntentEntity = {
       intentId: intent.intentId,
-      strategyInstanceId: intent.strategyInstanceId,
+      runtimeInstanceKey: intent.runtimeInstanceKey,
       strategyKey: intent.strategyKey,
       userId: intent.userId,
       clientId: intent.clientId,

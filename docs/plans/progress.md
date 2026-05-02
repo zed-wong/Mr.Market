@@ -253,7 +253,7 @@
 ## 2026-03-11
 
 - Add pooled executor architecture with ExecutorRegistry managing ExchangePairExecutor per exchange:pair
-- Add strategySnapshot to MarketMakingOrder with definitionVersion, controllerType, and resolvedConfig
+- Add strategySnapshot to MarketMakingOrder with strategyDefinitionId, definition key/name, controllerType, resolvedConfig, and resolvedAt
 - Add configOverrides to MarketMakingOrderIntent for user-provided config at order creation
 - Add StrategyConfigResolverService.resolveForOrderSnapshot() for config resolution at order creation
 - Add clientOrderId format helpers in common/helpers/client-order-id.ts (format: {orderId}:{seq})
@@ -291,11 +291,11 @@
 
 ## 2026-02-28
 
-- Add dynamic strategy definition architecture (`strategy_definitions`, `strategy_definition_versions`) and instance linkage fields on `strategy_instances`
-- Add admin strategy definition lifecycle APIs (create/list/get/update/enable/disable/publish versions)
+- Add dynamic strategy definition architecture (`strategy_definitions`) and instance linkage fields on `strategy_instances`
+- Add admin strategy definition lifecycle APIs (create/list/get/update/enable/disable)
 - Add admin strategy instance APIs (validate/start/stop/list)
 - Add legacy strategy instance backfill endpoint
-- Add seeded built-in strategy definitions (pure market making, arbitrage, volume) with version snapshots
+- Add seeded built-in strategy definitions (pure market making, arbitrage, volume)
 - Add executor registry abstraction and executor modules for strategy runtime dispatch
 - Add admin strategy manage settings page
 - Add typed interface helper APIs/tests

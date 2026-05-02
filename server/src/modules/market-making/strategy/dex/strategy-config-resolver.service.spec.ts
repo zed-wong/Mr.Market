@@ -243,6 +243,8 @@ describe('StrategyConfigResolverService', () => {
   it('builds order snapshot payload from stored definition and overrides', async () => {
     strategyDefinitionRepository.findOne = jest.fn().mockResolvedValueOnce({
       id: 'definition-1',
+      key: 'pure-market-making',
+      name: 'Pure Market Making',
       enabled: false,
       controllerType: 'pureMarketMaking',
       defaultConfig: {
@@ -278,8 +280,8 @@ describe('StrategyConfigResolverService', () => {
     });
     expect(result).toEqual({
       strategyDefinitionId: 'definition-1',
-      definitionKey: undefined,
-      definitionName: undefined,
+      definitionKey: 'pure-market-making',
+      definitionName: 'Pure Market Making',
       controllerType: 'pureMarketMaking',
       resolvedConfig: {
         bidSpread: '0.0025',
@@ -297,6 +299,8 @@ describe('StrategyConfigResolverService', () => {
   it('accepts dual-account volume variance overrides defined by the seeded schema', async () => {
     strategyDefinitionRepository.findOne = jest.fn().mockResolvedValueOnce({
       id: 'definition-dual-volume',
+      key: 'dual-account-volume',
+      name: 'Dual Account Volume',
       enabled: true,
       controllerType: 'dualAccountVolume',
       defaultConfig: {
@@ -321,8 +325,8 @@ describe('StrategyConfigResolverService', () => {
 
     expect(result).toEqual({
       strategyDefinitionId: 'definition-dual-volume',
-      definitionKey: undefined,
-      definitionName: undefined,
+      definitionKey: 'dual-account-volume',
+      definitionName: 'Dual Account Volume',
       controllerType: 'dualAccountVolume',
       resolvedConfig: expect.objectContaining({
         exchangeName: 'binance',

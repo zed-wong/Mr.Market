@@ -29,6 +29,7 @@ import { BalanceStateRefreshService } from 'src/modules/market-making/balance-st
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import type { StrategyType } from 'src/modules/market-making/strategy/config/strategy-controller.types';
 import { normalizeControllerType } from 'src/modules/market-making/strategy/config/strategy-controller-aliases';
+import { assertStrategyConfigOverridesSafe } from 'src/modules/market-making/strategy/config/strategy-config-override.guard';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import {
@@ -153,9 +154,16 @@ export class AdminDirectMarketMakingService {
       capabilities.directExecutionMode,
     );
     const orderId = randomUUID();
-    const configOverrides = this.sanitizeConfigOverrides(dto.configOverrides);
+    assertStrategyConfigOverridesSafe(
+      dto.configOverrides,
+      DIRECT_RESERVED_CONFIG_FIELDS,
+    );
+    const configOverrides = dto.configOverrides || {};
     const resolverInput = {
       ...configOverrides,
+      pair: dto.pair,
+      symbol: dto.pair,
+      exchangeName: dto.exchangeName,
     };
 
     this.logger.log(
@@ -1019,20 +1027,6 @@ export class AdminDirectMarketMakingService {
 
     return new BadRequestException(
       error instanceof Error ? error.message : 'Unknown market-making error',
-    );
-  }
-
-  private sanitizeConfigOverrides(
-    configOverrides?: Record<string, unknown>,
-  ): Record<string, unknown> {
-    if (!configOverrides) {
-      return {};
-    }
-
-    return Object.fromEntries(
-      Object.entries(configOverrides).filter(
-        ([field]) => !DIRECT_RESERVED_CONFIG_FIELDS.has(field),
-      ),
     );
   }
 

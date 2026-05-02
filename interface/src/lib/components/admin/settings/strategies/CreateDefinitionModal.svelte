@@ -2,10 +2,7 @@
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
     import { createStrategyDefinition } from "$lib/helpers/mrm/admin/strategy";
-    import {
-        CONFIG_SCHEMA_TEMPLATES,
-        STRATEGY_CAPABILITY_TEMPLATES,
-    } from "$lib/helpers/admin/settings/strategies/configTemplates";
+    import { CONFIG_SCHEMA_TEMPLATES } from "$lib/helpers/admin/settings/strategies/configTemplates";
     import SchemaConfigForm from "./SchemaConfigForm.svelte";
     import type { StrategyDefinitionVisibility } from "$lib/types/hufi/strategy-definition";
 
@@ -20,7 +17,7 @@
     let controllerType = "pureMarketMaking";
     let configSchema: Record<string, unknown> = {};
     let defaultConfig: Record<string, unknown> = {};
-    let visibility: StrategyDefinitionVisibility = "public";
+    let visibility: StrategyDefinitionVisibility = "admin";
     let createdBy = "";
 
     let schemaError = false;
@@ -43,11 +40,6 @@
         return template ? JSON.parse(JSON.stringify(template)) : {};
     }
 
-    function getInitialCapabilities(type: string) {
-        const template = STRATEGY_CAPABILITY_TEMPLATES[type];
-        return template ? JSON.parse(JSON.stringify(template)) : undefined;
-    }
-
     function applyTemplate(type: string) {
         configSchema = getInitialSchema(type);
         schemaText = JSON.stringify(configSchema, null, 2);
@@ -67,7 +59,7 @@
         configSchema = {};
         schemaText = "";
         defaultConfig = {};
-        visibility = "public";
+        visibility = "admin";
         createdBy = "";
         schemaError = false;
     }
@@ -109,7 +101,6 @@
                     controllerType,
                     configSchema,
                     defaultConfig,
-                    capabilities: getInitialCapabilities(controllerType),
                     visibility,
                     createdBy: createdBy.trim() || undefined,
                 },

@@ -61,7 +61,7 @@
   </div>
 
   <button
-    class="w-full mt-4 py-3 rounded-xl bg-blue-50 text-blue-600 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors border-none"
+    class="w-full mt-4 py-3 rounded-xl bg-base-300 text-base-content font-semibold text-sm flex items-center justify-center gap-2 hover:bg-base-300 transition-colors border-none"
     on:click={() => {
       const el = document.getElementById("definitions-table");
       el?.scrollIntoView({ behavior: "smooth" });

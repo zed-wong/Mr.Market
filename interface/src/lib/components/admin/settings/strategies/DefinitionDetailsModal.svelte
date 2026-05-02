@@ -124,6 +124,14 @@
         <!-- Config Schema (read-only <pre>) -->
         <div class="bg-base-200/40 rounded-xl p-4">
           <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+            >{$_("admin_strategy_capabilities")}</span
+          >
+          <pre class="text-xs text-base-content/70 font-mono bg-base-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(definition.capabilities || {}, null, 2)}</pre>
+        </div>
+
+        <!-- Config Schema (read-only <pre>) -->
+        <div class="bg-base-200/40 rounded-xl p-4">
+          <span class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
             >{$_("admin_strategy_config_schema")}</span
           >
           <pre class="text-xs text-base-content/70 font-mono bg-base-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(definition.configSchema, null, 2)}</pre>
