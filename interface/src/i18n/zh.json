@@ -695,7 +695,7 @@
   "strategy_stop_success": "策略实例已停止",
   "strategy_stop_failed": "停止策略实例失败",
   "strategy_instance_missing_definition": "该实例缺少关联的策略定义",
-  "strategy_definition_required_fields": "策略定义 key、name 和 executorType 为必填",
+  "strategy_definition_required_fields": "策略定义 key、name 和 controllerType 为必填",
   "strategy_definition_create_success": "策略定义创建成功",
   "strategy_definition_create_failed": "策略定义创建失败",
   "strategy_definition_toggle_success": "策略定义状态已更新",

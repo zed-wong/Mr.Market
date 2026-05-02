@@ -1,36 +1,21 @@
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  type StrategyDefinitionCapabilities,
+  type StrategyDirectExecutionMode,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 
-export type StrategyDirectExecutionMode = 'single_account' | 'dual_account';
+export type { StrategyDirectExecutionMode };
 
-export type StrategyDefinitionCapabilities = {
+export type ResolvedStrategyDefinitionCapabilities = {
   directOrderCompatible: boolean;
   directExecutionMode: StrategyDirectExecutionMode | null;
   launchSurfaces: string[];
 };
 
-type StrategyDefinitionCapabilityMetadata = {
-  launchSurfaces?: unknown;
-  directExecutionMode?: unknown;
-};
-
-function readCapabilityMetadata(
-  definition: Pick<StrategyDefinition, 'configSchema'>,
-): StrategyDefinitionCapabilityMetadata {
-  if (
-    !definition.configSchema ||
-    typeof definition.configSchema !== 'object' ||
-    Array.isArray(definition.configSchema)
-  ) {
-    return {};
-  }
-
-  return definition.configSchema as StrategyDefinitionCapabilityMetadata;
-}
-
 function readLaunchSurfaces(
-  metadata: StrategyDefinitionCapabilityMetadata,
+  metadata: StrategyDefinitionCapabilities | undefined,
 ): string[] {
-  if (!Array.isArray(metadata.launchSurfaces)) {
+  if (!metadata || !Array.isArray(metadata.launchSurfaces)) {
     return [];
   }
 
@@ -41,13 +26,13 @@ function readLaunchSurfaces(
 }
 
 function readDirectExecutionMode(
-  metadata: StrategyDefinitionCapabilityMetadata,
+  metadata: StrategyDefinitionCapabilities | undefined,
 ): StrategyDirectExecutionMode | null {
-  if (metadata.directExecutionMode === 'single_account') {
+  if (metadata?.directExecutionMode === 'single_account') {
     return 'single_account';
   }
 
-  if (metadata.directExecutionMode === 'dual_account') {
+  if (metadata?.directExecutionMode === 'dual_account') {
     return 'dual_account';
   }
 
@@ -55,14 +40,10 @@ function readDirectExecutionMode(
 }
 
 export function getStrategyDefinitionCapabilities(
-  definition: Pick<
-    StrategyDefinition,
-    'controllerType' | 'executorType' | 'configSchema'
-  >,
-): StrategyDefinitionCapabilities {
-  const metadata = readCapabilityMetadata(definition);
-  const launchSurfaces = readLaunchSurfaces(metadata);
-  const directExecutionMode = readDirectExecutionMode(metadata);
+  definition: Pick<StrategyDefinition, 'controllerType' | 'capabilities'>,
+): ResolvedStrategyDefinitionCapabilities {
+  const launchSurfaces = readLaunchSurfaces(definition.capabilities);
+  const directExecutionMode = readDirectExecutionMode(definition.capabilities);
   const directOrderCompatible =
     launchSurfaces.includes('admin_direct_mm') && directExecutionMode !== null;
 
@@ -74,11 +55,8 @@ export function getStrategyDefinitionCapabilities(
 }
 
 export function attachStrategyDefinitionCapabilities<
-  T extends Pick<
-    StrategyDefinition,
-    'controllerType' | 'executorType' | 'configSchema'
-  >,
->(definition: T): T & StrategyDefinitionCapabilities {
+  T extends Pick<StrategyDefinition, 'controllerType' | 'capabilities'>,
+>(definition: T): T & ResolvedStrategyDefinitionCapabilities {
   return {
     ...definition,
     ...getStrategyDefinitionCapabilities(definition),

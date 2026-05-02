@@ -1,11 +1,25 @@
 import {
+  BeforeInsert,
+  BeforeUpdate,
   Column,
-  CreateDateColumn,
   Entity,
   Index,
   PrimaryGeneratedColumn,
-  UpdateDateColumn,
 } from 'typeorm';
+
+import { getRFC3339Timestamp } from '../../helpers/utils';
+
+export enum StrategyDefinitionVisibility {
+  PUBLIC = 'public',
+  ADMIN = 'admin',
+}
+
+export type StrategyDirectExecutionMode = 'single_account' | 'dual_account';
+
+export type StrategyDefinitionCapabilities = {
+  launchSurfaces: string[];
+  directExecutionMode?: StrategyDirectExecutionMode | null;
+};
 
 @Entity('strategy_definitions')
 export class StrategyDefinition {
@@ -22,16 +36,8 @@ export class StrategyDefinition {
   @Column({ nullable: true })
   description?: string;
 
-  @Column({ name: 'executorType' })
+  @Column()
   controllerType: string;
-
-  get executorType(): string {
-    return this.controllerType;
-  }
-
-  set executorType(value: string) {
-    this.controllerType = value;
-  }
 
   @Column('simple-json')
   configSchema: Record<string, unknown>;
@@ -39,18 +45,38 @@ export class StrategyDefinition {
   @Column('simple-json')
   defaultConfig: Record<string, unknown>;
 
+  @Column('simple-json', { nullable: true })
+  capabilities?: StrategyDefinitionCapabilities;
+
   @Column({ default: true })
   enabled: boolean;
 
-  @Column({ default: 'system' })
-  visibility: string;
+  @Column({
+    type: 'simple-enum',
+    enum: StrategyDefinitionVisibility,
+    default: StrategyDefinitionVisibility.ADMIN,
+  })
+  visibility: StrategyDefinitionVisibility;
 
   @Column({ nullable: true })
   createdBy?: string;
 
-  @CreateDateColumn()
-  createdAt: Date;
+  @Column()
+  createdAt: string;
 
-  @UpdateDateColumn()
-  updatedAt: Date;
+  @Column()
+  updatedAt: string;
+
+  @BeforeInsert()
+  setCreatedTimestamps(): void {
+    const now = getRFC3339Timestamp();
+
+    this.createdAt = this.createdAt || now;
+    this.updatedAt = this.updatedAt || now;
+  }
+
+  @BeforeUpdate()
+  setUpdatedTimestamp(): void {
+    this.updatedAt = getRFC3339Timestamp();
+  }
 }

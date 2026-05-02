@@ -10,7 +10,7 @@ export class StrategyOrderIntentEntity {
   intentId: string;
 
   @Column()
-  strategyInstanceId: string;
+  runtimeInstanceKey: string;
 
   @Column()
   @Index()

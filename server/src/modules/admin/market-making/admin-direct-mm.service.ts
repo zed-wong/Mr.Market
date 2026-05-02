@@ -362,12 +362,12 @@ export class AdminDirectMarketMakingService {
       where: { source: 'admin_direct', state: Not('deleted') },
       order: { createdAt: 'DESC' },
     });
-    const definitionIds = orders
+    const strategyDefinitionIds = orders
       .map((order) => order.strategyDefinitionId)
       .filter((value): value is string => Boolean(value));
-    const definitions = definitionIds.length
+    const definitions = strategyDefinitionIds.length
       ? await this.strategyDefinitionRepository.find({
-          where: { id: In(definitionIds) },
+          where: { id: In(strategyDefinitionIds) },
         })
       : [];
     const definitionMap = new Map(
@@ -986,10 +986,8 @@ export class AdminDirectMarketMakingService {
     return definitions
       .map((definition) => attachStrategyDefinitionCapabilities(definition))
       .filter((definition) => {
-        const controllerType = String(
-          definition.controllerType || definition.executorType || '',
-        ).trim();
-        const visibility = String(definition.visibility || 'public').trim();
+        const controllerType = String(definition.controllerType || '').trim();
+        const visibility = String(definition.visibility || 'admin').trim();
 
         return (
           ['public', 'admin'].includes(visibility) &&

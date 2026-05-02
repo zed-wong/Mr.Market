@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDecimal, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import {
+  StrategyDefinitionVisibility,
+  type StrategyDefinitionCapabilities,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 
 import {
   ArbitrageStrategyDto,
@@ -8,11 +12,6 @@ import {
   ExecuteVolumeStrategyDto,
   PureMarketMakingStrategyDto,
 } from '../../market-making/strategy/config/strategy.dto';
-
-export enum StrategyDefinitionVisibility {
-  PUBLIC = 'public',
-  ADMIN = 'admin',
-}
 
 // Unified DTO for starting strategies that handles all types
 export class StartStrategyDto {
@@ -195,13 +194,7 @@ export class StrategyDefinitionDto {
       'Controller type that maps to local strategy intent-generation implementation',
     example: 'pureMarketMaking',
   })
-  controllerType?: string;
-
-  @ApiPropertyOptional({
-    description: 'Deprecated alias for controllerType',
-    example: 'pureMarketMaking',
-  })
-  executorType?: string;
+  controllerType: string;
 
   @ApiProperty({
     description: 'JSON schema for validating instance configs',
@@ -226,13 +219,22 @@ export class StrategyDefinitionDto {
   defaultConfig: Record<string, unknown>;
 
   @ApiPropertyOptional({
+    description: 'Strategy launch capabilities and execution mode metadata',
+    example: {
+      launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
+      directExecutionMode: 'single_account',
+    },
+  })
+  capabilities?: StrategyDefinitionCapabilities;
+
+  @ApiPropertyOptional({
     description: 'Definition visibility scope',
     example: 'public',
     enum: StrategyDefinitionVisibility,
   })
   @IsOptional()
   @IsEnum(StrategyDefinitionVisibility)
-  visibility?: string;
+  visibility?: StrategyDefinitionVisibility;
 
   @ApiPropertyOptional({
     description: 'Creator identity',
@@ -251,14 +253,14 @@ export class UpdateStrategyDefinitionDto {
   @ApiPropertyOptional({ description: 'Controller type' })
   controllerType?: string;
 
-  @ApiPropertyOptional({ description: 'Deprecated alias for controllerType' })
-  executorType?: string;
-
   @ApiPropertyOptional({ description: 'JSON schema' })
   configSchema?: Record<string, unknown>;
 
   @ApiPropertyOptional({ description: 'Default config values' })
   defaultConfig?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Strategy launch capabilities' })
+  capabilities?: StrategyDefinitionCapabilities;
 
   @ApiPropertyOptional({
     description: 'Definition visibility',
@@ -266,7 +268,7 @@ export class UpdateStrategyDefinitionDto {
   })
   @IsOptional()
   @IsEnum(StrategyDefinitionVisibility)
-  visibility?: string;
+  visibility?: StrategyDefinitionVisibility;
 }
 
 export class RemoveStrategyDefinitionDto {
@@ -274,7 +276,7 @@ export class RemoveStrategyDefinitionDto {
     description: 'Strategy definition id',
     example: 'bfcdd76d-bbcb-4f85-b645-c5f6a5cc3981',
   })
-  definitionId: string;
+  strategyDefinitionId: string;
 }
 
 export class StartStrategyInstanceDto {
@@ -282,7 +284,7 @@ export class StartStrategyInstanceDto {
     description: 'Strategy definition id',
     example: 'bfcdd76d-bbcb-4f85-b645-c5f6a5cc3981',
   })
-  definitionId: string;
+  strategyDefinitionId: string;
 
   @ApiProperty({ description: 'User ID associated with the strategy instance' })
   userId: string;
@@ -313,7 +315,7 @@ export class StopStrategyInstanceDto {
     description: 'Strategy definition id',
     example: 'bfcdd76d-bbcb-4f85-b645-c5f6a5cc3981',
   })
-  definitionId: string;
+  strategyDefinitionId: string;
 
   @ApiProperty({ description: 'User ID associated with the strategy instance' })
   userId: string;

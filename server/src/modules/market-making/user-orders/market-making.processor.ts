@@ -683,7 +683,8 @@ export class MarketMakingOrderProcessor {
         return;
       }
       const strategySnapshot =
-        await this.strategyConfigResolver.resolveForOrderSnapshot(
+        orderIntent.strategySnapshot ||
+        (await this.strategyConfigResolver.resolveForOrderSnapshot(
           orderIntent.strategyDefinitionId,
           this.buildOrderSnapshotOverrides({
             orderId,
@@ -692,7 +693,7 @@ export class MarketMakingOrderProcessor {
             exchangeName: pairConfig.exchange_id,
             configOverrides: orderIntent.configOverrides,
           }),
-        );
+        ));
       const orderConfigFields =
         mapStrategySnapshotToMarketMakingOrderFields(strategySnapshot);
 

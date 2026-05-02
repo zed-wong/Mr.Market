@@ -303,7 +303,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-1',
       enabled: true,
       controllerType: 'pureMarketMaking',
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
     const result = await service.directStart(directStartDto, 'admin-user');
 
@@ -348,7 +349,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-1',
       enabled: true,
       controllerType: 'pureMarketMaking',
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
 
     await expect(
@@ -381,7 +383,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-1',
       enabled: true,
       controllerType: 'pureMarketMaking',
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
     strategyConfigResolver.resolveForOrderSnapshot.mockRejectedValue(
       new Error('schema validation failed'),
@@ -405,7 +408,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-1',
       enabled: true,
       controllerType: 'pureMarketMaking',
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
     strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
       controllerType: 'pureMarketMaking',
@@ -446,7 +450,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-1',
       enabled: true,
       controllerType: 'pureMarketMaking',
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
     strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
       controllerType: 'pureMarketMaking',
@@ -490,7 +495,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: directStartDto.strategyDefinitionId,
       enabled: true,
       controllerType: 'pureMarketMaking',
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
     growdataMarketMakingPairRepository.findOne.mockResolvedValue({
       exchange_id: 'binance',
@@ -515,7 +521,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: directStartDto.strategyDefinitionId,
       enabled: true,
       controllerType: 'pureMarketMaking',
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
     growdataMarketMakingPairRepository.findOne.mockResolvedValue({
       exchange_id: 'binance',
@@ -546,7 +553,8 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: directStartDto.strategyDefinitionId,
       enabled: true,
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
     growdataMarketMakingPairRepository.findOne.mockResolvedValue({
       exchange_id: 'binance',
@@ -575,7 +583,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: directStartDto.strategyDefinitionId,
       enabled: true,
       controllerType: 'pureMarketMaking',
-      configSchema: singleAccountLaunchConfig,
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
     });
     exchange.markets['BTC/USDT'].maker = 0.002;
 
@@ -859,7 +868,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-2',
       enabled: true,
       controllerType: 'dualAccountVolume',
-      configSchema: dualAccountLaunchConfig,
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountVolume',
@@ -913,7 +923,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-best',
       enabled: true,
       controllerType: 'dualAccountBestCapacityVolume',
-      configSchema: dualAccountLaunchConfig,
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountBestCapacityVolume',
@@ -975,7 +986,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-2',
       enabled: true,
       controllerType: 'dualAccountVolume',
-      configSchema: dualAccountLaunchConfig,
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountVolume',
@@ -1032,7 +1044,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-2',
       enabled: true,
       controllerType: 'dualAccountVolume',
-      configSchema: dualAccountLaunchConfig,
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountVolume',
@@ -1068,7 +1081,8 @@ describe('AdminDirectMarketMakingService', () => {
       id: 'strategy-2',
       enabled: true,
       controllerType: 'dualAccountVolume',
-      configSchema: dualAccountLaunchConfig,
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountVolume',
@@ -1160,7 +1174,8 @@ describe('AdminDirectMarketMakingService', () => {
         key: 'pure-market-making',
         name: 'Pure Market Making',
         controllerType: 'pureMarketMaking',
-        configSchema: singleAccountLaunchConfig,
+        capabilities: singleAccountLaunchConfig,
+      configSchema: {},
         visibility: 'public',
         enabled: true,
       },
@@ -1169,7 +1184,8 @@ describe('AdminDirectMarketMakingService', () => {
         key: 'dual-account-volume',
         name: 'Dual Account Volume',
         controllerType: 'dualAccountVolume',
-        configSchema: dualAccountLaunchConfig,
+        capabilities: dualAccountLaunchConfig,
+      configSchema: {},
         visibility: 'admin',
         enabled: true,
       },

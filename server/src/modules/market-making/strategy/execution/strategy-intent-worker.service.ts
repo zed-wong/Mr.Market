@@ -252,7 +252,7 @@ export class StrategyIntentWorkerService
     return {
       type: intentEntity.type as StrategyOrderIntent['type'],
       intentId: intentEntity.intentId,
-      strategyInstanceId: intentEntity.strategyInstanceId,
+      runtimeInstanceKey: intentEntity.runtimeInstanceKey,
       strategyKey: intentEntity.strategyKey,
       userId: intentEntity.userId,
       clientId: intentEntity.clientId,

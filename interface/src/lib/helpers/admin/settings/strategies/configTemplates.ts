@@ -7,8 +7,6 @@
 
 export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
   pureMarketMaking: {
-    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
-    directExecutionMode: "single_account",
     type: "object",
     required: [
       "bidSpread",
@@ -208,8 +206,6 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
     },
   },
   dualAccountVolume: {
-    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
-    directExecutionMode: "dual_account",
     type: "object",
     required: [
       "exchangeName",
@@ -273,8 +269,6 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
     },
   },
   dualAccountBestCapacityVolume: {
-    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
-    directExecutionMode: "dual_account",
     type: "object",
     required: ["maxOrderAmount"],
     properties: {
@@ -390,5 +384,23 @@ export const CONFIG_SCHEMA_TEMPLATES: Record<string, object> = {
         description: "Take-profit percent (optional)",
       },
     },
+  },
+};
+
+export const STRATEGY_CAPABILITY_TEMPLATES: Record<
+  string,
+  { launchSurfaces: string[]; directExecutionMode?: "single_account" | "dual_account" | null }
+> = {
+  pureMarketMaking: {
+    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
+    directExecutionMode: "single_account",
+  },
+  dualAccountVolume: {
+    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
+    directExecutionMode: "dual_account",
+  },
+  dualAccountBestCapacityVolume: {
+    launchSurfaces: ["strategy_settings", "admin_direct_mm"],
+    directExecutionMode: "dual_account",
   },
 };

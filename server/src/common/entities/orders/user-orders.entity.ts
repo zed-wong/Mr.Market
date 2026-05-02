@@ -11,8 +11,12 @@ import type {
 } from '../../types/orders/states';
 
 export type MarketMakingOrderStrategySnapshot = {
+  strategyDefinitionId: string;
+  definitionKey: string;
+  definitionName: string;
   controllerType: string;
   resolvedConfig: Record<string, unknown>;
+  resolvedAt: string;
 };
 
 @Entity()

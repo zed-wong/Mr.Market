@@ -68,9 +68,9 @@ export class MarketMakingRuntimeService {
         where: { id: order.strategyDefinitionId },
       });
 
-      if (definition?.controllerType || definition?.executorType) {
+      if (definition?.controllerType) {
         return this.strategyRuntimeDispatcher.toStrategyType(
-          definition.controllerType || definition.executorType,
+          definition.controllerType,
         );
       }
     }

@@ -16,7 +16,10 @@ import {
   GrowdataSimplyGrowToken,
 } from '../../common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
-import { StrategyDefinition } from '../../common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  StrategyDefinitionVisibility,
+} from '../../common/entities/market-making/strategy-definition.entity';
 import { fetchAllMarkets, MarketInfo } from './ccxt-fetcher';
 import { TRADING_PAIRS } from './data/assets';
 import { TOP_EXCHANGES } from './data/exchanges';
@@ -371,9 +374,7 @@ export async function seedStrategyDefinitions(
         description: definition.description
           ? String(definition.description)
           : undefined,
-        controllerType: String(
-          definition.controllerType || definition.executorType,
-        ),
+        controllerType: String(definition.controllerType),
         configSchema: (definition.configSchema || {}) as Record<
           string,
           unknown
@@ -382,8 +383,10 @@ export async function seedStrategyDefinitions(
           string,
           unknown
         >,
+        capabilities: definition.capabilities,
         enabled: definition.enabled !== false,
-        visibility: String(definition.visibility || 'public'),
+        visibility:
+          definition.visibility || StrategyDefinitionVisibility.ADMIN,
         createdBy: definition.createdBy
           ? String(definition.createdBy)
           : undefined,
@@ -399,9 +402,7 @@ export async function seedStrategyDefinitions(
         description: definition.description
           ? String(definition.description)
           : undefined,
-        controllerType: String(
-          definition.controllerType || definition.executorType,
-        ),
+        controllerType: String(definition.controllerType),
         configSchema: (definition.configSchema || {}) as Record<
           string,
           unknown
@@ -410,8 +411,10 @@ export async function seedStrategyDefinitions(
           string,
           unknown
         >,
+        capabilities: definition.capabilities,
         enabled: definition.enabled !== false,
-        visibility: String(definition.visibility || 'public'),
+        visibility:
+          definition.visibility || StrategyDefinitionVisibility.ADMIN,
         createdBy: definition.createdBy
           ? String(definition.createdBy)
           : undefined,

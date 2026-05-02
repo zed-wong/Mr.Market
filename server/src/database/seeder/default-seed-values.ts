@@ -5,7 +5,12 @@ import {
   GrowdataSimplyGrowToken,
 } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  type StrategyDefinitionCapabilities,
+  StrategyDefinitionVisibility,
+  type StrategyDirectExecutionMode,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 
 import { TOP_EXCHANGES as EXCHANGES } from './data/exchanges';
 import arbitrageSeedDefinition from './data/strategies/arbitrage.json';
@@ -19,6 +24,56 @@ type SeededStrategyDefinitionConfig = {
   configSchema: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
 };
+
+function splitSeedConfig(
+  seed: SeededStrategyDefinitionConfig,
+): SeededStrategyDefinitionConfig & {
+  capabilities?: StrategyDefinitionCapabilities;
+} {
+  const { launchSurfaces, directExecutionMode, ...configSchema } =
+    seed.configSchema;
+  const resolvedDirectExecutionMode: StrategyDirectExecutionMode | null =
+    directExecutionMode === 'single_account' ||
+    directExecutionMode === 'dual_account'
+      ? directExecutionMode
+      : null;
+  const capabilities =
+    Array.isArray(launchSurfaces) || directExecutionMode
+      ? {
+          launchSurfaces: Array.isArray(launchSurfaces)
+            ? launchSurfaces.filter(
+                (surface): surface is string => typeof surface === 'string',
+              )
+            : [],
+          directExecutionMode: resolvedDirectExecutionMode,
+        }
+      : undefined;
+
+  return {
+    configSchema,
+    defaultConfig: seed.defaultConfig,
+    capabilities,
+  };
+}
+
+const pureMarketMakingSeed = splitSeedConfig(
+  pureMarketMakingSeedDefinition as SeededStrategyDefinitionConfig,
+);
+const arbitrageSeed = splitSeedConfig(
+  arbitrageSeedDefinition as SeededStrategyDefinitionConfig,
+);
+const volumeSeed = splitSeedConfig(
+  volumeSeedDefinition as SeededStrategyDefinitionConfig,
+);
+const dualAccountVolumeSeed = splitSeedConfig(
+  dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig,
+);
+const dualAccountBestCapacityVolumeSeed = splitSeedConfig(
+  dualAccountBestCapacityVolumeSeedDefinition as SeededStrategyDefinitionConfig,
+);
+const timeIndicatorSeed = splitSeedConfig(
+  timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig,
+);
 
 // Export exchanges from data file
 export const defaultExchanges: GrowdataExchange[] = EXCHANGES.map((e) => ({
@@ -50,14 +105,11 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     name: 'Pure Market Making',
     description: 'Place buy and sell orders on both sides of the order book',
     controllerType: 'pureMarketMaking',
-    configSchema: (
-      pureMarketMakingSeedDefinition as SeededStrategyDefinitionConfig
-    ).configSchema,
-    defaultConfig: (
-      pureMarketMakingSeedDefinition as SeededStrategyDefinitionConfig
-    ).defaultConfig,
+    configSchema: pureMarketMakingSeed.configSchema,
+    defaultConfig: pureMarketMakingSeed.defaultConfig,
+    capabilities: pureMarketMakingSeed.capabilities,
     enabled: true,
-    visibility: 'public',
+    visibility: StrategyDefinitionVisibility.PUBLIC,
     createdBy: 'seed',
   },
   {
@@ -65,12 +117,11 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     name: 'Arbitrage',
     description: 'Cross-exchange arbitrage between two exchanges',
     controllerType: 'arbitrage',
-    configSchema: (arbitrageSeedDefinition as SeededStrategyDefinitionConfig)
-      .configSchema,
-    defaultConfig: (arbitrageSeedDefinition as SeededStrategyDefinitionConfig)
-      .defaultConfig,
+    configSchema: arbitrageSeed.configSchema,
+    defaultConfig: arbitrageSeed.defaultConfig,
+    capabilities: arbitrageSeed.capabilities,
     enabled: true,
-    visibility: 'admin',
+    visibility: StrategyDefinitionVisibility.ADMIN,
     createdBy: 'seed',
   },
   {
@@ -78,12 +129,11 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     name: 'Volume',
     description: 'Generate volume with controlled swaps',
     controllerType: 'volume',
-    configSchema: (volumeSeedDefinition as SeededStrategyDefinitionConfig)
-      .configSchema,
-    defaultConfig: (volumeSeedDefinition as SeededStrategyDefinitionConfig)
-      .defaultConfig,
+    configSchema: volumeSeed.configSchema,
+    defaultConfig: volumeSeed.defaultConfig,
+    capabilities: volumeSeed.capabilities,
     enabled: true,
-    visibility: 'admin',
+    visibility: StrategyDefinitionVisibility.ADMIN,
     createdBy: 'seed',
   },
   {
@@ -92,14 +142,11 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     description:
       'Generate paired maker/taker volume for admin direct market making',
     controllerType: 'dualAccountVolume',
-    configSchema: (
-      dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig
-    ).configSchema,
-    defaultConfig: (
-      dualAccountVolumeSeedDefinition as SeededStrategyDefinitionConfig
-    ).defaultConfig,
+    configSchema: dualAccountVolumeSeed.configSchema,
+    defaultConfig: dualAccountVolumeSeed.defaultConfig,
+    capabilities: dualAccountVolumeSeed.capabilities,
     enabled: true,
-    visibility: 'admin',
+    visibility: StrategyDefinitionVisibility.ADMIN,
     createdBy: 'seed',
   },
   {
@@ -108,14 +155,11 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     description:
       'Generate paired maker/taker volume using 4-way best executable capacity selection',
     controllerType: 'dualAccountBestCapacityVolume',
-    configSchema: (
-      dualAccountBestCapacityVolumeSeedDefinition as SeededStrategyDefinitionConfig
-    ).configSchema,
-    defaultConfig: (
-      dualAccountBestCapacityVolumeSeedDefinition as SeededStrategyDefinitionConfig
-    ).defaultConfig,
+    configSchema: dualAccountBestCapacityVolumeSeed.configSchema,
+    defaultConfig: dualAccountBestCapacityVolumeSeed.defaultConfig,
+    capabilities: dualAccountBestCapacityVolumeSeed.capabilities,
     enabled: true,
-    visibility: 'admin',
+    visibility: StrategyDefinitionVisibility.ADMIN,
     createdBy: 'seed',
   },
   {
@@ -123,14 +167,11 @@ export const defaultStrategyDefinitions: Partial<StrategyDefinition>[] = [
     name: 'Time Indicator',
     description: 'Trade based on EMA/RSI indicators',
     controllerType: 'timeIndicator',
-    configSchema: (
-      timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig
-    ).configSchema,
-    defaultConfig: (
-      timeIndicatorSeedDefinition as SeededStrategyDefinitionConfig
-    ).defaultConfig,
+    configSchema: timeIndicatorSeed.configSchema,
+    defaultConfig: timeIndicatorSeed.defaultConfig,
+    capabilities: timeIndicatorSeed.capabilities,
     enabled: true,
-    visibility: 'admin',
+    visibility: StrategyDefinitionVisibility.ADMIN,
     createdBy: 'seed',
   },
 ];

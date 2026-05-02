@@ -2,7 +2,10 @@
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
     import { createStrategyDefinition } from "$lib/helpers/mrm/admin/strategy";
-    import { CONFIG_SCHEMA_TEMPLATES } from "$lib/helpers/admin/settings/strategies/configTemplates";
+    import {
+        CONFIG_SCHEMA_TEMPLATES,
+        STRATEGY_CAPABILITY_TEMPLATES,
+    } from "$lib/helpers/admin/settings/strategies/configTemplates";
     import SchemaConfigForm from "./SchemaConfigForm.svelte";
     import type { StrategyDefinitionVisibility } from "$lib/types/hufi/strategy-definition";
 
@@ -38,6 +41,11 @@
     function getInitialSchema(type: string): Record<string, unknown> {
         const template = CONFIG_SCHEMA_TEMPLATES[type];
         return template ? JSON.parse(JSON.stringify(template)) : {};
+    }
+
+    function getInitialCapabilities(type: string) {
+        const template = STRATEGY_CAPABILITY_TEMPLATES[type];
+        return template ? JSON.parse(JSON.stringify(template)) : undefined;
     }
 
     function applyTemplate(type: string) {
@@ -101,6 +109,7 @@
                     controllerType,
                     configSchema,
                     defaultConfig,
+                    capabilities: getInitialCapabilities(controllerType),
                     visibility,
                     createdBy: createdBy.trim() || undefined,
                 },

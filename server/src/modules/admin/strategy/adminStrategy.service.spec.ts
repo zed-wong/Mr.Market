@@ -112,7 +112,7 @@ describe('AdminStrategyService', () => {
           useValue: {
             getDefinitionControllerType: jest.fn(
               (definition) =>
-                definition.controllerType || definition.executorType,
+                definition.controllerType || definition.controllerType,
             ),
             resolveDefinitionStartConfig: jest
               .fn()
@@ -421,7 +421,7 @@ describe('AdminStrategyService', () => {
         id: 'def-1',
         key: 'pure-market-making',
         enabled: true,
-        executorType: 'pureMarketMaking',
+        controllerType: 'pureMarketMaking',
         defaultConfig: {
           pair: 'BTC/USDT',
           exchangeName: 'binance',
@@ -445,7 +445,7 @@ describe('AdminStrategyService', () => {
       });
 
       const dto: StartStrategyInstanceDto = {
-        definitionId: 'def-1',
+        strategyDefinitionId: 'def-1',
         userId: 'user123',
         clientId: 'client123',
         config: {
@@ -474,8 +474,8 @@ describe('AdminStrategyService', () => {
       );
       expect(result).toEqual(
         expect.objectContaining({
-          definitionId: 'def-1',
-          executorType: 'pureMarketMaking',
+          strategyDefinitionId: 'def-1',
+          controllerType: 'pureMarketMaking',
         }),
       );
     });
@@ -485,7 +485,7 @@ describe('AdminStrategyService', () => {
         id: 'def-2',
         key: 'volume',
         enabled: true,
-        executorType: 'volume',
+        controllerType: 'volume',
         defaultConfig: {
           exchangeName: 'binance',
           symbol: 'BTC/USDT',
@@ -505,7 +505,7 @@ describe('AdminStrategyService', () => {
       });
 
       const dto: StartStrategyInstanceDto = {
-        definitionId: 'def-2',
+        strategyDefinitionId: 'def-2',
         userId: 'u1',
         clientId: 'c1',
       };
@@ -515,9 +515,9 @@ describe('AdminStrategyService', () => {
       expect(result).toEqual(
         expect.objectContaining({
           valid: true,
-          definitionId: 'def-2',
+          strategyDefinitionId: 'def-2',
           definitionKey: 'volume',
-          executorType: 'volume',
+          controllerType: 'volume',
           mergedConfig: expect.objectContaining({
             userId: 'u1',
             clientId: 'c1',
@@ -534,11 +534,11 @@ describe('AdminStrategyService', () => {
         id: 'def-1',
         key: 'pure-market-making',
         enabled: true,
-        executorType: 'pureMarketMaking',
+        controllerType: 'pureMarketMaking',
       });
 
       const dto: StopStrategyInstanceDto = {
-        definitionId: 'def-1',
+        strategyDefinitionId: 'def-1',
         userId: 'user123',
         clientId: 'client123',
       };
@@ -552,8 +552,8 @@ describe('AdminStrategyService', () => {
       );
       expect(result).toEqual(
         expect.objectContaining({
-          definitionId: 'def-1',
-          executorType: 'pureMarketMaking',
+          strategyDefinitionId: 'def-1',
+          controllerType: 'pureMarketMaking',
         }),
       );
     });
@@ -563,11 +563,11 @@ describe('AdminStrategyService', () => {
         id: 'def-2',
         key: 'volume',
         enabled: true,
-        executorType: 'volume',
+        controllerType: 'volume',
       });
 
       const dto: StopStrategyInstanceDto = {
-        definitionId: 'def-2',
+        strategyDefinitionId: 'def-2',
         userId: 'user123',
         clientId: 'client123',
         marketMakingOrderId: 'order123',
@@ -593,7 +593,7 @@ describe('AdminStrategyService', () => {
           status: 'running',
           userId: 'u',
           clientId: 'c',
-          definitionId: 'def-1',
+          strategyDefinitionId: 'def-1',
           createdAt: new Date('2026-01-01T00:00:00.000Z'),
           updatedAt: new Date('2026-01-01T00:00:00.000Z'),
         },
@@ -603,7 +603,7 @@ describe('AdminStrategyService', () => {
           id: 'def-1',
           key: 'arbitrage',
           name: 'Arbitrage',
-          executorType: 'arbitrage',
+          controllerType: 'arbitrage',
         },
       ]);
 
@@ -614,7 +614,7 @@ describe('AdminStrategyService', () => {
           strategyKey: 'u-c-arbitrage',
           definitionKey: 'arbitrage',
           definitionName: 'Arbitrage',
-          executorType: 'arbitrage',
+          controllerType: 'arbitrage',
         }),
       ]);
     });
@@ -631,7 +631,7 @@ describe('AdminStrategyService', () => {
       mockStrategyDefinitionRepository.delete = jest.fn().mockResolvedValue({});
 
       const result = await service.removeStrategyDefinition({
-        definitionId: 'def-remove-1',
+        strategyDefinitionId: 'def-remove-1',
       });
 
       expect(mockStrategyDefinitionRepository.delete).toHaveBeenCalledWith({
@@ -639,7 +639,7 @@ describe('AdminStrategyService', () => {
       });
       expect(result).toEqual({
         message: 'Removed strategy definition volume',
-        definitionId: 'def-remove-1',
+        strategyDefinitionId: 'def-remove-1',
       });
     });
 
@@ -651,7 +651,7 @@ describe('AdminStrategyService', () => {
       });
 
       await expect(
-        service.removeStrategyDefinition({ definitionId: 'def-remove-2' }),
+        service.removeStrategyDefinition({ strategyDefinitionId: 'def-remove-2' }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -663,11 +663,11 @@ describe('AdminStrategyService', () => {
       });
       mockStrategyInstanceRepository.findOne.mockResolvedValue({
         id: 1,
-        definitionId: 'def-remove-3',
+        strategyDefinitionId: 'def-remove-3',
       });
 
       await expect(
-        service.removeStrategyDefinition({ definitionId: 'def-remove-3' }),
+        service.removeStrategyDefinition({ strategyDefinitionId: 'def-remove-3' }),
       ).rejects.toThrow(BadRequestException);
     });
   });

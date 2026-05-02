@@ -39,17 +39,12 @@ describe('StrategyConfigResolverService', () => {
     );
   });
 
-  it('reads controllerType and accepts executorType alias', () => {
+  it('reads and normalizes controllerType', () => {
     expect(
       service.getDefinitionControllerType({
         controllerType: 'arbitrage',
       } as Partial<StrategyDefinition>),
     ).toBe('arbitrage');
-    expect(
-      service.getDefinitionControllerType({
-        executorType: 'volume',
-      } as Partial<StrategyDefinition>),
-    ).toBe('volume');
     expect(
       service.getDefinitionControllerType({
         controllerType: 'pure_market_making',
@@ -282,16 +277,20 @@ describe('StrategyConfigResolverService', () => {
       where: { id: 'definition-1' },
     });
     expect(result).toEqual({
+      strategyDefinitionId: 'definition-1',
+      definitionKey: undefined,
+      definitionName: undefined,
       controllerType: 'pureMarketMaking',
       resolvedConfig: {
-        bidSpread: 0.0025,
-        askSpread: 0.001,
+        bidSpread: '0.0025',
+        askSpread: '0.001',
         orderRefreshTime: 1000,
         pair: 'BTC/USDT',
         exchangeName: 'binance',
         userId: 'user-1',
         clientId: 'order-1',
       },
+      resolvedAt: expect.any(String),
     });
   });
 
@@ -321,6 +320,9 @@ describe('StrategyConfigResolverService', () => {
     );
 
     expect(result).toEqual({
+      strategyDefinitionId: 'definition-dual-volume',
+      definitionKey: undefined,
+      definitionName: undefined,
       controllerType: 'dualAccountVolume',
       resolvedConfig: expect.objectContaining({
         exchangeName: 'binance',
@@ -328,6 +330,7 @@ describe('StrategyConfigResolverService', () => {
         tradeAmountVariance: 0.15,
         priceOffsetVariance: 0.2,
       }),
+      resolvedAt: expect.any(String),
     });
   });
 });

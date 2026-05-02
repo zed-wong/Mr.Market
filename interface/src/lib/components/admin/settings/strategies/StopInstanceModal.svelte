@@ -22,7 +22,7 @@
     try {
       await stopStrategyInstance(
         {
-          definitionId: String(instance.definitionId || ""),
+          strategyDefinitionId: String(instance.strategyDefinitionId || ""),
           userId: instance.userId || "",
           clientId: instance.clientId || "",
         },

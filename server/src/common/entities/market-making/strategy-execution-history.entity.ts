@@ -1,7 +1,8 @@
 import { Side } from 'src/common/constants/side';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import {
+  BeforeInsert,
   Column,
-  CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -36,7 +37,7 @@ export class StrategyExecutionHistory {
   strategyType!: string;
 
   @Column({ nullable: true })
-  strategyInstanceId?: string;
+  runtimeInstanceKey?: string;
 
   @Column({ nullable: true })
   orderId?: string;
@@ -47,6 +48,11 @@ export class StrategyExecutionHistory {
   @Column({ type: 'simple-json', nullable: true })
   metadata?: Record<string, unknown>;
 
-  @CreateDateColumn({ type: 'datetime' })
-  executedAt!: Date;
+  @Column()
+  executedAt!: string;
+
+  @BeforeInsert()
+  setExecutedAt(): void {
+    this.executedAt = this.executedAt || getRFC3339Timestamp();
+  }
 }

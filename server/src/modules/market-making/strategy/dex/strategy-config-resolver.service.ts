@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import type { MarketMakingOrderStrategySnapshot } from 'src/common/entities/orders/user-orders.entity';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { Repository } from 'typeorm';
 
 import type { StrategyType } from '../config/strategy-controller.types';
@@ -18,6 +20,22 @@ type StrategyConfigSchema = {
   enum?: unknown[];
 };
 
+const DECIMAL_STRING_CONFIG_FIELDS = new Set([
+  'amount',
+  'amountToTrade',
+  'baseTradeAmount',
+  'bidSpread',
+  'askSpread',
+  'ceilingPrice',
+  'floorPrice',
+  'maxOrderAmount',
+  'orderAmount',
+  'price',
+  'qty',
+  'targetQuoteVolume',
+  'tradeAmount',
+]);
+
 @Injectable()
 export class StrategyConfigResolverService {
   private readonly logger = new Logger(StrategyConfigResolverService.name);
@@ -29,9 +47,7 @@ export class StrategyConfigResolverService {
   ) {}
 
   getDefinitionControllerType(definition: Partial<StrategyDefinition>): string {
-    const controllerType = normalizeControllerType(
-      definition.controllerType || definition.executorType,
-    );
+    const controllerType = normalizeControllerType(definition.controllerType);
 
     if (!controllerType) {
       throw new BadRequestException(
@@ -81,19 +97,16 @@ export class StrategyConfigResolverService {
   }
 
   async resolveForOrderSnapshot(
-    definitionId: string,
+    strategyDefinitionId: string,
     overrides?: Record<string, unknown>,
-  ): Promise<{
-    controllerType: string;
-    resolvedConfig: Record<string, unknown>;
-  }> {
+  ): Promise<MarketMakingOrderStrategySnapshot> {
     const definition = await this.strategyDefinitionRepository.findOne({
-      where: { id: definitionId },
+      where: { id: strategyDefinitionId },
     });
 
     if (!definition) {
       throw new BadRequestException(
-        `Strategy definition ${definitionId} not found`,
+        `Strategy definition ${strategyDefinitionId} not found`,
       );
     }
 
@@ -104,8 +117,12 @@ export class StrategyConfigResolverService {
     });
 
     return {
+      strategyDefinitionId: definition.id,
+      definitionKey: definition.key,
+      definitionName: definition.name,
       controllerType,
       resolvedConfig,
+      resolvedAt: getRFC3339Timestamp(),
     };
   }
 
@@ -151,7 +168,7 @@ export class StrategyConfigResolverService {
       this.toConfigSchema(definition.configSchema),
     );
 
-    return normalizedConfig;
+    return this.normalizeDecimalStringFields(normalizedConfig);
   }
 
   validateConfigAgainstSchema(
@@ -193,7 +210,11 @@ export class StrategyConfigResolverService {
           `Config field ${fieldPath} must be string`,
         );
       }
-      if (rule.type === 'number' && typeof value !== 'number') {
+      if (
+        rule.type === 'number' &&
+        typeof value !== 'number' &&
+        !this.isNumericString(value)
+      ) {
         throw new BadRequestException(
           `Config field ${fieldPath} must be number`,
         );
@@ -220,8 +241,15 @@ export class StrategyConfigResolverService {
           fieldPath,
         );
       }
-      if (rule.minimum !== undefined && typeof value === 'number') {
-        if (value < Number(rule.minimum)) {
+      if (rule.minimum !== undefined) {
+        const numericValue =
+          typeof value === 'number'
+            ? value
+            : this.isNumericString(value)
+            ? Number(value)
+            : undefined;
+
+        if (numericValue !== undefined && numericValue < Number(rule.minimum)) {
           throw new BadRequestException(
             `Config field ${fieldPath} must be >= ${rule.minimum}`,
           );
@@ -259,6 +287,38 @@ export class StrategyConfigResolverService {
 
   private readString(value: unknown): string | undefined {
     return typeof value === 'string' ? value : undefined;
+  }
+
+  private isNumericString(value: unknown): value is string {
+    return (
+      typeof value === 'string' &&
+      value.trim().length > 0 &&
+      Number.isFinite(Number(value))
+    );
+  }
+
+  private normalizeDecimalStringFields(config: StrategyConfig): StrategyConfig {
+    return Object.fromEntries(
+      Object.entries(config).map(([key, value]) => {
+        if (
+          DECIMAL_STRING_CONFIG_FIELDS.has(key) &&
+          (typeof value === 'number' || this.isNumericString(value))
+        ) {
+          return [key, String(value)];
+        }
+
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          return [
+            key,
+            this.normalizeDecimalStringFields(
+              value as Record<string, unknown>,
+            ),
+          ];
+        }
+
+        return [key, value];
+      }),
+    );
   }
 
   private toConfig(value: unknown): StrategyConfig {

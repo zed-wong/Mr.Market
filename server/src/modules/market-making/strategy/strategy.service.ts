@@ -311,7 +311,7 @@ export class StrategyService
 
       await this.strategyInstanceRepository.update(
         { strategyKey: strategy.strategyKey },
-        { status: 'stopped', updatedAt: new Date() },
+        { status: 'stopped', updatedAt: getRFC3339Timestamp() },
       );
       this.logger.warn(
         `Skipping stale strategy restore for ${strategy.strategyKey}: bound market-making order is not running`,
@@ -359,7 +359,7 @@ export class StrategyService
       if (isLegacyDualAdminDirect) {
         await this.strategyInstanceRepository.update(
           { strategyKey: strategy.strategyKey },
-          { status: 'failed', updatedAt: new Date() },
+          { status: 'failed', updatedAt: getRFC3339Timestamp() },
         );
         this.logger.warn(
           `Skipping orphan admin-direct dual-account strategy ${strategy.strategyKey}: missing marketMakingOrderId binding`,
@@ -693,7 +693,7 @@ export class StrategyService
     try {
       await this.strategyInstanceRepository.update(
         { strategyKey },
-        { status: 'stopped', updatedAt: new Date() },
+        { status: 'stopped', updatedAt: getRFC3339Timestamp() },
       );
       this.pendingActivationStrategies.delete(strategyKey);
 
@@ -710,7 +710,7 @@ export class StrategyService
       const stopIntent: StrategyOrderIntent = {
         type: 'STOP_CONTROLLER',
         intentId: `${strategyKey}:${Date.now()}:stop`,
-        strategyInstanceId: strategyKey,
+        runtimeInstanceKey: strategyKey,
         strategyKey,
         userId,
         clientId,
@@ -751,7 +751,7 @@ export class StrategyService
     userId: string,
     clientId: string,
     strategyType: StrategyType,
-    definitionId: string,
+    strategyDefinitionId: string,
     marketMakingOrderId?: string,
   ): Promise<void> {
     const strategyKey =
@@ -766,9 +766,9 @@ export class StrategyService
     await this.strategyInstanceRepository.update(
       { strategyKey },
       {
-        definitionId,
+        strategyDefinitionId,
         marketMakingOrderId: marketMakingOrderId || undefined,
-        updatedAt: new Date(),
+        updatedAt: getRFC3339Timestamp(),
       },
     );
   }
@@ -1171,7 +1171,7 @@ export class StrategyService
           strategyType,
           parameters,
           marketMakingOrderId: marketMakingOrderId || null,
-          updatedAt: new Date(),
+          updatedAt: getRFC3339Timestamp(),
         },
       );
 
@@ -1230,7 +1230,7 @@ export class StrategyService
 
     await this.strategyInstanceRepository.update(
       { strategyKey },
-      { status: 'failed', updatedAt: new Date() },
+      { status: 'failed', updatedAt: getRFC3339Timestamp() },
     );
   }
 
@@ -1384,7 +1384,7 @@ export class StrategyService
         {
           type: 'EXECUTE_AMM_SWAP',
           intentId: `${session.strategyKey}:${ts}:amm-${executedTrades}`,
-          strategyInstanceId: session.strategyKey,
+          runtimeInstanceKey: session.strategyKey,
           strategyKey: session.strategyKey,
           userId: session.userId,
           clientId: session.clientId,
@@ -4320,7 +4320,7 @@ export class StrategyService
     return {
       type: 'CANCEL_ORDER',
       intentId: `${strategyKey}:${ts}:cancel-${reason}-${order.exchangeOrderId}`,
-      strategyInstanceId: strategyKey,
+      runtimeInstanceKey: strategyKey,
       strategyKey,
       userId: params.userId,
       clientId: params.clientId,
@@ -4353,7 +4353,7 @@ export class StrategyService
   }
 
   private createIntent(
-    strategyInstanceId: string,
+    runtimeInstanceKey: string,
     strategyKey: string,
     userId: string,
     clientId: string,
@@ -4373,7 +4373,7 @@ export class StrategyService
     return {
       type: 'CREATE_LIMIT_ORDER',
       intentId: `${strategyKey}:${ts}:${suffix}`,
-      strategyInstanceId,
+      runtimeInstanceKey,
       strategyKey,
       userId,
       clientId,
@@ -4643,7 +4643,7 @@ export class StrategyService
       { strategyKey },
       {
         parameters: params as Record<string, any>,
-        updatedAt: new Date(),
+        updatedAt: getRFC3339Timestamp(),
       },
     );
   }
@@ -4907,7 +4907,7 @@ export class StrategyService
       {
         type: 'CREATE_LIMIT_ORDER',
         intentId: `${session.strategyKey}:${ts}:indicator-entry`,
-        strategyInstanceId: session.strategyKey,
+        runtimeInstanceKey: session.strategyKey,
         strategyKey: session.strategyKey,
         userId,
         clientId,
@@ -6115,7 +6115,7 @@ export class StrategyService
       .map((order, index) => ({
         type: 'CANCEL_ORDER' as const,
         intentId: `${strategyKey}:${ts}:stale-cancel-${index}`,
-        strategyInstanceId: strategyKey,
+        runtimeInstanceKey: strategyKey,
         strategyKey,
         userId: params.userId,
         clientId: params.clientId,
@@ -6362,7 +6362,7 @@ export class StrategyService
       try {
         await this.strategyInstanceRepository.update(
           { strategyKey: session.strategyKey },
-          { status: 'stopped', updatedAt: new Date() },
+          { status: 'stopped', updatedAt: getRFC3339Timestamp() },
         );
 
         if (

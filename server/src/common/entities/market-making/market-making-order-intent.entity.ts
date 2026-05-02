@@ -4,6 +4,8 @@
  */
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
+import type { MarketMakingOrderStrategySnapshot } from '../orders/user-orders.entity';
+
 export type MarketMakingOrderIntentState =
   | 'pending'
   | 'in_progress'
@@ -26,6 +28,9 @@ export class MarketMakingOrderIntent {
 
   @Column('simple-json', { nullable: true })
   configOverrides?: Record<string, unknown> | null;
+
+  @Column('simple-json', { nullable: true })
+  strategySnapshot?: MarketMakingOrderStrategySnapshot | null;
 
   @Column({ type: 'varchar', default: 'pending' })
   state: MarketMakingOrderIntentState;

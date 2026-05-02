@@ -294,7 +294,7 @@ export class StrategyIntentExecutionService {
               amount: intent.qty,
               price: intent.price,
               strategyType: this.extractStrategyType(intent.strategyKey),
-              strategyInstanceId: intent.strategyInstanceId,
+              runtimeInstanceKey: intent.runtimeInstanceKey,
               orderId: String(result.id),
               status: result?.status || 'open',
               metadata: {
@@ -474,7 +474,7 @@ export class StrategyIntentExecutionService {
             amount: intent.qty,
             price: intent.price,
             strategyType: this.extractStrategyType(intent.strategyKey),
-            strategyInstanceId: intent.strategyInstanceId,
+            runtimeInstanceKey: intent.runtimeInstanceKey,
             orderId: result.txHash,
             status: 'filled',
             metadata: {

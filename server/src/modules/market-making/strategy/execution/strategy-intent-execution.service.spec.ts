@@ -145,7 +145,7 @@ describe('StrategyIntentExecutionService', () => {
   const baseIntent: StrategyOrderIntent = {
     type: 'CREATE_LIMIT_ORDER',
     intentId: 'intent-1',
-    strategyInstanceId: 'strategy-1',
+    runtimeInstanceKey: 'strategy-1',
     strategyKey: 'u1-c1-pureMarketMaking',
     userId: 'u1',
     clientId: 'c1',

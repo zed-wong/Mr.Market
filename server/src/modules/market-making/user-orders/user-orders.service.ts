@@ -8,7 +8,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Queue } from 'bull';
 import { randomUUID } from 'crypto';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  StrategyDefinitionVisibility,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -315,16 +318,17 @@ export class UserOrdersService {
 
     const orderId = randomUUID();
 
-    await this.strategyConfigResolver.resolveForOrderSnapshot(
-      strategyDefinitionId,
-      this.buildOrderSnapshotOverrides({
-        orderId,
-        userId,
-        pair: pair.symbol,
-        exchangeName: pair.exchange_id,
-        configOverrides,
-      }),
-    );
+    const strategySnapshot =
+      await this.strategyConfigResolver.resolveForOrderSnapshot(
+        strategyDefinitionId,
+        this.buildOrderSnapshotOverrides({
+          orderId,
+          userId,
+          pair: pair.symbol,
+          exchangeName: pair.exchange_id,
+          configOverrides,
+        }),
+      );
     const memo = encodeMarketMakingCreateMemo({
       version: 1,
       tradingType: 'Market Making',
@@ -342,6 +346,7 @@ export class UserOrdersService {
       marketMakingPairId,
       strategyDefinitionId,
       configOverrides: configOverrides ?? null,
+      strategySnapshot,
       state: 'pending',
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -387,7 +392,10 @@ export class UserOrdersService {
 
   async listEnabledMarketMakingStrategies() {
     const definitions = await this.strategyDefinitionRepository.find({
-      where: { enabled: true, visibility: 'public' },
+      where: {
+        enabled: true,
+        visibility: StrategyDefinitionVisibility.PUBLIC,
+      },
       order: { updatedAt: 'DESC' },
     });
 
@@ -400,7 +408,8 @@ export class UserOrdersService {
         key: definition.key,
         name: definition.name,
         description: definition.description,
-        controllerType: definition.controllerType || definition.executorType,
+        controllerType: definition.controllerType,
+        capabilities: definition.capabilities,
         defaultConfig: definition.defaultConfig || {},
         configSchema: definition.configSchema || {},
       }));
@@ -409,9 +418,7 @@ export class UserOrdersService {
   private isPublicUserMarketMakingDefinition(
     definition: Partial<StrategyDefinition> | null | undefined,
   ): boolean {
-    const controllerType = normalizeControllerType(
-      definition?.controllerType || definition?.executorType,
-    );
+    const controllerType = normalizeControllerType(definition?.controllerType);
 
     return controllerType === 'pureMarketMaking';
   }

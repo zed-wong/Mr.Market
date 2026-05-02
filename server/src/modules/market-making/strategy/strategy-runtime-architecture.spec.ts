@@ -433,7 +433,7 @@ describe('Strategy runtime architecture', () => {
     expect(fixture.historyRows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          strategyInstanceId: 'order-1-pureMarketMaking',
+          runtimeInstanceKey: 'order-1-pureMarketMaking',
           status: 'open',
           metadata: expect.objectContaining({
             clientOrderId: submittedClientOrderId0,

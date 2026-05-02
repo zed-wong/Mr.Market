@@ -52,7 +52,7 @@ describe("admin strategy helper", () => {
 
     const result = await validateStrategyInstance(
       {
-        definitionId: "def-1",
+        strategyDefinitionId: "def-1",
         userId: "u1",
         clientId: "c1",
         config: { pair: "BTC/USDT" },
@@ -77,7 +77,7 @@ describe("admin strategy helper", () => {
 
     const result = await startStrategyInstance(
       {
-        definitionId: "def-1",
+        strategyDefinitionId: "def-1",
         userId: "u1",
         clientId: "c1",
       },
@@ -104,7 +104,7 @@ describe("admin strategy helper", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
-        new Response(JSON.stringify({ message: "removed", definitionId: "d1" }), {
+        new Response(JSON.stringify({ message: "removed", strategyDefinitionId: "d1" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
@@ -116,6 +116,6 @@ describe("admin strategy helper", () => {
       "http://localhost:3000/admin/strategy/definitions/d1/remove",
       expect.objectContaining({ method: "DELETE" }),
     );
-    expect(result).toEqual({ message: "removed", definitionId: "d1" });
+    expect(result).toEqual({ message: "removed", strategyDefinitionId: "d1" });
   });
 });

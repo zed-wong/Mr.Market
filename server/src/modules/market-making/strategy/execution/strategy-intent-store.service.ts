@@ -223,7 +223,7 @@ export class StrategyIntentStoreService {
   ): StrategyOrderIntentEntity {
     return {
       intentId: intent.intentId,
-      strategyInstanceId: intent.strategyInstanceId,
+      runtimeInstanceKey: intent.runtimeInstanceKey,
       strategyKey: intent.strategyKey,
       userId: intent.userId,
       clientId: intent.clientId,

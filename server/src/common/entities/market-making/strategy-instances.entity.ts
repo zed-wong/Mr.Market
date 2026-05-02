@@ -4,14 +4,16 @@
  * Used by app.module and modules/market-making strategy services plus admin strategy tools.
  */
 import {
+  BeforeInsert,
+  BeforeUpdate,
   Column,
-  CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
-  UpdateDateColumn,
 } from 'typeorm';
 
+import { getRFC3339Timestamp } from '../../helpers/utils';
 import { Contribution } from '../campaign/contribution.entity';
 
 @Entity('strategy_instances')
@@ -32,7 +34,8 @@ export class StrategyInstance {
   strategyType: string;
 
   @Column({ nullable: true })
-  definitionId?: string;
+  @Index()
+  strategyDefinitionId?: string;
 
   @Column({ nullable: true })
   marketMakingOrderId?: string;
@@ -49,9 +52,22 @@ export class StrategyInstance {
   @OneToMany('Contribution', 'strategy')
   contributions: Contribution[];
 
-  @CreateDateColumn()
-  createdAt: Date;
+  @Column()
+  createdAt: string;
 
-  @UpdateDateColumn()
-  updatedAt: Date;
+  @Column()
+  updatedAt: string;
+
+  @BeforeInsert()
+  setCreatedTimestamps(): void {
+    const now = getRFC3339Timestamp();
+
+    this.createdAt = this.createdAt || now;
+    this.updatedAt = this.updatedAt || now;
+  }
+
+  @BeforeUpdate()
+  setUpdatedTimestamp(): void {
+    this.updatedAt = getRFC3339Timestamp();
+  }
 }

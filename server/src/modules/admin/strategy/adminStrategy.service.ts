@@ -3,7 +3,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ethers } from 'ethers';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  StrategyDefinitionVisibility,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 import {
@@ -13,6 +16,7 @@ import {
 import { In, Repository } from 'typeorm';
 
 import { ExchangeInitService } from '../../infrastructure/exchange-init/exchange-init.service';
+import { normalizeControllerType } from '../../market-making/strategy/config/strategy-controller-aliases';
 import { StrategyConfigResolverService } from '../../market-making/strategy/dex/strategy-config-resolver.service';
 import { StrategyRuntimeDispatcherService } from '../../market-making/strategy/execution/strategy-runtime-dispatcher.service';
 import { StrategyService } from '../../market-making/strategy/strategy.service';
@@ -311,7 +315,7 @@ export class AdminStrategyService {
   async createStrategyDefinition(
     dto: StrategyDefinitionDto,
   ): Promise<StrategyDefinition> {
-    const controllerType = dto.controllerType || dto.executorType;
+    const controllerType = normalizeControllerType(dto.controllerType);
 
     if (!controllerType) {
       throw new BadRequestException('controllerType is required');
@@ -334,8 +338,9 @@ export class AdminStrategyService {
       controllerType,
       configSchema: dto.configSchema,
       defaultConfig: dto.defaultConfig,
+      capabilities: dto.capabilities,
       enabled: true,
-      visibility: dto.visibility || 'public',
+      visibility: dto.visibility || StrategyDefinitionVisibility.ADMIN,
       createdBy: dto.createdBy,
     });
 
@@ -376,9 +381,11 @@ export class AdminStrategyService {
     definition.description = dto.description ?? definition.description;
     definition.configSchema = dto.configSchema ?? definition.configSchema;
     definition.defaultConfig = dto.defaultConfig ?? definition.defaultConfig;
+    definition.capabilities = dto.capabilities ?? definition.capabilities;
     definition.visibility = dto.visibility ?? definition.visibility;
-    definition.controllerType =
-      dto.controllerType || dto.executorType || definition.controllerType;
+    definition.controllerType = dto.controllerType
+      ? normalizeControllerType(dto.controllerType)
+      : definition.controllerType;
 
     return attachStrategyDefinitionCapabilities(
       await this.strategyDefinitionRepository.save(definition),
@@ -400,9 +407,11 @@ export class AdminStrategyService {
 
   async removeStrategyDefinition(dto: RemoveStrategyDefinitionDto): Promise<{
     message: string;
-    definitionId: string;
+    strategyDefinitionId: string;
   }> {
-    const definition = await this.getStrategyDefinition(dto.definitionId);
+    const definition = await this.getStrategyDefinition(
+      dto.strategyDefinitionId,
+    );
 
     if (definition.enabled) {
       throw new BadRequestException(
@@ -411,7 +420,7 @@ export class AdminStrategyService {
     }
 
     const linkedInstance = await this.strategyInstanceRepository.findOne({
-      where: { definitionId: definition.id },
+      where: { strategyDefinitionId: definition.id },
       order: { updatedAt: 'DESC' },
     });
 
@@ -425,7 +434,7 @@ export class AdminStrategyService {
 
     return {
       message: `Removed strategy definition ${definition.key}`,
-      definitionId: definition.id,
+      strategyDefinitionId: definition.id,
     };
   }
 
@@ -438,32 +447,33 @@ export class AdminStrategyService {
       userId: string;
       clientId: string;
       marketMakingOrderId?: string;
-      definitionId?: string;
+      strategyDefinitionId?: string;
       definitionKey?: string;
       definitionName?: string;
       controllerType?: string;
-      executorType?: string;
-      createdAt: Date;
-      updatedAt: Date;
+      createdAt: string;
+      updatedAt: string;
     }>
   > {
     const instances = runningOnly
       ? await this.strategyService.getRunningStrategies()
       : await this.strategyService.getAllStrategies();
-    const definitionIds = [
-      ...new Set(instances.map((i) => i.definitionId).filter(Boolean)),
+    const strategyDefinitionIds = [
+      ...new Set(
+        instances.map((i) => i.strategyDefinitionId).filter(Boolean),
+      ),
     ] as string[];
 
-    const definitions = definitionIds.length
+    const definitions = strategyDefinitionIds.length
       ? await this.strategyDefinitionRepository.find({
-          where: { id: In(definitionIds) },
+          where: { id: In(strategyDefinitionIds) },
         })
       : [];
     const definitionMap = new Map(definitions.map((d) => [d.id, d]));
 
     return instances.map((instance) => {
-      const definition = instance.definitionId
-        ? definitionMap.get(instance.definitionId)
+      const definition = instance.strategyDefinitionId
+        ? definitionMap.get(instance.strategyDefinitionId)
         : undefined;
       const controllerType = definition
         ? this.strategyConfigResolver.getDefinitionControllerType(definition)
@@ -477,11 +487,10 @@ export class AdminStrategyService {
         userId: instance.userId,
         clientId: instance.clientId,
         marketMakingOrderId: instance.marketMakingOrderId,
-        definitionId: instance.definitionId,
+        strategyDefinitionId: instance.strategyDefinitionId,
         definitionKey: definition?.key,
         definitionName: definition?.name,
         controllerType,
-        executorType: controllerType,
         createdAt: instance.createdAt,
         updatedAt: instance.updatedAt,
       };
@@ -490,11 +499,12 @@ export class AdminStrategyService {
 
   async startStrategyInstance(dto: StartStrategyInstanceDto): Promise<{
     message: string;
-    definitionId: string;
+    strategyDefinitionId: string;
     controllerType: string;
-    executorType: string;
   }> {
-    const definition = await this.getStrategyDefinition(dto.definitionId);
+    const definition = await this.getStrategyDefinition(
+      dto.strategyDefinitionId,
+    );
     const { mergedConfig, strategyType } =
       this.strategyConfigResolver.resolveDefinitionStartConfig(definition, dto);
     const controllerType =
@@ -516,21 +526,21 @@ export class AdminStrategyService {
 
     return {
       message: `Started strategy instance from definition ${definition.key}`,
-      definitionId: definition.id,
+      strategyDefinitionId: definition.id,
       controllerType,
-      executorType: controllerType,
     };
   }
 
   async validateStrategyInstanceConfig(dto: StartStrategyInstanceDto): Promise<{
     valid: true;
-    definitionId: string;
+    strategyDefinitionId: string;
     definitionKey: string;
     controllerType: string;
-    executorType: string;
     mergedConfig: Record<string, any>;
   }> {
-    const definition = await this.getStrategyDefinition(dto.definitionId);
+    const definition = await this.getStrategyDefinition(
+      dto.strategyDefinitionId,
+    );
     const { mergedConfig } =
       this.strategyConfigResolver.resolveDefinitionStartConfig(definition, dto);
     const controllerType =
@@ -538,21 +548,21 @@ export class AdminStrategyService {
 
     return {
       valid: true,
-      definitionId: definition.id,
+      strategyDefinitionId: definition.id,
       definitionKey: definition.key,
       controllerType,
-      executorType: controllerType,
       mergedConfig,
     };
   }
 
   async stopStrategyInstance(dto: StopStrategyInstanceDto): Promise<{
     message: string;
-    definitionId: string;
+    strategyDefinitionId: string;
     controllerType: string;
-    executorType: string;
   }> {
-    const definition = await this.getStrategyDefinition(dto.definitionId);
+    const definition = await this.getStrategyDefinition(
+      dto.strategyDefinitionId,
+    );
     const controllerType =
       this.strategyConfigResolver.getDefinitionControllerType(definition);
     const strategyType =
@@ -570,9 +580,8 @@ export class AdminStrategyService {
 
     return {
       message: `Stopped strategy instance from definition ${definition.key}`,
-      definitionId: definition.id,
+      strategyDefinitionId: definition.id,
       controllerType,
-      executorType: controllerType,
     };
   }
 }

@@ -1700,7 +1700,7 @@ describe('StrategyService', () => {
       {
         type: 'CREATE_LIMIT_ORDER',
         intentId: 'intent-1',
-        strategyInstanceId: strategyKey,
+        runtimeInstanceKey: strategyKey,
         strategyKey,
         userId: 'user1',
         clientId: 'client1',
@@ -1789,7 +1789,7 @@ describe('StrategyService', () => {
       {
         type: 'CREATE_LIMIT_ORDER',
         intentId: 'intent-1',
-        strategyInstanceId: strategyKey,
+        runtimeInstanceKey: strategyKey,
         strategyKey,
         userId: 'user1',
         clientId: 'client1',

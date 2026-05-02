@@ -19,7 +19,7 @@ export type StrategyIntentStatus =
 export type StrategyOrderIntent = {
   type: StrategyIntentType;
   intentId: string;
-  strategyInstanceId: string;
+  runtimeInstanceKey: string;
   strategyKey: string;
   userId: string;
   clientId: string;

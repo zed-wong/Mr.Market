@@ -4,6 +4,7 @@ import BigNumber from 'bignumber.js';
 import * as ccxt from 'ccxt';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { createStrategyKey } from 'src/common/helpers/strategyKey';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ArbitrageStrategyDto } from 'src/modules/market-making/strategy/config/strategy.dto';
@@ -336,7 +337,7 @@ export class AlpacaStratService implements OnModuleDestroy {
         sellPrice: sellPrice.toString(),
         profit: profitLoss.toNumber(),
       },
-      executedAt: new Date(),
+      executedAt: getRFC3339Timestamp(),
     });
 
     await this.strategyExecutionHistoryRepository.save(arbitrageOrder);

@@ -7,7 +7,7 @@ const createIntent = (
   overrides?: Partial<StrategyOrderIntentEntity>,
 ): StrategyOrderIntentEntity => ({
   intentId: 'intent-1',
-  strategyInstanceId: 'strategy-1',
+  runtimeInstanceKey: 'strategy-1',
   strategyKey: 'strategy-1',
   userId: 'user-1',
   clientId: 'client-1',

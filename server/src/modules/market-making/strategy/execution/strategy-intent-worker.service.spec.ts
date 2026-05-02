@@ -43,7 +43,7 @@ const createHeadIntent = (
   status: StrategyOrderIntentEntity['status'] = 'NEW',
 ): StrategyOrderIntentEntity => ({
   intentId,
-  strategyInstanceId: strategyKey,
+  runtimeInstanceKey: strategyKey,
   strategyKey,
   userId: strategyKey,
   clientId: strategyKey,
@@ -292,7 +292,7 @@ describe('StrategyIntentWorkerService', () => {
       listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1', 's2']),
       getNextNewIntent: jest.fn(async (strategyKey: string) => ({
         ...createHeadIntent(strategyKey, duplicateIntentId),
-        strategyInstanceId: strategyKey,
+        runtimeInstanceKey: strategyKey,
         userId: `${strategyKey}-user`,
         clientId: `${strategyKey}-client`,
       })),

@@ -35,10 +35,10 @@ describe('MarketMakingOrderProcessor', () => {
     };
     const strategyConfigResolver = {
       getDefinitionControllerType: jest.fn(
-        (definition) => definition.controllerType || definition.executorType,
+        (definition) => definition.controllerType || definition.controllerType,
       ),
       resolveForOrderSnapshot: jest.fn(
-        async (_definitionId, overrides = {}) => ({
+        async (_strategyDefinitionId, overrides = {}) => ({
           controllerType: 'pureMarketMaking',
           resolvedConfig: {
             bidSpread: 0.001,
@@ -56,7 +56,7 @@ describe('MarketMakingOrderProcessor', () => {
         }),
       ),
       resolveDefinitionStartConfig: jest.fn((definition, payload) => ({
-        strategyType: definition.controllerType || definition.executorType,
+        strategyType: definition.controllerType || definition.controllerType,
         mergedConfig: {
           ...(definition.defaultConfig || {}),
           userId: payload.userId,
