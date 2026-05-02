@@ -183,6 +183,16 @@ describe('Database migration and seed scripts', () => {
         additionalProperties: false,
       }),
     );
+    expect(pureMarketMakingDefinition.configSchema).not.toHaveProperty(
+      'launchSurfaces',
+    );
+    expect(pureMarketMakingDefinition.configSchema).not.toHaveProperty(
+      'directExecutionMode',
+    );
+    expect(pureMarketMakingDefinition.capabilities).toEqual({
+      launchSurfaces: ['strategy_settings', 'admin_direct_mm'],
+      directExecutionMode: 'single_account',
+    });
     expect(pureMarketMakingDefinition.defaultConfig).toEqual(
       expect.objectContaining({
         pair: 'BTC/USDT',

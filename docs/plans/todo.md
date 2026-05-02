@@ -70,8 +70,8 @@ Deferred strategy follow-ups
 - [ ] 6. Roll back started runtime sessions when admin strategy start succeeds in dispatcher but fails to link the definition in storage
 - [ ] 7. Align admin strategy definition/instance endpoints with more idiomatic REST semantics and boolean query parsing, then add controller tests for the new routes
 - [ ] 8. Add TTL or explicit invalidation for cached market-making strategies in `interface/src/lib/helpers/mrm/marketMakingPayment.ts`
-- [ ] 9. Reset CCXT seeder cache per run and add a timeout guard around `loadMarkets()` to avoid hanging the seed process
-- [ ] 10. Parallelize chain icon fetching during pair seed generation and wrap `runSeed()` database cleanup in `try/finally`
+- [x] 9. Reset CCXT seeder cache per run and add a timeout guard around `loadMarkets()` to avoid hanging the seed process
+- [x] 10. Parallelize chain icon fetching during pair seed generation and wrap `runSeed()` database cleanup in `try/finally`
 
 ### Intent Worker Rate-Limiting
 

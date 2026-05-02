@@ -24,6 +24,7 @@ export interface MarketInfo {
 // Type for dynamic ccxt exchange access
 type CcxtExchangeClass = new () => ccxt.Exchange;
 const ccxtExchanges = ccxt as unknown as Record<string, CcxtExchangeClass>;
+const LOAD_MARKETS_TIMEOUT_MS = 30_000;
 
 // Cache for loaded exchange markets
 const exchangeCache = new Map<string, ccxt.Exchange>();
@@ -37,6 +38,25 @@ const log = {
   failed: (exchange: string, error: string) =>
     console.log(`  ✗ ${exchange}: ${error}`.padEnd(50)),
 };
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeout: NodeJS.Timeout;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() =>
+    clearTimeout(timeout),
+  );
+}
 
 /**
  * Load exchange markets (cached per exchange)
@@ -63,7 +83,11 @@ async function getExchange(
     log.loading(exchangeId, index, total);
     const exchange = new ExchangeClass();
 
-    await exchange.loadMarkets();
+    await withTimeout(
+      exchange.loadMarkets(),
+      LOAD_MARKETS_TIMEOUT_MS,
+      `${exchangeId}.loadMarkets()`,
+    );
     exchangeCache.set(exchangeId, exchange);
     log.loaded(exchangeId, Object.keys(exchange.markets).length);
 

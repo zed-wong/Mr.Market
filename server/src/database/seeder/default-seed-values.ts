@@ -1,15 +1,15 @@
-import { CustomConfigEntity } from 'src/common/entities/admin/custom-config.entity';
+import { CustomConfigEntity } from '../../common/entities/admin/custom-config.entity';
 import {
   GrowdataExchange,
   GrowdataMarketMakingPair,
   GrowdataSimplyGrowToken,
-} from 'src/common/entities/data/grow-data.entity';
-import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
+} from '../../common/entities/data/grow-data.entity';
+import { SpotdataTradingPair } from '../../common/entities/data/spot-data.entity';
 import {
   StrategyDefinition,
   type StrategyDefinitionCapabilities,
   StrategyDefinitionVisibility,
-} from 'src/common/entities/market-making/strategy-definition.entity';
+} from '../../common/entities/market-making/strategy-definition.entity';
 
 import { TOP_EXCHANGES as EXCHANGES } from './data/exchanges';
 import arbitrageSeedDefinition from './data/strategies/arbitrage.json';

@@ -20,7 +20,11 @@ import {
   StrategyDefinition,
   StrategyDefinitionVisibility,
 } from '../../common/entities/market-making/strategy-definition.entity';
-import { fetchAllMarkets, MarketInfo } from './ccxt-fetcher';
+import {
+  clearCache as clearCcxtCache,
+  fetchAllMarkets,
+  MarketInfo,
+} from './ccxt-fetcher';
 import { TRADING_PAIRS } from './data/assets';
 import { TOP_EXCHANGES } from './data/exchanges';
 import {
@@ -130,7 +134,7 @@ interface PairSeedData {
 async function buildPairSeedData(
   mixinAssets: Map<string, MixinAsset>,
 ): Promise<PairSeedData[]> {
-  const results: PairSeedData[] = [];
+  const pairSeedTasks: Array<Promise<PairSeedData | null>> = [];
 
   const exchangeIds = TOP_EXCHANGES.map((e) => e.exchange_id);
   const symbols = [...TRADING_PAIRS];
@@ -142,7 +146,6 @@ async function buildPairSeedData(
   // Fetch all markets from CCXT (cached per exchange)
   const marketsMap = await fetchAllMarkets(exchangeIds, symbols, 300);
 
-  // Build PairSeedData by combining Mixin + CCXT data
   for (const exchange of TOP_EXCHANGES) {
     const exchangeMarkets = marketsMap.get(exchange.exchange_id);
 
@@ -164,24 +167,29 @@ async function buildPairSeedData(
 
       if (!marketInfo) continue;
 
-      // Get chain icon URLs
-      const baseChainIconUrl = await getChainIconUrl(baseAsset.chain_id);
-      const quoteChainIconUrl = await getChainIconUrl(quoteAsset.chain_id);
-
-      results.push({
-        exchangeId: exchange.exchange_id,
-        exchangeName: exchange.name,
-        pairSymbol,
-        baseSymbol,
-        quoteSymbol,
-        baseAsset,
-        quoteAsset,
-        baseChainIconUrl,
-        quoteChainIconUrl,
-        marketInfo,
-      });
+      pairSeedTasks.push(
+        Promise.all([
+          getChainIconUrl(baseAsset.chain_id),
+          getChainIconUrl(quoteAsset.chain_id),
+        ]).then(([baseChainIconUrl, quoteChainIconUrl]) => ({
+          exchangeId: exchange.exchange_id,
+          exchangeName: exchange.name,
+          pairSymbol,
+          baseSymbol,
+          quoteSymbol,
+          baseAsset,
+          quoteAsset,
+          baseChainIconUrl,
+          quoteChainIconUrl,
+          marketInfo,
+        })),
+      );
     }
   }
+
+  const results = (await Promise.all(pairSeedTasks)).filter(
+    (value): value is PairSeedData => value !== null,
+  );
 
   log.success(`Found ${results.length} valid trading pairs`);
 
@@ -436,49 +444,53 @@ export async function runSeed() {
 
   const dataSource = await connectToDatabase();
 
-  // Fetch Mixin assets first (needed for all entity seeding)
-  log.step('Fetching assets from Mixin API...');
-  const mixinAssets = await fetchMixinAssets();
+  try {
+    clearCcxtCache();
 
-  // Seed static data
-  log.step('Seeding static data...');
-  await Promise.all([
-    seedGrowdataExchange(dataSource.getRepository(GrowdataExchange)),
-    seedGrowdataSimplyGrowToken(
-      dataSource.getRepository(GrowdataSimplyGrowToken),
-      mixinAssets,
-    ),
-    seedCustomConfig(dataSource.getRepository(CustomConfigEntity)),
-  ]);
+    // Fetch Mixin assets first (needed for all entity seeding)
+    log.step('Fetching assets from Mixin API...');
+    const mixinAssets = await fetchMixinAssets();
 
-  // Seed strategy definitions
-  log.step('Seeding strategy definitions...');
-  await seedStrategyDefinitions(dataSource.getRepository(StrategyDefinition));
+    // Seed static data
+    log.step('Seeding static data...');
+    await Promise.all([
+      seedGrowdataExchange(dataSource.getRepository(GrowdataExchange)),
+      seedGrowdataSimplyGrowToken(
+        dataSource.getRepository(GrowdataSimplyGrowToken),
+        mixinAssets,
+      ),
+      seedCustomConfig(dataSource.getRepository(CustomConfigEntity)),
+    ]);
 
-  // Build pair seed data (combines Mixin + CCXT data)
-  log.step('Fetching market data from CCXT...');
-  const marketData = await buildPairSeedData(mixinAssets);
+    // Seed strategy definitions
+    log.step('Seeding strategy definitions...');
+    await seedStrategyDefinitions(dataSource.getRepository(StrategyDefinition));
 
-  // Seed dynamic data
-  log.step('Seeding trading pairs...');
-  await Promise.all([
-    seedGrowdataMarketMakingPair(
-      dataSource.getRepository(GrowdataMarketMakingPair),
-      marketData,
-    ),
-    /*
-    seedSpotdataTradingPair(
-      dataSource.getRepository(SpotdataTradingPair),
-      marketData,
-    ),
-    */
-  ]);
+    // Build pair seed data (combines Mixin + CCXT data)
+    log.step('Fetching market data from CCXT...');
+    const marketData = await buildPairSeedData(mixinAssets);
 
-  await dataSource.destroy();
+    // Seed dynamic data
+    log.step('Seeding trading pairs...');
+    await Promise.all([
+      seedGrowdataMarketMakingPair(
+        dataSource.getRepository(GrowdataMarketMakingPair),
+        marketData,
+      ),
+      /*
+      seedSpotdataTradingPair(
+        dataSource.getRepository(SpotdataTradingPair),
+        marketData,
+      ),
+      */
+    ]);
 
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-  log.header(`Seed Complete (${elapsed}s)`);
+    log.header(`Seed Complete (${elapsed}s)`);
+  } finally {
+    await dataSource.destroy();
+  }
 }
 
 if (require.main === module) {
