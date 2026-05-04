@@ -18,7 +18,7 @@ After that is complete, later phases can wire fills, fee correction, withdrawal 
 ## Source Of Truth
 
 - Product and technical spec: `docs/product/yellowpaper.zh.md`
-- Existing architecture plan: `docs/plans/2026-04-26-improve-architecture-plan.md`
+- Superseded architecture reference: `docs/archive/plans/2026-04-26-improve-architecture-plan.md`
 - Current module map: `docs/architecture/server/module-map.md`
 - Current open work: `docs/plans/todo.md`
 
@@ -63,11 +63,21 @@ Current mismatch that must be fixed before execution is trustworthy:
 - UI redesign. UI may need new read models later, but this plan is backend-first.
 - Full HuFi product expansion. This plan only covers the accounting/execution foundation needed by HuFi.
 
-## Open Decisions To Close Before Code
+## Closed Execution Decisions
+
+These decisions are accepted for the first implementation pass.
+
+| Decision | Value |
+|---|---|
+| First rollout target | Admin-direct market-making only |
+| Dev/local database handling | Hard-cut is allowed; no old market-making balance compatibility |
+| Production migration | Defer until the hard-cut implementation is complete |
+| Internal score MVP | Eligible fill quote volume |
+| Estimated fee threshold | 15 minutes before reconciliation/manual review |
 
 ### D1. Strategy Snapshot Serialization
 
-Recommendation: store `strategySnapshot` as canonical JSON with explicit decimal strings and a `configHash`.
+Decision: store `strategySnapshot` as canonical JSON with explicit decimal strings and a `configHash`.
 
 ```text
 StrategyDefinition.defaultConfig
@@ -83,7 +93,7 @@ Why: runtime must never re-resolve mutable `StrategyDefinition` for existing ord
 
 ### D2. Internal Score Formula
 
-Recommendation for MVP: use fill quote volume as the first internal score.
+Decision for MVP: use fill quote volume as the first internal score.
 
 ```text
 user_internal_score = sum(fill.quote_notional for eligible fills)
@@ -93,7 +103,7 @@ Why: quote volume is simple, auditable, and maps to campaign market-making contr
 
 ### D3. Rate Limit Partition
 
-Recommendation: partition by `exchange + apiKeyId + pair + intentMutationType`.
+Decision: partition by `exchange + apiKeyId + pair + intentMutationType`.
 
 ```text
 query lane: order status, open orders, balance refresh
@@ -104,7 +114,7 @@ Why: create/cancel must not be blocked behind slow read polling, and multiple AP
 
 ### D4. Fee Correction Delay
 
-Recommendation: estimated fees may be used for reservation, but every estimated fee must be reconciled within one fill reconciliation cycle or marked `manual_review`.
+Decision: estimated fees may be used for reservation, but every estimated fee must be reconciled within one fill reconciliation cycle or marked `manual_review`.
 
 MVP threshold:
 
@@ -116,7 +126,7 @@ Why: indefinite estimated fees break user PnL and reward fairness.
 
 ### D5. Fill PubSub Mechanism
 
-Recommendation: use the existing `MarketMakingEventBus` for in-process event fanout, plus `DurabilityModule` outbox for durable ledger/reward side effects.
+Decision: use the existing `MarketMakingEventBus` for in-process event fanout, plus `DurabilityModule` outbox for durable ledger/reward side effects.
 
 Why: no new queue technology is needed for the first implementation. Boring wins.
 
@@ -144,16 +154,16 @@ Mixin snapshot / funding confirmation
 
 ### Tasks
 
-- Record final decisions for D1-D5 in this plan.
-- Confirm whether this implementation may reset local/dev DBs.
-- Confirm whether production migration is required now or deferred until the hard-cut is complete.
-- Choose the first rollout target: sandbox-only, admin-direct only, or payment-flow market-making.
+- [x] Record final decisions for D1-D5 in this plan.
+- [x] Allow local/dev DB hard-cut for market-making balance semantics.
+- [x] Defer production migration design until the hard-cut implementation is complete.
+- [x] Choose first rollout target: admin-direct market-making only.
 
 ### Acceptance
 
-- D1-D5 are no longer open in `docs/product/yellowpaper.zh.md`.
-- This plan has a "Decision Log" entry for each decision.
-- Implementation scope says exactly which runtime path is first.
+- [x] D1-D5 are no longer open in `docs/product/yellowpaper.zh.md`.
+- [x] This plan has a "Decision Log" entry for each decision.
+- [x] Implementation scope says exactly which runtime path is first.
 
 ## Phase 1: Order-Scoped Ledger And Balance
 
@@ -550,11 +560,14 @@ bun run test:system
 
 | Decision | Status | Value |
 |---|---|---|
-| D1 Strategy snapshot serialization | Proposed | Canonical JSON + decimal strings + `configHash` |
-| D2 Internal score formula | Proposed | Eligible quote fill volume |
-| D3 Rate limit partition | Proposed | `exchange + apiKeyId + pair + intentMutationType` |
-| D4 Fee correction delay | Proposed | 15 minutes before manual review |
-| D5 Fill PubSub mechanism | Proposed | `MarketMakingEventBus` + durable outbox |
+| D1 Strategy snapshot serialization | Accepted | Canonical JSON + decimal strings + `configHash` |
+| D2 Internal score formula | Accepted | Eligible quote fill volume |
+| D3 Rate limit partition | Accepted | `exchange + apiKeyId + pair + intentMutationType` |
+| D4 Fee correction delay | Accepted | 15 minutes before manual review |
+| D5 Fill PubSub mechanism | Accepted | `MarketMakingEventBus` + durable outbox |
+| Rollout target | Accepted | Admin-direct market-making only for first implementation pass |
+| Dev/local DB policy | Accepted | Hard-cut allowed; no old market-making balance compatibility |
+| Production migration policy | Accepted | Defer production migration design until hard-cut implementation is complete |
 
 ## Definition Of Done
 
