@@ -2,6 +2,7 @@
 
 ## 2026-05-04
 
+- Add `docs/plans/2026-05-04-yellowpaper-implementation-plan.md` as the execution plan for the yellowpaper: close open technical decisions first, then phase implementation through order-scoped ledger, reservation, intent execution, fill/fee settlement, funding lifecycle, rewards, and reconciliation.
 - Clarify the yellowpaper funding-layer asset identity boundary: Mixin is the current primary asset directory and funding entry, CCXT is exchange capability/metadata translation rather than the asset source of truth, and future EVM/Solana entries must map into Mixin or canonical asset identity before entering OrderBalance.
 - Reframe yellowpaper reservation as a required order-level locking invariant rather than a mandatory standalone table: MVP can express it through ledger reserve entries plus intent/tracked-order references, while keeping active-lock recovery, release, settlement, and audit rules explicit.
 
