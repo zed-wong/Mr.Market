@@ -88,6 +88,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
     - `data/` - StrategyMarketDataProviderService.
     - `intent/` - ExecutorOrchestratorService, QuoteExecutorManagerService.
     - `execution/` - StrategyIntentExecutionService, StrategyIntentStoreService, StrategyIntentWorkerService, StrategyRuntimeDispatcherService, ExecutorRegistry, ExchangePairExecutor.
+    - `settlement/` - FillSettlementService for order-scoped fill and actual-fee ledger settlement.
     - `dex/` - AlpacaStratService, DexModule, StrategyConfigResolverService.
 - `modules/market-making/strategy/dex/dex.module.ts`
   - Depends on: `Web3Module`, `DefiModule`.
@@ -112,7 +113,11 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Main role: build parseable local clientOrderId values and exchange-safe submitted clientOrderId values.
 - `modules/market-making/ledger/ledger.module.ts`
   - Depends on: TypeORM ledger entities, `DurabilityModule`.
-  - Main role: internal balance ledger.
+  - Main role: order-scoped market-making balance ledger. Mutations append immutable `LedgerEntry` rows keyed by `orderId + assetId`, update `MarketMakingOrderBalance`, reject same-key/different-payload idempotency replays, and can rebuild an order balance from ledger facts.
+  - Reservation boundary: `OrderReservationService` converts limit-order intents into `reserve_lock` / `reserve_release` mutations before exchange placement.
+- `modules/market-making/exchange-api-key/exchange-api-key.module.ts`
+  - Depends on: TypeORM API key entities.
+  - Main role: exchange API key storage, validation status, and key-health reads for admin-direct execution.
 - `modules/market-making/durability/durability.module.ts`
   - Depends on: TypeORM durability entities.
   - Main role: outbox and idempotent receipt store.
@@ -121,10 +126,10 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Main role: pause and withdraw orchestration.
 - `modules/market-making/reconciliation/reconciliation.module.ts`
   - Depends on: TypeORM ledger/reward/intent entities, `TrackersModule`.
-  - Main role: consistency checks and repair logic.
+  - Main role: consistency checks and repair logic. Fill reconciliation compares ledger fill refs against bounded private trade evidence and pauses affected reservations when trade evidence is missing or amount evidence disagrees.
 - `modules/market-making/rewards/rewards.module.ts`
   - Depends on: TypeORM reward entities, `DurabilityModule`, `LedgerModule`, `Web3Module`, `TransactionModule`.
-  - Main role: reward pipeline and transfer.
+  - Main role: reward pipeline and transfer. Reward allocations are order-scoped, and payout corrections are linked delta facts instead of rewrites of credited allocation rows.
 - `modules/market-making/network-mapping/network-mapping.module.ts`
   - Depends on: `MixinClientModule`.
   - Main role: network/chain mapping.
@@ -310,7 +315,7 @@ This section explains each module with three questions:
 
 - What: handles market-making user order APIs and queue processor.
 - Why: this is the business bridge from payment intent to active strategy instance lifecycle.
-- Where: used when creating MM intent, confirming payment, starting run, joining campaign, and handling exit paths.
+- Where: used when creating MM intent, confirming payment, withdrawing funded assets to exchange addresses, starting run, joining campaign, and handling exit paths.
 
 #### `market-making/tick/tick.module.ts`
 
@@ -358,13 +363,13 @@ This section explains each module with three questions:
 
 - What: pause+withdraw orchestration service wiring.
 - Why: withdraw flow crosses strategy, trackers, execution, ledger, and withdrawal modules and needs one orchestration owner.
-- Where: used for safe stop/drain/unlock/debit/withdraw/compensate business sequence.
+- Where: used for safe stop/drain/unlock/reservation-check/debit/withdraw/compensate business sequence.
 
 #### `market-making/reconciliation/reconciliation.module.ts`
 
 - What: periodic consistency checks for ledger/intents plus the off-tick `ExchangeOrderReconciliationRunner`.
 - Why: long-running async systems need reconciliation against drift, and tracked orders need REST recovery that no longer stretches the shared strategy tick.
-- Where: used in scheduled maintenance checks, anomaly detection, and runtime order-state recovery.
+- Where: used in scheduled maintenance checks, anomaly detection, runtime order-state recovery, and estimated-fee correction.
 
 #### `market-making/connector/*`
 

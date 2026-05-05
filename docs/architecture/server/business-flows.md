@@ -139,10 +139,12 @@ Why this flow exists:
 
 Summary:
 
-1. Reward pipeline computes eligible allocation basis.
+1. Reward pipeline computes eligible allocation basis from attributable quote-side market-making fill ledger entries and keeps allocation rows scoped to the contributing market-making `orderId`.
 2. Share-ledger and reward-ledger entities are updated.
-3. Reward receiver checks confirmations on schedule.
-4. Reward vault transfer executes under durability guards.
+3. Platform fee and undistributed remainder are stored with the reward ledger so allocated user rewards, platform fee, and remainder reconcile to the gross payout.
+4. Existing reward allocations are not rewritten once created; credited rows are skipped during distribution replay, and oracle payout corrections are recorded as linked delta reward facts.
+5. Reward receiver checks confirmations on schedule.
+6. Reward vault transfer executes under durability guards.
 
 Main modules:
 

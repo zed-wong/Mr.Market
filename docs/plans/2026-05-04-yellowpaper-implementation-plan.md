@@ -224,12 +224,12 @@ Avoid adding new generic `adjustment` paths. If a mutation cannot name its busin
 
 ### Tasks
 
-1. Add market-making order balance entity.
-2. Add `orderId`, `idempotencyContentHash`, and `reversalOf` support to ledger entry.
-3. Replace market-making balance mutation commands with `orderId + assetId`.
-4. Reject duplicate idempotency keys when the content hash differs.
-5. Update deposit credit path to credit the specific market-making order.
-6. Add ledger rebuild helper:
+1. [x] Add market-making order balance entity.
+2. [x] Add `orderId`, `idempotencyContentHash`, and `reversalOf` support to ledger entry.
+3. [x] Replace market-making balance mutation commands with `orderId + assetId`.
+4. [x] Reject duplicate idempotency keys when the content hash differs.
+5. [x] Update deposit credit path to credit the specific market-making order.
+6. [x] Add ledger rebuild helper:
 
 ```text
 LedgerEntry(orderId, assetId)
@@ -241,13 +241,13 @@ LedgerEntry(orderId, assetId)
 
 ### Acceptance Tests
 
-- Deposit credits one order balance, not every order from the same user.
-- Two orders from the same user and same asset do not share `available`.
-- Duplicate idempotency key with identical payload returns existing entry.
-- Duplicate idempotency key with different payload is rejected and audited.
-- Ledger and balance update commit atomically.
-- Rebuild from ledger matches the read model.
-- Mismatch detection blocks new reservation for the affected order.
+- [x] Deposit credits one order balance, not every order from the same user.
+- [x] Two orders from the same user and same asset do not share `available`.
+- [x] Duplicate idempotency key with identical payload returns existing entry.
+- [x] Duplicate idempotency key with different payload is rejected and audited.
+- [x] Ledger and balance update commit atomically.
+- [x] Rebuild from ledger matches the read model.
+- [x] Mismatch detection blocks new reservation for the affected order.
 
 ## Phase 2: Reservation Contract
 
@@ -270,19 +270,19 @@ reserve_lock ledger entry
 
 ### Tasks
 
-1. Add reservation service around ledger lock/release semantics.
-2. Bind every active lock to exactly one intent or tracked exchange order.
-3. Release lock on exchange create failure, rejected order, cancel, expired order, or unfilled remainder.
-4. Consume lock on fill settlement.
-5. Add recovery scan for active locks without open exchange order or live intent.
+1. [x] Add reservation service around ledger lock/release semantics.
+2. [x] Bind every active lock to exactly one intent or tracked exchange order.
+3. [x] Release lock on exchange create failure, rejected order, cancel, expired order, or unfilled remainder.
+4. [x] Consume lock on fill settlement.
+5. [x] Add recovery scan for active locks without open exchange order or live intent.
 
 ### Acceptance Tests
 
-- Exchange order creation is impossible without prior `reserve_lock`.
-- Concurrent reserve attempts on the same `orderId + assetId` cannot overspend.
-- Exchange create failure releases lock or marks `manual_review`.
-- Partial fill consumes filled amount and leaves or releases the remainder correctly.
-- Restart recovery can reconcile active reservation with open exchange orders.
+- [x] Exchange order creation is impossible without prior `reserve_lock`.
+- [x] Concurrent reserve attempts on the same `orderId + assetId` cannot overspend.
+- [x] Exchange create failure releases lock or marks `manual_review`.
+- [x] Partial fill consumes filled amount and leaves or releases the remainder correctly.
+- [x] Restart recovery can reconcile active reservation with open exchange orders.
 
 ## Phase 3: Intent Worker Integration
 
@@ -301,27 +301,27 @@ StrategyOrderIntent NEW
 
 ### Tasks
 
-1. Add pre-execution risk gate:
-   - order state
-   - strategy instance state
-   - available balance
-   - trading rules
-   - market data freshness
-   - API key health
-   - rate limit
-2. Ensure per-strategy intent execution is serial.
-3. Ensure per-exchange/account mutation lanes are rate-limited.
-4. Ensure risk failure cannot create an exchange order.
-5. Ensure reserve failure cannot create an exchange order.
+1. [x] Add pre-execution risk gate:
+   - [x] order state
+   - [x] strategy instance state
+   - [x] available balance
+   - [x] trading rules
+   - [x] market data freshness
+   - [x] API key health
+   - [x] rate limit
+2. [x] Ensure per-strategy intent execution is serial.
+3. [x] Ensure per-exchange/account mutation lanes are rate-limited.
+4. [x] Ensure risk failure cannot create an exchange order.
+5. [x] Ensure reserve failure cannot create an exchange order.
 
 ### Acceptance Tests
 
-- `NEW -> SENT -> ACKED -> DONE` happy path.
-- Risk failure goes to `FAILED` with no reservation and no exchange call.
-- Reserve failure goes to `FAILED` with no exchange call.
-- Exchange create failure releases reservation.
-- Same strategy intents execute serially.
-- Different exchange/account/pair lanes can execute in parallel.
+- [x] `NEW -> SENT -> ACKED -> DONE` happy path.
+- [x] Risk failure goes to `FAILED` with no reservation and no exchange call.
+- [x] Reserve failure goes to `FAILED` with no exchange call.
+- [x] Exchange create failure releases reservation.
+- [x] Same strategy intents execute serially.
+- [x] Different exchange/account/pair lanes can execute in parallel.
 
 ## Phase 4: Fill, Fee, And PnL Settlement
 
@@ -331,22 +331,22 @@ Make fills the only path that settles locked funds into realized order balance c
 
 ### Tasks
 
-1. Route user stream and REST-recovered fills into one settlement service.
-2. Deduplicate fills by stable exchange trade identity.
-3. Apply `fill_settle` for base/quote movement.
-4. Apply `fee_debit` with actual fee when available.
-5. Use estimated fee only until reconciliation supplies actual fee.
-6. Track realized PnL per order.
-7. Release or keep remaining lock after partial fill based on tracked order state.
+1. [x] Route user stream and REST-recovered fills into one settlement path.
+2. [x] Deduplicate fills by stable exchange trade identity.
+3. [x] Apply `fill_settle` for base/quote movement.
+4. [x] Apply `fee_debit` with actual fee when available.
+5. [x] Use estimated fee only until reconciliation supplies actual fee.
+6. [x] Track realized PnL per order.
+7. [x] Release or keep remaining lock after partial fill based on tracked order state.
 
 ### Acceptance Tests
 
-- Full fill settles base/quote and consumes reservation.
-- Partial fill settles filled amount and keeps or releases remainder correctly.
-- Duplicate fill event does not duplicate ledger impact.
-- Fee from exchange payload beats estimated fee.
-- Estimated fee older than threshold is flagged.
-- Fill with missing order mapping goes to reconciliation/manual review instead of mutating ambiguous balance.
+- [x] Full fill settles base/quote and consumes reservation.
+- [x] Partial fill settles filled amount and keeps or releases remainder correctly.
+- [x] Duplicate fill event does not duplicate ledger impact.
+- [x] Fee from exchange payload beats estimated fee.
+- [x] Estimated fee older than threshold is flagged.
+- [x] Fill with missing order mapping goes to reconciliation/manual review instead of mutating ambiguous balance.
 
 ## Phase 5: Funding And Withdrawal Lifecycle
 
@@ -368,19 +368,19 @@ payment_complete
 
 ### Tasks
 
-1. Re-enable real `withdraw_to_exchange` execution for the selected rollout target.
-2. Track exchange deposit confirmation end to end.
-3. Trigger campaign join after deposit confirmation when a campaign applies.
-4. Start market-making only after required funding and campaign gates are satisfied.
-5. On stop/withdraw, stop new intents, cancel open orders, release reservations, then withdraw.
+1. [x] Re-enable real `withdraw_to_exchange` execution for the selected rollout target.
+2. [x] Track exchange deposit confirmation end to end.
+3. [x] Trigger campaign join after deposit confirmation when a campaign applies.
+4. [x] Start market-making only after required funding and campaign gates are satisfied.
+5. [x] On stop/withdraw, stop new intents, cancel open orders, release reservations, then withdraw.
 
 ### Acceptance Tests
 
-- Successful payment-flow order reaches `running`.
-- Missing campaign match skips campaign join and reaches `created`.
-- HuFi join API failure leaves clear state and error reason.
-- Stop prevents new intents before cancel/release.
-- Withdrawal cannot execute while active reservation or open order remains.
+- [x] Successful payment-flow order reaches `running`.
+- [x] Missing campaign match skips campaign join and reaches `created`.
+- [x] HuFi join API failure leaves clear state and error reason.
+- [x] Stop prevents new intents before cancel/release.
+- [x] Withdrawal cannot execute while active reservation or open order remains.
 
 ## Phase 6: Reward Ledger And Allocation
 
@@ -390,21 +390,21 @@ Allocate external campaign rewards only after confirmed campaign payout facts ex
 
 ### Tasks
 
-1. Confirm campaign reward from oracle.
-2. Create campaign reward ledger entry.
-3. Compute internal score from eligible attributable fills.
-4. Apply platform fee.
-5. Create user allocations.
-6. Credit user/order reward only once.
-7. Handle zero internal score with undistributed remainder.
+- [x] Confirm campaign reward from oracle.
+- [x] Create campaign reward ledger entry.
+- [x] Compute internal score from eligible attributable fills.
+- [x] Apply platform fee.
+- [x] Create user allocations.
+- [x] Credit user/order reward only once.
+- [x] Handle zero internal score with undistributed remainder.
 
 ### Acceptance Tests
 
-- `sum(user_rewards) + platform_fee + undistributed_remainder = gross_daily_payout`.
-- Already credited allocation is immutable.
-- Fee config change does not rewrite settled reward days.
-- Duplicate oracle payout observation is idempotent.
-- Missing fill attribution excludes fill from score and flags reconciliation.
+- [x] `sum(user_rewards) + platform_fee + undistributed_remainder = gross_daily_payout`.
+- [x] Already credited allocation is immutable.
+- [x] Fee config change does not rewrite settled reward days.
+- [x] Duplicate oracle payout observation is idempotent.
+- [x] Missing fill attribution excludes fill from score and flags reconciliation.
 
 ## Phase 7: Reconciliation, Audit, And Observability
 
@@ -414,21 +414,21 @@ Make every cross-system mismatch visible, bounded, and recoverable.
 
 ### Tasks
 
-1. Reconcile order balance against ledger aggregate.
-2. Reconcile tracked orders against exchange open/closed orders.
-3. Reconcile fills against exchange trades.
-4. Reconcile withdrawals against Mixin/exchange/chain evidence.
-5. Reconcile rewards against oracle/campaign evidence.
-6. Emit structured audit events for every automatic correction.
-7. Block new risk-increasing operations for affected order/account when mismatch is unresolved.
+- [x] Reconcile order balance against ledger aggregate.
+- [x] Reconcile tracked orders against exchange open/closed orders.
+- [x] Reconcile fills against exchange trades via private trade/order refs.
+- [x] Reconcile withdrawals against Mixin/exchange/chain evidence.
+- [x] Reconcile rewards against oracle/campaign evidence.
+- [x] Emit structured audit events for every automatic correction.
+- [x] Block new risk-increasing operations for affected order/account when mismatch is unresolved.
 
 ### Acceptance Tests
 
-- Balance mismatch pauses new reservation.
-- Exchange order exists externally but not internally creates `internal_missing`.
-- Internal open order missing externally creates `external_missing` or final state after evidence.
-- Amount mismatch never rewrites ledger directly.
-- Automatic correction always has `refType`, `refId`, and audit event.
+- [x] Balance mismatch pauses new reservation.
+- [x] Exchange order exists externally but not internally creates `internal_missing`.
+- [x] Internal open order missing externally creates `external_missing` or final state after evidence.
+- [x] Amount mismatch never rewrites ledger directly.
+- [x] Automatic correction always has `refType`, `refId`, and audit event.
 
 ## Test Coverage Diagram
 
@@ -437,50 +437,51 @@ CODE PATH COVERAGE TARGET
 =========================
 [+] Ledger mutation
     |
-    +-- [GAP] deposit_credit order-scoped balance
-    +-- [GAP] duplicate idempotency same payload
-    +-- [GAP] duplicate idempotency different payload
-    +-- [GAP] atomic ledger + read-model commit
-    +-- [GAP] reversal and rebuild
+    +-- [DONE] deposit_credit order-scoped balance
+    +-- [DONE] duplicate idempotency same payload
+    +-- [DONE] duplicate idempotency different payload
+    +-- [DONE] atomic ledger + read-model commit
+    +-- [DONE] reversal and rebuild
 
 [+] Reservation
     |
-    +-- [GAP] reserve_lock before exchange create
-    +-- [GAP] concurrent same orderId + assetId lock
-    +-- [GAP] exchange create failure release
-    +-- [GAP] partial fill consume/release split
-    +-- [GAP] restart recovery active lock
+    +-- [DONE] reserve_lock before exchange create
+    +-- [DONE] concurrent same orderId + assetId lock
+    +-- [DONE] exchange create failure release
+    +-- [DONE] partial fill consume/release split
+    +-- [DONE] restart recovery active lock
 
 [+] Intent worker
     |
-    +-- [GAP] risk failure before reservation
-    +-- [GAP] reservation failure before exchange call
-    +-- [GAP] ACKED happy path
-    +-- [GAP] FAILED release path
-    +-- [GAP] per-strategy serial execution
-    +-- [GAP] per-account rate limit lane
+    +-- [DONE] risk failure before reservation
+    +-- [DONE] reservation failure before exchange call
+    +-- [DONE] ACKED happy path
+    +-- [DONE] FAILED release path
+    +-- [DONE] per-strategy serial execution
+    +-- [DONE] per-account rate limit lane
 
 [+] Fill settlement
     |
-    +-- [GAP] full fill settlement
-    +-- [GAP] partial fill settlement
-    +-- [GAP] duplicate fill dedupe
-    +-- [GAP] actual fee correction
-    +-- [GAP] missing mapping manual review
+    +-- [DONE] full fill settlement
+    +-- [DONE] partial fill settlement
+    +-- [DONE] duplicate fill dedupe
+    +-- [DONE] actual fee debit
+    +-- [DONE] estimated fee reversal after actual fee
+    +-- [DONE] missing mapping manual review
 
 [+] Funding lifecycle
     |
-    +-- [GAP] payment -> withdrawal -> deposit -> created
-    +-- [GAP] campaign join success
-    +-- [GAP] campaign join failure
-    +-- [GAP] stop blocks new intent before withdrawal
+    +-- [DONE] payment -> withdrawal -> deposit -> created
+    +-- [DONE] campaign join success
+    +-- [DONE] campaign join failure
+    +-- [DONE] stop blocks new intent before withdrawal
 
 [+] Rewards
     |
-    +-- [GAP] confirmed payout allocation
-    +-- [GAP] zero internal score remainder
-    +-- [GAP] duplicate payout idempotency
-    +-- [GAP] settled allocation immutability
+    +-- [DONE] confirmed payout allocation
+    +-- [DONE] zero internal score remainder
+    +-- [DONE] duplicate payout idempotency
+    +-- [DONE] settled allocation immutability
 ```
 
 ## Failure Modes
@@ -495,7 +496,7 @@ CODE PATH COVERAGE TARGET
 | Fill settlement | User stream sends duplicate trade | Dedup prevents duplicate ledger impact |
 | Fee settlement | Exchange omits fee | Estimated fee applied, then reconciled or manual review after threshold |
 | Withdrawal | User requests withdrawal while open order exists | Stop new intents, cancel open orders, release reservation first |
-| Reward allocation | Oracle payout changes after distribution | Do not rewrite credited allocation; use new correction entry |
+| Reward allocation | Oracle payout changes after distribution | Do not rewrite credited allocation; use new correction reward ledger entry |
 | Reconciliation | Ledger/read model mismatch | Ledger wins, pause affected order's new reservation |
 
 ## Worktree Parallelization Strategy

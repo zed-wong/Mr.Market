@@ -10,7 +10,7 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 
 ## 1) Idempotency keys + unique constraints
 
-- `BalanceLedgerService` writes each mutation with `idempotencyKey` and treats duplicates as `applied: false`.
+- `BalanceLedgerService` writes each mutation with `idempotencyKey` and `idempotencyContentHash`; exact duplicates return `applied: false`, while same-key/different-payload replays are rejected.
 - `ConsumerReceipt` enforces unique (`consumerName`, `idempotencyKey`) for once-only consumer marking.
 - Used in:
   - `server/src/modules/market-making/ledger/balance-ledger.service.ts`
@@ -31,16 +31,33 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 
 ## 3) Ledger serialization and invariants
 
-- Per `(userId, assetId)` in-process lock serializes concurrent balance writes.
-- Optional DB transaction path wraps entry + balance updates.
+- Per `(orderId, assetId)` in-process lock serializes concurrent balance writes.
+- Optional DB transaction path wraps ledger entry + `MarketMakingOrderBalance` projection updates.
 - Balance math checks prevent negative available/locked and enforce numeric input.
+- Negative `fill_settle` entries consume locked reservation balance; positive `fill_settle` entries credit available received assets.
+- Actual exchange fill fees from user-stream trade payloads are applied as idempotent `fee_debit` ledger entries keyed by the same stable fill identity as the base/quote settlement.
+- If actual fee debit cannot be applied after fill settlement, the fee is logged for manual review instead of replaying or rolling back the already-attributed fill.
+- `FillSettlementService` owns fill base/quote and actual-fee ledger writes so user-stream and REST-recovered fills share one settlement boundary.
+- Reconciliation reverses `market_making_estimated_fee` debits once a matching actual `market_making_fee` debit exists, and flags unreversed estimates older than 15 minutes.
+- Orphaned fills with missing order attribution emit `fill.manual-review` and stay out of ledger mutation instead of guessing an order balance.
+- Ledger rebuild can compare `LedgerEntry(orderId, assetId)` against the read model and pause new reservations for mismatched order balances.
+- Pause/withdraw checks aggregate locked balance for the same user and asset across order scopes and refuses external withdrawal while any reservation remains.
+- Market-making exchange withdrawal debits the order-scoped ledger before calling `WithdrawalService.executeWithdrawal`, uses the debit key as the Mixin request key, and compensates the debit if the external withdrawal call fails.
+- After Mixin withdrawal confirmation, payment-flow orders enter `deposit_confirming`; exchange base/quote balances must meet the funded amounts before `deposit_confirmed` queues campaign handling.
+- Required HuFi campaign joins call the configured signer/read-only exchange credential flow; failed joins fail the order instead of starting market making without campaign enrollment.
+- Market-making orders persist lifecycle failure details in `lifecycleError` so failed gates keep an operator-visible reason.
 - File: `server/src/modules/market-making/ledger/balance-ledger.service.ts`
 
 ## 4) Compensation for partial failure
 
 - In market-making refund path, if ledger debit succeeds but transfer fails, compensation credit is applied.
+- In strategy intent execution, `CREATE_LIMIT_ORDER` reserves order-scoped funds before exchange placement, releases that reservation when exchange create fails or returns a rejected/expired/cancelled acknowledgement, and releases unfilled remainder on final cancel acknowledgement.
+- Reservation recovery scans active ledger locks, keeps reservations attached to live intents or open order ids, and releases clearly dangling locks with a stable recovery idempotency key.
 - This reduces ledger/external transfer divergence.
-- File: `server/src/modules/market-making/user-orders/market-making.processor.ts`
+- Files:
+  - `server/src/modules/market-making/user-orders/market-making.processor.ts`
+  - `server/src/modules/market-making/ledger/order-reservation.service.ts`
+  - `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts`
 
 ## 5) Retry, timeout, and bounded failure handling
 
@@ -54,10 +71,11 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 
 - Intent worker enforces:
   - global max in-flight,
-  - per-exchange max in-flight,
+  - per exchange/account/pair/mutation lane max in-flight,
   - one in-flight per strategy key,
   - no duplicate dispatch for already processed/in-flight intent.
 - File: `server/src/modules/market-making/strategy/execution/strategy-intent-worker.service.ts`
+- Create-intent execution validates basic order shape, known order state, cached market-data freshness, and API-key health before reservation: exchange, pair, side, positive quantity, positive price, running market-making order state, fresh tracked order book, `read-trade` permission, matching exchange, and `valid` API-key validation status must pass before any reservation or exchange placement.
 
 ## 7) Tick-loop safety
 
@@ -83,8 +101,13 @@ The runtime is async and stateful (queue workers, exchange APIs, ledger, strateg
 
 - Every 5 minutes, reconciliation scans for:
   - ledger invariant breaks,
-  - reward over-allocation,
+  - reward allocation mismatches across user allocations, platform fee, and undistributed remainder,
+  - market-making fills missing order/user/fill attribution,
+  - fill ledger refs missing from exchange private trade/order evidence,
+  - external-only open orders as `internal_missing`,
+  - internal-only open orders as `external_missing`,
   - stale or inconsistent strategy intents.
+- Automatic estimated-fee reversals emit `reconciliation.audit` events with correction `refType`, `refId`, and reversed ledger entry id.
 - File: `server/src/modules/market-making/reconciliation/reconciliation.service.ts`
 
 ## 10.1) Reward vault transfer idempotency gate
