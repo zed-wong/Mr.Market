@@ -30,6 +30,8 @@ type RoutedFillCandidate = {
   price?: string;
   qty?: string;
   cumulativeQty?: string;
+  feeAmount?: string;
+  feeAsset?: string;
   qtyKind?: 'delta' | 'cumulative';
   status?: 'open' | 'partially_filled' | 'filled' | 'cancelled' | 'failed';
   receivedAt: string;
@@ -430,6 +432,8 @@ export class UserStreamTrackerService
       ]),
       qty: qtyValue,
       cumulativeQty,
+      feeAmount: this.pickNumberString(payload, ['feeAmount', 'fee.cost']),
+      feeAsset: this.pickString(payload, ['feeAsset', 'fee.currency']),
       qtyKind,
       status,
       receivedAt: event.receivedAt,
@@ -489,6 +493,8 @@ export class UserStreamTrackerService
       status: event.kind === 'order' ? event.payload.status : undefined,
       fillId: event.kind === 'trade' ? event.payload.fillId : undefined,
       qty: event.kind === 'trade' ? event.payload.qty : undefined,
+      feeAmount: event.kind === 'trade' ? event.payload.feeAmount : undefined,
+      feeAsset: event.kind === 'trade' ? event.payload.feeAsset : undefined,
     };
   }
 
@@ -596,6 +602,8 @@ export class UserStreamTrackerService
     price?: string;
     qty?: string;
     cumulativeQty?: string;
+    feeAmount?: string;
+    feeAsset?: string;
     receivedAt: string;
     payload: Record<string, unknown>;
   } | null {
@@ -627,6 +635,8 @@ export class UserStreamTrackerService
       price,
       qty,
       cumulativeQty,
+      feeAmount: fill.feeAmount,
+      feeAsset: fill.feeAsset,
       receivedAt: fill.receivedAt,
       payload: fill.payload,
     };
@@ -732,6 +742,19 @@ export class UserStreamTrackerService
     if (this.orphanedFills.length > 100) {
       this.orphanedFills.shift();
     }
+
+    this.marketMakingEventBus?.emitFillManualReview({
+      exchange: fill.exchange,
+      accountLabel: fill.accountLabel,
+      pair: fill.pair,
+      orderId: fill.orderId,
+      exchangeOrderId: fill.exchangeOrderId,
+      clientOrderId: fill.clientOrderId,
+      fillId: fill.fillId,
+      reason,
+      reviewStatus: 'manual_review',
+      observedAt: fill.receivedAt,
+    });
 
     this.logger.warn(
       `Orphaned fill requires manual review exchange=${fill.exchange} pair=${

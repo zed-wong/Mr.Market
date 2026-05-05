@@ -29,6 +29,8 @@ export type UserStreamTradeEvent = {
     qty?: string;
     cumulativeQty?: string;
     price?: string;
+    feeAmount?: string;
+    feeAsset?: string;
     raw: Record<string, unknown>;
   };
 };

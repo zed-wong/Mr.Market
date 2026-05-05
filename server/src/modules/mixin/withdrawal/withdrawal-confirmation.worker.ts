@@ -144,8 +144,7 @@ export class WithdrawalConfirmationWorker {
   }
 
   /**
-   * Check transaction status from Mixin API
-   * This is a placeholder - implement actual Mixin API call
+   * Check transaction status from Mixin snapshot evidence.
    */
   private async checkMixinTransactionStatus(txId: string): Promise<{
     status: 'pending' | 'completed' | 'failed';
@@ -162,14 +161,17 @@ export class WithdrawalConfirmationWorker {
         return null;
       }
 
-      // Check if transaction has been confirmed
-      const confirmed = snapshot.confirmations >= 1;
+      const onChainHash =
+        typeof snapshot.transaction_hash === 'string'
+          ? snapshot.transaction_hash.trim()
+          : '';
+      const confirmed = snapshot.confirmations >= 1 && Boolean(onChainHash);
       const status = confirmed ? 'completed' : 'pending';
 
       return {
         status,
         confirmed,
-        onChainHash: snapshot.transaction_hash,
+        onChainHash: onChainHash || undefined,
       };
     } catch (error) {
       this.logger.error(
@@ -180,26 +182,4 @@ export class WithdrawalConfirmationWorker {
     }
   }
 
-  /**
-   * Optional: Check transaction status from blockchain explorer
-   * This can be implemented for additional verification
-   */
-  private async checkBlockchainExplorer(
-    assetId: string,
-    txHash: string,
-  ): Promise<boolean> {
-    return false;
-  }
-
-  /**
-   * Optional: Check if deposit arrived at destination exchange
-   * This can be implemented if withdrawing to an exchange
-   */
-  private async checkExchangeDeposit(
-    exchangeName: string,
-    assetSymbol: string,
-    amount: string,
-  ): Promise<boolean> {
-    return false;
-  }
 }

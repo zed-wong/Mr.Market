@@ -2,7 +2,7 @@ import 'reflect-metadata';
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
-import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
+import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { RewardAllocation } from 'src/common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
@@ -25,7 +25,7 @@ describe('ReconciliationService persistence parity (system)', () => {
 
   let moduleRef: TestingModule;
   let reconciliationService: ReconciliationService;
-  let balanceRepository: Repository<BalanceReadModel>;
+  let balanceRepository: Repository<MarketMakingOrderBalance>;
   let rewardLedgerRepository: Repository<RewardLedger>;
   let rewardAllocationRepository: Repository<RewardAllocation>;
   let strategyIntentRepository: Repository<StrategyOrderIntentEntity>;
@@ -41,7 +41,7 @@ describe('ReconciliationService persistence parity (system)', () => {
           ...databaseConfig.options,
           dropSchema: true,
           entities: [
-            BalanceReadModel,
+            MarketMakingOrderBalance,
             RewardLedger,
             RewardAllocation,
             StrategyOrderIntentEntity,
@@ -49,7 +49,7 @@ describe('ReconciliationService persistence parity (system)', () => {
           synchronize: true,
         }),
         TypeOrmModule.forFeature([
-          BalanceReadModel,
+          MarketMakingOrderBalance,
           RewardLedger,
           RewardAllocation,
           StrategyOrderIntentEntity,
@@ -67,7 +67,9 @@ describe('ReconciliationService persistence parity (system)', () => {
     }).compile();
 
     reconciliationService = moduleRef.get(ReconciliationService);
-    balanceRepository = moduleRef.get(getRepositoryToken(BalanceReadModel));
+    balanceRepository = moduleRef.get(
+      getRepositoryToken(MarketMakingOrderBalance),
+    );
     rewardLedgerRepository = moduleRef.get(getRepositoryToken(RewardLedger));
     rewardAllocationRepository = moduleRef.get(
       getRepositoryToken(RewardAllocation),
@@ -95,6 +97,7 @@ describe('ReconciliationService persistence parity (system)', () => {
   it('reports zero ledger violations for balanced rows and detects invalid totals', async () => {
     await balanceRepository.save(
       balanceRepository.create({
+        orderId: 'order-1',
         userId: 'u1',
         assetId: 'usdt',
         available: '70',
@@ -111,6 +114,7 @@ describe('ReconciliationService persistence parity (system)', () => {
     await balanceRepository.clear();
     await balanceRepository.save(
       balanceRepository.create({
+        orderId: 'order-1',
         userId: 'u1',
         assetId: 'usdt',
         available: '60',
@@ -151,6 +155,7 @@ describe('ReconciliationService persistence parity (system)', () => {
           campaignId: 'campaign-1',
           dayIndex: 1,
           userId: 'user-1',
+          orderId: 'order-1',
           token: 'USDT',
           amount: '40',
           basisShares: '40',
@@ -162,6 +167,7 @@ describe('ReconciliationService persistence parity (system)', () => {
           campaignId: 'campaign-1',
           dayIndex: 1,
           userId: 'user-2',
+          orderId: 'order-2',
           token: 'USDT',
           amount: '60',
           basisShares: '60',
@@ -184,6 +190,7 @@ describe('ReconciliationService persistence parity (system)', () => {
           campaignId: 'campaign-1',
           dayIndex: 1,
           userId: 'user-1',
+          orderId: 'order-1',
           token: 'USDT',
           amount: '80',
           basisShares: '80',
@@ -195,6 +202,7 @@ describe('ReconciliationService persistence parity (system)', () => {
           campaignId: 'campaign-1',
           dayIndex: 1,
           userId: 'user-2',
+          orderId: 'order-2',
           token: 'USDT',
           amount: '30',
           basisShares: '30',
@@ -221,7 +229,7 @@ describe('ReconciliationService persistence parity (system)', () => {
     await strategyIntentRepository.save(
       strategyIntentRepository.create({
         intentId: 'intent-valid',
-        strategyInstanceId: 'strategy-1',
+        runtimeInstanceKey: 'strategy-1',
         strategyKey: 'pure-mm:order-1',
         userId: 'user-1',
         clientId: 'order-1',
@@ -247,7 +255,7 @@ describe('ReconciliationService persistence parity (system)', () => {
     await strategyIntentRepository.save(
       strategyIntentRepository.create({
         intentId: 'intent-stale',
-        strategyInstanceId: 'strategy-1',
+        runtimeInstanceKey: 'strategy-1',
         strategyKey: 'pure-mm:order-1',
         userId: 'user-1',
         clientId: 'order-1',

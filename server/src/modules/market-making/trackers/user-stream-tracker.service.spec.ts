@@ -128,6 +128,8 @@ describe('UserStreamTrackerService', () => {
       payload: {
         clientOrderId: 'order-1:0',
         qty: '1',
+        feeAmount: '0.01',
+        feeAsset: 'USDT',
         raw: {},
       },
       receivedAt: '2026-03-11T00:00:00.000Z',
@@ -139,6 +141,8 @@ describe('UserStreamTrackerService', () => {
       expect.objectContaining({
         orderId: 'order-1',
         clientOrderId: 'order-1:0',
+        feeAmount: '0.01',
+        feeAsset: 'USDT',
       }),
     );
     expect(service.getOrphanedFills()).toEqual([]);
@@ -407,6 +411,11 @@ describe('UserStreamTrackerService', () => {
   });
 
   it('records orphaned fills when routing cannot resolve an order', async () => {
+    const marketMakingEventBus = new MarketMakingEventBus();
+    const emitFillManualReviewSpy = jest.spyOn(
+      marketMakingEventBus,
+      'emitFillManualReview',
+    );
     const service = new UserStreamTrackerService(
       undefined,
       {
@@ -421,6 +430,7 @@ describe('UserStreamTrackerService', () => {
         getExecutor: jest.fn().mockReturnValue(undefined),
         findExecutorByOrderId: jest.fn().mockReturnValue(undefined),
       } as unknown as ExecutorRegistry,
+      marketMakingEventBus,
     );
     const logger = Reflect.get(service, 'logger') as CustomLogger;
     const warnSpy = jest
@@ -453,6 +463,18 @@ describe('UserStreamTrackerService', () => {
         reason: 'unresolved_order',
       }),
     ]);
+    expect(emitFillManualReviewSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchange: 'binance',
+        accountLabel: 'default',
+        pair: 'BTC/USDT',
+        clientOrderId: 'legacy-client-oid',
+        exchangeOrderId: 'ex-missing',
+        reason: 'unresolved_order',
+        reviewStatus: 'manual_review',
+        observedAt: '2026-03-11T00:00:04.000Z',
+      }),
+    );
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 

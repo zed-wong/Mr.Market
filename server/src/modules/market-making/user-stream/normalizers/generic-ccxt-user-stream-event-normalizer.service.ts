@@ -25,7 +25,6 @@ export class GenericCcxtUserStreamEventNormalizerService
     }
 
     const payload = rawPayload as Record<string, unknown>;
-
     return {
       exchange,
       accountLabel,
@@ -78,6 +77,10 @@ export class GenericCcxtUserStreamEventNormalizerService
     }
 
     const payload = rawPayload as Record<string, unknown>;
+    const fee =
+      payload.fee && typeof payload.fee === 'object'
+        ? (payload.fee as Record<string, unknown>)
+        : undefined;
 
     return {
       exchange,
@@ -127,6 +130,14 @@ export class GenericCcxtUserStreamEventNormalizerService
         price:
           typeof payload.price === 'string' || typeof payload.price === 'number'
             ? String(payload.price)
+            : undefined,
+        feeAmount:
+          typeof fee?.cost === 'string' || typeof fee?.cost === 'number'
+            ? String(fee.cost)
+            : undefined,
+        feeAsset:
+          typeof fee?.currency === 'string' && fee.currency
+            ? fee.currency
             : undefined,
         raw: payload,
       },

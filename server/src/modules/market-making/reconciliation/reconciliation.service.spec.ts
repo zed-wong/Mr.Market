@@ -58,7 +58,37 @@ describe('ReconciliationService', () => {
     expect(report.violations).toBe(1);
   });
 
-  it('detects reward consistency mismatch when allocations exceed reward amount', async () => {
+  it('accepts reward consistency when allocations, platform fee, and remainder equal reward amount', async () => {
+    const service = new ReconciliationService(
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
+      {
+        find: jest.fn().mockResolvedValue([
+          {
+            txHash: 'tx-balanced',
+            amount: '100',
+            platformFee: '10',
+            undistributedRemainder: '5',
+            campaignId: 'c1',
+            dayIndex: 1,
+          },
+        ]),
+      } as any,
+      {
+        find: jest.fn().mockResolvedValue([
+          { rewardTxHash: 'tx-balanced', amount: '50' },
+          { rewardTxHash: 'tx-balanced', amount: '35' },
+        ]),
+      } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+    );
+
+    const report = await service.reconcileRewardConsistency();
+
+    expect(report.violations).toBe(0);
+  });
+
+  it('detects reward consistency mismatch when accounting does not equal reward amount', async () => {
     const service = new ReconciliationService(
       { find: jest.fn().mockResolvedValue([]) } as any,
       { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
@@ -66,7 +96,14 @@ describe('ReconciliationService', () => {
         find: jest
           .fn()
           .mockResolvedValue([
-            { txHash: 'tx-1', amount: '100', campaignId: 'c1', dayIndex: 1 },
+            {
+              txHash: 'tx-1',
+              amount: '100',
+              platformFee: '10',
+              undistributedRemainder: '0',
+              campaignId: 'c1',
+              dayIndex: 1,
+            },
           ]),
       } as any,
       {
@@ -115,5 +152,304 @@ describe('ReconciliationService', () => {
     const report = await service.reconcileIntentLifecycleConsistency();
 
     expect(report.violations).toBe(2);
+  });
+
+  it('flags estimated fee debits older than the reconciliation threshold', async () => {
+    const nowSpy = jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-05-04T00:20:00.000Z'));
+    const service = new ReconciliationService(
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      {
+        find: jest.fn().mockResolvedValue([
+          {
+            entryId: 'estimated-fee-stale',
+            type: 'fee_debit',
+            refType: 'market_making_estimated_fee',
+            createdAt: '2026-05-04T00:00:00.000Z',
+          },
+          {
+            entryId: 'estimated-fee-fresh',
+            type: 'fee_debit',
+            refType: 'market_making_estimated_fee',
+            createdAt: '2026-05-04T00:10:01.000Z',
+          },
+        ]),
+      } as any,
+    );
+
+    const report = await service.reconcileEstimatedFeeAging();
+
+    expect(report).toEqual({
+      checked: 2,
+      violations: 1,
+    });
+    nowSpy.mockRestore();
+  });
+
+  it('does not flag estimated fee debits after they are reversed', async () => {
+    const nowSpy = jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-05-04T00:20:00.000Z'));
+    const service = new ReconciliationService(
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      {
+        find: jest.fn(async ({ where }: any) => {
+          if (where.refType === 'market_making_estimated_fee') {
+            return [
+              {
+                entryId: 'estimated-fee-reversed',
+                type: 'fee_debit',
+                refType: 'market_making_estimated_fee',
+                createdAt: '2026-05-04T00:00:00.000Z',
+              },
+            ];
+          }
+
+          if (where.refType === 'market_making_estimated_fee_reversal') {
+            return [
+              {
+                entryId: 'reversal-1',
+                type: 'reversal',
+                refType: 'market_making_estimated_fee_reversal',
+                reversalOf: 'estimated-fee-reversed',
+              },
+            ];
+          }
+
+          return [];
+        }),
+      } as any,
+    );
+
+    const report = await service.reconcileEstimatedFeeAging();
+
+    expect(report).toEqual({
+      checked: 1,
+      violations: 0,
+    });
+    nowSpy.mockRestore();
+  });
+
+  it('reverses estimated fee debit when actual fee exists for the same fill', async () => {
+    const balanceLedgerService = {
+      reverse: jest.fn().mockResolvedValue({ applied: true }),
+    };
+    const marketMakingEventBus = {
+      emitReconciliationAudit: jest.fn(),
+    };
+    const service = new ReconciliationService(
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      {
+        find: jest.fn(async ({ where }: any) => {
+          if (where.refType === 'market_making_estimated_fee') {
+            return [
+              {
+                entryId: 'estimated-fee-1',
+                orderId: 'order-1',
+                userId: 'user-1',
+                assetId: 'USDT',
+                amount: '-0.1',
+                type: 'fee_debit',
+                refType: 'market_making_estimated_fee',
+                refId: 'trade-1',
+              },
+            ];
+          }
+
+          if (where.refType === 'market_making_fee') {
+            return [
+              {
+                entryId: 'actual-fee-1',
+                orderId: 'order-1',
+                userId: 'user-1',
+                assetId: 'USDT',
+                amount: '-0.07',
+                type: 'fee_debit',
+                refType: 'market_making_fee',
+                refId: 'trade-1',
+              },
+            ];
+          }
+
+          return [];
+        }),
+      } as any,
+      balanceLedgerService as any,
+      marketMakingEventBus as any,
+    );
+
+    const report = await service.reconcileEstimatedFeeCorrections();
+
+    expect(report).toEqual({
+      checked: 1,
+      violations: 0,
+      corrected: 1,
+    });
+    expect(balanceLedgerService.reverse).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'USDT',
+      amount: '0.1',
+      idempotencyKey: 'estimated-fee-reversal:estimated-fee-1',
+      refType: 'market_making_estimated_fee_reversal',
+      refId: 'trade-1',
+      reversalOf: 'estimated-fee-1',
+    });
+    expect(marketMakingEventBus.emitReconciliationAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        correctionType: 'estimated_fee_reversal',
+        orderId: 'order-1',
+        userId: 'user-1',
+        assetId: 'USDT',
+        amount: '0.1',
+        refType: 'market_making_estimated_fee_reversal',
+        refId: 'trade-1',
+        reversalOf: 'estimated-fee-1',
+      }),
+    );
+  });
+
+  it('flags market-making fills that are missing attribution fields', async () => {
+    const service = new ReconciliationService(
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      {
+        find: jest.fn().mockResolvedValue([
+          {
+            entryId: 'fill-ok',
+            orderId: 'order-1',
+            userId: 'user-1',
+            amount: '-100',
+            type: 'fill_settle',
+            refType: 'market_making_fill',
+            refId: 'fill-1',
+          },
+          {
+            entryId: 'fill-missing-order',
+            orderId: '',
+            userId: 'user-2',
+            amount: '-50',
+            type: 'fill_settle',
+            refType: 'market_making_fill',
+            refId: 'fill-2',
+          },
+          {
+            entryId: 'fill-missing-ref',
+            orderId: 'order-3',
+            userId: 'user-3',
+            amount: '-25',
+            type: 'fill_settle',
+            refType: 'market_making_fill',
+            refId: '',
+          },
+        ]),
+      } as any,
+    );
+
+    const report = await service.reconcileFillAttributionConsistency();
+
+    expect(report).toEqual({
+      checked: 3,
+      violations: 2,
+    });
+  });
+
+  it('reconciles fill ledger refs against exchange private trade evidence', async () => {
+    const ledgerEntryRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          entryId: 'fill-backed',
+          orderId: 'order-1',
+          userId: 'user-1',
+          amount: '-100',
+          type: 'fill_settle',
+          refType: 'market_making_fill',
+          refId: 'exchange-order-backed',
+        },
+        {
+          entryId: 'fill-missing-exchange-trade',
+          orderId: 'order-2',
+          userId: 'user-2',
+          amount: '-50',
+          type: 'fill_settle',
+          refType: 'market_making_fill',
+          refId: 'exchange-order-missing',
+        },
+        {
+          entryId: 'fill-untracked',
+          orderId: 'order-3',
+          userId: 'user-3',
+          amount: '-25',
+          type: 'fill_settle',
+          refType: 'market_making_fill',
+          refId: 'not-in-tracker',
+        },
+      ]),
+    };
+    const exchangeConnectorAdapterService = {
+      fetchMyTrades: jest.fn().mockResolvedValue([
+        {
+          id: 'trade-1',
+          order: 'exchange-order-backed',
+        },
+      ]),
+    };
+    const service = new ReconciliationService(
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      {
+        getOpenOrders: jest.fn().mockReturnValue([]),
+        getAllTrackedOrders: jest.fn().mockReturnValue([
+          {
+            exchange: 'binance',
+            accountLabel: 'maker',
+            pair: 'BTC/USDT',
+            exchangeOrderId: 'exchange-order-backed',
+          },
+          {
+            exchange: 'binance',
+            accountLabel: 'maker',
+            pair: 'BTC/USDT',
+            exchangeOrderId: 'exchange-order-missing',
+          },
+        ]),
+      } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      ledgerEntryRepository as any,
+      undefined,
+      undefined,
+      exchangeConnectorAdapterService as any,
+    );
+
+    const report = await service.reconcileFillsAgainstExchangeTrades();
+
+    expect(exchangeConnectorAdapterService.fetchMyTrades).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      undefined,
+      1000,
+      'maker',
+    );
+    expect(report).toEqual({
+      checked: 3,
+      violations: 2,
+    });
   });
 });

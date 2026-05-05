@@ -112,6 +112,63 @@ describe('ExchangeOrderTrackerService', () => {
     ).toEqual(['pending-create', 'open-order', 'pending-cancel']);
   });
 
+  it('reconciles open order snapshots into internal/external mismatch states', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    service.upsertOrder({
+      orderId: 'o1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'internal-open',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    const report = service.reconcileOpenOrderSnapshot({
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      openOrders: [
+        {
+          id: 'external-open',
+          side: 'sell',
+          price: '101',
+          amount: '2',
+          filled: '0.5',
+        },
+      ],
+      observedAt: '2026-02-11T00:00:01.000Z',
+    });
+
+    expect(report).toEqual({
+      internalMissing: ['external-open'],
+      externalMissing: ['internal-open'],
+    });
+    expect(service.getTrackedOrders('strategy-1')[0].status).toBe(
+      'external_missing',
+    );
+
+    const missingExternal = service.getTrackedOrders(
+      'internal_missing:binance:default:BTC/USDT',
+    );
+
+    expect(missingExternal).toHaveLength(1);
+    expect(missingExternal[0]).toEqual(
+      expect.objectContaining({
+        exchangeOrderId: 'external-open',
+        status: 'internal_missing',
+        side: 'sell',
+        price: '101',
+        qty: '2',
+        cumulativeFilledQty: '0.5',
+      }),
+    );
+  });
+
   it('reconciles order status through the off-tick poller', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'closed' }),
@@ -137,6 +194,43 @@ describe('ExchangeOrderTrackerService', () => {
     const tracked = service.getByExchangeOrderId('binance', 'ex-1');
 
     expect(tracked?.status).toBe('filled');
+  });
+
+  it('reconciles open-order snapshots during off-tick polling when available', async () => {
+    const adapter = {
+      fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'open' }),
+      fetchOpenOrders: jest.fn().mockResolvedValue([{ id: 'external-open' }]),
+    };
+    const service = new ExchangeOrderTrackerService(adapter as any);
+
+    service.upsertOrder({
+      orderId: 'u1-c1',
+      strategyKey: 'u1-c1-pureMarketMaking',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    await service.pollDueOrders('2026-02-11T00:00:01.000Z');
+
+    expect(adapter.fetchOpenOrders).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      undefined,
+    );
+    expect(service.getTrackedOrders('u1-c1-pureMarketMaking')[0].status).toBe(
+      'external_missing',
+    );
+    expect(
+      service.getTrackedOrders('internal_missing:binance:default:BTC/USDT')[0]
+        .exchangeOrderId,
+    ).toBe('external-open');
   });
 
   it('self-heals stopped market-making orders without re-polling them on later reconciliation passes', async () => {

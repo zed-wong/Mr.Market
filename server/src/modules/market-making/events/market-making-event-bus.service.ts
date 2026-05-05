@@ -3,8 +3,10 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import type {
   MarketMakingBalanceStaleEvent,
+  MarketMakingFillManualReviewEvent,
   MarketMakingEventName,
   MarketMakingEventPayloadMap,
+  MarketMakingReconciliationAuditEvent,
   MarketMakingStreamHealthChangedEvent,
 } from './market-making-events.types';
 import { MARKET_MAKING_EVENT_NAMES } from './market-making-events.types';
@@ -35,6 +37,16 @@ export class MarketMakingEventBus {
 
   emitBalanceStale(payload: MarketMakingBalanceStaleEvent): void {
     this.emit(MARKET_MAKING_EVENT_NAMES.balanceStale, payload);
+  }
+
+  emitFillManualReview(payload: MarketMakingFillManualReviewEvent): void {
+    this.emit(MARKET_MAKING_EVENT_NAMES.fillManualReview, payload);
+  }
+
+  emitReconciliationAudit(
+    payload: MarketMakingReconciliationAuditEvent,
+  ): void {
+    this.emit(MARKET_MAKING_EVENT_NAMES.reconciliationAudit, payload);
   }
 
   emitStreamHealthChanged(payload: MarketMakingStreamHealthChangedEvent): void {

@@ -67,4 +67,31 @@ describe('MarketMakingEventBus', () => {
 
     detach();
   });
+
+  it('emits reconciliation audit events', () => {
+    const bus = new MarketMakingEventBus();
+    const listener = jest.fn();
+
+    bus.on(MARKET_MAKING_EVENT_NAMES.reconciliationAudit, listener);
+
+    bus.emitReconciliationAudit({
+      correctionType: 'estimated_fee_reversal',
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'USDT',
+      amount: '0.1',
+      refType: 'market_making_estimated_fee_reversal',
+      refId: 'trade-1',
+      reversalOf: 'estimated-fee-1',
+      observedAt: '2026-05-04T00:00:00.000Z',
+    });
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        correctionType: 'estimated_fee_reversal',
+        refType: 'market_making_estimated_fee_reversal',
+        refId: 'trade-1',
+      }),
+    );
+  });
 });

@@ -24,7 +24,9 @@ export type TrackedOrderState =
   | 'pending_cancel'
   | 'filled'
   | 'cancelled'
-  | 'failed';
+  | 'failed'
+  | 'external_missing'
+  | 'internal_missing';
 
 export type TrackedOrder = {
   orderId: string;
@@ -58,6 +60,8 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     'filled',
     'cancelled',
     'failed',
+    'external_missing',
+    'internal_missing',
   ]);
   private static readonly validTransitions: Record<
     TrackedOrderState,
@@ -87,6 +91,8 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     filled: [],
     cancelled: [],
     failed: [],
+    external_missing: [],
+    internal_missing: [],
   };
   private static readonly STREAM_HEALTHY_THRESHOLD_MS = 30_000;
   private static readonly SLOW_POLL_INTERVAL_MS = 120_000;
@@ -197,6 +203,109 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     return [...this.orders.values()].filter(
       (order) => order.strategyKey === strategyKey,
     );
+  }
+
+  getAllTrackedOrders(): TrackedOrder[] {
+    return [...this.orders.values()];
+  }
+
+  reconcileOpenOrderSnapshot(params: {
+    exchange: string;
+    pair: string;
+    accountLabel?: string;
+    openOrders: Array<Record<string, unknown>>;
+    observedAt?: string;
+  }): { internalMissing: string[]; externalMissing: string[] } {
+    const observedAt = params.observedAt || getRFC3339Timestamp();
+    const externalIds = new Set(
+      params.openOrders
+        .map((order) => this.extractExchangeOrderId(order))
+        .filter((id): id is string => Boolean(id)),
+    );
+    const internalMissing: string[] = [];
+    const externalMissing: string[] = [];
+
+    for (const externalOrder of params.openOrders) {
+      const exchangeOrderId = this.extractExchangeOrderId(externalOrder);
+
+      if (!exchangeOrderId) {
+        continue;
+      }
+
+      const key = this.toKey(
+        params.exchange,
+        params.accountLabel,
+        exchangeOrderId,
+      );
+
+      if (this.orders.has(key)) {
+        continue;
+      }
+
+      const placeholder: TrackedOrder = {
+        orderId: `internal_missing:${exchangeOrderId}`,
+        strategyKey: `internal_missing:${params.exchange}:${
+          params.accountLabel || 'default'
+        }:${params.pair}`,
+        exchange: params.exchange,
+        accountLabel: params.accountLabel,
+        pair: params.pair,
+        exchangeOrderId,
+        clientOrderId: this.extractOptionalString(
+          externalOrder.clientOrderId || externalOrder.clientOrderID,
+        ),
+        side: this.normalizeExternalSide(externalOrder.side),
+        price: this.extractOptionalString(externalOrder.price) || '0',
+        qty:
+          this.extractOptionalString(
+            externalOrder.amount || externalOrder.qty || externalOrder.quantity,
+          ) || '0',
+        cumulativeFilledQty: this.normalizeCumulativeFilledQty(
+          externalOrder.filled,
+        ),
+        status: 'internal_missing',
+        createdAt: observedAt,
+        updatedAt: observedAt,
+      };
+
+      this.orders.set(key, placeholder);
+      void this.persistOrder(placeholder, key).catch(() => {});
+      internalMissing.push(exchangeOrderId);
+    }
+
+    for (const order of this.orders.values()) {
+      if (
+        order.exchange !== params.exchange ||
+        order.pair !== params.pair ||
+        (order.accountLabel || undefined) !==
+          (params.accountLabel || undefined) ||
+        (order.status !== 'open' && order.status !== 'partially_filled')
+      ) {
+        continue;
+      }
+
+      if (externalIds.has(order.exchangeOrderId)) {
+        continue;
+      }
+
+      const key = this.toKey(
+        order.exchange,
+        order.accountLabel,
+        order.exchangeOrderId,
+      );
+      const nextOrder = {
+        ...order,
+        status: 'external_missing' as const,
+        updatedAt: observedAt,
+      };
+
+      this.orders.set(key, nextOrder);
+      this.updatePollingStateForOrder(key, nextOrder.status);
+      void this.persistOrder(nextOrder, key).catch(() => {});
+      externalMissing.push(order.exchangeOrderId);
+    }
+
+    return { internalMissing, externalMissing };
   }
 
   getByExchangeOrderId(
@@ -338,7 +447,58 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       }
     }
 
+    await this.reconcileOpenOrderSnapshots(dueOrders, ts);
+
     return processedCount;
+  }
+
+  private async reconcileOpenOrderSnapshots(
+    dueOrders: TrackedOrder[],
+    ts: string,
+  ): Promise<void> {
+    if (
+      !this.exchangeConnectorAdapterService ||
+      typeof this.exchangeConnectorAdapterService.fetchOpenOrders !== 'function'
+    ) {
+      return;
+    }
+
+    const seenGroups = new Set<string>();
+
+    for (const order of dueOrders) {
+      const groupKey = `${order.exchange}:${order.accountLabel || 'default'}:${
+        order.pair
+      }`;
+
+      if (seenGroups.has(groupKey)) {
+        continue;
+      }
+
+      seenGroups.add(groupKey);
+
+      try {
+        const openOrders =
+          await this.exchangeConnectorAdapterService.fetchOpenOrders(
+            order.exchange,
+            order.pair,
+            order.accountLabel,
+          );
+
+        this.reconcileOpenOrderSnapshot({
+          exchange: order.exchange,
+          accountLabel: order.accountLabel,
+          pair: order.pair,
+          openOrders: Array.isArray(openOrders) ? openOrders : [],
+          observedAt: ts,
+        });
+      } catch (error) {
+        if (error instanceof ServiceUnavailableException) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
   }
 
   private isUserStreamHealthy(
@@ -593,6 +753,26 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     exchangeOrderId: string,
   ): string {
     return `${exchange}:${accountLabel || 'default'}:${exchangeOrderId}`;
+  }
+
+  private extractExchangeOrderId(order: Record<string, unknown>): string {
+    return this.extractOptionalString(order.id || order.orderId) || '';
+  }
+
+  private extractOptionalString(value: unknown): string | undefined {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    return undefined;
+  }
+
+  private normalizeExternalSide(value: unknown): 'buy' | 'sell' {
+    return String(value || '').toLowerCase() === 'sell' ? 'sell' : 'buy';
   }
 
   private normalizeFilledValue(value: unknown): string | undefined {

@@ -34,6 +34,7 @@ function createParams(orderId: string) {
 describe('Private fill REST recovery parity (mock system)', () => {
   let balanceLedgerService: {
     adjust: jest.Mock;
+    debitFee: jest.Mock;
   };
   let exchangeConnectorAdapterService: {
     fetchOrder: jest.Mock;
@@ -45,6 +46,7 @@ describe('Private fill REST recovery parity (mock system)', () => {
   beforeEach(async () => {
     balanceLedgerService = {
       adjust: jest.fn().mockResolvedValue(undefined),
+      debitFee: jest.fn().mockResolvedValue(undefined),
     };
     exchangeConnectorAdapterService = {
       fetchOrder: jest.fn(),

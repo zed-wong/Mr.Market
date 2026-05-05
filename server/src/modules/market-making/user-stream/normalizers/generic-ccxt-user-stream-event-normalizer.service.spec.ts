@@ -31,4 +31,33 @@ describe('GenericCcxtUserStreamEventNormalizerService', () => {
       }),
     );
   });
+
+  it('normalizes CCXT trade fee cost and currency', () => {
+    const service = new GenericCcxtUserStreamEventNormalizerService();
+
+    const event = service.normalizeTrade(
+      'binance',
+      'maker',
+      {
+        symbol: 'BTC/USDT',
+        order: 'ex-1',
+        id: 'fill-1',
+        side: 'buy',
+        amount: '0.5',
+        price: '100',
+        fee: {
+          cost: '0.0005',
+          currency: 'BTC',
+        },
+      },
+      '2026-04-18T10:28:55.000Z',
+    );
+
+    expect(event?.payload).toEqual(
+      expect.objectContaining({
+        feeAmount: '0.0005',
+        feeAsset: 'BTC',
+      }),
+    );
+  });
 });

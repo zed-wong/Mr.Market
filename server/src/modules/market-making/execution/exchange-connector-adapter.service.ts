@@ -165,6 +165,34 @@ export class ExchangeConnectorAdapterService {
     );
   }
 
+  async fetchMyTrades(
+    exchangeName: string,
+    pair?: string,
+    since?: number,
+    limit?: number,
+    accountLabel?: string,
+  ): Promise<any[]> {
+    return await this.withRateLimit(
+      this.toRateLimitKey(exchangeName, accountLabel),
+      'stateRead',
+      `fetchMyTrades ${exchangeName}:${accountLabel || 'default'} ${
+        pair || 'all'
+      }`,
+      async () => {
+        const exchange = this.exchangeInitService.getExchange(
+          exchangeName,
+          accountLabel,
+        );
+
+        if (typeof exchange.fetchMyTrades !== 'function') {
+          return [];
+        }
+
+        return await exchange.fetchMyTrades(pair, since, limit);
+      },
+    );
+  }
+
   async fetchOrderBook(exchangeName: string, pair: string): Promise<any> {
     return await this.withRateLimit(
       exchangeName,

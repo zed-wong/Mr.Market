@@ -1,11 +1,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
+import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
+import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { RewardAllocation } from 'src/common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 
 import { ExchangeConnectorRegistry } from '../connector/exchange-connector-registry';
+import { MarketMakingEventsModule } from '../events/market-making-events.module';
+import { ExecutionModule } from '../execution/execution.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { TrackersModule } from '../trackers/trackers.module';
 import { ExchangeOrderReconciliationRunner } from './exchange-order-reconciliation-runner';
 import { ReconciliationService } from './reconciliation.service';
@@ -13,11 +17,15 @@ import { ReconciliationService } from './reconciliation.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      BalanceReadModel,
+      LedgerEntry,
+      MarketMakingOrderBalance,
       RewardLedger,
       RewardAllocation,
       StrategyOrderIntentEntity,
     ]),
+    MarketMakingEventsModule,
+    ExecutionModule,
+    LedgerModule,
     TrackersModule,
   ],
   providers: [
