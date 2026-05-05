@@ -24,8 +24,8 @@ import {
   GrowdataSimplyGrowToken,
 } from './common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from './common/entities/data/spot-data.entity';
-import { BalanceReadModel } from './common/entities/ledger/balance-read-model.entity';
 import { LedgerEntry } from './common/entities/ledger/ledger-entry.entity';
+import { MarketMakingOrderBalance } from './common/entities/ledger/market-making-order-balance.entity';
 import { RewardAllocation } from './common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from './common/entities/ledger/reward-ledger.entity';
 import { ShareLedgerEntry } from './common/entities/ledger/share-ledger-entry.entity';
@@ -152,7 +152,7 @@ function buildRedisConfig(configService: ConfigService) {
         Withdrawal,
         MarketMakingOrderIntent,
         LedgerEntry,
-        BalanceReadModel,
+        MarketMakingOrderBalance,
         OutboxEvent,
         ConsumerReceipt,
         RewardLedger,

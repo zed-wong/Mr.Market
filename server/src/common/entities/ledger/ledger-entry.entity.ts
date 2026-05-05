@@ -5,19 +5,23 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
 export type LedgerEntryType =
-  | 'DEPOSIT_CREDIT'
-  | 'LOCK'
-  | 'UNLOCK'
-  | 'MM_REALIZED_PNL'
-  | 'REWARD_CREDIT'
-  | 'WITHDRAW_DEBIT'
-  | 'FEE_DEBIT'
-  | 'ADJUSTMENT';
+  | 'deposit_credit'
+  | 'reserve_lock'
+  | 'reserve_release'
+  | 'fill_settle'
+  | 'fee_debit'
+  | 'withdraw_debit'
+  | 'reward_credit'
+  | 'reversal';
 
 @Entity()
 export class LedgerEntry {
   @PrimaryColumn()
   entryId: string;
+
+  @Column()
+  @Index()
+  orderId: string;
 
   @Column()
   @Index()
@@ -41,6 +45,12 @@ export class LedgerEntry {
 
   @Column({ unique: true })
   idempotencyKey: string;
+
+  @Column()
+  idempotencyContentHash: string;
+
+  @Column({ nullable: true })
+  reversalOf?: string;
 
   @Column()
   createdAt: string;
