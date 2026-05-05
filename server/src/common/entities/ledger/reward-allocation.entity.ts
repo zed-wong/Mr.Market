@@ -22,6 +22,9 @@ export class RewardAllocation {
   userId: string;
 
   @Column()
+  orderId: string;
+
+  @Column()
   token: string;
 
   @Column()

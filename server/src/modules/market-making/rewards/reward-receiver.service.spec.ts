@@ -36,4 +36,43 @@ describe('RewardReceiverService', () => {
 
     expect(rows[0].status).toBe('CONFIRMED');
   });
+
+  it('leaves observed rewards pending when chain receipt is missing or failed', async () => {
+    const rows: any[] = [
+      {
+        txHash: 'tx-missing',
+        status: 'OBSERVED',
+      },
+      {
+        txHash: 'tx-failed',
+        status: 'OBSERVED',
+      },
+    ];
+
+    const rewardLedgerRepository = {
+      find: jest.fn(async () => rows),
+      save: jest.fn(),
+    };
+
+    const web3Service = {
+      getSigner: jest.fn().mockReturnValue({
+        provider: {
+          getTransactionReceipt: jest
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ status: 0 }),
+        },
+      }),
+    };
+
+    const service = new RewardReceiverService(
+      rewardLedgerRepository as any,
+      web3Service as any,
+    );
+
+    await service.confirmObservedRewards(1);
+
+    expect(rows.map((row) => row.status)).toEqual(['OBSERVED', 'OBSERVED']);
+    expect(rewardLedgerRepository.save).not.toHaveBeenCalled();
+  });
 });

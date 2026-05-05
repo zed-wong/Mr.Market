@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { RewardAllocation } from 'src/common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
 import { ShareLedgerEntry } from 'src/common/entities/ledger/share-ledger-entry.entity';
@@ -16,6 +17,7 @@ import { ShareLedgerService } from './share-ledger.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      LedgerEntry,
       RewardLedger,
       RewardAllocation,
       ShareLedgerEntry,

@@ -22,6 +22,12 @@ export class RewardLedger {
   @Column()
   amount: string;
 
+  @Column({ default: '0' })
+  platformFee: string;
+
+  @Column({ default: '0' })
+  undistributedRemainder: string;
+
   @Column()
   campaignId: string;
 
@@ -33,6 +39,9 @@ export class RewardLedger {
 
   @Column()
   observedAt: string;
+
+  @Column({ nullable: true })
+  correctionOf?: string;
 
   @Column({ nullable: true })
   confirmedAt?: string;
