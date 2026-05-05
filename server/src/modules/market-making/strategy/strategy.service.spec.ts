@@ -22,6 +22,7 @@ import { StrategyMarketDataProviderService } from './data/strategy-market-data-p
 import { ExecutorRegistry } from './execution/executor-registry';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
+import { FillSettlementService } from './settlement/fill-settlement.service';
 import { StrategyService } from './strategy.service';
 
 class PerformanceServiceMock {
@@ -82,6 +83,7 @@ describe('StrategyService', () => {
   };
   let balanceLedgerService: {
     adjust: jest.Mock;
+    debitFee: jest.Mock;
   };
   let balanceStateCacheService: {
     hasFreshAccountSnapshot: jest.Mock;
@@ -201,6 +203,7 @@ describe('StrategyService', () => {
     };
     balanceLedgerService = {
       adjust: jest.fn().mockResolvedValue({ applied: true }),
+      debitFee: jest.fn().mockResolvedValue({ applied: true }),
     };
     setCachedBalances({
       default: { BTC: 10, USDT: 1000 },
@@ -304,6 +307,7 @@ describe('StrategyService', () => {
           provide: BalanceLedgerService,
           useValue: balanceLedgerService,
         },
+        FillSettlementService,
         {
           provide: BalanceStateCacheService,
           useValue: balanceStateCacheService,
@@ -664,6 +668,7 @@ describe('StrategyService', () => {
 
     expect(balanceLedgerService.adjust).toHaveBeenCalledTimes(2);
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(1, {
+      orderId: 'client1',
       userId: '1',
       assetId: 'BTC',
       amount: '0.5',
@@ -673,6 +678,7 @@ describe('StrategyService', () => {
       refId: 'ex-1',
     });
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(2, {
+      orderId: 'client1',
       userId: '1',
       assetId: 'USDT',
       amount: '-50',
@@ -681,6 +687,153 @@ describe('StrategyService', () => {
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
+  });
+
+  it('debits actual fill fees from the fee asset when a fill carries exchange fee data', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.1,
+      askSpread: 0.1,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 2,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0.1,
+      amountChangeType: 'percentage',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await service.executePureMarketMakingStrategy(strategyParamsDto);
+
+    await expect(
+      service.routeFillForExchangePair('bitfinex', 'BTC/USDT', {
+        orderId: 'client1',
+        clientOrderId: 'client1:0',
+        exchangeOrderId: 'ex-1',
+        fillId: 'fill-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        feeAmount: '0.0005',
+        feeAsset: 'BTC',
+        receivedAt: '2026-03-18T00:00:00.000Z',
+      }),
+    ).resolves.toBe(true);
+
+    expect(balanceLedgerService.debitFee).toHaveBeenCalledWith({
+      orderId: 'client1',
+      userId: '1',
+      assetId: 'BTC',
+      amount: '0.0005',
+      idempotencyKey: 'mm-fill:client1-pureMarketMaking:fill-1:fee:BTC',
+      refType: 'market_making_fee',
+      refId: 'ex-1',
+    });
+  });
+
+  it('keeps fill settlement applied when actual fee debit requires manual review', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.1,
+      askSpread: 0.1,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 2,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0.1,
+      amountChangeType: 'percentage',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+    balanceLedgerService.debitFee.mockRejectedValue(
+      new Error('insufficient available balance'),
+    );
+    await service.executePureMarketMakingStrategy(strategyParamsDto);
+
+    await expect(
+      service.routeFillForExchangePair('bitfinex', 'BTC/USDT', {
+        orderId: 'client1',
+        clientOrderId: 'client1:0',
+        exchangeOrderId: 'ex-1',
+        fillId: 'fill-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        feeAmount: '0.0005',
+        feeAsset: 'BTC',
+        receivedAt: '2026-03-18T00:00:00.000Z',
+      }),
+    ).resolves.toBe(true);
+
+    expect(balanceLedgerService.adjust).toHaveBeenCalledTimes(2);
+    expect(balanceLedgerService.debitFee).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks realized quote PnL per pure market-making order from matched fills', async () => {
+    const strategyParamsDto: PureMarketMakingStrategyDto = {
+      userId: '1',
+      clientId: 'client1',
+      pair: 'BTC/USDT',
+      exchangeName: 'bitfinex',
+      bidSpread: 0.1,
+      askSpread: 0.1,
+      orderAmount: 1,
+      orderRefreshTime: 1000,
+      numberOfLayers: 2,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0.1,
+      amountChangeType: 'percentage',
+      ceilingPrice: undefined,
+      floorPrice: undefined,
+    };
+
+    await service.executePureMarketMakingStrategy(strategyParamsDto);
+    await service.routeFillForExchangePair('bitfinex', 'BTC/USDT', {
+      orderId: 'client1',
+      clientOrderId: 'client1:0',
+      exchangeOrderId: 'buy-1',
+      fillId: 'fill-buy-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      receivedAt: '2026-03-18T00:00:00.000Z',
+    });
+    await service.routeFillForExchangePair('bitfinex', 'BTC/USDT', {
+      orderId: 'client1',
+      clientOrderId: 'client1:1',
+      exchangeOrderId: 'sell-1',
+      fillId: 'fill-sell-1',
+      side: 'sell',
+      price: '110',
+      qty: '1',
+      receivedAt: '2026-03-18T00:01:00.000Z',
+    });
+
+    const session = executorRegistry
+      .getExecutor('bitfinex', 'BTC/USDT')
+      ?.getSession('client1');
+
+    expect(session).toEqual(
+      expect.objectContaining({
+        inventoryBaseQty: 0,
+        inventoryCostQuote: 0,
+        realizedPnlQuote: 10,
+        tradedQuoteVolume: 210,
+        params: expect.objectContaining({
+          inventoryBaseQty: 0,
+          inventoryCostQuote: 0,
+          realizedPnlQuote: 10,
+          tradedQuoteVolume: 210,
+        }),
+      }),
+    );
   });
 
   it('uses cumulative fill state instead of receivedAt in ledger idempotency keys', async () => {

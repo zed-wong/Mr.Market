@@ -44,6 +44,21 @@ interface WithdrawJobData {
   marketMakingPairId: string;
 }
 
+interface ConfirmExchangeDepositJobData {
+  orderId: string;
+  marketMakingPairId: string;
+}
+
+type ExchangeWithdrawalCommand = {
+  orderId: string;
+  userId: string;
+  role: 'base' | 'quote';
+  assetId: string;
+  amount: string;
+  destination: string;
+  memo: string;
+};
+
 type RefundTransferCommand = {
   userId: string;
   assetId: string;
@@ -184,6 +199,7 @@ export class MarketMakingOrderProcessor {
 
     try {
       const debitResult = await this.balanceLedgerService.debitWithdrawal({
+        orderId: command.refId,
         userId: command.userId,
         assetId: command.assetId,
         amount: command.amount,
@@ -252,6 +268,7 @@ export class MarketMakingOrderProcessor {
   ): Promise<void> {
     try {
       await this.balanceLedgerService.creditDeposit({
+        orderId: command.refId,
         userId: command.userId,
         assetId: command.assetId,
         amount: command.amount,
@@ -373,6 +390,7 @@ export class MarketMakingOrderProcessor {
       }
 
       await this.balanceLedgerService.creditDeposit({
+        orderId,
         userId,
         assetId: receivedAssetId,
         amount: receivedAmount,
@@ -745,24 +763,21 @@ export class MarketMakingOrderProcessor {
         'payment_complete',
       );
 
-      // Queue withdrawal (disabled for snapshot flow testing)
-      // await (job.queue as any).add(
-      //   'withdraw_to_exchange',
-      //   {
-      //     orderId,
-      //     marketMakingPairId,
-      //   } as WithdrawJobData,
-      //   {
-      //     jobId: `withdraw_${orderId}`,
-      //     attempts: 3,
-      //     backoff: { type: 'exponential', delay: 10000 },
-      //     removeOnComplete: false,
-      //   },
-      // );
-
-      this.logger.log(
-        `Payment complete, withdrawal queueing skipped for order ${orderId}`,
+      await (job.queue as any).add(
+        'withdraw_to_exchange',
+        {
+          orderId,
+          marketMakingPairId,
+        } as WithdrawJobData,
+        {
+          jobId: `withdraw_${orderId}`,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 10000 },
+          removeOnComplete: false,
+        },
       );
+
+      this.logger.log(`Payment complete, queued withdrawal for ${orderId}`);
     } catch (error) {
       this.logger.error(
         `Error checking payment for ${orderId}: ${error.message}`,
@@ -859,48 +874,51 @@ export class MarketMakingOrderProcessor {
         `Got deposit addresses - Base: ${baseDepositResult.address}, Quote: ${quoteDepositResult.address}`,
       );
 
-      // Withdrawal dry-run for validation
+      const baseWithdrawalResult = await this.executeExchangeWithdrawal({
+        orderId,
+        userId: paymentState.userId,
+        role: 'base',
+        assetId: paymentState.baseAssetId,
+        amount: paymentState.baseAssetAmount,
+        destination: baseDepositResult.address,
+        memo: baseDepositResult.memo || `MM:${orderId}:base`,
+      });
+      const quoteWithdrawalResult = await this.executeExchangeWithdrawal({
+        orderId,
+        userId: paymentState.userId,
+        role: 'quote',
+        assetId: paymentState.quoteAssetId,
+        amount: paymentState.quoteAssetAmount,
+        destination: quoteDepositResult.address,
+        memo: quoteDepositResult.memo || `MM:${orderId}:quote`,
+      });
+
+      const baseWithdrawalTxId = baseWithdrawalResult[0]?.request_id;
+      const quoteWithdrawalTxId = quoteWithdrawalResult[0]?.request_id;
+
+      if (!baseWithdrawalTxId || !quoteWithdrawalTxId) {
+        throw new Error('Exchange withdrawal returned no request id');
+      }
+
       this.logger.log(
-        `Withdrawal dry-run for order ${orderId}: base=${paymentState.baseAssetAmount} ${pairConfig.base_symbol}, quote=${paymentState.quoteAssetAmount} ${pairConfig.quote_symbol}`,
+        `Withdrawals executed for order ${orderId}: base=${baseWithdrawalTxId}, quote=${quoteWithdrawalTxId}`,
       );
 
-      // Execute withdrawals for base and quote
-      // const baseWithdrawalResult = await this.withdrawalService.executeWithdrawal(
-      //   paymentState.baseAssetId,
-      //   baseDepositResult.address,
-      //   baseDepositResult.memo || `MM:${orderId}:base`,
-      //   paymentState.baseAssetAmount,
-      // );
-
-      // const quoteWithdrawalResult = await this.withdrawalService.executeWithdrawal(
-      //   paymentState.quoteAssetId,
-      //   quoteDepositResult.address,
-      //   quoteDepositResult.memo || `MM:${orderId}:quote`,
-      //   paymentState.quoteAssetAmount,
-      // );
-
-      // this.logger.log(
-      //   `Withdrawals executed for order ${orderId}: base=${baseWithdrawalResult[0]?.request_id}, quote=${quoteWithdrawalResult[0]?.request_id}`,
-      // );
-
-      // await this.userOrdersService.updateMarketMakingOrderState(
-      //   orderId,
-      //   'withdrawal_confirmed',
-      // );
-
-      this.logger.warn(
-        `Withdrawal disabled for validation. Refunding order ${orderId} instead of sending to exchange.`,
-      );
-
-      await this.refundMarketMakingPendingOrder(
-        orderId,
-        paymentState,
-        'validation mode: withdrawal disabled',
-      );
-
-      await this.userOrdersService.updateMarketMakingOrderState(
-        orderId,
-        'failed',
+      await (job.queue as any).add(
+        'monitor_mixin_withdrawal',
+        {
+          orderId,
+          marketMakingPairId,
+          baseWithdrawalTxId,
+          quoteWithdrawalTxId,
+          startedAt: Date.now(),
+        },
+        {
+          jobId: `monitor_withdrawal_${orderId}`,
+          attempts: 60,
+          backoff: { type: 'fixed', delay: this.RETRY_DELAY_MS },
+          removeOnComplete: false,
+        },
       );
     } catch (error) {
       this.logger.error(
@@ -910,7 +928,52 @@ export class MarketMakingOrderProcessor {
       await this.userOrdersService.updateMarketMakingOrderState(
         orderId,
         'failed',
+        error instanceof Error ? error.message : String(error),
       );
+      throw error;
+    }
+  }
+
+  private async executeExchangeWithdrawal(
+    command: ExchangeWithdrawalCommand,
+  ): Promise<{ request_id: string }[]> {
+    const debitKey = `mm-exchange-withdraw:${command.orderId}:${command.role}`;
+    let debitApplied = false;
+    const amount = new BigNumber(command.amount).toFixed();
+
+    try {
+      const debitResult = await this.balanceLedgerService.debitWithdrawal({
+        orderId: command.orderId,
+        userId: command.userId,
+        assetId: command.assetId,
+        amount,
+        idempotencyKey: debitKey,
+        refType: 'market_making_exchange_withdrawal',
+        refId: command.orderId,
+      });
+
+      debitApplied = debitResult.applied;
+
+      return await this.withdrawalService.executeWithdrawal(
+        command.assetId,
+        command.destination,
+        command.memo,
+        amount,
+        debitKey,
+      );
+    } catch (error) {
+      if (debitApplied) {
+        await this.balanceLedgerService.creditDeposit({
+          orderId: command.orderId,
+          userId: command.userId,
+          assetId: command.assetId,
+          amount,
+          idempotencyKey: `${debitKey}:compensation`,
+          refType: 'market_making_exchange_withdrawal_compensation',
+          refId: command.orderId,
+        });
+      }
+
       throw error;
     }
   }
@@ -952,6 +1015,8 @@ export class MarketMakingOrderProcessor {
         throw new Error(`Order ${orderId} not found`);
       }
 
+      let campaignJoined = false;
+
       if (hufiCampaign?.chainId && hufiCampaign?.campaignAddress) {
         try {
           this.logger.log(
@@ -968,8 +1033,12 @@ export class MarketMakingOrderProcessor {
 
           if (matchingCampaign) {
             this.logger.log(
-              `Found matching HuFi campaign: ${matchingCampaign.address}. Will be auto-joined by cron.`,
+              `Found matching HuFi campaign: ${matchingCampaign.address}. Joining campaign.`,
             );
+            await this.hufiCampaignService.joinMarketMakingCampaign(
+              matchingCampaign,
+            );
+            campaignJoined = true;
           } else {
             this.logger.warn(
               `HuFi campaign not found: chainId=${hufiCampaign.chainId}, address=${hufiCampaign.campaignAddress}`,
@@ -977,14 +1046,22 @@ export class MarketMakingOrderProcessor {
           }
         } catch (hufiError) {
           this.logger.error(
-            `Failed to join HuFi campaign (non-blocking): ${hufiError.message}`,
+            `Failed to join HuFi campaign: ${hufiError.message}`,
           );
+          throw hufiError;
         }
+      }
+
+      if (campaignJoined) {
+        await this.userOrdersService.updateMarketMakingOrderState(
+          orderId,
+          'campaign_joined',
+        );
       }
 
       await this.userOrdersService.updateMarketMakingOrderState(
         orderId,
-        'campaign_joined',
+        'created',
       );
 
       await (job.queue as any).add(
@@ -1009,6 +1086,7 @@ export class MarketMakingOrderProcessor {
       await this.userOrdersService.updateMarketMakingOrderState(
         orderId,
         'failed',
+        error instanceof Error ? error.message : String(error),
       );
       throw error;
     }
@@ -1146,15 +1224,28 @@ export class MarketMakingOrderProcessor {
         this.logger.log(
           `Both withdrawals confirmed for order ${orderId}, proceeding to join campaign`,
         );
+        await this.userOrdersService.updateMarketMakingOrderState(
+          orderId,
+          'withdrawal_confirmed',
+        );
+        await this.userOrdersService.updateMarketMakingOrderState(
+          orderId,
+          'deposit_confirming',
+        );
         await (job.queue as any).add(
-          'join_campaign',
-          { orderId },
+          'confirm_exchange_deposit',
           {
-            jobId: `join_campaign_${orderId}`,
+            orderId,
+            marketMakingPairId: job.data.marketMakingPairId,
+          } as ConfirmExchangeDepositJobData,
+          {
+            jobId: `confirm_exchange_deposit_${orderId}`,
+            attempts: 60,
+            backoff: { type: 'fixed', delay: this.RETRY_DELAY_MS },
             removeOnComplete: false,
           },
         );
-        this.logger.log(`Queued join_campaign for order ${orderId}`);
+        this.logger.log(`Queued exchange deposit confirmation for ${orderId}`);
 
         return;
       }
@@ -1202,6 +1293,88 @@ export class MarketMakingOrderProcessor {
       this.logger.error(`Error checking withdrawal ${txId}: ${error.message}`);
 
       return false;
+    }
+  }
+
+  @Process('confirm_exchange_deposit')
+  async handleConfirmExchangeDeposit(
+    job: Job<ConfirmExchangeDepositJobData>,
+  ): Promise<void> {
+    const { orderId, marketMakingPairId } = job.data;
+
+    try {
+      await this.userOrdersService.updateMarketMakingOrderState(
+        orderId,
+        'deposit_confirming',
+      );
+
+      const paymentState = await this.paymentStateRepository.findOne({
+        where: { orderId },
+      });
+      const pairConfig = await this.growDataRepository.findMarketMakingPairById(
+        marketMakingPairId,
+      );
+
+      if (!paymentState || !pairConfig) {
+        throw new Error('Payment state or pair config not found');
+      }
+
+      const apiKey = await this.exchangeService.findFirstAPIKeyByExchange(
+        pairConfig.exchange_id,
+      );
+
+      if (!apiKey) {
+        throw new Error(`No API key found for exchange ${pairConfig.exchange_id}`);
+      }
+
+      const decryptedApiKey =
+        (await this.exchangeService.readDecryptedAPIKey?.(apiKey.key_id)) ||
+        apiKey;
+      const [baseBalance, quoteBalance] = await Promise.all([
+        this.exchangeService.getBalanceBySymbol(
+          pairConfig.exchange_id,
+          decryptedApiKey.api_key,
+          decryptedApiKey.api_secret,
+          pairConfig.base_symbol,
+        ),
+        this.exchangeService.getBalanceBySymbol(
+          pairConfig.exchange_id,
+          decryptedApiKey.api_key,
+          decryptedApiKey.api_secret,
+          pairConfig.quote_symbol,
+        ),
+      ]);
+      const baseConfirmed = new BigNumber(baseBalance).isGreaterThanOrEqualTo(
+        paymentState.baseAssetAmount,
+      );
+      const quoteConfirmed = new BigNumber(quoteBalance).isGreaterThanOrEqualTo(
+        paymentState.quoteAssetAmount,
+      );
+
+      if (!baseConfirmed || !quoteConfirmed) {
+        throw new Error(
+          `Exchange deposit not confirmed for ${orderId}: base=${baseBalance}/${paymentState.baseAssetAmount}, quote=${quoteBalance}/${paymentState.quoteAssetAmount}`,
+        );
+      }
+
+      await this.userOrdersService.updateMarketMakingOrderState(
+        orderId,
+        'deposit_confirmed',
+      );
+      await (job.queue as any).add(
+        'join_campaign',
+        { orderId },
+        {
+          jobId: `join_campaign_${orderId}`,
+          removeOnComplete: false,
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error confirming exchange deposit for ${orderId}: ${error.message}`,
+        error.stack,
+      );
+      throw error;
     }
   }
 }

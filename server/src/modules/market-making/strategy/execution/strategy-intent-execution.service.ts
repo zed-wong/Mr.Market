@@ -4,18 +4,25 @@ import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { Repository } from 'typeorm';
 
 import { DurabilityService } from '../../durability/durability.service';
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../../execution/exchange-order-mapping.service';
+import {
+  OrderReservationResult,
+  OrderReservationService,
+} from '../../ledger/order-reservation.service';
 import type { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
 import { ExchangeOrderTrackerService } from '../../trackers/exchange-order-tracker.service';
 import { DexAdapterId } from '../config/strategy.dto';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
+import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
@@ -52,6 +59,7 @@ export class StrategyIntentExecutionService {
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
   private readonly dualAccountInlineTakerMaxDelayMs: number;
+  private readonly marketDataMaxAgeMs: number;
   private readonly nextClientOrderSeqByOrderId = new Map<string, number>();
   private readonly stoppedExecutionReason =
     'strategy stopped before intent execution';
@@ -75,6 +83,15 @@ export class StrategyIntentExecutionService {
     private readonly exchangeOrderMappingService?: ExchangeOrderMappingService,
     @Optional()
     private readonly dexVolumeStrategyService?: DexVolumeStrategyService,
+    @Optional()
+    private readonly orderReservationService?: OrderReservationService,
+    @Optional()
+    @InjectRepository(MarketMakingOrder)
+    private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
+    @Optional()
+    private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
+    @Optional()
+    private readonly exchangeApiKeyService?: ExchangeApiKeyService,
   ) {
     this.executeIntents = this.toBoolean(
       this.configService.get('strategy.execute_intents', false),
@@ -126,6 +143,21 @@ export class StrategyIntentExecutionService {
     ) {
       this.logger.warn(
         `Invalid strategy.dual_account_inline_taker_max_delay_ms value: ${parsedDualAccountInlineTakerMaxDelayMs}. Falling back to ${this.dualAccountInlineTakerMaxDelayMs}`,
+      );
+    }
+
+    const parsedMarketDataMaxAgeMs = Number(
+      this.configService.get('strategy.market_data_max_age_ms', 30_000),
+    );
+
+    this.marketDataMaxAgeMs =
+      Number.isFinite(parsedMarketDataMaxAgeMs) &&
+      parsedMarketDataMaxAgeMs >= 0
+        ? Math.floor(parsedMarketDataMaxAgeMs)
+        : 30_000;
+    if (this.marketDataMaxAgeMs !== parsedMarketDataMaxAgeMs) {
+      this.logger.warn(
+        `Invalid strategy.market_data_max_age_ms value: ${parsedMarketDataMaxAgeMs}. Falling back to ${this.marketDataMaxAgeMs}`,
       );
     }
   }
@@ -212,6 +244,9 @@ export class StrategyIntentExecutionService {
       let executionResult: Record<string, unknown> | undefined;
 
       if (intent.type === 'CREATE_LIMIT_ORDER') {
+        const orderId = this.resolveOrderIdForClientOrderId(intent);
+
+        await this.assertCreateLimitOrderRisk(intent, orderId);
         const activeSlotOrders =
           this.exchangeOrderTrackerService?.getActiveSlotOrders?.(
             intent.strategyKey,
@@ -253,28 +288,64 @@ export class StrategyIntentExecutionService {
           return;
         }
 
-        const orderId = this.resolveOrderIdForClientOrderId(intent);
         const clientOrderId = await this.reserveClientOrderId(orderId);
-        const result = await this.runWithRetries(intent, () =>
-          this.exchangeConnectorAdapterService.placeLimitOrder(
-            intent.exchange,
-            intent.pair,
-            intent.side,
-            intent.qty,
-            intent.price,
-            clientOrderId,
-            {
-              postOnly: Boolean(intent.postOnly),
-              timeInForce: intent.timeInForce,
-            },
-            intent.accountLabel,
-          ),
-        );
+        let reservation: OrderReservationResult | undefined;
+        let result: Record<string, unknown> | undefined;
+
+        if (this.orderReservationService) {
+          reservation = await this.orderReservationService.reserveForLimitOrder({
+            orderId,
+            userId: intent.userId,
+            intentId: intent.intentId,
+            pair: intent.pair,
+            side: intent.side,
+            price: intent.price,
+            qty: intent.qty,
+          });
+        }
+
+        try {
+          result = await this.runWithRetries(intent, () =>
+            this.exchangeConnectorAdapterService.placeLimitOrder(
+              intent.exchange,
+              intent.pair,
+              intent.side,
+              intent.qty,
+              intent.price,
+              clientOrderId,
+              {
+                postOnly: Boolean(intent.postOnly),
+                timeInForce: intent.timeInForce,
+              },
+              intent.accountLabel,
+            ),
+          );
+        } catch (error) {
+          if (reservation?.applied) {
+            await this.orderReservationService?.releaseLimitOrderReservation({
+              orderId,
+              userId: intent.userId,
+              intentId: intent.intentId,
+              pair: intent.pair,
+              side: intent.side,
+              price: intent.price,
+              qty: intent.qty,
+              reason: 'exchange_create_failed',
+            });
+          }
+          throw error;
+        }
 
         this.assertImmediateOrderAck(intent, result);
         executionResult = result as Record<string, unknown> | undefined;
 
         if (result?.id) {
+          const createAckStatus = this.normalizeTrackedOrderStatus(
+            result.status,
+          );
+          const rejectedCreateAck =
+            createAckStatus === 'failed' || createAckStatus === 'cancelled';
+
           await this.strategyIntentStoreService?.attachMixinOrderId(
             intent.intentId,
             String(result.id),
@@ -296,7 +367,8 @@ export class StrategyIntentExecutionService {
               strategyType: this.extractStrategyType(intent.strategyKey),
               runtimeInstanceKey: intent.runtimeInstanceKey,
               orderId: String(result.id),
-              status: result?.status || 'open',
+              status:
+                typeof result?.status === 'string' ? result.status : 'open',
               metadata: {
                 intentId: intent.intentId,
                 intentType: intent.type,
@@ -318,10 +390,29 @@ export class StrategyIntentExecutionService {
             price: intent.price,
             qty: intent.qty,
             cumulativeFilledQty: '0',
-            status: 'pending_create',
+            status: rejectedCreateAck ? createAckStatus : 'pending_create',
             createdAt: getRFC3339Timestamp(),
             updatedAt: getRFC3339Timestamp(),
           });
+
+          if (rejectedCreateAck) {
+            if (reservation?.applied) {
+              await this.orderReservationService?.releaseLimitOrderReservation({
+                orderId,
+                userId: intent.userId,
+                intentId: intent.intentId,
+                releaseId: clientOrderId,
+                pair: intent.pair,
+                side: intent.side,
+                price: intent.price,
+                qty: intent.qty,
+                reason: 'exchange_create_rejected',
+              });
+            }
+            throw new Error(
+              `exchange create returned terminal status ${createAckStatus}`,
+            );
+          }
 
           await this.maybeExecuteImmediateDualAccountTaker(
             intent,
@@ -396,6 +487,27 @@ export class StrategyIntentExecutionService {
           createdAt: getRFC3339Timestamp(),
           updatedAt: getRFC3339Timestamp(),
         });
+
+        if (
+          result?.status === 'canceled' ||
+          result?.status === 'cancelled'
+        ) {
+          await this.orderReservationService?.releaseLimitOrderReservation({
+            orderId,
+            userId: intent.userId,
+            intentId: intent.intentId,
+            releaseId:
+              trackedOrder?.clientOrderId ||
+              trackedOrder?.exchangeOrderId ||
+              intent.mixinOrderId,
+            pair: intent.pair,
+            side: intent.side,
+            price: trackedOrder?.price || intent.price,
+            qty: trackedOrder?.qty || intent.qty,
+            filledQty: trackedOrder?.cumulativeFilledQty,
+            reason: 'exchange_order_cancelled',
+          });
+        }
 
         executionResult = result as Record<string, unknown> | undefined;
       }
@@ -582,6 +694,130 @@ export class StrategyIntentExecutionService {
     return role === 'maker' || role === 'taker' || role === 'rebalance'
       ? role
       : undefined;
+  }
+
+  private async assertCreateLimitOrderRisk(
+    intent: StrategyOrderIntent,
+    orderId: string,
+  ): Promise<void> {
+    if (!intent.exchange || !String(intent.exchange).trim()) {
+      throw new Error('risk gate rejected create intent: missing exchange');
+    }
+
+    if (!intent.pair || !String(intent.pair).includes('/')) {
+      throw new Error('risk gate rejected create intent: invalid pair');
+    }
+
+    if (intent.side !== 'buy' && intent.side !== 'sell') {
+      throw new Error('risk gate rejected create intent: invalid side');
+    }
+
+    const qty = new BigNumber(intent.qty);
+    const price = new BigNumber(intent.price);
+
+    if (!qty.isFinite() || qty.isLessThanOrEqualTo(0)) {
+      throw new Error('risk gate rejected create intent: invalid quantity');
+    }
+
+    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
+      throw new Error('risk gate rejected create intent: invalid price');
+    }
+
+    const order = this.marketMakingOrderRepository
+      ? await this.marketMakingOrderRepository.findOne({
+          where: { orderId },
+        })
+      : null;
+
+    if (order && order.state !== 'running') {
+      throw new Error(
+        `risk gate rejected create intent: order state ${order.state}`,
+      );
+    }
+
+    this.assertMarketDataFreshness(intent);
+    await this.assertApiKeyHealth(intent, order || undefined);
+  }
+
+  private assertMarketDataFreshness(intent: StrategyOrderIntent): void {
+    if (
+      !this.strategyMarketDataProviderService ||
+      this.marketDataMaxAgeMs <= 0
+    ) {
+      return;
+    }
+
+    const freshness =
+      this.strategyMarketDataProviderService.getTrackedOrderBookFreshness(
+        intent.exchange,
+        intent.pair,
+        this.marketDataMaxAgeMs,
+      );
+
+    if (!freshness.fresh) {
+      throw new Error(
+        `risk gate rejected create intent: stale market data for ${intent.exchange} ${intent.pair}`,
+      );
+    }
+  }
+
+  private async assertApiKeyHealth(
+    intent: StrategyOrderIntent,
+    order?: MarketMakingOrder,
+  ): Promise<void> {
+    if (!this.exchangeApiKeyService) {
+      return;
+    }
+
+    const apiKeyId = this.resolveApiKeyIdForIntent(intent, order);
+
+    if (!apiKeyId || apiKeyId === 'default') {
+      return;
+    }
+
+    const apiKey = await this.exchangeApiKeyService.readAPIKey(apiKeyId);
+
+    if (!apiKey) {
+      throw new Error('risk gate rejected create intent: API key not found');
+    }
+
+    if (apiKey.exchange !== intent.exchange) {
+      throw new Error(
+        'risk gate rejected create intent: API key exchange mismatch',
+      );
+    }
+
+    if (String(apiKey.permissions || '').trim() !== 'read-trade') {
+      throw new Error(
+        'risk gate rejected create intent: API key lacks trade permission',
+      );
+    }
+
+    if (apiKey.validation_status !== 'valid') {
+      throw new Error(
+        `risk gate rejected create intent: API key health ${apiKey.validation_status}`,
+      );
+    }
+  }
+
+  private resolveApiKeyIdForIntent(
+    intent: StrategyOrderIntent,
+    order?: MarketMakingOrder,
+  ): string | undefined {
+    const role = this.resolveIntentRole(intent);
+    const roleApiKeyId =
+      role === 'taker'
+        ? this.readMetadataString(intent, 'takerApiKeyId')
+        : this.readMetadataString(intent, 'makerApiKeyId');
+
+    return (
+      this.readMetadataString(intent, 'apiKeyId') ||
+      roleApiKeyId ||
+      (intent.accountLabel && intent.accountLabel !== 'default'
+        ? intent.accountLabel
+        : undefined) ||
+      (order?.apiKeyId ? String(order.apiKeyId).trim() : undefined)
+    );
   }
 
   private readMetadataString(

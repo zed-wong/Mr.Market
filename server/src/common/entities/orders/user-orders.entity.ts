@@ -84,6 +84,9 @@ export class MarketMakingOrder {
   @Column({ type: 'varchar' })
   state: MarketMakingStates;
 
+  @Column({ nullable: true })
+  lifecycleError?: string | null;
+
   @Column()
   createdAt: string;
 

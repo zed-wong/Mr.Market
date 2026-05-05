@@ -171,7 +171,7 @@ export class StrategyIntentWorkerService
         continue;
       }
 
-      const exchangeKey = headIntent.exchange || '__unknown__';
+      const exchangeKey = this.getMutationLaneKey(headIntent);
       const exchangeInFlight = this.inFlightByExchange.get(exchangeKey) || 0;
 
       if (exchangeInFlight >= this.maxInFlightPerExchange) {
@@ -244,6 +244,22 @@ export class StrategyIntentWorkerService
         this.inFlightByExchange.set(exchangeKey, remainingForExchange);
       }
     });
+  }
+
+  private getMutationLaneKey(intent: StrategyOrderIntentEntity): string {
+    const mutationType =
+      intent.type === 'CANCEL_ORDER' || intent.type === 'WITHDRAW'
+        ? intent.type
+        : intent.type === 'CREATE_LIMIT_ORDER'
+        ? 'CREATE_LIMIT_ORDER'
+        : intent.executionCategory || intent.type || '__unknown_mutation__';
+
+    return [
+      intent.exchange || '__unknown_exchange__',
+      intent.accountLabel || '__default_account__',
+      intent.pair || '__unknown_pair__',
+      mutationType,
+    ].join(':');
   }
 
   private toIntent(

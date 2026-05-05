@@ -14,6 +14,7 @@ import { MarketdataModule } from '../../data/market-data/market-data.module';
 import { LoggerModule } from '../../infrastructure/logger/logger.module';
 import { Web3Module } from '../../web3/web3.module';
 import { DurabilityModule } from '../durability/durability.module';
+import { ExchangeApiKeyModule } from '../exchange-api-key/exchange-api-key.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { FeeModule } from '../fee/fee.module';
 import { LedgerModule } from '../ledger/ledger.module';
@@ -38,6 +39,7 @@ import { StrategyIntentWorkerService } from './execution/strategy-intent-worker.
 import { StrategyRuntimeDispatcherService } from './execution/strategy-runtime-dispatcher.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
+import { FillSettlementService } from './settlement/fill-settlement.service';
 import { StrategyService } from './strategy.service';
 
 const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
@@ -57,6 +59,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     ]),
     FeeModule,
     LedgerModule,
+    ExchangeApiKeyModule,
     TickModule,
     DurabilityModule,
     ExecutionModule,
@@ -76,6 +79,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyConfigResolverService,
     StrategyRuntimeDispatcherService,
     StrategyMarketDataProviderService,
+    FillSettlementService,
     ArbitrageStrategyController,
     PureMarketMakingStrategyController,
     DualAccountBestCapacityVolumeStrategyController,

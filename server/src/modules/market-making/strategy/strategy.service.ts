@@ -82,6 +82,7 @@ import { ExecutorRegistry } from './execution/executor-registry';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
+import { FillSettlementService } from './settlement/fill-settlement.service';
 
 type DualAccountCapacityDiagnostics = {
   buyCapacity: BigNumber;
@@ -170,6 +171,8 @@ export class StrategyService
     private readonly exchangeOrderMappingService?: ExchangeOrderMappingService,
     @Optional()
     private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
+    @Optional()
+    private readonly fillSettlementService?: FillSettlementService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -234,6 +237,8 @@ export class StrategyService
       price?: string;
       qty?: string;
       cumulativeQty?: string;
+      feeAmount?: string;
+      feeAsset?: string;
       receivedAt?: string;
       payload?: Record<string, unknown>;
     },
@@ -5302,6 +5307,8 @@ export class StrategyService
       price?: string;
       qty?: string;
       cumulativeQty?: string;
+      feeAmount?: string;
+      feeAsset?: string;
       receivedAt?: string;
     },
   ): Promise<void> {
@@ -5319,7 +5326,7 @@ export class StrategyService
         ? this.resolveTrackedOrderForFill(session, fill)
         : undefined;
 
-    await this.applyFillToBalanceLedger(session, fill);
+    await this.settleFillToBalanceLedger(session, fill);
     this.recordSessionPnL(session, fill, {
       includeTradedQuoteVolume:
         session.strategyType === 'pureMarketMaking' ||
@@ -5527,6 +5534,8 @@ export class StrategyService
       price?: string;
       qty?: string;
       cumulativeQty?: string;
+      feeAmount?: string;
+      feeAsset?: string;
       receivedAt?: string;
     },
     trackedOrder: TrackedOrder,
@@ -5694,6 +5703,8 @@ export class StrategyService
       price?: string;
       qty?: string;
       cumulativeQty?: string;
+      feeAmount?: string;
+      feeAsset?: string;
       receivedAt?: string;
     },
   ): Promise<void> {
@@ -5746,6 +5757,7 @@ export class StrategyService
       fill.side === 'buy' ? baseAmount : qty.negated().toFixed();
 
     await this.balanceLedgerService.adjust({
+      orderId: session.marketMakingOrderId || session.clientId,
       userId: session.userId,
       assetId: assets.base,
       amount: baseDelta,
@@ -5755,6 +5767,7 @@ export class StrategyService
     });
 
     await this.balanceLedgerService.adjust({
+      orderId: session.marketMakingOrderId || session.clientId,
       userId: session.userId,
       assetId: assets.quote,
       amount: quoteDelta,
@@ -5762,6 +5775,94 @@ export class StrategyService
       refType: 'market_making_fill',
       refId: fill.exchangeOrderId || fill.clientOrderId || session.strategyKey,
     });
+
+    await this.applyFillFeeToBalanceLedger(session, fill, eventKey);
+  }
+
+  private async settleFillToBalanceLedger(
+    session: StrategyRuntimeSession,
+    fill: {
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      fillId?: string | null;
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      cumulativeQty?: string;
+      feeAmount?: string;
+      feeAsset?: string;
+      receivedAt?: string;
+    },
+  ): Promise<void> {
+    const pair = this.readString(
+      session.params?.pair,
+      this.readString(session.params?.symbol, ''),
+    );
+
+    if (this.fillSettlementService && pair) {
+      await this.fillSettlementService.settleFill({
+        strategyKey: session.strategyKey,
+        orderId: session.marketMakingOrderId || session.clientId,
+        userId: session.userId,
+        pair,
+        fill,
+      });
+
+      return;
+    }
+
+    await this.applyFillToBalanceLedger(session, fill);
+  }
+
+  private async applyFillFeeToBalanceLedger(
+    session: StrategyRuntimeSession,
+    fill: {
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      feeAmount?: string;
+      feeAsset?: string;
+    },
+    eventKey: string,
+  ): Promise<void> {
+    if (!this.balanceLedgerService || !fill.feeAmount || !fill.feeAsset) {
+      return;
+    }
+
+    const feeAmount = new BigNumber(fill.feeAmount);
+    const feeAsset = this.readString(fill.feeAsset);
+
+    if (!feeAsset || !feeAmount.isFinite() || feeAmount.isLessThanOrEqualTo(0)) {
+      this.logger.warn(
+        `Skipping fill fee ledger update for strategyKey=${
+          session.strategyKey
+        }: invalid fee asset=${fill.feeAsset || ''} amount=${
+          fill.feeAmount || ''
+        }`,
+      );
+
+      return;
+    }
+
+    try {
+      await this.balanceLedgerService.debitFee({
+        orderId: session.marketMakingOrderId || session.clientId,
+        userId: session.userId,
+        assetId: feeAsset,
+        amount: feeAmount.toFixed(),
+        idempotencyKey: `${eventKey}:fee:${feeAsset}`,
+        refType: 'market_making_fee',
+        refId:
+          fill.exchangeOrderId || fill.clientOrderId || session.strategyKey,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Fill fee debit requires manual review for strategyKey=${
+          session.strategyKey
+        } asset=${feeAsset} amount=${feeAmount.toFixed()}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private buildFillLedgerEventKey(
@@ -5774,6 +5875,8 @@ export class StrategyService
       price?: string;
       qty?: string;
       cumulativeQty?: string;
+      feeAmount?: string;
+      feeAsset?: string;
       receivedAt?: string;
     },
   ): string {

@@ -6,10 +6,13 @@ import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
 import type { Job } from 'bull';
-import { BalanceReadModel } from 'src/common/entities/ledger/balance-read-model.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
+import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  StrategyDefinitionVisibility,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingPaymentState } from 'src/common/entities/orders/payment-state.entity';
 import {
@@ -114,7 +117,7 @@ class FakeQueue {
 }
 
 const PAYMENT_TEST_ENTITIES = [
-  BalanceReadModel,
+  MarketMakingOrderBalance,
   LedgerEntry,
   MarketMakingOrder,
   MarketMakingOrderIntent,
@@ -152,6 +155,52 @@ export class MarketMakingPaymentHelper {
     refund: jest.fn().mockResolvedValue(undefined),
     transfer: jest.fn().mockResolvedValue(undefined),
   };
+  private readonly campaignServiceStub = {
+    getCampaigns: jest.fn().mockResolvedValue([]),
+    joinMarketMakingCampaign: jest.fn().mockResolvedValue({ id: 'join-1' }),
+  };
+  private readonly exchangeApiKeyServiceStub = {
+    findFirstAPIKeyByExchange: jest.fn().mockResolvedValue({
+      key_id: 'api-key-1',
+      api_key: 'api-key',
+      api_secret: 'api-secret',
+    }),
+    readDecryptedAPIKey: jest.fn().mockResolvedValue({
+      key_id: 'api-key-1',
+      api_key: 'api-key',
+      api_secret: 'api-secret',
+    }),
+    getDepositAddress: jest.fn().mockResolvedValue({
+      address: 'exchange-deposit-address',
+      memo: '',
+    }),
+    getBalanceBySymbol: jest.fn().mockResolvedValue(1000000),
+  };
+  private readonly mixinClientServiceStub = {
+    client: {
+      safe: {
+        fetchSafeSnapshots: jest.fn(),
+        fetchSafeSnapshot: jest.fn().mockResolvedValue({
+          confirmations: 1,
+          transaction_hash: '0xconfirmed',
+        }),
+      },
+    },
+  };
+  private readonly networkMappingServiceStub = {
+    getNetworkForAsset: jest.fn().mockResolvedValue('ETH'),
+  };
+  private readonly withdrawalServiceStub = {
+    executeWithdrawal: jest.fn(
+      async (
+        _assetId: string,
+        _destination: string,
+        _memo: string,
+        _amount: string,
+        requestKey?: string,
+      ) => [{ request_id: requestKey || 'withdrawal-request' }],
+    ),
+  };
   private marketMakingOrderIntentRepository!: Repository<MarketMakingOrderIntent>;
   private marketMakingOrderRepository!: Repository<MarketMakingOrder>;
   private moduleRef!: TestingModule;
@@ -171,6 +220,8 @@ export class MarketMakingPaymentHelper {
       enable: true,
       exchange_id: 'binance',
       symbol: 'BTC/USDT',
+      base_symbol: 'BTC',
+      quote_symbol: 'USDT',
       base_asset_id: 'asset-base',
       quote_asset_id: 'asset-quote',
     };
@@ -217,7 +268,7 @@ export class MarketMakingPaymentHelper {
         },
         {
           provide: CampaignService,
-          useValue: {},
+          useValue: this.campaignServiceStub,
         },
         {
           provide: ConfigService,
@@ -227,7 +278,7 @@ export class MarketMakingPaymentHelper {
         },
         {
           provide: ExchangeApiKeyService,
-          useValue: {},
+          useValue: this.exchangeApiKeyServiceStub,
         },
         {
           provide: FeeService,
@@ -253,17 +304,11 @@ export class MarketMakingPaymentHelper {
         },
         {
           provide: MixinClientService,
-          useValue: {
-            client: {
-              safe: {
-                fetchSafeSnapshots: jest.fn(),
-              },
-            },
-          },
+          useValue: this.mixinClientServiceStub,
         },
         {
           provide: NetworkMappingService,
-          useValue: {},
+          useValue: this.networkMappingServiceStub,
         },
         {
           provide: StrategyService,
@@ -275,7 +320,7 @@ export class MarketMakingPaymentHelper {
         },
         {
           provide: WithdrawalService,
-          useValue: {},
+          useValue: this.withdrawalServiceStub,
         },
         {
           provide: getQueueToken('market-making'),
@@ -319,6 +364,30 @@ export class MarketMakingPaymentHelper {
         await processor.handleCheckPaymentComplete(job as unknown as Job);
       },
     );
+    this.marketMakingQueue.registerHandler(
+      'withdraw_to_exchange',
+      async (job) => {
+        await processor.handleWithdrawToExchange(job as unknown as Job);
+      },
+    );
+    this.marketMakingQueue.registerHandler(
+      'monitor_mixin_withdrawal',
+      async (job) => {
+        await processor.handleMonitorMMWithdrawal(job as unknown as Job);
+      },
+    );
+    this.marketMakingQueue.registerHandler(
+      'confirm_exchange_deposit',
+      async (job) => {
+        await processor.handleConfirmExchangeDeposit(job as unknown as Job);
+      },
+    );
+    this.marketMakingQueue.registerHandler('join_campaign', async (job) => {
+      await processor.handleJoinCampaign(job as unknown as Job);
+    });
+    this.marketMakingQueue.registerHandler('start_mm', async (job) => {
+      await processor.handleStartMM(job as unknown as Job);
+    });
   }
 
   async close(): Promise<void> {
@@ -351,7 +420,7 @@ export class MarketMakingPaymentHelper {
           amountChangeType: 'fixed',
         },
         enabled: true,
-        visibility: 'system',
+        visibility: StrategyDefinitionVisibility.ADMIN,
       }),
     );
     const result = await this.userOrdersService.createMarketMakingOrderIntent({
@@ -403,12 +472,16 @@ export class MarketMakingPaymentHelper {
     return await this.marketMakingOrderRepository.findOneBy({ orderId });
   }
 
-  async getBalance(userId: string, assetId: string) {
-    return await this.balanceLedgerService.getBalance(userId, assetId);
+  async getBalance(orderId: string, assetId: string) {
+    return await this.balanceLedgerService.getBalance(orderId, assetId);
   }
 
   async getQueuedMarketMakingJob(jobId: string) {
     return await this.marketMakingQueue.getJob(jobId);
+  }
+
+  async runQueuedMarketMakingJob(jobId: string): Promise<void> {
+    await this.marketMakingQueue.runJob(jobId);
   }
 
   async startOrder(orderId: string, userId: string): Promise<void> {
@@ -422,5 +495,9 @@ export class MarketMakingPaymentHelper {
 
   getStrategyServiceStub() {
     return this.strategyServiceStub;
+  }
+
+  getWithdrawalServiceStub() {
+    return this.withdrawalServiceStub;
   }
 }

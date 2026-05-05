@@ -78,6 +78,7 @@ describe('WithdrawalProcessor', () => {
     } as any);
 
     expect(balanceLedgerService.debitWithdrawal).toHaveBeenCalledWith({
+      orderId: 'withdrawal-1',
       userId: 'user-1',
       assetId: 'asset-usdt',
       amount: '10',

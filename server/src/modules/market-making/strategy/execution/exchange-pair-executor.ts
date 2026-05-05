@@ -13,6 +13,8 @@ export type ExchangePairFill = {
   price?: string;
   qty?: string;
   cumulativeQty?: string;
+  feeAmount?: string;
+  feeAsset?: string;
   receivedAt?: string;
   payload?: Record<string, unknown>;
 };

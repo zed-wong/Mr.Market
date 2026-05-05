@@ -104,6 +104,21 @@ describe('StrategyIntentExecutionService', () => {
     }),
   } as unknown as DexVolumeStrategyService;
 
+  const orderReservationService = {
+    reserveForLimitOrder: jest.fn().mockResolvedValue({
+      orderId: 'c1',
+      assetId: 'USDT',
+      amount: '100',
+      applied: true,
+    }),
+    releaseLimitOrderReservation: jest.fn().mockResolvedValue({
+      orderId: 'c1',
+      assetId: 'USDT',
+      amount: '100',
+      applied: true,
+    }),
+  };
+
   const intentStoreService = {
     updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
@@ -123,6 +138,27 @@ describe('StrategyIntentExecutionService', () => {
       parameters: {},
     }),
     update: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const marketMakingOrderRepository = {
+    findOne: jest.fn().mockResolvedValue(null),
+  };
+
+  const strategyMarketDataProviderService = {
+    getTrackedOrderBookFreshness: jest.fn().mockReturnValue({
+      fresh: true,
+      ageMs: 100,
+      freshnessTimestamp: '2026-02-11T00:00:00.000Z',
+    }),
+  };
+
+  const exchangeApiKeyService = {
+    readAPIKey: jest.fn().mockResolvedValue({
+      key_id: 'api-key-1',
+      exchange: 'binance',
+      permissions: 'read-trade',
+      validation_status: 'valid',
+    }),
   };
 
   const createConfigService = (
@@ -162,6 +198,10 @@ describe('StrategyIntentExecutionService', () => {
     executeIntents: boolean,
     configService = createConfigService(executeIntents),
     executionHistoryRepository = createExecutionHistoryRepository(),
+    reservationService?: typeof orderReservationService,
+    orderRepository?: typeof marketMakingOrderRepository,
+    marketDataProvider?: typeof strategyMarketDataProviderService,
+    apiKeyService?: typeof exchangeApiKeyService,
   ) =>
     new StrategyIntentExecutionService(
       configService,
@@ -173,6 +213,10 @@ describe('StrategyIntentExecutionService', () => {
       exchangeOrderTrackerService as any,
       exchangeOrderMappingService as any,
       dexVolumeStrategyService,
+      reservationService as any,
+      orderRepository as any,
+      marketDataProvider as any,
+      apiKeyService as any,
     );
 
   beforeEach(() => {
@@ -257,12 +301,40 @@ describe('StrategyIntentExecutionService', () => {
     exchangeOrderMappingService.createMapping
       .mockReset()
       .mockResolvedValue(undefined);
+    orderReservationService.reserveForLimitOrder.mockReset().mockResolvedValue({
+      orderId: 'c1',
+      assetId: 'USDT',
+      amount: '100',
+      applied: true,
+    });
+    orderReservationService.releaseLimitOrderReservation
+      .mockReset()
+      .mockResolvedValue({
+        orderId: 'c1',
+        assetId: 'USDT',
+        amount: '100',
+        applied: true,
+      });
     strategyInstanceRepository.findOne.mockResolvedValue({
       strategyKey: 'u1-c1-pureMarketMaking',
       status: 'running',
       parameters: {},
     });
     strategyInstanceRepository.update.mockResolvedValue(undefined);
+    marketMakingOrderRepository.findOne.mockReset().mockResolvedValue(null);
+    strategyMarketDataProviderService.getTrackedOrderBookFreshness
+      .mockReset()
+      .mockReturnValue({
+        fresh: true,
+        ageMs: 100,
+        freshnessTimestamp: '2026-02-11T00:00:00.000Z',
+      });
+    exchangeApiKeyService.readAPIKey.mockReset().mockResolvedValue({
+      key_id: 'api-key-1',
+      exchange: 'binance',
+      permissions: 'read-trade',
+      validation_status: 'valid',
+    });
     intentStoreService.getMixinOrderId.mockResolvedValue(undefined);
   });
 
@@ -317,6 +389,278 @@ describe('StrategyIntentExecutionService', () => {
         clientOrderId: buildSubmittedClientOrderId('c1', 0),
         status: 'pending_create',
       }),
+    );
+  });
+
+  it('reserves order funds before exchange create', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+    const callOrder: string[] = [];
+
+    orderReservationService.reserveForLimitOrder.mockImplementation(
+      async () => {
+        callOrder.push('reserve');
+
+        return {
+          orderId: 'c1',
+          assetId: 'USDT',
+          amount: '100',
+          applied: true,
+        };
+      },
+    );
+    exchangeConnectorAdapterService.placeLimitOrder.mockImplementation(
+      async () => {
+        callOrder.push('place');
+
+        return { id: 'order-1', status: 'open' };
+      },
+    );
+
+    await service.consumeIntents([baseIntent]);
+
+    expect(orderReservationService.reserveForLimitOrder).toHaveBeenCalledWith({
+      orderId: 'c1',
+      userId: 'u1',
+      intentId: 'intent-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+    });
+    expect(callOrder).toEqual(['reserve', 'place']);
+  });
+
+  it('does not create exchange order when reservation fails', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    orderReservationService.reserveForLimitOrder.mockRejectedValue(
+      new Error('insufficient available balance for lock'),
+    );
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'insufficient available balance for lock',
+    );
+
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'FAILED',
+      'insufficient available balance for lock',
+    );
+  });
+
+  it('fails risk gate before reservation or exchange call', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+    const invalidIntent: StrategyOrderIntent = {
+      ...baseIntent,
+      intentId: 'intent-risk-fail',
+      qty: '0',
+    };
+
+    await expect(service.consumeIntents([invalidIntent])).rejects.toThrow(
+      'risk gate rejected create intent: invalid quantity',
+    );
+
+    expect(orderReservationService.reserveForLimitOrder).not.toHaveBeenCalled();
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-risk-fail',
+      'FAILED',
+      'risk gate rejected create intent: invalid quantity',
+    );
+  });
+
+  it('fails order-state risk gate before reservation or exchange call', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+      marketMakingOrderRepository,
+    );
+
+    marketMakingOrderRepository.findOne.mockResolvedValue({
+      orderId: 'c1',
+      state: 'paused',
+    });
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'risk gate rejected create intent: order state paused',
+    );
+
+    expect(orderReservationService.reserveForLimitOrder).not.toHaveBeenCalled();
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'FAILED',
+      'risk gate rejected create intent: order state paused',
+    );
+  });
+
+  it('fails market-data freshness risk gate before reservation or exchange call', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+      marketMakingOrderRepository,
+      strategyMarketDataProviderService,
+    );
+
+    strategyMarketDataProviderService.getTrackedOrderBookFreshness.mockReturnValue(
+      {
+        fresh: false,
+        ageMs: null,
+        freshnessTimestamp: null,
+      },
+    );
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'risk gate rejected create intent: stale market data for binance BTC/USDT',
+    );
+
+    expect(orderReservationService.reserveForLimitOrder).not.toHaveBeenCalled();
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'FAILED',
+      'risk gate rejected create intent: stale market data for binance BTC/USDT',
+    );
+  });
+
+  it('fails API-key health risk gate before reservation or exchange call', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+      marketMakingOrderRepository,
+      strategyMarketDataProviderService,
+      exchangeApiKeyService,
+    );
+
+    exchangeApiKeyService.readAPIKey.mockResolvedValue({
+      key_id: 'api-key-1',
+      exchange: 'binance',
+      permissions: 'read-trade',
+      validation_status: 'invalid',
+    });
+
+    await expect(
+      service.consumeIntents([
+        {
+          ...baseIntent,
+          accountLabel: 'api-key-1',
+        },
+      ]),
+    ).rejects.toThrow(
+      'risk gate rejected create intent: API key health invalid',
+    );
+
+    expect(orderReservationService.reserveForLimitOrder).not.toHaveBeenCalled();
+    expect(
+      exchangeConnectorAdapterService.placeLimitOrder,
+    ).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'FAILED',
+      'risk gate rejected create intent: API key health invalid',
+    );
+  });
+
+  it('releases reservation when exchange create fails', async () => {
+    const service = createService(
+      true,
+      createConfigService(true, { 'strategy.intent_max_retries': 0 }),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
+      new Error('exchange rejected order'),
+    );
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'exchange rejected order',
+    );
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'c1',
+      userId: 'u1',
+      intentId: 'intent-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      reason: 'exchange_create_failed',
+    });
+  });
+
+  it('releases reservation and fails intent when exchange create returns rejected status', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
+      id: 'order-1',
+      status: 'rejected',
+    });
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'exchange create returned terminal status failed',
+    );
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'c1',
+      userId: 'u1',
+      intentId: 'intent-1',
+      releaseId: buildSubmittedClientOrderId('c1', 0),
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      reason: 'exchange_create_rejected',
+    });
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'order-1',
+        status: 'failed',
+      }),
+    );
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'FAILED',
+      'exchange create returned terminal status failed',
     );
   });
 
@@ -1005,6 +1349,51 @@ describe('StrategyIntentExecutionService', () => {
       'strategy-intent-execution',
       'intent-cancel',
     );
+  });
+
+  it('releases remaining reservation when cancel ack is final', async () => {
+    trackedOrders.set(toTrackedOrderKey('binance', undefined, 'exchange-order-1'), {
+      orderId: 'c1',
+      strategyKey: 'u1-c1-pureMarketMaking',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'exchange-order-1',
+      clientOrderId: buildSubmittedClientOrderId('c1', 0),
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      cumulativeFilledQty: '0.25',
+      status: 'open',
+    });
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+    const cancelIntent: StrategyOrderIntent = {
+      ...baseIntent,
+      intentId: 'intent-cancel',
+      type: 'CANCEL_ORDER',
+      mixinOrderId: 'exchange-order-1',
+    };
+
+    await service.consumeIntents([cancelIntent]);
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'c1',
+      userId: 'u1',
+      intentId: 'intent-cancel',
+      releaseId: buildSubmittedClientOrderId('c1', 0),
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      filledQty: '0.25',
+      reason: 'exchange_order_cancelled',
+    });
   });
 
   it('rejects CANCEL_ORDER intents without mixinOrderId', async () => {

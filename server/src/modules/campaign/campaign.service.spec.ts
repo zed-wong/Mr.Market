@@ -50,6 +50,7 @@ describe('CampaignService', () => {
                 .mockResolvedValue(
                   '0x1234567890abcdef1234567890abcdef12345678',
                 ),
+              privateKey: '0xprivate-key',
             }),
           },
         },
@@ -70,6 +71,30 @@ describe('CampaignService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('joins a market-making campaign with configured signer and read-only exchange credentials', async () => {
+    const joinSpy = jest
+      .spyOn(service, 'joinCampaignWithAuth')
+      .mockResolvedValue({ id: 'join-1' });
+
+    await expect(
+      service.joinMarketMakingCampaign({
+        chain_id: 137,
+        address: '0xabc',
+        exchange_name: 'binance',
+      }),
+    ).resolves.toEqual({ id: 'join-1' });
+
+    expect(joinSpy).toHaveBeenCalledWith(
+      '0x1234567890abcdef1234567890abcdef12345678',
+      '0xprivate-key',
+      'binance',
+      'mock-api-key',
+      'mock-secret',
+      137,
+      '0xabc',
+    );
   });
 
   describe('getCampaigns', () => {

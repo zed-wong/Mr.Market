@@ -202,6 +202,140 @@ describe('StrategyIntentWorkerService', () => {
     await service.onModuleDestroy();
   });
 
+  it('partitions mutation lanes by exchange, account, pair, and mutation type', async () => {
+    const processed = new Set<string>();
+    let active = 0;
+    let maxActive = 0;
+
+    const intents = {
+      s1: {
+        ...createHeadIntent('s1', 's1-intent', 'binance'),
+        accountLabel: 'maker',
+        pair: 'BTC/USDT',
+        type: 'CREATE_LIMIT_ORDER',
+      },
+      s2: {
+        ...createHeadIntent('s2', 's2-intent', 'binance'),
+        accountLabel: 'taker',
+        pair: 'BTC/USDT',
+        type: 'CREATE_LIMIT_ORDER',
+      },
+      s3: {
+        ...createHeadIntent('s3', 's3-intent', 'binance'),
+        accountLabel: 'maker',
+        pair: 'ETH/USDT',
+        type: 'CREATE_LIMIT_ORDER',
+      },
+      s4: {
+        ...createHeadIntent('s4', 's4-intent', 'binance'),
+        accountLabel: 'maker',
+        pair: 'BTC/USDT',
+        type: 'CANCEL_ORDER',
+      },
+    };
+
+    const strategyIntentStoreService = {
+      listStrategyKeysWithNewIntents: jest
+        .fn()
+        .mockResolvedValue(['s1', 's2', 's3', 's4']),
+      getNextNewIntent: jest.fn(async (strategyKey: string) => {
+        return intents[strategyKey as keyof typeof intents] || null;
+      }),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
+    };
+
+    const strategyIntentExecutionService = {
+      hasProcessedIntent: jest.fn((intentId: string) =>
+        processed.has(intentId),
+      ),
+      consumeIntents: jest.fn(async (consumedIntents) => {
+        const intentId = consumedIntents[0].intentId;
+
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await wait(25);
+        processed.add(intentId);
+        active -= 1;
+      }),
+    };
+
+    const service = new StrategyIntentWorkerService(
+      createConfigService({
+        'strategy.intent_worker_max_in_flight': 4,
+        'strategy.intent_worker_max_in_flight_per_exchange': 1,
+      }),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          status: 'running',
+        }),
+      } as any,
+      strategyIntentStoreService as any,
+      strategyIntentExecutionService as any,
+    );
+
+    await service.onModuleInit();
+    await waitFor(
+      () =>
+        strategyIntentExecutionService.consumeIntents.mock.calls.length >= 4,
+    );
+    await service.onModuleDestroy();
+
+    expect(maxActive).toBe(4);
+  });
+
+  it('serializes matching exchange/account/pair/mutation lanes', async () => {
+    const processed = new Set<string>();
+    let active = 0;
+    let maxActive = 0;
+
+    const strategyIntentStoreService = {
+      listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1', 's2']),
+      getNextNewIntent: jest.fn(async (strategyKey: string) => ({
+        ...createHeadIntent(strategyKey, `${strategyKey}-intent`, 'binance'),
+        accountLabel: 'maker',
+        pair: 'BTC/USDT',
+        type: 'CREATE_LIMIT_ORDER',
+      })),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
+    };
+
+    const strategyIntentExecutionService = {
+      hasProcessedIntent: jest.fn((intentId: string) =>
+        processed.has(intentId),
+      ),
+      consumeIntents: jest.fn(async (intents) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await wait(25);
+        processed.add(intents[0].intentId);
+        active -= 1;
+      }),
+    };
+
+    const service = new StrategyIntentWorkerService(
+      createConfigService({
+        'strategy.intent_worker_max_in_flight': 2,
+        'strategy.intent_worker_max_in_flight_per_exchange': 1,
+      }),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          status: 'running',
+        }),
+      } as any,
+      strategyIntentStoreService as any,
+      strategyIntentExecutionService as any,
+    );
+
+    await service.onModuleInit();
+    await waitFor(
+      () =>
+        strategyIntentExecutionService.consumeIntents.mock.calls.length >= 2,
+    );
+    await service.onModuleDestroy();
+
+    expect(maxActive).toBe(1);
+  });
+
   it('serializes head intents for the same strategy key while one is already in flight', async () => {
     const processed = new Set<string>();
     const intentsByStrategy = {

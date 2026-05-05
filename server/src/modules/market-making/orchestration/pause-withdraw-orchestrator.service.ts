@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import BigNumber from 'bignumber.js';
 import {
   createPureMarketMakingStrategyKey,
   createStrategyKey,
@@ -62,6 +63,7 @@ export class PauseWithdrawOrchestratorService {
     await this.cancelUntilDrained(strategyKey);
 
     const unlockResult = await this.balanceLedgerService.unlockFunds({
+      orderId: command.clientId,
       userId: command.userId,
       assetId: command.assetId,
       amount: command.amount,
@@ -74,7 +76,19 @@ export class PauseWithdrawOrchestratorService {
       throw new Error('Unlock mutation was not applied');
     }
 
+    const remainingLockedAmount =
+      await this.balanceLedgerService.getLockedBalanceForUserAsset(
+        command.userId,
+        command.assetId,
+      );
+    const remainingLocked = new BigNumber(remainingLockedAmount);
+
+    if (remainingLocked.isGreaterThan(0)) {
+      throw new Error('Active reservation remains for withdrawal asset');
+    }
+
     const debitResult = await this.balanceLedgerService.debitWithdrawal({
+      orderId: command.clientId,
       userId: command.userId,
       assetId: command.assetId,
       amount: command.amount,
@@ -148,6 +162,7 @@ export class PauseWithdrawOrchestratorService {
       }
 
       await this.balanceLedgerService.adjust({
+        orderId: command.clientId,
         userId: command.userId,
         assetId: command.assetId,
         amount: command.amount,

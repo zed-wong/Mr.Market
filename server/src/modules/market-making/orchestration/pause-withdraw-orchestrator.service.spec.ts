@@ -8,6 +8,8 @@ describe('PauseWithdrawOrchestratorService', () => {
     };
     const balanceLedgerService = {
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+      getBalance: jest.fn().mockResolvedValue({ locked: '0' }),
+      getLockedBalanceForUserAsset: jest.fn().mockResolvedValue('0'),
       debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
       adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
@@ -75,6 +77,8 @@ describe('PauseWithdrawOrchestratorService', () => {
     };
     const balanceLedgerService = {
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+      getBalance: jest.fn().mockResolvedValue({ locked: '0' }),
+      getLockedBalanceForUserAsset: jest.fn().mockResolvedValue('0'),
       debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
       adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
@@ -123,6 +127,8 @@ describe('PauseWithdrawOrchestratorService', () => {
     };
     const balanceLedgerService = {
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+      getBalance: jest.fn().mockResolvedValue({ locked: '0' }),
+      getLockedBalanceForUserAsset: jest.fn().mockResolvedValue('0'),
       debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
       adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
@@ -176,12 +182,64 @@ describe('PauseWithdrawOrchestratorService', () => {
     expect(withdrawalService.executeWithdrawal).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects withdraw flow when a reservation remains locked after unlock', async () => {
+    const strategyService = {
+      stopStrategyForUser: jest.fn().mockResolvedValue(undefined),
+    };
+    const balanceLedgerService = {
+      unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+      getBalance: jest.fn().mockResolvedValue({ locked: '0' }),
+      getLockedBalanceForUserAsset: jest.fn().mockResolvedValue('0.1'),
+      debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
+      adjust: jest.fn().mockResolvedValue({ applied: true }),
+    };
+    const withdrawalService = {
+      executeWithdrawal: jest.fn().mockResolvedValue({ trace_id: 'tx-1' }),
+    };
+    const exchangeOrderTrackerService = {
+      getLiveOrders: jest.fn().mockReturnValue([]),
+    };
+    const exchangeConnectorAdapterService = {
+      cancelOrder: jest.fn().mockResolvedValue(undefined),
+    };
+    const durabilityService = {
+      appendOutboxEvent: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new PauseWithdrawOrchestratorService(
+      strategyService as any,
+      balanceLedgerService as any,
+      withdrawalService as any,
+      exchangeOrderTrackerService as any,
+      exchangeConnectorAdapterService as any,
+      durabilityService as any,
+    );
+
+    await expect(
+      service.pauseAndWithdraw({
+        operationId: 'op-reserved',
+        userId: 'u1',
+        clientId: 'c1',
+        strategyType: 'pureMarketMaking',
+        assetId: 'asset-usdt',
+        amount: '10',
+        destination: '0xabc',
+        destinationTag: '',
+      }),
+    ).rejects.toThrow('Active reservation remains for withdrawal asset');
+
+    expect(balanceLedgerService.debitWithdrawal).not.toHaveBeenCalled();
+    expect(withdrawalService.executeWithdrawal).not.toHaveBeenCalled();
+  });
+
   it('records failure intent and compensates debit when withdrawal execution fails', async () => {
     const strategyService = {
       stopStrategyForUser: jest.fn().mockResolvedValue(undefined),
     };
     const balanceLedgerService = {
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+      getBalance: jest.fn().mockResolvedValue({ locked: '0' }),
+      getLockedBalanceForUserAsset: jest.fn().mockResolvedValue('0'),
       debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
       adjust: jest.fn().mockResolvedValue({ applied: true }),
     };
@@ -243,6 +301,7 @@ describe('PauseWithdrawOrchestratorService', () => {
     );
 
     expect(balanceLedgerService.adjust).toHaveBeenCalledWith({
+      orderId: 'c1',
       userId: 'u1',
       assetId: 'asset-usdt',
       amount: '10',

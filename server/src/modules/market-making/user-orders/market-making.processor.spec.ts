@@ -136,6 +136,43 @@ describe('MarketMakingOrderProcessor', () => {
       creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
       debitWithdrawal: jest.fn().mockResolvedValue({ applied: true }),
     };
+    const withdrawalService = {
+      executeWithdrawal: jest.fn().mockResolvedValue([{ request_id: 'tx-1' }]),
+    };
+    const hufiCampaignService = {
+      getCampaigns: jest.fn().mockResolvedValue([]),
+      joinMarketMakingCampaign: jest.fn().mockResolvedValue({ id: 'join-1' }),
+    };
+    const exchangeService = {
+      findFirstAPIKeyByExchange: jest.fn().mockResolvedValue({
+        key_id: 'api-key-1',
+        api_key: 'api-key',
+        api_secret: 'api-secret',
+      }),
+      readDecryptedAPIKey: jest.fn().mockResolvedValue({
+        key_id: 'api-key-1',
+        api_key: 'api-key',
+        api_secret: 'api-secret',
+      }),
+      getDepositAddress: jest.fn().mockResolvedValue({
+        address: 'deposit-address',
+        memo: '',
+      }),
+      getBalanceBySymbol: jest.fn().mockResolvedValue(100),
+    };
+    const networkMappingService = {
+      getNetworkForAsset: jest.fn().mockResolvedValue('ETH'),
+    };
+    const mixinClientService = {
+      client: {
+        safe: {
+          fetchSafeSnapshot: jest.fn().mockResolvedValue({
+            confirmations: 1,
+            transaction_hash: '0xhash',
+          }),
+        },
+      },
+    };
     const marketMakingRepository = {
       findOne: jest.fn().mockResolvedValue({ userId: 'user-1' }),
       create: jest.fn((payload) => payload),
@@ -180,19 +217,18 @@ describe('MarketMakingOrderProcessor', () => {
           enable: true,
           exchange_id: 'binance',
           symbol: 'BTC/USDT',
+          base_symbol: 'BTC',
+          quote_symbol: 'USDT',
           base_asset_id: 'asset-base',
           quote_asset_id: 'asset-quote',
         }),
       } as any,
       transactionService as any,
-      { executeWithdrawal: jest.fn() } as any,
-      { getCampaigns: jest.fn() } as any,
-      {
-        findFirstAPIKeyByExchange: jest.fn(),
-        getDepositAddress: jest.fn(),
-      } as any,
-      { getNetworkForAsset: jest.fn() } as any,
-      {} as any,
+      withdrawalService as any,
+      hufiCampaignService as any,
+      exchangeService as any,
+      networkMappingService as any,
+      mixinClientService as any,
       strategyConfigResolver as any,
       paymentStateRepository as any,
       marketMakingOrderIntentRepository as any,
@@ -211,6 +247,11 @@ describe('MarketMakingOrderProcessor', () => {
       marketMakingOrderIntentRepository,
       marketMakingRepository,
       balanceLedgerService,
+      withdrawalService,
+      hufiCampaignService,
+      exchangeService,
+      networkMappingService,
+      mixinClientService,
       strategyDefinitionRepository,
     };
   };
@@ -242,6 +283,7 @@ describe('MarketMakingOrderProcessor', () => {
     expect(
       (processor as any).balanceLedgerService.creditDeposit,
     ).toHaveBeenCalledWith({
+      orderId: 'order-1',
       userId: 'user-1',
       assetId: 'asset-base',
       amount: '10',
@@ -343,6 +385,7 @@ describe('MarketMakingOrderProcessor', () => {
     );
 
     expect(balanceLedgerService.debitWithdrawal).toHaveBeenCalledWith({
+      orderId: 'snapshot-2',
       userId: 'user-1',
       assetId: 'asset-base',
       amount: '12',
@@ -446,6 +489,7 @@ describe('MarketMakingOrderProcessor', () => {
     ).rejects.toThrow('transfer failed');
 
     expect(balanceLedgerService.creditDeposit).toHaveBeenCalledWith({
+      orderId: 'snapshot-3',
       userId: 'user-1',
       assetId: 'asset-base',
       amount: '8.5',
@@ -470,6 +514,7 @@ describe('MarketMakingOrderProcessor', () => {
     );
 
     expect(balanceLedgerService.debitWithdrawal).toHaveBeenCalledWith({
+      orderId: 'order-9',
       userId: 'user-1',
       assetId: 'asset-base',
       amount: '5',
@@ -664,11 +709,13 @@ describe('MarketMakingOrderProcessor', () => {
     marketMakingRepository.findOne.mockResolvedValueOnce(null);
     marketMakingRepository.save.mockImplementation(async (payload) => payload);
 
+    const queue = { add: jest.fn() };
+
     await processor.handleCheckPaymentComplete({
       data: { orderId: 'order-1', marketMakingPairId: 'pair-1' },
       attemptsMade: 0,
       opts: { attempts: 3 },
-      queue: { add: jest.fn() },
+      queue,
     } as any);
 
     expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
@@ -694,6 +741,309 @@ describe('MarketMakingOrderProcessor', () => {
     expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
       'order-1',
       'payment_complete',
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      'withdraw_to_exchange',
+      {
+        orderId: 'order-1',
+        marketMakingPairId: 'pair-1',
+      },
+      expect.objectContaining({
+        jobId: 'withdraw_order-1',
+      }),
+    );
+  });
+
+  it('debits ledger, executes exchange withdrawals, and queues confirmation monitoring', async () => {
+    const {
+      processor,
+      paymentStateRepository,
+      withdrawalService,
+      balanceLedgerService,
+      exchangeService,
+      networkMappingService,
+      userOrdersService,
+    } = createProcessor();
+    const queue = { add: jest.fn() };
+
+    paymentStateRepository.findOne.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'user-1',
+      baseAssetId: 'asset-base',
+      baseAssetAmount: '10',
+      quoteAssetId: 'asset-quote',
+      quoteAssetAmount: '20',
+    });
+    withdrawalService.executeWithdrawal
+      .mockResolvedValueOnce([{ request_id: 'base-tx' }])
+      .mockResolvedValueOnce([{ request_id: 'quote-tx' }]);
+
+    await processor.handleWithdrawToExchange({
+      data: { orderId: 'order-1', marketMakingPairId: 'pair-1' },
+      queue,
+    } as any);
+
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'withdrawing',
+    );
+    expect(networkMappingService.getNetworkForAsset).toHaveBeenCalledWith(
+      'asset-base',
+      'BTC',
+    );
+    expect(exchangeService.getDepositAddress).toHaveBeenCalledWith({
+      exchange: 'binance',
+      apiKeyId: 'api-key-1',
+      symbol: 'BTC',
+      network: 'ETH',
+    });
+    expect(balanceLedgerService.debitWithdrawal).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'asset-base',
+      amount: '10',
+      idempotencyKey: 'mm-exchange-withdraw:order-1:base',
+      refType: 'market_making_exchange_withdrawal',
+      refId: 'order-1',
+    });
+    expect(withdrawalService.executeWithdrawal).toHaveBeenCalledWith(
+      'asset-base',
+      'deposit-address',
+      'MM:order-1:base',
+      '10',
+      'mm-exchange-withdraw:order-1:base',
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      'monitor_mixin_withdrawal',
+      expect.objectContaining({
+        orderId: 'order-1',
+        marketMakingPairId: 'pair-1',
+        baseWithdrawalTxId: 'base-tx',
+        quoteWithdrawalTxId: 'quote-tx',
+      }),
+      expect.objectContaining({
+        jobId: 'monitor_withdrawal_order-1',
+      }),
+    );
+  });
+
+  it('queues exchange deposit confirmation after both Mixin withdrawals confirm', async () => {
+    const { processor, userOrdersService } = createProcessor();
+    const queue = { add: jest.fn() };
+
+    await processor.handleMonitorMMWithdrawal({
+      data: {
+        orderId: 'order-1',
+        marketMakingPairId: 'pair-1',
+        baseWithdrawalTxId: 'base-tx',
+        quoteWithdrawalTxId: 'quote-tx',
+        startedAt: Date.now(),
+      },
+      attemptsMade: 0,
+      queue,
+    } as any);
+
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'withdrawal_confirmed',
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'deposit_confirming',
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      'confirm_exchange_deposit',
+      {
+        orderId: 'order-1',
+        marketMakingPairId: 'pair-1',
+      },
+      expect.objectContaining({
+        jobId: 'confirm_exchange_deposit_order-1',
+      }),
+    );
+  });
+
+  it('queues campaign join only after exchange balances confirm deposits', async () => {
+    const {
+      processor,
+      paymentStateRepository,
+      exchangeService,
+      userOrdersService,
+    } = createProcessor();
+    const queue = { add: jest.fn() };
+
+    paymentStateRepository.findOne.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'user-1',
+      baseAssetAmount: '10',
+      quoteAssetAmount: '20',
+    });
+    exchangeService.getBalanceBySymbol
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(20);
+
+    await processor.handleConfirmExchangeDeposit({
+      data: { orderId: 'order-1', marketMakingPairId: 'pair-1' },
+      queue,
+    } as any);
+
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'deposit_confirming',
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'deposit_confirmed',
+    );
+    expect(exchangeService.getBalanceBySymbol).toHaveBeenCalledWith(
+      'binance',
+      'api-key',
+      'api-secret',
+      'BTC',
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      'join_campaign',
+      { orderId: 'order-1' },
+      expect.objectContaining({
+        jobId: 'join_campaign_order-1',
+      }),
+    );
+  });
+
+  it('marks order created before start when no campaign is required', async () => {
+    const { processor, userOrdersService } = createProcessor();
+    const queue = { add: jest.fn() };
+
+    await processor.handleJoinCampaign({
+      data: { orderId: 'order-1' },
+      queue,
+    } as any);
+
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'joining_campaign',
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'created',
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalledWith(
+      'order-1',
+      'campaign_joined',
+    );
+    expect(queue.add).toHaveBeenCalledWith(
+      'start_mm',
+      {
+        userId: 'user-1',
+        orderId: 'order-1',
+      },
+      expect.objectContaining({
+        jobId: 'start_mm_order-1',
+      }),
+    );
+  });
+
+  it('skips campaign_joined when requested campaign is not found', async () => {
+    const { processor, userOrdersService, hufiCampaignService } =
+      createProcessor();
+    const queue = { add: jest.fn() };
+
+    hufiCampaignService.getCampaigns.mockResolvedValueOnce([]);
+
+    await processor.handleJoinCampaign({
+      data: {
+        orderId: 'order-1',
+        hufiCampaign: {
+          chainId: 137,
+          campaignAddress: '0xabc',
+        },
+      },
+      queue,
+    } as any);
+
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'created',
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalledWith(
+      'order-1',
+      'campaign_joined',
+    );
+  });
+
+  it('joins matching HuFi campaign before marking campaign_joined', async () => {
+    const { processor, userOrdersService, hufiCampaignService } =
+      createProcessor();
+    const queue = { add: jest.fn() };
+    const campaign = {
+      chain_id: 137,
+      address: '0xabc',
+      exchange_name: 'binance',
+    };
+
+    hufiCampaignService.getCampaigns.mockResolvedValueOnce([campaign]);
+
+    await processor.handleJoinCampaign({
+      data: {
+        orderId: 'order-1',
+        hufiCampaign: {
+          chainId: 137,
+          campaignAddress: '0xAbC',
+        },
+      },
+      queue,
+    } as any);
+
+    expect(hufiCampaignService.joinMarketMakingCampaign).toHaveBeenCalledWith(
+      campaign,
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'campaign_joined',
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'created',
+    );
+  });
+
+  it('fails the order when required HuFi campaign join fails', async () => {
+    const { processor, userOrdersService, hufiCampaignService } =
+      createProcessor();
+    const queue = { add: jest.fn() };
+    const campaign = {
+      chain_id: 137,
+      address: '0xabc',
+      exchange_name: 'binance',
+    };
+
+    hufiCampaignService.getCampaigns.mockResolvedValueOnce([campaign]);
+    hufiCampaignService.joinMarketMakingCampaign.mockRejectedValueOnce(
+      new Error('join failed'),
+    );
+
+    await expect(
+      processor.handleJoinCampaign({
+        data: {
+          orderId: 'order-1',
+          hufiCampaign: {
+            chainId: 137,
+            campaignAddress: '0xabc',
+          },
+        },
+        queue,
+      } as any),
+    ).rejects.toThrow('join failed');
+
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'failed',
+      'join failed',
+    );
+    expect(queue.add).not.toHaveBeenCalledWith(
+      'start_mm',
+      expect.anything(),
+      expect.anything(),
     );
   });
   it('does nothing when start_mm order is missing', async () => {

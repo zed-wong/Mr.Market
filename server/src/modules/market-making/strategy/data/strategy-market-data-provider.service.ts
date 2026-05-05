@@ -213,6 +213,37 @@ export class StrategyMarketDataProviderService {
     return this.getTrackedBestBidAsk(exchangeName, pair) !== null;
   }
 
+  getTrackedOrderBookFreshness(
+    exchangeName: string,
+    pair: string,
+    maxAgeMs: number,
+  ): {
+    fresh: boolean;
+    ageMs: number | null;
+    freshnessTimestamp: string | null;
+  } {
+    const lastUpdateAt = this.orderBookTrackerService.getLastUpdateAt(
+      exchangeName,
+      pair,
+    );
+
+    if (lastUpdateAt === undefined) {
+      return {
+        fresh: false,
+        ageMs: null,
+        freshnessTimestamp: null,
+      };
+    }
+
+    const ageMs = Date.now() - lastUpdateAt;
+
+    return {
+      fresh: ageMs <= maxAgeMs && this.hasTrackedOrderBook(exchangeName, pair),
+      ageMs,
+      freshnessTimestamp: new Date(lastUpdateAt).toISOString(),
+    };
+  }
+
   async getOrderBook(
     exchangeName: string,
     pair: string,

@@ -415,6 +415,29 @@ export class CampaignService {
     }
   }
 
+  async joinMarketMakingCampaign(campaign: {
+    chain_id: number;
+    address: string;
+    exchange_name: string;
+  }): Promise<any> {
+    const signer = this.web3Service.getSigner(campaign.chain_id);
+    const walletAddress = await signer.getAddress();
+    const exchangeInstance = await this.exchangeService.getExchange(
+      campaign.exchange_name,
+      'read-only',
+    );
+
+    return await this.joinCampaignWithAuth(
+      walletAddress,
+      signer.privateKey,
+      campaign.exchange_name,
+      exchangeInstance.apiKey,
+      exchangeInstance.secret,
+      campaign.chain_id,
+      campaign.address,
+    );
+  }
+
   /**
    * Every hour, check if there are any new campaigns to join
    */

@@ -20,7 +20,7 @@ describe('Market making payment intake parity (system)', () => {
     log.suite('helper closed');
   });
 
-  it('creates an order intent through the real service and reaches payment_complete through snapshot intake', async () => {
+  it('creates an order intent through the real service and reaches running through the funding lifecycle', async () => {
     log.step('creating market-making intent');
     const fixture = await helper.createIntent({
       configOverrides: {
@@ -75,8 +75,11 @@ describe('Market making payment intake parity (system)', () => {
     const completedPayment = await helper.findPaymentState(fixture.orderId);
     const order = await helper.findOrder(fixture.orderId);
     const intent = await helper.findIntent(fixture.orderId);
-    const baseBalance = await helper.getBalance(fixture.userId, 'asset-base');
-    const quoteBalance = await helper.getBalance(fixture.userId, 'asset-quote');
+    const baseBalance = await helper.getBalance(fixture.orderId, 'asset-base');
+    const quoteBalance = await helper.getBalance(
+      fixture.orderId,
+      'asset-quote',
+    );
 
     log.result('payment completion artifacts collected', {
       orderState: order?.state,
@@ -108,7 +111,7 @@ describe('Market making payment intake parity (system)', () => {
           marketMakingOrderId: fixture.orderId,
           pair: 'BTC/USDT',
           exchangeName: 'binance',
-          bidSpread: 0.002,
+          bidSpread: '0.002',
           orderRefreshTime: 20000,
         }),
       }),
@@ -120,13 +123,29 @@ describe('Market making payment intake parity (system)', () => {
     expect(baseBalance.available).toBe('10');
     expect(quoteBalance.available).toBe('200');
 
-    log.step('starting order through runtime handoff');
-    await helper.startOrder(fixture.orderId, fixture.userId);
-    log.check('strategy dispatch called', {
+    log.step('running queued funding lifecycle jobs');
+    await helper.runQueuedMarketMakingJob(`withdraw_${fixture.orderId}`);
+    await helper.runQueuedMarketMakingJob(
+      `monitor_withdrawal_${fixture.orderId}`,
+    );
+    await helper.runQueuedMarketMakingJob(
+      `confirm_exchange_deposit_${fixture.orderId}`,
+    );
+    await helper.runQueuedMarketMakingJob(`join_campaign_${fixture.orderId}`);
+    await helper.runQueuedMarketMakingJob(`start_mm_${fixture.orderId}`);
+
+    const runningOrder = await helper.findOrder(fixture.orderId);
+
+    log.check('strategy dispatch called after lifecycle gates', {
       orderId: fixture.orderId,
       userId: fixture.userId,
+      orderState: runningOrder?.state,
     });
 
+    expect(runningOrder?.state).toBe('running');
+    expect(helper.getWithdrawalServiceStub().executeWithdrawal).toHaveBeenCalledTimes(
+      2,
+    );
     expect(
       helper.getStrategyServiceStub().executePureMarketMakingStrategy,
     ).toHaveBeenCalledWith(

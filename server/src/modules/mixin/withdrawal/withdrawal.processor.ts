@@ -133,6 +133,7 @@ export class WithdrawalProcessor {
 
         try {
           await this.balanceLedgerService.debitWithdrawal({
+            orderId: withdrawal.snapshotId || withdrawal.id,
             userId: withdrawal.userId,
             assetId: withdrawal.assetId,
             amount: new BigNumber(withdrawal.amount).toFixed(),
@@ -221,6 +222,7 @@ export class WithdrawalProcessor {
     }
 
     await this.balanceLedgerService.debitWithdrawal({
+      orderId: withdrawal.snapshotId || withdrawal.id,
       userId: withdrawal.userId,
       assetId: withdrawal.assetId,
       amount: new BigNumber(withdrawal.amount).toFixed(),

@@ -184,6 +184,23 @@ describe('UserOrdersService', () => {
         { state: newState },
       );
     });
+
+    it('stores lifecycle error when state update includes a failure reason', async () => {
+      const orderId = 'mm1';
+
+      jest.spyOn(marketMakingRepository, 'update').mockResolvedValue(undefined);
+
+      await service.updateMarketMakingOrderState(
+        orderId,
+        'failed',
+        'join failed',
+      );
+
+      expect(marketMakingRepository.update).toHaveBeenCalledWith(
+        { orderId },
+        { state: 'failed', lifecycleError: 'join failed' },
+      );
+    });
   });
 
   describe('listEnabledMarketMakingStrategies', () => {

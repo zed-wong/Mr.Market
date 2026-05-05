@@ -180,11 +180,18 @@ export class UserOrdersService {
   async updateMarketMakingOrderState(
     orderId: string,
     newState: MarketMakingStates,
+    lifecycleError?: string | null,
   ): Promise<void> {
     try {
+      const update: Partial<MarketMakingOrder> = { state: newState };
+
+      if (lifecycleError !== undefined) {
+        update.lifecycleError = lifecycleError;
+      }
+
       await this.marketMakingRepository.update(
         { orderId },
-        { state: newState },
+        update,
       );
       this.logger.log(
         `Market making order ${orderId} updated successfully to state ${newState}`,
