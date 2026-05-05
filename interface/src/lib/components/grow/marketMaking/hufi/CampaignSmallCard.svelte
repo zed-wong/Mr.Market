@@ -45,18 +45,45 @@
 
   <div class="grid grid-cols-2 gap-2 mt-2">
     <div class="bg-base-100 p-4 py-3 rounded-xl">
-      <p class="text-[10px] text-base-content/60 capitalize">
+      <span class="block text-[10px] text-base-content/60 capitalize">
         {$_("total_funded")}
-      </p>
-      <p class="text-base font-semibold text-primary/80">
+      </span>
+      <span class="block text-base font-semibold text-primary/80">
         {campaign.totalFundedAmount || "0"}
-      </p>
+      </span>
     </div>
     <div class="bg-base-100 p-4 py-3 rounded-xl">
-      <p class="text-[10px] text-base-content/60 capitalize">{$_("target")}</p>
-      <p class="text-base font-semibold text-primary/80">
+      <span class="block text-[10px] text-base-content/60 capitalize">
+        {$_("target")}
+      </span>
+      <span class="block text-base font-semibold text-primary/80">
         {campaign.targetValue || "0"}
-      </p>
+      </span>
+    </div>
+    <div class="bg-base-100 p-4 py-3 rounded-xl col-span-2">
+      <span class="block text-[10px] text-base-content/60 capitalize">
+        {$_("campaign_period")}
+      </span>
+      <span
+        class="flex items-center gap-2 text-base font-semibold text-primary/80"
+      >
+        <span>{campaign.startDate || "-"}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="2"
+          stroke="currentColor"
+          class="w-4 h-4 opacity-60"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+          />
+        </svg>
+        <span>{campaign.endDate || "-"}</span>
+      </span>
     </div>
   </div>
 </button>
