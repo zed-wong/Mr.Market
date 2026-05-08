@@ -297,6 +297,165 @@ describe('BalanceLedgerService', () => {
     expect(second.available).toBe('80');
   });
 
+  it('serializes data source transactions across different balances', async () => {
+    const repos = createInMemoryRepos();
+    let activeTransactions = 0;
+    let maxActiveTransactions = 0;
+    const dataSource = {
+      transaction: jest.fn(async (callback: any) => {
+        activeTransactions += 1;
+        maxActiveTransactions = Math.max(
+          maxActiveTransactions,
+          activeTransactions,
+        );
+        if (activeTransactions > 1) {
+          throw new Error('cannot start a transaction within a transaction');
+        }
+
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+
+          return await callback({
+            getRepository: (entity: any) =>
+              entity === LedgerEntry
+                ? repos.ledgerEntryRepository
+                : repos.balanceReadModelRepository,
+          });
+        } finally {
+          activeTransactions -= 1;
+        }
+      }),
+    };
+    const service = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+      undefined,
+      dataSource as any,
+    );
+
+    await Promise.all([
+      service.creditDeposit({
+        orderId: 'order-1',
+        userId: 'u1',
+        assetId: 'asset-usdt',
+        amount: '25',
+        idempotencyKey: 'dep-transaction-1',
+        refType: 'deposit',
+        refId: 'snapshot-1',
+      }),
+      service.creditDeposit({
+        orderId: 'order-1',
+        userId: 'u1',
+        assetId: 'asset-xin',
+        amount: '2',
+        idempotencyKey: 'dep-transaction-2',
+        refType: 'deposit',
+        refId: 'snapshot-2',
+      }),
+    ]);
+
+    expect(dataSource.transaction).toHaveBeenCalledTimes(2);
+    expect(maxActiveTransactions).toBe(1);
+  });
+
+  it('serializes data source transactions across service instances', async () => {
+    const repos = createInMemoryRepos();
+    let activeTransactions = 0;
+    let maxActiveTransactions = 0;
+    const dataSource = {
+      transaction: jest.fn(async (callback: any) => {
+        activeTransactions += 1;
+        maxActiveTransactions = Math.max(
+          maxActiveTransactions,
+          activeTransactions,
+        );
+        if (activeTransactions > 1) {
+          throw new Error('cannot start a transaction within a transaction');
+        }
+
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+
+          return await callback({
+            getRepository: (entity: any) =>
+              entity === LedgerEntry
+                ? repos.ledgerEntryRepository
+                : repos.balanceReadModelRepository,
+          });
+        } finally {
+          activeTransactions -= 1;
+        }
+      }),
+    };
+    const firstService = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+      undefined,
+      dataSource as any,
+    );
+    const secondService = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+      undefined,
+      dataSource as any,
+    );
+
+    await Promise.all([
+      firstService.creditDeposit({
+        orderId: 'order-1',
+        userId: 'u1',
+        assetId: 'asset-usdt',
+        amount: '25',
+        idempotencyKey: 'dep-cross-instance-1',
+        refType: 'deposit',
+        refId: 'snapshot-1',
+      }),
+      secondService.creditDeposit({
+        orderId: 'order-1',
+        userId: 'u1',
+        assetId: 'asset-xin',
+        amount: '2',
+        idempotencyKey: 'dep-cross-instance-2',
+        refType: 'deposit',
+        refId: 'snapshot-2',
+      }),
+    ]);
+
+    expect(dataSource.transaction).toHaveBeenCalledTimes(2);
+    expect(maxActiveTransactions).toBe(1);
+  });
+
+  it('skips explicit data source transactions for sqlite', async () => {
+    const repos = createInMemoryRepos();
+    const dataSource = {
+      options: { type: 'sqlite' },
+      transaction: jest.fn(async () => {
+        throw new Error('sqlite transaction should not be opened');
+      }),
+    };
+    const service = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+      undefined,
+      dataSource as any,
+    );
+
+    await service.creditDeposit({
+      orderId: 'order-1',
+      userId: 'u1',
+      assetId: 'asset-usdt',
+      amount: '25',
+      idempotencyKey: 'dep-sqlite-no-transaction',
+      refType: 'deposit',
+      refId: 'snapshot-1',
+    });
+
+    const balance = await service.getBalance('order-1', 'asset-usdt');
+
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+    expect(balance.available).toBe('25');
+  });
+
   it('rejects duplicate idempotency key with a different payload', async () => {
     const repos = createInMemoryRepos();
     const durabilityService = { appendOutboxEvent: jest.fn() };

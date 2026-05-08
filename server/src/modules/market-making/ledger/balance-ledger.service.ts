@@ -40,6 +40,12 @@ export type LedgerRebuildResult = {
 
 @Injectable()
 export class BalanceLedgerService {
+  private static readonly transactionLockKey = '__ledger_transaction__';
+  private static readonly transactionMutationLocks = new Map<
+    string,
+    Promise<void>
+  >();
+
   private readonly balanceMutationLocks = new Map<string, Promise<void>>();
   private readonly reservationPausedBalances = new Set<string>();
 
@@ -169,7 +175,7 @@ export class BalanceLedgerService {
     type: LedgerEntryType,
     command: BalanceLedgerCommand,
   ): Promise<BalanceLedgerResult> {
-    const lockKey = this.getBalanceLockKey(command.orderId, command.assetId);
+    const lockKey = this.getMutationLockKey(command.orderId, command.assetId);
     const result = await this.withBalanceMutationLock(lockKey, async () => {
       const execute = async (
         ledgerEntryRepository: Repository<LedgerEntry>,
@@ -182,7 +188,7 @@ export class BalanceLedgerService {
           orderBalanceRepository,
         );
 
-      if (this.dataSource) {
+      if (this.shouldUseDataSourceTransaction()) {
         try {
           return await this.dataSource.transaction(async (manager) => {
             return await execute(
@@ -245,12 +251,33 @@ export class BalanceLedgerService {
     return `${orderId}:${assetId}`;
   }
 
+  private shouldUseDataSourceTransaction(): boolean {
+    if (!this.dataSource) {
+      return false;
+    }
+
+    const type = String(this.dataSource.options?.type || '').toLowerCase();
+
+    return type !== 'sqlite' && type !== 'better-sqlite3' && type !== 'sqljs';
+  }
+
+  private getMutationLockKey(orderId: string, assetId: string): string {
+    if (this.dataSource) {
+      return BalanceLedgerService.transactionLockKey;
+    }
+
+    return this.getBalanceLockKey(orderId, assetId);
+  }
+
   private async withBalanceMutationLock<T>(
     lockKey: string,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const currentTail =
-      this.balanceMutationLocks.get(lockKey) || Promise.resolve();
+    const mutationLocks =
+      lockKey === BalanceLedgerService.transactionLockKey
+        ? BalanceLedgerService.transactionMutationLocks
+        : this.balanceMutationLocks;
+    const currentTail = mutationLocks.get(lockKey) || Promise.resolve();
     let releaseCurrent: () => void = () => {};
     const nextTail = new Promise<void>((resolve) => {
       releaseCurrent = resolve;
@@ -258,15 +285,15 @@ export class BalanceLedgerService {
 
     const chainedTail = currentTail.then(() => nextTail);
 
-    this.balanceMutationLocks.set(lockKey, chainedTail);
+    mutationLocks.set(lockKey, chainedTail);
     await currentTail;
 
     try {
       return await operation();
     } finally {
       releaseCurrent();
-      if (this.balanceMutationLocks.get(lockKey) === chainedTail) {
-        this.balanceMutationLocks.delete(lockKey);
+      if (mutationLocks.get(lockKey) === chainedTail) {
+        mutationLocks.delete(lockKey);
       }
     }
   }
