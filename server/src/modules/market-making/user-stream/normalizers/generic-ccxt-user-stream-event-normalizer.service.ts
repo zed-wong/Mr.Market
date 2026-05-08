@@ -25,6 +25,7 @@ export class GenericCcxtUserStreamEventNormalizerService
     }
 
     const payload = rawPayload as Record<string, unknown>;
+
     return {
       exchange,
       accountLabel,

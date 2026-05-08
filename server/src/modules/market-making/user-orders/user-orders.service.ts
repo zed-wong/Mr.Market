@@ -28,8 +28,8 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 import { validate as isUuid } from 'uuid';
 
-import { normalizeControllerType } from '../strategy/config/strategy-controller-aliases';
 import { assertStrategyConfigOverridesSafe } from '../strategy/config/strategy-config-override.guard';
+import { normalizeControllerType } from '../strategy/config/strategy-controller-aliases';
 import { StrategyConfigResolverService } from '../strategy/dex/strategy-config-resolver.service';
 
 const RESERVED_CONFIG_OVERRIDE_FIELDS = new Set([
@@ -189,10 +189,7 @@ export class UserOrdersService {
         update.lifecycleError = lifecycleError;
       }
 
-      await this.marketMakingRepository.update(
-        { orderId },
-        update,
-      );
+      await this.marketMakingRepository.update({ orderId }, update);
       this.logger.log(
         `Market making order ${orderId} updated successfully to state ${newState}`,
       );

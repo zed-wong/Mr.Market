@@ -927,10 +927,9 @@ describe('MarketMakingOrderProcessor', () => {
       'order-1',
       'created',
     );
-    expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalledWith(
-      'order-1',
-      'campaign_joined',
-    );
+    expect(
+      userOrdersService.updateMarketMakingOrderState,
+    ).not.toHaveBeenCalledWith('order-1', 'campaign_joined');
     expect(queue.add).toHaveBeenCalledWith(
       'start_mm',
       {
@@ -965,10 +964,9 @@ describe('MarketMakingOrderProcessor', () => {
       'order-1',
       'created',
     );
-    expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalledWith(
-      'order-1',
-      'campaign_joined',
-    );
+    expect(
+      userOrdersService.updateMarketMakingOrderState,
+    ).not.toHaveBeenCalledWith('order-1', 'campaign_joined');
   });
 
   it('joins matching HuFi campaign before marking campaign_joined', async () => {

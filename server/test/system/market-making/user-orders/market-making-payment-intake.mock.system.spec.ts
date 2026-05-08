@@ -143,9 +143,9 @@ describe('Market making payment intake parity (system)', () => {
     });
 
     expect(runningOrder?.state).toBe('running');
-    expect(helper.getWithdrawalServiceStub().executeWithdrawal).toHaveBeenCalledTimes(
-      2,
-    );
+    expect(
+      helper.getWithdrawalServiceStub().executeWithdrawal,
+    ).toHaveBeenCalledTimes(2);
     expect(
       helper.getStrategyServiceStub().executePureMarketMakingStrategy,
     ).toHaveBeenCalledWith(

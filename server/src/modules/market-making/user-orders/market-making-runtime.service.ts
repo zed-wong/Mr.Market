@@ -34,18 +34,18 @@ export class MarketMakingRuntimeService {
       await this.strategyService.linkDefinitionToStrategyInstance(
         order.userId,
         order.orderId,
-      strategyType,
-      order.strategyDefinitionId,
-      strategyType === 'pureMarketMaking' ? order.orderId : undefined,
-      {
-        strategyDefinitionId: order.strategySnapshot.strategyDefinitionId,
-        definitionKey: order.strategySnapshot.definitionKey,
-        definitionName: order.strategySnapshot.definitionName,
-        controllerType: order.strategySnapshot.controllerType,
-        resolvedAt: order.strategySnapshot.resolvedAt,
-      },
-    );
-  }
+        strategyType,
+        order.strategyDefinitionId,
+        strategyType === 'pureMarketMaking' ? order.orderId : undefined,
+        {
+          strategyDefinitionId: order.strategySnapshot.strategyDefinitionId,
+          definitionKey: order.strategySnapshot.definitionKey,
+          definitionName: order.strategySnapshot.definitionName,
+          controllerType: order.strategySnapshot.controllerType,
+          resolvedAt: order.strategySnapshot.resolvedAt,
+        },
+      );
+    }
   }
 
   async stopOrder(

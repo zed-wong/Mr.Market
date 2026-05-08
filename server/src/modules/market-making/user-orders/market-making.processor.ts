@@ -1324,7 +1324,9 @@ export class MarketMakingOrderProcessor {
       );
 
       if (!apiKey) {
-        throw new Error(`No API key found for exchange ${pairConfig.exchange_id}`);
+        throw new Error(
+          `No API key found for exchange ${pairConfig.exchange_id}`,
+        );
       }
 
       const decryptedApiKey =
