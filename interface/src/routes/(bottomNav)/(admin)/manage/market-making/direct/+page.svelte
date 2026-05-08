@@ -185,12 +185,7 @@
 
     $: orders = initialOrders;
     $: campaigns = initialCampaigns;
-    $: activeOrdersCount = orders.filter(
-        (o) =>
-            o.runtimeState === "running" ||
-            o.runtimeState === "active" ||
-            o.runtimeState === "stale",
-    ).length;
+    $: stoppableOrdersCount = orders.length;
     $: stoppedOrdersCount = orders.filter(
         (o) => o.runtimeState === "stopped",
     ).length;
@@ -499,18 +494,13 @@
         isStoppingAll = true;
 
         try {
-            const activeOrders = orders.filter(
-                (o) =>
-                    o.runtimeState === "running" ||
-                    o.runtimeState === "active" ||
-                    o.runtimeState === "stale",
-            );
-            const activeIds = new Set(activeOrders.map((o) => o.orderId));
+            const stoppableOrders = orders;
+            const stoppableIds = new Set(stoppableOrders.map((o) => o.orderId));
             await Promise.all(
-                activeOrders.map((o) => stopDirectOrder(o.orderId, token)),
+                stoppableOrders.map((o) => stopDirectOrder(o.orderId, token)),
             );
             orders = orders.map((o) =>
-                activeIds.has(o.orderId)
+                stoppableIds.has(o.orderId)
                     ? {
                           ...o,
                           runtimeState: "stopped" as const,
@@ -937,7 +927,7 @@
 <StopAllModal
     show={showStopAllConfirm}
     {isStoppingAll}
-    {activeOrdersCount}
+    activeOrdersCount={stoppableOrdersCount}
     onConfirm={handleStopAll}
     onCancel={() => (showStopAllConfirm = false)}
 />

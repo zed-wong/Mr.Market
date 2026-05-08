@@ -926,9 +926,17 @@
                         {$_("admin_direct_mm_cancel")}
                     </button>
                     <button
-                        class="btn btn-primary text-primary-content font-semibold px-6 gap-2"
-                        on:click={onSubmit}
-                        disabled={submitDisabled}
+                        class="btn font-semibold px-6 gap-2 border-none {submitDisabled
+                            ? 'bg-base-300 text-base-content/40 cursor-not-allowed hover:bg-base-300'
+                            : 'bg-primary text-primary-content hover:bg-primary/90'}"
+                        on:click={(e) => {
+                            if (isStarting || submitDisabled) {
+                                e.preventDefault();
+                                return;
+                            }
+                            onSubmit();
+                        }}
+                        aria-disabled={submitDisabled}
                     >
                         {#if isStarting}
                             <span class="loading loading-spinner loading-xs"
