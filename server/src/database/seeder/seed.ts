@@ -393,8 +393,7 @@ export async function seedStrategyDefinitions(
         >,
         capabilities: definition.capabilities,
         enabled: definition.enabled !== false,
-        visibility:
-          definition.visibility || StrategyDefinitionVisibility.ADMIN,
+        visibility: definition.visibility || StrategyDefinitionVisibility.ADMIN,
         createdBy: definition.createdBy
           ? String(definition.createdBy)
           : undefined,
@@ -421,8 +420,7 @@ export async function seedStrategyDefinitions(
         >,
         capabilities: definition.capabilities,
         enabled: definition.enabled !== false,
-        visibility:
-          definition.visibility || StrategyDefinitionVisibility.ADMIN,
+        visibility: definition.visibility || StrategyDefinitionVisibility.ADMIN,
         createdBy: definition.createdBy
           ? String(definition.createdBy)
           : undefined,

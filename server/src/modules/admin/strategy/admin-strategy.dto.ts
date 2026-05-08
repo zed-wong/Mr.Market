@@ -14,8 +14,8 @@ import {
 } from 'class-validator';
 import {
   STRATEGY_LAUNCH_SURFACES,
-  StrategyDefinitionVisibility,
   type StrategyDefinitionCapabilities,
+  StrategyDefinitionVisibility,
 } from 'src/common/entities/market-making/strategy-definition.entity';
 
 export class GetDepositAddressDto {

@@ -118,11 +118,7 @@ export class NormalizeStrategyDefinitionEntities1776200000000
         "${targetControllerColumn}" varchar NOT NULL,
         "configSchema" text NOT NULL,
         "defaultConfig" text NOT NULL,
-        ${
-          direction === 'up'
-            ? '"capabilities" text,'
-            : ''
-        }
+        ${direction === 'up' ? '"capabilities" text,' : ''}
         "enabled" boolean NOT NULL DEFAULT (1),
         "visibility" varchar NOT NULL DEFAULT ('admin'),
         "createdBy" varchar,
@@ -140,11 +136,7 @@ export class NormalizeStrategyDefinitionEntities1776200000000
         "${targetControllerColumn}",
         "configSchema",
         "defaultConfig",
-        ${
-          direction === 'up'
-            ? '"capabilities",'
-            : ''
-        }
+        ${direction === 'up' ? '"capabilities",' : ''}
         "enabled",
         "visibility",
         "createdBy",
@@ -159,11 +151,7 @@ export class NormalizeStrategyDefinitionEntities1776200000000
         ${sourceControllerColumn},
         ${configSchemaSelect},
         "defaultConfig",
-        ${
-          direction === 'up'
-            ? `${capabilitiesSelect},`
-            : ''
-        }
+        ${direction === 'up' ? `${capabilitiesSelect},` : ''}
         "enabled",
         CASE WHEN "visibility" = 'public' THEN 'public' ELSE 'admin' END,
         "createdBy",
@@ -355,17 +343,65 @@ export class NormalizeStrategyDefinitionEntities1776200000000
         "clientId",
         "type",
         "exchange",
-        ${await this.hasColumn(queryRunner, 'strategy_order_intent', 'accountLabel') ? '"accountLabel"' : 'NULL'},
+        ${
+          (await this.hasColumn(
+            queryRunner,
+            'strategy_order_intent',
+            'accountLabel',
+          ))
+            ? '"accountLabel"'
+            : 'NULL'
+        },
         "pair",
         "side",
         "price",
         "qty",
         "mixinOrderId",
-        ${await this.hasColumn(queryRunner, 'strategy_order_intent', 'executionCategory') ? '"executionCategory"' : 'NULL'},
-        ${await this.hasColumn(queryRunner, 'strategy_order_intent', 'postOnly') ? '"postOnly"' : 'NULL'},
-        ${await this.hasColumn(queryRunner, 'strategy_order_intent', 'timeInForce') ? '"timeInForce"' : 'NULL'},
-        ${await this.hasColumn(queryRunner, 'strategy_order_intent', 'slotKey') ? '"slotKey"' : 'NULL'},
-        ${await this.hasColumn(queryRunner, 'strategy_order_intent', 'metadata') ? '"metadata"' : 'NULL'},
+        ${
+          (await this.hasColumn(
+            queryRunner,
+            'strategy_order_intent',
+            'executionCategory',
+          ))
+            ? '"executionCategory"'
+            : 'NULL'
+        },
+        ${
+          (await this.hasColumn(
+            queryRunner,
+            'strategy_order_intent',
+            'postOnly',
+          ))
+            ? '"postOnly"'
+            : 'NULL'
+        },
+        ${
+          (await this.hasColumn(
+            queryRunner,
+            'strategy_order_intent',
+            'timeInForce',
+          ))
+            ? '"timeInForce"'
+            : 'NULL'
+        },
+        ${
+          (await this.hasColumn(
+            queryRunner,
+            'strategy_order_intent',
+            'slotKey',
+          ))
+            ? '"slotKey"'
+            : 'NULL'
+        },
+        ${
+          (await this.hasColumn(
+            queryRunner,
+            'strategy_order_intent',
+            'metadata',
+          ))
+            ? '"metadata"'
+            : 'NULL'
+        },
         "status",
         "errorReason",
         "createdAt",

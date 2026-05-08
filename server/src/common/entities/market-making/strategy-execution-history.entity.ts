@@ -1,11 +1,6 @@
 import { Side } from 'src/common/constants/side';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
-import {
-  BeforeInsert,
-  Column,
-  Entity,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { BeforeInsert, Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity({ name: 'strategy_execution_history' })
 export class StrategyExecutionHistory {

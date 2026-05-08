@@ -537,7 +537,9 @@ describe('AdminStrategyService', () => {
       });
 
       await expect(
-        service.removeStrategyDefinition({ strategyDefinitionId: 'def-remove-2' }),
+        service.removeStrategyDefinition({
+          strategyDefinitionId: 'def-remove-2',
+        }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -553,7 +555,9 @@ describe('AdminStrategyService', () => {
       });
 
       await expect(
-        service.removeStrategyDefinition({ strategyDefinitionId: 'def-remove-3' }),
+        service.removeStrategyDefinition({
+          strategyDefinitionId: 'def-remove-3',
+        }),
       ).rejects.toThrow(BadRequestException);
     });
   });

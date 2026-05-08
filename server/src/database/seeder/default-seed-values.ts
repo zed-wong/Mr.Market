@@ -10,7 +10,6 @@ import {
   type StrategyDefinitionCapabilities,
   StrategyDefinitionVisibility,
 } from '../../common/entities/market-making/strategy-definition.entity';
-
 import { TOP_EXCHANGES as EXCHANGES } from './data/exchanges';
 import arbitrageSeedDefinition from './data/strategies/arbitrage.json';
 import dualAccountBestCapacityVolumeSeedDefinition from './data/strategies/dual-account-best-capacity-volume.json';

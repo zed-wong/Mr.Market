@@ -310,9 +310,7 @@ export class StrategyConfigResolverService {
         if (value && typeof value === 'object' && !Array.isArray(value)) {
           return [
             key,
-            this.normalizeDecimalStringFields(
-              value as Record<string, unknown>,
-            ),
+            this.normalizeDecimalStringFields(value as Record<string, unknown>),
           ];
         }
 

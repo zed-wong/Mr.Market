@@ -20,8 +20,9 @@ function readLaunchSurfaces(
     return [];
   }
 
-  return metadata.launchSurfaces.filter((surface): surface is StrategyLaunchSurface =>
-    surface === 'strategy_settings' || surface === 'admin_direct_mm',
+  return metadata.launchSurfaces.filter(
+    (surface): surface is StrategyLaunchSurface =>
+      surface === 'strategy_settings' || surface === 'admin_direct_mm',
   );
 }
 

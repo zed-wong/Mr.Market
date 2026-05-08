@@ -392,9 +392,7 @@ export class AdminStrategyService {
       ? await this.strategyService.getRunningStrategies()
       : await this.strategyService.getAllStrategies();
     const strategyDefinitionIds = [
-      ...new Set(
-        instances.map((i) => i.strategyDefinitionId).filter(Boolean),
-      ),
+      ...new Set(instances.map((i) => i.strategyDefinitionId).filter(Boolean)),
     ] as string[];
 
     const definitions = strategyDefinitionIds.length
