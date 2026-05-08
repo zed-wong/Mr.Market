@@ -752,6 +752,7 @@ describe('StrategyService', () => {
       ceilingPrice: undefined,
       floorPrice: undefined,
     };
+
     balanceLedgerService.debitFee.mockRejectedValue(
       new Error('insufficient available balance'),
     );

@@ -3,9 +3,9 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import type {
   MarketMakingBalanceStaleEvent,
-  MarketMakingFillManualReviewEvent,
   MarketMakingEventName,
   MarketMakingEventPayloadMap,
+  MarketMakingFillManualReviewEvent,
   MarketMakingReconciliationAuditEvent,
   MarketMakingStreamHealthChangedEvent,
 } from './market-making-events.types';
@@ -43,9 +43,7 @@ export class MarketMakingEventBus {
     this.emit(MARKET_MAKING_EVENT_NAMES.fillManualReview, payload);
   }
 
-  emitReconciliationAudit(
-    payload: MarketMakingReconciliationAuditEvent,
-  ): void {
+  emitReconciliationAudit(payload: MarketMakingReconciliationAuditEvent): void {
     this.emit(MARKET_MAKING_EVENT_NAMES.reconciliationAudit, payload);
   }
 

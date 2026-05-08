@@ -93,18 +93,16 @@ describe('ReconciliationService', () => {
       { find: jest.fn().mockResolvedValue([]) } as any,
       { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
       {
-        find: jest
-          .fn()
-          .mockResolvedValue([
-            {
-              txHash: 'tx-1',
-              amount: '100',
-              platformFee: '10',
-              undistributedRemainder: '0',
-              campaignId: 'c1',
-              dayIndex: 1,
-            },
-          ]),
+        find: jest.fn().mockResolvedValue([
+          {
+            txHash: 'tx-1',
+            amount: '100',
+            platformFee: '10',
+            undistributedRemainder: '0',
+            campaignId: 'c1',
+            dayIndex: 1,
+          },
+        ]),
       } as any,
       {
         find: jest.fn().mockResolvedValue([

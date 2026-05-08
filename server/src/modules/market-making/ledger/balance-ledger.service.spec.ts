@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, unused-imports/no-unused-vars */
 import { BadRequestException } from '@nestjs/common';
-import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
+import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 
 import { BalanceLedgerService } from './balance-ledger.service';
 
@@ -682,6 +682,7 @@ describe('BalanceLedgerService', () => {
       refType: 'market_making_estimated_fee',
       refId: 'trade-1',
     });
+
     await service.reverse({
       orderId: 'order-1',
       userId: 'u1',
@@ -740,6 +741,7 @@ describe('BalanceLedgerService', () => {
     });
 
     const stored = repos.balances.get('order-1:asset-usdt');
+
     repos.balances.set('order-1:asset-usdt', {
       ...stored,
       available: '99',

@@ -375,7 +375,9 @@ export class RewardPipelineService {
     token: string,
   ): string {
     return createHash('sha256')
-      .update(`${txHash}:${campaignId}:${dayIndex}:${userId}:${orderId}:${token}`)
+      .update(
+        `${txHash}:${campaignId}:${dayIndex}:${userId}:${orderId}:${token}`,
+      )
       .digest('hex');
   }
 

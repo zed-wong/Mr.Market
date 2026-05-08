@@ -5831,7 +5831,11 @@ export class StrategyService
     const feeAmount = new BigNumber(fill.feeAmount);
     const feeAsset = this.readString(fill.feeAsset);
 
-    if (!feeAsset || !feeAmount.isFinite() || feeAmount.isLessThanOrEqualTo(0)) {
+    if (
+      !feeAsset ||
+      !feeAmount.isFinite() ||
+      feeAmount.isLessThanOrEqualTo(0)
+    ) {
       this.logger.warn(
         `Skipping fill fee ledger update for strategyKey=${
           session.strategyKey

@@ -120,7 +120,11 @@ export class FillSettlementService {
     const feeAmount = new BigNumber(command.fill.feeAmount);
     const feeAsset = String(command.fill.feeAsset || '').trim();
 
-    if (!feeAsset || !feeAmount.isFinite() || feeAmount.isLessThanOrEqualTo(0)) {
+    if (
+      !feeAsset ||
+      !feeAmount.isFinite() ||
+      feeAmount.isLessThanOrEqualTo(0)
+    ) {
       this.logger.warn(
         `Skipping fill fee ledger update for strategyKey=${
           command.strategyKey

@@ -64,7 +64,21 @@ export class ReconciliationService {
     const fillTrades = await this.reconcileFillsAgainstExchangeTrades();
 
     this.logger.log(
-      `Ledger reconciliation checked=${ledger.checked} violations=${ledger.violations}; reward checked=${rewards.checked} violations=${rewards.violations}; intent checked=${intents.checked} violations=${intents.violations}; estimatedFee checked=${estimatedFees.checked} violations=${estimatedFees.violations} corrected=${estimatedFeeCorrections.corrected || 0}; fillAttribution checked=${fillAttribution.checked} violations=${fillAttribution.violations}; fillTrades checked=${fillTrades.checked} violations=${fillTrades.violations}`,
+      `Ledger reconciliation checked=${ledger.checked} violations=${
+        ledger.violations
+      }; reward checked=${rewards.checked} violations=${
+        rewards.violations
+      }; intent checked=${intents.checked} violations=${
+        intents.violations
+      }; estimatedFee checked=${estimatedFees.checked} violations=${
+        estimatedFees.violations
+      } corrected=${
+        estimatedFeeCorrections.corrected || 0
+      }; fillAttribution checked=${fillAttribution.checked} violations=${
+        fillAttribution.violations
+      }; fillTrades checked=${fillTrades.checked} violations=${
+        fillTrades.violations
+      }`,
     );
   }
 
@@ -114,9 +128,9 @@ export class ReconciliationService {
           (acc, allocation) => acc.plus(allocation.amount),
           new BigNumber(0),
         );
-      const accounted = allocated.plus(platformFee).plus(
-        undistributedRemainder,
-      );
+      const accounted = allocated
+        .plus(platformFee)
+        .plus(undistributedRemainder);
 
       if (!accounted.isEqualTo(rewardAmount)) {
         violations += 1;
@@ -228,8 +242,7 @@ export class ReconciliationService {
     if (
       !this.ledgerEntryRepository ||
       !this.exchangeConnectorAdapterService ||
-      typeof this.exchangeOrderTrackerService.getAllTrackedOrders !==
-        'function'
+      typeof this.exchangeOrderTrackerService.getAllTrackedOrders !== 'function'
     ) {
       return {
         checked: 0,
@@ -243,7 +256,8 @@ export class ReconciliationService {
         refType: 'market_making_fill',
       },
     });
-    const trackedOrders = this.exchangeOrderTrackerService.getAllTrackedOrders();
+    const trackedOrders =
+      this.exchangeOrderTrackerService.getAllTrackedOrders();
     const trackedByExchangeOrderId = new Map<string, TrackedOrder>();
     const trackedByOrderId = new Map<string, TrackedOrder>();
 
@@ -578,7 +592,10 @@ export class ReconciliationService {
 
   private pauseAndAuditFillMismatch(entry: LedgerEntry, reason: string): void {
     if (entry.orderId && entry.assetId) {
-      this.balanceLedgerService?.pauseReservations(entry.orderId, entry.assetId);
+      this.balanceLedgerService?.pauseReservations(
+        entry.orderId,
+        entry.assetId,
+      );
     }
 
     this.marketMakingEventBus?.emitReconciliationAudit({

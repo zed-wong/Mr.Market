@@ -186,6 +186,7 @@ describe('RewardPipelineService', () => {
       campaignId: 'campaign-1',
       dayIndex: 3,
     });
+
     reward.platformFee = '12.5';
 
     await service.createAllocations('tx-zero-score', [
@@ -243,6 +244,7 @@ describe('RewardPipelineService', () => {
       campaignId: 'campaign-1',
       dayIndex: 4,
     });
+
     reward.platformFee = '9.25';
 
     await service.createAllocations('tx-platform-fee', [
@@ -467,9 +469,9 @@ describe('RewardPipelineService', () => {
         correctionOf: 'tx-original',
       }),
     );
-    expect(
-      rewardRows.find((row) => row.txHash === 'tx-original')?.amount,
-    ).toBe('100');
+    expect(rewardRows.find((row) => row.txHash === 'tx-original')?.amount).toBe(
+      '100',
+    );
     expect(allocationRows).toHaveLength(1);
     expect(allocationRows[0]).toEqual(
       expect.objectContaining({

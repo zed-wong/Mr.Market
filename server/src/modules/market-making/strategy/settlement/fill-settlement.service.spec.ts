@@ -36,8 +36,7 @@ describe('FillSettlementService', () => {
       userId: 'user-1',
       assetId: 'BTC',
       amount: '0.5',
-      idempotencyKey:
-        'mm-fill:strategy-1:ex-1:order-1:0:buy:100:0.5:base',
+      idempotencyKey: 'mm-fill:strategy-1:ex-1:order-1:0:buy:100:0.5:base',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -46,8 +45,7 @@ describe('FillSettlementService', () => {
       userId: 'user-1',
       assetId: 'USDT',
       amount: '-50',
-      idempotencyKey:
-        'mm-fill:strategy-1:ex-1:order-1:0:buy:100:0.5:quote',
+      idempotencyKey: 'mm-fill:strategy-1:ex-1:order-1:0:buy:100:0.5:quote',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
