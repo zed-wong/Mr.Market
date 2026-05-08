@@ -29,8 +29,8 @@
     const progressPercent =
         fundAmountValue > 0 ? (paidValue / fundAmountValue) * 100 : 0;
 
-    function getStatusBadgeClass(status: string) {
-        switch (status.toLowerCase()) {
+    function getStatusBadgeClass(status: string | undefined) {
+        switch ((status || "").toLowerCase()) {
             case "active":
                 return "badge-success text-success-content";
             case "pending":
@@ -44,8 +44,8 @@
         }
     }
 
-    function getEscrowBadgeClass(escrowStatus: string) {
-        switch (escrowStatus.toLowerCase()) {
+    function getEscrowBadgeClass(escrowStatus: string | undefined) {
+        switch ((escrowStatus || "").toLowerCase()) {
             case "pending":
                 return "badge-warning text-warning-content";
             case "approved":
@@ -83,11 +83,13 @@
                 class="badge {getStatusBadgeClass(campaign.status)} font-medium"
                 >{formatStatus(campaign.status)}</span
             >
-            <span
-                class="badge {getEscrowBadgeClass(
-                    campaign.escrow_status,
-                )} font-medium">Escrow: {campaign.escrow_status}</span
-            >
+            {#if campaign.escrow_status}
+                <span
+                    class="badge {getEscrowBadgeClass(
+                        campaign.escrow_status,
+                    )} font-medium">Escrow: {campaign.escrow_status}</span
+                >
+            {/if}
         </div>
     </div>
 

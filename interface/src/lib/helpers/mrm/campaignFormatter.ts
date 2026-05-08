@@ -77,17 +77,20 @@ export function formatDateTime(dateString: string): string {
   });
 }
 
-export function formatType(type: string): string {
+export function formatType(type: string | undefined): string {
+  if (!type) return '';
   return type.split('_').map(word =>
     word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
   ).join(' ');
 }
 
-export function formatStatus(status: string): string {
+export function formatStatus(status: string | undefined): string {
+  if (!status) return '';
   return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 }
 
-export function formatExchangeName(name: string): string {
+export function formatExchangeName(name: string | undefined): string {
+  if (!name) return '';
   const exchangeNames: Record<string, string> = {
     'mexc': 'MEXC Global',
     'gate': 'Gate.io',

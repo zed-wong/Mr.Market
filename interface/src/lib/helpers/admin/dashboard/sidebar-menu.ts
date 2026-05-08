@@ -26,11 +26,6 @@ export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
           value: "/manage/settings/exchanges",
         },
         {
-          key: "spot-trading",
-          labelKey: "spot_trading",
-          value: "/manage/settings/spot-trading",
-        },
-        {
           key: "market-making",
           labelKey: "market_making",
           value: "/manage/settings/market-making",

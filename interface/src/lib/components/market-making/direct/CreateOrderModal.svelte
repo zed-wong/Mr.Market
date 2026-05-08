@@ -17,7 +17,11 @@
     export let filteredApiKeys: AdminSingleKey[] = [];
     export let strategies: MarketMakingStrategy[] = [];
     export let selectedControllerType = "";
-    export let directExecutionMode: "single_account" | "dual_account" | null | undefined;
+    export let directExecutionMode:
+        | "single_account"
+        | "dual_account"
+        | null
+        | undefined;
     export let prefillingFromOrderId: string | null = null;
     export let selectedStrategySchema: StrategySchema = {};
     export let genericConfig: Record<string, unknown> = {};
@@ -53,10 +57,12 @@
         directExecutionMode,
         controllerType: selectedControllerType,
     });
-    $: isBestCapacityStrategy =
-        isBestCapacityDirectOrderControllerType(selectedControllerType);
-    $: isSchemaDrivenStrategy =
-        isSchemaDrivenDirectOrderControllerType(selectedControllerType);
+    $: isBestCapacityStrategy = isBestCapacityDirectOrderControllerType(
+        selectedControllerType,
+    );
+    $: isSchemaDrivenStrategy = isSchemaDrivenDirectOrderControllerType(
+        selectedControllerType,
+    );
 
     $: orderAmountError = orderAmount && isNaN(Number(orderAmount));
     $: orderAmountBelowMinimum =
@@ -81,8 +87,7 @@
         !isBestCapacityStrategy &&
         (!intervalTime || !numTrades || !pricePushRate);
     $: dualAccountSelectionMissing =
-        isDualAccountStrategy &&
-        (!startMakerApiKeyId || !startTakerApiKeyId);
+        isDualAccountStrategy && (!startMakerApiKeyId || !startTakerApiKeyId);
     $: dualSameAccount =
         isDualAccountStrategy &&
         !!startMakerApiKeyId &&
@@ -290,7 +295,9 @@
                         {/if}
                         {#if dualAccountUnavailable}
                             <span class="text-xs text-error mt-1 block"
-                                >{$_("admin_direct_mm_error_dual_accounts_required")}</span
+                                >{$_(
+                                    "admin_direct_mm_error_dual_accounts_required",
+                                )}</span
                             >
                         {/if}
                     </div>
@@ -327,7 +334,9 @@
                             {/if}
                             {#if dualSameAccount}
                                 <span class="text-xs text-error mt-1 block"
-                                    >{$_("admin_direct_mm_error_distinct_accounts")}</span
+                                    >{$_(
+                                        "admin_direct_mm_error_distinct_accounts",
+                                    )}</span
                                 >
                             {/if}
                         </div>
@@ -439,9 +448,7 @@
                             >{$_("admin_direct_mm_select_strategy")}</option
                         >
                         {#each strategies as strategy}
-                            <option value={strategy.id}
-                                >{strategy.name}</option
-                            >
+                            <option value={strategy.id}>{strategy.name}</option>
                         {/each}
                     </select>
                 </div>
@@ -547,37 +554,39 @@
 
                     <!-- Spread -->
                     {#if !isBestCapacityStrategy}
-                    <div class="bg-base-200/40 rounded-xl p-4">
-                        <span
-                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                            >{$_("admin_direct_mm_spread_optional")}</span
-                        >
-                        <div class="relative">
-                            <input
-                                type="text"
-                                inputmode="decimal"
-                                placeholder="e.g. 0.5"
-                                class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
+                        <div class="bg-base-200/40 rounded-xl p-4">
+                            <span
+                                class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                                >{$_("admin_direct_mm_spread_optional")}</span
+                            >
+                            <div class="relative">
+                                <input
+                                    type="text"
+                                    inputmode="decimal"
+                                    placeholder="e.g. 0.5"
+                                    class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
                   {spreadError ? 'border-error' : ''}"
-                                class:pr-10={true}
-                                bind:value={orderSpread}
-                            />
-                            <span
-                                class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
-                                >%</span
-                            >
+                                    class:pr-10={true}
+                                    bind:value={orderSpread}
+                                />
+                                <span
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
+                                    >%</span
+                                >
+                            </div>
+                            {#if spreadError}
+                                <span class="text-xs text-error mt-1 block"
+                                    >{$_(
+                                        "admin_direct_mm_invalid_number",
+                                    )}</span
+                                >
+                            {:else}
+                                <span
+                                    class="text-xs text-base-content/40 mt-1 block"
+                                    >{$_("admin_direct_mm_spread_hint")}</span
+                                >
+                            {/if}
                         </div>
-                        {#if spreadError}
-                            <span class="text-xs text-error mt-1 block"
-                                >{$_("admin_direct_mm_invalid_number")}</span
-                            >
-                        {:else}
-                            <span
-                                class="text-xs text-base-content/40 mt-1 block"
-                                >{$_("admin_direct_mm_spread_hint")}</span
-                            >
-                        {/if}
-                    </div>
                     {/if}
 
                     {#if isDualAccountStrategy}
@@ -659,211 +668,12 @@
                                 </div>
 
                                 {#if isBestCapacityStrategy}
-                                <!-- Daily Volume Target -->
-                                <div class="flex-1">
-                                    <span
-                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                        >{$_(
-                                            "admin_direct_mm_daily_volume_target_config",
-                                        )}</span
-                                    >
-                                    <input
-                                        type="text"
-                                        inputmode="decimal"
-                                        placeholder="e.g. 50000"
-                                        class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
-                              {targetQuoteVolumeError ? 'border-error' : ''}"
-                                        bind:value={targetQuoteVolume}
-                                    />
-                                    {#if targetQuoteVolumeError}
-                                        <span
-                                            class="text-xs text-error mt-1 block"
-                                            >{$_(
-                                                "admin_direct_mm_invalid_number",
-                                            )}</span
-                                        >
-                                    {:else}
-                                        <span
-                                            class="text-xs text-base-content/40 mt-1 block"
-                                            >{$_(
-                                                "admin_direct_mm_daily_volume_target_config_hint",
-                                            )}</span
-                                        >
-                                    {/if}
-                                </div>
-
-                                {/if}
-
-                                {#if !isBestCapacityStrategy}
-                                <!-- Num Trades -->
-                                <div class="flex-1">
-                                    <span
-                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                        >{$_(
-                                            "admin_direct_mm_num_trades",
-                                        )}</span
-                                    >
-                                    <input
-                                        type="text"
-                                        inputmode="numeric"
-                                        placeholder="e.g. 100"
-                                        class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
-                          {numTradesError ? 'border-error' : ''}"
-                                        bind:value={numTrades}
-                                    />
-                                    {#if numTradesError}
-                                        <span
-                                            class="text-xs text-error mt-1 block"
-                                            >{$_(
-                                                "admin_direct_mm_invalid_number",
-                                            )}</span
-                                        >
-                                    {:else}
-                                        <span
-                                            class="text-xs text-base-content/40 mt-1 block"
-                                            >{$_(
-                                                "admin_direct_mm_num_trades_hint",
-                                            )}</span
-                                        >
-                                    {/if}
-                                </div>
-
-                                <!-- Price Push Rate -->
-                                <div class="flex-1">
-                                    <span
-                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                        >{$_(
-                                            "admin_direct_mm_price_push_rate",
-                                        )}</span
-                                    >
-                                    <div class="relative">
-                                        <input
-                                            type="text"
-                                            inputmode="decimal"
-                                            placeholder="e.g. 0.1"
-                                            class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 pr-10
-                              {pricePushRateError ? 'border-error' : ''}"
-                                            bind:value={pricePushRate}
-                                        />
-                                        <span
-                                            class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
-                                            >%</span
-                                        >
-                                    </div>
-                                    {#if pricePushRateError}
-                                        <span
-                                            class="text-xs text-error mt-1 block"
-                                            >{$_(
-                                                "admin_direct_mm_invalid_number",
-                                            )}</span
-                                        >
-                                    {:else}
-                                        <span
-                                            class="text-xs text-base-content/40 mt-1 block"
-                                            >{$_(
-                                                "admin_direct_mm_price_push_rate_hint",
-                                            )}</span
-                                        >
-                                    {/if}
-                                </div>
-
-                                <!-- Post-Only Side -->
-                                <div class="flex-1">
-                                    <span
-                                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                                        >{$_(
-                                            "admin_direct_mm_post_only_side",
-                                        )}</span
-                                    >
-                                    <select
-                                        class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
-                                        bind:value={postOnlySide}
-                                    >
-                                        <option value=""
-                                            >{$_(
-                                                "admin_direct_mm_post_only_side_hint",
-                                            )}</option
-                                        >
-                                        <option value="buy"
-                                            >{$_(
-                                                "admin_direct_mm_post_only_side_buy",
-                                            )}</option
-                                        >
-                                        <option value="sell"
-                                            >{$_(
-                                                "admin_direct_mm_post_only_side_sell",
-                                            )}</option
-                                        >
-                                    </select>
-                                </div>
-                                {/if}
-                            </div>
-                        </div>
-
-                        <!-- Advanced Config (collapsible) -->
-                        {#if !isBestCapacityStrategy}
-                        <div>
-                            <button
-                                class="flex items-center gap-1.5 mb-1 cursor-pointer"
-                                on:click={() => (showAdvanced = !showAdvanced)}
-                            >
-                                <span
-                                    class="text-xs font-semibold text-base-content/60 tracking-wider"
-                                    >{$_(
-                                        "admin_direct_mm_advanced_config",
-                                    )}</span
-                                >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke-width="2"
-                                    stroke="currentColor"
-                                    class="w-3.5 h-3.5 text-base-content/40 transition-transform"
-                                    class:rotate-180={showAdvanced}
-                                >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        d="m19.5 8.25-7.5 7.5-7.5-7.5"
-                                    />
-                                </svg>
-                            </button>
-                            {#if showAdvanced}
-                                <div
-                                    class="bg-base-200/40 rounded-xl p-4 flex flex-col gap-4"
-                                >
-                                    <!-- Dynamic Role Switching -->
-                                    <div
-                                        class="flex items-center justify-between"
-                                    >
-                                        <div>
-                                            <span
-                                                class="text-xs font-semibold text-base-content/50 tracking-wider block"
-                                                >{$_(
-                                                    "admin_direct_mm_dynamic_role_switching",
-                                                )}</span
-                                            >
-                                            <span
-                                                class="text-xs text-base-content/40 block mt-0.5"
-                                                >{$_(
-                                                    "admin_direct_mm_dynamic_role_switching_hint",
-                                                )}</span
-                                            >
-                                        </div>
-                                        <input
-                                            type="checkbox"
-                                            class="toggle toggle-primary toggle-sm"
-                                            bind:checked={dynamicRoleSwitching}
-                                        />
-                                    </div>
-
-                                    <!-- Target Quote Volume -->
+                                    <!-- Daily Volume Target -->
                                     <div class="flex-1">
                                         <span
                                             class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
                                             >{$_(
-                                                "admin_direct_mm_target_quote_volume",
+                                                "admin_direct_mm_daily_volume_target_config",
                                             )}</span
                                         >
                                         <input
@@ -885,17 +695,216 @@
                                             <span
                                                 class="text-xs text-base-content/40 mt-1 block"
                                                 >{$_(
-                                                    "admin_direct_mm_target_quote_volume_hint",
+                                                    "admin_direct_mm_daily_volume_target_config_hint",
+                                                )}</span
+                                            >
+                                        {/if}
+                                    </div>
+                                {/if}
+
+                                {#if !isBestCapacityStrategy}
+                                    <!-- Num Trades -->
+                                    <div class="flex-1">
+                                        <span
+                                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                                            >{$_(
+                                                "admin_direct_mm_num_trades",
+                                            )}</span
+                                        >
+                                        <input
+                                            type="text"
+                                            inputmode="numeric"
+                                            placeholder="e.g. 100"
+                                            class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
+                          {numTradesError ? 'border-error' : ''}"
+                                            bind:value={numTrades}
+                                        />
+                                        {#if numTradesError}
+                                            <span
+                                                class="text-xs text-error mt-1 block"
+                                                >{$_(
+                                                    "admin_direct_mm_invalid_number",
+                                                )}</span
+                                            >
+                                        {:else}
+                                            <span
+                                                class="text-xs text-base-content/40 mt-1 block"
+                                                >{$_(
+                                                    "admin_direct_mm_num_trades_hint",
                                                 )}</span
                                             >
                                         {/if}
                                     </div>
 
-                                </div>
-                            {/if}
-                        </div>
-                        {/if}
+                                    <!-- Price Push Rate -->
+                                    <div class="flex-1">
+                                        <span
+                                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                                            >{$_(
+                                                "admin_direct_mm_price_push_rate",
+                                            )}</span
+                                        >
+                                        <div class="relative">
+                                            <input
+                                                type="text"
+                                                inputmode="decimal"
+                                                placeholder="e.g. 0.1"
+                                                class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 pr-10
+                              {pricePushRateError ? 'border-error' : ''}"
+                                                bind:value={pricePushRate}
+                                            />
+                                            <span
+                                                class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-base-content/40"
+                                                >%</span
+                                            >
+                                        </div>
+                                        {#if pricePushRateError}
+                                            <span
+                                                class="text-xs text-error mt-1 block"
+                                                >{$_(
+                                                    "admin_direct_mm_invalid_number",
+                                                )}</span
+                                            >
+                                        {:else}
+                                            <span
+                                                class="text-xs text-base-content/40 mt-1 block"
+                                                >{$_(
+                                                    "admin_direct_mm_price_push_rate_hint",
+                                                )}</span
+                                            >
+                                        {/if}
+                                    </div>
 
+                                    <!-- Post-Only Side -->
+                                    <div class="flex-1">
+                                        <span
+                                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                                            >{$_(
+                                                "admin_direct_mm_post_only_side",
+                                            )}</span
+                                        >
+                                        <select
+                                            class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                                            bind:value={postOnlySide}
+                                        >
+                                            <option value=""
+                                                >{$_(
+                                                    "admin_direct_mm_post_only_side_hint",
+                                                )}</option
+                                            >
+                                            <option value="buy"
+                                                >{$_(
+                                                    "admin_direct_mm_post_only_side_buy",
+                                                )}</option
+                                            >
+                                            <option value="sell"
+                                                >{$_(
+                                                    "admin_direct_mm_post_only_side_sell",
+                                                )}</option
+                                            >
+                                        </select>
+                                    </div>
+                                {/if}
+                            </div>
+                        </div>
+
+                        <!-- Advanced Config (collapsible) -->
+                        {#if !isBestCapacityStrategy}
+                            <div>
+                                <button
+                                    class="flex items-center gap-1.5 mb-1 cursor-pointer"
+                                    on:click={() =>
+                                        (showAdvanced = !showAdvanced)}
+                                >
+                                    <span
+                                        class="text-xs font-semibold text-base-content/60 tracking-wider"
+                                        >{$_(
+                                            "admin_direct_mm_advanced_config",
+                                        )}</span
+                                    >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="2"
+                                        stroke="currentColor"
+                                        class="w-3.5 h-3.5 text-base-content/40 transition-transform"
+                                        class:rotate-180={showAdvanced}
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                                        />
+                                    </svg>
+                                </button>
+                                {#if showAdvanced}
+                                    <div
+                                        class="bg-base-200/40 rounded-xl p-4 flex flex-col gap-4"
+                                    >
+                                        <!-- Dynamic Role Switching -->
+                                        <div
+                                            class="flex items-center justify-between"
+                                        >
+                                            <div>
+                                                <span
+                                                    class="text-xs font-semibold text-base-content/50 tracking-wider block"
+                                                    >{$_(
+                                                        "admin_direct_mm_dynamic_role_switching",
+                                                    )}</span
+                                                >
+                                                <span
+                                                    class="text-xs text-base-content/40 block mt-0.5"
+                                                    >{$_(
+                                                        "admin_direct_mm_dynamic_role_switching_hint",
+                                                    )}</span
+                                                >
+                                            </div>
+                                            <input
+                                                type="checkbox"
+                                                class="toggle toggle-primary toggle-sm"
+                                                bind:checked={
+                                                    dynamicRoleSwitching
+                                                }
+                                            />
+                                        </div>
+
+                                        <!-- Target Quote Volume -->
+                                        <div class="flex-1">
+                                            <span
+                                                class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                                                >{$_(
+                                                    "admin_direct_mm_target_quote_volume",
+                                                )}</span
+                                            >
+                                            <input
+                                                type="text"
+                                                inputmode="decimal"
+                                                placeholder="e.g. 50000"
+                                                class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
+                              {targetQuoteVolumeError ? 'border-error' : ''}"
+                                                bind:value={targetQuoteVolume}
+                                            />
+                                            {#if targetQuoteVolumeError}
+                                                <span
+                                                    class="text-xs text-error mt-1 block"
+                                                    >{$_(
+                                                        "admin_direct_mm_invalid_number",
+                                                    )}</span
+                                                >
+                                            {:else}
+                                                <span
+                                                    class="text-xs text-base-content/40 mt-1 block"
+                                                    >{$_(
+                                                        "admin_direct_mm_target_quote_volume_hint",
+                                                    )}</span
+                                                >
+                                            {/if}
+                                        </div>
+                                    </div>
+                                {/if}
+                            </div>
+                        {/if}
                     {/if}
                 {/if}
 
@@ -921,6 +930,10 @@
                         on:click={onSubmit}
                         disabled={submitDisabled}
                     >
+                        {#if isStarting}
+                            <span class="loading loading-spinner loading-xs"
+                            ></span>
+                        {/if}
                         <span
                             >{isStarting
                                 ? $_("admin_direct_mm_launching")
