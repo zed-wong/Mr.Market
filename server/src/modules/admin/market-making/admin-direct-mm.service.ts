@@ -27,9 +27,9 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
 import { BalanceStateRefreshService } from 'src/modules/market-making/balance-state/balance-state-refresh.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
+import { assertStrategyConfigOverridesSafe } from 'src/modules/market-making/strategy/config/strategy-config-override.guard';
 import type { StrategyType } from 'src/modules/market-making/strategy/config/strategy-controller.types';
 import { normalizeControllerType } from 'src/modules/market-making/strategy/config/strategy-controller-aliases';
-import { assertStrategyConfigOverridesSafe } from 'src/modules/market-making/strategy/config/strategy-config-override.guard';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import {
@@ -154,17 +154,26 @@ export class AdminDirectMarketMakingService {
       capabilities.directExecutionMode,
     );
     const orderId = randomUUID();
+
     assertStrategyConfigOverridesSafe(
       dto.configOverrides,
       DIRECT_RESERVED_CONFIG_FIELDS,
     );
     const configOverrides = dto.configOverrides || {};
-    const resolverInput = {
-      ...configOverrides,
-      pair: dto.pair,
-      symbol: dto.pair,
-      exchangeName: dto.exchangeName,
-    };
+    const resolverInput = this.buildDirectResolverInput(
+      definition,
+      {
+        ...configOverrides,
+        pair: dto.pair,
+        exchangeName: dto.exchangeName,
+      },
+      {
+        symbol: dto.pair,
+        userId: directUserId,
+        clientId: orderId,
+        marketMakingOrderId: orderId,
+      },
+    );
 
     this.logger.log(
       `Admin direct-start config ${JSON.stringify({
@@ -1127,6 +1136,44 @@ export class AdminDirectMarketMakingService {
     resolvedConfig.pair = dto.pair;
     resolvedConfig.symbol = dto.pair;
     resolvedConfig.exchangeName = dto.exchangeName;
+  }
+
+  private buildDirectResolverInput(
+    definition: Pick<StrategyDefinition, 'configSchema'>,
+    config: Record<string, unknown>,
+    runtimeFields: Record<string, string>,
+  ): Record<string, unknown> {
+    const resolverInput = { ...config };
+
+    for (const [field, value] of Object.entries(runtimeFields)) {
+      if (this.schemaMentionsRootField(definition.configSchema, field)) {
+        resolverInput[field] = value;
+      }
+    }
+
+    return resolverInput;
+  }
+
+  private schemaMentionsRootField(schema: unknown, field: string): boolean {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+      return false;
+    }
+
+    const configSchema = schema as {
+      required?: unknown;
+      properties?: unknown;
+    };
+    const required = Array.isArray(configSchema.required)
+      ? configSchema.required
+      : [];
+    const properties =
+      configSchema.properties &&
+      typeof configSchema.properties === 'object' &&
+      !Array.isArray(configSchema.properties)
+        ? (configSchema.properties as Record<string, unknown>)
+        : {};
+
+    return required.includes(field) || field in properties;
   }
 
   private backfillOrderRuntimeSnapshot(order: MarketMakingOrder): void {

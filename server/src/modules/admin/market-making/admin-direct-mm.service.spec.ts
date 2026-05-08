@@ -406,6 +406,86 @@ describe('AdminDirectMarketMakingService', () => {
     expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
   });
 
+  it('passes schema-declared system fields into direct-start resolution', async () => {
+    const { service, strategyDefinitionRepository, strategyConfigResolver } =
+      buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-1',
+      enabled: true,
+      controllerType: 'pureMarketMaking',
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {
+        type: 'object',
+        required: ['pair', 'exchangeName', 'userId', 'clientId'],
+        properties: {
+          pair: { type: 'string' },
+          symbol: { type: 'string' },
+          exchangeName: { type: 'string' },
+          userId: { type: 'string' },
+          clientId: { type: 'string' },
+          marketMakingOrderId: { type: 'string' },
+          orderAmount: { type: 'number' },
+        },
+      },
+    });
+
+    await service.directStart(directStartDto, 'admin-user');
+
+    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalledWith(
+      'strategy-1',
+      expect.objectContaining({
+        pair: 'BTC/USDT',
+        symbol: 'BTC/USDT',
+        exchangeName: 'binance',
+        userId: 'admin-user',
+        clientId: expect.any(String),
+        marketMakingOrderId: expect.any(String),
+      }),
+    );
+  });
+
+  it('omits symbol from strict direct-start resolution when schema does not allow it', async () => {
+    const { service, strategyDefinitionRepository, strategyConfigResolver } =
+      buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-1',
+      enabled: true,
+      controllerType: 'pureMarketMaking',
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {
+        type: 'object',
+        required: ['pair', 'exchangeName', 'userId', 'clientId'],
+        additionalProperties: false,
+        properties: {
+          pair: { type: 'string' },
+          exchangeName: { type: 'string' },
+          userId: { type: 'string' },
+          clientId: { type: 'string' },
+          marketMakingOrderId: { type: 'string' },
+          orderAmount: { type: 'number' },
+        },
+      },
+    });
+
+    await service.directStart(directStartDto, 'admin-user');
+
+    const resolverInput =
+      strategyConfigResolver.resolveForOrderSnapshot.mock.calls[0][1];
+
+    expect(resolverInput).toEqual(
+      expect.objectContaining({
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        userId: 'admin-user',
+        clientId: expect.any(String),
+        marketMakingOrderId: expect.any(String),
+      }),
+    );
+    expect(resolverInput).not.toHaveProperty('symbol');
+  });
+
   it('returns advisory balance warnings without blocking direct start', async () => {
     const {
       service,
@@ -1023,7 +1103,9 @@ describe('AdminDirectMarketMakingService', () => {
       ),
     ).rejects.toThrow('configOverrides cannot override system field: userId');
 
-    expect(strategyConfigResolver.resolveForOrderSnapshot).not.toHaveBeenCalled();
+    expect(
+      strategyConfigResolver.resolveForOrderSnapshot,
+    ).not.toHaveBeenCalled();
   });
 
   it('passes safe dual-account config overrides to the resolver', async () => {
@@ -1206,7 +1288,7 @@ describe('AdminDirectMarketMakingService', () => {
         name: 'Pure Market Making',
         controllerType: 'pureMarketMaking',
         capabilities: singleAccountLaunchConfig,
-      configSchema: {},
+        configSchema: {},
         visibility: 'public',
         enabled: true,
       },
@@ -1216,7 +1298,7 @@ describe('AdminDirectMarketMakingService', () => {
         name: 'Dual Account Volume',
         controllerType: 'dualAccountVolume',
         capabilities: dualAccountLaunchConfig,
-      configSchema: {},
+        configSchema: {},
         visibility: 'admin',
         enabled: true,
       },
