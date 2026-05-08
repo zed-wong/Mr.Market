@@ -4968,10 +4968,10 @@ export class StrategyService
               order.exchangeOrderId,
               order.accountLabel,
             );
-          const status = String(result?.status || '').toLowerCase();
+          const cancelSucceeded = this.isCancelResultFinal(result);
 
           this.exchangeOrderTrackerService?.upsertOrder(
-            status === 'canceled' || status === 'cancelled'
+            cancelSucceeded
               ? {
                   ...order,
                   status: 'cancelled',
@@ -6265,14 +6265,11 @@ export class StrategyService
               order.exchangeOrderId,
               order.accountLabel,
             );
-          const status = String(result?.status || '').toLowerCase();
+          const cancelSucceeded = this.isCancelResultFinal(result);
 
           this.exchangeOrderTrackerService?.upsertOrder({
             ...order,
-            status:
-              status === 'canceled' || status === 'cancelled'
-                ? 'cancelled'
-                : 'pending_cancel',
+            status: cancelSucceeded ? 'cancelled' : 'pending_cancel',
             updatedAt: getRFC3339Timestamp(),
           });
         } catch (error) {
@@ -6833,8 +6830,9 @@ export class StrategyService
         exchangeOrderId,
         accountLabel,
       );
-      const nextStatus =
-        this.normalizeExchangeOrderStatus(result?.status) || 'pending_cancel';
+      const nextStatus = this.isCancelResultFinal(result)
+        ? 'cancelled'
+        : 'pending_cancel';
 
       this.exchangeOrderTrackerService?.upsertOrder({
         orderId: this.readString(
@@ -6867,6 +6865,14 @@ export class StrategyService
   private isTrackedOrderTerminal(status: string): boolean {
     return ['filled', 'cancelled', 'failed'].includes(
       String(status || '').toLowerCase(),
+    );
+  }
+
+  private isCancelResultFinal(result: Record<string, unknown> | undefined) {
+    const status = String(result?.status || '').toLowerCase();
+
+    return (
+      !status || !['new', 'open', 'pending', 'pending_cancel'].includes(status)
     );
   }
 

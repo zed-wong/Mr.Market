@@ -428,6 +428,20 @@ export class StrategyIntentExecutionService {
               intent.pair
             } result=${JSON.stringify(result)}`,
           );
+          if (reservation?.applied) {
+            await this.orderReservationService?.releaseLimitOrderReservation({
+              orderId,
+              userId: intent.userId,
+              intentId: intent.intentId,
+              releaseId: clientOrderId,
+              pair: intent.pair,
+              side: intent.side,
+              price: intent.price,
+              qty: intent.qty,
+              reason: 'exchange_create_missing_id',
+            });
+          }
+          throw new Error('exchange create returned no order id');
         }
       }
 
@@ -487,29 +501,32 @@ export class StrategyIntentExecutionService {
         );
 
         const orderId = this.resolveOrderIdForClientOrderId(intent);
+        const cancelSucceeded = this.isCancelResultFinal(
+          result as Record<string, unknown> | undefined,
+        );
 
-        this.exchangeOrderTrackerService?.upsertOrder({
-          orderId,
-          strategyKey: intent.strategyKey,
-          exchange: intent.exchange,
-          accountLabel: trackedOrder?.accountLabel || intent.accountLabel,
-          pair: intent.pair,
-          exchangeOrderId: intent.mixinOrderId,
-          clientOrderId: trackedOrder?.clientOrderId,
-          slotKey: trackedOrder?.slotKey || intent.slotKey,
-          role: trackedOrder?.role,
-          side: intent.side,
-          price: intent.price,
-          qty: intent.qty,
-          status:
-            result?.status === 'canceled' || result?.status === 'cancelled'
-              ? 'cancelled'
-              : 'pending_cancel',
-          createdAt: getRFC3339Timestamp(),
-          updatedAt: getRFC3339Timestamp(),
-        });
+        this.exchangeOrderTrackerService?.upsertOrder(
+          {
+            orderId,
+            strategyKey: intent.strategyKey,
+            exchange: intent.exchange,
+            accountLabel: trackedOrder?.accountLabel || intent.accountLabel,
+            pair: intent.pair,
+            exchangeOrderId: intent.mixinOrderId,
+            clientOrderId: trackedOrder?.clientOrderId,
+            slotKey: trackedOrder?.slotKey || intent.slotKey,
+            role: trackedOrder?.role,
+            side: intent.side,
+            price: intent.price,
+            qty: intent.qty,
+            status: cancelSucceeded ? 'cancelled' : 'pending_cancel',
+            createdAt: getRFC3339Timestamp(),
+            updatedAt: getRFC3339Timestamp(),
+          },
+          { releaseReservation: !cancelSucceeded },
+        );
 
-        if (result?.status === 'canceled' || result?.status === 'cancelled') {
+        if (cancelSucceeded) {
           await this.orderReservationService?.releaseLimitOrderReservation({
             orderId,
             userId: intent.userId,
@@ -1513,7 +1530,6 @@ export class StrategyIntentExecutionService {
           makerExchangeOrderId,
           intent.accountLabel,
         );
-      const cancelStatus = this.readOrderStatusFromResult(result);
 
       this.exchangeOrderTrackerService?.upsertOrder({
         orderId: this.resolveOrderIdForClientOrderId(intent),
@@ -1530,10 +1546,11 @@ export class StrategyIntentExecutionService {
         price: intent.price,
         qty: intent.qty,
         cumulativeFilledQty: existingTrackedOrder?.cumulativeFilledQty || '0',
-        status:
-          cancelStatus === 'canceled' || cancelStatus === 'cancelled'
-            ? 'cancelled'
-            : 'pending_cancel',
+        status: this.isCancelResultFinal(
+          result as Record<string, unknown> | undefined,
+        )
+          ? 'cancelled'
+          : 'pending_cancel',
         createdAt: existingTrackedOrder?.createdAt || getRFC3339Timestamp(),
         updatedAt: getRFC3339Timestamp(),
       });
@@ -1646,6 +1663,14 @@ export class StrategyIntentExecutionService {
     this.nextClientOrderSeqByOrderId.set(orderId, nextSeq + 1);
 
     return clientOrderId;
+  }
+
+  private isCancelResultFinal(result: Record<string, unknown> | undefined) {
+    const status = String(result?.status || '').toLowerCase();
+
+    return (
+      !status || !['new', 'open', 'pending', 'pending_cancel'].includes(status)
+    );
   }
 
   private async runWithRetries<T>(

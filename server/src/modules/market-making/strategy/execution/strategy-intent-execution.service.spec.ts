@@ -664,6 +664,43 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
+  it('releases reservation and fails intent when exchange create returns no order id', async () => {
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockResolvedValue({
+      status: 'open',
+    });
+
+    await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
+      'exchange create returned no order id',
+    );
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'c1',
+      userId: 'u1',
+      intentId: 'intent-1',
+      releaseId: buildSubmittedClientOrderId('c1', 0),
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      reason: 'exchange_create_missing_id',
+    });
+    expect(exchangeOrderTrackerService.upsertOrder).not.toHaveBeenCalled();
+    expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      baseIntent.intentId,
+      'FAILED',
+      'exchange create returned no order id',
+    );
+  });
+
   it('passes postOnly to limit-order execution', async () => {
     const service = createService(true);
 
@@ -1334,6 +1371,7 @@ describe('StrategyIntentExecutionService', () => {
         exchangeOrderId: 'exchange-order-1',
         status: 'cancelled',
       }),
+      { releaseReservation: false },
     );
     expect(intentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       'intent-cancel',
@@ -1397,6 +1435,118 @@ describe('StrategyIntentExecutionService', () => {
       filledQty: '0.25',
       reason: 'exchange_order_cancelled',
     });
+  });
+
+  it('treats successful cancel ack without status as final and releases reservation', async () => {
+    trackedOrders.set(
+      toTrackedOrderKey('binance', undefined, 'exchange-order-1'),
+      {
+        orderId: 'c1',
+        strategyKey: '**********************',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-order-1',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        cumulativeFilledQty: '0',
+        status: 'open',
+      },
+    );
+    exchangeConnectorAdapterService.cancelOrder.mockResolvedValueOnce({
+      id: 'exchange-order-1',
+    });
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+    const cancelIntent: StrategyOrderIntent = {
+      ...baseIntent,
+      intentId: 'intent-cancel',
+      type: 'CANCEL_ORDER',
+      mixinOrderId: 'exchange-order-1',
+    };
+
+    await service.consumeIntents([cancelIntent]);
+
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'exchange-order-1',
+        status: 'cancelled',
+      }),
+      { releaseReservation: false },
+    );
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'c1',
+      userId: 'u1',
+      intentId: 'intent-cancel',
+      releaseId: buildSubmittedClientOrderId('c1', 0),
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      filledQty: '0',
+      reason: 'exchange_order_cancelled',
+    });
+  });
+
+  it('treats successful closed cancel ack as final and releases reservation', async () => {
+    trackedOrders.set(
+      toTrackedOrderKey('binance', undefined, 'exchange-order-1'),
+      {
+        orderId: 'c1',
+        strategyKey: '**********************',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-order-1',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        cumulativeFilledQty: '0',
+        status: 'open',
+      },
+    );
+    exchangeConnectorAdapterService.cancelOrder.mockResolvedValueOnce({
+      id: 'exchange-order-1',
+      status: 'closed',
+    });
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+    const cancelIntent: StrategyOrderIntent = {
+      ...baseIntent,
+      intentId: 'intent-cancel',
+      type: 'CANCEL_ORDER',
+      mixinOrderId: 'exchange-order-1',
+    };
+
+    await service.consumeIntents([cancelIntent]);
+
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'exchange-order-1',
+        status: 'cancelled',
+      }),
+      { releaseReservation: false },
+    );
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'c1',
+        intentId: 'intent-cancel',
+        reason: 'exchange_order_cancelled',
+      }),
+    );
   });
 
   it('releases reservation when cancel intent finds order already cancelled', async () => {

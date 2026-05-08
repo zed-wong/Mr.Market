@@ -530,6 +530,9 @@ describe('StrategyService', () => {
       async (clientOrderId: string) =>
         clientOrderId === 'mm-orphan' ? { orderId: 'order-1' } : null,
     );
+    exchangeConnectorAdapterService.cancelOrder.mockResolvedValueOnce({
+      status: 'closed',
+    });
     jest.spyOn(service, 'getCadenceMs').mockReturnValue(1000);
     jest.spyOn(service as any, 'upsertSession').mockResolvedValue({
       strategyKey: strategy.strategyKey,
