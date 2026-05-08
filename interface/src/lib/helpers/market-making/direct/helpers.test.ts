@@ -26,8 +26,8 @@ describe('normalizeConfigOverrides', () => {
     ).toEqual({
       numberOfLayers: 2,
       orderAmount: 10,
-      bidSpread: 0.25,
-      askSpread: 0.25,
+      bidSpread: 0.0025,
+      askSpread: 0.0025,
     });
   });
 

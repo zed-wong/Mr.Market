@@ -79,7 +79,7 @@ export class OrderReservationService {
         command.releaseId || command.intentId
       }:${command.reason}`,
       refType: command.reason,
-      refId: command.intentId,
+      refId: command.releaseId || command.intentId,
     });
 
     return { ...reservation, applied: result.applied };
@@ -101,7 +101,9 @@ export class OrderReservationService {
     const dangling = activeReservations.filter(
       (candidate) =>
         !openOrderIds.has(candidate.orderId) &&
-        !candidate.liveIntentIds.some((intentId) => liveIntentIds.has(intentId)),
+        !candidate.liveIntentIds.some((intentId) =>
+          liveIntentIds.has(intentId),
+        ),
     );
 
     if (params.dryRun) {
@@ -189,15 +191,13 @@ export class OrderReservationService {
       }
 
       const key = `${entry.orderId}:${entry.assetId}`;
-      const candidate =
-        candidates.get(key) ||
-        {
-          orderId: entry.orderId,
-          userId: entry.userId,
-          assetId: entry.assetId,
-          amount: new BigNumber(0),
-          liveIntentIds: new Set<string>(),
-        };
+      const candidate = candidates.get(key) || {
+        orderId: entry.orderId,
+        userId: entry.userId,
+        assetId: entry.assetId,
+        amount: new BigNumber(0),
+        liveIntentIds: new Set<string>(),
+      };
       const amount = new BigNumber(entry.amount);
 
       if (entry.type === 'reserve_lock') {

@@ -27,6 +27,7 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
 import { BalanceStateRefreshService } from 'src/modules/market-making/balance-state/balance-state-refresh.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
+import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { assertStrategyConfigOverridesSafe } from 'src/modules/market-making/strategy/config/strategy-config-override.guard';
 import type { StrategyType } from 'src/modules/market-making/strategy/config/strategy-controller.types';
 import { normalizeControllerType } from 'src/modules/market-making/strategy/config/strategy-controller-aliases';
@@ -113,6 +114,7 @@ export class AdminDirectMarketMakingService {
     private readonly orderBookTrackerService: OrderBookTrackerService,
     private readonly campaignService: CampaignService,
     private readonly configService: ConfigService,
+    private readonly balanceLedgerService: BalanceLedgerService,
     @Optional()
     private readonly userStreamIngestionService?: UserStreamIngestionService,
     @Optional()
@@ -199,6 +201,15 @@ export class AdminDirectMarketMakingService {
       executionAccounts,
       capabilities.directExecutionMode,
     );
+    await this.populateAdminDirectLedgerAllocations(
+      dto.exchangeName,
+      dto.pair,
+      executionAccounts.primary.accountLabel,
+      resolvedConfig.resolvedConfig,
+    );
+    this.assertAdminDirectSeedAllocationsAvailable(
+      resolvedConfig.resolvedConfig,
+    );
 
     const warnings =
       capabilities.directExecutionMode === 'dual_account'
@@ -225,6 +236,8 @@ export class AdminDirectMarketMakingService {
       source: 'admin_direct',
       apiKeyId: executionAccounts.primary.apiKeyId,
       ...mapStrategySnapshotToMarketMakingOrderFields(resolvedConfig),
+      balanceA: this.readPositiveAmount(resolvedConfig.resolvedConfig.balanceA),
+      balanceB: this.readPositiveAmount(resolvedConfig.resolvedConfig.balanceB),
       state: 'created',
       createdAt: getRFC3339Timestamp(),
       rewardAddress: null,
@@ -233,6 +246,7 @@ export class AdminDirectMarketMakingService {
     await this.userOrdersService.createMarketMaking(order);
 
     try {
+      await this.ensureAdminDirectLedgerSeeded(order);
       await this.marketMakingRuntimeService.startOrder(order);
       await this.userOrdersService.updateMarketMakingOrderState(
         orderId,
@@ -264,7 +278,10 @@ export class AdminDirectMarketMakingService {
       throw new NotFoundException('Order not found');
     }
     if (order.state === 'stopped') {
-      throw new BadRequestException('Order already stopped');
+      return {
+        orderId,
+        state: 'stopped',
+      };
     }
 
     await this.marketMakingRuntimeService.stopOrder(
@@ -299,6 +316,23 @@ export class AdminDirectMarketMakingService {
     this.backfillOrderRuntimeSnapshot(order);
 
     const resolvedConfig = order.strategySnapshot?.resolvedConfig || {};
+
+    await this.populateAdminDirectLedgerAllocations(
+      order.exchangeName,
+      order.pair,
+      this.isDualAccountMode(order)
+        ? this.readMakerAccountLabel(order)
+        : this.readPrimaryAccountLabel(order),
+      resolvedConfig,
+    );
+    order.balanceA =
+      this.readPositiveAmount(order.balanceA) ||
+      this.readPositiveAmount(resolvedConfig.balanceA) ||
+      order.balanceA;
+    order.balanceB =
+      this.readPositiveAmount(order.balanceB) ||
+      this.readPositiveAmount(resolvedConfig.balanceB) ||
+      order.balanceB;
     const warnings = this.isDualAccountMode(order)
       ? await this.runDualAccountBalancePreCheck(
           order.exchangeName,
@@ -321,6 +355,7 @@ export class AdminDirectMarketMakingService {
         );
 
     try {
+      await this.ensureAdminDirectLedgerSeeded(order);
       await this.marketMakingRuntimeService.startOrder(order);
       await this.userOrdersService.updateMarketMakingOrderState(
         orderId,
@@ -1258,6 +1293,151 @@ export class AdminDirectMarketMakingService {
       accountLabel,
       resolvedConfig,
     );
+  }
+
+  private async ensureAdminDirectLedgerSeeded(
+    order: MarketMakingOrder,
+  ): Promise<void> {
+    const [baseAsset, quoteAsset] = this.parsePair(order.pair);
+    const resolvedConfig = order.strategySnapshot?.resolvedConfig || {};
+    const allocations = [
+      {
+        assetId: baseAsset,
+        amount: this.readPositiveAmount(
+          order.balanceA || resolvedConfig.balanceA,
+        ),
+      },
+      {
+        assetId: quoteAsset,
+        amount: this.readPositiveAmount(
+          order.balanceB || resolvedConfig.balanceB,
+        ),
+      },
+    ].filter((allocation) => allocation.assetId);
+    let hasFunding = false;
+
+    for (const allocation of allocations) {
+      const alreadyFunded = await this.balanceLedgerService.hasDepositCredit(
+        order.orderId,
+        allocation.assetId,
+      );
+
+      if (alreadyFunded) {
+        hasFunding = true;
+        continue;
+      }
+
+      if (!allocation.amount) {
+        continue;
+      }
+
+      await this.balanceLedgerService.creditDeposit({
+        orderId: order.orderId,
+        userId: order.userId,
+        assetId: allocation.assetId,
+        amount: allocation.amount,
+        idempotencyKey: `admin-direct-seed:${order.orderId}:${allocation.assetId}`,
+        refType: 'admin_direct_seed',
+        refId: order.orderId,
+      });
+      hasFunding = true;
+    }
+
+    if (!hasFunding) {
+      throw new BadRequestException(
+        'Admin direct order requires available base or quote balance to seed ledger',
+      );
+    }
+  }
+
+  private async populateAdminDirectLedgerAllocations(
+    exchangeName: string,
+    pair: string,
+    accountLabel: string,
+    resolvedConfig: Record<string, unknown>,
+  ): Promise<void> {
+    if (
+      this.readPositiveAmount(resolvedConfig.balanceA) ||
+      this.readPositiveAmount(resolvedConfig.balanceB)
+    ) {
+      return;
+    }
+
+    const [baseAsset, quoteAsset] = this.parsePair(pair);
+    const exchange = this.exchangeInitService.getExchange(
+      exchangeName,
+      accountLabel,
+    );
+    const [balance, referencePrice] = await Promise.all([
+      exchange.fetchBalance(),
+      this.resolveTickerPrice(exchangeName, pair, accountLabel),
+    ]);
+    const desiredBase = this.calculateAdminDirectBaseAllocation(resolvedConfig);
+    const desiredQuote =
+      referencePrice && desiredBase.isGreaterThan(0)
+        ? desiredBase.multipliedBy(referencePrice)
+        : new BigNumber(0);
+    const baseFree = new BigNumber(balance?.free?.[baseAsset] ?? 0);
+    const quoteFree = new BigNumber(balance?.free?.[quoteAsset] ?? 0);
+    const baseAllocation = BigNumber.minimum(baseFree, desiredBase);
+    const quoteAllocation = BigNumber.minimum(quoteFree, desiredQuote);
+
+    if (baseAllocation.isFinite() && baseAllocation.isGreaterThan(0)) {
+      resolvedConfig.balanceA = baseAllocation.toFixed();
+    }
+    if (quoteAllocation.isFinite() && quoteAllocation.isGreaterThan(0)) {
+      resolvedConfig.balanceB = quoteAllocation.toFixed();
+    }
+  }
+
+  private assertAdminDirectSeedAllocationsAvailable(
+    resolvedConfig: Record<string, unknown>,
+  ): void {
+    if (
+      this.readPositiveAmount(resolvedConfig.balanceA) ||
+      this.readPositiveAmount(resolvedConfig.balanceB)
+    ) {
+      return;
+    }
+
+    throw new BadRequestException(
+      'Admin direct order requires available base or quote balance to seed ledger',
+    );
+  }
+
+  private calculateAdminDirectBaseAllocation(
+    resolvedConfig: Record<string, unknown>,
+  ): BigNumber {
+    const baseAmount =
+      this.readPositiveBigNumber(resolvedConfig.orderAmount) ||
+      this.readPositiveBigNumber(resolvedConfig.maxOrderAmount) ||
+      this.readPositiveBigNumber(resolvedConfig.baseTradeAmount) ||
+      new BigNumber(0);
+    const layerCount = Math.max(
+      1,
+      Math.floor(Number(resolvedConfig.numberOfLayers || 1)),
+    );
+    const amountChangePerLayer =
+      this.readPositiveBigNumber(resolvedConfig.amountChangePerLayer) ||
+      new BigNumber(0);
+    const amountChangeType =
+      resolvedConfig.amountChangeType === 'percentage' ? 'percentage' : 'fixed';
+    let total = new BigNumber(0);
+
+    for (let layer = 0; layer < layerCount; layer += 1) {
+      const layerAmount =
+        amountChangeType === 'percentage'
+          ? baseAmount.multipliedBy(
+              new BigNumber(1).plus(amountChangePerLayer).pow(layer),
+            )
+          : baseAmount.plus(amountChangePerLayer.multipliedBy(layer));
+
+      if (layerAmount.isFinite() && layerAmount.isGreaterThan(0)) {
+        total = total.plus(layerAmount);
+      }
+    }
+
+    return total;
   }
 
   private async runDualAccountBalancePreCheck(

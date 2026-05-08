@@ -72,6 +72,8 @@ describe('AdminDirectMarketMakingService', () => {
           amountChangeType: 'fixed',
           ceilingPrice: 0,
           floorPrice: 0,
+          balanceA: '1',
+          balanceB: '1000',
         },
       }),
     };
@@ -189,6 +191,10 @@ describe('AdminDirectMarketMakingService', () => {
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
     };
+    const balanceLedgerService = {
+      hasDepositCredit: jest.fn().mockResolvedValue(false),
+      creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
+    };
     const balanceStateCacheService = {
       getBalance: jest.fn().mockReturnValue(undefined),
       applyBalanceSnapshot: jest.fn(),
@@ -226,6 +232,7 @@ describe('AdminDirectMarketMakingService', () => {
       orderBookTrackerService as any,
       campaignService as any,
       configService as any,
+      balanceLedgerService as any,
       userStreamIngestionService as any,
       balanceStateCacheService as any,
       balanceStateRefreshService as any,
@@ -253,6 +260,7 @@ describe('AdminDirectMarketMakingService', () => {
       orderBookTrackerService,
       campaignService,
       configService,
+      balanceLedgerService,
       balanceStateCacheService,
       balanceStateRefreshService,
       userStreamCapabilityService,
@@ -307,6 +315,7 @@ describe('AdminDirectMarketMakingService', () => {
       strategyDefinitionRepository,
       userOrdersService,
       marketMakingRuntimeService,
+      balanceLedgerService,
     } = buildService();
 
     strategyDefinitionRepository.findOne.mockResolvedValue({
@@ -334,12 +343,143 @@ describe('AdminDirectMarketMakingService', () => {
     expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         source: 'admin_direct',
+        balanceA: '1',
+        balanceB: '1000',
+      }),
+    );
+    expect(balanceLedgerService.creditDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetId: 'BTC',
+        amount: '1',
+        refType: 'admin_direct_seed',
+      }),
+    );
+    expect(balanceLedgerService.creditDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetId: 'USDT',
+        amount: '1000',
+        refType: 'admin_direct_seed',
       }),
     );
     expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
       result.orderId,
       'running',
     );
+  });
+
+  it('skips admin-direct ledger seed for assets that already have deposits', async () => {
+    const { service, strategyDefinitionRepository, balanceLedgerService } =
+      buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-1',
+      enabled: true,
+      controllerType: 'pureMarketMaking',
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
+    });
+    balanceLedgerService.hasDepositCredit.mockImplementation(
+      async (_orderId: string, assetId: string) => assetId === 'BTC',
+    );
+
+    await service.directStart(directStartDto, 'admin-user');
+
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ assetId: 'BTC' }),
+    );
+    expect(balanceLedgerService.creditDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({ assetId: 'USDT', amount: '1000' }),
+    );
+  });
+
+  it('derives admin-direct ledger allocations from exchange free balance', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      balanceLedgerService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-1',
+      enabled: true,
+      controllerType: 'pureMarketMaking',
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'pureMarketMaking',
+      resolvedConfig: {
+        accountLabel: 'api-key-1',
+        bidSpread: 0.001,
+        askSpread: 0.001,
+        orderAmount: 10,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: 'MID_PRICE',
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        ceilingPrice: 0,
+        floorPrice: 0,
+      },
+    });
+
+    await service.directStart(directStartDto, 'admin-user');
+
+    expect(balanceLedgerService.creditDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({ assetId: 'BTC', amount: '1' }),
+    );
+    expect(balanceLedgerService.creditDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({ assetId: 'USDT', amount: '1000' }),
+    );
+  });
+
+  it('rejects admin-direct start without available ledger seed balance', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      exchange,
+      userOrdersService,
+      marketMakingRuntimeService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-1',
+      enabled: true,
+      controllerType: 'pureMarketMaking',
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'pureMarketMaking',
+      resolvedConfig: {
+        accountLabel: 'api-key-1',
+        bidSpread: 0.001,
+        askSpread: 0.001,
+        orderAmount: 10,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: 'MID_PRICE',
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        ceilingPrice: 0,
+        floorPrice: 0,
+      },
+    });
+    exchange.fetchBalance.mockResolvedValue({
+      free: { BTC: 0, USDT: 0 },
+      used: {},
+      total: {},
+    });
+
+    await expect(
+      service.directStart(directStartDto, 'admin-user'),
+    ).rejects.toThrow(
+      'Admin direct order requires available base or quote balance to seed ledger',
+    );
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
   });
 
   it('fails direct start when the API key is missing', async () => {
@@ -514,6 +654,8 @@ describe('AdminDirectMarketMakingService', () => {
         amountChangeType: 'fixed',
         ceilingPrice: 0,
         floorPrice: 0,
+        balanceA: '1',
+        balanceB: '1000',
       },
     });
     exchange.fetchBalance.mockResolvedValue({
@@ -556,6 +698,8 @@ describe('AdminDirectMarketMakingService', () => {
         amountChangeType: 'fixed',
         ceilingPrice: 0,
         floorPrice: 0,
+        balanceA: '1',
+        balanceB: '1000',
       },
     });
     exchange.fetchBalance.mockResolvedValue({
@@ -721,8 +865,13 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('rejects stopping an already stopped direct order', async () => {
-    const { service, marketMakingRepository } = buildService();
+  it('treats stopping an already stopped direct order as successful', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      userOrdersService,
+    } = buildService();
 
     marketMakingRepository.findOne.mockResolvedValue({
       orderId: 'order-1',
@@ -730,8 +879,42 @@ describe('AdminDirectMarketMakingService', () => {
       source: 'admin_direct',
     });
 
-    await expect(service.directStop('order-1')).rejects.toBeInstanceOf(
-      BadRequestException,
+    await expect(service.directStop('order-1')).resolves.toEqual({
+      orderId: 'order-1',
+      state: 'stopped',
+    });
+    expect(marketMakingRuntimeService.stopOrder).not.toHaveBeenCalled();
+    expect(
+      userOrdersService.updateMarketMakingOrderState,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('stops a failed direct order', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      userOrdersService,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'failed',
+    });
+
+    await expect(service.directStop('order-1')).resolves.toEqual({
+      orderId: 'order-1',
+      state: 'stopped',
+    });
+    expect(marketMakingRuntimeService.stopOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: 'order-1' }),
+      'admin-user',
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'stopped',
     );
   });
 
@@ -846,6 +1029,8 @@ describe('AdminDirectMarketMakingService', () => {
       exchangeName: 'mexc',
       pair: 'XIN/USDT',
       apiKeyId: '4',
+      balanceA: '1',
+      balanceB: '1000',
       strategySnapshot: {
         controllerType: 'dualAccountBestCapacityVolume',
         resolvedConfig: {
@@ -976,6 +1161,8 @@ describe('AdminDirectMarketMakingService', () => {
         numTrades: 20,
         baseIncrementPercentage: 0.2,
         pricePushRate: 0,
+        balanceA: '1',
+        balanceB: '1000',
       },
     });
 
@@ -1031,6 +1218,8 @@ describe('AdminDirectMarketMakingService', () => {
         numTrades: 20,
         baseIncrementPercentage: 0.2,
         pricePushRate: 0,
+        balanceA: '1',
+        balanceB: '1000',
       },
     });
 

@@ -1352,19 +1352,22 @@ describe('StrategyIntentExecutionService', () => {
   });
 
   it('releases remaining reservation when cancel ack is final', async () => {
-    trackedOrders.set(toTrackedOrderKey('binance', undefined, 'exchange-order-1'), {
-      orderId: 'c1',
-      strategyKey: 'u1-c1-pureMarketMaking',
-      exchange: 'binance',
-      pair: 'BTC/USDT',
-      exchangeOrderId: 'exchange-order-1',
-      clientOrderId: buildSubmittedClientOrderId('c1', 0),
-      side: 'buy',
-      price: '100',
-      qty: '1',
-      cumulativeFilledQty: '0.25',
-      status: 'open',
-    });
+    trackedOrders.set(
+      toTrackedOrderKey('binance', undefined, 'exchange-order-1'),
+      {
+        orderId: 'c1',
+        strategyKey: 'u1-c1-pureMarketMaking',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-order-1',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        cumulativeFilledQty: '0.25',
+        status: 'open',
+      },
+    );
     const service = createService(
       true,
       createConfigService(true),
@@ -1386,6 +1389,54 @@ describe('StrategyIntentExecutionService', () => {
       orderId: 'c1',
       userId: 'u1',
       intentId: 'intent-cancel',
+      releaseId: buildSubmittedClientOrderId('c1', 0),
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      filledQty: '0.25',
+      reason: 'exchange_order_cancelled',
+    });
+  });
+
+  it('releases reservation when cancel intent finds order already cancelled', async () => {
+    trackedOrders.set(
+      toTrackedOrderKey('binance', undefined, 'exchange-order-1'),
+      {
+        orderId: 'c1',
+        strategyKey: '**********************',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-order-1',
+        clientOrderId: buildSubmittedClientOrderId('c1', 0),
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        cumulativeFilledQty: '0.25',
+        status: 'cancelled',
+      },
+    );
+    const service = createService(
+      true,
+      createConfigService(true),
+      createExecutionHistoryRepository(),
+      orderReservationService,
+    );
+    const cancelIntent: StrategyOrderIntent = {
+      ...baseIntent,
+      intentId: 'intent-cancel-already-final',
+      type: 'CANCEL_ORDER',
+      mixinOrderId: 'exchange-order-1',
+    };
+
+    await service.consumeIntents([cancelIntent]);
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'c1',
+      userId: 'u1',
+      intentId: 'intent-cancel-already-final',
       releaseId: buildSubmittedClientOrderId('c1', 0),
       pair: 'BTC/USDT',
       side: 'buy',

@@ -18,6 +18,7 @@ import { SpotdataModule } from '../data/spot-data/spot-data.module';
 import { ExchangeInitModule } from '../infrastructure/exchange-init/exchange-init.module';
 import { ExchangeApiKeyModule } from '../market-making/exchange-api-key/exchange-api-key.module';
 import { ExecutionModule } from '../market-making/execution/execution.module';
+import { LedgerModule } from '../market-making/ledger/ledger.module';
 import { PerformanceService } from '../market-making/performance/performance.service';
 import { StrategyModule } from '../market-making/strategy/strategy.module';
 import { TrackersModule } from '../market-making/trackers/trackers.module';
@@ -45,6 +46,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
     UserOrdersModule,
     TrackersModule,
     ExecutionModule,
+    LedgerModule,
     ExchangeApiKeyModule,
     ExchangeInitModule,
     TypeOrmModule.forFeature([

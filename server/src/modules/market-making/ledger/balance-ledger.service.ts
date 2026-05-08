@@ -101,6 +101,18 @@ export class BalanceLedgerService {
     return await this.getOrCreateBalance(orderId, assetId);
   }
 
+  async hasDepositCredit(orderId: string, assetId: string): Promise<boolean> {
+    const existing = await this.ledgerEntryRepository.findOne({
+      where: {
+        orderId,
+        assetId,
+        type: 'deposit_credit',
+      },
+    });
+
+    return Boolean(existing);
+  }
+
   async getLockedBalanceForUserAsset(
     userId: string,
     assetId: string,
@@ -118,7 +130,9 @@ export class BalanceLedgerService {
   }
 
   pauseReservations(orderId: string, assetId: string): void {
-    this.reservationPausedBalances.add(this.getBalanceLockKey(orderId, assetId));
+    this.reservationPausedBalances.add(
+      this.getBalanceLockKey(orderId, assetId),
+    );
   }
 
   async rebuildOrderBalance(
@@ -318,6 +332,7 @@ export class BalanceLedgerService {
       orderBalanceRepository,
       false,
     );
+
     balance.userId = command.userId;
     const availableBn = new BigNumber(balance.available);
     const lockedBn = new BigNumber(balance.locked);
@@ -558,7 +573,9 @@ export class BalanceLedgerService {
       initialDeposit: '0',
       realizedDelta: '0',
       feePaid: '0',
-      updatedAt: sortedEntries[sortedEntries.length - 1]?.createdAt || getRFC3339Timestamp(),
+      updatedAt:
+        sortedEntries[sortedEntries.length - 1]?.createdAt ||
+        getRFC3339Timestamp(),
     });
 
     let available = new BigNumber(0);

@@ -151,8 +151,7 @@ export class StrategyIntentExecutionService {
     );
 
     this.marketDataMaxAgeMs =
-      Number.isFinite(parsedMarketDataMaxAgeMs) &&
-      parsedMarketDataMaxAgeMs >= 0
+      Number.isFinite(parsedMarketDataMaxAgeMs) && parsedMarketDataMaxAgeMs >= 0
         ? Math.floor(parsedMarketDataMaxAgeMs)
         : 30_000;
     if (this.marketDataMaxAgeMs !== parsedMarketDataMaxAgeMs) {
@@ -293,15 +292,17 @@ export class StrategyIntentExecutionService {
         let result: Record<string, unknown> | undefined;
 
         if (this.orderReservationService) {
-          reservation = await this.orderReservationService.reserveForLimitOrder({
-            orderId,
-            userId: intent.userId,
-            intentId: intent.intentId,
-            pair: intent.pair,
-            side: intent.side,
-            price: intent.price,
-            qty: intent.qty,
-          });
+          reservation = await this.orderReservationService.reserveForLimitOrder(
+            {
+              orderId,
+              userId: intent.userId,
+              intentId: intent.intentId,
+              pair: intent.pair,
+              side: intent.side,
+              price: intent.price,
+              qty: intent.qty,
+            },
+          );
         }
 
         try {
@@ -448,6 +449,26 @@ export class StrategyIntentExecutionService {
             trackedOrder.status === 'cancelled' ||
             trackedOrder.status === 'filled')
         ) {
+          if (trackedOrder.status === 'cancelled') {
+            const orderId = this.resolveOrderIdForClientOrderId(intent);
+
+            await this.orderReservationService?.releaseLimitOrderReservation({
+              orderId,
+              userId: intent.userId,
+              intentId: intent.intentId,
+              releaseId:
+                trackedOrder.clientOrderId ||
+                trackedOrder.exchangeOrderId ||
+                intent.mixinOrderId,
+              pair: intent.pair,
+              side: intent.side,
+              price: trackedOrder.price || intent.price,
+              qty: trackedOrder.qty || intent.qty,
+              filledQty: trackedOrder.cumulativeFilledQty,
+              reason: 'exchange_order_cancelled',
+            });
+          }
+
           await this.strategyIntentStoreService?.updateIntentStatus(
             intent.intentId,
             'DONE',
@@ -488,10 +509,7 @@ export class StrategyIntentExecutionService {
           updatedAt: getRFC3339Timestamp(),
         });
 
-        if (
-          result?.status === 'canceled' ||
-          result?.status === 'cancelled'
-        ) {
+        if (result?.status === 'canceled' || result?.status === 'cancelled') {
           await this.orderReservationService?.releaseLimitOrderReservation({
             orderId,
             userId: intent.userId,

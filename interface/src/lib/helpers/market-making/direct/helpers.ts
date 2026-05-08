@@ -476,14 +476,15 @@ export function normalizeConfigOverrides(
   if (orderSpread) {
     const num = Number(orderSpread);
     const value = isNaN(num) ? orderSpread : num;
+    const fractionalSpread = isNaN(num) ? orderSpread : num / 100;
 
     if (controllerType === "dualAccountBestCapacityVolume") {
       // Best-capacity strategy does not use spread configuration.
     } else if (isDualAccountStrategy) {
       accumulator["baseIncrementPercentage"] = value;
     } else {
-      accumulator["bidSpread"] = value;
-      accumulator["askSpread"] = value;
+      accumulator["bidSpread"] = fractionalSpread;
+      accumulator["askSpread"] = fractionalSpread;
     }
   }
   if (isDualAccountStrategy && dualFields) {

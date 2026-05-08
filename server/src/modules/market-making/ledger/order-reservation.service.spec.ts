@@ -113,9 +113,10 @@ describe('OrderReservationService', () => {
       userId: 'user-1',
       assetId: 'USDT',
       amount: '110',
-      idempotencyKey: 'reserve-release:exchange-order-1:exchange_order_cancelled',
+      idempotencyKey:
+        'reserve-release:exchange-order-1:exchange_order_cancelled',
       refType: 'exchange_order_cancelled',
-      refId: 'intent-cancel',
+      refId: 'exchange-order-1',
     });
   });
 
