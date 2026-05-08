@@ -11,6 +11,7 @@ import { BalanceStateCacheService } from '../balance-state/balance-state-cache.s
 import { BalanceStateRefreshService } from '../balance-state/balance-state-refresh.service';
 import { MarketMakingEventsModule } from '../events/market-making-events.module';
 import { ExecutionModule } from '../execution/execution.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { TickModule } from '../tick/tick.module';
 import {
   BinanceUserStreamEventNormalizerService,
@@ -29,6 +30,7 @@ import { UserStreamTrackerService } from './user-stream-tracker.service';
   imports: [
     TickModule,
     ExecutionModule,
+    LedgerModule,
     MarketMakingEventsModule,
     ExchangeInitModule,
     MarketdataModule,

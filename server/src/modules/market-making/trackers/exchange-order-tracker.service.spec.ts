@@ -6,6 +6,9 @@ describe('ExchangeOrderTrackerService', () => {
     jest.restoreAllMocks();
   });
 
+  const flushPromises = async () =>
+    await new Promise((resolve) => setImmediate(resolve));
+
   it('upserts order states and returns open orders by strategy', async () => {
     const service = new ExchangeOrderTrackerService();
 
@@ -54,6 +57,131 @@ describe('ExchangeOrderTrackerService', () => {
 
     expect(openOrders).toHaveLength(1);
     expect(openOrders[0].exchangeOrderId).toBe('ex-1');
+  });
+
+  it('releases reservations when a tracked order becomes cancelled', async () => {
+    const marketMakingOrderRepository = {
+      findOne: jest.fn().mockResolvedValue({ userId: 'admin-direct' }),
+    };
+    const orderReservationService = {
+      releaseLimitOrderReservation: jest.fn().mockResolvedValue({
+        applied: true,
+      }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      marketMakingOrderRepository as any,
+      undefined,
+      orderReservationService as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'order-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      exchange: 'mexc',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'client-1',
+      side: 'buy',
+      price: '58.2',
+      qty: '0.02',
+      cumulativeFilledQty: '0',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'order-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      exchange: 'mexc',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'client-1',
+      side: 'buy',
+      price: '58.2',
+      qty: '0.02',
+      cumulativeFilledQty: '0',
+      status: 'cancelled',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:01.000Z',
+    });
+
+    await flushPromises();
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      userId: 'admin-direct',
+      intentId: 'client-1',
+      releaseId: 'client-1',
+      pair: 'XIN/USDT',
+      side: 'buy',
+      price: '58.2',
+      qty: '0.02',
+      filledQty: '0',
+      reason: 'exchange_order_cancelled',
+    });
+  });
+
+  it('skips terminal reservation release when disabled by caller', async () => {
+    const orderReservationService = {
+      releaseLimitOrderReservation: jest.fn().mockResolvedValue({
+        applied: true,
+      }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      orderReservationService as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'order-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      exchange: 'mexc',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'client-1',
+      side: 'buy',
+      price: '58.2',
+      qty: '0.02',
+      cumulativeFilledQty: '0',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder(
+      {
+        orderId: 'order-1',
+        strategyKey: 'order-1-pureMarketMaking',
+        exchange: 'mexc',
+        pair: 'XIN/USDT',
+        exchangeOrderId: 'ex-1',
+        clientOrderId: 'client-1',
+        side: 'buy',
+        price: '58.2',
+        qty: '0.02',
+        cumulativeFilledQty: '0',
+        status: 'cancelled',
+        createdAt: '2026-02-11T00:00:00.000Z',
+        updatedAt: '2026-02-11T00:00:01.000Z',
+      },
+      { releaseReservation: false },
+    );
+
+    await flushPromises();
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).not.toHaveBeenCalled();
   });
 
   it('splits live orders from active slot orders', () => {

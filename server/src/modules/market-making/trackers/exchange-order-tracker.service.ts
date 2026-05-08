@@ -14,6 +14,7 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
+import { OrderReservationService } from '../ledger/order-reservation.service';
 import { ExecutorRegistry } from '../strategy/execution/executor-registry';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 
@@ -45,6 +46,10 @@ export type TrackedOrder = {
   status: TrackedOrderState;
   createdAt: string;
   updatedAt: string;
+};
+
+export type UpsertTrackedOrderOptions = {
+  releaseReservation?: boolean;
 };
 
 type FillLogEntry = {
@@ -121,6 +126,8 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
     @Optional()
     private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
+    @Optional()
+    private readonly orderReservationService?: OrderReservationService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -139,7 +146,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     return true;
   }
 
-  upsertOrder(order: TrackedOrder): void {
+  upsertOrder(order: TrackedOrder, options?: UpsertTrackedOrderOptions): void {
     const key = this.toKey(
       order.exchange,
       order.accountLabel,
@@ -159,6 +166,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       this.orders.set(key, nextOrder);
       this.updatePollingStateForOrder(key, nextOrder.status);
       void this.persistOrder(nextOrder, key).catch(() => {});
+      if (options?.releaseReservation !== false) {
+        this.releaseReservationForTerminalOrder(existingOrder, nextOrder);
+      }
 
       return;
     }
@@ -174,6 +184,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     this.orders.set(key, createdOrder);
     this.updatePollingStateForOrder(key, createdOrder.status);
     void this.persistOrder(createdOrder, key).catch(() => {});
+    if (options?.releaseReservation !== false) {
+      this.releaseReservationForTerminalOrder(undefined, createdOrder);
+    }
   }
 
   getLiveOrders(strategyKey: string): TrackedOrder[] {
@@ -717,6 +730,71 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     }
 
     return 'failed';
+  }
+
+  private releaseReservationForTerminalOrder(
+    previousOrder: TrackedOrder | undefined,
+    nextOrder: TrackedOrder,
+  ): void {
+    if (!this.orderReservationService) {
+      return;
+    }
+
+    if (
+      previousOrder &&
+      ExchangeOrderTrackerService.terminalStates.has(previousOrder.status)
+    ) {
+      return;
+    }
+
+    if (nextOrder.status !== 'cancelled' && nextOrder.status !== 'filled') {
+      return;
+    }
+
+    void this.releaseReservationForTerminalOrderAsync(nextOrder).catch(
+      (error) => {
+        this.logger.warn(
+          `Failed to release reservation for terminal tracked order ${
+            nextOrder.exchangeOrderId
+          }: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
+  }
+
+  private async releaseReservationForTerminalOrderAsync(
+    order: TrackedOrder,
+  ): Promise<void> {
+    const marketMakingOrder = await this.marketMakingOrderRepository?.findOne({
+      where: { orderId: order.orderId },
+    });
+    const userId =
+      String(marketMakingOrder?.userId || '').trim() ||
+      this.extractUserIdFromStrategyKey(order.strategyKey);
+
+    if (!userId) {
+      return;
+    }
+
+    await this.orderReservationService?.releaseLimitOrderReservation({
+      orderId: order.orderId,
+      userId,
+      intentId: order.clientOrderId || order.exchangeOrderId,
+      releaseId: order.clientOrderId || order.exchangeOrderId,
+      pair: order.pair,
+      side: order.side,
+      price: order.price,
+      qty: order.qty,
+      filledQty: order.cumulativeFilledQty,
+      reason:
+        order.status === 'filled'
+          ? 'exchange_order_filled'
+          : 'exchange_order_cancelled',
+    });
+  }
+
+  private extractUserIdFromStrategyKey(strategyKey: string): string {
+    return String(strategyKey || '').split('-')[0] || '';
   }
 
   private async isStrategyOrderStillActive(
