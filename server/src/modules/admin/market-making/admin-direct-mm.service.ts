@@ -86,6 +86,11 @@ type DirectExecutionAccount = {
   apiKey: Record<string, any>;
 };
 
+type DirectMarketSnapshot = {
+  balance?: ccxt.Balances;
+  tickerPrice?: BigNumber | null;
+};
+
 @Injectable()
 export class AdminDirectMarketMakingService {
   private readonly logger = new CustomLogger(
@@ -201,11 +206,17 @@ export class AdminDirectMarketMakingService {
       executionAccounts,
       capabilities.directExecutionMode,
     );
+    const primaryMarketSnapshot = await this.resolveDirectMarketSnapshot(
+      dto.exchangeName,
+      dto.pair,
+      executionAccounts.primary.accountLabel,
+    );
     await this.populateAdminDirectLedgerAllocations(
       dto.exchangeName,
       dto.pair,
       executionAccounts.primary.accountLabel,
       resolvedConfig.resolvedConfig,
+      primaryMarketSnapshot,
     );
     this.assertAdminDirectSeedAllocationsAvailable(
       resolvedConfig.resolvedConfig,
@@ -218,12 +229,14 @@ export class AdminDirectMarketMakingService {
             dto.pair,
             executionAccounts,
             resolvedConfig.resolvedConfig,
+            primaryMarketSnapshot,
           )
         : await this.runSingleAccountPreCheck(
             dto.exchangeName,
             dto.pair,
             executionAccounts.primary.accountLabel,
             resolvedConfig.resolvedConfig,
+            primaryMarketSnapshot,
           );
 
     const order = this.marketMakingRepository.create({
@@ -316,14 +329,21 @@ export class AdminDirectMarketMakingService {
     this.backfillOrderRuntimeSnapshot(order);
 
     const resolvedConfig = order.strategySnapshot?.resolvedConfig || {};
+    const primaryAccountLabel = this.isDualAccountMode(order)
+      ? this.readMakerAccountLabel(order)
+      : this.readPrimaryAccountLabel(order);
+    const primaryMarketSnapshot = await this.resolveDirectMarketSnapshot(
+      order.exchangeName,
+      order.pair,
+      primaryAccountLabel,
+    );
 
     await this.populateAdminDirectLedgerAllocations(
       order.exchangeName,
       order.pair,
-      this.isDualAccountMode(order)
-        ? this.readMakerAccountLabel(order)
-        : this.readPrimaryAccountLabel(order),
+      primaryAccountLabel,
       resolvedConfig,
+      primaryMarketSnapshot,
     );
     order.balanceA =
       this.readPositiveAmount(order.balanceA) ||
@@ -346,12 +366,14 @@ export class AdminDirectMarketMakingService {
             },
           },
           resolvedConfig,
+          primaryMarketSnapshot,
         )
       : await this.runSingleAccountPreCheck(
           order.exchangeName,
           order.pair,
-          this.readPrimaryAccountLabel(order),
+          primaryAccountLabel,
           resolvedConfig,
+          primaryMarketSnapshot,
         );
 
     try {
@@ -1273,12 +1295,14 @@ export class AdminDirectMarketMakingService {
     pair: string,
     accountLabel: string,
     resolvedConfig: Record<string, unknown>,
+    snapshot?: DirectMarketSnapshot,
   ): Promise<string[]> {
     await this.validateMinimumOrderAmount(
       exchangeName,
       pair,
       resolvedConfig,
       accountLabel,
+      snapshot,
     );
     await this.validateExecutableSpreadConfig(
       exchangeName,
@@ -1292,6 +1316,7 @@ export class AdminDirectMarketMakingService {
       pair,
       accountLabel,
       resolvedConfig,
+      snapshot,
     );
   }
 
@@ -1355,6 +1380,7 @@ export class AdminDirectMarketMakingService {
     pair: string,
     accountLabel: string,
     resolvedConfig: Record<string, unknown>,
+    snapshot?: DirectMarketSnapshot,
   ): Promise<void> {
     if (
       this.readPositiveAmount(resolvedConfig.balanceA) ||
@@ -1364,14 +1390,11 @@ export class AdminDirectMarketMakingService {
     }
 
     const [baseAsset, quoteAsset] = this.parsePair(pair);
-    const exchange = this.exchangeInitService.getExchange(
-      exchangeName,
-      accountLabel,
-    );
-    const [balance, referencePrice] = await Promise.all([
-      exchange.fetchBalance(),
-      this.resolveTickerPrice(exchangeName, pair, accountLabel),
-    ]);
+    const directSnapshot =
+      snapshot ||
+      (await this.resolveDirectMarketSnapshot(exchangeName, pair, accountLabel));
+    const balance = directSnapshot.balance;
+    const referencePrice = directSnapshot.tickerPrice;
     const desiredBase = this.calculateAdminDirectBaseAllocation(resolvedConfig);
     const desiredQuote =
       referencePrice && desiredBase.isGreaterThan(0)
@@ -1448,27 +1471,42 @@ export class AdminDirectMarketMakingService {
       secondary?: Pick<DirectExecutionAccount, 'accountLabel'>;
     },
     resolvedConfig: Record<string, unknown>,
+    primarySnapshot?: DirectMarketSnapshot,
   ): Promise<string[]> {
     await this.validateMinimumOrderAmount(
       exchangeName,
       pair,
       resolvedConfig,
       executionAccounts.primary.accountLabel,
+      primarySnapshot,
     );
 
+    const secondaryAccount = executionAccounts.secondary;
+    const secondarySnapshotPromise =
+      secondaryAccount && primarySnapshot
+        ? this.resolveDirectBalanceSnapshot(
+            exchangeName,
+            secondaryAccount.accountLabel,
+            primarySnapshot.tickerPrice,
+          )
+        : Promise.resolve(undefined);
     const warnings = await Promise.all([
       this.runBalancePreCheck(
         exchangeName,
         pair,
         executionAccounts.primary.accountLabel,
         resolvedConfig,
+        primarySnapshot,
       ),
-      executionAccounts.secondary
-        ? this.runBalancePreCheck(
-            exchangeName,
-            pair,
-            executionAccounts.secondary.accountLabel,
-            resolvedConfig,
+      secondaryAccount
+        ? secondarySnapshotPromise.then((secondarySnapshot) =>
+            this.runBalancePreCheck(
+              exchangeName,
+              pair,
+              secondaryAccount.accountLabel,
+              resolvedConfig,
+              secondarySnapshot,
+            ),
           )
         : Promise.resolve([]),
     ]);
@@ -1488,15 +1526,19 @@ export class AdminDirectMarketMakingService {
     pair: string,
     accountLabel: string,
     resolvedConfig: Record<string, unknown>,
+    snapshot?: DirectMarketSnapshot,
   ): Promise<string[]> {
-    const exchange = this.exchangeInitService.getExchange(
-      exchangeName,
-      accountLabel,
-    );
     const [baseAsset, quoteAsset] = this.parsePair(pair);
 
     try {
-      const balance = await exchange.fetchBalance();
+      const directSnapshot =
+        snapshot ||
+        (await this.resolveDirectMarketSnapshot(
+          exchangeName,
+          pair,
+          accountLabel,
+        ));
+      const balance = directSnapshot.balance;
       const orderAmount = new BigNumber(
         String(
           resolvedConfig.orderAmount ??
@@ -1510,9 +1552,7 @@ export class AdminDirectMarketMakingService {
       const quoteFree = new BigNumber(balance?.free?.[quoteAsset] ?? 0);
       const quoteRequirement =
         quoteAsset && orderAmount.isFinite() && orderAmount.isGreaterThan(0)
-          ? (
-              await this.resolveTickerPrice(exchangeName, pair, accountLabel)
-            )?.multipliedBy(orderAmount) || null
+          ? directSnapshot.tickerPrice?.multipliedBy(orderAmount) || null
           : null;
 
       if (baseAsset && baseFree.isZero()) {
@@ -1557,6 +1597,42 @@ export class AdminDirectMarketMakingService {
     return amount ? new BigNumber(amount) : null;
   }
 
+  private async resolveDirectMarketSnapshot(
+    exchangeName: string,
+    pair: string,
+    accountLabel: string,
+  ): Promise<DirectMarketSnapshot> {
+    const exchange = this.exchangeInitService.getExchange(
+      exchangeName,
+      accountLabel,
+    );
+    const [balance, tickerPrice] = await Promise.all([
+      exchange.fetchBalance(),
+      this.resolveTickerPrice(exchangeName, pair, accountLabel),
+    ]);
+
+    return {
+      balance,
+      tickerPrice,
+    };
+  }
+
+  private async resolveDirectBalanceSnapshot(
+    exchangeName: string,
+    accountLabel: string,
+    tickerPrice?: BigNumber | null,
+  ): Promise<DirectMarketSnapshot> {
+    const exchange = this.exchangeInitService.getExchange(
+      exchangeName,
+      accountLabel,
+    );
+
+    return {
+      balance: await exchange.fetchBalance(),
+      tickerPrice,
+    };
+  }
+
   private async resolveTickerPrice(
     exchangeName: string,
     pair: string,
@@ -1596,6 +1672,7 @@ export class AdminDirectMarketMakingService {
     pair: string,
     persistedMinimum: unknown,
     accountLabel: string,
+    snapshot?: DirectMarketSnapshot,
   ): Promise<string> {
     const candidates = [this.readPositiveBigNumber(persistedMinimum)].filter(
       (value): value is BigNumber => value !== null,
@@ -1628,11 +1705,9 @@ export class AdminDirectMarketMakingService {
       }
 
       if (costMinimum) {
-        const tickerPrice = await this.resolveTickerPrice(
-          exchangeName,
-          pair,
-          accountLabel,
-        );
+        const tickerPrice =
+          snapshot?.tickerPrice ??
+          (await this.resolveTickerPrice(exchangeName, pair, accountLabel));
 
         if (tickerPrice) {
           candidates.push(costMinimum.dividedBy(tickerPrice));
@@ -1661,6 +1736,7 @@ export class AdminDirectMarketMakingService {
     pair: string,
     resolvedConfig: Record<string, unknown>,
     accountLabel: string,
+    snapshot?: DirectMarketSnapshot,
   ): Promise<void> {
     const pairConfig = await this.growdataMarketMakingPairRepository.findOne({
       where: { exchange_id: exchangeName, symbol: pair },
@@ -1670,6 +1746,7 @@ export class AdminDirectMarketMakingService {
       pair,
       pairConfig?.min_order_amount,
       accountLabel,
+      snapshot,
     );
 
     if (!minimum) {

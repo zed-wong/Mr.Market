@@ -62,6 +62,7 @@ const createHeadIntent = (
 
 describe('StrategyIntentWorkerService', () => {
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
@@ -110,6 +111,45 @@ describe('StrategyIntentWorkerService', () => {
     );
     expect(maxActive).toBe(2);
     await service.onModuleDestroy();
+  });
+
+  it('does not duplicate execution-service logs for per-intent failures', async () => {
+    const strategyIntentStoreService = {
+      listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),
+      getNextNewIntent: jest
+        .fn()
+        .mockResolvedValue(createHeadIntent('s1', 's1-next', 'binance')),
+      cancelPendingIntents: jest.fn().mockResolvedValue(0),
+    };
+    const strategyIntentExecutionService = {
+      hasProcessedIntent: jest.fn().mockReturnValue(false),
+      consumeIntents: jest.fn(async () => {
+        throw new Error('intent failed');
+      }),
+    };
+
+    const service = new StrategyIntentWorkerService(
+      createConfigService(),
+      {
+        findOne: jest.fn().mockResolvedValue({
+          strategyKey: 's1',
+          status: 'running',
+        }),
+      } as any,
+      strategyIntentStoreService as any,
+      strategyIntentExecutionService as any,
+    );
+    const loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    await service.onModuleInit();
+    await waitFor(
+      () => strategyIntentExecutionService.consumeIntents.mock.calls.length > 0,
+    );
+    await service.onModuleDestroy();
+
+    expect(loggerErrorSpy).not.toHaveBeenCalled();
   });
 
   it('executes the oldest NEW intent even when an older FAILED intent exists', async () => {

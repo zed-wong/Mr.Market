@@ -202,29 +202,8 @@ export class StrategyIntentWorkerService
     const task = (async () => {
       try {
         await this.strategyIntentExecutionService?.consumeIntents([intent]);
-      } catch (error) {
-        const role =
-          intent.metadata &&
-          typeof intent.metadata === 'object' &&
-          typeof (intent.metadata as Record<string, unknown>).role === 'string'
-            ? String((intent.metadata as Record<string, unknown>).role)
-            : 'unknown';
-
-        this.logger.error(
-          [
-            'Intent worker failed',
-            `strategy=${intent.strategyKey}`,
-            `intent=${intent.intentId}`,
-            `exchange=${intent.exchange}`,
-            `pair=${intent.pair}`,
-            `role=${role}`,
-            `account=${intent.accountLabel || 'default'}`,
-            `side=${intent.side}`,
-            `qty=${intent.qty}`,
-            `price=${intent.price}`,
-            `error=${error instanceof Error ? error.message : String(error)}`,
-          ].join(' | '),
-        );
+      } catch {
+        // StrategyIntentExecutionService already records intent failure details.
       }
     })();
 

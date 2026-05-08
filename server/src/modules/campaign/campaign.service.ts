@@ -67,18 +67,12 @@ export class CampaignService {
    * @throws Error if the API request fails
    */
   async get_auth_nonce(wallet_address: string): Promise<string> {
-    this.logger.log(
-      `Getting authentication nonce for wallet: ${wallet_address}`,
-    );
-
     try {
       const { data } = await this.hufiRecordingOracleAPI.post<{
         nonce: string;
       }>('/auth/nonce', {
         address: wallet_address,
       });
-
-      this.logger.log('Successfully retrieved authentication nonce');
 
       return data.nonce;
     } catch (error) {
@@ -110,15 +104,11 @@ export class CampaignService {
     nonce: string,
     private_key: string,
   ): Promise<string> {
-    this.logger.log(`Authenticating Web3 user: ${wallet_address}`);
-
     try {
       const { Wallet } = await import('ethers');
       const wallet = new Wallet(private_key);
       const signableMessage = JSON.stringify({ nonce });
       const signature = await wallet.signMessage(signableMessage);
-
-      this.logger.log('Nonce signed successfully, requesting access token');
 
       // Send the signed message to the API for verification
       const { data } = await this.hufiRecordingOracleAPI.post<{
@@ -127,8 +117,6 @@ export class CampaignService {
         address: wallet_address,
         signature: signature,
       });
-
-      this.logger.log('Successfully authenticated Web3 user');
 
       return data.access_token;
     } catch (error) {

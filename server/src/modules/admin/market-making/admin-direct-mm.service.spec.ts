@@ -316,6 +316,7 @@ describe('AdminDirectMarketMakingService', () => {
       userOrdersService,
       marketMakingRuntimeService,
       balanceLedgerService,
+      exchange,
     } = buildService();
 
     strategyDefinitionRepository.findOne.mockResolvedValue({
@@ -365,6 +366,8 @@ describe('AdminDirectMarketMakingService', () => {
       result.orderId,
       'running',
     );
+    expect(exchange.fetchBalance).toHaveBeenCalledTimes(1);
+    expect(exchange.fetchTicker).toHaveBeenCalledTimes(1);
   });
 
   it('skips admin-direct ledger seed for assets that already have deposits', async () => {
