@@ -7,7 +7,10 @@ import type * as ccxt from 'ccxt';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  StrategyDefinitionVisibility,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
@@ -284,15 +287,18 @@ export class MarketMakingRuntimeHelper {
         configSchema: {},
         defaultConfig: {},
         enabled: true,
-        visibility: 'system',
+        visibility: StrategyDefinitionVisibility.ADMIN,
       }),
     );
     const strategySnapshot =
       overrides.strategySnapshot ||
       this.buildPureMarketMakingStrategySnapshot({
+        definitionKey: strategyDefinition.key,
+        definitionName: strategyDefinition.name,
         exchangeName,
         orderId,
         pair,
+        strategyDefinitionId: strategyDefinition.id,
         userId,
       });
     const order = await this.marketMakingOrderRepository.save(
@@ -356,13 +362,20 @@ export class MarketMakingRuntimeHelper {
   }
 
   private buildPureMarketMakingStrategySnapshot(params: {
+    definitionKey: string;
+    definitionName: string;
     exchangeName: string;
     orderId: string;
     pair: string;
+    strategyDefinitionId: string;
     userId: string;
   }): MarketMakingOrderStrategySnapshot {
     return {
+      strategyDefinitionId: params.strategyDefinitionId,
+      definitionKey: params.definitionKey,
+      definitionName: params.definitionName,
       controllerType: 'pureMarketMaking',
+      resolvedAt: getRFC3339Timestamp(),
       resolvedConfig: {
         userId: params.userId,
         clientId: params.orderId,

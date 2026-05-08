@@ -16,6 +16,7 @@ import {
 } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
 import { ExchangeConnectorAdapterService } from 'src/modules/market-making/execution/exchange-connector-adapter.service';
@@ -183,6 +184,11 @@ export class MarketMakingIntentLifecycleHelper {
     const strategyMarketDataProviderServiceMock = {
       getReferencePrice: jest.fn(async () => 100),
       getBestBidAsk: jest.fn(async () => ({ bestBid: 99.5, bestAsk: 100.5 })),
+      getTrackedOrderBookFreshness: jest.fn(() => ({
+        fresh: true,
+        ageMs: 0,
+        freshnessTimestamp: getRFC3339Timestamp(),
+      })),
       getOrderBook: jest.fn(async () => ({
         bids: [[99.5, 10]],
         asks: [[100.5, 10]],
@@ -345,11 +351,12 @@ export class MarketMakingIntentLifecycleHelper {
           | 'STOP_CONTROLLER'
           | 'STOP_EXECUTOR',
         intentId: intent.intentId,
-        strategyInstanceId: intent.strategyInstanceId,
+        runtimeInstanceKey: intent.runtimeInstanceKey,
         strategyKey: intent.strategyKey,
         userId: intent.userId,
         clientId: intent.clientId,
         exchange: intent.exchange,
+        accountLabel: intent.accountLabel || undefined,
         pair: intent.pair,
         side: intent.side as 'buy' | 'sell',
         price: intent.price,
@@ -360,9 +367,19 @@ export class MarketMakingIntentLifecycleHelper {
           | 'clob_dex'
           | 'amm_dex'
           | undefined,
+        postOnly:
+          typeof intent.postOnly === 'boolean' ? intent.postOnly : undefined,
+        timeInForce: intent.timeInForce as 'GTC' | 'IOC' | undefined,
+        slotKey: intent.slotKey || undefined,
         metadata: intent.metadata || undefined,
         createdAt: intent.createdAt,
-        status: intent.status as 'NEW' | 'SENT' | 'ACKED' | 'FAILED' | 'DONE',
+        status: intent.status as
+          | 'NEW'
+          | 'SENT'
+          | 'ACKED'
+          | 'FAILED'
+          | 'DONE'
+          | 'CANCELLED',
       })),
     );
   }

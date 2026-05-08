@@ -54,7 +54,7 @@ const buildIntent = (
 ): StrategyOrderIntent => ({
   type: 'CREATE_LIMIT_ORDER',
   intentId: 'restart-intent-1',
-  strategyInstanceId: 'strategy-instance-1',
+  runtimeInstanceKey: 'strategy-instance-1',
   strategyKey: 'u1-c1-pureMarketMaking',
   userId: 'u1',
   clientId: 'c1',

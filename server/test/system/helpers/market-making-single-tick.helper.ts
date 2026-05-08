@@ -8,7 +8,10 @@ import type * as ccxt from 'ccxt';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  StrategyDefinitionVisibility,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
@@ -318,7 +321,7 @@ export class MarketMakingSingleTickHelper {
           provide: StrategyConfigResolverService,
           useValue: {
             getDefinitionControllerType: (definition: StrategyDefinition) =>
-              definition.controllerType || definition.executorType,
+              definition.controllerType,
           },
         },
         {
@@ -458,7 +461,7 @@ export class MarketMakingSingleTickHelper {
         configSchema: {},
         defaultConfig: {},
         enabled: true,
-        visibility: 'system',
+        visibility: StrategyDefinitionVisibility.ADMIN,
       }),
     );
     const order = await this.marketMakingOrderRepository.save(
@@ -483,6 +486,9 @@ export class MarketMakingSingleTickHelper {
           orderRefreshTime,
           numberOfLayers,
           pair,
+          strategyDefinitionId: strategyDefinition.id,
+          definitionKey: strategyDefinition.key,
+          definitionName: strategyDefinition.name,
           userId,
         }),
         bidSpread: String(bidSpread),
@@ -645,11 +651,12 @@ export class MarketMakingSingleTickHelper {
           | 'STOP_CONTROLLER'
           | 'STOP_EXECUTOR',
         intentId: intent.intentId,
-        strategyInstanceId: intent.strategyInstanceId,
+        runtimeInstanceKey: intent.runtimeInstanceKey,
         strategyKey: intent.strategyKey,
         userId: intent.userId,
         clientId: intent.clientId,
         exchange: intent.exchange,
+        accountLabel: intent.accountLabel || undefined,
         pair: intent.pair,
         side: intent.side as 'buy' | 'sell',
         price: intent.price,
@@ -660,9 +667,19 @@ export class MarketMakingSingleTickHelper {
           | 'clob_dex'
           | 'amm_dex'
           | undefined,
+        postOnly:
+          typeof intent.postOnly === 'boolean' ? intent.postOnly : undefined,
+        timeInForce: intent.timeInForce as 'GTC' | 'IOC' | undefined,
+        slotKey: intent.slotKey || undefined,
         metadata: intent.metadata || undefined,
         createdAt: intent.createdAt,
-        status: intent.status as 'NEW' | 'SENT' | 'ACKED' | 'FAILED' | 'DONE',
+        status: intent.status as
+          | 'NEW'
+          | 'SENT'
+          | 'ACKED'
+          | 'FAILED'
+          | 'DONE'
+          | 'CANCELLED',
       })),
     );
   }
@@ -734,11 +751,18 @@ export class MarketMakingSingleTickHelper {
       orderRefreshTolerancePct?: number;
       orderRefreshTime: number;
       pair: string;
+      strategyDefinitionId: string;
+      definitionKey: string;
+      definitionName: string;
       userId: string;
     },
   ): MarketMakingOrderStrategySnapshot {
     return {
+      strategyDefinitionId: overrides.strategyDefinitionId,
+      definitionKey: overrides.definitionKey,
+      definitionName: overrides.definitionName,
       controllerType: 'pureMarketMaking',
+      resolvedAt: getRFC3339Timestamp(),
       resolvedConfig: {
         userId: overrides.userId,
         clientId: orderId,

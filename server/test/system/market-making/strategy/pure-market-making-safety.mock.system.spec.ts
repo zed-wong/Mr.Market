@@ -223,7 +223,7 @@ describe('Pure market making safety gaps (mock system)', () => {
 
   it('restores active quotes on startup, cancels orphan exchange orders, and avoids duplicate quotes on the next tick', async () => {
     const params = createPureMmParams('order-1');
-    const strategy: StrategyInstance = {
+    const strategy = {
       id: 1,
       strategyKey: 'order-1-pureMarketMaking',
       userId: params.userId,
@@ -233,10 +233,10 @@ describe('Pure market making safety gaps (mock system)', () => {
       parameters: params,
       status: 'running',
       startPrice: 100,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: getRFC3339Timestamp(),
+      updatedAt: getRFC3339Timestamp(),
       contributions: [],
-    };
+    } as unknown as StrategyInstance;
 
     strategyRepo.state.push(strategy);
     const trackedBuy: TrackedOrder = {
