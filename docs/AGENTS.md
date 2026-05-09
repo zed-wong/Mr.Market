@@ -1,6 +1,27 @@
 # Principles
 Follow KISS, YAGNI, and DRY. Don't add unnecessary code. Reuse existing codebase.
 
+# Architecture
+
+Source of truth: `docs/` yellowpaper.
+
+## Three Layers
+1. **Funding Layer** — deposits, withdrawals, rewards
+2. **Scheduling Layer** — tick, strategy controllers, intent dispatch
+3. **Trading Layer** — reservation, exchange orders, fills, reconciliation
+
+## Invariants
+- **Ledger is the balance source of truth.** No in-memory-only balances.
+- **Market-making balance is scoped by `orderId + asset`**, not `userId + asset`.
+- **All balance changes** → immutable ledger entries, idempotent, transactional.
+- **External orders** → risk check → order-level reservation before proceeding.
+- **Strategy controllers** produce actions/intents only. They must **never** place exchange orders or mutate balances.
+- **Intent workers** own reservation, exchange mutation, tracked orders, and state transitions.
+- **Tick must not block** on exchange I/O, REST calls, or DB settlement.
+- **Fills, fees, withdrawals, rewards, reversals** → attributable to a specific order.
+- **Reconciliation** blocks risk-increasing operations on mismatch.
+- **No generic balance adjustment paths.** Only typed, order-attributed mutations.
+
 # Tech Stack
 - **Frontend**: Always use Svelte 4 syntax + SvelteKit + daisyui/tailwind + svelte-i18n (`$_()`)
 - **Backend**: Always use bignumber.js for calculation, and getRFC3339Timestamp() for timestamp
