@@ -113,7 +113,7 @@ describe('StrategyIntentWorkerService', () => {
     await service.onModuleDestroy();
   });
 
-  it('does not duplicate execution-service logs for per-intent failures', async () => {
+  it('logs worker-level context for per-intent failures', async () => {
     const strategyIntentStoreService = {
       listStrategyKeysWithNewIntents: jest.fn().mockResolvedValue(['s1']),
       getNextNewIntent: jest
@@ -149,7 +149,9 @@ describe('StrategyIntentWorkerService', () => {
     );
     await service.onModuleDestroy();
 
-    expect(loggerErrorSpy).not.toHaveBeenCalled();
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Intent worker failed for s1-next: intent failed'),
+    );
   });
 
   it('executes the oldest NEW intent even when an older FAILED intent exists', async () => {

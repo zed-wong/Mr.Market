@@ -202,8 +202,12 @@ export class StrategyIntentWorkerService
     const task = (async () => {
       try {
         await this.strategyIntentExecutionService?.consumeIntents([intent]);
-      } catch {
-        // StrategyIntentExecutionService already records intent failure details.
+      } catch (error) {
+        this.logger.error(
+          `Intent worker failed for ${intent.intentId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     })();
 
