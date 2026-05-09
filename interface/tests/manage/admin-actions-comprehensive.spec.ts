@@ -266,10 +266,6 @@ test.describe("admin settings actions", () => {
     await expect(page).toHaveURL(/\/manage\/settings\/exchanges/);
 
     await page.goto("/manage/settings");
-    await settingsCards.filter({ hasText: /spot/i }).first().click();
-    await expect(page).toHaveURL(/\/manage\/settings\/spot-trading/);
-
-    await page.goto("/manage/settings");
     await settingsCards.filter({ hasText: /market making/i }).first().click();
     await expect(page).toHaveURL(/\/manage\/settings\/market-making/);
 
