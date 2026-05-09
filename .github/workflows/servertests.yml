@@ -24,4 +24,4 @@ jobs:
       - name: Install dependencies
         run: bun install
       - name: Execute Unit tests
-        run: bun run test
+        run: bun run test -- --runInBand

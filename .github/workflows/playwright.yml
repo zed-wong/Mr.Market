@@ -49,7 +49,7 @@ jobs:
           cd server && bun run start:dev &
           echo "Waiting for localhost:3000 to become available..."
           attempt=1
-          max_attempts=3
+          max_attempts=12
           while [ $attempt -le $max_attempts ]; do
               echo "Attempt $attempt of $max_attempts"
               if $(curl --output /dev/null --silent --head --fail http://localhost:3000); then
