@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { JwtStrategy } from './jwt.strategy';
+import { AuthService } from './auth.service';
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
@@ -16,6 +17,12 @@ describe('JwtStrategy', () => {
             get: jest.fn().mockReturnValue('mock_jwt_secret'), // Mocking the get method
           },
         },
+        {
+          provide: AuthService,
+          useValue: {
+            assertAdminTokenVersion: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -27,9 +34,13 @@ describe('JwtStrategy', () => {
   });
 
   it('should validate the payload and return user data', async () => {
-    const payload = { username: 'admin', sub: 'user-id' };
+    const payload = { username: 'admin', sub: 'user-id', tokenVersion: 1 };
     const result = await strategy.validate(payload);
 
-    expect(result).toEqual({ userId: 'user-id', username: 'admin' });
+    expect(result).toEqual({
+      userId: 'user-id',
+      username: 'admin',
+      tokenVersion: 1,
+    });
   });
 });

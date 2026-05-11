@@ -12,6 +12,8 @@ import { MixinMessage } from 'src/common/entities/mixin/mixin-message.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 
 import { AppController } from './app.controller';
+import { AdminAuthStateEntity } from './common/entities/admin/admin-auth-state.entity';
+import { AdminPasskeyCredentialEntity } from './common/entities/admin/admin-passkey-credential.entity';
 import { APIKeysConfig } from './common/entities/admin/api-keys.entity';
 import { CustomConfigEntity } from './common/entities/admin/custom-config.entity';
 import { CampaignJoin } from './common/entities/campaign/campaign-join.entity';
@@ -132,6 +134,8 @@ function buildRedisConfig(configService: ConfigService) {
         StrategyDefinition,
         Performance,
         SpotOrder,
+        AdminAuthStateEntity,
+        AdminPasskeyCredentialEntity,
         APIKeysConfig,
         CampaignJoin,
         CustomConfigEntity,

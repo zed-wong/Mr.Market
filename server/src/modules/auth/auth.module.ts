@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
+import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
 import { AuthController } from 'src/modules/auth/auth.controller';
 import { AuthService } from 'src/modules/auth/auth.service';
 import { JwtStrategy } from 'src/modules/auth/jwt.strategy';
@@ -13,6 +16,10 @@ import { UserModule } from '../mixin/user/user.module';
     PassportModule,
     ConfigModule,
     UserModule,
+    TypeOrmModule.forFeature([
+      AdminAuthStateEntity,
+      AdminPasskeyCredentialEntity,
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

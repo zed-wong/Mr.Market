@@ -6,8 +6,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import axios from 'axios';
 import { createHash } from 'crypto';
+import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
+import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
 import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { getUserMe } from 'src/common/helpers/mixin/user';
 
@@ -22,11 +25,25 @@ describe('AuthService', () => {
   let authService: AuthService;
   let jwtService: JwtService;
   let userService: UserService;
+  let authStateRepository: {
+    findOne: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+  };
 
   beforeEach(async () => {
     // Mock UserService
     const mockUserService = {
       checkAndUpdateUserToken: jest.fn(),
+    };
+    authStateRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'admin',
+        tokenVersion: 1,
+        failedLoginAttempts: 0,
+      }),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => value),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -55,6 +72,18 @@ describe('AuthService', () => {
         {
           provide: UserService,
           useValue: mockUserService, // Use the mock service
+        },
+        {
+          provide: getRepositoryToken(AdminAuthStateEntity),
+          useValue: authStateRepository,
+        },
+        {
+          provide: getRepositoryToken(AdminPasskeyCredentialEntity),
+          useValue: {
+            find: jest.fn().mockResolvedValue([]),
+            findOne: jest.fn().mockResolvedValue(null),
+            save: jest.fn(async (value) => value),
+          },
         },
       ],
     }).compile();
@@ -104,7 +133,7 @@ describe('AuthService', () => {
       const result = await authService.validateUser(hashedAdminPassword);
 
       expect(signSpy).toHaveBeenCalledWith(
-        { username: 'admin' },
+        { username: 'admin', tokenVersion: 1 },
         { expiresIn: '7d' },
       );
       expect(result).toBe('signed_token');

@@ -16,6 +16,12 @@ describe('AuthController', () => {
           provide: AuthService,
           useValue: {
             validateUser: jest.fn(() => 'mock-jwt'),
+            getSession: jest.fn(),
+            logout: jest.fn(),
+            generatePasskeyRegistrationOptions: jest.fn(),
+            verifyPasskeyRegistration: jest.fn(),
+            generatePasskeyLoginOptions: jest.fn(),
+            verifyPasskeyLogin: jest.fn(),
           },
         },
       ],
@@ -33,6 +39,6 @@ describe('AuthController', () => {
     const result = await controller.login('password');
 
     expect(authService.validateUser).toHaveBeenCalledWith('password');
-    expect(result).toEqual({ access_token: 'mock-jwt' });
+    expect(result).toEqual({ access_token: 'mock-jwt', expires_in: 604800 });
   });
 });

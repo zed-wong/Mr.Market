@@ -49,6 +49,8 @@
     "@nestjs/throttler": "^5.1.2",
     "@nestjs/typeorm": "^10.0.1",
     "@nestjs/websockets": "^10.2.10",
+    "@simplewebauthn/server": "^13.2.2",
+    "@simplewebauthn/types": "^12.0.0",
     "@types/sqlite3": "^5.1.0",
     "axios": "^1.6.7",
     "bignumber.js": "^9.1.2",
