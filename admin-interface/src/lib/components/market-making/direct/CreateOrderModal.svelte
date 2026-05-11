@@ -563,7 +563,7 @@
                                 <input
                                     type="text"
                                     inputmode="decimal"
-                                    placeholder="e.g. 0.5"
+                                    placeholder={$_("admin_direct_mm_spread_placeholder")}
                                     class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
                   {spreadError ? 'border-error' : ''}"
                                     class:pr-10={true}
@@ -638,7 +638,7 @@
                                         <input
                                             type="text"
                                             inputmode="decimal"
-                                            placeholder="e.g. 30"
+                                            placeholder={$_("admin_direct_mm_interval_placeholder")}
                                             class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 pr-8
                               {intervalTimeError ? 'border-error' : ''}"
                                             bind:value={intervalTime}
@@ -679,7 +679,7 @@
                                         <input
                                             type="text"
                                             inputmode="decimal"
-                                            placeholder="e.g. 50000"
+                                            placeholder={$_("admin_direct_mm_target_quote_volume_placeholder")}
                                             class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
                               {targetQuoteVolumeError ? 'border-error' : ''}"
                                             bind:value={targetQuoteVolume}
@@ -714,7 +714,7 @@
                                         <input
                                             type="text"
                                             inputmode="numeric"
-                                            placeholder="e.g. 100"
+                                            placeholder={$_("admin_direct_mm_num_trades_placeholder")}
                                             class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
                           {numTradesError ? 'border-error' : ''}"
                                             bind:value={numTrades}
@@ -748,7 +748,7 @@
                                             <input
                                                 type="text"
                                                 inputmode="decimal"
-                                                placeholder="e.g. 0.1"
+                                                placeholder={$_("admin_direct_mm_price_push_rate_placeholder")}
                                                 class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 pr-10
                               {pricePushRateError ? 'border-error' : ''}"
                                                 bind:value={pricePushRate}
@@ -880,7 +880,7 @@
                                             <input
                                                 type="text"
                                                 inputmode="decimal"
-                                                placeholder="e.g. 50000"
+                                                placeholder={$_("admin_direct_mm_target_quote_volume_placeholder")}
                                                 class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300
                               {targetQuoteVolumeError ? 'border-error' : ''}"
                                                 bind:value={targetQuoteVolume}

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
-    import { formatCampaignType } from "$lib/helpers/market-making/direct/helpers";
+    import { formatCampaignType, getStateLabel } from "$lib/helpers/market-making/direct/helpers";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
 
     export let show = false;
@@ -92,6 +92,7 @@
                     </div>
                     <button
                         class="btn btn-ghost btn-sm btn-circle text-base-content/50"
+                        aria-label={$_("close")}
                         on:click={onCancel}>x</button
                     >
                 </div>
@@ -109,7 +110,7 @@
                         <span
                             class={`text-[11px] font-bold tracking-wider capitalize ${statusColor(status)}`}
                         >
-                            {status}
+                            {getStateLabel(status)}
                         </span>
                     </div>
                 </div>
@@ -117,13 +118,12 @@
 
             <div class="px-7 pb-7 pt-6">
                 <span class="block text-sm leading-7 text-base-content/70">
-                    You are about to join
-                    <span class="font-semibold text-primary"
-                        >{campaignName} {campaignType}</span
-                    >
-                    campaign{exchange !== $_("admin_direct_mm_na")
-                        ? ` on ${exchange}`
-                        : ""}.
+                    {$_("admin_direct_mm_join_campaign_body", {
+                        values: {
+                            campaign: `${campaignName} ${campaignType}`,
+                            exchange,
+                        },
+                    })}
                 </span>
 
                 <div class="mt-6 flex flex-col gap-4">
@@ -147,6 +147,7 @@
                             {#if joinCampaignEvmAddress}
                                 <button
                                     class="btn btn-ghost btn-sm btn-circle h-8 min-h-8 w-8 text-primary"
+                                    aria-label={$_("admin_direct_mm_copy_address")}
                                     on:click={copyAddress}
                                 >
                                     <svg

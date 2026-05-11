@@ -30,15 +30,15 @@
     <div class="flex gap-6">
       <div class="flex flex-col">
         <span class="text-3xl font-bold text-base-content">{total}</span>
-        <span class="text-xs text-base-content/50 mt-0.5">Total</span>
+        <span class="text-xs text-base-content/50 mt-0.5">{$_("total")}</span>
       </div>
       <div class="flex flex-col">
         <span class="text-3xl font-bold text-success">{running}</span>
-        <span class="text-xs text-base-content/50 mt-0.5">Running</span>
+        <span class="text-xs text-base-content/50 mt-0.5">{$_("admin_strategy_status_running")}</span>
       </div>
       <div class="flex flex-col">
         <span class="text-3xl font-bold text-base-content">{stopped}</span>
-        <span class="text-xs text-base-content/50 mt-0.5">Stopped</span>
+        <span class="text-xs text-base-content/50 mt-0.5">{$_("admin_strategy_status_stopped")}</span>
       </div>
     </div>
 

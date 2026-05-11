@@ -321,8 +321,8 @@
                             on:click={togglePasswordVisibility}
                             class="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-base-content/40 hover:text-base-content transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-md"
                             aria-label={showPassword
-                                ? "Hide password"
-                                : "Show password"}
+                                ? $_("admin.hide_password")
+                                : $_("admin.show_password")}
                         >
                             {#if showPassword}
                                 <svg
@@ -394,7 +394,7 @@
                 >
                     {#if $loginLoading}
                         <span class="loading loading-spinner loading-sm"></span>
-                        <span class="text-sm">{$_("loading")}...</span>
+                        <span class="text-sm">{$_("admin.loading")}...</span>
                     {:else}
                         <span class="text-sm font-medium">{$_("login")}</span>
                         <svg
@@ -414,12 +414,6 @@
                 </button>
             </form>
 
-            <!-- Footer note -->
-            <div class="mt-8 pt-6 border-t border-base-300">
-                <p class="text-xs text-base-content/40 text-center">
-                    Admin access only. Unauthorized use is prohibited.
-                </p>
-            </div>
         </div>
     </div>
 </div>

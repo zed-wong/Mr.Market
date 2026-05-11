@@ -126,7 +126,7 @@
           type="button"
           class="btn btn-sm btn-circle btn-ghost"
           on:click={closeDialog}
-          aria-label="Close"
+          aria-label={$_("close")}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -268,6 +268,6 @@
     </div>
   </div>
   <form method="dialog" class="modal-backdrop">
-    <button aria-label="Close">close</button>
+    <button aria-label={$_("close")}>{$_("close")}</button>
   </form>
 </dialog>

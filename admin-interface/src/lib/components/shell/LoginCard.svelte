@@ -262,7 +262,7 @@
       />
       <div class="flex flex-col">
         <span class="text-xl font-semibold tracking-tight text-base-content">Mr.Market</span>
-        <span class="text-sm text-base-content/50">Market Making Engine</span>
+        <span class="text-sm text-base-content/50">{$_('market_making_engine')}</span>
       </div>
     </div>
   </div>
@@ -273,7 +273,7 @@
       <img src="/mr-market-logo-transparent.svg" alt="Mr.Market" class="h-10 w-10" />
       <div class="flex flex-col">
         <span class="text-lg font-semibold tracking-tight text-base-content">Mr.Market</span>
-        <span class="text-xs text-base-content/50">Market Making Engine</span>
+        <span class="text-xs text-base-content/50">{$_('market_making_engine')}</span>
       </div>
     </div>
 
@@ -493,12 +493,6 @@
           </button>
         </div>
       {/if}
-
-      <div class="mt-8 border-t border-base-300 pt-6">
-        <span class="block text-center text-xs text-base-content/40">
-          {$_('admin.login_footer')}
-        </span>
-      </div>
     </div>
   </div>
 </div>

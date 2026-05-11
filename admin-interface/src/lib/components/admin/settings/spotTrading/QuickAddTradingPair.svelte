@@ -180,7 +180,7 @@
     if (!configuredExchanges.length) return;
     const token = localStorage.getItem("admin-access-token");
     if (!token) {
-      toast.error($_("auth_token_missing") || "Auth token missing");
+      toast.error($_("auth_token_missing"));
       return;
     }
     isLoadingMarkets = true;
@@ -248,7 +248,7 @@
   async function submitPair(market: any, baseAsset: any, quoteAsset: any) {
     const token = localStorage.getItem("admin-access-token");
     if (!token) {
-      toast.error($_("auth_token_missing") || "Auth token missing");
+      toast.error($_("auth_token_missing"));
       return;
     }
 
@@ -297,7 +297,7 @@
 
     const token = localStorage.getItem("admin-access-token");
     if (!token) {
-      toast.error($_("auth_token_missing") || "Auth token missing");
+      toast.error($_("auth_token_missing"));
       return;
     }
 
@@ -312,7 +312,7 @@
       ]);
 
       if (!baseAssets.length || !quoteAssets.length) {
-        toast.error($_("no_assets_found") || "No assets found");
+        toast.error($_("no_assets_found"));
         isFocusedAddFlow = false;
         loadingMarket = null;
         return;

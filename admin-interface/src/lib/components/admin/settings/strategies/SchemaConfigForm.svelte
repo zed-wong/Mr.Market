@@ -18,6 +18,36 @@
     export let readOnly = false;
 
     let showRawJson = false;
+
+    const descriptionKeyMap: Record<string, string> = {
+        userId: "admin_strategy_field_user_id_hint",
+        clientId: "admin_strategy_field_client_id_hint",
+        marketMakingOrderId: "admin_strategy_field_market_making_order_id_hint",
+        pair: "admin_strategy_field_pair_hint",
+        exchangeName: "admin_strategy_field_exchange_name_hint",
+        oracleExchangeName: "admin_strategy_field_oracle_exchange_name_hint",
+        bidSpread: "admin_strategy_field_bid_spread_hint",
+        askSpread: "admin_strategy_field_ask_spread_hint",
+        orderAmount: "admin_strategy_field_order_amount_hint",
+        orderRefreshTime: "admin_strategy_field_order_refresh_time_hint",
+        numberOfLayers: "admin_strategy_field_number_of_layers_hint",
+        priceSourceType: "admin_strategy_field_price_source_type_hint",
+        amountChangePerLayer: "admin_strategy_field_amount_change_per_layer_hint",
+        amountChangeType: "admin_strategy_field_amount_change_type_hint",
+        ceilingPrice: "admin_strategy_field_ceiling_price_hint",
+        floorPrice: "admin_strategy_field_floor_price_hint",
+        hangingOrdersEnabled: "admin_strategy_field_hanging_orders_enabled_hint",
+        makerHeavyMode: "admin_strategy_field_maker_heavy_mode_hint",
+        makerHeavyBiasBps: "admin_strategy_field_maker_heavy_bias_bps_hint",
+        inventoryTargetBaseRatio: "admin_strategy_field_inventory_target_base_ratio_hint",
+        inventorySkewFactor: "admin_strategy_field_inventory_skew_factor_hint",
+        currentBaseRatio: "admin_strategy_field_current_base_ratio_hint",
+    };
+
+    function fieldDescription(key: string, description: string): string {
+        const i18nKey = descriptionKeyMap[key];
+        return i18nKey ? $_(i18nKey) : description;
+    }
     let rawJsonText = "";
 
     $: properties = schema.properties || {};
@@ -112,7 +142,7 @@
                             />
                             {#if prop.description}
                                 <span class="text-xs text-base-content/40"
-                                    >{prop.description}</span
+                                    >{fieldDescription(key, prop.description)}</span
                                 >
                             {/if}
                         </label>
@@ -135,14 +165,14 @@
                                 on:change={(e) =>
                                     setFieldValue(key, e.currentTarget.value)}
                             >
-                                <option value="" disabled>Select...</option>
+                                <option value="" disabled>{$_("select_placeholder")}</option>
                                 {#each prop.enum as opt}
                                     <option value={opt}>{opt}</option>
                                 {/each}
                             </select>
                             {#if prop.description}
                                 <span class="text-xs text-base-content/40"
-                                    >{prop.description}</span
+                                    >{fieldDescription(key, prop.description)}</span
                                 >
                             {/if}
                         </label>
@@ -160,7 +190,7 @@
                             <input
                                 id="field-{key}"
                                 type="text"
-                                placeholder="e.g. [1, 2, 3]"
+                                placeholder={$_("array_placeholder")}
                                 class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm font-mono focus:outline-none focus:border-primary border-base-300"
                                 value={Array.isArray(val)
                                     ? JSON.stringify(val)
@@ -179,7 +209,7 @@
                             />
                             {#if prop.description}
                                 <span class="text-xs text-base-content/40"
-                                    >{prop.description}</span
+                                    >{fieldDescription(key, prop.description)}</span
                                 >
                             {/if}
                         </label>
@@ -206,7 +236,7 @@
                             />
                             {#if prop.description}
                                 <span class="text-xs text-base-content/40"
-                                    >{prop.description}</span
+                                    >{fieldDescription(key, prop.description)}</span
                                 >
                             {/if}
                         </label>

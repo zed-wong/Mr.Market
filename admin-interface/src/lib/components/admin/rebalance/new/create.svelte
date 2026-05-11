@@ -71,7 +71,7 @@
         <span class="text-sm"> {$_(item)} </span>
         <input
           type="text"
-          placeholder="Type here"
+          placeholder={$_("type_here")}
           bind:value={items[item]}
           class="input input-bordered w-full max-w-xs focus:outline-none"
         />

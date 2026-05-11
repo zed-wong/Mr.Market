@@ -40,7 +40,7 @@
 
 <button
   type="button"
-  aria-label="close sidebar backdrop"
+  aria-label={$_('close_sidebar_backdrop')}
   class={clsx(
     'fixed inset-0 z-30 bg-base-content/40 transition-opacity duration-300 lg:hidden',
     open ? 'opacity-100' : 'pointer-events-none opacity-0',
@@ -53,7 +53,7 @@
     'fixed top-0 left-0 z-40 h-screen w-72 shrink-0 transition-transform duration-300 ease-in-out',
     open ? 'translate-x-0' : '-translate-x-full',
   )}
-  aria-label="Sidebar"
+  aria-label={$_('sidebar')}
   data-testid="old-admin-sidebar"
 >
   <div class="relative flex h-full flex-1 flex-col border-r border-base-300 bg-base-100">
@@ -71,7 +71,7 @@
         type="button"
         class="btn btn-ghost btn-sm lg:hidden"
         onclick={onClose}
-        aria-label="close sidebar"
+        aria-label={$_('close_sidebar')}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -88,7 +88,7 @@
 
     <nav class="flex-1 overflow-y-auto px-3 py-4">
       <div class="mb-3 px-2">
-        <span class="text-xs font-semibold text-base-content/50 capitalize">menu</span>
+        <span class="text-xs font-semibold text-base-content/50 capitalize">{$_('menu')}</span>
       </div>
       <ul class="menu menu-sm gap-1">
         {#each NAV_ITEMS as item (item.key)}

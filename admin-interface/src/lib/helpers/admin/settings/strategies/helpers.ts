@@ -1,3 +1,6 @@
+import { get } from "svelte/store";
+import { _ } from "svelte-i18n";
+
 export function formatDate(value: string): string {
   if (!value) return "—";
 
@@ -40,19 +43,20 @@ export function formatRelativeTime(value: string): string {
 }
 
 export function getControllerTypeLabel(type: string): string {
+  const $_ = get(_);
   switch (type) {
     case "pureMarketMaking":
-      return "Market Making";
+      return $_("admin_strategy_controller_market_making");
     case "arbitrage":
-      return "Arbitrage";
+      return $_("admin_strategy_controller_arbitrage");
     case "volume":
-      return "Volume";
+      return $_("admin_strategy_controller_volume");
     case "dualAccountBestCapacityVolume":
-      return "Dual Account Best Capacity";
+      return $_("admin_strategy_controller_dual_account_best_capacity");
     case "dualAccountVolume":
-      return "Dual Account Volume";
+      return $_("admin_strategy_controller_dual_account_volume");
     case "timeIndicator":
-      return "Time Indicator";
+      return $_("admin_strategy_controller_time_indicator");
     default:
       return type || "—";
   }
@@ -78,17 +82,18 @@ export function getControllerTypeClasses(type: string): string {
 }
 
 export function getStatusLabel(status: string): string {
+  const $_ = get(_);
   switch (status) {
     case "running":
-      return "Running";
+      return $_("admin_strategy_status_running");
     case "stopped":
-      return "Stopped";
+      return $_("admin_strategy_status_stopped");
     case "failed":
-      return "Failed";
+      return $_("admin_strategy_status_failed");
     case "created":
-      return "Created";
+      return $_("admin_strategy_status_created");
     case "stale":
-      return "Stale";
+      return $_("admin_strategy_status_stale");
     default:
       return status || "—";
   }
@@ -112,11 +117,12 @@ export function getStatusClasses(status: string): string {
 }
 
 export function getVisibilityLabel(visibility: string): string {
+  const $_ = get(_);
   switch (visibility) {
     case "public":
-      return "Public";
+      return $_("admin_strategy_visibility_public");
     case "admin":
-      return "Admin";
+      return $_("admin_strategy_visibility_admin");
     default:
       return visibility || "—";
   }

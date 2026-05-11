@@ -3,6 +3,7 @@
     import {
         formatFundAmount,
         formatCampaignType,
+        getStateLabel,
     } from "$lib/helpers/market-making/direct/helpers";
     import type { AdminCampaign } from "$lib/types/hufi/admin-direct-market-making";
 
@@ -43,6 +44,12 @@
         })
         .sort((a, b) => Number(!!a.joined) - Number(!!b.joined));
 
+    function localeForFormatting(): string {
+        return typeof localStorage !== "undefined"
+            ? localStorage.getItem("admin-locale") || "en-US"
+            : "en-US";
+    }
+
     function getDetail(campaign: AdminCampaign, key: string): unknown {
         const details = campaign.details;
         if (details && typeof details === "object" && !Array.isArray(details)) {
@@ -55,9 +62,10 @@
         if (!d) return "";
         const date = new Date(String(d));
         if (isNaN(date.getTime())) return String(d);
-        return date.toLocaleDateString("en-US", {
+        return date.toLocaleDateString(localeForFormatting(), {
             month: "short",
             day: "numeric",
+            year: "numeric",
         });
     }
 
@@ -65,7 +73,7 @@
         if (value === null || value === undefined || value === "") return "—";
         const num = Number(value);
         if (Number.isNaN(num)) return String(value);
-        return num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+        return num.toLocaleString(localeForFormatting(), { maximumFractionDigits: 2 });
     }
 
     function getTargetLabel(type: unknown): string {
@@ -305,7 +313,7 @@
                                 <span
                                     class={`text-[10px] font-bold tracking-wider capitalize rounded-md px-2 py-0.5 ${statusColor(String(campaign.status || "active"))}`}
                                 >
-                                    {String(campaign.status || "active")}
+                                    {getStateLabel(String(campaign.status || "active"))}
                                 </span>
                             </div>
                             <div

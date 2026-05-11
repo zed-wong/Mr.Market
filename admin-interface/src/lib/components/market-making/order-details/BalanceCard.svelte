@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
+
     export let baseSymbol: string;
     export let quoteSymbol: string;
     export let baseAmount: string | number;
@@ -6,7 +8,7 @@
 </script>
 
 <div class="mx-4 mt-8">
-    <h3 class="text-sm font-bold text-gray-500 mb-3 px-1">Current Balance</h3>
+    <h3 class="text-sm font-bold text-gray-500 mb-3 px-1">{$_("current_balance")}</h3>
 
     <div
         class="bg-white rounded-2xl shadow-sm border border-gray-50 overflow-hidden"

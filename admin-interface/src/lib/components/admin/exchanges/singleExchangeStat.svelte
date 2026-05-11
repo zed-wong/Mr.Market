@@ -1,6 +1,7 @@
 <script lang="ts">
 	import emptyToken from '$lib/images/empty-token.svg';
   import { findExchangeIconByIdentifier } from "$lib/helpers/helpers";
+  import { _ } from "svelte-i18n";
 
   export let exchange = {
     name: 'binance',
@@ -22,11 +23,11 @@
       <span class="capitalize">{exchange.name}</span>
     </div>
     {#if exchange.failure > 0}
-      <div class="stat-value text-red-500 my-1 mr-2">{exchange.failure} failure</div>
-      <div class="stat-desc">{exchange.active} active</div>
+      <div class="stat-value text-red-500 my-1 mr-2">{exchange.failure} {$_("failure")}</div>
+      <div class="stat-desc">{exchange.active} {$_("active")}</div>
     {:else}
-      <div class="stat-value my-1 mr-2">{exchange.active} active</div>
-      <div class="stat-desc">0 failure</div>
+      <div class="stat-value my-1 mr-2">{exchange.active} {$_("active")}</div>
+      <div class="stat-desc">0 {$_("failure")}</div>
     {/if}
   </div>
 </div>

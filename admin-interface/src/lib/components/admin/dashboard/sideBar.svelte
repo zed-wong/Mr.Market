@@ -75,7 +75,7 @@
 
 <button
     type="button"
-    aria-label="close sidebar backdrop"
+    aria-label={$_("close_sidebar_backdrop")}
     class={clsx(
         "fixed inset-0 z-30 bg-base-content/40 transition-opacity duration-300 lg:hidden",
         sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0",
@@ -89,7 +89,7 @@
         "fixed top-0 left-0 z-40 h-screen w-72 shrink-0 transition-transform duration-300 ease-in-out",
         sidebarOpen ? "translate-x-0" : "-translate-x-full",
     )}
-    aria-label="Sidebar"
+    aria-label={$_("sidebar")}
 >
     <div
         class="relative flex h-full flex-1 flex-col border-r border-base-300 bg-base-100"
@@ -169,14 +169,14 @@
                     </div>
                 </div>
                 <span class="text-lg font-bold text-base-content"
-                    >{$_("Mr.Market")}</span
+                    >Mr.Market</span
                 >
             </button>
 
             <button
                 class="btn btn-ghost btn-sm lg:hidden"
                 on:click={() => (sidebarOpen = false)}
-                aria-label="close sidebar"
+                aria-label={$_("close_sidebar")}
             >
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -319,6 +319,6 @@
         </div>
     </div>
     <form method="dialog" class="modal-backdrop">
-        <button aria-label="close">close</button>
+        <button aria-label={$_("close")}>{$_("close")}</button>
     </form>
 </dialog>

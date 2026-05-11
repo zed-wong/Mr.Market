@@ -237,8 +237,8 @@
                             class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
                             bind:value={visibility}
                         >
-                            <option value="public">Public</option>
-                            <option value="admin">Admin</option>
+                            <option value="public">{$_("admin_strategy_visibility_public")}</option>
+                            <option value="admin">{$_("admin_strategy_visibility_admin")}</option>
                         </select>
                     </div>
                 </div>

@@ -369,12 +369,12 @@
             missingDualAccount
         ) {
             const missing: string[] = [];
-            if (!token) missing.push("token");
-            if (!startExchangeName) missing.push("exchange");
-            if (!startPair) missing.push("pair");
-            if (!startStrategyDefinitionId) missing.push("strategy");
-            if (missingSingleAccount) missing.push("API key");
-            if (missingDualAccount) missing.push("maker/taker API keys");
+            if (!token) missing.push($_("auth_token_missing"));
+            if (!startExchangeName) missing.push($_("exchange"));
+            if (!startPair) missing.push($_("pair"));
+            if (!startStrategyDefinitionId) missing.push($_("admin_direct_mm_strategy"));
+            if (missingSingleAccount) missing.push($_("admin_direct_mm_api_key"));
+            if (missingDualAccount) missing.push($_("admin_direct_mm_maker_taker_api_keys"));
             toast.error($_("admin_direct_mm_error_missing_fields"), {
                 description: `${$_("admin_direct_mm_recovery_required_fields")} (${missing.join(", ")})`,
             });

@@ -1,9 +1,12 @@
 <script lang="ts">
 	import emptyToken from '$lib/images/empty-token.svg';
+  import { _ } from "svelte-i18n";
   import { findCoinIconBySymbol } from "$lib/helpers/helpers";
   import type { AdminSwapOrder } from "$lib/types/hufi/admin";
 
   export let order: AdminSwapOrder;
+
+  const orderStateKey = (state: string) => `order_state_${state.toLowerCase()}`;
 </script>
 
 <tr>
@@ -34,7 +37,7 @@
   </td>
   <td>
     <span>
-      {order.state}
+      {$_(orderStateKey(order.state))}
     </span>
   </td>
   <td>

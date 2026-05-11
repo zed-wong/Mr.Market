@@ -11,7 +11,7 @@
 </script>
 
 <div class="mx-4 mt-8">
-    <h3 class="text-sm font-bold text-gray-500 mb-3 px-1">Order Details</h3>
+    <h3 class="text-sm font-bold text-gray-500 mb-3 px-1">{$_("order_details")}</h3>
 
     <div
         class="bg-white rounded-2xl shadow-sm border border-gray-50 p-5 space-y-6"

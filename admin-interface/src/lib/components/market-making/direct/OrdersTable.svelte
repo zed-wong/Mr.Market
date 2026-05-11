@@ -13,6 +13,12 @@
   export let onRemoveOrder: (order: DirectOrderSummary) => void;
   export let onOrderClick: (order: DirectOrderSummary) => void;
 
+  function localeForFormatting(): string {
+    return typeof localStorage !== "undefined"
+      ? localStorage.getItem("admin-locale") || "en-US"
+      : "en-US";
+  }
+
   function formatPair(pair: string): string {
     return pair.replace(/[-_]/g, " / ");
   }
@@ -23,11 +29,11 @@
     const date = new Date(createdAt);
     if (Number.isNaN(date.getTime())) return $_("admin_direct_mm_na");
 
-    return `${date.toLocaleDateString("en-US", {
+    return `${date.toLocaleDateString(localeForFormatting(), {
       month: "short",
       day: "numeric",
       year: "numeric",
-    })} • ${date.toLocaleTimeString("en-US", {
+    })} • ${date.toLocaleTimeString(localeForFormatting(), {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,

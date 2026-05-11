@@ -32,7 +32,7 @@
       type="button"
       class="btn btn-ghost btn-sm"
       onclick={onToggleSidebar}
-      aria-label="toggle sidebar"
+      aria-label={$_('toggle_sidebar')}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -71,7 +71,7 @@
         type="button"
         class="btn btn-ghost btn-sm capitalize"
         onclick={toggleDarkTheme}
-        aria-label="toggle theme"
+        aria-label={$_('toggle_theme')}
       >
         {$darkTheme ? $_('admin.theme_light') : $_('admin.theme_dark')}
       </button>
