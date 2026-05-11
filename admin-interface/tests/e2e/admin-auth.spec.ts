@@ -59,11 +59,16 @@ const loginWithPassword = async (page: Page) => {
       response.request().method() === 'POST',
   );
   await page.goto('/login');
+  await expect(page.getByTestId('old-admin-login-layout')).toBeVisible();
+  await expect(page.getByTestId('old-admin-market-depth')).toBeVisible();
+  await expect(page.getByText(/market making engine/i).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /login with passkey/i })).toBeVisible();
   await page.getByLabel(/enter password/i).fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: /^login$/i }).click();
   expect([200, 201]).toContain((await loginResponse).status());
   await expect(page).toHaveURL('/');
   await expect(page.locator('aside[aria-label="Sidebar"]')).toBeVisible();
+  await expect(page.getByTestId('old-admin-sidebar')).toBeVisible();
   await expect.poll(() => getTokenPresence(page)).toBe(true);
 };
 
@@ -110,6 +115,7 @@ test('protected routes redirect unauthenticated sessions to login', async ({ pag
   for (const route of ['/', '/settings', '/orders/spot', '/market-making/direct', '/rebalance/new']) {
     await page.goto(route);
     await expectUnauthenticated(page);
+    await expect(page.getByTestId('old-admin-login-layout')).toBeVisible();
   }
 });
 
@@ -131,6 +137,21 @@ test('password login, session persistence, invalid token clearing, login redirec
   await page.reload();
   await expect(page).toHaveURL('/');
   await expect(page.locator('aside[aria-label="Sidebar"]')).toBeVisible();
+  await expect(page.getByTestId('old-admin-sidebar')).toBeVisible();
+  await expect(page.locator('main')).toContainText(/dashboard overview/i);
+  await expect(page.locator('body')).not.toContainText('/manage');
+  expect(await page.evaluate(() => document.body.innerHTML.includes('/manage'))).toBe(false);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByTestId('old-admin-sidebar')).toBeVisible();
+  await expect(page.getByRole('button', { name: /register passkey/i })).toBeVisible();
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await expect(page.getByRole('button', { name: /toggle sidebar/i })).toBeVisible();
+  await page.getByRole('button', { name: /toggle sidebar/i }).click();
+  await expect(page.getByTestId('old-admin-sidebar')).toBeVisible();
+  await expect(page.getByRole('button', { name: /logout/i })).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(page.getByRole('button', { name: /logout/i })).toBeVisible();
 
   const storageState = await context.storageState();
   const freshContext = await context.browser()!.newContext({ storageState });
@@ -184,6 +205,7 @@ test('invalid password remains unauthenticated', async ({ page }) => {
   await expectUnauthenticated(page);
 });
 
+
 test('passkey registration and login create a fresh valid session with localhost RP', async ({
   page,
   context,
@@ -229,6 +251,7 @@ test('passkey registration and login create a fresh valid session with localhost
     await page.goto(route);
     await expect(page).toHaveURL(route);
     await expect(page.locator('aside[aria-label="Sidebar"]')).toBeVisible();
+    await expect(page.getByTestId('old-admin-sidebar')).toBeVisible();
   }
 
   expect(network.pageErrors).toEqual([]);
@@ -246,6 +269,7 @@ test('passkey login without a credential fails gracefully', async ({ page, conte
   await addVirtualAuthenticator(context, page);
 
   await page.goto('/login');
+  await expect(page.getByTestId('old-admin-login-layout')).toBeVisible();
   await page.getByRole('button', { name: /login with passkey/i }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('alert')).toBeVisible();
