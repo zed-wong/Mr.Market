@@ -141,7 +141,7 @@
 
     {#if keys.length === 0}
         <div
-            class="flex flex-col items-center justify-center p-12 text-center text-base-content/60 border border-base-200 rounded-box bg-base-100/50 dashboard-card"
+            class="card flex flex-col items-center justify-center p-12 text-center text-base-content/60 border border-base-200 rounded-box bg-base-100/50 dashboard-card"
         >
             <svg
                 xmlns="http://www.w3.org/2000/svg"

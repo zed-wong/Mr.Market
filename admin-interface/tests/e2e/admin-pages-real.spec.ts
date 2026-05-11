@@ -49,6 +49,94 @@ const ROUTE_CONTENT: Record<string, RegExp> = {
   '/settings/strategies': /strategies|strategy definitions/i,
 };
 
+const ROUTE_STRUCTURES: Record<string, Array<{ name: string; selector?: string; text?: RegExp }>> = {
+  '/': [
+    { name: 'dashboard card', selector: '[data-testid="admin-dashboard-shell"] .card' },
+    { name: 'dashboard overview title', text: /dashboard overview/i },
+  ],
+  '/users': [
+    { name: 'user search input', selector: 'input[placeholder*="Search" i]' },
+    { name: 'user table', selector: 'table' },
+  ],
+  '/exchanges': [
+    { name: 'exchange stats', text: /exchange/i },
+    { name: 'api key section', text: /api key/i },
+  ],
+  '/health': [
+    { name: 'health stats', text: /health/i },
+    { name: 'errors section', text: /error/i },
+  ],
+  '/message': [
+    { name: 'message stats', text: /message/i },
+    { name: 'messages table', selector: 'table' },
+  ],
+  '/orders': [
+    { name: 'spot orders section', text: /spot/i },
+    { name: 'swap orders section', text: /swap/i },
+  ],
+  '/orders/spot': [
+    { name: 'spot orders route card', selector: '[data-testid="spot-orders-route-content"] .card-body' },
+    { name: 'spot order activity table', selector: 'table' },
+    { name: 'old-style status badge', selector: '.badge' },
+  ],
+  '/orders/swap': [
+    { name: 'swap orders route card', selector: '[data-testid="swap-orders-route-content"] .card-body' },
+    { name: 'swap order activity table', selector: 'table' },
+    { name: 'old-style status badge', selector: '.badge' },
+  ],
+  '/revenue': [
+    { name: 'revenue route card', selector: '[data-testid="revenue-route-content"] .card-body' },
+    { name: 'revenue stats', selector: '.stats .stat' },
+    { name: 'revenue table', selector: 'table' },
+  ],
+  '/market-making/direct': [
+    { name: 'direct market making workspace', text: /direct market making/i },
+    { name: 'orders panel', text: /orders/i },
+  ],
+  '/rebalance': [
+    { name: 'minimum balance screen', text: /minimum[_\s-]*balance[_\s-]*settings/i },
+    { name: 'rebalance table or empty state', selector: 'table, .card' },
+  ],
+  '/rebalance/new': [
+    { name: 'minimum balance create form', text: /create[_\s-]*new[_\s-]*minimum[_\s-]*balance[_\s-]*record/i },
+    { name: 'create form controls', selector: 'input, select' },
+  ],
+  '/settings': [
+    { name: 'settings grid', selector: '[data-testid="settings-card-grid"]' },
+    { name: 'exchanges settings card', selector: '[data-testid="settings-card-exchanges"]' },
+    { name: 'spot trading settings card', selector: '[data-testid="settings-card-spot_trading"]' },
+    { name: 'market making settings card', selector: '[data-testid="settings-card-market_making"]' },
+    { name: 'fees settings card', selector: '[data-testid="settings-card-fees"]' },
+    { name: 'api keys settings card', selector: '[data-testid="settings-card-api_keys"]' },
+    { name: 'strategies settings card', selector: '[data-testid="settings-card-strategies"]' },
+    { name: 'direct market making settings card', selector: '[data-testid="settings-card-direct_market_making"]' },
+  ],
+  '/settings/api-keys': [
+    { name: 'api key add control', text: /add|api key/i },
+    { name: 'api key list card', selector: '.card, table' },
+  ],
+  '/settings/exchanges': [
+    { name: 'exchange add control', text: /add|exchange/i },
+    { name: 'exchange list', selector: '.card, table' },
+  ],
+  '/settings/fees': [
+    { name: 'global fee controls', text: /global[_\s-]*fees/i },
+    { name: 'fee override section', text: /override|spot fee|market making fee/i },
+  ],
+  '/settings/spot-trading': [
+    { name: 'spot trading add control', text: /spot[_\s-]*trading|trading pairs/i },
+    { name: 'trading pair list', selector: '.card, table' },
+  ],
+  '/settings/market-making': [
+    { name: 'market making add control', text: /market[_\s-]*making|market making pairs/i },
+    { name: 'market making pair list', selector: '.card, table' },
+  ],
+  '/settings/strategies': [
+    { name: 'strategy summary', text: /strategy definitions|strategy instances|definitions/i },
+    { name: 'strategy tables or cards', selector: '.card, table' },
+  ],
+};
+
 const installRouteSweepAssertions = (page: Page) => {
   const pageErrors: string[] = [];
   const apiFailures: string[] = [];
@@ -100,6 +188,20 @@ const expectRouteLoaded = async (page: Page, route: string) => {
   await expect(page.locator('main'), `route ${route} should render route-specific content`).toContainText(
     ROUTE_CONTENT[route],
   );
+  for (const marker of ROUTE_STRUCTURES[route]) {
+    if (marker.selector) {
+      await expect(
+        page.locator(marker.selector).first(),
+        `route ${route} should render old-style ${marker.name}`,
+      ).toBeVisible();
+    }
+    if (marker.text) {
+      await expect(
+        page.locator('main'),
+        `route ${route} should render old-style ${marker.name}`,
+      ).toContainText(marker.text);
+    }
+  }
 };
 
 test('admin page E2E contains no backend stubs or fake backend port', async () => {
@@ -110,6 +212,7 @@ test('admin page E2E contains no backend stubs or fake backend port', async () =
 
   expect(spec).not.toContain(`route.${'fulfill'}`);
   expect(spec).toContain('ROUTE_CONTENT');
+  expect(spec).toContain('ROUTE_STRUCTURES');
   expect(config).not.toContain('59999');
   expect(config).toContain('http://localhost:4174');
   expect(config).toContain('http://127.0.0.1:3000');

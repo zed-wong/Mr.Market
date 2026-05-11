@@ -62,7 +62,7 @@ const loginWithPassword = async (page: Page) => {
   await expect(page.getByTestId('old-admin-login-layout')).toBeVisible();
   await expect(page.getByTestId('old-admin-market-depth')).toBeVisible();
   await expect(page.getByText(/market making engine/i).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: /login with passkey/i })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /passkey/i })).toBeVisible();
   await page.getByLabel(/enter password/i).fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: /^login$/i }).click();
   expect([200, 201]).toContain((await loginResponse).status());
@@ -233,6 +233,7 @@ test('passkey registration and login create a fresh valid session with localhost
 
   const loginOptions = page.waitForResponse(`${API_ORIGIN}/auth/passkeys/login/options`);
   const loginVerify = page.waitForResponse(`${API_ORIGIN}/auth/passkeys/login/verify`);
+  await page.getByRole('tab', { name: /passkey/i }).click();
   await page.getByRole('button', { name: /login with passkey/i }).click();
   await expect((await loginOptions).status()).toBe(201);
   await expect((await loginVerify).status()).toBe(201);
@@ -270,6 +271,7 @@ test('passkey login without a credential fails gracefully', async ({ page, conte
 
   await page.goto('/login');
   await expect(page.getByTestId('old-admin-login-layout')).toBeVisible();
+  await page.getByRole('tab', { name: /passkey/i }).click();
   await page.getByRole('button', { name: /login with passkey/i }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('alert')).toBeVisible();
@@ -294,6 +296,7 @@ test('cancelled WebAuthn operations leave auth state unchanged', async ({ page }
   });
 
   await page.goto('/login');
+  await page.getByRole('tab', { name: /passkey/i }).click();
   await page.getByRole('button', { name: /login with passkey/i }).click();
   await expect(page.getByRole('alert')).toBeVisible();
   await expect.poll(() => getTokenPresence(page)).toBe(false);
