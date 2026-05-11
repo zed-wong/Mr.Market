@@ -42,7 +42,7 @@
   <div class="m-7 flex items-center space-x-3">
     <button
       on:click={() => {
-        goto("/manage/rebalance");
+        goto("/rebalance");
       }}
     >
       <svg

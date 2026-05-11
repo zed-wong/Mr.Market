@@ -92,7 +92,7 @@
     <div class="flex items-center justify-between mb-4">
       <span class="text-lg font-semibold leading-none text-base-content">{$_("latest_users")}</span>
       <a
-        href="/manage/users"
+        href="/users"
         class="btn btn-ghost btn-sm normal-case"
       >
         {$_("view_all")}

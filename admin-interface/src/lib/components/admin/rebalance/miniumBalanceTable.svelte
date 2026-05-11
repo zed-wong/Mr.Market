@@ -21,7 +21,9 @@
     return await fetchMiniumBalanceSettings(token);
   };
   (async () => {
-    table = (await fetchData()) as any[];
+    if (!TEMPORARY_SKIP) {
+      table = (await fetchData()) as any[];
+    }
   })();
 </script>
 
@@ -34,7 +36,7 @@
       <button
         class="btn btn-xs btn-ghost hover:bg-base-100 no-animation flex items-center"
         on:click={() => {
-          goto("/manage/rebalance/new");
+          goto("/rebalance/new");
         }}
       >
         <svg

@@ -49,7 +49,7 @@
     $: {
         activeKey = "";
 
-        if (currentPath === "/manage") {
+        if (currentPath === "/") {
             activeKey = "dashboard";
         }
 
@@ -99,7 +99,7 @@
         >
             <button
                 class="flex items-center gap-3"
-                on:click={() => goto("/manage/settings")}
+                on:click={() => goto("/settings")}
             >
                 <div class="avatar placeholder">
                     <div

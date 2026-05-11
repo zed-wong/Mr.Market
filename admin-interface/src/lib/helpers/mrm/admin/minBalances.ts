@@ -1,46 +1,20 @@
-import { MRM_BACKEND_URL } from "$lib/helpers/constants";
+import { apiFetch } from "$lib/helpers/api/client";
 
 export const fetchRebalanceExchanges = async (jwtToken: string): Promise<unknown> => {
-  const url = `${MRM_BACKEND_URL}/rebalance/minimum_balance/exchanges`;
-
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${jwtToken}`,
-      },
+    return await apiFetch('/rebalance/minimum_balance/exchanges', {
+      headers: { Authorization: `Bearer ${jwtToken}` },
     });
-
-    if (!response.ok) {
-      throw new Error(`Error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data;
   } catch (error) {
     console.error('Failed to fetch minium balance settings:', error);
     throw error;
   }
 }
 export const fetchMiniumBalanceSettings = async (jwtToken: string): Promise<unknown> => {
-  const url = `${MRM_BACKEND_URL}/rebalance/minimum_balance/all`;
-
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${jwtToken}`,
-      },
+    return await apiFetch('/rebalance/minimum_balance/all', {
+      headers: { Authorization: `Bearer ${jwtToken}` },
     });
-
-    if (!response.ok) {
-      throw new Error(`Error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data;
   } catch (error) {
     console.error('Failed to fetch minium balance settings:', error);
     throw error;
@@ -48,24 +22,12 @@ export const fetchMiniumBalanceSettings = async (jwtToken: string): Promise<unkn
 }
 
 export const addMinimumBalanceSetting = async (jwtToken: string, settings: { symbol: string; assetId: string; exchangeName: string; minimumBalance: string; }): Promise<unknown> => {
-  const url = `${MRM_BACKEND_URL}/rebalance/minimum_balance/add`;
-
   try {
-    const response = await fetch(url, {
+    return await apiFetch('/rebalance/minimum_balance/add', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${jwtToken}`,
-      },
-      body: JSON.stringify(settings),
+      headers: { Authorization: `Bearer ${jwtToken}` },
+      json: settings,
     });
-
-    if (!response.ok) {
-      throw new Error(`Error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data;
   } catch (error) {
     console.error('Failed to add minimum balance setting:', error);
     throw error;
@@ -73,23 +35,12 @@ export const addMinimumBalanceSetting = async (jwtToken: string, settings: { sym
 }
 
 export const updateMinimumBalanceSetting = async (jwtToken: string, settings: { assetId: string; exchangeName: string; minimumBalance: string; }): Promise<unknown> => {
-  const url = `${MRM_BACKEND_URL}/rebalance/minimum_balance/update`;
-
   try {
-    const response = await fetch(url, {
+    const data = await apiFetch<{ message?: unknown }>('/rebalance/minimum_balance/update', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${jwtToken}`,
-      },
-      body: JSON.stringify(settings),
+      headers: { Authorization: `Bearer ${jwtToken}` },
+      json: settings,
     });
-
-    if (!response.ok) {
-      throw new Error(`Error: ${response.status}`);
-    }
-
-    const data = await response.json();
     return {
       message: data.message,
     };

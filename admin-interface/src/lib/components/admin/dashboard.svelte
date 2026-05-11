@@ -17,9 +17,9 @@
           <span class="text-base-content/70">{$_("admin_dashboard_subtitle")}</span>
         </div>
         <div class="flex flex-wrap items-center gap-3">
-          <a href="/manage/settings" class="btn btn-primary btn-sm md:btn-md">{$_("settings")}</a>
-          <a href="/manage/orders" class="btn btn-ghost btn-sm md:btn-md">{$_("orders")}</a>
-          <a href="/manage/users" class="btn btn-ghost btn-sm md:btn-md">{$_("users")}</a>
+          <a href="/settings" class="btn btn-primary btn-sm md:btn-md">{$_("settings")}</a>
+          <a href="/orders" class="btn btn-ghost btn-sm md:btn-md">{$_("orders")}</a>
+          <a href="/users" class="btn btn-ghost btn-sm md:btn-md">{$_("users")}</a>
         </div>
       </div>
     </div>

@@ -17,43 +17,43 @@ export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
     {
       key: "settings",
       labelKey: "settings",
-      value: "/manage/settings",
+      value: "/settings",
       icon: "settings",
       children: [
         {
           key: "exchanges",
           labelKey: "exchanges",
-          value: "/manage/settings/exchanges",
+          value: "/settings/exchanges",
         },
         {
           key: "spot-trading",
           labelKey: "spot_trading",
-          value: "/manage/settings/spot-trading",
+          value: "/settings/spot-trading",
         },
         {
           key: "market-making",
           labelKey: "market_making",
-          value: "/manage/settings/market-making",
+          value: "/settings/market-making",
         },
         {
           key: "fees",
           labelKey: "fees",
-          value: "/manage/settings/fees",
+          value: "/settings/fees",
         },
         {
           key: "api-keys",
           labelKey: "api_keys",
-          value: "/manage/settings/api-keys",
+          value: "/settings/api-keys",
         },
         {
           key: "strategies",
           labelKey: "strategies",
-          value: "/manage/settings/strategies",
+          value: "/settings/strategies",
         },
         {
           key: "direct-market-making",
           labelKey: "admin_direct_mm_nav",
-          value: "/manage/market-making/direct",
+          value: "/market-making/direct",
         },
       ],
     },

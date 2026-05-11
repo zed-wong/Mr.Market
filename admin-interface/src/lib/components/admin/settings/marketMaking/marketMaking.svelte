@@ -6,7 +6,7 @@
   import { invalidate } from "$app/navigation";
   import { mixinAsset } from "$lib/helpers/mixin/mixin";
   import { getRandomDelay } from "$lib/helpers/utils";
-  import { getUuid } from "@mixin.dev/mixin-node-sdk";
+  import { getUuid } from "$lib/helpers/uuid";
   import type {
     MarketMakingPair,
     MarketMakingPairDto,

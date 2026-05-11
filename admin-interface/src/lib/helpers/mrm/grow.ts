@@ -8,9 +8,14 @@ const handleResponse = async (response: Response) => {
   return await response.json();
 };
 
-export const getGrowBasicInfo = async (): Promise<GrowInfo> => {
+const bearerHeaders = (token?: string) =>
+  token ? { Authorization: `Bearer ${token}` } : undefined;
+
+export const getGrowBasicInfo = async (token?: string): Promise<GrowInfo> => {
   try {
-    const response = await fetch(`${MRM_BACKEND_URL}/grow/info`);
+    const response = await fetch(`${MRM_BACKEND_URL}/grow/info`, {
+      headers: bearerHeaders(token),
+    });
     return await handleResponse(response);
   } catch (error) {
     console.error("Error fetching grow basic info:", error);

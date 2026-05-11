@@ -140,7 +140,7 @@
 
     <button
         class="w-full mt-4 py-3 rounded-xl bg-blue-50 text-blue-600 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors border-none"
-        on:click={() => window.open("/manage/settings/api-keys", "_blank")}
+        on:click={() => window.open("/settings/api-keys", "_blank")}
     >
         <svg
             xmlns="http://www.w3.org/2000/svg"

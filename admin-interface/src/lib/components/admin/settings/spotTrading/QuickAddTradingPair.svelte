@@ -3,7 +3,7 @@
   import { _ } from "svelte-i18n";
   import { toast } from "svelte-sonner";
   import { createEventDispatcher } from "svelte";
-  import { getUuid } from "@mixin.dev/mixin-node-sdk";
+  import { getUuid } from "$lib/helpers/uuid";
   import { MIXIN_API_BASE_URL } from "$lib/helpers/constants";
   import { mixinAsset } from "$lib/helpers/mixin/mixin";
   import { addSpotTradingPair } from "$lib/helpers/mrm/admin/spotdata";

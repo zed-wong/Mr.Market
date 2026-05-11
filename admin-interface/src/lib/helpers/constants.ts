@@ -9,8 +9,16 @@ export const OAUTH_SCOPE = env.PUBLIC_OAUTH_SCOPE || 'PROFILE:READ ASSETS:READ S
 export const MIXIN_MESSENGER_INSTALL = env.PUBLIC_MIXIN_MESSENGER_INSTALL || 'https://messenger.mixin.one/install'
 export const MIXIN_API_BASE_URL = env.PUBLIC_MIXIN_API_BASE_URL || 'https://api.mixin.one'
 
+const requireMrmBackendUrl = (): string => {
+  const raw = env.PUBLIC_MRM_BACKEND_URL;
+  if (!raw || raw.trim().length === 0) {
+    throw new Error('PUBLIC_MRM_BACKEND_URL is not set. Configure it before building admin-interface.');
+  }
+  return raw.replace(/\/$/, '');
+};
+
 export const MRM_SOCKET_URL = env.PUBLIC_MRM_SOCKET_URL || '//mr-market-server.onrender.com'
-export const MRM_BACKEND_URL = env.PUBLIC_MRM_BACKEND_URL || 'https://mr-market-server.onrender.com'
+export const MRM_BACKEND_URL = requireMrmBackendUrl()
 export const HUFI_CAMPAGIN_LAUNCHER_URL = env.PUBLIC_HUFI_CAMPAGIN_LAUNCHER_URL || 'https://cl.hu.finance'
 export const HUMAN_PROTOCOL_GROUP_URL = env.PUBLIC_HUMAN_PROTOCOL_GROUP_URL || 'https://mixin.one/apps/5a33fc52-f445-4170-a06a-47f8be94a8f3'
 
@@ -94,9 +102,5 @@ export const maskOption = {
 }
 
 export const getMrmBackendUrl = (): string => {
-  const raw = env.PUBLIC_MRM_BACKEND_URL;
-  if (!raw || raw.trim().length === 0) {
-    throw new Error('PUBLIC_MRM_BACKEND_URL is not set. Configure it before building admin-interface.');
-  }
-  return raw.replace(/\/$/, '');
+  return requireMrmBackendUrl();
 };

@@ -406,8 +406,8 @@
                                                             goto(
                                                                 override.type ===
                                                                     "spot"
-                                                                    ? "/manage/settings/spot-trading"
-                                                                    : "/manage/settings/market-making",
+                                                                    ? "/settings/spot-trading"
+                                                                    : "/settings/market-making",
                                                             );
                                                         }}
                                                         class="btn btn-xs btn-ghost gap-1"
@@ -453,7 +453,7 @@
                     <button
                         class="btn btn-primary justify-start gap-3"
                         on:click={() => {
-                            goto("/manage/settings/spot-trading");
+                            goto("/settings/spot-trading");
                         }}
                     >
                         <svg
@@ -475,7 +475,7 @@
                     <button
                         class="btn btn-accent justify-start gap-3"
                         on:click={() => {
-                            goto("/manage/settings/market-making");
+                            goto("/settings/market-making");
                         }}
                     >
                         <svg

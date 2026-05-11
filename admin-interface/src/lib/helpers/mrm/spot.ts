@@ -2,9 +2,11 @@ import { MRM_BACKEND_URL } from "$lib/helpers/constants";
 
 import type { SpotInfo } from "$lib/types/hufi/spot";
 
-export const getSpotInfo = async (): Promise<SpotInfo> => {
+export const getSpotInfo = async (token?: string): Promise<SpotInfo> => {
   try {
-    const response = await fetch(`${MRM_BACKEND_URL}/spot/info`)
+    const response = await fetch(`${MRM_BACKEND_URL}/spot/info`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }

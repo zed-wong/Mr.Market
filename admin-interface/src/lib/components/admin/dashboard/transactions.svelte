@@ -21,7 +21,7 @@
         </div>
       <div class="flex-shrink-0">
         <a
-          href="/manage/orders"
+          href="/orders"
           class="btn btn-ghost btn-sm normal-case"
           >{$_("view_all")}</a
         >

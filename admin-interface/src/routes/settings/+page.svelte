@@ -7,31 +7,31 @@
     const links = [
         {
             name: "exchanges",
-            path: "/manage/settings/exchanges",
+            path: "/settings/exchanges",
             // Bank/Building icon
             icon: "M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z",
         },
         {
             name: "market_making",
-            path: "/manage/settings/market-making",
+            path: "/settings/market-making",
             // Market Making icon
             icon: "M2,19.99l7.5-7.51l4,4l7.09-7.97L22,9.92l-8.5,9.56l-4-4l-6,6.01L2,19.99z M3.5,15.49l6-6.01l4,4L22,3.92l-1.41-1.41 l-7.09,7.97l-4-4L2,13.99L3.5,15.49z",
             filled: true,
         },
         {
             name: "fees",
-            path: "/manage/settings/fees",
+            path: "/settings/fees",
             // Percentage/Ticket icon
             icon: "M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
         },
         {
             name: "strategies",
-            path: "/manage/settings/strategies",
+            path: "/settings/strategies",
             icon: "M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h5.25M3.75 3h11.25A2.25 2.25 0 0 1 17.25 5.25v5.25M3.75 3 9 8.25m8.25 8.25L21 20.25m0 0-3.75 3.75M21 20.25l-3.75-3.75",
         },
         {
             name: "api_keys",
-            path: "/manage/settings/api-keys",
+            path: "/settings/api-keys",
             // Key icon
             icon: "M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z",
         },

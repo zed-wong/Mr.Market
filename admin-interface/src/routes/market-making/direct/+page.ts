@@ -38,7 +38,7 @@ export const load: PageLoad = async ({ depends }) => {
   }
 
   return {
-    growInfo: getGrowBasicInfo().catch(() => null),
+    growInfo: getGrowBasicInfo(token).catch(() => null),
     strategies: listDirectStrategies(token).catch(() => []),
     apiKeys: getAllAPIKeys(token).catch(() => []),
     directOrders: listDirectOrders(token).catch(() => []),

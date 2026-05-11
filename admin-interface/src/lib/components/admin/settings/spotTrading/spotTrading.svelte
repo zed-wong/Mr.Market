@@ -3,7 +3,7 @@
   import { _ } from "svelte-i18n";
   import { page } from "$app/stores";
   import { invalidate } from "$app/navigation";
-  import { getUuid } from "@mixin.dev/mixin-node-sdk";
+  import { getUuid } from "$lib/helpers/uuid";
   import { getRandomDelay } from "$lib/helpers/utils";
   import type { SpotTradingPair } from "$lib/types/hufi/spot";
   import Loading from "$lib/components/common/loading.svelte";
