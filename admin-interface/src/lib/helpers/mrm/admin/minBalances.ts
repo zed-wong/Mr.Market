@@ -1,15 +1,5 @@
 import { apiFetch } from "$lib/helpers/api/client";
 
-export const fetchRebalanceExchanges = async (jwtToken: string): Promise<unknown> => {
-  try {
-    return await apiFetch('/rebalance/minimum_balance/exchanges', {
-      headers: { Authorization: `Bearer ${jwtToken}` },
-    });
-  } catch (error) {
-    console.error('Failed to fetch minium balance settings:', error);
-    throw error;
-  }
-}
 export const fetchMiniumBalanceSettings = async (jwtToken: string): Promise<unknown> => {
   try {
     return await apiFetch('/rebalance/minimum_balance/all', {

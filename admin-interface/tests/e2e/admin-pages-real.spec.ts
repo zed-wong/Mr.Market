@@ -27,6 +27,28 @@ const MIGRATED_ROUTES = [
   '/settings/strategies',
 ];
 
+const ROUTE_CONTENT: Record<string, RegExp> = {
+  '/': /dashboard overview/i,
+  '/users': /user|search/i,
+  '/exchanges': /exchange|api key/i,
+  '/health': /health|error/i,
+  '/message': /message/i,
+  '/orders': /spot|swap|order/i,
+  '/orders/spot': /spot[_\s-]*orders?|spot order activity/i,
+  '/orders/swap': /swap[_\s-]*orders?|swap order activity/i,
+  '/revenue': /revenue|fee revenue/i,
+  '/market-making/direct': /direct|market[_\s-]*making|orders/i,
+  '/rebalance': /minimum[_\s-]*balance[_\s-]*settings|minimum balance reviews/i,
+  '/rebalance/new': /create[_\s-]*new[_\s-]*minimum[_\s-]*balance[_\s-]*record/i,
+  '/settings': /manage[_\s-]*your[_\s-]*application[_\s-]*configuration|settings/i,
+  '/settings/api-keys': /api[_\s-]*keys|exchange api keys/i,
+  '/settings/exchanges': /manage[_\s-]*connected[_\s-]*exchanges|exchanges/i,
+  '/settings/fees': /global[_\s-]*fees|fee[_\s-]*overrides/i,
+  '/settings/spot-trading': /spot[_\s-]*trading|trading pairs/i,
+  '/settings/market-making': /market[_\s-]*making|market making pairs/i,
+  '/settings/strategies': /strategies|strategy definitions/i,
+};
+
 const installRouteSweepAssertions = (page: Page) => {
   const pageErrors: string[] = [];
   const apiFailures: string[] = [];
@@ -75,6 +97,9 @@ const expectRouteLoaded = async (page: Page, route: string) => {
     /internal error|vite error|page not found/i,
   );
   await expect(page.locator('main')).not.toBeEmpty();
+  await expect(page.locator('main'), `route ${route} should render route-specific content`).toContainText(
+    ROUTE_CONTENT[route],
+  );
 };
 
 test('admin page E2E contains no backend stubs or fake backend port', async () => {
@@ -84,6 +109,7 @@ test('admin page E2E contains no backend stubs or fake backend port', async () =
   ]);
 
   expect(spec).not.toContain(`route.${'fulfill'}`);
+  expect(spec).toContain('ROUTE_CONTENT');
   expect(config).not.toContain('59999');
   expect(config).toContain('http://localhost:4174');
   expect(config).toContain('http://127.0.0.1:3000');

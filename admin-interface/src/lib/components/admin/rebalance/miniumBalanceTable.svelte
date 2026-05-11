@@ -1,107 +1,53 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { goto } from "$app/navigation";
-  import {
-    fetchMiniumBalanceSettings,
-    fetchRebalanceExchanges,
-  } from "$lib/helpers/mrm/admin/minBalances";
 
-  const TEMPORARY_SKIP = true;
-
-  let exchanges: any[] = [];
-  let table: any[] = [];
-
-  const fetchData = async () => {
-    const token = localStorage.getItem("admin-access-token");
-    if (!token) {
-      console.error("Unable to fetch admin endpoint without jwt token");
-      return;
-    }
-    exchanges = (await fetchRebalanceExchanges(token)) as any[];
-    return await fetchMiniumBalanceSettings(token);
-  };
-  (async () => {
-    if (!TEMPORARY_SKIP) {
-      table = (await fetchData()) as any[];
-    }
-  })();
+  const columns = ["symbol", "asset_id", "exchange_name", "minimum_balance"];
 </script>
 
-{#if !TEMPORARY_SKIP}
-  <div class="overflow-x-auto flex flex-col space-y-4">
-    <div class="flex items-center">
-      <span class="font-semibold text-base">
-        {$_("minimum_balance_settings")}
-      </span>
+<div
+  class="card bg-base-100 border border-base-300 shadow-sm"
+  data-testid="rebalance-minimum-balance-content"
+>
+  <div class="card-body gap-6">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div class="flex flex-col gap-2">
+        <span class="text-2xl font-bold text-base-content">
+          {$_("minimum_balance_settings")}
+        </span>
+        <span class="text-sm text-base-content/60">
+          {$_("rebalance_minimum_balance_description")}
+        </span>
+      </div>
       <button
-        class="btn btn-xs btn-ghost hover:bg-base-100 no-animation flex items-center"
+        class="btn btn-sm btn-primary"
         on:click={() => {
           goto("/rebalance/new");
         }}
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-4 h-4"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 4.5v15m7.5-7.5h-15"
-          />
-        </svg>
+        <span>{$_("create_new_minimum_balance_record")}</span>
       </button>
     </div>
-    {#if table.length != 0}
-      <table class="table mt-4">
-        <!-- head -->
+
+    <div class="overflow-x-auto">
+      <table class="table">
         <thead>
           <tr>
-            <th>{$_("symbol")}</th>
-            <!-- <th>{$_('asset_id')}</th> -->
-            {#each Object.values(exchanges) as exchange}
-              <th>
-                {exchange.name}
-              </th>
+            {#each columns as column}
+              <th>{$_(column)}</th>
             {/each}
           </tr>
         </thead>
         <tbody>
-          {#each Object.values(table) as t}
-            <tr>
-              <td>
-                {t.symbol}
-              </td>
-              {#each t.exchange as e}
-                <td>
-                  <div class="input input-xs">
-                    {e.name === exchanges[0].name ? e.minimumBalance : "-"}
-                  </div>
-                </td>
-                <td>
-                  <div class="input input-xs">
-                    {e.name === exchanges[1].name ? e.minimumBalance : "-"}
-                  </div>
-                </td>
-              {/each}
-            </tr>
-          {/each}
+          <tr>
+            <td colspan={columns.length} class="text-center">
+              <span class="text-base-content/60">
+                {$_("no_result_found")}
+              </span>
+            </td>
+          </tr>
         </tbody>
       </table>
-    {:else}
-      <div class="m-32 !my-64 text-center">
-        <span> {$_("no_result_found")} </span>
-      </div>
-    {/if}
+    </div>
   </div>
-{:else}
-  <div class="flex items-center justify-center">
-    <span>
-      We skip this for now as we can modifiy them through db. We don't have
-      enough time for this (27 Mar)
-    </span>
-  </div>
-{/if}
+</div>
