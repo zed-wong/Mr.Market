@@ -84,11 +84,11 @@
           </span>
           {#if definition.enabled}
             <span class="inline-flex bg-success/10 text-success px-2.5 py-1 rounded-[6px] text-xs font-semibold border border-success/20">
-              Enabled
+              {$_("enabled")}
             </span>
           {:else}
             <span class="inline-flex bg-base-200 text-base-content/50 px-2.5 py-1 rounded-[6px] text-xs font-semibold">
-              Disabled
+              {$_("disabled")}
             </span>
           {/if}
         </div>

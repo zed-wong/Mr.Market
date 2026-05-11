@@ -162,7 +162,7 @@
                                 <button
                                     class="text-base-content/30 hover:text-base-content/60 transition-colors"
                                     on:click={copyOrderId}
-                                    aria-label="Copy order ID"
+                                    aria-label={$_("copy_order_id")}
                                 >
                                     <svg
                                         xmlns="http://www.w3.org/2000/svg"

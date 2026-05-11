@@ -239,7 +239,7 @@
                         Mr.Market
                     </div>
                     <div class="text-sm text-base-content/50">
-                        Market Making Engine
+                        {$_("market_making_engine")}
                     </div>
                 </div>
             </div>
@@ -266,7 +266,7 @@
                     Mr.Market
                 </div>
                 <div class="text-xs text-base-content/50">
-                    Market Making Engine
+                    {$_("market_making_engine")}
                 </div>
             </div>
         </div>

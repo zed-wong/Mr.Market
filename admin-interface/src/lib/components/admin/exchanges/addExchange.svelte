@@ -237,7 +237,7 @@
             <div class="rounded-xl">
               <img
                 src={AddNewIconUrl}
-                alt="Preview"
+                alt={$_("preview")}
                 on:error={(e) => {
                   const target = e.currentTarget;
                   if (target instanceof HTMLImageElement) {
