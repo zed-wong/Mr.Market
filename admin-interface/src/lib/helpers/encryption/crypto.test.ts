@@ -3,6 +3,7 @@ import { expect, test, describe, vi, beforeEach } from "vitest";
 describe("Crypto Helpers", () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.doUnmock("$app/environment");
     vi.doMock("$app/environment", () => ({ browser: true }));
   });
 
@@ -41,6 +42,7 @@ describe("Crypto Helpers", () => {
 
   test("encrypt should reject on server-only environment", async () => {
     vi.resetModules();
+    vi.doUnmock("$app/environment");
     vi.doMock("$app/environment", () => ({ browser: false }));
     const { encrypt } = await import("./crypto");
 
