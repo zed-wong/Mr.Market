@@ -37,6 +37,25 @@ SQLite is file-based. Set `DATABASE_PATH` in `/server/.env` and the database fil
 make start-dev
 ```
 
+### Local admin-interface validation
+
+The standalone admin interface is validated locally against the real Nest server. The admin preview runs at `http://localhost:4174`, and the server runs at `http://127.0.0.1:3000`.
+
+The restored admin UI visuals are validated through the same local flow while preserving real local password and passkey authentication. Build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3000`, then run the preview against the local production server.
+
+Use inline environment variables for local validation instead of reading `.env` files. At minimum, provide the local server values such as `PORT=3000`, `DATABASE_PATH`, `ADMIN_PASSWORD`, `JWT_SECRET`, `ENCRYPTION_PRIVATE_KEY`, `CORS_ORIGIN=http://localhost:4174`, and passkey origin/RP settings; build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3000`.
+
+Key commands:
+
+```
+bun run --cwd server build
+bun run --cwd server start:prod
+bun run --cwd admin-interface check
+bun run --cwd admin-interface test:unit
+bun run --cwd admin-interface test:e2e
+bun run --cwd admin-interface preview -- --host localhost --port 4174
+```
+
 ## Tests
 
 ### Client

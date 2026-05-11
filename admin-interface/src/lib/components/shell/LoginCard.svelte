@@ -11,24 +11,19 @@
   } from '$lib/stores/auth';
 
   type Mode = 'password' | 'passkey';
-  type Bar = {
-    leftWidth: number;
-    rightWidth: number;
-    leftAlpha: number;
-    rightAlpha: number;
-  };
-
-  const BAR_COUNT = 38;
-  const TICK_MS = 220;
-  const BARS_PER_TICK = 5;
 
   let mode = $state<Mode>('password');
   let password = $state('');
   let showPassword = $state(false);
   let shakeError = $state(false);
   let errorMessage = $state<string | null>(null);
-  let bars = $state<Bar[]>([]);
-  let tickHandle = 0;
+
+  // Market depth visualization state
+  let canvas = $state<HTMLCanvasElement | undefined>();
+  let ctx: CanvasRenderingContext2D | null = null;
+  let animationId = 0;
+  let bids: { price: number; size: number }[] = [];
+  let asks: { price: number; size: number }[] = [];
 
   const triggerShake = () => {
     shakeError = true;
@@ -86,33 +81,139 @@
     }
   };
 
-  const randomBar = (): Bar => {
-    const bias = Math.random();
-    return {
-      leftWidth: 0.08 + Math.random() * 0.92,
-      rightWidth: 0.08 + Math.random() * 0.92,
-      leftAlpha: bias > 0.85 ? 0.45 + Math.random() * 0.25 : 0.08 + Math.random() * 0.3,
-      rightAlpha: bias < 0.15 ? 0.45 + Math.random() * 0.25 : 0.08 + Math.random() * 0.3,
-    };
+  // Generate synthetic market depth data
+  const generateDepthData = () => {
+    const basePrice = 67432.5;
+    bids = [];
+    asks = [];
+
+    let bidPrice = basePrice;
+    for (let i = 0; i < 20; i += 1) {
+      bidPrice -= Math.random() * 50 + 10;
+      bids.push({ price: bidPrice, size: Math.random() * 2 + 0.1 });
+    }
+
+    let askPrice = basePrice;
+    for (let i = 0; i < 20; i += 1) {
+      askPrice += Math.random() * 50 + 10;
+      asks.push({ price: askPrice, size: Math.random() * 2 + 0.1 });
+    }
   };
 
-  const tick = () => {
-    const next = bars.slice();
-    for (let i = 0; i < BARS_PER_TICK; i += 1) {
-      const idx = Math.floor(Math.random() * next.length);
-      next[idx] = randomBar();
+  // Update a single level (simulate live order book)
+  const updateLevel = () => {
+    const isBid = Math.random() > 0.5;
+    const arr = isBid ? bids : asks;
+    const idx = Math.floor(Math.random() * arr.length);
+    if (arr[idx]) {
+      arr[idx].size = Math.max(
+        0.01,
+        arr[idx].size + (Math.random() - 0.5) * 0.5,
+      );
     }
-    bars = next;
-    tickHandle = window.setTimeout(tick, TICK_MS);
+  };
+
+  // Draw the market depth visualization
+  const drawDepth = () => {
+    if (!ctx || !canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const centerY = height / 2;
+    const rowHeight = height / 40;
+    const maxSize = 2.5;
+    const sideWidth = width / 2;
+
+    // Draw bids (left side, green)
+    bids.forEach((bid, i) => {
+      const y = centerY - (i + 1) * rowHeight;
+      const barWidth = (bid.size / maxSize) * (sideWidth * 0.9);
+
+      ctx!.fillStyle = 'rgba(16, 185, 129, 0.08)';
+      ctx!.fillRect(sideWidth - barWidth, y, barWidth, rowHeight - 1);
+
+      if (bid.size > 1.5) {
+        ctx!.fillStyle = 'rgba(16, 185, 129, 0.15)';
+        ctx!.fillRect(sideWidth - barWidth, y, barWidth, rowHeight - 1);
+      }
+    });
+
+    // Draw asks (right side, red)
+    asks.forEach((ask, i) => {
+      const y = centerY - (i + 1) * rowHeight;
+      const barWidth = (ask.size / maxSize) * (sideWidth * 0.9);
+
+      ctx!.fillStyle = 'rgba(239, 68, 68, 0.08)';
+      ctx!.fillRect(sideWidth, y, barWidth, rowHeight - 1);
+
+      if (ask.size > 1.5) {
+        ctx!.fillStyle = 'rgba(239, 68, 68, 0.15)';
+        ctx!.fillRect(sideWidth, y, barWidth, rowHeight - 1);
+      }
+    });
+
+    // Draw mirror below center
+    bids.forEach((bid, i) => {
+      const y = centerY + i * rowHeight;
+      const barWidth = (bid.size / maxSize) * (sideWidth * 0.9);
+
+      ctx!.fillStyle = 'rgba(16, 185, 129, 0.06)';
+      ctx!.fillRect(sideWidth - barWidth, y, barWidth, rowHeight - 1);
+    });
+
+    asks.forEach((ask, i) => {
+      const y = centerY + i * rowHeight;
+      const barWidth = (ask.size / maxSize) * (sideWidth * 0.9);
+
+      ctx!.fillStyle = 'rgba(239, 68, 68, 0.06)';
+      ctx!.fillRect(sideWidth, y, barWidth, rowHeight - 1);
+    });
+
+    // Draw center spread line
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sideWidth, 0);
+    ctx.lineTo(sideWidth, height);
+    ctx.stroke();
+  };
+
+  const animate = () => {
+    updateLevel();
+    drawDepth();
+    animationId = requestAnimationFrame(() => {
+      window.setTimeout(animate, 100);
+    });
+  };
+
+  const setupCanvas = () => {
+    if (!canvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+
+    ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+
+    generateDepthData();
+    drawDepth();
+    animate();
   };
 
   onMount(() => {
-    bars = Array.from({ length: BAR_COUNT }, randomBar);
-    tickHandle = window.setTimeout(tick, TICK_MS);
+    setupCanvas();
   });
 
   onDestroy(() => {
-    if (tickHandle) window.clearTimeout(tickHandle);
+    if (animationId) cancelAnimationFrame(animationId);
   });
 
   const switchMode = (next: Mode) => {
@@ -125,33 +226,33 @@
 </script>
 
 <div class="flex min-h-screen w-full bg-base-100" data-testid="old-admin-login-layout">
-  <!-- Left visual panel -->
+  <!-- Left side: Market depth visualization -->
   <div class="relative hidden overflow-hidden bg-base-200 lg:flex lg:w-1/2">
-    <div
-      class="absolute inset-0 flex flex-col justify-center gap-2 px-10 py-16"
+    <canvas
+      bind:this={canvas}
+      class="absolute inset-0 h-full w-full"
+      style="width: 100%; height: 100%;"
       data-testid="old-admin-market-depth"
       aria-hidden="true"
-    >
-      {#each bars as bar, i (i)}
-        <div class="flex h-3 items-stretch">
-          <div class="flex flex-1 justify-end">
-            <div
-              class="h-full rounded-l-sm transition-[width,background-color] duration-700 ease-out"
-              style="width: {bar.leftWidth * 100}%; background-color: rgba(16, 185, 129, {bar.leftAlpha});"
-            ></div>
-          </div>
-          <div class="flex flex-1 justify-start">
-            <div
-              class="h-full rounded-r-sm transition-[width,background-color] duration-700 ease-out"
-              style="width: {bar.rightWidth * 100}%; background-color: rgba(239, 68, 68, {bar.rightAlpha});"
-            ></div>
-          </div>
-        </div>
-      {/each}
-    </div>
+    ></canvas>
 
-    <div class="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-base-200 to-transparent"></div>
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-base-200 to-transparent"></div>
+    <!-- Overlay gradient for depth fade -->
+    <div
+      class="pointer-events-none absolute inset-0 bg-gradient-to-r from-base-200 via-transparent to-transparent"
+      style="width: 30%;"
+    ></div>
+    <div
+      class="pointer-events-none absolute inset-0 bg-gradient-to-l from-base-200 via-transparent to-transparent"
+      style="left: 70%;"
+    ></div>
+    <div
+      class="pointer-events-none absolute inset-0 bg-gradient-to-b from-base-200 via-transparent to-base-200"
+      style="height: 15%; top: 0;"
+    ></div>
+    <div
+      class="pointer-events-none absolute inset-0 bg-gradient-to-t from-base-200 via-transparent to-transparent"
+      style="height: 15%; bottom: 0;"
+    ></div>
 
     <div class="absolute bottom-8 left-8 flex items-center gap-3">
       <img
@@ -219,19 +320,17 @@
           onclick={() => switchMode('password')}
         >
           <svg
+            xmlns="http://www.w3.org/2000/svg"
             class="h-4 w-4"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            stroke-width="2"
+            stroke-width="1.5"
             stroke-linecap="round"
             stroke-linejoin="round"
             aria-hidden="true"
           >
-            <circle cx="9" cy="9" r="4"></circle>
-            <path d="M21 21l-9-9"></path>
-            <path d="M17 17l2 2"></path>
-            <path d="M14 14l2 2"></path>
+            <path d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1.000.43-1.563A6 6 0 1 1 21.75 8.25Z" />
           </svg>
           <span>{$_('admin.password')}</span>
         </button>
@@ -248,20 +347,17 @@
           onclick={() => switchMode('passkey')}
         >
           <svg
+            xmlns="http://www.w3.org/2000/svg"
             class="h-4 w-4"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            stroke-width="2"
+            stroke-width="1.5"
             stroke-linecap="round"
             stroke-linejoin="round"
             aria-hidden="true"
           >
-            <path d="M12 11c-1.7 0-3 1.3-3 3v3"></path>
-            <path d="M16 13v3a4 4 0 01-4 4"></path>
-            <path d="M5 11a7 7 0 0114 0v2"></path>
-            <path d="M8 14v3"></path>
-            <path d="M12 17v4"></path>
+            <path d="M7.864 4.243A7.5 7.5 0 0 1 19.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 0 0 4.5 10.5a7.464 7.464 0 0 1-1.15 3.993m1.989 3.559A11.209 11.209 0 0 0 8.25 10.5a3.75 3.75 0 1 1 7.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 0 1-3.6 9.75m6.633-4.596a18.666 18.666 0 0 1-2.485 5.33" />
           </svg>
           <span>{$_('admin.passkey')}</span>
         </button>
@@ -339,20 +435,17 @@
           <div class="rounded-xl border border-base-300 bg-base-200/60 px-5 py-6 text-center">
             <div class="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-base-300 bg-base-100">
               <svg
+                xmlns="http://www.w3.org/2000/svg"
                 class="h-5 w-5 text-base-content/70"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2"
+                stroke-width="1.5"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 aria-hidden="true"
               >
-                <path d="M12 11c-1.7 0-3 1.3-3 3v3"></path>
-                <path d="M16 13v3a4 4 0 01-4 4"></path>
-                <path d="M5 11a7 7 0 0114 0v2"></path>
-                <path d="M8 14v3"></path>
-                <path d="M12 17v4"></path>
+                <path d="M7.864 4.243A7.5 7.5 0 0 1 19.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 0 0 4.5 10.5a7.464 7.464 0 0 1-1.15 3.993m1.989 3.559A11.209 11.209 0 0 0 8.25 10.5a3.75 3.75 0 1 1 7.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 0 1-3.6 9.75m6.633-4.596a18.666 18.666 0 0 1-2.485 5.33" />
               </svg>
             </div>
             <span class="block text-sm font-semibold capitalize text-base-content">
