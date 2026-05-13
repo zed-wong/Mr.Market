@@ -50,7 +50,8 @@
       "settings_fees": "fees",
       "settings_spot_trading": "spot trading",
       "settings_market_making": "market making",
-      "settings_strategies": "strategies"
+      "settings_strategies": "strategies",
+      "settings_direct_market_making": "direct market making"
     },
     "passkey": "passkey",
     "passkey_hint": "Sign in securely and quickly with your saved passkey on this device.",

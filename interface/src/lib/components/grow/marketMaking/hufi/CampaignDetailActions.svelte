@@ -240,16 +240,10 @@
 </script>
 
 <div
-    class="fixed bottom-0 left-0 right-0 p-5 bg-base-100 border-t border-gray-100 flex gap-4 pb-8 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]"
+    class="fixed bottom-0 left-0 right-0 p-5 bg-base-100 border-t border-gray-100 flex pb-8 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]"
 >
     <button
-        class="flex-1 btn bg-base-100 hover:bg-base-200 text-base-content border border-gray-200 rounded-full h-12 min-h-12 text-sm font-bold normal-case shadow-sm"
-        on:click={() => goto("/market-making/hufi/join")}
-    >
-        {$_("hufi_campaign_join_direct")}
-    </button>
-    <button
-        class="flex-[1.5] btn bg-base-content hover:bg-base-content/90 text-base-100 border-none rounded-full h-12 min-h-12 text-sm font-bold normal-case shadow-lg"
+        class="w-full btn bg-base-content hover:bg-base-content/90 text-base-100 border-none rounded-full h-12 min-h-12 text-sm font-bold normal-case shadow-lg"
         data-testid="hufi-create-button"
         on:click={() => (showDialog = true)}
     >
@@ -341,26 +335,14 @@
                             })}
                         </span>
                     </div>
-                    <div class="flex gap-3">
-                        <button
-                            class="btn btn-xl flex-1 rounded-full bg-base-100 border border-base-300"
-                            on:click={requestAdding}
-                        >
-                            <span class="text-normal">
-                                {$_("hufi_campaign_request_adding")}
-                            </span>
-                        </button>
-                        <button
-                            class="btn btn-xl flex-1 rounded-full bg-base-content hover:bg-base-content/90 focus:bg-base-content/90 no-animation"
-                            on:click={() => goto("/market-making/hufi/join")}
-                        >
-                            <span
-                                class="text-base-100 font-semibold capitalize"
-                            >
-                                {$_("hufi_campaign_join_direct")}
-                            </span>
-                        </button>
-                    </div>
+                    <button
+                        class="btn btn-xl w-full rounded-full bg-base-100 border border-base-300"
+                        on:click={requestAdding}
+                    >
+                        <span class="text-normal">
+                            {$_("hufi_campaign_request_adding")}
+                        </span>
+                    </button>
                 </div>
             {:else if !showConfirmStep}
                 <div class="space-y-4">

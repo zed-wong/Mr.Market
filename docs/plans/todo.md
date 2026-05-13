@@ -10,10 +10,10 @@ Mixin-only auth caps the addressable market to ~1M users. EVM wallet support ope
 
 ### HuFi Campaigns — EVM
 
-- [ ] Mr.Market users can create campaigns with EVM wallets (including Mixin EVM wallet) under /market-making/hufi
-- [ ] Mr.Market users can join HuFi campaigns by creating market-making orders with EVM wallets under /market-making/hufi
-- [ ] Mr.Market users can see joined HuFi campaigns with EVM wallets under /market-making/hufi
-- [ ] Mr.Market users can see their created campaigns with EVM wallets under /market-making/hufi
+- [ ] Mr.Market users can create campaigns with EVM wallets (including Mixin EVM wallet) in web3-interface
+- [ ] Mr.Market users can join HuFi campaigns by creating market-making orders with EVM wallets in web3-interface
+- [ ] Mr.Market users can see joined HuFi campaigns with EVM wallets in web3-interface
+- [ ] Mr.Market users can see their created campaigns with EVM wallets in web3-interface
 
 ---
 
@@ -41,10 +41,10 @@ The full user journey — create → fund → join → execute → earn — must
 
 ### HuFi Campaigns — Mixin
 
-- [ ] Mr.Market users can create campaigns with Mixin wallet under /market-making/hufi
-- [ ] Mr.Market users can join HuFi campaigns by creating market-making orders with Mixin wallet under /market-making/hufi
-- [ ] Mr.Market users can see joined HuFi campaigns (via market-making orders) under /market-making/hufi
-- [ ] Mr.Market users can see their created campaigns with Mixin wallet under /market-making/hufi
+- [ ] Mr.Market users can create campaigns with Mixin wallet in web3-interface
+- [ ] Mr.Market users can join HuFi campaigns by creating market-making orders with Mixin wallet in web3-interface
+- [ ] Mr.Market users can see joined HuFi campaigns (via market-making orders) in web3-interface
+- [ ] Mr.Market users can see their created campaigns with Mixin wallet in web3-interface
 
 ### UI Follow-ups
 

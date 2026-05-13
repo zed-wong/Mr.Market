@@ -418,7 +418,7 @@
   "hufi_campaign_join_direct": "直接加入",
   "hufi_campaign_create_mmaking": "创建做市",
   "hufi_campaign_create_new_notice": "填写两个代币数量并确认支付，即可创建做市订单并开始赚取奖励。",
-  "hufi_campaign_pair_not_supported": "{exchange} {pair} 暂不被当前 Mr.Market 实例支持。您仍然可以使用EVM兼容的钱包直接加入。",
+  "hufi_campaign_pair_not_supported": "{exchange} {pair} 暂不被当前 Mr.Market 实例支持。请先申请添加支持后再创建做市订单。",
   "hufi_campaign_request_adding": "申请添加",
   "hufi_campaign_join_threshold": "加入阈值活动",
   "hufi_campaign_join_holding": "加入持仓活动",

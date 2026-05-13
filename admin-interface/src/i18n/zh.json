@@ -50,7 +50,8 @@
       "settings_fees": "手续费",
       "settings_spot_trading": "现货交易",
       "settings_market_making": "做市",
-      "settings_strategies": "策略"
+      "settings_strategies": "策略",
+      "settings_direct_market_making": "直接做市"
     },
     "passkey": "通行密钥",
     "passkey_hint": "使用本设备已保存的通行密钥安全快捷登录。",
