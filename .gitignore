@@ -17,3 +17,5 @@ server/data/*.db-wal
 .gstack/
 .context/
 .impeccable.md
+.svelte-kit/
+build/
