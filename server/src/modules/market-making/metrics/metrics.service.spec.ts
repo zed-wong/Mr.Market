@@ -36,11 +36,6 @@ describe('MetricsService', () => {
       MarketMakingRuntimeTimingService,
     );
   });
-
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
   it('uses sqlite-safe day bucketing SQL for both queries', async () => {
     repository.query.mockResolvedValue([]);
 

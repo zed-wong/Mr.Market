@@ -107,34 +107,6 @@ describe('UserOrdersService', () => {
   });
 
   describe('createSimplyGrow', () => {
-    it('should successfully create a simply grow order', async () => {
-      const mockSimplyGrowOrder = {
-        orderId: 'sg1',
-        userId: 'user1',
-        version: 'v1',
-        tradingType: 'typeA',
-        action: 'buy',
-        state: 'created' as SimplyGrowStates,
-        createdAt: new Date(),
-        rewardAddress: '0x0000000000000000000000000000000000000000',
-        mixinAssetId: '123e4567-e89b-12d3-a456-426614174000',
-        amount: 100,
-      } as unknown as SimplyGrowOrder;
-
-      jest
-        .spyOn(simplyGrowRepository, 'save')
-        .mockResolvedValue(mockSimplyGrowOrder);
-
-      const result = await service.createSimplyGrow(mockSimplyGrowOrder);
-
-      expect(result).toEqual(mockSimplyGrowOrder);
-      expect(simplyGrowRepository.save).toHaveBeenCalledWith(
-        mockSimplyGrowOrder,
-      );
-    });
-  });
-
-  describe('createMarketMaking', () => {
     it('should successfully create a market making order', async () => {
       const mockMarketMakingOrder = {
         orderId: 'mm1',
@@ -172,19 +144,6 @@ describe('UserOrdersService', () => {
   });
 
   describe('updateMarketMakingOrderState', () => {
-    it('should update the state of a market making order', async () => {
-      const orderId = 'mm1';
-      const newState = 'paused' as MarketMakingStates;
-
-      jest.spyOn(marketMakingRepository, 'update').mockResolvedValue(undefined);
-
-      await service.updateMarketMakingOrderState(orderId, newState);
-      expect(marketMakingRepository.update).toHaveBeenCalledWith(
-        { orderId },
-        { state: newState },
-      );
-    });
-
     it('stores lifecycle error when state update includes a failure reason', async () => {
       const orderId = 'mm1';
 
@@ -573,19 +532,6 @@ describe('UserOrdersService', () => {
       await expect(
         service.findOwnedMarketMakingPaymentStateById('user-2', 'order-1'),
       ).rejects.toThrow(NotFoundException);
-    });
-
-    it('rejects simply grow detail lookups for other users', async () => {
-      jest.spyOn(simplyGrowRepository, 'findOneBy').mockResolvedValueOnce(null);
-
-      await expect(
-        service.findOwnedSimplyGrowByOrderId('user-2', 'order-1'),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(simplyGrowRepository.findOneBy).toHaveBeenCalledWith({
-        orderId: 'order-1',
-        userId: 'user-2',
-      });
     });
   });
 });

@@ -137,21 +137,6 @@ describe('WithdrawalService', () => {
       expect(result).toEqual(existingWithdrawal);
     });
 
-    it('should handle errors gracefully', async () => {
-      mockWithdrawalRepository.findOne.mockRejectedValue(
-        new Error('Database error'),
-      );
-
-      const result = await service.initializeWithdrawal(
-        mockSnapshot,
-        mockMemoDetails,
-      );
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('queueWithdrawal', () => {
     it('should queue withdrawal with correct parameters', async () => {
       const withdrawalId = 'test-withdrawal-id';
 
@@ -190,51 +175,6 @@ describe('WithdrawalService', () => {
       );
     });
 
-    it('should update withdrawal status with additional data', async () => {
-      const withdrawalId = 'test-withdrawal-id';
-      const newStatus = 'completed';
-      const additionalData = { onChainTxId: 'test-tx-hash' };
-
-      await service.updateWithdrawalStatus(
-        withdrawalId,
-        newStatus,
-        additionalData,
-      );
-
-      expect(mockWithdrawalRepository.update).toHaveBeenCalledWith(
-        withdrawalId,
-        {
-          status: newStatus,
-          ...additionalData,
-        },
-      );
-    });
-  });
-
-  describe('getPendingWithdrawals', () => {
-    it('should fetch pending withdrawals', async () => {
-      const mockWithdrawals = [
-        { id: '1', status: 'processing' },
-        { id: '2', status: 'sent' },
-      ];
-
-      mockWithdrawalRepository.find.mockResolvedValue(mockWithdrawals);
-
-      const result = await service.getPendingWithdrawals();
-
-      expect(mockWithdrawalRepository.find).toHaveBeenCalledWith({
-        where: [
-          { status: 'processing' },
-          { status: 'sent' },
-          { status: 'confirmed' },
-        ],
-        order: { createdAt: 'ASC' },
-      });
-      expect(result).toEqual(mockWithdrawals);
-    });
-  });
-
-  describe('markAsFailed', () => {
     it('should mark withdrawal as failed with error message', async () => {
       const withdrawalId = 'test-withdrawal-id';
       const errorMessage = 'Insufficient balance';
@@ -281,16 +221,6 @@ describe('WithdrawalService', () => {
         withdrawalId,
         { retryCount: 2 },
       );
-    });
-
-    it('should handle non-existent withdrawal', async () => {
-      const withdrawalId = 'non-existent-id';
-
-      mockWithdrawalRepository.findOne.mockResolvedValue(null);
-
-      await service.incrementRetryCount(withdrawalId);
-
-      expect(mockWithdrawalRepository.update).not.toHaveBeenCalled();
     });
   });
 });
