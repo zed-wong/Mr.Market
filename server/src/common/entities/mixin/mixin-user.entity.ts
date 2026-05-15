@@ -26,7 +26,7 @@ export class MixinUser {
   @Column({ nullable: true })
   avatar_url: string;
 
-  @Column()
+  @Column({ nullable: true })
   jwt_token: string;
 
   @OneToMany(() => Contribution, (contribution) => contribution.mixinUser)
