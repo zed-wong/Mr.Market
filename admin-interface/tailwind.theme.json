@@ -1,0 +1,189 @@
+{
+  "theme": {
+    "extend": {
+      "colors": {
+        "primary": "#111111",
+        "secondary": "#615e5b",
+        "tertiary": "#ff9900",
+        "neutral": "#ffffff",
+        "midnight-ink": "#111111",
+        "canvas-white": "#ffffff",
+        "off-white-sage": "#f3efeb",
+        "faded-stone": "#e9eaeb",
+        "gunmetal-gray": "#615e5b",
+        "soft-concrete": "#d8d3cc",
+        "action-black": "#000000",
+        "highlight-orange": "#ff9900",
+        "success-sage": "#dce7df",
+        "warning-paper": "#eee6d1",
+        "error-clay": "#ead7d2",
+        "info-mist": "#dde7eb"
+      },
+      "fontFamily": {
+        "display": [
+          "Geist"
+        ],
+        "display-sm": [
+          "Geist"
+        ],
+        "heading-lg": [
+          "Geist"
+        ],
+        "heading": [
+          "Geist"
+        ],
+        "heading-sm": [
+          "Geist"
+        ],
+        "body-lg": [
+          "Geist"
+        ],
+        "body": [
+          "Geist"
+        ],
+        "body-sm": [
+          "Geist"
+        ],
+        "caption": [
+          "Geist"
+        ],
+        "data-xl": [
+          "Geist Mono"
+        ],
+        "data-lg": [
+          "Geist Mono"
+        ],
+        "data": [
+          "Geist Mono"
+        ],
+        "data-sm": [
+          "Geist Mono"
+        ]
+      },
+      "fontSize": {
+        "display": [
+          "60px",
+          {
+            "letterSpacing": "-0.03em",
+            "fontWeight": "500"
+          }
+        ],
+        "display-sm": [
+          "40px",
+          {
+            "letterSpacing": "-0.03em",
+            "fontWeight": "500"
+          }
+        ],
+        "heading-lg": [
+          "32px",
+          {
+            "letterSpacing": "-0.03em",
+            "fontWeight": "500"
+          }
+        ],
+        "heading": [
+          "24px",
+          {
+            "letterSpacing": "-0.01em",
+            "fontWeight": "500"
+          }
+        ],
+        "heading-sm": [
+          "20px",
+          {
+            "letterSpacing": "-0.01em",
+            "fontWeight": "400"
+          }
+        ],
+        "body-lg": [
+          "16px",
+          {
+            "letterSpacing": "0em",
+            "fontWeight": "400"
+          }
+        ],
+        "body": [
+          "14px",
+          {
+            "letterSpacing": "0em",
+            "fontWeight": "400"
+          }
+        ],
+        "body-sm": [
+          "12px",
+          {
+            "letterSpacing": "0.02em",
+            "fontWeight": "400"
+          }
+        ],
+        "caption": [
+          "10px",
+          {
+            "letterSpacing": "0.03em",
+            "fontWeight": "500"
+          }
+        ],
+        "data-xl": [
+          "48px",
+          {
+            "letterSpacing": "-0.01em",
+            "fontWeight": "500"
+          }
+        ],
+        "data-lg": [
+          "28px",
+          {
+            "letterSpacing": "-0.01em",
+            "fontWeight": "500"
+          }
+        ],
+        "data": [
+          "20px",
+          {
+            "letterSpacing": "-0.01em",
+            "fontWeight": "500"
+          }
+        ],
+        "data-sm": [
+          "13px",
+          {
+            "letterSpacing": "0.03em",
+            "fontWeight": "400"
+          }
+        ]
+      },
+      "borderRadius": {
+        "small": "10px",
+        "medium": "20px",
+        "cards": "32px",
+        "navigation": "140px",
+        "buttons": "160px"
+      },
+      "spacing": {
+        "4": "4px",
+        "8": "8px",
+        "12": "12px",
+        "16": "16px",
+        "20": "20px",
+        "24": "24px",
+        "28": "28px",
+        "32": "32px",
+        "36": "36px",
+        "40": "40px",
+        "52": "52px",
+        "56": "56px",
+        "60": "60px",
+        "64": "64px",
+        "72": "72px",
+        "80": "80px",
+        "page-max-width": "1440px",
+        "sidebar-width": "288px",
+        "topbar-height": "64px",
+        "section-gap": "32px",
+        "card-padding": "28px",
+        "element-gap": "24px"
+      }
+    }
+  }
+}
