@@ -28,7 +28,13 @@
   let pathname = $derived($page.url.pathname.replace(/\/+$/, '') || '/');
 
   const iconName = (key: string) => {
-    if (key === 'market_making') return 'settings';
+    if (key.includes('market_making')) return 'settings';
+    if (key.includes('users')) return 'users';
+    if (key.includes('logs') || key.includes('audit')) return 'orders';
+    if (key.includes('api_keys') || key.includes('config') || key.includes('roles')) return 'settings';
+    if (key.includes('status') || key.includes('risks')) return 'health';
+    if (key.includes('capital') || key.includes('positions')) return 'revenue';
+    if (key.includes('runs') || key.includes('routes') || key.includes('strategies')) return 'exchanges';
     return key.replaceAll('.', '_');
   };
 
@@ -42,7 +48,7 @@
   type="button"
   aria-label={$_('close_sidebar_backdrop')}
   class={clsx(
-    'fixed inset-0 z-30 bg-base-content/40 transition-opacity duration-300 lg:hidden',
+    'fixed inset-0 z-30 bg-base-content/30 transition-opacity duration-300 lg:hidden',
     open ? 'opacity-100' : 'pointer-events-none opacity-0',
   )}
   onclick={onClose}
@@ -57,19 +63,17 @@
   data-testid="old-admin-sidebar"
 >
   <div class="relative flex h-full flex-1 flex-col border-r border-base-300 bg-base-100">
-    <div class="flex items-center justify-between border-base-300 px-5 py-4">
+    <div class="flex items-center justify-between border-b border-base-300 px-5 py-4">
       <button type="button" class="flex items-center gap-3" onclick={() => navigate('/settings')}>
-        <div class="avatar placeholder">
-          <div class="flex w-10 items-center justify-center rounded-lg text-primary-content">
-            <img src="/mr-market-logo-transparent.svg" alt="Mr.Market" class="h-10 w-10" />
-          </div>
-        </div>
-        <span class="text-lg font-bold text-base-content">Mr.Market</span>
+        <span class="flex h-10 w-10 items-center justify-center rounded-full border border-base-300 bg-base-100">
+          <img src="/mr-market-logo-transparent.svg" alt="Mr.Market" class="h-8 w-8" />
+        </span>
+        <span class="text-lg font-semibold tracking-tight text-base-content">Mr.Market</span>
       </button>
 
       <button
         type="button"
-        class="btn btn-ghost btn-sm lg:hidden"
+        class="btn btn-ghost btn-sm rounded-full lg:hidden"
         onclick={onClose}
         aria-label={$_('close_sidebar')}
       >
@@ -88,44 +92,42 @@
 
     <nav class="flex-1 overflow-y-auto px-3 py-4">
       <div class="mb-3 px-2">
-        <span class="text-xs font-semibold text-base-content/50 capitalize">{$_('menu')}</span>
+        <span class="text-xs font-medium text-base-content/50 capitalize">{$_('menu')}</span>
       </div>
-      <ul class="menu menu-sm gap-1">
+      <ul class="space-y-5">
         {#each NAV_ITEMS as item (item.key)}
           <li>
             <button
               type="button"
               class={clsx(
-                'flex items-center gap-3 rounded-xl px-3 py-2.5 text-base-content/70 transition-colors',
-                isActive(item.href, pathname)
-                  ? 'bg-primary/10 text-primary'
-                  : 'hover:bg-base-200 hover:text-base-content',
+                'mb-1 flex min-h-10 w-full items-center gap-3 rounded-full px-3 py-2 text-left text-sm transition-colors',
+                item.href && isActive(item.href, pathname)
+                  ? 'bg-primary text-primary-content'
+                  : 'text-base-content/70 hover:bg-neutral hover:text-base-content',
               )}
-              onclick={() => navigate(item.href)}
+              onclick={() => item.href && navigate(item.href)}
             >
               <SideBarIcons name={iconName(item.key)} />
               <span class="font-medium capitalize">{$_(item.label)}</span>
             </button>
-            {#if item.children?.length}
-              <ul class="mt-1 space-y-1 pl-10">
-                {#each item.children as child (child.key)}
-                  <li>
-                    <button
-                      type="button"
-                      class={clsx(
-                        'w-full rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                        isActive(child.href, pathname)
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-base-content/60 hover:bg-base-200 hover:text-base-content',
-                      )}
-                      onclick={() => navigate(child.href)}
-                    >
-                      <span class="capitalize">{$_(child.label)}</span>
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
+            <ul class="space-y-1 pl-3">
+              {#each item.children as child (child.key)}
+                <li>
+                  <button
+                    type="button"
+                    class={clsx(
+                      'min-h-9 w-full rounded-full px-4 py-2 text-left text-sm transition-colors',
+                      isActive(child.href, pathname)
+                        ? 'bg-primary text-primary-content'
+                        : 'text-base-content/60 hover:bg-neutral hover:text-base-content',
+                    )}
+                    onclick={() => navigate(child.href)}
+                  >
+                    <span class="capitalize">{$_(child.label)}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
           </li>
         {/each}
       </ul>
@@ -134,7 +136,7 @@
     <div class="border-t border-base-300 px-3 py-4">
       <button
         type="button"
-        class="btn btn-ghost btn-sm w-full justify-start gap-3 text-error hover:bg-error/10"
+        class="btn btn-ghost btn-sm w-full justify-start gap-3 rounded-full text-error hover:bg-error/10"
         onclick={requestLogout}
       >
         <SideBarIcons name="exit" />

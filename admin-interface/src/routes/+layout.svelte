@@ -5,8 +5,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { initi18n } from '../i18n/i18n';
-  import { darkTheme } from '$lib/stores/theme';
-  import { toAdminTheme } from '$lib/theme/themes';
+  import { ADMIN_LIGHT_THEME } from '$lib/theme/themes';
   import { checkSession, logout } from '$lib/helpers/api/auth';
   import {
     correct,
@@ -26,11 +25,10 @@
 
   let pathname = $derived($page.url.pathname);
   let onLoginRoute = $derived(pathname === '/login' || pathname.startsWith('/login/'));
-  let adminTheme = $derived(toAdminTheme($darkTheme));
 
   $effect(() => {
     if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', adminTheme);
+      document.documentElement.setAttribute('data-theme', ADMIN_LIGHT_THEME);
     }
   });
 
@@ -104,8 +102,8 @@
 {:else if onLoginRoute || !$correct}
   {@render children?.()}
 {:else}
-  <main class="min-h-screen bg-base-200">
-    <div class="flex h-screen overflow-hidden bg-base-200">
+  <main class="min-h-screen bg-base-100">
+    <div class="flex h-screen overflow-hidden bg-base-100">
       <Sidebar
         open={sidebarOpen}
         onClose={() => (sidebarOpen = false)}
