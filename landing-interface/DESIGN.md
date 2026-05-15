@@ -254,6 +254,7 @@ Use Geist as the intended primary face. If Geist is unavailable, use Inter. Use 
 - Display headlines use Geist 700 at 60px or 40px with tight negative letter spacing. Headlines should be direct and short.
 - Body text uses Geist 400 or 500 at 14–16px. Avoid thin weights.
 - Captions and metadata use small sizes with modest positive tracking, but avoid all-caps shouting unless the label is truly structural.
+- Button labels use normal letter spacing. Do not add positive tracking to CTAs; pill geometry and weight provide enough emphasis.
 - Numerical data should use mono with tabular behavior so leaderboard rows and orderbook depths scan vertically.
 
 ## Layout

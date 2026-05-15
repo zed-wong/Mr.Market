@@ -30,7 +30,7 @@
       {/each}
     </div>
 
-    <a href="https://mr-market-app.onrender.com" class="rounded-full border border-base-content bg-base-content px-5 py-2.5 text-[0.68rem] font-bold tracking-[0.15em] text-base-100 capitalize no-underline transition duration-300 hover:-translate-y-0.5 hover:no-underline">
+    <a href="https://mr-market-app.onrender.com" class="rounded-full border border-base-content bg-base-content px-5 py-2.5 text-[0.68rem] font-bold text-base-100 capitalize no-underline transition duration-300 hover:-translate-y-0.5 hover:no-underline">
       <span>Open App</span>
     </a>
   </div>

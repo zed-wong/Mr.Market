@@ -55,10 +55,10 @@
             Permissionless liquidity campaigns. Automated market-making execution. Open-source runtime, protected by TEE.
           </span>
           <div class="flex flex-col gap-3 sm:flex-row">
-            <a href="/leaderboard" class="rounded-full border border-base-content bg-base-content px-6 py-3 text-[0.68rem] font-bold tracking-[0.16em] text-base-100 capitalize no-underline hover:no-underline">
+            <a href="/leaderboard" class="rounded-full border border-base-content bg-base-content px-6 py-3 text-[0.68rem] font-bold text-base-100 capitalize no-underline hover:no-underline">
               View leaderboard →
             </a>
-            <a href="/offerings" class="rounded-full border border-base-content/18 bg-base-100/70 px-6 py-3 text-[0.68rem] font-bold tracking-[0.16em] text-base-content capitalize no-underline hover:no-underline">
+            <a href="/offerings" class="rounded-full border border-base-content/18 bg-base-100/70 px-6 py-3 text-[0.68rem] font-bold text-base-content capitalize no-underline hover:no-underline">
               View offerings →
             </a>
           </div>
@@ -157,7 +157,7 @@
           <span class="micro-label block text-base-content/50">Public proof</span>
           <span class="mt-4 block balance-font text-4xl font-bold leading-none">Top makers this epoch</span>
         </span>
-        <a href="/leaderboard" class="rounded-full border border-base-content bg-base-content px-5 py-2.5 text-[0.68rem] font-bold tracking-[0.16em] text-base-100 capitalize no-underline hover:no-underline">
+        <a href="/leaderboard" class="rounded-full border border-base-content bg-base-content px-5 py-2.5 text-[0.68rem] font-bold text-base-100 capitalize no-underline hover:no-underline">
           Open leaderboard →
         </a>
       </div>
