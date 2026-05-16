@@ -375,6 +375,19 @@ StrategyDefinition.defaultConfig
 
 如果需要新增 signal、组合条件、执行状态机、hedging 规则或新的订单协调方式，必须新增或修改服务端 `Strategy Controller`，并注册新的 `controllerType`。
 
+#### 动态报价参数
+
+部分策略大类（如 Adaptive PMM）需要 Controller 在运行时根据市场波动率、订单簿成交强度、库存偏离等指标动态计算 spread、size、refresh 等报价参数。Mr.Market 不为这类策略新增独立"调参层"，而是约定：
+
+1. 动态报价参数计算属于 `Strategy Controller` 内部行为，Controller 仍是策略决策的唯一入口；
+2. 计算所需指标必须以共享 indicator 模块形式实现（例如 `InstantVolatility`、`TradingIntensity`、`InventorySkew`），可被多个 Controller 复用，但本身不持有策略状态，也不产生 side effect；
+3. 动态参数只能在 `strategySnapshot.resolvedConfig` 声明的参数边界内取值，越界必须 clip 并写入决策审计；
+4. 动态参数计算不得跨越 Controller 边界，不得调用交易所、不得修改余额、不得写 Ledger、不得绕过 Intent 直接下单；
+5. Controller 必须显式定义"指标预热期"行为：预热未完成时不得产生新的下单 intent；
+6. 同一个动态报价子模块的输入（snapshot、OrderBalance、indicator 状态）与输出（最终 quote 参数）必须可重放，便于回测与归因。
+
+具体策略大类（例如 Adaptive PMM）的指标组合、预热规则与 clip 行为，由该 Controller 的架构文档定义，不在本节展开。
+
 ### 3.4 CEX 优先执行边界
 
 第一版实施范围只包含 CEX 执行。
