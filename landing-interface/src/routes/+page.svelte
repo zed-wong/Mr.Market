@@ -1,43 +1,27 @@
 <script lang="ts">
   import LandingNav from '$lib/landing/LandingNav.svelte';
-  import { epochStats, makers } from '$lib/landing/data';
-
-  const coreSteps = [
-    {
-      name: 'Campaign',
-      label: 'capital mandate',
-      text: 'A project opens a public liquidity target, reward pool, and scoring rule.',
-    },
-    {
-      name: 'Competition',
-      label: 'maker quality',
-      text: 'Makers compete on durable spread, useful depth, uptime, and settled volume.',
-    },
-    {
-      name: 'Leaderboard',
-      label: 'public attribution',
-      text: 'Market quality becomes visible before rewards are distributed.',
-    },
-  ];
-
-  const coreClaims = [
-    'Public campaigns for markets that need real liquidity',
-    'Maker ranking based on measurable quality, not private access',
-    'Rewards connected to attributed depth, spread, uptime, and fills',
-  ];
+  import {
+    audiences,
+    epochStats,
+    heroPills,
+    makers,
+    problems,
+    shiftCompare,
+  } from '$lib/landing/data';
 
   const topMakers = makers.slice(0, 3);
 </script>
 
 <svelte:head>
-  <title>Mr.Market — Liquidity Access Layer</title>
+  <title>Mr.Market — Democratized market-making engine</title>
   <meta
     name="description"
-    content="Mr.Market turns liquidity campaigns into visible, measurable market-making infrastructure."
+    content="Liquidity should belong to everyone, not to privilege. Mr.Market turns market-making from a private negotiation into a public, measurable, permissionless workflow."
   />
 </svelte:head>
 
 <main class="min-h-screen bg-base-100 text-base-content" data-theme="landing-light">
+  <!-- 1. HERO -->
   <section class="relative overflow-hidden border-b quiet-rule">
     <div class="pointer-events-none absolute inset-x-0 top-0 h-[30rem] bg-[radial-gradient(circle_at_74%_10%,rgba(17,17,17,0.035),transparent_30%)]"></div>
     <div class="relative mx-auto flex max-w-7xl flex-col gap-16 px-5 py-6 sm:px-8 lg:px-10">
@@ -105,9 +89,9 @@
             </div>
 
             <div class="relative mt-8 grid gap-3 sm:grid-cols-3">
-              {#each coreSteps as step, index}
+              {#each heroPills as pill}
                 <span class="rounded-full border border-base-100/14 bg-base-100/8 px-4 py-3 text-sm text-base-100/78 backdrop-blur-sm">
-                  <span class="data-font mr-2 font-semibold text-base-100">0{index + 1}</span>{step.name}
+                  <span class="data-font mr-2 font-semibold text-base-100">{pill.index}</span>{pill.label}
                 </span>
               {/each}
             </div>
@@ -117,39 +101,90 @@
     </div>
   </section>
 
+  <!-- 2. THE SOUL -->
   <section class="border-b quiet-rule">
-    <div class="mx-auto grid max-w-7xl gap-3 px-5 py-6 sm:px-8 lg:grid-cols-3 lg:px-10">
-      {#each coreClaims as claim}
-        <span class="border-b quiet-rule py-4 text-sm leading-6 text-base-content/68 lg:border-b-0 lg:border-r lg:pr-8 last:lg:border-r-0">
-          {claim}
-        </span>
-      {/each}
+    <div class="mx-auto max-w-7xl px-5 py-20 sm:px-8 lg:px-10">
+      <span class="micro-label block text-base-content/48">The soul</span>
+      <span class="mt-6 block max-w-5xl balance-font text-4xl font-bold leading-[1.06] sm:text-5xl">
+        Liquidity is the one thing on-chain markets never made permissionless.
+        <span class="text-base-content/40"> We're fixing that.</span>
+      </span>
     </div>
   </section>
 
-  <section id="how" class="border-b quiet-rule bg-base-200/42">
+  <!-- 3. THE PROBLEM -->
+  <section class="border-b quiet-rule bg-base-200/42">
     <div class="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[0.72fr_1.28fr] lg:px-10">
       <div class="flex flex-col gap-5">
-        <span class="micro-label text-base-content/50">The core loop</span>
-        <span class="balance-font text-5xl font-bold leading-[1.04]">Capital becomes measurable liquidity.</span>
+        <span class="micro-label text-base-content/50">How liquidity works today</span>
+        <span class="balance-font text-5xl font-bold leading-[1.04]">A market built on private deals.</span>
         <span class="max-w-sm text-sm leading-7 text-base-content/62">
-          A campaign is not a private deal. It is a public mandate with market-quality attribution.
+          Modern liquidity is granted, not earned. Projects negotiate with a handful of market makers in private. Quality is unverifiable. New tokens depend on relationships.
         </span>
       </div>
 
       <div class="grid gap-4 lg:grid-cols-3">
-        {#each coreSteps as step, index}
-          <div class="rounded-[1.45rem] border border-base-content/12 bg-base-100/72 p-6 {index === 1 ? 'shadow-[0_24px_70px_rgba(17,17,15,0.08)]' : ''}">
+        {#each problems as problem, index}
+          <div class="rounded-[1.45rem] border border-base-content/12 bg-base-100/72 p-6">
             <span class="data-font text-4xl font-semibold text-base-content/28">0{index + 1}</span>
-            <span class="mt-10 block balance-font text-3xl font-bold leading-none">{step.name}</span>
-            <span class="mt-3 block text-xs text-base-content/46">{step.label}</span>
-            <span class="mt-5 block text-sm leading-6 text-base-content/62">{step.text}</span>
+            <span class="mt-10 block balance-font text-3xl font-bold leading-none">{problem.name}</span>
+            <span class="mt-5 block text-sm leading-6 text-base-content/62">{problem.text}</span>
           </div>
         {/each}
       </div>
     </div>
   </section>
 
+  <!-- 4. THE SHIFT -->
+  <section class="border-b quiet-rule">
+    <div class="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[0.72fr_1.28fr] lg:px-10">
+      <div class="flex flex-col gap-5">
+        <span class="micro-label text-base-content/50">The shift</span>
+        <span class="balance-font text-5xl font-bold leading-[1.04]">From primitives to workflows.</span>
+        <span class="max-w-sm text-sm leading-7 text-base-content/62">
+          Existing market-making tools expose low-level trading primitives — only useful if you already are a market-making engineer. Mr.Market exposes liquidity as a workflow. The complexity is absorbed by the system, not pushed onto the user.
+        </span>
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-2">
+        <div class="rounded-[1.45rem] border border-base-content/12 bg-base-100/72 p-7">
+          <span class="micro-label text-base-content/46">{shiftCompare.left.label}</span>
+          <span class="mt-6 block balance-font text-2xl font-bold leading-tight">{shiftCompare.left.title}</span>
+          <span class="mt-4 block text-sm leading-6 text-base-content/62">{shiftCompare.left.body}</span>
+        </div>
+        <div class="rounded-[1.45rem] border border-base-content bg-base-content p-7 text-base-100 shadow-[0_24px_70px_rgba(17,17,15,0.12)]">
+          <span class="micro-label text-base-100/56">{shiftCompare.right.label}</span>
+          <span class="mt-6 block balance-font text-2xl font-bold leading-tight">{shiftCompare.right.title}</span>
+          <span class="mt-4 block text-sm leading-6 text-base-100/72">{shiftCompare.right.body}</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. WHO IT'S FOR -->
+  <section class="border-b quiet-rule">
+    <div class="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:px-10">
+      <div class="flex flex-col gap-5">
+        <span class="micro-label text-base-content/50">Who it's for</span>
+        <span class="balance-font text-5xl font-bold leading-[1.04]">Two sides, one open market.</span>
+      </div>
+
+      <div class="mt-10 grid gap-4 lg:grid-cols-2">
+        {#each audiences as audience}
+          <div class="rounded-[1.45rem] border border-base-content/12 bg-base-200/52 p-7 sm:p-9">
+            <span class="micro-label text-base-content/48">{audience.label}</span>
+            <span class="mt-6 block balance-font text-3xl font-bold leading-[1.1]">{audience.title}</span>
+            <span class="mt-5 block text-sm leading-7 text-base-content/66">{audience.body}</span>
+            <a href={audience.cta.href} class="mt-8 inline-flex rounded-full border border-base-content/18 bg-base-100 px-5 py-2.5 text-[0.68rem] font-bold text-base-content capitalize no-underline hover:no-underline">
+              {audience.cta.text}
+            </a>
+          </div>
+        {/each}
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. PUBLIC PROOF -->
   <section class="mx-auto grid max-w-7xl gap-6 px-5 py-16 sm:px-8 lg:grid-cols-[1fr_20rem] lg:px-10">
     <div class="overflow-hidden rounded-[1.45rem] border border-base-content/12 bg-base-100">
       <div class="grid gap-3 border-b quiet-rule p-6 md:grid-cols-[1fr_auto] md:items-end">
@@ -187,17 +222,25 @@
     </aside>
   </section>
 
-  <section id="mechanism" class="mx-auto max-w-7xl px-5 pb-16 sm:px-8 lg:px-10">
-    <div class="rounded-[1.45rem] border border-base-content/12 bg-base-200/52 p-7 sm:p-9">
-      <span class="micro-label block text-base-content/48">One-sentence thesis</span>
+  <!-- 7. CLOSING THESIS -->
+  <section id="thesis" class="mx-auto max-w-7xl px-5 pb-16 sm:px-8 lg:px-10">
+    <div class="rounded-[1.45rem] border border-base-content/12 bg-base-200/52 p-7 sm:p-12">
+      <span class="micro-label block text-base-content/48">Closing thesis</span>
       <span class="mt-6 block max-w-5xl balance-font text-4xl font-bold leading-[1.06] sm:text-5xl">
-        Liquidity access should be earned and measured in public, not allocated by private relationships.
+        Not unregulatable.
+        <span class="text-base-content/40">Unmanipulable.</span>
+      </span>
+      <span class="mt-5 block max-w-3xl text-base leading-7 text-base-content/64">
+        We don't eliminate the law. We eliminate the control point. What we change is not the market — it's the way to enter the market.
+      </span>
+      <span class="mt-10 block max-w-4xl balance-font text-2xl font-semibold leading-tight text-base-content sm:text-3xl">
+        Liquidity should belong to everyone, not to privilege.
       </span>
     </div>
   </section>
 
   <footer class="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-8 text-xs opacity-54 sm:px-8 md:flex-row md:items-center md:justify-between lg:px-10">
     <span>Mr.Market · landing-interface</span>
-    <span>Campaigns · makers · scores · rewards</span>
+    <span>Open · measurable · permissionless</span>
   </footer>
 </main>

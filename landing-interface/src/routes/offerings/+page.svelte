@@ -7,7 +7,7 @@
   <title>Mr.Market — Offerings</title>
   <meta
     name="description"
-    content="Mr.Market offerings for liquidity campaigns, market makers, order-scoped ledger execution, public scoring, and rewards."
+    content="Mr.Market offerings: who we serve, the services we run, and the liquidity outcomes you can pursue — from bootstrapping a new market to operating as a competitive maker."
   />
 </svelte:head>
 
@@ -61,8 +61,8 @@
             <h2 class="m-0 text-2xl font-semibold tracking-[-0.025em]">{group.title}</h2>
             <div class="mt-8 border-t quiet-rule">
               {#each group.items as item}
-                <a href="/leaderboard" class="offering-list-row flex items-center justify-between gap-6 border-b quiet-rule py-5 text-base-content no-underline transition duration-300 hover:pl-2 hover:no-underline">
-                  <span class="text-[1.02rem] font-medium tracking-[-0.015em]">{item}</span>
+                <a href={`/offerings/${item.slug}`} class="offering-list-row flex items-center justify-between gap-6 border-b quiet-rule py-5 text-base-content no-underline transition duration-300 hover:pl-2 hover:no-underline">
+                  <span class="text-[1.02rem] font-medium tracking-[-0.015em]">{item.label}</span>
                   <span class="text-xl text-base-content/34">›</span>
                 </a>
               {/each}
@@ -72,11 +72,11 @@
       </div>
 
       <div class="py-12 lg:pl-12">
-        <h2 class="m-0 text-2xl font-semibold tracking-[-0.025em]">Strategies we offer</h2>
+        <h2 class="m-0 text-2xl font-semibold tracking-[-0.025em]">Outcomes you can pursue</h2>
         <div class="mt-8 border-t quiet-rule">
           {#each strategyOfferings as item}
-            <a href="/leaderboard" class="offering-list-row flex items-center justify-between gap-6 border-b quiet-rule py-5 text-base-content no-underline transition duration-300 hover:pl-2 hover:no-underline">
-              <span class="text-[1.02rem] font-medium tracking-[-0.015em]">{item}</span>
+            <a href={`/offerings/${item.slug}`} class="offering-list-row flex items-center justify-between gap-6 border-b quiet-rule py-5 text-base-content no-underline transition duration-300 hover:pl-2 hover:no-underline">
+              <span class="text-[1.02rem] font-medium tracking-[-0.015em]">{item.label}</span>
               <span class="text-xl text-base-content/34">›</span>
             </a>
           {/each}
