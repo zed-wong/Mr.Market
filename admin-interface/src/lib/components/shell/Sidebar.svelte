@@ -28,13 +28,9 @@
   let pathname = $derived($page.url.pathname.replace(/\/+$/, '') || '/');
 
   const iconName = (key: string) => {
-    if (key.includes('market_making')) return 'settings';
-    if (key.includes('users')) return 'users';
-    if (key.includes('logs') || key.includes('audit')) return 'orders';
-    if (key.includes('api_keys') || key.includes('config') || key.includes('roles')) return 'settings';
-    if (key.includes('status') || key.includes('risks')) return 'health';
-    if (key.includes('capital') || key.includes('positions')) return 'revenue';
-    if (key.includes('runs') || key.includes('routes') || key.includes('strategies')) return 'exchanges';
+    if (key === 'overview') return 'dashboard';
+    if (key === 'trading') return 'revenue';
+    if (key === 'system') return 'settings';
     return key.replaceAll('.', '_');
   };
 
