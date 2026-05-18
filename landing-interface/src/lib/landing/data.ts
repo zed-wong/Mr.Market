@@ -7,15 +7,15 @@ export const heroPills = [
 export const problems = [
   {
     name: 'Negotiated',
-    text: 'Liquidity is granted through private deals between projects and a handful of permissioned market makers.',
+    text: "You don't buy liquidity. You ask for it — in private, from a handful of makers, on terms no one else sees.",
   },
   {
     name: 'Opaque',
-    text: 'No standard way to measure depth, spread quality, or uptime. Fake volume goes undetected.',
+    text: 'There is no public number for spread, useful depth, or uptime. Fake volume is the default, not the exception.',
   },
   {
     name: 'Permissioned',
-    text: 'New tokens depend on relationships, not on a protocol. Liquidity is a privilege, not a capability.',
+    text: 'New tokens get liquidity only if a maker agrees. Refusal has no appeal — and leaves no record.',
   },
 ];
 
@@ -567,3 +567,68 @@ export const offeringGroups: { title: string; items: { slug: string; label: stri
 export const strategyOfferings: { slug: string; label: string }[] = offeringPages
   .filter((p) => p.group === 'outcome')
   .map((p) => ({ slug: p.slug, label: p.label }));
+
+// ─── ARCHITECTURE ────────────────────────────────────────────
+export type ArchitectureLayer = {
+  index: string;
+  name: string;
+  role: string;
+  detail: string;
+};
+
+export const architectureLayers: ArchitectureLayer[] = [
+  {
+    index: '01',
+    name: 'Funding layer',
+    role: 'Deposits, withdrawals, rewards.',
+    detail:
+      'The ledger is the single source of truth for every balance. Funds enter, leave, and earn through immutable, idempotent entries — never through in-memory state.',
+  },
+  {
+    index: '02',
+    name: 'Scheduling layer',
+    role: 'Tick, strategy controllers, intent dispatch.',
+    detail:
+      'A non-blocking tick advances time and dispatches signals. Strategy controllers translate state into typed intents — they never place orders or mutate balances themselves.',
+  },
+  {
+    index: '03',
+    name: 'Trading layer',
+    role: 'Reservation, exchange orders, fills, reconciliation.',
+    detail:
+      'Intent workers reserve balance at the order level, place exchange orders, settle fills back to the ledger, and reconcile against exchange state. Risk-increasing operations halt on mismatch.',
+  },
+];
+
+export type ArchitectureInvariant = { heading: string; body: string };
+
+export const architectureInvariants: ArchitectureInvariant[] = [
+  {
+    heading: 'Ledger is the source of truth',
+    body: 'Every balance change is an append-only ledger entry — idempotent, transactional, and attributable. No in-memory-only balances exist.',
+  },
+  {
+    heading: 'Balance scoped by order',
+    body: 'Market-making balance is keyed by orderId + asset, not by userId + asset. Every deployed dollar traces back to a specific order.',
+  },
+  {
+    heading: 'Reserve before you trade',
+    body: 'External orders pass a risk check and an order-level reservation before any exchange call. No order goes out without funds set aside.',
+  },
+  {
+    heading: 'Strategies only emit intent',
+    body: 'Controllers produce actions and intents. Intent workers own reservation, exchange mutation, tracked orders, and state transitions.',
+  },
+  {
+    heading: 'Tick never blocks',
+    body: 'The scheduling tick must not wait on exchange I/O, REST calls, or DB settlement. Latency belongs in the workers, not in the clock.',
+  },
+  {
+    heading: 'Reconciliation halts risk',
+    body: 'When internal ledger and exchange state disagree, risk-increasing operations are blocked until the mismatch is resolved.',
+  },
+  {
+    heading: 'No generic adjustment path',
+    body: 'Fills, fees, rewards, withdrawals, and reversals are typed and order-attributed. There is no “miscellaneous adjustment” that hides activity.',
+  },
+];

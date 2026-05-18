@@ -1,9 +1,10 @@
 <script lang="ts">
-  export let active: 'landing' | 'offerings' | 'leaderboard' = 'landing';
+  export let active: 'landing' | 'offerings' | 'architecture' | 'leaderboard' = 'landing';
 
   const navItems = [
     { key: 'landing', label: 'Overview', href: '/' },
     { key: 'offerings', label: 'Offerings', href: '/offerings' },
+    { key: 'architecture', label: 'Architecture', href: '/architecture' },
     { key: 'leaderboard', label: 'Leaderboard', href: '/leaderboard' },
   ];
 </script>

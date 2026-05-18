@@ -62,9 +62,4 @@ the liquidity layer can be separated from institutional layers and become a publ
 
 If this capability matures, it will become the default launch method for on-chain organizations, just as open source software became the default collaboration model.
 
-What we pursue is not "unregulatable," but "unmanipulable."
-What we eliminate is not law, but control points.
-What we change is not the market, but the way to enter the market.
-
-Liquidity should belong to everyone, not to privilege.
-This is the soul of the project.
+A liquidity layer worth building offers no preferred relationship, no privileged path, and no party whose cooperation must be negotiated. It does not refuse regulation — it leaves regulation less surface to act on through capture, and more surface to act on through rule.

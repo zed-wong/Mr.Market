@@ -117,9 +117,9 @@
     <div class="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[0.72fr_1.28fr] lg:px-10">
       <div class="flex flex-col gap-5">
         <span class="micro-label text-base-content/50">How liquidity works today</span>
-        <span class="balance-font text-5xl font-bold leading-[1.04]">A market built on private deals.</span>
+        <span class="balance-font text-5xl font-bold leading-[1.04]">Liquidity is still a favor.</span>
         <span class="max-w-sm text-sm leading-7 text-base-content/62">
-          Modern liquidity is granted, not earned. Projects negotiate with a handful of market makers in private. Quality is unverifiable. New tokens depend on relationships.
+          You ask the right firm. You hope for a yes. You trust the numbers they show you. None of it is public — and none of it has to be.
         </span>
       </div>
 
@@ -224,18 +224,47 @@
 
   <!-- 7. CLOSING THESIS -->
   <section id="thesis" class="mx-auto max-w-7xl px-5 pb-16 sm:px-8 lg:px-10">
-    <div class="rounded-[1.45rem] border border-base-content/12 bg-base-200/52 p-7 sm:p-12">
-      <span class="micro-label block text-base-content/48">Closing thesis</span>
-      <span class="mt-6 block max-w-5xl balance-font text-4xl font-bold leading-[1.06] sm:text-5xl">
-        Not unregulatable.
-        <span class="text-base-content/40">Unmanipulable.</span>
-      </span>
-      <span class="mt-5 block max-w-3xl text-base leading-7 text-base-content/64">
-        We don't eliminate the law. We eliminate the control point. What we change is not the market — it's the way to enter the market.
-      </span>
-      <span class="mt-10 block max-w-4xl balance-font text-2xl font-semibold leading-tight text-base-content sm:text-3xl">
-        Liquidity should belong to everyone, not to privilege.
-      </span>
+    <div class="rounded-[2rem] border border-base-content/12 bg-base-200/52 p-7 sm:p-12">
+      <div class="grid gap-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-start">
+        <div>
+          <span class="micro-label block text-base-content/48">Closing thesis</span>
+          <span class="mt-6 block balance-font text-4xl font-bold leading-[1.06] sm:text-5xl">
+            A liquidity layer worth building has no inside lane.
+          </span>
+          <span class="mt-5 block max-w-md text-sm leading-7 text-base-content/62">
+            It is not private access made smoother. It is market entry expressed as a public mechanism.
+          </span>
+        </div>
+
+        <div class="grid gap-3">
+          <div class="rounded-[1.25rem] border border-base-content/10 bg-base-100 p-5">
+            <span class="data-font text-sm text-base-content/34">01</span>
+            <span class="mt-4 block balance-font text-2xl font-bold leading-tight">No preferred relationship.</span>
+          </div>
+          <div class="rounded-[1.25rem] border border-base-content/10 bg-base-100 p-5">
+            <span class="data-font text-sm text-base-content/34">02</span>
+            <span class="mt-4 block balance-font text-2xl font-bold leading-tight">No privileged path.</span>
+          </div>
+          <div class="rounded-[1.25rem] border border-base-content/10 bg-base-100 p-5">
+            <span class="data-font text-sm text-base-content/34">03</span>
+            <span class="mt-4 block balance-font text-2xl font-bold leading-tight">
+              No party whose cooperation must be negotiated.
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-12 border-t border-base-content/10 pt-8">
+        <span class="block max-w-5xl balance-font text-3xl font-bold leading-[1.12] text-base-content/44 sm:text-4xl">
+          It does not refuse regulation.
+          <span>
+            It gives markets
+            <span class="text-base-content">fewer private gates</span>,
+            and more public rules
+            <span class="text-base-content">anyone can rely on</span>.
+          </span>
+        </span>
+      </div>
     </div>
   </section>
 
