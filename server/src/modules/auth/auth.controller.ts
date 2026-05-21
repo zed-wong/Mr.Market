@@ -4,6 +4,14 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from 'src/modules/auth/auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
+type AdminJwtRequest = {
+  user?: {
+    username?: string;
+    tokenVersion?: number;
+    authMethod?: 'password' | 'passkey';
+  };
+};
+
 // Add @ApiTags to categorize the endpoint in Swagger
 @ApiTags('Auth')
 @Controller('auth')
@@ -47,22 +55,30 @@ export class AuthController {
 
   @Post('passkeys/register/options')
   @UseGuards(JwtAuthGuard)
-  async passkeyRegistrationOptions() {
-    return this.authService.generatePasskeyRegistrationOptions();
+  async passkeyRegistrationOptions(@Req() request: AdminJwtRequest) {
+    return this.authService.generatePasskeyRegistrationOptions(request.user);
   }
 
   @Post('passkeys/register/verify')
   @UseGuards(JwtAuthGuard)
-  async passkeyRegistrationVerify(@Body() body: unknown) {
-    return this.authService.verifyPasskeyRegistration(body as never);
+  async passkeyRegistrationVerify(
+    @Body() body: unknown,
+    @Req() request: AdminJwtRequest,
+  ) {
+    return this.authService.verifyPasskeyRegistration(
+      body as never,
+      request.user,
+    );
   }
 
   @Post('passkeys/login/options')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async passkeyLoginOptions() {
     return this.authService.generatePasskeyLoginOptions();
   }
 
   @Post('passkeys/login/verify')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async passkeyLoginVerify(
     @Body() body: unknown,
   ): Promise<{ access_token: string; expires_in: number }> {

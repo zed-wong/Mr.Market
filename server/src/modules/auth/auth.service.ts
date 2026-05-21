@@ -34,6 +34,16 @@ const ADMIN_AUTH_ID = 'admin';
 const ADMIN_JWT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
+const DEFAULT_PASSKEY_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+];
+type AdminAuthMethod = 'password' | 'passkey';
+type AdminJwtPayload = {
+  username?: string;
+  tokenVersion?: number;
+  authMethod?: AdminAuthMethod;
+};
 
 @Injectable()
 export class AuthService {
@@ -104,10 +114,10 @@ export class AuthService {
     await this.resetFailedLogins(state);
     this.audit('admin.password_login.succeeded');
 
-    return this.signAdminJwt(state.tokenVersion);
+    return this.signAdminJwt(state.tokenVersion, 'password');
   }
 
-  async getSession(payload?: { username?: string; tokenVersion?: number }) {
+  async getSession(payload?: AdminJwtPayload) {
     if (payload?.username !== ADMIN_AUTH_ID) {
       return { authenticated: false };
     }
@@ -129,7 +139,8 @@ export class AuthService {
     }
   }
 
-  async generatePasskeyRegistrationOptions() {
+  async generatePasskeyRegistrationOptions(payload?: AdminJwtPayload) {
+    this.assertPasswordAuthenticatedAdmin(payload);
     const state = await this.getAdminAuthState();
     const credentials = await this.passkeyRepository.find();
     const options = await generateRegistrationOptions({
@@ -153,18 +164,20 @@ export class AuthService {
     return options;
   }
 
-  async verifyPasskeyRegistration(body: RegistrationResponseJSON) {
+  async verifyPasskeyRegistration(
+    body: RegistrationResponseJSON,
+    payload?: AdminJwtPayload,
+  ) {
+    this.assertPasswordAuthenticatedAdmin(payload);
     const state = await this.getAdminAuthState();
     if (!state.currentChallenge) {
       throw new UnauthorizedException('Passkey registration challenge missing');
     }
 
-    const verification = await verifyRegistrationResponse({
-      response: body,
-      expectedChallenge: state.currentChallenge,
-      expectedOrigin: this.getPasskeyOrigin(),
-      expectedRPID: this.getPasskeyRpId(),
-    });
+    const verification = await this.verifyPasskeyRegistrationResponse(
+      body,
+      state.currentChallenge,
+    );
 
     if (!verification.verified || !verification.registrationInfo) {
       throw new UnauthorizedException('Invalid passkey registration');
@@ -222,20 +235,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid passkey');
     }
 
-    const verification = await verifyAuthenticationResponse({
-      response: body,
-      expectedChallenge: state.currentChallenge,
-      expectedOrigin: this.getPasskeyOrigin(),
-      expectedRPID: this.getPasskeyRpId(),
-      credential: {
-        id: credential.credentialId,
-        publicKey: Buffer.from(credential.publicKey, 'base64url'),
-        counter: credential.counter,
-        transports: credential.transports
-          ? JSON.parse(credential.transports)
-          : undefined,
-      },
-    });
+    const verification = await this.verifyPasskeyAuthenticationResponse(
+      body,
+      state.currentChallenge,
+      credential,
+    );
 
     if (!verification.verified) {
       this.audit('admin.passkey_login.failed');
@@ -250,14 +254,81 @@ export class AuthService {
     state.updatedAt = getRFC3339Timestamp();
     await this.adminAuthStateRepository.save(state);
     this.audit('admin.passkey_login.succeeded');
-    return this.signAdminJwt(state.tokenVersion);
+    return this.signAdminJwt(state.tokenVersion, 'passkey');
   }
 
-  private signAdminJwt(tokenVersion: number): string {
+  private signAdminJwt(
+    tokenVersion: number,
+    authMethod: AdminAuthMethod,
+  ): string {
     return this.jwtService.sign(
-      { username: ADMIN_AUTH_ID, tokenVersion },
+      { username: ADMIN_AUTH_ID, tokenVersion, authMethod },
       { expiresIn: '7d' },
     );
+  }
+
+  private assertPasswordAuthenticatedAdmin(payload?: AdminJwtPayload): void {
+    if (
+      payload?.username !== ADMIN_AUTH_ID ||
+      payload.authMethod !== 'password'
+    ) {
+      throw new UnauthorizedException(
+        'Passkey registration requires password login',
+      );
+    }
+  }
+
+  private async verifyPasskeyRegistrationResponse(
+    body: RegistrationResponseJSON,
+    currentChallenge: string,
+  ) {
+    try {
+      return await verifyRegistrationResponse({
+        response: body,
+        expectedChallenge: currentChallenge,
+        expectedOrigin: this.getPasskeyOrigins(),
+        expectedRPID: this.getPasskeyRpId(),
+      });
+    } catch (error) {
+      this.audit('admin.passkey_registration.failed');
+      this.logger.warn(
+        `Passkey registration verification failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw new UnauthorizedException('Invalid passkey registration');
+    }
+  }
+
+  private async verifyPasskeyAuthenticationResponse(
+    body: AuthenticationResponseJSON,
+    currentChallenge: string,
+    credential: AdminPasskeyCredentialEntity,
+  ) {
+    try {
+      return await verifyAuthenticationResponse({
+        response: body,
+        expectedChallenge: currentChallenge,
+        expectedOrigin: this.getPasskeyOrigins(),
+        expectedRPID: this.getPasskeyRpId(),
+        credential: {
+          id: credential.credentialId,
+          publicKey: Buffer.from(credential.publicKey, 'base64url'),
+          counter: credential.counter,
+          transports: credential.transports
+            ? JSON.parse(credential.transports)
+            : undefined,
+        },
+      });
+    } catch (error) {
+      this.audit('admin.passkey_login.failed');
+      this.logger.warn(
+        `Passkey login verification failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw new UnauthorizedException('Invalid passkey');
+    }
   }
 
   private async getAdminAuthState(): Promise<AdminAuthStateEntity> {
@@ -320,17 +391,45 @@ export class AuthService {
   }
 
   private getPasskeyRpId(): string {
-    return (
-      this.configService.get<string>('admin.passkey_rp_id') ||
-      'localhost'
-    );
+    const configured = this.configService.get<string>('admin.passkey_rp_id');
+    if (configured) {
+      return configured;
+    }
+
+    return this.getPasskeyOriginHostname(this.getPasskeyOrigins()[0]);
   }
 
-  private getPasskeyOrigin(): string {
-    return (
+  private getPasskeyOrigins(): string[] {
+    const configured =
       this.configService.get<string>('admin.passkey_origin') ||
-      'http://localhost:5173'
-    );
+      this.configService.get<string>('cors.origin');
+    if (!configured) {
+      return DEFAULT_PASSKEY_ORIGINS;
+    }
+
+    const origins = configured
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0 && origin !== '*')
+      .filter((origin) => this.isValidOrigin(origin));
+    return origins.length > 0 ? origins : DEFAULT_PASSKEY_ORIGINS;
+  }
+
+  private getPasskeyOriginHostname(origin: string): string {
+    try {
+      return new URL(origin).hostname;
+    } catch {
+      return 'localhost';
+    }
+  }
+
+  private isValidOrigin(origin: string): boolean {
+    try {
+      const parsed = new URL(origin);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
   }
 
   private audit(event: string) {

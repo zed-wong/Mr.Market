@@ -37,6 +37,9 @@ export default () => ({
     passkey_rp_id: process.env.ADMIN_PASSKEY_RP_ID,
     passkey_origin: process.env.ADMIN_PASSKEY_ORIGIN,
   },
+  cors: {
+    origin: process.env.CORS_ORIGIN,
+  },
   mixin: {
     app_id: process.env.MIXIN_APP_ID,
     session_id: process.env.MIXIN_SESSION_ID,

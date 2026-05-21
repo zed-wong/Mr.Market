@@ -7,6 +7,12 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from '@simplewebauthn/server';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
@@ -20,6 +26,12 @@ import { AuthService } from './auth.service';
 // Mock axios and getUserMe
 jest.mock('axios');
 jest.mock('src/common/helpers/mixin/user');
+jest.mock('@simplewebauthn/server', () => ({
+  generateAuthenticationOptions: jest.fn(),
+  generateRegistrationOptions: jest.fn(),
+  verifyAuthenticationResponse: jest.fn(),
+  verifyRegistrationResponse: jest.fn(),
+}));
 
 describe('AuthService', () => {
   let authService: AuthService;
@@ -30,6 +42,12 @@ describe('AuthService', () => {
     create: jest.Mock;
     save: jest.Mock;
   };
+  let passkeyRepository: {
+    find: jest.Mock;
+    findOne: jest.Mock;
+    save: jest.Mock;
+  };
+  let configValues: Record<string, string | null>;
 
   beforeEach(async () => {
     // Mock UserService
@@ -45,6 +63,27 @@ describe('AuthService', () => {
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => value),
     };
+    passkeyRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
+      save: jest.fn(async (value) => value),
+    };
+    configValues = {
+      'admin.jwt_secret': 'jwt_secret',
+      'admin.pass': 'admin_pass',
+      'mixin.app_id': 'test_app_id',
+      'mixin.oauth_secret': 'test_oauth_secret',
+    };
+    (generateRegistrationOptions as jest.Mock).mockResolvedValue({
+      challenge: 'registration-challenge',
+    });
+    (generateAuthenticationOptions as jest.Mock).mockResolvedValue({
+      challenge: 'login-challenge',
+    });
+    (verifyAuthenticationResponse as jest.Mock).mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 2 },
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -53,20 +92,7 @@ describe('AuthService', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn((key: string) => {
-              switch (key) {
-                case 'admin.jwt_secret':
-                  return 'jwt_secret';
-                case 'admin.pass':
-                  return 'admin_pass';
-                case 'mixin.app_id':
-                  return 'test_app_id';
-                case 'mixin.oauth_secret':
-                  return 'test_oauth_secret';
-                default:
-                  return null;
-              }
-            }),
+            get: jest.fn((key: string) => configValues[key] ?? null),
           },
         },
         {
@@ -79,11 +105,7 @@ describe('AuthService', () => {
         },
         {
           provide: getRepositoryToken(AdminPasskeyCredentialEntity),
-          useValue: {
-            find: jest.fn().mockResolvedValue([]),
-            findOne: jest.fn().mockResolvedValue(null),
-            save: jest.fn(async (value) => value),
-          },
+          useValue: passkeyRepository,
         },
       ],
     }).compile();
@@ -133,10 +155,166 @@ describe('AuthService', () => {
       const result = await authService.validateUser(hashedAdminPassword);
 
       expect(signSpy).toHaveBeenCalledWith(
-        { username: 'admin', tokenVersion: 1 },
+        { username: 'admin', tokenVersion: 1, authMethod: 'password' },
         { expiresIn: '7d' },
       );
       expect(result).toBe('signed_token');
+    });
+  });
+
+  describe('passkeys', () => {
+    it('requires a password-authenticated token before registration options are issued', async () => {
+      await expect(
+        authService.generatePasskeyRegistrationOptions({
+          username: 'admin',
+          tokenVersion: 1,
+          authMethod: 'passkey',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(generateRegistrationOptions).not.toHaveBeenCalled();
+    });
+
+    it('generates registration options after password login and stores the challenge', async () => {
+      const options = await authService.generatePasskeyRegistrationOptions({
+        username: 'admin',
+        tokenVersion: 1,
+        authMethod: 'password',
+      });
+
+      expect(options).toEqual({ challenge: 'registration-challenge' });
+      expect(authStateRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          currentChallenge: 'registration-challenge',
+        }),
+      );
+    });
+
+    it('uses CORS origins and derives RP ID when passkey-specific config is absent', async () => {
+      configValues['cors.origin'] =
+        'https://admin.mrmarket.one, https://ops.mrmarket.one';
+
+      await authService.generatePasskeyRegistrationOptions({
+        username: 'admin',
+        tokenVersion: 1,
+        authMethod: 'password',
+      });
+
+      expect(generateRegistrationOptions).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rpID: 'admin.mrmarket.one',
+        }),
+      );
+    });
+
+    it('prefers explicit passkey origin and RP ID over CORS config', async () => {
+      configValues['cors.origin'] = 'https://admin.mrmarket.one';
+      configValues['admin.passkey_origin'] = 'https://secure.mrmarket.one';
+      configValues['admin.passkey_rp_id'] = 'mrmarket.one';
+      (verifyRegistrationResponse as jest.Mock).mockResolvedValueOnce({
+        verified: false,
+      });
+      authStateRepository.findOne.mockResolvedValue({
+        id: 'admin',
+        tokenVersion: 1,
+        failedLoginAttempts: 0,
+        currentChallenge: 'registration-challenge',
+      });
+
+      await expect(
+        authService.verifyPasskeyRegistration(
+          { response: { transports: [] } } as never,
+          {
+            username: 'admin',
+            tokenVersion: 1,
+            authMethod: 'password',
+          },
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(verifyRegistrationResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expectedOrigin: ['https://secure.mrmarket.one'],
+          expectedRPID: 'mrmarket.one',
+        }),
+      );
+    });
+
+    it('accepts the local admin dev origin when verifying registration', async () => {
+      authStateRepository.findOne.mockResolvedValue({
+        id: 'admin',
+        tokenVersion: 1,
+        failedLoginAttempts: 0,
+        currentChallenge: 'registration-challenge',
+      });
+      (verifyRegistrationResponse as jest.Mock).mockResolvedValueOnce({
+        verified: false,
+      });
+
+      await expect(
+        authService.verifyPasskeyRegistration(
+          { response: { transports: [] } } as never,
+          {
+            username: 'admin',
+            tokenVersion: 1,
+            authMethod: 'password',
+          },
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(verifyRegistrationResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expectedOrigin: expect.arrayContaining(['http://localhost:5174']),
+        }),
+      );
+    });
+
+    it('maps passkey registration verification errors to unauthorized responses', async () => {
+      authStateRepository.findOne.mockResolvedValue({
+        id: 'admin',
+        tokenVersion: 1,
+        failedLoginAttempts: 0,
+        currentChallenge: 'registration-challenge',
+      });
+      (verifyRegistrationResponse as jest.Mock).mockRejectedValueOnce(
+        new Error('Unexpected registration response origin'),
+      );
+
+      await expect(
+        authService.verifyPasskeyRegistration(
+          { response: { transports: [] } } as never,
+          {
+            username: 'admin',
+            tokenVersion: 1,
+            authMethod: 'password',
+          },
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('returns a passkey-authenticated JWT after a valid passkey login', async () => {
+      authStateRepository.findOne.mockResolvedValue({
+        id: 'admin',
+        tokenVersion: 3,
+        failedLoginAttempts: 0,
+        currentChallenge: 'login-challenge',
+      });
+      passkeyRepository.findOne.mockResolvedValue({
+        credentialId: 'credential-id',
+        publicKey: Buffer.from('public-key').toString('base64url'),
+        counter: 1,
+        transports: JSON.stringify(['internal']),
+      });
+      const signSpy = jest
+        .spyOn(jwtService, 'sign')
+        .mockReturnValue('passkey_token');
+
+      const result = await authService.verifyPasskeyLogin({
+        id: 'credential-id',
+      } as never);
+
+      expect(signSpy).toHaveBeenCalledWith(
+        { username: 'admin', tokenVersion: 3, authMethod: 'passkey' },
+        { expiresIn: '7d' },
+      );
+      expect(result).toBe('passkey_token');
     });
   });
 
