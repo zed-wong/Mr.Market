@@ -199,7 +199,7 @@ export class PureMarketMakingStrategyDto {
 
   @ApiProperty({
     description:
-      'Price source type (MID_PRICE, BEST_BID, BEST_ASK, LAST_PRICE)',
+      'Price source type (MID_PRICE, MICROPRICE, BEST_BID, BEST_ASK, LAST_PRICE)',
     example: 'MID_PRICE',
     enum: PriceSourceType,
   })

@@ -33,7 +33,7 @@
       "numberOfLayers": { "type": "number", "minimum": 1 },
       "priceSourceType": {
         "type": "string",
-        "enum": ["MID_PRICE", "BEST_BID", "BEST_ASK", "LAST_PRICE"]
+        "enum": ["MID_PRICE", "MICROPRICE", "BEST_BID", "BEST_ASK", "LAST_PRICE"]
       },
       "amountChangePerLayer": { "type": "number" },
       "amountChangeType": {

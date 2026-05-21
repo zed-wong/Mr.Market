@@ -11,6 +11,12 @@ import { TickComponent } from '../tick/tick-component.interface';
 
 type BookLevel = [number, number];
 
+export type MidPriceSample = {
+  price: number;
+  ts: number;
+  sequence: number;
+};
+
 type OrderBookState = {
   bids: BookLevel[];
   asks: BookLevel[];
@@ -31,7 +37,9 @@ export class OrderBookTrackerService
   private readonly books = new Map<string, OrderBookState>();
   private readonly snapshotQueue = new Map<string, OrderBookState[]>();
   private readonly lastUpdateAtByKey = new Map<string, number>();
+  private readonly midPriceHistoryByKey = new Map<string, MidPriceSample[]>();
   private drainScheduled = false;
+  private readonly midPriceHistoryRetentionMs = 10 * 60 * 1000;
 
   constructor(
     @Optional()
@@ -53,6 +61,7 @@ export class OrderBookTrackerService
   async stop(): Promise<void> {
     this.snapshotQueue.clear();
     this.lastUpdateAtByKey.clear();
+    this.midPriceHistoryByKey.clear();
   }
 
   async health(): Promise<boolean> {
@@ -82,6 +91,18 @@ export class OrderBookTrackerService
 
   getLastUpdateAt(exchange: string, pair: string): number | undefined {
     return this.lastUpdateAtByKey.get(this.toKey(exchange, pair));
+  }
+
+  getMidPriceHistory(
+    exchange: string,
+    pair: string,
+    windowMs: number,
+  ): MidPriceSample[] {
+    const key = this.toKey(exchange, pair);
+    const history = this.midPriceHistoryByKey.get(key) || [];
+    const cutoff = Date.now() - Math.max(0, Number(windowMs || 0));
+
+    return history.filter((sample) => sample.ts >= cutoff);
   }
 
   isStale(exchange: string, pair: string, maxAgeMs: number): boolean {
@@ -125,12 +146,14 @@ export class OrderBookTrackerService
             `Rejected crossed order book ${key} bestBid=${bids[0]?.[0]} bestAsk=${asks[0]?.[0]}`,
           );
         } else {
+          const now = Date.now();
           this.books.set(key, {
             bids,
             asks,
             sequence: lastSnapshot.sequence,
           });
-          this.lastUpdateAtByKey.set(key, Date.now());
+          this.lastUpdateAtByKey.set(key, now);
+          this.recordMidPrice(key, bids, asks, lastSnapshot.sequence, now);
         }
       }
 
@@ -146,6 +169,40 @@ export class OrderBookTrackerService
     const bestAsk = asks[0][0];
 
     return bestBid >= bestAsk;
+  }
+
+  private recordMidPrice(
+    key: string,
+    bids: BookLevel[],
+    asks: BookLevel[],
+    sequence: number,
+    ts: number,
+  ): void {
+    const bestBid = this.toPositiveNumber(bids[0]?.[0]);
+    const bestAsk = this.toPositiveNumber(asks[0]?.[0]);
+
+    if (bestBid === undefined || bestAsk === undefined) {
+      return;
+    }
+
+    const midPrice = (bestBid + bestAsk) / 2;
+    const cutoff = ts - this.midPriceHistoryRetentionMs;
+    const history = (this.midPriceHistoryByKey.get(key) || []).filter(
+      (sample) => sample.ts >= cutoff,
+    );
+
+    history.push({ price: midPrice, ts, sequence });
+    this.midPriceHistoryByKey.set(key, history);
+  }
+
+  private toPositiveNumber(value: unknown): number | undefined {
+    const parsed = Number(value);
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return undefined;
+    }
+
+    return parsed;
   }
 
   private toKey(exchange: string, pair: string): string {

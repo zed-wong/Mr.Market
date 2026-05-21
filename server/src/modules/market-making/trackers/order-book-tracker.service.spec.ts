@@ -128,6 +128,93 @@ describe('OrderBookTrackerService', () => {
     jest.restoreAllMocks();
   });
 
+  it('records mid price history for valid snapshots', async () => {
+    const service = new OrderBookTrackerService();
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+
+    service.queueSnapshot('binance', 'BTC/USDT', {
+      bids: [[100, 1]],
+      asks: [[102, 1]],
+      sequence: 1,
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(service.getMidPriceHistory('binance', 'BTC/USDT', 5000)).toEqual([
+      { price: 101, ts: now, sequence: 1 },
+    ]);
+
+    jest.restoreAllMocks();
+  });
+
+  it('filters mid price history by requested window', async () => {
+    const service = new OrderBookTrackerService();
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now - 6000);
+    service.queueSnapshot('binance', 'BTC/USDT', {
+      bids: [[100, 1]],
+      asks: [[102, 1]],
+      sequence: 1,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    service.queueSnapshot('binance', 'BTC/USDT', {
+      bids: [[102, 1]],
+      asks: [[104, 1]],
+      sequence: 2,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(service.getMidPriceHistory('binance', 'BTC/USDT', 5000)).toEqual([
+      { price: 103, ts: now, sequence: 2 },
+    ]);
+
+    jest.restoreAllMocks();
+  });
+
+  it('does not record mid price history for crossed books', async () => {
+    const service = new OrderBookTrackerService();
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+
+    service.queueSnapshot('binance', 'BTC/USDT', {
+      bids: [[101, 1]],
+      asks: [[100, 1]],
+      sequence: 1,
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(service.getMidPriceHistory('binance', 'BTC/USDT', 5000)).toEqual([]);
+
+    jest.restoreAllMocks();
+  });
+
+  it('clears mid price history on stop', async () => {
+    const service = new OrderBookTrackerService();
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+
+    service.queueSnapshot('binance', 'BTC/USDT', {
+      bids: [[100, 1]],
+      asks: [[102, 1]],
+      sequence: 1,
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    await service.stop();
+
+    expect(service.getMidPriceHistory('binance', 'BTC/USDT', 5000)).toEqual([]);
+
+    jest.restoreAllMocks();
+  });
+
   it('queueDelta is a no-op', async () => {
     const service = new OrderBookTrackerService();
 

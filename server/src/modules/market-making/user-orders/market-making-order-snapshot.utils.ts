@@ -13,8 +13,12 @@ function toStoredString(value: unknown, fallback: string): string {
 }
 
 function toStoredPriceSourceType(value: unknown): PriceSourceType {
-  return Object.values(PriceSourceType).includes(value as PriceSourceType)
-    ? (value as PriceSourceType)
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+
+  return Object.values(PriceSourceType).includes(normalized as PriceSourceType)
+    ? (normalized as PriceSourceType)
     : PriceSourceType.MID_PRICE;
 }
 

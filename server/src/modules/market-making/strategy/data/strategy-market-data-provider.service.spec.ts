@@ -11,6 +11,8 @@ describe('StrategyMarketDataProviderService', () => {
   };
   const orderBookTrackerService = {
     getOrderBook: jest.fn(),
+    getLastUpdateAt: jest.fn(),
+    getMidPriceHistory: jest.fn(),
   };
   const exchangeConnectorAdapterService = {
     fetchOrderBook: jest.fn(),
@@ -23,6 +25,8 @@ describe('StrategyMarketDataProviderService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(undefined);
+    orderBookTrackerService.getMidPriceHistory.mockReturnValue([]);
     service = new StrategyMarketDataProviderService(
       configService as any,
       orderBookTrackerService as unknown as OrderBookTrackerService,
@@ -82,6 +86,26 @@ describe('StrategyMarketDataProviderService', () => {
     );
 
     expect(result).toBe(100);
+  });
+
+  it('uses tracked microprice as a reference price source', async () => {
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 3]],
+      asks: [[102, 1]],
+      sequence: 1,
+    });
+
+    const result = await service.getReferencePrice(
+      'binance',
+      'BTC/USDT',
+      'MICROPRICE' as unknown as PriceSourceType,
+    );
+
+    expect(result).toBe(101.5);
+    expect(
+      exchangeConnectorAdapterService.fetchOrderBook,
+    ).not.toHaveBeenCalled();
+    expect(marketdataService.getTickerPrice).not.toHaveBeenCalled();
   });
 
   it('falls back to ticker for reference price when books unavailable', async () => {
@@ -154,6 +178,276 @@ describe('StrategyMarketDataProviderService', () => {
     const result = service.getTrackedBestBidAsk('binance', 'BTC/USDT');
 
     expect(result).toBeNull();
+  });
+
+  it('returns tracked reference price snapshot without connector fallback', () => {
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 1]],
+      asks: [[102, 1]],
+      sequence: 2,
+    });
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 1000);
+
+    const result = service.getTrackedReferencePriceSnapshot(
+      'binance',
+      'BTC/USDT',
+      PriceSourceType.MID_PRICE,
+      5000,
+    );
+
+    expect(result).toEqual({
+      price: 101,
+      sourceType: PriceSourceType.MID_PRICE,
+      ageMs: 1000,
+    });
+    expect(
+      exchangeConnectorAdapterService.fetchOrderBook,
+    ).not.toHaveBeenCalled();
+    expect(marketdataService.getTickerPrice).not.toHaveBeenCalled();
+
+    jest.restoreAllMocks();
+  });
+
+  it('returns null for stale tracked reference price snapshot', () => {
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 1]],
+      asks: [[102, 1]],
+      sequence: 2,
+    });
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 6000);
+
+    const result = service.getTrackedReferencePriceSnapshot(
+      'binance',
+      'BTC/USDT',
+      PriceSourceType.MID_PRICE,
+      5000,
+    );
+
+    expect(result).toBeNull();
+    expect(
+      exchangeConnectorAdapterService.fetchOrderBook,
+    ).not.toHaveBeenCalled();
+
+    jest.restoreAllMocks();
+  });
+
+  it('returns tracked microprice without connector fallback', () => {
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 3]],
+      asks: [[102, 1]],
+      sequence: 2,
+    });
+
+    const result = service.getTrackedMicroprice('binance', 'BTC/USDT');
+
+    expect(result).toBe(101.5);
+    expect(
+      exchangeConnectorAdapterService.fetchOrderBook,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('returns tracked order book imbalance by depth', () => {
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [
+        [100, 1],
+        [99, 1],
+      ],
+      asks: [
+        [102, 1],
+        [103, 1],
+      ],
+      sequence: 2,
+    });
+
+    const result = service.getTrackedOrderBookImbalance(
+      'binance',
+      'BTC/USDT',
+      2,
+    );
+
+    expect(result).toBeCloseTo(-6 / 404, 10);
+    expect(
+      exchangeConnectorAdapterService.fetchOrderBook,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('returns mid price history from tracker', () => {
+    orderBookTrackerService.getMidPriceHistory.mockReturnValue([
+      { price: 100, ts: 1000, sequence: 1 },
+    ]);
+
+    const result = service.getTrackedMidPriceHistory(
+      'binance',
+      'BTC/USDT',
+      5000,
+    );
+
+    expect(result).toEqual([{ price: 100, ts: 1000, sequence: 1 }]);
+    expect(orderBookTrackerService.getMidPriceHistory).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      5000,
+    );
+  });
+
+  it('returns realized volatility from tracked mid price history', () => {
+    orderBookTrackerService.getMidPriceHistory.mockReturnValue([
+      { price: 100, ts: 1000, sequence: 1 },
+      { price: 110, ts: 2000, sequence: 2 },
+      { price: 121, ts: 3000, sequence: 3 },
+    ]);
+
+    const result = service.getRealizedVolatility('binance', 'BTC/USDT', 5000);
+
+    expect(result).toBeCloseTo(0, 10);
+  });
+
+  it('builds an adaptive PMM signal snapshot from tracked data only', () => {
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 3]],
+      asks: [[102, 1]],
+      sequence: 2,
+    });
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 1000);
+    orderBookTrackerService.getMidPriceHistory.mockReturnValue([
+      { price: 100, ts: now - 2000, sequence: 1 },
+      { price: 101, ts: now, sequence: 2 },
+    ]);
+
+    const result = service.getAdaptivePmmSignalSnapshot(
+      'binance',
+      'BTC/USDT',
+      {
+        priceSourceType: PriceSourceType.MICROPRICE,
+        sigmaWindowMs: 5000,
+        staleSoftMs: 2000,
+        staleHardMs: 10000,
+        imbalanceDepthLevels: 1,
+        marketCrashWindowMs: 5000,
+        marketCrashBps: 500,
+      },
+    );
+
+    expect(result.referencePrice?.price).toBe(101.5);
+    expect(result.referencePrice?.sourceType).toBe(PriceSourceType.MICROPRICE);
+    expect(result.microprice).toBe(101.5);
+    expect(result.imbalance).toBeCloseTo(198 / 402, 10);
+    expect(result.freshness).toEqual({
+      status: 'fresh',
+      ageMs: 1000,
+      staleSoftMs: 2000,
+      staleHardMs: 10000,
+    });
+    expect(result.crash).toEqual({
+      crashed: false,
+      changeBps: 100,
+      windowMs: 5000,
+      thresholdBps: 500,
+    });
+    expect(result.unavailableReasons).toEqual([]);
+    expect(
+      exchangeConnectorAdapterService.fetchOrderBook,
+    ).not.toHaveBeenCalled();
+    expect(marketdataService.getTickerPrice).not.toHaveBeenCalled();
+
+    jest.restoreAllMocks();
+  });
+
+  it('marks adaptive PMM snapshot as soft stale before hard stale', () => {
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 1]],
+      asks: [[102, 1]],
+      sequence: 2,
+    });
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 5000);
+
+    const result = service.getAdaptivePmmSignalSnapshot(
+      'binance',
+      'BTC/USDT',
+      {
+        staleSoftMs: 2000,
+        staleHardMs: 10000,
+      },
+    );
+
+    expect(result.freshness.status).toBe('soft_stale');
+    expect(result.unavailableReasons).toContain('soft_stale_order_book');
+    expect(result.unavailableReasons).not.toContain('hard_stale_order_book');
+
+    jest.restoreAllMocks();
+  });
+
+  it('marks adaptive PMM snapshot as hard stale at the hard threshold', () => {
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 1]],
+      asks: [[102, 1]],
+      sequence: 2,
+    });
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 10000);
+
+    const result = service.getAdaptivePmmSignalSnapshot(
+      'binance',
+      'BTC/USDT',
+      {
+        staleSoftMs: 2000,
+        staleHardMs: 10000,
+      },
+    );
+
+    expect(result.freshness.status).toBe('hard_stale');
+    expect(result.unavailableReasons).toContain('hard_stale_order_book');
+
+    jest.restoreAllMocks();
+  });
+
+  it('marks adaptive PMM snapshot as crashed when mid changes beyond threshold', () => {
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[95, 1]],
+      asks: [[97, 1]],
+      sequence: 2,
+    });
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 1000);
+    orderBookTrackerService.getMidPriceHistory.mockReturnValue([
+      { price: 100, ts: now - 5000, sequence: 1 },
+      { price: 94, ts: now, sequence: 2 },
+    ]);
+
+    const result = service.getAdaptivePmmSignalSnapshot(
+      'binance',
+      'BTC/USDT',
+      {
+        marketCrashWindowMs: 60000,
+        marketCrashBps: 500,
+      },
+    );
+
+    expect(result.crash).toEqual({
+      crashed: true,
+      changeBps: -600,
+      windowMs: 60000,
+      thresholdBps: 500,
+    });
+    expect(result.unavailableReasons).toContain('market_crash');
+
+    jest.restoreAllMocks();
   });
 
   it('reports tracked order book readiness from tracked best bid/ask availability', () => {
