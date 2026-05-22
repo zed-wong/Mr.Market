@@ -40,8 +40,9 @@ import { ExchangeApiKeyRepository } from './exchange-api-key.repository';
 @Injectable()
 export class ExchangeApiKeyService {
   private exchangeInstances: { [key: string]: ccxt.Exchange } = {};
+  private readonly validatingApiKeyIds = new Set<string>();
   private readonly logger = new CustomLogger(ExchangeApiKeyService.name);
-  private readonly validationTimeoutMs = 5000;
+  private readonly validationTimeoutMs = 30000;
 
   constructor(
     private exchangeRepository: ExchangeApiKeyRepository,
@@ -145,6 +146,10 @@ export class ExchangeApiKeyService {
 
     if (key.validation_status === 'pending') {
       return 'pending';
+    }
+
+    if (key.validation_status === 'invalid') {
+      return 'error';
     }
 
     const exchangeClass = ccxt[key.exchange];
@@ -758,6 +763,12 @@ export class ExchangeApiKeyService {
   }
 
   private async validateApiKeyInBackground(keyId: string): Promise<void> {
+    if (this.validatingApiKeyIds.has(keyId)) {
+      return;
+    }
+
+    this.validatingApiKeyIds.add(keyId);
+
     try {
       const key = await this.readDecryptedAPIKey(keyId);
 
@@ -802,12 +813,44 @@ export class ExchangeApiKeyService {
       const message = error instanceof Error ? error.message : String(error);
 
       this.logger.warn(`API key validation failed for ${keyId}: ${message}`);
+
+      if (message === 'Validation timeout') {
+        await this.exchangeRepository.updateAPIKey(keyId, {
+          validation_status: 'pending',
+          validation_error: null,
+          validated_at: null,
+        });
+
+        return;
+      }
+
       await this.exchangeRepository.updateAPIKey(keyId, {
         validation_status: 'invalid',
         validation_error: message,
         validated_at: getRFC3339Timestamp(),
       });
+    } finally {
+      this.validatingApiKeyIds.delete(keyId);
     }
+  }
+
+  @Cron('*/30 * * * * *') // Every 30 seconds
+  async pendingApiKeyValidator() {
+    const keys = await this.exchangeRepository.readAllAPIKeys();
+    const retryableKeys = keys.filter(
+      (key) =>
+        key.validation_status === 'pending' ||
+        (key.validation_status === 'invalid' &&
+          key.validation_error === 'Validation timeout'),
+    );
+
+    if (retryableKeys.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      retryableKeys.map((key) => this.validateApiKeyInBackground(key.key_id)),
+    );
   }
 
   async readAPIKey(keyId: string) {

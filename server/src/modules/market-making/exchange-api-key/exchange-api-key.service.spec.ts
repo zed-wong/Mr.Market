@@ -17,6 +17,7 @@ const crypto = jest.requireMock('src/common/helpers/crypto');
 describe('ExchangeApiKeyService', () => {
   const makeService = (overrides?: {
     readAllAPIKeys?: jest.Mock;
+    readAPIKey?: jest.Mock;
     addAPIKey?: jest.Mock;
     updateAPIKey?: jest.Mock;
     getConfig?: jest.Mock;
@@ -24,6 +25,7 @@ describe('ExchangeApiKeyService', () => {
     const exchangeRepository = {
       readAllAPIKeys:
         overrides?.readAllAPIKeys || jest.fn().mockResolvedValue([]),
+      readAPIKey: overrides?.readAPIKey || jest.fn().mockResolvedValue(null),
       addAPIKey: overrides?.addAPIKey || jest.fn().mockResolvedValue(undefined),
       updateAPIKey:
         overrides?.updateAPIKey || jest.fn().mockResolvedValue(undefined),
@@ -212,5 +214,134 @@ describe('ExchangeApiKeyService', () => {
         walletAddress: '0xwallet',
       },
     });
+  });
+
+  it('keeps API key validation pending when exchange balance validation times out', async () => {
+    const readAPIKey = jest.fn().mockResolvedValue({
+      key_id: '1',
+      exchange: 'binance',
+      name: 'default',
+      api_key: 'key',
+      api_secret: 'secret',
+      validation_status: 'pending',
+      created_at: '2026-04-02T00:00:00.000Z',
+    } as APIKeysConfig);
+    const updateAPIKey = jest.fn().mockResolvedValue(undefined);
+    const { service } = makeService({ readAPIKey, updateAPIKey });
+    const fetchBalanceSpy = jest
+      .spyOn((ccxt as any).binance.prototype, 'fetchBalance')
+      .mockImplementation(() => new Promise(() => undefined));
+
+    try {
+      (service as any).validationTimeoutMs = 1;
+      const validation = (service as any).validateApiKeyInBackground('1');
+
+      await validation;
+
+      expect(updateAPIKey).toHaveBeenCalledWith('1', {
+        validation_status: 'pending',
+        validation_error: null,
+        validated_at: null,
+      });
+    } finally {
+      fetchBalanceSpy.mockRestore();
+    }
+  });
+
+  it('revalidates pending and timed-out API keys from the scheduled validator', async () => {
+    const readAllAPIKeys = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          key_id: '1',
+          exchange: 'binance',
+          name: 'default',
+          api_key: 'key',
+          api_secret: 'secret',
+          validation_status: 'pending',
+          created_at: '2026-04-02T00:00:00.000Z',
+        } as APIKeysConfig,
+        {
+          key_id: '2',
+          exchange: 'binance',
+          name: 'timed-out',
+          api_key: 'key-2',
+          api_secret: 'secret-2',
+          validation_status: 'invalid',
+          validation_error: 'Validation timeout',
+          created_at: '2026-04-02T00:00:00.000Z',
+        } as APIKeysConfig,
+        {
+          key_id: '3',
+          exchange: 'binance',
+          name: 'valid',
+          api_key: 'key-3',
+          api_secret: 'secret-3',
+          validation_status: 'valid',
+          created_at: '2026-04-02T00:00:00.000Z',
+        } as APIKeysConfig,
+      ]);
+    const readAPIKey = jest.fn().mockImplementation(async (keyId: string) => {
+      if (keyId === '1') {
+        return {
+          key_id: '1',
+          exchange: 'binance',
+          name: 'default',
+          api_key: 'key',
+          api_secret: 'secret',
+          validation_status: 'pending',
+          created_at: '2026-04-02T00:00:00.000Z',
+        } as APIKeysConfig;
+      }
+
+      if (keyId === '2') {
+        return {
+          key_id: '2',
+          exchange: 'binance',
+          name: 'timed-out',
+          api_key: 'key-2',
+          api_secret: 'secret-2',
+          validation_status: 'invalid',
+          validation_error: 'Validation timeout',
+          created_at: '2026-04-02T00:00:00.000Z',
+        } as APIKeysConfig;
+      }
+
+      return null;
+    });
+    const updateAPIKey = jest.fn().mockResolvedValue(undefined);
+    const { service } = makeService({
+      readAllAPIKeys,
+      readAPIKey,
+      updateAPIKey,
+    });
+    const fetchBalanceSpy = jest
+      .spyOn((ccxt as any).binance.prototype, 'fetchBalance')
+      .mockResolvedValue({ free: {} } as any);
+
+    try {
+      await service.pendingApiKeyValidator();
+
+      expect(readAPIKey).toHaveBeenCalledWith('1');
+      expect(readAPIKey).toHaveBeenCalledWith('2');
+      expect(readAPIKey).not.toHaveBeenCalledWith('3');
+      expect(updateAPIKey).toHaveBeenCalledWith(
+        '1',
+        expect.objectContaining({
+          validation_status: 'valid',
+          validation_error: null,
+        }),
+      );
+      expect(updateAPIKey).toHaveBeenCalledWith(
+        '2',
+        expect.objectContaining({
+          validation_status: 'valid',
+          validation_error: null,
+        }),
+      );
+    } finally {
+      fetchBalanceSpy.mockRestore();
+    }
   });
 });

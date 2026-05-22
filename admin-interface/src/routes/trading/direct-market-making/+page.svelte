@@ -891,7 +891,7 @@
     }
 </script>
 
-<div class="min-h-screen pb-10 bg-slate-50">
+<div class="min-h-screen pb-10 bg-base-100">
     <div class="max-w-350 mx-auto p-4 sm:p-6 md:p-8 space-y-6">
         {#if pageLoading}
             <div class="skeleton h-12 w-full rounded-xl"></div>
