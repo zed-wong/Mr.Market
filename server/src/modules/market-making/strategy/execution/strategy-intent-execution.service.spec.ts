@@ -202,6 +202,7 @@ describe('StrategyIntentExecutionService', () => {
     orderRepository?: typeof marketMakingOrderRepository,
     marketDataProvider?: typeof strategyMarketDataProviderService,
     apiKeyService?: typeof exchangeApiKeyService,
+    runtimeObservationService?: { recordIntentFailure: jest.Mock },
   ) =>
     new StrategyIntentExecutionService(
       configService,
@@ -217,6 +218,7 @@ describe('StrategyIntentExecutionService', () => {
       orderRepository as any,
       marketDataProvider as any,
       apiKeyService as any,
+      runtimeObservationService as any,
     );
 
   beforeEach(() => {
@@ -592,16 +594,21 @@ describe('StrategyIntentExecutionService', () => {
   });
 
   it('releases reservation when exchange create fails', async () => {
+    const runtimeObservationService = { recordIntentFailure: jest.fn() };
     const service = createService(
       true,
       createConfigService(true, { 'strategy.intent_max_retries': 0 }),
       createExecutionHistoryRepository(),
       orderReservationService,
+      undefined,
+      undefined,
+      undefined,
+      runtimeObservationService,
     );
 
-    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(
-      new Error('exchange rejected order'),
-    );
+    const error = new Error('exchange rejected order');
+
+    exchangeConnectorAdapterService.placeLimitOrder.mockRejectedValue(error);
 
     await expect(service.consumeIntents([baseIntent])).rejects.toThrow(
       'exchange rejected order',
@@ -619,6 +626,10 @@ describe('StrategyIntentExecutionService', () => {
       qty: '1',
       reason: 'exchange_create_failed',
     });
+    expect(runtimeObservationService.recordIntentFailure).toHaveBeenCalledWith(
+      baseIntent,
+      error,
+    );
   });
 
   it('releases reservation and fails intent when exchange create returns rejected status', async () => {

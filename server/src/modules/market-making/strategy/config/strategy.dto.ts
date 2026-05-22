@@ -307,6 +307,240 @@ export class PureMarketMakingStrategyDto {
     example: '5%',
   })
   killSwitchThreshold?: number | string;
+
+  @ApiPropertyOptional({
+    description: 'Enable volatility-based adaptive spread widening',
+    example: true,
+  })
+  volBasedSpread?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Rolling volatility window for adaptive PMM signals',
+    example: 60000,
+  })
+  sigmaWindowMs?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Multiplier applied to realized volatility before widening spread',
+    example: 1,
+  })
+  spreadSigmaMultiplier?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum effective adaptive spread after signal adjustments',
+    example: 0.02,
+  })
+  maxAdaptiveSpread?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum mid-price samples required before using volatility',
+    example: 3,
+  })
+  volatilitySampleMinCount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Multiplier applied to order-book imbalance spread skew',
+    example: 0.002,
+  })
+  imbalanceSkewFactor?: number;
+
+  @ApiPropertyOptional({
+    description: 'Order-book depth levels used for imbalance',
+    example: 3,
+  })
+  imbalanceDepthLevels?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum total depth notional required before using imbalance',
+    example: 1000,
+  })
+  imbalanceMinDepthNotional?: number;
+
+  @ApiPropertyOptional({
+    description: 'EWMA smoothing window for order-book imbalance',
+    example: 1000,
+  })
+  imbalanceSmoothingMs?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Inventory deviation where imbalance influence is fully suppressed',
+    example: 0.3,
+  })
+  inventorySeverePivot?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Inventory deviation where the side that worsens inventory is paused',
+    example: 0.45,
+  })
+  inventoryPauseSidePivot?: number;
+
+  @ApiPropertyOptional({
+    description: 'Enable adaptive quote sizing and layer reduction',
+    example: true,
+  })
+  adaptiveSizeEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Multiplier for volatility-based quote size reduction',
+    example: 5,
+  })
+  sizeVolScalingFactor?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum size ratio after adaptive reductions',
+    example: 0.2,
+  })
+  sizeFloor?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum layers allowed while volatility is active',
+    example: 1,
+  })
+  maxLayersInVol?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Single-side budget must be at least this multiple of min order notional to keep multiple layers',
+    example: 10,
+  })
+  layeringMinBudgetMultiple?: number;
+
+  @ApiPropertyOptional({
+    description: 'Enable adaptive PMM refresh cadence',
+    example: true,
+  })
+  adaptiveRefreshEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Fastest adaptive refresh cadence in milliseconds',
+    example: 1000,
+  })
+  refreshMinMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Slowest adaptive refresh cadence in milliseconds',
+    example: 10000,
+  })
+  refreshMaxMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Volatility level that maps refresh cadence to refreshMinMs',
+    example: 0.01,
+  })
+  refreshVolPivot?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum cancel intents emitted per strategy per second',
+    example: 2,
+  })
+  cancelBudgetPerSec?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Runtime observation window for reject and rate-limit pressure',
+    example: 60000,
+  })
+  runtimeObservationWindowMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Post-only reject count that triggers temporary wider spreads',
+    example: 2,
+  })
+  postOnlyRejectThreshold?: number;
+
+  @ApiPropertyOptional({
+    description: 'Extra spread in bps after post-only reject pressure',
+    example: 10,
+  })
+  postOnlyRejectWidenBps?: number;
+
+  @ApiPropertyOptional({
+    description: 'Rate-limit count that slows PMM cadence to refreshMaxMs',
+    example: 1,
+  })
+  rateLimitPressureThreshold?: number;
+
+  @ApiPropertyOptional({
+    description: 'Soft stale threshold for tracked order-book signals',
+    example: 2000,
+  })
+  staleSoftMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Hard stale threshold for tracked order-book signals',
+    example: 10000,
+  })
+  staleHardMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Window for market crash detection from mid-price history',
+    example: 60000,
+  })
+  marketCrashWindowMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Mid-price move threshold that blocks PMM quoting',
+    example: 500,
+  })
+  marketCrashBps?: number;
+
+  @ApiPropertyOptional({
+    description: 'Adverse markout threshold in basis points after a fill',
+    example: 20,
+  })
+  adverseMarkoutGuardBps?: number;
+
+  @ApiPropertyOptional({
+    description: 'Delay before evaluating post-fill markout in milliseconds',
+    example: 5000,
+  })
+  adverseMarkoutWindowMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Side cooldown duration after adverse markout in milliseconds',
+    example: 30000,
+  })
+  adverseMarkoutCooldownMs?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Gradual side recovery duration after adverse markout cooldown expires',
+    example: 30000,
+  })
+  adverseMarkoutRecoveryMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Initial size ratio while a cooled-down side recovers',
+    example: 0.5,
+  })
+  adverseMarkoutRecoverySizeRatio?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum global warmup duration in milliseconds',
+    example: 30000,
+  })
+  warmupMs?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum global warmup tick count',
+    example: 3,
+  })
+  warmupTicks?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum half-spread used while PMM is warming up',
+    example: 0.005,
+  })
+  warmupSpread?: number;
+
+  @ApiPropertyOptional({
+    description: 'Quote size ratio used while PMM is warming up',
+    example: 0.2,
+  })
+  warmupSizeRatio?: number;
 }
 export class ExecuteVolumeStrategyDto {
   @ApiPropertyOptional({

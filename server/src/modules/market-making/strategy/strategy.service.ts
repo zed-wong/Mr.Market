@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import {
   StrategyInstance,
   type StrategyInstanceDefinitionSnapshot,
@@ -76,12 +77,20 @@ import type {
 } from './config/strategy-params.types';
 import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
-import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
+import {
+  AdaptivePmmSignalSnapshot,
+  StrategyMarketDataProviderService,
+} from './data/strategy-market-data-provider.service';
 import { ExchangePairExecutorSession } from './execution/exchange-pair-executor';
 import { ExecutorRegistry } from './execution/executor-registry';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
+import { PmmMarkoutEvaluatorService } from './observation/pmm-markout-evaluator.service';
+import {
+  RuntimeObservationService,
+  StrategyRuntimePressureSnapshot,
+} from './observation/runtime-observation.service';
 import { FillSettlementService } from './settlement/fill-settlement.service';
 
 type DualAccountCapacityDiagnostics = {
@@ -119,6 +128,15 @@ export class StrategyService
     string,
     StrategyOrderIntent[]
   >();
+  private readonly cancelBudgetUsageByStrategySecond = new Map<
+    string,
+    number
+  >();
+  private readonly adaptivePmmWarmupStartedAtByStrategy = new Map<
+    string,
+    number
+  >();
+  private readonly adaptivePmmWarmupTicksByStrategy = new Map<string, number>();
   private readonly stoppingStrategyKeys = new Set<string>();
   private readonly loggedDualAccountBestCapacityIgnoredConfigWarnings =
     new Set<string>();
@@ -139,6 +157,9 @@ export class StrategyService
     @Optional()
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
+    @Optional()
+    @InjectRepository(StrategyExecutionHistory)
+    private readonly strategyExecutionHistoryRepository?: Repository<StrategyExecutionHistory>,
     @Optional()
     private readonly clockTickCoordinatorService?: ClockTickCoordinatorService,
     @Optional()
@@ -173,6 +194,10 @@ export class StrategyService
     private readonly runtimeTimingService?: MarketMakingRuntimeTimingService,
     @Optional()
     private readonly fillSettlementService?: FillSettlementService,
+    @Optional()
+    private readonly pmmMarkoutEvaluatorService?: PmmMarkoutEvaluatorService,
+    @Optional()
+    private readonly runtimeObservationService?: RuntimeObservationService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -3965,10 +3990,161 @@ export class StrategyService
       return [];
     }
 
+    let realizedVolatility: number | null = null;
+    let orderBookImbalance: number | null = null;
+    let signalSnapshot: AdaptivePmmSignalSnapshot | null = null;
+
+    this.pmmMarkoutEvaluatorService?.evaluateDue();
+    const toxicityState =
+      this.pmmMarkoutEvaluatorService?.getToxicity(strategyKey) || null;
+    const runtimePressure = this.resolveAdaptivePmmRuntimePressure(
+      strategyKey,
+      params,
+    );
+    const currentBaseRatio = await this.resolveOrderScopedInventoryRatio(
+      params,
+      priceSource,
+    );
+
+    const shouldReadAdaptiveSignals = this.shouldReadAdaptivePmmSignals(params);
+    const minSamples = Math.max(
+      2,
+      Math.floor(Number(params.volatilitySampleMinCount || 3)),
+    );
+
+    if (
+      shouldReadAdaptiveSignals &&
+      this.strategyMarketDataProviderService?.getAdaptivePmmSignalSnapshot
+    ) {
+      const sigmaWindowMs = Number(params.sigmaWindowMs || 60_000);
+      const imbalanceDepthLevels = Math.max(
+        1,
+        Math.floor(Number(params.imbalanceDepthLevels || 1)),
+      );
+      const nextSignalSnapshot =
+        this.strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot(
+          priceExchange,
+          params.pair,
+          {
+            priceSourceType: params.priceSourceType,
+            sigmaWindowMs,
+            staleSoftMs: Number(params.staleSoftMs || 2000),
+            staleHardMs: Number(params.staleHardMs || 10_000),
+            imbalanceDepthLevels,
+            imbalanceMinDepthNotional: Number(
+              params.imbalanceMinDepthNotional || 0,
+            ),
+            imbalanceSmoothingMs: Number(params.imbalanceSmoothingMs || 0),
+            marketCrashWindowMs: Number(
+              params.marketCrashWindowMs || sigmaWindowMs,
+            ),
+            marketCrashBps:
+              params.marketCrashBps === undefined
+                ? undefined
+                : Number(params.marketCrashBps),
+          },
+        );
+
+      signalSnapshot = nextSignalSnapshot;
+
+      if (
+        nextSignalSnapshot.midPriceHistory.length >= minSamples &&
+        typeof nextSignalSnapshot.realizedVolatility === 'number' &&
+        Number.isFinite(nextSignalSnapshot.realizedVolatility)
+      ) {
+        realizedVolatility = nextSignalSnapshot.realizedVolatility;
+      }
+
+      if (
+        typeof nextSignalSnapshot.imbalance === 'number' &&
+        Number.isFinite(nextSignalSnapshot.imbalance)
+      ) {
+        orderBookImbalance = nextSignalSnapshot.imbalance;
+      }
+    }
+
+    if (
+      signalSnapshot &&
+      this.shouldBlockAdaptivePmmForMarketSafety(signalSnapshot)
+    ) {
+      this.appendAdaptivePmmSafetyCancels(
+        actions,
+        cancelledExchangeOrderIds,
+        strategyKey,
+        params,
+        ts,
+        liveOrders,
+      );
+      this.logAdaptivePmmDecisionSnapshot(strategyKey, {
+        params,
+        reason: 'market_safety_block',
+        signalSnapshot,
+        toxicityState,
+        actions: actions.length,
+        layers: 0,
+      });
+
+      return actions;
+    }
+
+    if (this.isAdaptivePmmReservationPaused(params)) {
+      this.appendAdaptivePmmSafetyCancels(
+        actions,
+        cancelledExchangeOrderIds,
+        strategyKey,
+        params,
+        ts,
+        liveOrders,
+      );
+      this.logAdaptivePmmDecisionSnapshot(strategyKey, {
+        params,
+        reason: 'reservation_paused',
+        signalSnapshot,
+        toxicityState,
+        actions: actions.length,
+        layers: 0,
+      });
+
+      return actions;
+    }
+
+    this.updateAdaptivePmmCadence(strategyKey, params, realizedVolatility);
+    this.applyAdaptivePmmRuntimePressureCadence(
+      strategyKey,
+      params,
+      runtimePressure,
+    );
+    const warmupState = this.resolveAdaptivePmmWarmupState(
+      strategyKey,
+      params,
+      signalSnapshot,
+      minSamples,
+    );
+    const runtimePressureWiden = this.resolveAdaptivePmmRuntimePressureWiden(
+      params,
+      runtimePressure,
+    );
+    const sideRecoveryState = this.resolveAdaptivePmmSideRecoveryState(
+      params,
+      toxicityState,
+    );
+
     const liveOrdersBySide = {
       buy: liveOrders.filter((order) => order.side === 'buy').length,
       sell: liveOrders.filter((order) => order.side === 'sell').length,
     };
+    const availableBalances = await this.getAvailableBalancesForPair(
+      params.exchangeName,
+      params.pair,
+      params.accountLabel,
+    );
+    const effectiveNumberOfLayers = warmupState.active
+      ? 1
+      : await this.resolveAdaptivePmmLayerCountFromBudget(
+          params,
+          priceSource,
+          availableBalances,
+        );
     const staleCancellationActions = this.buildStaleOrderActions(
       strategyKey,
       params,
@@ -3977,46 +4153,92 @@ export class StrategyService
       liveOrders,
     );
 
+    const cancelBudgetPerSec = Number(params.cancelBudgetPerSec || 0);
+
     for (const action of staleCancellationActions) {
-      actions.push(action);
-      if (action.mixinOrderId) {
-        cancelledExchangeOrderIds.add(action.mixinOrderId);
-      }
+      this.appendCancelAction(
+        actions,
+        cancelledExchangeOrderIds,
+        action,
+        strategyKey,
+        ts,
+        cancelBudgetPerSec,
+      );
     }
 
     const quotes = this.quoteExecutorManagerService
       ? this.quoteExecutorManagerService.buildQuotes({
           midPrice: priceSource.toFixed(),
-          numberOfLayers: params.numberOfLayers,
-          bidSpread: params.bidSpread,
-          askSpread: params.askSpread,
-          orderAmount: new BigNumber(params.orderAmount).toFixed(),
+          numberOfLayers: effectiveNumberOfLayers,
+          bidSpread: warmupState.bidSpread + runtimePressureWiden,
+          askSpread: warmupState.askSpread + runtimePressureWiden,
+          orderAmount: warmupState.orderAmount,
           amountChangePerLayer: params.amountChangePerLayer,
           amountChangeType: params.amountChangeType,
           inventorySkewFactor: Number(params.inventorySkewFactor || 0),
           inventoryTargetBaseRatio: Number(
             params.inventoryTargetBaseRatio || 0.5,
           ),
-          currentBaseRatio: Number(params.currentBaseRatio || 0.5),
+          currentBaseRatio,
           makerHeavyMode: Boolean(params.makerHeavyMode),
           makerHeavyBiasBps: Number(params.makerHeavyBiasBps || 0),
+          volBasedSpread: warmupState.active
+            ? false
+            : Boolean(params.volBasedSpread),
+          realizedVolatility: warmupState.active ? null : realizedVolatility,
+          spreadSigmaMultiplier: Number(params.spreadSigmaMultiplier || 0),
+          maxAdaptiveSpread: Number(params.maxAdaptiveSpread || 0),
+          orderBookImbalance: warmupState.active ? null : orderBookImbalance,
+          imbalanceSkewFactor: warmupState.active
+            ? 0
+            : Number(params.imbalanceSkewFactor || 0),
+          inventorySeverePivot: Number(params.inventorySeverePivot || 0),
+          inventoryPauseSidePivot: Number(params.inventoryPauseSidePivot || 0),
+          adaptiveSizeEnabled: Boolean(params.adaptiveSizeEnabled),
+          sizeVolScalingFactor: Number(params.sizeVolScalingFactor || 0),
+          sizeFloor: Number(params.sizeFloor || 0),
+          maxLayersInVol: Number(params.maxLayersInVol || 0),
+          buyToxicityScore: toxicityState?.buyScore || 0,
+          sellToxicityScore: toxicityState?.sellScore || 0,
+          toxicityWidenBps: Number(params.adverseMarkoutGuardBps || 0),
+          buyPaused: Boolean(toxicityState?.buyPausedUntilMs),
+          sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
+          buyRecoveryWidenBps: sideRecoveryState.buyWidenBps,
+          sellRecoveryWidenBps: sideRecoveryState.sellWidenBps,
+          buyRecoverySizeRatio: sideRecoveryState.buySizeRatio,
+          sellRecoverySizeRatio: sideRecoveryState.sellSizeRatio,
         })
       : this.buildLegacyQuotes(params, priceSource);
 
     this.logger.log(
       `[${strategyKey}] midPrice=${priceSource.toFixed()} bidSpread=${
-        params.bidSpread
-      } askSpread=${params.askSpread} layers=${
-        params.numberOfLayers
-      } liveBuys=${liveOrdersBySide.buy} liveSells=${liveOrdersBySide.sell}`,
+        warmupState.bidSpread
+      } pressureWiden=${runtimePressureWiden} askSpread=${
+        warmupState.askSpread
+      } layers=${effectiveNumberOfLayers} liveBuys=${
+        liveOrdersBySide.buy
+      } liveSells=${liveOrdersBySide.sell}`,
     );
+    this.logAdaptivePmmDecisionSnapshot(strategyKey, {
+      params,
+      reason: 'quote_build',
+      signalSnapshot,
+      toxicityState,
+      actions: quotes.length,
+      layers: effectiveNumberOfLayers,
+      realizedVolatility,
+      orderBookImbalance,
+      buyPaused: Boolean(toxicityState?.buyPausedUntilMs),
+      sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
+      warmupActive: warmupState.active,
+      warmupReason: warmupState.reason,
+      buyRecoveryActive: sideRecoveryState.buyActive,
+      sellRecoveryActive: sideRecoveryState.sellActive,
+      runtimePressure,
+      runtimePressureWiden,
+    });
 
     const minimumSpread = Number(params.minimumSpread || 0);
-    const availableBalances = await this.getAvailableBalancesForPair(
-      params.exchangeName,
-      params.pair,
-      params.accountLabel,
-    );
     const targetActionBySlot = new Map<string, ExecutorAction>();
 
     for (const quote of quotes) {
@@ -4126,6 +4348,9 @@ export class StrategyService
           ts,
           'unassigned',
         ),
+        strategyKey,
+        ts,
+        cancelBudgetPerSec,
       );
     }
 
@@ -4174,6 +4399,9 @@ export class StrategyService
             ts,
             slotKey,
           ),
+          strategyKey,
+          ts,
+          cancelBudgetPerSec,
         );
         continue;
       }
@@ -4209,6 +4437,9 @@ export class StrategyService
           ts,
           slotKey,
         ),
+        strategyKey,
+        ts,
+        cancelBudgetPerSec,
       );
     }
 
@@ -4282,6 +4513,654 @@ export class StrategyService
     return quotes;
   }
 
+  private async resolveOrderScopedInventoryRatio(
+    params: PureMarketMakingStrategyDto,
+    referencePrice: BigNumber,
+  ): Promise<number> {
+    const configuredRatio = Number(params.currentBaseRatio || 0.5);
+
+    if (!params.marketMakingOrderId || !this.balanceLedgerService) {
+      return configuredRatio;
+    }
+
+    const [baseAssetId, quoteAssetId] = params.pair.split('/');
+
+    if (!baseAssetId || !quoteAssetId) {
+      return configuredRatio;
+    }
+
+    try {
+      const [baseBalance, quoteBalance] = await Promise.all([
+        this.balanceLedgerService.getExistingBalance(
+          params.marketMakingOrderId,
+          baseAssetId,
+        ),
+        this.balanceLedgerService.getExistingBalance(
+          params.marketMakingOrderId,
+          quoteAssetId,
+        ),
+      ]);
+      const baseTotal = new BigNumber(baseBalance?.total || 0);
+      const quoteTotal = new BigNumber(quoteBalance?.total || 0);
+
+      if (
+        !baseTotal.isFinite() ||
+        baseTotal.isLessThan(0) ||
+        !quoteTotal.isFinite() ||
+        quoteTotal.isLessThan(0) ||
+        !referencePrice.isFinite() ||
+        referencePrice.isLessThanOrEqualTo(0)
+      ) {
+        return configuredRatio;
+      }
+
+      const baseQuoteValue = baseTotal.multipliedBy(referencePrice);
+      const totalQuoteValue = baseQuoteValue.plus(quoteTotal);
+
+      if (totalQuoteValue.isLessThanOrEqualTo(0)) {
+        return configuredRatio;
+      }
+
+      return baseQuoteValue.dividedBy(totalQuoteValue).toNumber();
+    } catch (error) {
+      this.logger.warn(
+        `Falling back to configured PMM inventory ratio for ${
+          params.marketMakingOrderId
+        }: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      return configuredRatio;
+    }
+  }
+
+  private async resolveAdaptivePmmLayerCountFromBudget(
+    params: PureMarketMakingStrategyDto,
+    referencePrice: BigNumber,
+    availableBalances: {
+      base: BigNumber;
+      quote: BigNumber;
+      assets: { base: string; quote: string };
+    } | null,
+  ): Promise<number> {
+    const configuredLayers = Math.max(
+      1,
+      Math.floor(Number(params.numberOfLayers || 1)),
+    );
+
+    if (!params.adaptiveSizeEnabled || configuredLayers <= 1) {
+      return configuredLayers;
+    }
+
+    const multiple = new BigNumber(params.layeringMinBudgetMultiple || 10);
+
+    if (
+      !multiple.isFinite() ||
+      multiple.isLessThanOrEqualTo(0) ||
+      !availableBalances ||
+      !referencePrice.isFinite() ||
+      referencePrice.isLessThanOrEqualTo(0)
+    ) {
+      return configuredLayers;
+    }
+
+    const minOrderNotional = await this.resolveMinOrderNotional(
+      params.exchangeName,
+      params.pair,
+      params.accountLabel,
+      referencePrice,
+    );
+
+    if (minOrderNotional.isLessThanOrEqualTo(0)) {
+      return configuredLayers;
+    }
+
+    const requiredBudget = minOrderNotional.multipliedBy(multiple);
+    const buyBudget = availableBalances.quote;
+    const sellBudget = availableBalances.base.multipliedBy(referencePrice);
+    const sideBudget = BigNumber.min(buyBudget, sellBudget);
+
+    if (sideBudget.isLessThan(requiredBudget)) {
+      return 1;
+    }
+
+    return configuredLayers;
+  }
+
+  private shouldReadAdaptivePmmSignals(
+    params: PureMarketMakingStrategyDto,
+  ): boolean {
+    return (
+      Boolean(params.volBasedSpread) ||
+      Number(params.imbalanceSkewFactor || 0) > 0 ||
+      Boolean(params.adaptiveRefreshEnabled) ||
+      Boolean(params.adaptiveSizeEnabled) ||
+      Number(params.staleSoftMs || 0) > 0 ||
+      Number(params.staleHardMs || 0) > 0 ||
+      Number(params.marketCrashBps || 0) > 0 ||
+      Number(params.marketCrashWindowMs || 0) > 0 ||
+      Number(params.warmupTicks || 0) > 0 ||
+      Number(params.warmupMs || 0) > 0 ||
+      Number(params.warmupSpread || 0) > 0 ||
+      Number(params.adverseMarkoutGuardBps || 0) > 0 ||
+      params.priceSourceType === PriceSourceType.MICROPRICE
+    );
+  }
+
+  private resolveAdaptivePmmWarmupState(
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+    signalSnapshot: AdaptivePmmSignalSnapshot | null,
+    minSamples: number,
+  ): {
+    active: boolean;
+    reason: string | null;
+    bidSpread: number;
+    askSpread: number;
+    orderAmount: string;
+  } {
+    const nowMs = Date.now();
+    const startedAt =
+      this.adaptivePmmWarmupStartedAtByStrategy.get(strategyKey) || nowMs;
+    const ticks =
+      (this.adaptivePmmWarmupTicksByStrategy.get(strategyKey) || 0) + 1;
+
+    this.adaptivePmmWarmupStartedAtByStrategy.set(strategyKey, startedAt);
+    this.adaptivePmmWarmupTicksByStrategy.set(strategyKey, ticks);
+
+    const warmupMs = Math.max(0, Number(params.warmupMs || 0));
+    const warmupTicks = Math.max(
+      0,
+      Math.floor(Number(params.warmupTicks || 0)),
+    );
+    const sampleCount = signalSnapshot?.midPriceHistory.length || 0;
+    let reason: string | null = null;
+
+    if (signalSnapshot && sampleCount > 0 && sampleCount < minSamples) {
+      reason = 'insufficient_signal_samples';
+    }
+    if (!reason && warmupMs > 0 && nowMs - startedAt < warmupMs) {
+      reason = 'warmup_ms';
+    }
+    if (!reason && warmupTicks > 0 && ticks <= warmupTicks) {
+      reason = 'warmup_ticks';
+    }
+
+    const active = reason !== null;
+
+    if (!active) {
+      return {
+        active: false,
+        reason: null,
+        bidSpread: params.bidSpread,
+        askSpread: params.askSpread,
+        orderAmount: new BigNumber(params.orderAmount).toFixed(),
+      };
+    }
+
+    const warmupSpread = new BigNumber(params.warmupSpread || 0);
+    const sizeRatio = this.resolveAdaptivePmmWarmupSizeRatio(
+      params.warmupSizeRatio,
+    );
+    const orderAmount = new BigNumber(params.orderAmount);
+
+    return {
+      active,
+      reason,
+      bidSpread:
+        warmupSpread.isFinite() && warmupSpread.isGreaterThan(0)
+          ? BigNumber.max(params.bidSpread, warmupSpread).toNumber()
+          : params.bidSpread,
+      askSpread:
+        warmupSpread.isFinite() && warmupSpread.isGreaterThan(0)
+          ? BigNumber.max(params.askSpread, warmupSpread).toNumber()
+          : params.askSpread,
+      orderAmount:
+        orderAmount.isFinite() && orderAmount.isGreaterThan(0)
+          ? orderAmount.multipliedBy(sizeRatio).toFixed()
+          : new BigNumber(params.orderAmount).toFixed(),
+    };
+  }
+
+  private resolveAdaptivePmmRuntimePressure(
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+  ): StrategyRuntimePressureSnapshot | null {
+    if (!this.runtimeObservationService) {
+      return null;
+    }
+
+    const windowMs = Math.max(
+      1_000,
+      Number(params.runtimeObservationWindowMs || 60_000),
+    );
+
+    return this.runtimeObservationService.getPressure(strategyKey, windowMs);
+  }
+
+  private resolveAdaptivePmmRuntimePressureWiden(
+    params: PureMarketMakingStrategyDto,
+    pressure: StrategyRuntimePressureSnapshot | null,
+  ): number {
+    if (!pressure) {
+      return 0;
+    }
+
+    const threshold = Math.max(
+      0,
+      Math.floor(Number(params.postOnlyRejectThreshold || 0)),
+    );
+    const widenBps = Math.max(0, Number(params.postOnlyRejectWidenBps || 0));
+
+    if (
+      threshold <= 0 ||
+      widenBps <= 0 ||
+      pressure.postOnlyRejectCount < threshold
+    ) {
+      return 0;
+    }
+
+    return widenBps / 10_000;
+  }
+
+  private applyAdaptivePmmRuntimePressureCadence(
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+    pressure: StrategyRuntimePressureSnapshot | null,
+  ): void {
+    if (!pressure) {
+      return;
+    }
+
+    const threshold = Math.max(
+      0,
+      Math.floor(Number(params.rateLimitPressureThreshold || 0)),
+    );
+
+    if (threshold <= 0 || pressure.rateLimitCount < threshold) {
+      return;
+    }
+
+    const session = this.sessions.get(strategyKey);
+
+    if (!session) {
+      return;
+    }
+
+    session.cadenceMs = Math.max(
+      session.cadenceMs,
+      Number(
+        params.refreshMaxMs || params.orderRefreshTime || session.cadenceMs,
+      ),
+    );
+    this.sessions.set(strategyKey, session);
+  }
+
+  private resolveAdaptivePmmWarmupSizeRatio(
+    value: number | undefined,
+  ): BigNumber {
+    const ratio = new BigNumber(value === undefined ? 0.2 : value);
+
+    if (!ratio.isFinite() || ratio.isLessThanOrEqualTo(0)) {
+      return new BigNumber(0.2);
+    }
+
+    return BigNumber.min(1, ratio);
+  }
+
+  private resolveAdaptivePmmSideRecoveryState(
+    params: PureMarketMakingStrategyDto,
+    toxicityState: {
+      buyLastPausedUntilMs?: number | null;
+      sellLastPausedUntilMs?: number | null;
+    } | null,
+  ): {
+    buyActive: boolean;
+    sellActive: boolean;
+    buyWidenBps: number;
+    sellWidenBps: number;
+    buySizeRatio: number;
+    sellSizeRatio: number;
+  } {
+    const windowMs = Math.max(
+      0,
+      Number(
+        params.adverseMarkoutRecoveryMs || params.adverseMarkoutCooldownMs || 0,
+      ),
+    );
+    const baseWidenBps = Math.max(
+      0,
+      Number(params.adverseMarkoutGuardBps || 0),
+    );
+    const floorRatio = this.resolveAdaptivePmmWarmupSizeRatio(
+      params.adverseMarkoutRecoverySizeRatio,
+    ).toNumber();
+
+    if (!toxicityState || windowMs <= 0 || baseWidenBps <= 0) {
+      return {
+        buyActive: false,
+        sellActive: false,
+        buyWidenBps: 0,
+        sellWidenBps: 0,
+        buySizeRatio: 1,
+        sellSizeRatio: 1,
+      };
+    }
+
+    const nowMs = Date.now();
+    const buy = this.resolveAdaptivePmmSideRecovery(
+      toxicityState.buyLastPausedUntilMs,
+      nowMs,
+      windowMs,
+      baseWidenBps,
+      floorRatio,
+    );
+    const sell = this.resolveAdaptivePmmSideRecovery(
+      toxicityState.sellLastPausedUntilMs,
+      nowMs,
+      windowMs,
+      baseWidenBps,
+      floorRatio,
+    );
+
+    return {
+      buyActive: buy.active,
+      sellActive: sell.active,
+      buyWidenBps: buy.widenBps,
+      sellWidenBps: sell.widenBps,
+      buySizeRatio: buy.sizeRatio,
+      sellSizeRatio: sell.sizeRatio,
+    };
+  }
+
+  private resolveAdaptivePmmSideRecovery(
+    lastPausedUntilMs: number | null | undefined,
+    nowMs: number,
+    windowMs: number,
+    baseWidenBps: number,
+    floorRatio: number,
+  ): { active: boolean; widenBps: number; sizeRatio: number } {
+    if (!lastPausedUntilMs || nowMs <= lastPausedUntilMs) {
+      return { active: false, widenBps: 0, sizeRatio: 1 };
+    }
+
+    const elapsedMs = nowMs - lastPausedUntilMs;
+
+    if (elapsedMs >= windowMs) {
+      return { active: false, widenBps: 0, sizeRatio: 1 };
+    }
+
+    const remaining = 1 - elapsedMs / windowMs;
+
+    return {
+      active: true,
+      widenBps: baseWidenBps * remaining,
+      sizeRatio: floorRatio + (1 - floorRatio) * (1 - remaining),
+    };
+  }
+
+  private shouldBlockAdaptivePmmForMarketSafety(
+    signalSnapshot: AdaptivePmmSignalSnapshot,
+  ): boolean {
+    return (
+      signalSnapshot.crash.crashed ||
+      signalSnapshot.freshness.status === 'missing' ||
+      signalSnapshot.freshness.status === 'soft_stale' ||
+      signalSnapshot.freshness.status === 'hard_stale'
+    );
+  }
+
+  private isAdaptivePmmReservationPaused(
+    params: PureMarketMakingStrategyDto,
+  ): boolean {
+    if (
+      !params.marketMakingOrderId ||
+      !this.balanceLedgerService ||
+      typeof this.balanceLedgerService.isReservationPaused !== 'function'
+    ) {
+      return false;
+    }
+
+    const [baseAssetId, quoteAssetId] = params.pair.split('/');
+
+    return [baseAssetId, quoteAssetId]
+      .filter(Boolean)
+      .some((assetId) =>
+        this.balanceLedgerService?.isReservationPaused(
+          params.marketMakingOrderId as string,
+          assetId,
+        ),
+      );
+  }
+
+  private appendAdaptivePmmSafetyCancels(
+    actions: ExecutorAction[],
+    cancelledExchangeOrderIds: Set<string>,
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+    ts: string,
+    liveOrders: TrackedOrder[],
+  ): void {
+    const cancelBudgetPerSec = Number(params.cancelBudgetPerSec || 0);
+
+    for (const order of liveOrders) {
+      this.appendCancelAction(
+        actions,
+        cancelledExchangeOrderIds,
+        this.buildCancelOrderAction(
+          strategyKey,
+          params,
+          order,
+          ts,
+          'adaptive-market-safety',
+        ),
+        strategyKey,
+        ts,
+        cancelBudgetPerSec,
+      );
+    }
+  }
+
+  private logAdaptivePmmDecisionSnapshot(
+    strategyKey: string,
+    snapshot: {
+      params: PureMarketMakingStrategyDto;
+      reason: string;
+      signalSnapshot: AdaptivePmmSignalSnapshot | null;
+      toxicityState: {
+        buyScore: number;
+        sellScore: number;
+        buyPausedUntilMs: number | null;
+        sellPausedUntilMs: number | null;
+        buyLastPausedUntilMs?: number | null;
+        sellLastPausedUntilMs?: number | null;
+      } | null;
+      actions: number;
+      layers: number;
+      realizedVolatility?: number | null;
+      orderBookImbalance?: number | null;
+      buyPaused?: boolean;
+      sellPaused?: boolean;
+      warmupActive?: boolean;
+      warmupReason?: string | null;
+      buyRecoveryActive?: boolean;
+      sellRecoveryActive?: boolean;
+      runtimePressure?: StrategyRuntimePressureSnapshot | null;
+      runtimePressureWiden?: number;
+    },
+  ): void {
+    const metadata = this.buildAdaptivePmmDecisionMetadata(
+      strategyKey,
+      snapshot,
+    );
+
+    this.logger.log(JSON.stringify(metadata));
+    void this.persistAdaptivePmmDecisionSnapshot(snapshot.params, metadata);
+  }
+
+  private buildAdaptivePmmDecisionMetadata(
+    strategyKey: string,
+    snapshot: {
+      reason: string;
+      signalSnapshot: AdaptivePmmSignalSnapshot | null;
+      toxicityState: {
+        buyScore: number;
+        sellScore: number;
+        buyPausedUntilMs: number | null;
+        sellPausedUntilMs: number | null;
+        buyLastPausedUntilMs?: number | null;
+        sellLastPausedUntilMs?: number | null;
+      } | null;
+      actions: number;
+      layers: number;
+      realizedVolatility?: number | null;
+      orderBookImbalance?: number | null;
+      buyPaused?: boolean;
+      sellPaused?: boolean;
+      warmupActive?: boolean;
+      warmupReason?: string | null;
+      buyRecoveryActive?: boolean;
+      sellRecoveryActive?: boolean;
+      runtimePressure?: StrategyRuntimePressureSnapshot | null;
+      runtimePressureWiden?: number;
+    },
+  ): Record<string, unknown> {
+    return {
+      event: 'adaptive_pmm.decision',
+      strategyKey,
+      reason: snapshot.reason,
+      actions: snapshot.actions,
+      layers: snapshot.layers,
+      freshness: snapshot.signalSnapshot?.freshness.status || null,
+      freshnessAgeMs: snapshot.signalSnapshot?.freshness.ageMs || null,
+      crash: snapshot.signalSnapshot?.crash.crashed || false,
+      crashChangeBps: snapshot.signalSnapshot?.crash.changeBps ?? null,
+      realizedVolatility:
+        snapshot.realizedVolatility ??
+        snapshot.signalSnapshot?.realizedVolatility ??
+        null,
+      imbalance:
+        snapshot.orderBookImbalance ??
+        snapshot.signalSnapshot?.imbalance ??
+        null,
+      imbalanceDepthNotional:
+        snapshot.signalSnapshot?.imbalanceDepthNotional ?? null,
+      buyToxicityScore: snapshot.toxicityState?.buyScore || 0,
+      sellToxicityScore: snapshot.toxicityState?.sellScore || 0,
+      buyPaused: Boolean(snapshot.buyPaused),
+      sellPaused: Boolean(snapshot.sellPaused),
+      warmupActive: Boolean(snapshot.warmupActive),
+      warmupReason: snapshot.warmupReason || null,
+      buyRecoveryActive: Boolean(snapshot.buyRecoveryActive),
+      sellRecoveryActive: Boolean(snapshot.sellRecoveryActive),
+      runtimeRejectCount: snapshot.runtimePressure?.rejectCount || 0,
+      runtimePostOnlyRejectCount:
+        snapshot.runtimePressure?.postOnlyRejectCount || 0,
+      runtimeRateLimitCount: snapshot.runtimePressure?.rateLimitCount || 0,
+      runtimePressureWiden: snapshot.runtimePressureWiden || 0,
+      unavailableReasons: snapshot.signalSnapshot?.unavailableReasons || [],
+    };
+  }
+
+  private async persistAdaptivePmmDecisionSnapshot(
+    params: PureMarketMakingStrategyDto,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.strategyExecutionHistoryRepository) {
+      return;
+    }
+
+    try {
+      await this.strategyExecutionHistoryRepository.save(
+        this.strategyExecutionHistoryRepository.create({
+          userId: params.userId,
+          clientId: params.clientId,
+          exchange: params.exchangeName,
+          pair: params.pair,
+          strategyType: 'pureMarketMaking',
+          runtimeInstanceKey: String(metadata.strategyKey || ''),
+          orderId: params.marketMakingOrderId,
+          status: String(metadata.reason || 'decision'),
+          metadata,
+        }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist adaptive PMM decision snapshot for ${
+          params.clientId
+        }: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private updateAdaptivePmmCadence(
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+    realizedVolatility: number | null,
+  ): void {
+    if (!params.adaptiveRefreshEnabled) {
+      return;
+    }
+
+    const refreshMinMs = Math.max(1000, Number(params.refreshMinMs || 1000));
+    const refreshMaxMs = Math.max(
+      refreshMinMs,
+      Number(params.refreshMaxMs || params.orderRefreshTime || refreshMinMs),
+    );
+    const pivot = Number(params.refreshVolPivot || 0);
+    const sigma = Number(realizedVolatility || 0);
+    const intensity =
+      Number.isFinite(sigma) && sigma > 0 && Number.isFinite(pivot) && pivot > 0
+        ? Math.min(1, sigma / pivot)
+        : 0;
+    const nextCadenceMs = Math.round(
+      refreshMaxMs - (refreshMaxMs - refreshMinMs) * intensity,
+    );
+    const session = this.sessions.get(strategyKey);
+
+    if (!session) {
+      return;
+    }
+
+    session.cadenceMs = nextCadenceMs;
+    this.sessions.set(strategyKey, session);
+  }
+
+  private async resolveMinOrderNotional(
+    exchangeName: string,
+    pair: string,
+    accountLabel: string | undefined,
+    referencePrice: BigNumber,
+  ): Promise<BigNumber> {
+    if (!this.exchangeConnectorAdapterService) {
+      return new BigNumber(0);
+    }
+
+    try {
+      const rules = await this.exchangeConnectorAdapterService.loadTradingRules(
+        exchangeName,
+        pair,
+        accountLabel,
+      );
+      const minByCost = new BigNumber(rules.costMin || 0);
+      const minByAmount = new BigNumber(rules.amountMin || 0).multipliedBy(
+        referencePrice,
+      );
+
+      return BigNumber.max(
+        minByCost.isFinite() ? minByCost : 0,
+        minByAmount.isFinite() ? minByAmount : 0,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Cannot resolve min order notional for ${exchangeName} ${pair}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return new BigNumber(0);
+    }
+  }
+
   private isQuoteWithinTolerance(
     order: TrackedOrder,
     action: ExecutorAction,
@@ -4296,16 +5175,29 @@ export class StrategyService
     }
 
     const actionPrice = new BigNumber(action.price);
+    const actionQty = new BigNumber(action.qty);
 
-    if (!actionPrice.isFinite() || actionPrice.isLessThanOrEqualTo(0)) {
+    if (
+      !actionPrice.isFinite() ||
+      actionPrice.isLessThanOrEqualTo(0) ||
+      !actionQty.isFinite() ||
+      actionQty.isLessThanOrEqualTo(0)
+    ) {
       return false;
     }
 
-    return new BigNumber(order.price)
+    const priceWithinTolerance = new BigNumber(order.price)
       .minus(action.price)
       .abs()
       .dividedBy(actionPrice)
       .isLessThan(tolerance);
+    const qtyWithinTolerance = new BigNumber(order.qty)
+      .minus(action.qty)
+      .abs()
+      .dividedBy(actionQty)
+      .isLessThan(tolerance);
+
+    return priceWithinTolerance && qtyWithinTolerance;
   }
 
   private buildCancelOrderAction(
@@ -4350,6 +5242,9 @@ export class StrategyService
     actions: ExecutorAction[],
     cancelledExchangeOrderIds: Set<string>,
     action: ExecutorAction | null,
+    strategyKey?: string,
+    ts?: string,
+    cancelBudgetPerSec?: number,
   ): void {
     if (
       !action?.mixinOrderId ||
@@ -4358,8 +5253,43 @@ export class StrategyService
       return;
     }
 
+    if (
+      strategyKey &&
+      ts &&
+      Number.isFinite(cancelBudgetPerSec) &&
+      Number(cancelBudgetPerSec) > 0 &&
+      !this.consumeCancelBudget(strategyKey, ts, Number(cancelBudgetPerSec))
+    ) {
+      this.logger.log(
+        `[${strategyKey}] reason=cancel_budget_exhausted mixinOrderId=${action.mixinOrderId}`,
+      );
+
+      return;
+    }
+
     cancelledExchangeOrderIds.add(action.mixinOrderId);
     actions.push(action);
+  }
+
+  private consumeCancelBudget(
+    strategyKey: string,
+    ts: string,
+    cancelBudgetPerSec: number,
+  ): boolean {
+    const parsedTs = Date.parse(ts);
+    const second = Math.floor(
+      (Number.isFinite(parsedTs) ? parsedTs : Date.now()) / 1000,
+    );
+    const key = `${strategyKey}:${second}`;
+    const used = this.cancelBudgetUsageByStrategySecond.get(key) || 0;
+
+    if (used >= cancelBudgetPerSec) {
+      return false;
+    }
+
+    this.cancelBudgetUsageByStrategySecond.set(key, used + 1);
+
+    return true;
   }
 
   private createIntent(
@@ -5365,6 +6295,11 @@ export class StrategyService
     }
 
     session.lastFillTimestamp = Date.now();
+    this.recordPureMarketMakingMarkout(
+      session,
+      fill,
+      session.lastFillTimestamp,
+    );
     const delayMs = Number(
       (session.params as unknown as PureMarketMakingStrategyDto)
         .filledOrderDelay || 0,
@@ -5374,6 +6309,58 @@ export class StrategyService
       Number.isFinite(delayMs) && delayMs > 0
         ? Math.max(session.nextRunAtMs, session.lastFillTimestamp + delayMs)
         : Math.min(session.nextRunAtMs, Date.now());
+  }
+
+  private recordPureMarketMakingMarkout(
+    session: StrategyRuntimeSession,
+    fill: {
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      receivedAt?: string;
+    },
+    fallbackObservedAtMs: number,
+  ): void {
+    if (
+      session.strategyType !== 'pureMarketMaking' ||
+      !this.pmmMarkoutEvaluatorService ||
+      !fill.side ||
+      !fill.price
+    ) {
+      return;
+    }
+
+    const params = session.params as unknown as PureMarketMakingStrategyDto;
+    const guardBps = Number(params.adverseMarkoutGuardBps || 0);
+    const markoutWindowMs = Number(params.adverseMarkoutWindowMs || 0);
+
+    if (
+      !Number.isFinite(guardBps) ||
+      guardBps <= 0 ||
+      !Number.isFinite(markoutWindowMs) ||
+      markoutWindowMs <= 0
+    ) {
+      return;
+    }
+
+    const observedAtMs = fill.receivedAt
+      ? Date.parse(fill.receivedAt)
+      : fallbackObservedAtMs;
+
+    this.pmmMarkoutEvaluatorService.recordFill({
+      strategyKey: session.strategyKey,
+      exchangeName: params.oracleExchangeName || params.exchangeName,
+      pair: params.pair,
+      side: fill.side,
+      price: fill.price,
+      qty: fill.qty,
+      observedAtMs: Number.isFinite(observedAtMs)
+        ? observedAtMs
+        : fallbackObservedAtMs,
+      markoutWindowMs,
+      guardBps,
+      cooldownMs: Number(params.adverseMarkoutCooldownMs || 0),
+    });
   }
 
   private resolveDualAccountCycleRoles(

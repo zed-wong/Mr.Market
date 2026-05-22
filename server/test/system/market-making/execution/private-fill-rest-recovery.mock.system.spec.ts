@@ -74,6 +74,7 @@ describe('Private fill REST recovery parity (mock system)', () => {
       } as any,
       undefined,
       undefined,
+      undefined,
       new QuoteExecutorManagerService(),
       exchangeOrderTrackerService,
       {

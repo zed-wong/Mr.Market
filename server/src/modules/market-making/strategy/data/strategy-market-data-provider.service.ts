@@ -13,6 +13,7 @@ import {
 
 type BookLevel = [number, number];
 type CachedPrice = { price: number; ts: number };
+type SmoothedImbalance = { value: number; ts: number };
 type TrackedReferencePriceSnapshot = {
   price: number;
   sourceType: PriceSourceType;
@@ -29,6 +30,8 @@ export type AdaptivePmmSignalSnapshotOptions = {
   staleSoftMs?: number;
   staleHardMs?: number;
   imbalanceDepthLevels?: number;
+  imbalanceMinDepthNotional?: number;
+  imbalanceSmoothingMs?: number;
   marketCrashWindowMs?: number;
   marketCrashBps?: number;
 };
@@ -39,6 +42,7 @@ export type AdaptivePmmSignalSnapshot = {
   referencePrice: TrackedReferencePriceSnapshot | null;
   microprice: number | null;
   imbalance: number | null;
+  imbalanceDepthNotional: number | null;
   realizedVolatility: number | null;
   midPriceHistory: MidPriceSample[];
   freshness: {
@@ -62,6 +66,7 @@ export class StrategyMarketDataProviderService {
     StrategyMarketDataProviderService.name,
   );
   private readonly priceCache = new Map<string, CachedPrice>();
+  private readonly imbalanceEwmaByKey = new Map<string, SmoothedImbalance>();
   private readonly priceCacheTtlMs: number;
 
   constructor(
@@ -317,6 +322,14 @@ export class StrategyMarketDataProviderService {
       1,
       Math.floor(this.toNonNegativeNumber(options.imbalanceDepthLevels, 1)),
     );
+    const imbalanceMinDepthNotional = this.toNonNegativeNumber(
+      options.imbalanceMinDepthNotional,
+      0,
+    );
+    const imbalanceSmoothingMs = this.toNonNegativeNumber(
+      options.imbalanceSmoothingMs,
+      0,
+    );
     const priceSourceType = this.normalizePriceSourceType(
       options.priceSourceType || PriceSourceType.MID_PRICE,
     );
@@ -342,16 +355,36 @@ export class StrategyMarketDataProviderService {
       options.marketCrashWindowMs,
       60_000,
     );
-    const crashThresholdBps =
+    const rawCrashThresholdBps =
       options.marketCrashBps === undefined
         ? null
         : this.toNonNegativeNumber(options.marketCrashBps, 0);
+    const crashThresholdBps =
+      rawCrashThresholdBps !== null && rawCrashThresholdBps > 0
+        ? rawCrashThresholdBps
+        : null;
     const crash = this.getMarketCrashSignal(
       exchangeName,
       pair,
       crashWindowMs,
       crashThresholdBps,
     );
+    const imbalanceDepthNotional = this.getTrackedOrderBookDepthNotional(
+      exchangeName,
+      pair,
+      imbalanceDepthLevels,
+    );
+    const imbalance =
+      imbalanceDepthNotional !== null &&
+      imbalanceDepthNotional >= imbalanceMinDepthNotional
+        ? this.getSmoothedTrackedOrderBookImbalance(
+            exchangeName,
+            pair,
+            imbalanceDepthLevels,
+            imbalanceSmoothingMs,
+            asOfMs,
+          )
+        : null;
     const unavailableReasons: string[] = [];
 
     if (freshness.status === 'missing') {
@@ -369,6 +402,12 @@ export class StrategyMarketDataProviderService {
     if (crash.crashed) {
       unavailableReasons.push('market_crash');
     }
+    if (
+      imbalanceDepthNotional !== null &&
+      imbalanceDepthNotional < imbalanceMinDepthNotional
+    ) {
+      unavailableReasons.push('insufficient_imbalance_depth');
+    }
 
     return {
       exchangeName,
@@ -376,11 +415,8 @@ export class StrategyMarketDataProviderService {
       asOfMs,
       referencePrice,
       microprice: this.getTrackedMicroprice(exchangeName, pair),
-      imbalance: this.getTrackedOrderBookImbalance(
-        exchangeName,
-        pair,
-        imbalanceDepthLevels,
-      ),
+      imbalance,
+      imbalanceDepthNotional,
       realizedVolatility: this.getRealizedVolatility(
         exchangeName,
         pair,
@@ -466,6 +502,81 @@ export class StrategyMarketDataProviderService {
     }
 
     return bidNotional.minus(askNotional).dividedBy(totalNotional).toNumber();
+  }
+
+  getSmoothedTrackedOrderBookImbalance(
+    exchangeName: string,
+    pair: string,
+    depth: number,
+    smoothingMs: number,
+    asOfMs = Date.now(),
+  ): number | null {
+    const rawImbalance = this.getTrackedOrderBookImbalance(
+      exchangeName,
+      pair,
+      depth,
+    );
+
+    if (rawImbalance === null) {
+      return null;
+    }
+
+    const normalizedSmoothingMs = this.toNonNegativeNumber(smoothingMs, 0);
+    const key = `${exchangeName}:${pair}:${Math.max(
+      1,
+      Math.floor(Number(depth || 0)),
+    )}`;
+
+    if (normalizedSmoothingMs <= 0) {
+      this.imbalanceEwmaByKey.set(key, { value: rawImbalance, ts: asOfMs });
+
+      return rawImbalance;
+    }
+
+    const previous = this.imbalanceEwmaByKey.get(key);
+
+    if (!previous) {
+      this.imbalanceEwmaByKey.set(key, { value: rawImbalance, ts: asOfMs });
+
+      return rawImbalance;
+    }
+
+    const elapsedMs = Math.max(0, asOfMs - previous.ts);
+    const alpha = 1 - Math.exp(-elapsedMs / normalizedSmoothingMs);
+    const smoothed = new BigNumber(previous.value)
+      .multipliedBy(1 - alpha)
+      .plus(new BigNumber(rawImbalance).multipliedBy(alpha))
+      .toNumber();
+
+    this.imbalanceEwmaByKey.set(key, { value: smoothed, ts: asOfMs });
+
+    return smoothed;
+  }
+
+  getTrackedOrderBookDepthNotional(
+    exchangeName: string,
+    pair: string,
+    depth: number,
+  ): number | null {
+    const tracked = this.orderBookTrackerService.getOrderBook(
+      exchangeName,
+      pair,
+    );
+
+    if (!tracked) {
+      return null;
+    }
+
+    const normalizedDepth = Math.max(1, Math.floor(Number(depth || 0)));
+    const bidNotional = this.sumBookNotional(tracked.bids, normalizedDepth);
+    const askNotional = this.sumBookNotional(tracked.asks, normalizedDepth);
+    const totalNotional = bidNotional.plus(askNotional);
+
+    if (totalNotional.isLessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    return totalNotional.toNumber();
   }
 
   getRealizedVolatility(

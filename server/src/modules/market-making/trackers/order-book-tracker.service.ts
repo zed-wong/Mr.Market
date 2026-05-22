@@ -147,6 +147,7 @@ export class OrderBookTrackerService
           );
         } else {
           const now = Date.now();
+
           this.books.set(key, {
             bids,
             asks,

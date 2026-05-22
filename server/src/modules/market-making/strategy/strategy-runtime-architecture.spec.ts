@@ -341,6 +341,7 @@ const createFixture = () => {
     undefined,
     undefined,
     undefined,
+    undefined,
     exchangeOrderTrackerService,
     new StrategyControllerRegistry([new PureMarketMakingStrategyController()]),
     executorOrchestratorService,

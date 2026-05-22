@@ -24,6 +24,7 @@ import { DexAdapterId } from '../config/strategy.dto';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
+import { RuntimeObservationService } from '../observation/runtime-observation.service';
 import { StrategyIntentStoreService } from './strategy-intent-store.service';
 
 class IntentCancelledError extends Error {
@@ -92,6 +93,8 @@ export class StrategyIntentExecutionService {
     private readonly strategyMarketDataProviderService?: StrategyMarketDataProviderService,
     @Optional()
     private readonly exchangeApiKeyService?: ExchangeApiKeyService,
+    @Optional()
+    private readonly runtimeObservationService?: RuntimeObservationService,
   ) {
     this.executeIntents = this.toBoolean(
       this.configService.get('strategy.execute_intents', false),
@@ -706,6 +709,7 @@ export class StrategyIntentExecutionService {
         'FAILED',
         error instanceof Error ? error.message : 'unknown error',
       );
+      this.runtimeObservationService?.recordIntentFailure(intent, error);
       await this.durabilityService?.appendOutboxEvent({
         topic: 'strategy.intent.failed',
         aggregateType: 'strategy_intent',

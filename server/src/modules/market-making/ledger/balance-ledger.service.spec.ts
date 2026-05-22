@@ -124,6 +124,19 @@ describe('BalanceLedgerService', () => {
     expect(balance.total).toBe('100');
   });
 
+  it('reads existing balances without creating missing rows', async () => {
+    const repos = createInMemoryRepos();
+    const service = new BalanceLedgerService(
+      repos.ledgerEntryRepository as any,
+      repos.balanceReadModelRepository as any,
+    );
+
+    await expect(
+      service.getExistingBalance('order-1', 'asset-usdt'),
+    ).resolves.toBeNull();
+    expect(repos.balanceReadModelRepository.save).not.toHaveBeenCalled();
+  });
+
   it('applies reserve_lock and reserve_release while preserving invariant total = available + locked', async () => {
     const repos = createInMemoryRepos();
     const service = new BalanceLedgerService(
@@ -909,6 +922,7 @@ describe('BalanceLedgerService', () => {
     const result = await service.rebuildOrderBalance('order-1', 'asset-usdt');
 
     expect(result.matches).toBe(false);
+    expect(service.isReservationPaused('order-1', 'asset-usdt')).toBe(true);
     await expect(
       service.lockFunds({
         orderId: 'order-1',

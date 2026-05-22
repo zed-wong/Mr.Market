@@ -277,6 +277,64 @@ describe('StrategyMarketDataProviderService', () => {
     ).not.toHaveBeenCalled();
   });
 
+  it('returns tracked order book depth notional by depth', () => {
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [
+        [100, 1],
+        [99, 1],
+      ],
+      asks: [
+        [102, 1],
+        [103, 1],
+      ],
+      sequence: 2,
+    });
+
+    const result = service.getTrackedOrderBookDepthNotional(
+      'binance',
+      'BTC/USDT',
+      2,
+    );
+
+    expect(result).toBe(404);
+  });
+
+  it('smooths tracked order book imbalance with EWMA', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 3]],
+      asks: [[100, 1]],
+      sequence: 1,
+    });
+
+    expect(
+      service.getSmoothedTrackedOrderBookImbalance(
+        'binance',
+        'BTC/USDT',
+        1,
+        1000,
+      ),
+    ).toBe(0.5);
+
+    jest.spyOn(Date, 'now').mockReturnValue(2000);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 1]],
+      asks: [[100, 3]],
+      sequence: 2,
+    });
+
+    const result = service.getSmoothedTrackedOrderBookImbalance(
+      'binance',
+      'BTC/USDT',
+      1,
+      1000,
+    );
+
+    expect(result).toBeCloseTo(-0.1321205588, 10);
+
+    jest.restoreAllMocks();
+  });
+
   it('returns mid price history from tracker', () => {
     orderBookTrackerService.getMidPriceHistory.mockReturnValue([
       { price: 100, ts: 1000, sequence: 1 },
@@ -323,19 +381,17 @@ describe('StrategyMarketDataProviderService', () => {
       { price: 101, ts: now, sequence: 2 },
     ]);
 
-    const result = service.getAdaptivePmmSignalSnapshot(
-      'binance',
-      'BTC/USDT',
-      {
-        priceSourceType: PriceSourceType.MICROPRICE,
-        sigmaWindowMs: 5000,
-        staleSoftMs: 2000,
-        staleHardMs: 10000,
-        imbalanceDepthLevels: 1,
-        marketCrashWindowMs: 5000,
-        marketCrashBps: 500,
-      },
-    );
+    const result = service.getAdaptivePmmSignalSnapshot('binance', 'BTC/USDT', {
+      priceSourceType: PriceSourceType.MICROPRICE,
+      sigmaWindowMs: 5000,
+      staleSoftMs: 2000,
+      staleHardMs: 10000,
+      imbalanceDepthLevels: 1,
+      imbalanceMinDepthNotional: 0,
+      imbalanceSmoothingMs: 0,
+      marketCrashWindowMs: 5000,
+      marketCrashBps: 500,
+    });
 
     expect(result.referencePrice?.price).toBe(101.5);
     expect(result.referencePrice?.sourceType).toBe(PriceSourceType.MICROPRICE);
@@ -362,6 +418,29 @@ describe('StrategyMarketDataProviderService', () => {
     jest.restoreAllMocks();
   });
 
+  it('omits imbalance from adaptive PMM snapshot when depth is too thin', () => {
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[100, 1]],
+      asks: [[102, 1]],
+      sequence: 2,
+    });
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 1000);
+
+    const result = service.getAdaptivePmmSignalSnapshot('binance', 'BTC/USDT', {
+      imbalanceDepthLevels: 1,
+      imbalanceMinDepthNotional: 1000,
+    });
+
+    expect(result.imbalance).toBeNull();
+    expect(result.imbalanceDepthNotional).toBe(202);
+    expect(result.unavailableReasons).toContain('insufficient_imbalance_depth');
+
+    jest.restoreAllMocks();
+  });
+
   it('marks adaptive PMM snapshot as soft stale before hard stale', () => {
     const now = 1234567890;
 
@@ -373,14 +452,10 @@ describe('StrategyMarketDataProviderService', () => {
     });
     orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 5000);
 
-    const result = service.getAdaptivePmmSignalSnapshot(
-      'binance',
-      'BTC/USDT',
-      {
-        staleSoftMs: 2000,
-        staleHardMs: 10000,
-      },
-    );
+    const result = service.getAdaptivePmmSignalSnapshot('binance', 'BTC/USDT', {
+      staleSoftMs: 2000,
+      staleHardMs: 10000,
+    });
 
     expect(result.freshness.status).toBe('soft_stale');
     expect(result.unavailableReasons).toContain('soft_stale_order_book');
@@ -400,14 +475,10 @@ describe('StrategyMarketDataProviderService', () => {
     });
     orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 10000);
 
-    const result = service.getAdaptivePmmSignalSnapshot(
-      'binance',
-      'BTC/USDT',
-      {
-        staleSoftMs: 2000,
-        staleHardMs: 10000,
-      },
-    );
+    const result = service.getAdaptivePmmSignalSnapshot('binance', 'BTC/USDT', {
+      staleSoftMs: 2000,
+      staleHardMs: 10000,
+    });
 
     expect(result.freshness.status).toBe('hard_stale');
     expect(result.unavailableReasons).toContain('hard_stale_order_book');
@@ -430,14 +501,10 @@ describe('StrategyMarketDataProviderService', () => {
       { price: 94, ts: now, sequence: 2 },
     ]);
 
-    const result = service.getAdaptivePmmSignalSnapshot(
-      'binance',
-      'BTC/USDT',
-      {
-        marketCrashWindowMs: 60000,
-        marketCrashBps: 500,
-      },
-    );
+    const result = service.getAdaptivePmmSignalSnapshot('binance', 'BTC/USDT', {
+      marketCrashWindowMs: 60000,
+      marketCrashBps: 500,
+    });
 
     expect(result.crash).toEqual({
       crashed: true,
@@ -446,6 +513,37 @@ describe('StrategyMarketDataProviderService', () => {
       thresholdBps: 500,
     });
     expect(result.unavailableReasons).toContain('market_crash');
+
+    jest.restoreAllMocks();
+  });
+
+  it('treats zero market crash threshold as disabled', () => {
+    const now = 1234567890;
+
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    orderBookTrackerService.getOrderBook.mockReturnValue({
+      bids: [[95, 1]],
+      asks: [[97, 1]],
+      sequence: 2,
+    });
+    orderBookTrackerService.getLastUpdateAt.mockReturnValue(now - 1000);
+    orderBookTrackerService.getMidPriceHistory.mockReturnValue([
+      { price: 100, ts: now - 5000, sequence: 1 },
+      { price: 94, ts: now, sequence: 2 },
+    ]);
+
+    const result = service.getAdaptivePmmSignalSnapshot('binance', 'BTC/USDT', {
+      marketCrashWindowMs: 60000,
+      marketCrashBps: 0,
+    });
+
+    expect(result.crash).toEqual({
+      crashed: false,
+      changeBps: null,
+      windowMs: 60000,
+      thresholdBps: null,
+    });
+    expect(result.unavailableReasons).not.toContain('market_crash');
 
     jest.restoreAllMocks();
   });

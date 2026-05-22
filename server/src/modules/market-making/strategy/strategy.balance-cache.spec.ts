@@ -60,6 +60,7 @@ describe('StrategyService balance cache helpers', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       strategyControllerRegistry as any,
       undefined,
       strategyMarketDataProviderService as any,

@@ -107,6 +107,13 @@ export class BalanceLedgerService {
     return await this.getOrCreateBalance(orderId, assetId);
   }
 
+  async getExistingBalance(
+    orderId: string,
+    assetId: string,
+  ): Promise<MarketMakingOrderBalance | null> {
+    return await this.orderBalanceRepository.findOneBy({ orderId, assetId });
+  }
+
   async hasDepositCredit(orderId: string, assetId: string): Promise<boolean> {
     const existing = await this.ledgerEntryRepository.findOne({
       where: {
@@ -137,6 +144,12 @@ export class BalanceLedgerService {
 
   pauseReservations(orderId: string, assetId: string): void {
     this.reservationPausedBalances.add(
+      this.getBalanceLockKey(orderId, assetId),
+    );
+  }
+
+  isReservationPaused(orderId: string, assetId: string): boolean {
+    return this.reservationPausedBalances.has(
       this.getBalanceLockKey(orderId, assetId),
     );
   }

@@ -39,6 +39,8 @@ import { StrategyIntentWorkerService } from './execution/strategy-intent-worker.
 import { StrategyRuntimeDispatcherService } from './execution/strategy-runtime-dispatcher.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
+import { PmmMarkoutEvaluatorService } from './observation/pmm-markout-evaluator.service';
+import { RuntimeObservationService } from './observation/runtime-observation.service';
 import { FillSettlementService } from './settlement/fill-settlement.service';
 import { StrategyService } from './strategy.service';
 
@@ -76,6 +78,8 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyIntentStoreService,
     ExecutorOrchestratorService,
     QuoteExecutorManagerService,
+    PmmMarkoutEvaluatorService,
+    RuntimeObservationService,
     StrategyConfigResolverService,
     StrategyRuntimeDispatcherService,
     StrategyMarketDataProviderService,

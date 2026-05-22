@@ -52,6 +52,7 @@ describe('StrategyRuntimeDispatcherService', () => {
             ),
         };
       }
+
       return undefined;
     }),
   } as unknown as StrategyControllerRegistry;
@@ -88,9 +89,9 @@ describe('StrategyRuntimeDispatcherService', () => {
       pair: 'BTC/USDT',
     });
 
-    expect(strategyService.executePureMarketMakingStrategy).toHaveBeenCalledWith(
-      expect.objectContaining({ pair: 'BTC/USDT' }),
-    );
+    expect(
+      strategyService.executePureMarketMakingStrategy,
+    ).toHaveBeenCalledWith(expect.objectContaining({ pair: 'BTC/USDT' }));
   });
 
   it('normalizes volume execution category while dispatching start', async () => {

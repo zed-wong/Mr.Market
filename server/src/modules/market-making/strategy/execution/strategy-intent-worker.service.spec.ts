@@ -150,7 +150,9 @@ describe('StrategyIntentWorkerService', () => {
     await service.onModuleDestroy();
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Intent worker failed for s1-next: intent failed'),
+      expect.stringContaining(
+        'Intent worker failed for s1-next: intent failed',
+      ),
     );
   });
 

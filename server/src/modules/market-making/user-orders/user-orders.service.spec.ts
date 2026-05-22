@@ -11,10 +11,7 @@ import {
   SimplyGrowOrder,
 } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import {
-  type MarketMakingStates,
-  type SimplyGrowStates,
-} from 'src/common/types/orders/states';
+import { type MarketMakingStates } from 'src/common/types/orders/states';
 import { GrowdataRepository } from 'src/modules/data/grow-data/grow-data.repository';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { Repository } from 'typeorm';

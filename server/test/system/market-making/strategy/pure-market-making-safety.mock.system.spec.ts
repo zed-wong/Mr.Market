@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
+import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKey';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
 import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
@@ -114,6 +115,7 @@ describe('Pure market making safety gaps (mock system)', () => {
   };
   let strategyMarketDataProviderService: {
     getReferencePrice: jest.Mock;
+    getAdaptivePmmSignalSnapshot: jest.Mock;
   };
 
   beforeEach(() => {
@@ -156,6 +158,25 @@ describe('Pure market making safety gaps (mock system)', () => {
     };
     strategyMarketDataProviderService = {
       getReferencePrice: jest.fn().mockResolvedValue(100),
+      getAdaptivePmmSignalSnapshot: jest.fn().mockReturnValue({
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [],
+        realizedVolatility: null,
+        imbalance: null,
+        imbalanceDepthNotional: null,
+      }),
     };
     executorRegistry = new ExecutorRegistry();
     exchangeOrderTrackerService = new ExchangeOrderTrackerService();
@@ -174,6 +195,7 @@ describe('Pure market making safety gaps (mock system)', () => {
         }),
       } as any,
       strategyRepo as any,
+      undefined,
       undefined,
       undefined,
       new QuoteExecutorManagerService(),
@@ -424,5 +446,710 @@ describe('Pure market making safety gaps (mock system)', () => {
       'ex-4',
       undefined,
     );
+  });
+
+  it('blocks adaptive PMM creates and emits cancels when tracked market data is stale', async () => {
+    const params = {
+      ...createPureMmParams('order-adaptive-stale'),
+      volBasedSpread: true,
+      staleSoftMs: 2000,
+      staleHardMs: 10000,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+
+    exchangeOrderTrackerService.upsertOrder({
+      orderId: params.marketMakingOrderId,
+      strategyKey,
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-stale-buy',
+      side: 'buy',
+      price: '99',
+      qty: '1',
+      status: 'open',
+      createdAt: getRFC3339Timestamp(),
+      updatedAt: getRFC3339Timestamp(),
+    });
+    strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
+      {
+        freshness: {
+          status: 'soft_stale',
+          ageMs: 3000,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: ['soft_stale_order_book'],
+        midPriceHistory: [],
+        realizedVolatility: null,
+        imbalance: null,
+        imbalanceDepthNotional: null,
+      },
+    );
+
+    const actions = await strategyService.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      getRFC3339Timestamp(),
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: 'CANCEL_ORDER',
+        mixinOrderId: 'ex-stale-buy',
+      }),
+    ]);
+  });
+
+  it('widens spread and reduces size from adaptive volatility signals', async () => {
+    const params = {
+      ...createPureMmParams('order-adaptive-vol'),
+      orderAmount: 10,
+      volBasedSpread: true,
+      spreadSigmaMultiplier: 2,
+      adaptiveSizeEnabled: true,
+      sizeVolScalingFactor: 10,
+      sizeFloor: 0.2,
+      volatilitySampleMinCount: 3,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+
+    strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
+      {
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [
+          { price: 100, ts: 1, sequence: 1 },
+          { price: 101, ts: 2, sequence: 2 },
+          { price: 102, ts: 3, sequence: 3 },
+        ],
+        realizedVolatility: 0.02,
+        imbalance: null,
+        imbalanceDepthNotional: null,
+      },
+    );
+
+    const actions = await strategyService.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      getRFC3339Timestamp(),
+    );
+
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'buy',
+          price: '95',
+          qty: '8',
+        }),
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'sell',
+          price: '105',
+          qty: '8',
+        }),
+      ]),
+    );
+  });
+
+  it('suppresses only the toxic side while markout cooldown is active', async () => {
+    const params = {
+      ...createPureMmParams('order-toxic-buy'),
+      adverseMarkoutGuardBps: 50,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+
+    (strategyService as any).pmmMarkoutEvaluatorService = {
+      evaluateDue: jest.fn(),
+      getToxicity: jest.fn().mockReturnValue({
+        buyScore: 1,
+        sellScore: 0,
+        buyPausedUntilMs: Date.now() + 30_000,
+        sellPausedUntilMs: null,
+        buyLastPausedUntilMs: null,
+        sellLastPausedUntilMs: null,
+      }),
+    };
+
+    const actions = await strategyService.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      getRFC3339Timestamp(),
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: 'CREATE_LIMIT_ORDER',
+        side: 'sell',
+      }),
+    ]);
+  });
+
+  it('widens PMM spread from recent runtime reject pressure', async () => {
+    const params = {
+      ...createPureMmParams('order-runtime-pressure'),
+      postOnlyRejectThreshold: 2,
+      postOnlyRejectWidenBps: 10,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+
+    (strategyService as any).runtimeObservationService = {
+      getPressure: jest.fn().mockReturnValue({
+        strategyKey,
+        windowMs: 60_000,
+        rejectCount: 2,
+        postOnlyRejectCount: 2,
+        rateLimitCount: 0,
+      }),
+    };
+
+    const actions = await strategyService.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      getRFC3339Timestamp(),
+    );
+
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'buy',
+          price: '98.9',
+        }),
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'sell',
+          price: '101.1',
+        }),
+      ]),
+    );
+  });
+
+  it('moves PMM quotes asymmetrically from positive order-book imbalance', async () => {
+    const params = {
+      ...createPureMmParams('order-imbalance-up'),
+      imbalanceSkewFactor: 0.01,
+      imbalanceDepthLevels: 3,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+
+    strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
+      {
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [],
+        realizedVolatility: null,
+        imbalance: 0.5,
+        imbalanceDepthNotional: 100000,
+      },
+    );
+
+    const actions = await strategyService.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      getRFC3339Timestamp(),
+    );
+
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'buy',
+          price: '98.5',
+        }),
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'sell',
+          price: '100.5',
+        }),
+      ]),
+    );
+  });
+
+  it('suppresses imbalance skew when inventory deviation is severe', async () => {
+    const params = {
+      ...createPureMmParams('order-inventory-suppression'),
+      currentBaseRatio: 0.8,
+      inventoryTargetBaseRatio: 0.5,
+      imbalanceSkewFactor: 0.01,
+      inventorySeverePivot: 0.3,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+
+    strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
+      {
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [],
+        realizedVolatility: null,
+        imbalance: 0.5,
+        imbalanceDepthNotional: 100000,
+      },
+    );
+
+    const actions = await strategyService.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      getRFC3339Timestamp(),
+    );
+
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'buy',
+          price: '99',
+        }),
+        expect.objectContaining({
+          type: 'CREATE_LIMIT_ORDER',
+          side: 'sell',
+          price: '101',
+        }),
+      ]),
+    );
+  });
+
+  it('uses conservative warmup quotes while adaptive signal history is thin', async () => {
+    const params = {
+      ...createPureMmParams('order-warmup'),
+      orderAmount: 10,
+      numberOfLayers: 3,
+      volBasedSpread: true,
+      warmupSpread: 0.05,
+      warmupSizeRatio: 0.2,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+
+    strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
+      {
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [{ price: 100, ts: 1, sequence: 1 }],
+        realizedVolatility: 0.02,
+        imbalance: 0.5,
+        imbalanceDepthNotional: 100000,
+      },
+    );
+
+    const actions = await strategyService.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      getRFC3339Timestamp(),
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: 'CREATE_LIMIT_ORDER',
+        slotKey: 'layer-1-buy',
+        price: '95',
+        qty: '2',
+      }),
+      expect.objectContaining({
+        type: 'CREATE_LIMIT_ORDER',
+        slotKey: 'layer-1-sell',
+        price: '105',
+        qty: '2',
+      }),
+    ]);
+  });
+
+  it('forces single-layer PMM when side budgets are too small for layered quoting', async () => {
+    const params = {
+      ...createPureMmParams('order-small-budget'),
+      orderAmount: 0.11,
+      numberOfLayers: 3,
+      adaptiveSizeEnabled: true,
+      layeringMinBudgetMultiple: 10,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+    const balanceStateCacheService = (strategyService as any)
+      .balanceStateCacheService as {
+      getBalance: jest.Mock;
+    };
+
+    balanceStateCacheService.getBalance.mockImplementation(
+      (_exchange: string, accountLabel: string, asset: string) => ({
+        exchange: _exchange,
+        accountLabel,
+        asset,
+        free: asset === 'BTC' ? '0.5' : '50',
+        source: 'ws',
+        freshnessTimestamp: '2026-04-09T00:00:00.000Z',
+      }),
+    );
+
+    const actions = await strategyService.buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      getRFC3339Timestamp(),
+    );
+
+    expect(actions.map((action) => action.slotKey)).toEqual([
+      'layer-1-buy',
+      'layer-1-sell',
+    ]);
+  });
+
+  it('runs a logical 30-minute adaptive scenario soak without action storms or unsafe stale creates', async () => {
+    const params = {
+      ...createPureMmParams('order-adaptive-soak'),
+      orderAmount: 1,
+      volBasedSpread: true,
+      spreadSigmaMultiplier: 2,
+      adaptiveSizeEnabled: true,
+      sizeVolScalingFactor: 5,
+      imbalanceSkewFactor: 0.01,
+      postOnlyRejectThreshold: 1,
+      postOnlyRejectWidenBps: 10,
+      cancelBudgetPerSec: 2,
+      volatilitySampleMinCount: 3,
+      inventorySeverePivot: 0.3,
+    };
+    const strategyKey = createPureMarketMakingStrategyKey(
+      params.marketMakingOrderId,
+    );
+    let currentToxicity: any = null;
+    let currentPressure = {
+      strategyKey,
+      windowMs: 60_000,
+      rejectCount: 0,
+      postOnlyRejectCount: 0,
+      rateLimitCount: 0,
+    };
+    const scenarios = [
+      {
+        name: 'calm-daily',
+        params: {},
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [
+          { price: 100, ts: 1, sequence: 1 },
+          { price: 100.01, ts: 2, sequence: 2 },
+          { price: 100, ts: 3, sequence: 3 },
+        ],
+        realizedVolatility: 0.0001,
+        imbalance: 0,
+        imbalanceDepthNotional: 100000,
+        toxicity: null,
+        pressure: {
+          strategyKey,
+          windowMs: 60_000,
+          rejectCount: 0,
+          postOnlyRejectCount: 0,
+          rateLimitCount: 0,
+        },
+      },
+      {
+        name: 'one-way-up-inventory-wins',
+        params: {
+          currentBaseRatio: 0.2,
+          inventoryTargetBaseRatio: 0.5,
+        },
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [
+          { price: 100, ts: 1, sequence: 1 },
+          { price: 101, ts: 2, sequence: 2 },
+          { price: 102, ts: 3, sequence: 3 },
+        ],
+        realizedVolatility: 0.01,
+        imbalance: 0.6,
+        imbalanceDepthNotional: 100000,
+        toxicity: null,
+        pressure: {
+          strategyKey,
+          windowMs: 60_000,
+          rejectCount: 0,
+          postOnlyRejectCount: 0,
+          rateLimitCount: 0,
+        },
+      },
+      {
+        name: 'noisy-sideways',
+        params: {},
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [
+          { price: 100, ts: 1, sequence: 1 },
+          { price: 99.8, ts: 2, sequence: 2 },
+          { price: 100.2, ts: 3, sequence: 3 },
+        ],
+        realizedVolatility: 0.005,
+        imbalance: -0.2,
+        imbalanceDepthNotional: 100000,
+        toxicity: null,
+        pressure: {
+          strategyKey,
+          windowMs: 60_000,
+          rejectCount: 1,
+          postOnlyRejectCount: 1,
+          rateLimitCount: 0,
+        },
+      },
+      {
+        name: 'toxic-flow',
+        params: {},
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [
+          { price: 100, ts: 1, sequence: 1 },
+          { price: 100.5, ts: 2, sequence: 2 },
+          { price: 101, ts: 3, sequence: 3 },
+        ],
+        realizedVolatility: 0.005,
+        imbalance: null,
+        imbalanceDepthNotional: 100000,
+        toxicity: {
+          buyScore: 1,
+          sellScore: 0,
+          buyPausedUntilMs: Date.now() + 30_000,
+          sellPausedUntilMs: null,
+          buyLastPausedUntilMs: null,
+          sellLastPausedUntilMs: null,
+        },
+        pressure: {
+          strategyKey,
+          windowMs: 60_000,
+          rejectCount: 0,
+          postOnlyRejectCount: 0,
+          rateLimitCount: 0,
+        },
+      },
+      {
+        name: 'thin-book',
+        params: {},
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: ['insufficient_imbalance_depth'],
+        midPriceHistory: [
+          { price: 100, ts: 1, sequence: 1 },
+          { price: 100.1, ts: 2, sequence: 2 },
+          { price: 100, ts: 3, sequence: 3 },
+        ],
+        realizedVolatility: 0.002,
+        imbalance: null,
+        imbalanceDepthNotional: 5,
+        toxicity: null,
+        pressure: {
+          strategyKey,
+          windowMs: 60_000,
+          rejectCount: 0,
+          postOnlyRejectCount: 0,
+          rateLimitCount: 0,
+        },
+      },
+      {
+        name: 'high-vol-severe-inventory',
+        params: {
+          currentBaseRatio: 0.9,
+          inventoryTargetBaseRatio: 0.5,
+        },
+        freshness: {
+          status: 'fresh',
+          ageMs: 0,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: [],
+        midPriceHistory: [
+          { price: 100, ts: 1, sequence: 1 },
+          { price: 103, ts: 2, sequence: 2 },
+          { price: 99, ts: 3, sequence: 3 },
+        ],
+        realizedVolatility: 0.03,
+        imbalance: 0.8,
+        imbalanceDepthNotional: 100000,
+        toxicity: null,
+        pressure: {
+          strategyKey,
+          windowMs: 60_000,
+          rejectCount: 0,
+          postOnlyRejectCount: 0,
+          rateLimitCount: 0,
+        },
+      },
+    ];
+
+    exchangeOrderTrackerService.upsertOrder({
+      orderId: params.marketMakingOrderId,
+      strategyKey,
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'soak-live-buy',
+      side: 'buy',
+      price: '99',
+      qty: '1',
+      status: 'open',
+      createdAt: getRFC3339Timestamp(),
+      updatedAt: getRFC3339Timestamp(),
+    });
+    (strategyService as any).runtimeObservationService = {
+      getPressure: jest.fn(() => currentPressure),
+    };
+    (strategyService as any).pmmMarkoutEvaluatorService = {
+      evaluateDue: jest.fn(),
+      getToxicity: jest.fn(() => currentToxicity),
+    };
+
+    for (let index = 0; index < 180; index += 1) {
+      const scenario = scenarios[index % scenarios.length];
+      const {
+        params: scenarioParams,
+        toxicity,
+        pressure,
+        ...snapshot
+      } = scenario;
+      const second = index * 10;
+
+      strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
+        snapshot,
+      );
+      currentToxicity = toxicity;
+      currentPressure = pressure;
+
+      const actions = await strategyService.buildPureMarketMakingActions(
+        strategyKey,
+        {
+          ...params,
+          ...scenarioParams,
+        },
+        new Date(Date.UTC(2026, 2, 11, 0, 0, second)).toISOString(),
+      );
+
+      expect(scenario.name).toBeTruthy();
+      expect(actions.length).toBeLessThanOrEqual(2);
+
+      if (snapshot.freshness.status !== 'fresh') {
+        expect(
+          actions.every((action) => action.type !== 'CREATE_LIMIT_ORDER'),
+        ).toBe(true);
+      }
+    }
   });
 });
