@@ -8,6 +8,7 @@
   class="btn btn-ghost btn-sm btn-circle"
   onclick={toggleTheme}
   aria-label={$_('theme_dark')}
+  data-testid="theme-toggle"
 >
   {#if $darkTheme}
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">

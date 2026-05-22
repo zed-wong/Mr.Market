@@ -1,21 +1,21 @@
 <script lang="ts">
-  import { _ } from 'svelte-i18n';
-  import { isAuthed } from '$lib/stores/auth';
-  import { walletChainId } from '$lib/stores/wallet';
-  import { getEthereumVaultAddress, SUPPORTED_CHAINS } from '$lib/helpers/constants';
-  import { shortenAddress } from '$lib/helpers/utils';
-  import { onMount } from 'svelte';
+  import { primaryDepositAddress } from '$lib/helpers/mock-web3';
+  import {
+    openMockWallet,
+    walletIsConnected,
+    walletIsUnsupported,
+    walletNamespace,
+    walletNamespaceLabel,
+    walletNetwork,
+    walletShortAddress,
+  } from '$lib/stores/wallet';
 
-  let vaultAddress = $state('');
   let copied = $state(false);
-
-  onMount(() => {
-    vaultAddress = getEthereumVaultAddress() || '';
-  });
+  let depositAddress = $derived($walletNamespace ? primaryDepositAddress($walletNamespace) : '');
 
   const copyVaultAddress = () => {
-    if (vaultAddress) {
-      navigator.clipboard.writeText(vaultAddress);
+    if (depositAddress) {
+      navigator.clipboard.writeText(depositAddress);
       copied = true;
       setTimeout(() => { copied = false; }, 2000);
     }
@@ -23,48 +23,66 @@
 </script>
 
 <section class="space-y-4" data-testid="web3-deposit">
-  <div class="card bg-base-100 border border-base-300 shadow-sm">
-    <div class="card-body gap-3 p-5 md:p-6">
-      <span class="text-lg font-bold text-base-content capitalize">{$_('deposit_title')}</span>
-      <span class="text-base-content/70">{$_('deposit_subtitle')}</span>
+  <div class="card border border-base-300 bg-base-100 shadow-sm">
+    <div class="card-body gap-3">
+      <span class="text-2xl font-bold text-base-content">Deposit</span>
+      <span class="text-base-content/70">Mocked funding instructions for EVM and Solana. No server endpoint or wallet transaction is required.</span>
     </div>
   </div>
 
-  {#if vaultAddress}
-    <div class="card bg-base-100 border border-base-300 shadow-sm">
-      <div class="card-body gap-3 p-5 md:p-6">
-        <span class="text-sm font-medium text-base-content/60 capitalize">{$_('deposit_vault_address')}</span>
-        <div class="flex items-center gap-2">
-          <code class="flex-1 rounded bg-base-200 px-3 py-2 text-sm break-all">{vaultAddress}</code>
-          <button class="btn btn-sm btn-outline capitalize" onclick={copyVaultAddress}>
-            {#if copied}
-              {$_('deposit_copied')}
-            {:else}
-              {$_('deposit_copy_address')}
-            {/if}
-          </button>
-        </div>
-        <p class="text-xs text-base-content/50 mt-2">
-          Send ETH or approved ERC-20 tokens to this address on the Ethereum network. Deposits require 12 confirmations to be credited.
-        </p>
-      </div>
+  {#if !$walletIsConnected && !$walletIsUnsupported}
+    <div class="alert alert-info" data-testid="deposit-connect-gate">
+      <span>Connect a mocked Reown wallet before generating deposit instructions.</span>
+      <button class="btn btn-sm btn-primary" onclick={openMockWallet}>Connect Wallet</button>
     </div>
-  {:else}
-    <div class="card bg-base-100 border border-base-300 shadow-sm">
-      <div class="card-body gap-3 p-5 md:p-6">
-        <span class="text-base-content/70">
-          Deposit instructions will be available once the vault contract is deployed. For now, please use the mainnet vault address provided by the operator.
-        </span>
-      </div>
+  {:else if $walletIsUnsupported}
+    <div class="alert alert-warning" data-testid="deposit-unsupported-gate">
+      <span>Unsupported chain selected. Deposit continuation is blocked until EVM or Solana is selected.</span>
     </div>
   {/if}
 
-  {#if $walletChainId && $walletChainId !== 1 && $walletChainId !== 11155111}
-    <div class="alert alert-warning">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
-        <path fill-rule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.31 0-3.752-2.5-2.598-4.5L9.4 3.003zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
-      </svg>
-      <span class="capitalize">{$_('wrong_network')} — {$_('switch_network')}</span>
+  {#if $walletIsConnected}
+    <div class="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body gap-3">
+          <span class="font-semibold">Account context</span>
+          <span class="badge badge-outline w-fit">{$walletNamespaceLabel}</span>
+          <span class="text-base-content/70">{$walletNetwork} · {$walletShortAddress}</span>
+          <select class="select select-bordered w-full" data-testid="deposit-asset-select">
+            <option>{$walletNamespace === 'evm' ? 'ETH' : 'SOL'}</option>
+            <option>USDC</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="deposit-instructions">
+        <div class="card-body gap-3">
+          <span class="text-sm font-medium text-base-content/60">Deposit address</span>
+          <div class="flex items-center gap-2">
+            <code class="flex-1 rounded bg-base-200 px-3 py-2 text-sm break-all">{depositAddress}</code>
+            <button class="btn btn-sm btn-outline" onclick={copyVaultAddress}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <span class="text-sm text-base-content/60">
+            {$walletNamespace === 'evm'
+              ? 'Send ETH or USDC on the selected EVM network. The mock timeline shows generated, detected, pending, and credited states.'
+              : 'Send SOL or SPL USDC on Solana. This address and all status updates are deterministic mock data.'}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="deposit-timeline">
+      <div class="card-body gap-3">
+        <span class="font-semibold">Mocked deposit timeline</span>
+        <ul class="steps steps-vertical lg:steps-horizontal">
+          <li class="step step-primary">Address generated</li>
+          <li class="step step-primary">Deposit detected</li>
+          <li class="step step-primary">Pending confirmations</li>
+          <li class="step">Credited</li>
+        </ul>
+      </div>
     </div>
   {/if}
 </section>

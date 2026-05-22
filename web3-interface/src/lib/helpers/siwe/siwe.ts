@@ -1,6 +1,5 @@
-import { getNonce, login } from '../api/auth';
-import { initAppKit, getWagmiAdapter } from '../wallet/appkit';
-import { walletAddress, walletChainId, walletStatus } from '$lib/stores/wallet';
+import { get } from 'svelte/store';
+import { selectedMockAccountId, switchMockAccount, walletAccount, walletStatus } from '$lib/stores/wallet';
 import { isAuthed, authState } from '$lib/stores/auth';
 
 export const buildSiweMessage = (
@@ -29,52 +28,23 @@ export const buildSiweMessage = (
 };
 
 export const signInWithEthereum = async (): Promise<boolean> => {
-  const adapter = getWagmiAdapter();
-  const appKit = initAppKit();
-  if (!adapter || !appKit) throw new Error('Wallet not initialized');
+  const accountId = get(selectedMockAccountId) ?? 'evm-primary';
+  switchMockAccount(accountId);
 
-  const wagmiClient = adapter.wagmiConfig;
-  const { getAccount, getChainId, signMessage } = await import('@wagmi/core');
-
-  const account = getAccount(wagmiClient);
-  if (!account.address) throw new Error('No wallet connected');
-
-  const chainId = getChainId(wagmiClient);
-  const address = account.address;
-
-  walletStatus.set('connecting');
-
-  try {
-    const nonceResponse = await getNonce(address, String(chainId));
-    const domain = nonceResponse.domain || window.location.host;
-    const uri = nonceResponse.uri || window.location.origin;
-
-    const message = buildSiweMessage(
-      nonceResponse.nonce,
-      address,
-      chainId,
-      domain,
-      uri,
-    );
-
-    const signature = await signMessage(wagmiClient, { message });
-
-    const loginResult = await login(message, signature);
-
-    walletAddress.set(address);
-    walletChainId.set(chainId);
-    isAuthed.set(true);
-    authState.set({
-      token: loginResult.jwt,
-      address: loginResult.address,
-      chainId: loginResult.chainId,
-      userId: loginResult.userId,
-    });
-
-    return true;
-  } catch (err) {
+  const account = get(walletAccount);
+  if (!account || account.unsupported) {
     walletStatus.set('disconnected');
     isAuthed.set(false);
-    throw err;
+    throw new Error('Select a supported mocked EVM account');
   }
+
+  isAuthed.set(true);
+  authState.set({
+    token: 'mock-web3-session-token',
+    address: account.address,
+    chainId: String(account.chainId ?? 0),
+    userId: account.id,
+  });
+
+  return true;
 };
