@@ -34,6 +34,18 @@ export interface MockCampaign {
   volume: string;
   minimum: string;
   summary: string;
+  duration: string;
+  rewardRate: string;
+  participants: number;
+  terms: string[];
+  requirements: string[];
+  metrics: {
+    liquidityGoal: string;
+    volumeGoal: string;
+    currentLiquidity: string;
+    currentVolume: string;
+    projectedReward: string;
+  };
 }
 
 export interface MockOrder {
@@ -57,6 +69,21 @@ export interface MockActivityEntry {
   category: 'funding' | 'campaign' | 'order';
   label: string;
   detail: string;
+}
+
+export type CampaignFilter = 'all' | 'evm' | 'solana' | 'eligible' | 'open' | 'active';
+
+export type CampaignEligibilityState =
+  | 'connect-wallet'
+  | 'unsupported-chain'
+  | 'namespace-supported'
+  | 'namespace-unsupported';
+
+export interface CampaignEligibility {
+  state: CampaignEligibilityState;
+  canParticipate: boolean;
+  label: string;
+  message: string;
 }
 
 export const mockAccounts: MockAccount[] = [
@@ -182,6 +209,26 @@ export const mockCampaigns: MockCampaign[] = [
     volume: '$8.4M',
     minimum: '$500',
     summary: 'Provide inventory for EVM ETH and USDC market-making campaigns.',
+    duration: 'May 23, 2026 → Jun 23, 2026',
+    rewardRate: '8.4% projected APR',
+    participants: 42,
+    terms: [
+      'Inventory remains allocated to mocked market-making orders only.',
+      'Rewards accrue after the campaign reaches 75% of the liquidity target.',
+      'Participants can pause future mocked order placement from order detail.',
+    ],
+    requirements: [
+      'Connect a supported EVM wallet on Ethereum or Sepolia.',
+      'Contribute at least $500 equivalent across ETH and USDC.',
+      'Keep enough USDC available for maker-side quote inventory.',
+    ],
+    metrics: {
+      liquidityGoal: '$1.5M',
+      volumeGoal: '$10M',
+      currentLiquidity: '$1.2M',
+      currentVolume: '$8.4M',
+      projectedReward: '$18,600',
+    },
   },
   {
     id: 'sol-usdc-growth',
@@ -193,6 +240,26 @@ export const mockCampaigns: MockCampaign[] = [
     volume: '$5.1M',
     minimum: '$250',
     summary: 'Support Solana liquidity with deterministic mocked rewards.',
+    duration: 'May 23, 2026 → Jul 7, 2026',
+    rewardRate: '7.1% projected APR',
+    participants: 28,
+    terms: [
+      'Orders are simulated against Solana / SVM market-making venues.',
+      'Rewards are modeled from filled volume and inventory uptime.',
+      'Campaign pauses automatically if mocked Solana funding is unavailable.',
+    ],
+    requirements: [
+      'Connect a supported Solana / SVM wallet.',
+      'Contribute at least $250 equivalent across SOL and USDC.',
+      'Use Solana-format funding and withdrawal addresses only.',
+    ],
+    metrics: {
+      liquidityGoal: '$900K',
+      volumeGoal: '$7M',
+      currentLiquidity: '$760K',
+      currentVolume: '$5.1M',
+      projectedReward: '$9,400',
+    },
   },
   {
     id: 'cross-chain-stable',
@@ -204,7 +271,36 @@ export const mockCampaigns: MockCampaign[] = [
     volume: '$14.2M',
     minimum: '$1,000',
     summary: 'A shared campaign for EVM and Solana stablecoin depth.',
+    duration: 'Jun 1, 2026 → Aug 1, 2026',
+    rewardRate: '6.2% projected APR',
+    participants: 67,
+    terms: [
+      'Stablecoin inventory can be assigned from either supported namespace.',
+      'Rewards are calculated per namespace and aggregated in account activity.',
+      'Mocked unsupported chains cannot be used for cross-chain participation.',
+    ],
+    requirements: [
+      'Connect a supported EVM or Solana / SVM wallet.',
+      'Contribute at least $1,000 equivalent in USDC.',
+      'Use namespace-specific deposit instructions before creating an order.',
+    ],
+    metrics: {
+      liquidityGoal: '$3M',
+      volumeGoal: '$18M',
+      currentLiquidity: '$2.4M',
+      currentVolume: '$14.2M',
+      projectedReward: '$24,800',
+    },
   },
+];
+
+export const campaignFilterOptions: { value: CampaignFilter; label: string }[] = [
+  { value: 'all', label: 'All campaigns' },
+  { value: 'evm', label: 'EVM supported' },
+  { value: 'solana', label: 'Solana / SVM supported' },
+  { value: 'eligible', label: 'Eligible for current wallet' },
+  { value: 'open', label: 'Open status' },
+  { value: 'active', label: 'Active status' },
 ];
 
 export const mockOrders: MockOrder[] = [
@@ -327,6 +423,69 @@ export const mockAccountActivityForNamespace = (
 
 export const totalUsdValue = (balances: MockBalance[]): string =>
   balances.reduce((sum, balance) => sum.plus(balance.usdValue), new BigNumber('0')).toFixed(2);
+
+export const campaignSupportsNamespace = (
+  campaign: MockCampaign,
+  namespace: WalletNamespace | null
+): boolean => Boolean(namespace && campaign.chains.includes(namespace));
+
+export const campaignEligibility = (
+  campaign: MockCampaign,
+  namespace: WalletNamespace | null,
+  isConnected: boolean,
+  isUnsupported: boolean
+): CampaignEligibility => {
+  if (isUnsupported) {
+    return {
+      state: 'unsupported-chain',
+      canParticipate: false,
+      label: 'Unsupported chain',
+      message: 'Unsupported chain selected. Switch to a supported EVM or Solana / SVM wallet before joining.',
+    };
+  }
+
+  if (!isConnected || !namespace) {
+    return {
+      state: 'connect-wallet',
+      canParticipate: false,
+      label: 'Connect wallet',
+      message: 'Connect a mocked Reown wallet to check namespace-specific campaign eligibility.',
+    };
+  }
+
+  if (campaignSupportsNamespace(campaign, namespace)) {
+    return {
+      state: 'namespace-supported',
+      canParticipate: true,
+      label: `${namespaceLabel(namespace)} eligible`,
+      message: `${namespaceLabel(namespace)} is supported for this campaign.`,
+    };
+  }
+
+  return {
+    state: 'namespace-unsupported',
+    canParticipate: false,
+    label: `${namespaceLabel(namespace)} not supported`,
+    message: `This campaign does not support ${namespaceLabel(namespace)}. Switch wallet namespace to ${campaign.chains
+      .map(namespaceLabel)
+      .join(' or ')} to participate.`,
+  };
+};
+
+export const filterMockCampaigns = (
+  campaigns: MockCampaign[],
+  filter: CampaignFilter,
+  namespace: WalletNamespace | null
+): MockCampaign[] => {
+  if (filter === 'all') return campaigns;
+  if (filter === 'evm' || filter === 'solana') {
+    return campaigns.filter((campaign) => campaign.chains.includes(filter));
+  }
+  if (filter === 'eligible') {
+    return namespace ? campaigns.filter((campaign) => campaignSupportsNamespace(campaign, namespace)) : [];
+  }
+  return campaigns.filter((campaign) => campaign.status === filter);
+};
 
 export const primaryDepositAddress = (namespace: WalletNamespace): string =>
   namespace === 'evm'

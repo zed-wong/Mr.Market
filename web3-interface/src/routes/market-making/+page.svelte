@@ -1,14 +1,34 @@
 <script lang="ts">
-  import { mockCampaigns, mockOrdersForNamespace, namespaceLabel } from '$lib/helpers/mock-web3';
+  import {
+    campaignEligibility,
+    campaignFilterOptions,
+    filterMockCampaigns,
+    mockCampaigns,
+    mockOrdersForNamespace,
+    namespaceLabel,
+    type CampaignFilter,
+    type WalletNamespace,
+  } from '$lib/helpers/mock-web3';
   import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespace } from '$lib/stores/wallet';
 
+  type DiscoveryState = 'loaded' | 'loading' | 'empty' | 'error';
+
+  const indicatorNamespaces: WalletNamespace[] = ['evm', 'solana'];
+
+  let selectedFilter = $state<CampaignFilter>('all');
+  let discoveryState = $state<DiscoveryState>('loaded');
+  let visibleCampaigns = $derived(
+    discoveryState === 'loaded' ? filterMockCampaigns(mockCampaigns, selectedFilter, $walletNamespace) : []
+  );
   let visibleOrders = $derived(
     $walletIsConnected && !$walletIsUnsupported ? mockOrdersForNamespace($walletNamespace) : []
   );
 
-  const actionLabel = () => {
+  const actionLabel = (campaign: (typeof mockCampaigns)[number]) => {
     if (!$walletIsConnected && !$walletIsUnsupported) return 'Connect to join';
     if ($walletIsUnsupported) return 'Unsupported chain';
+    const eligibility = campaignEligibility(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported);
+    if (!eligibility.canParticipate) return 'Switch wallet namespace';
     return 'Create market-making order';
   };
 </script>
@@ -37,8 +57,53 @@
     </div>
   {/if}
 
+  <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="campaign-discovery-controls">
+    <div class="card-body gap-4">
+      <div class="flex flex-wrap items-end gap-4">
+        <label class="form-control w-full max-w-xs">
+          <span class="label-text mb-1">Filter campaigns</span>
+          <select class="select select-bordered" bind:value={selectedFilter} data-testid="campaign-filter-select">
+            {#each campaignFilterOptions as option}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+        </label>
+
+        <label class="form-control w-full max-w-xs">
+          <span class="label-text mb-1">State preview</span>
+          <select class="select select-bordered" bind:value={discoveryState} data-testid="campaign-state-select">
+            <option value="loaded">Loaded campaigns</option>
+            <option value="loading">Loading state</option>
+            <option value="empty">Empty state</option>
+            <option value="error">Error state</option>
+          </select>
+        </label>
+
+        <span class="rounded-box bg-base-200 px-4 py-3 text-sm text-base-content/70" data-testid="campaign-filter-summary">
+          Showing {visibleCampaigns.length} of {mockCampaigns.length} mocked campaigns.
+        </span>
+      </div>
+    </div>
+  </div>
+
+  {#if discoveryState === 'loading'}
+    <div class="alert alert-info" data-testid="campaign-loading-state">
+      <span class="loading loading-spinner loading-sm"></span>
+      <span>Loading mocked campaign discovery data...</span>
+    </div>
+  {:else if discoveryState === 'error'}
+    <div class="alert alert-error" data-testid="campaign-error-state">
+      <span>Mock campaign discovery error. Retry by switching the state preview back to loaded campaigns.</span>
+    </div>
+  {:else if discoveryState === 'empty' || visibleCampaigns.length === 0}
+    <div class="rounded-box border border-dashed border-base-300 bg-base-100 p-8 text-center" data-testid="campaign-empty-state">
+      <span class="block font-semibold text-base-content">No campaigns match this deterministic state.</span>
+      <span class="mt-2 block text-sm text-base-content/70">Change the filter or state preview to render public campaign discovery again.</span>
+    </div>
+  {:else}
   <div class="grid gap-4 xl:grid-cols-3" data-testid="campaign-list">
-    {#each mockCampaigns as campaign}
+    {#each visibleCampaigns as campaign}
+      {@const eligibility = campaignEligibility(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported)}
       <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="campaign-card-{campaign.id}">
         <div class="card-body gap-4">
           <div class="flex items-start justify-between gap-3">
@@ -50,8 +115,13 @@
           </div>
 
           <div class="flex flex-wrap gap-2">
-            {#each campaign.chains as chain}
-              <span class="badge {chain === $walletNamespace ? 'badge-primary' : 'badge-ghost'}">{namespaceLabel(chain)}</span>
+            {#each indicatorNamespaces as chain}
+              <span
+                class="badge {campaign.chains.includes(chain) ? (chain === $walletNamespace ? 'badge-primary' : 'badge-ghost') : 'badge-outline'}"
+                data-testid="campaign-chain-indicator-{campaign.id}-{chain}"
+              >
+                {namespaceLabel(chain)} {campaign.chains.includes(chain) ? 'supported' : 'not supported'}
+              </span>
             {/each}
             {#each campaign.assets as asset}
               <span class="badge badge-outline">{asset}</span>
@@ -59,28 +129,70 @@
           </div>
 
           <div class="grid grid-cols-2 gap-2 text-sm">
-            <span class="rounded-box bg-base-200 p-3">Liquidity<br /><strong>{campaign.liquidity}</strong></span>
-            <span class="rounded-box bg-base-200 p-3">Volume<br /><strong>{campaign.volume}</strong></span>
+            <span class="rounded-box bg-base-200 p-3">Liquidity<br /><strong>{campaign.liquidity}</strong> / {campaign.metrics.liquidityGoal}</span>
+            <span class="rounded-box bg-base-200 p-3">Volume<br /><strong>{campaign.volume}</strong> / {campaign.metrics.volumeGoal}</span>
             <span class="rounded-box bg-base-200 p-3">Minimum<br /><strong>{campaign.minimum}</strong></span>
-            <span class="rounded-box bg-base-200 p-3">Eligibility<br /><strong>{campaign.chains.includes($walletNamespace ?? 'evm') && $walletIsConnected ? 'eligible' : 'review'}</strong></span>
+            <span class="rounded-box bg-base-200 p-3">Eligibility<br /><strong>{eligibility.label}</strong></span>
           </div>
 
           {#if !$walletIsConnected && !$walletIsUnsupported}
-            <button class="btn btn-primary" onclick={openMockWallet} data-testid="campaign-connect-action">{actionLabel()}</button>
-          {:else}
+            <button class="btn btn-primary" onclick={openMockWallet} data-testid="campaign-connect-action">{actionLabel(campaign)}</button>
+          {:else if eligibility.canParticipate}
             <a
               href="/market-making/order/new?campaign={campaign.id}"
-              class="btn btn-primary {$walletIsUnsupported ? 'btn-disabled' : ''}"
-              aria-disabled={$walletIsUnsupported}
+              class="btn btn-primary"
               data-testid="campaign-join-action"
             >
-              {actionLabel()}
+              {actionLabel(campaign)}
             </a>
+          {:else}
+            <button class="btn btn-primary" disabled data-testid="campaign-join-action">
+              {actionLabel(campaign)}
+            </button>
+            <span class="text-sm text-base-content/60" data-testid="campaign-namespace-guard-{campaign.id}">
+              {eligibility.message}
+            </span>
           {/if}
         </div>
       </div>
     {/each}
   </div>
+
+  <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="campaign-table">
+    <div class="card-body gap-3">
+      <span class="font-semibold">Campaign metrics table</span>
+      <div class="overflow-x-auto">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Campaign</th>
+              <th>Status</th>
+              <th>Namespaces</th>
+              <th>Assets</th>
+              <th>Liquidity</th>
+              <th>Volume</th>
+              <th>Eligibility</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each visibleCampaigns as campaign}
+              {@const eligibility = campaignEligibility(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported)}
+              <tr>
+                <td><a class="link" href="/market-making/campaign/{campaign.id}">{campaign.name}</a></td>
+                <td><span class="badge badge-outline">{campaign.status}</span></td>
+                <td>{campaign.chains.map(namespaceLabel).join(', ')}</td>
+                <td>{campaign.assets.join(', ')}</td>
+                <td>{campaign.liquidity}</td>
+                <td>{campaign.volume}</td>
+                <td>{eligibility.label}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {/if}
 
   <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="my-campaigns-orders">
     <div class="card-body gap-3">
