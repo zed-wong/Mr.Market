@@ -1,6 +1,11 @@
 import { get } from 'svelte/store';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  mockAccountActivityForNamespace,
+  mockFundingActivityForNamespace,
+  mockOrdersForNamespace,
+} from '$lib/helpers/mock-web3';
+import {
   connectMockWallet,
   selectedMockAccountId,
   setUnsupportedChain,
@@ -63,5 +68,16 @@ describe('mock wallet store', () => {
     setWalletDisconnected();
     expect(get(walletStatus)).toBe('disconnected');
     expect(get(walletAddress)).toBeNull();
+  });
+
+  it('does not expose account-scoped activity or orders without a supported namespace', () => {
+    expect(mockOrdersForNamespace(null)).toEqual([]);
+    expect(mockFundingActivityForNamespace(null)).toEqual([]);
+    expect(mockAccountActivityForNamespace(null)).toEqual([]);
+
+    expect(mockOrdersForNamespace('evm').map((order) => order.id)).toEqual(['MM-1001']);
+    expect(mockOrdersForNamespace('solana').map((order) => order.id)).toEqual(['MM-2001']);
+    expect(mockAccountActivityForNamespace('evm').some((entry) => entry.detail.includes('MM-2001'))).toBe(false);
+    expect(mockAccountActivityForNamespace('solana').some((entry) => entry.detail.includes('MM-1001'))).toBe(false);
   });
 });

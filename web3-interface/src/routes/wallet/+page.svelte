@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { mockFundingActivityForNamespace } from '$lib/helpers/mock-web3';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
-  import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
+  import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespace, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
+
+  let fundingActivity = $derived(
+    $walletIsConnected && !$walletIsUnsupported ? mockFundingActivityForNamespace($walletNamespace) : []
+  );
 </script>
 
 <section class="space-y-6" data-testid="web3-wallet-funding">
@@ -65,35 +70,34 @@
   <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="funding-activity">
     <div class="card-body gap-3">
       <span class="font-semibold">Recent funding activity</span>
-      <div class="overflow-x-auto">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Asset</th>
-              <th>Network</th>
-              <th>Status</th>
-              <th>Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Deposit</td>
-              <td>USDC</td>
-              <td>EVM · Ethereum</td>
-              <td><span class="badge badge-success">Confirmed</span></td>
-              <td>2026-05-23 09:00</td>
-            </tr>
-            <tr>
-              <td>Withdraw</td>
-              <td>SOL</td>
-              <td>Solana / SVM</td>
-              <td><span class="badge badge-warning">Reviewing</span></td>
-              <td>2026-05-23 08:30</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {#if fundingActivity.length > 0}
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each fundingActivity as entry}
+                <tr>
+                  <td>{entry.label}</td>
+                  <td>{entry.detail}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else if $walletIsUnsupported}
+        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+          Funding activity is hidden while the selected chain is unsupported.
+        </span>
+      {:else}
+        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+          Connect a mocked Reown wallet to view account-specific funding activity.
+        </span>
+      {/if}
     </div>
   </div>
 </section>

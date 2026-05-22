@@ -1,6 +1,10 @@
 <script lang="ts">
-  import { mockCampaigns, namespaceLabel } from '$lib/helpers/mock-web3';
+  import { mockCampaigns, mockOrdersForNamespace, namespaceLabel } from '$lib/helpers/mock-web3';
   import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespace } from '$lib/stores/wallet';
+
+  let visibleOrders = $derived(
+    $walletIsConnected && !$walletIsUnsupported ? mockOrdersForNamespace($walletNamespace) : []
+  );
 
   const actionLabel = () => {
     if (!$walletIsConnected && !$walletIsUnsupported) return 'Connect to join';
@@ -80,17 +84,35 @@
 
   <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="my-campaigns-orders">
     <div class="card-body gap-3">
-      <span class="font-semibold">My mocked campaigns / orders</span>
-      <div class="grid gap-3 md:grid-cols-2">
-        <a href="/market-making/order/MM-1001" class="rounded-box border border-base-300 bg-base-200 p-4">
-          <span class="font-semibold">MM-1001 · ETH / USDC Depth Builder</span>
-          <span class="block text-sm text-base-content/60">Active EVM order · created volume $124,000</span>
-        </a>
-        <a href="/market-making/order/MM-2001" class="rounded-box border border-base-300 bg-base-200 p-4">
-          <span class="font-semibold">MM-2001 · SOL / USDC Growth Campaign</span>
-          <span class="block text-sm text-base-content/60">Pending Solana order · zero metrics state</span>
-        </a>
-      </div>
+      {#if $walletIsConnected && !$walletIsUnsupported}
+        <span class="font-semibold">My mocked campaigns / orders</span>
+        {#if visibleOrders.length > 0}
+          <div class="grid gap-3 md:grid-cols-2">
+            {#each visibleOrders as order}
+              <a href="/market-making/order/{order.id}" class="rounded-box border border-base-300 bg-base-200 p-4">
+                <span class="font-semibold">{order.id} · {order.assets}</span>
+                <span class="block text-sm text-base-content/60">
+                  {order.status} {namespaceLabel(order.namespace)} order · created volume {order.createdVolume}
+                </span>
+              </a>
+            {/each}
+          </div>
+        {:else}
+          <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+            No campaign participation for the selected mocked account.
+          </span>
+        {/if}
+      {:else if $walletIsUnsupported}
+        <span class="font-semibold">Account campaign participation</span>
+        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+          Switch to a supported EVM or Solana account to view account-scoped campaigns and orders.
+        </span>
+      {:else}
+        <span class="font-semibold">Account campaign participation</span>
+        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+          Connect a mocked Reown wallet to view account-scoped campaigns and orders. Public campaign discovery stays available above.
+        </span>
+      {/if}
     </div>
   </div>
 </section>

@@ -51,6 +51,14 @@ export interface MockOrder {
   cancelCount: number;
 }
 
+export interface MockActivityEntry {
+  id: string;
+  namespace: WalletNamespace;
+  category: 'funding' | 'campaign' | 'order';
+  label: string;
+  detail: string;
+}
+
 export const mockAccounts: MockAccount[] = [
   {
     id: 'evm-primary',
@@ -230,6 +238,68 @@ export const mockOrders: MockOrder[] = [
   },
 ];
 
+export const mockFundingActivity: MockActivityEntry[] = [
+  {
+    id: 'fund-evm-deposit-usdc',
+    namespace: 'evm',
+    category: 'funding',
+    label: 'Deposit',
+    detail: 'USDC · EVM · Ethereum · confirmed · 2026-05-23 09:00',
+  },
+  {
+    id: 'fund-sol-withdraw-sol',
+    namespace: 'solana',
+    category: 'funding',
+    label: 'Withdraw',
+    detail: 'SOL · Solana / SVM · reviewing · 2026-05-23 08:30',
+  },
+];
+
+export const mockAccountActivity: MockActivityEntry[] = [
+  {
+    id: 'activity-evm-funding',
+    namespace: 'evm',
+    category: 'funding',
+    label: 'Funding',
+    detail: 'Deposit USDC confirmed on Ethereum',
+  },
+  {
+    id: 'activity-evm-campaign',
+    namespace: 'evm',
+    category: 'campaign',
+    label: 'Campaigns',
+    detail: 'Joined ETH / USDC Depth Builder',
+  },
+  {
+    id: 'activity-evm-order',
+    namespace: 'evm',
+    category: 'order',
+    label: 'Market-making orders',
+    detail: 'MM-1001 active',
+  },
+  {
+    id: 'activity-sol-funding',
+    namespace: 'solana',
+    category: 'funding',
+    label: 'Funding',
+    detail: 'Withdrawal SOL reviewing on Solana / SVM',
+  },
+  {
+    id: 'activity-sol-campaign',
+    namespace: 'solana',
+    category: 'campaign',
+    label: 'Campaigns',
+    detail: 'Joined SOL / USDC Growth Campaign',
+  },
+  {
+    id: 'activity-sol-order',
+    namespace: 'solana',
+    category: 'order',
+    label: 'Market-making orders',
+    detail: 'MM-2001 pending',
+  },
+];
+
 export const namespaceLabel = (namespace: WalletNamespace): string =>
   namespace === 'evm' ? 'EVM' : 'Solana / SVM';
 
@@ -241,6 +311,19 @@ export const shortenMockAddress = (address: string): string => {
 
 export const accountBalances = (accountId: string | null): MockBalance[] =>
   accountId ? mockBalancesByAccount[accountId] ?? [] : [];
+
+export const mockOrdersForNamespace = (namespace: WalletNamespace | null): MockOrder[] =>
+  namespace ? mockOrders.filter((order) => order.namespace === namespace) : [];
+
+export const mockFundingActivityForNamespace = (
+  namespace: WalletNamespace | null
+): MockActivityEntry[] =>
+  namespace ? mockFundingActivity.filter((entry) => entry.namespace === namespace) : [];
+
+export const mockAccountActivityForNamespace = (
+  namespace: WalletNamespace | null
+): MockActivityEntry[] =>
+  namespace ? mockAccountActivity.filter((entry) => entry.namespace === namespace) : [];
 
 export const totalUsdValue = (balances: MockBalance[]): string =>
   balances.reduce((sum, balance) => sum.plus(balance.usdValue), new BigNumber('0')).toFixed(2);

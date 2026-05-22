@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { mockAccountActivityForNamespace } from '$lib/helpers/mock-web3';
   import { balances } from '$lib/stores/balances';
   import {
     openMockWallet,
@@ -12,6 +13,12 @@
     walletShortAddress,
     walletStatus,
   } from '$lib/stores/wallet';
+
+  let activityEntries = $derived(
+    $walletIsConnected && !$walletIsUnsupported
+      ? mockAccountActivityForNamespace($walletAccount?.namespace ?? null)
+      : []
+  );
 </script>
 
 <section class="space-y-6" data-testid="web3-account">
@@ -72,20 +79,24 @@
   <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="account-activity">
     <div class="card-body gap-3">
       <span class="font-semibold">Activity</span>
-      <div class="grid gap-3 md:grid-cols-3">
-        <div class="rounded-box border border-base-300 bg-base-200 p-4">
-          <span class="font-semibold">Funding</span>
-          <span class="block text-sm text-base-content/60">Deposit USDC confirmed · Withdrawal SOL reviewing</span>
+      {#if activityEntries.length > 0}
+        <div class="grid gap-3 md:grid-cols-3">
+          {#each activityEntries as entry}
+            <div class="rounded-box border border-base-300 bg-base-200 p-4">
+              <span class="font-semibold">{entry.label}</span>
+              <span class="block text-sm text-base-content/60">{entry.detail}</span>
+            </div>
+          {/each}
         </div>
-        <div class="rounded-box border border-base-300 bg-base-200 p-4">
-          <span class="font-semibold">Campaigns</span>
-          <span class="block text-sm text-base-content/60">Joined ETH / USDC Depth Builder</span>
-        </div>
-        <div class="rounded-box border border-base-300 bg-base-200 p-4">
-          <span class="font-semibold">Market-making orders</span>
-          <span class="block text-sm text-base-content/60">MM-1001 active · MM-2001 pending</span>
-        </div>
-      </div>
+      {:else if $walletIsUnsupported}
+        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+          Account activity is hidden while the selected chain is unsupported.
+        </span>
+      {:else}
+        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+          No account activity is shown while disconnected. Connect a mocked Reown wallet to view funding, campaign, and market-making history.
+        </span>
+      {/if}
     </div>
   </div>
 
