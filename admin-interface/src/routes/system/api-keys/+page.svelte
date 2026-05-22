@@ -111,13 +111,6 @@
     }),
   );
 
-  let counts = $derived({
-    active: keys.filter((key) => keyStatus(key) === 'active').length,
-    pending: keys.filter((key) => keyStatus(key) === 'pending').length,
-    readTrade: keys.filter((key) => key.permissions === 'read-trade').length,
-    errors: keys.filter((key) => keyStatus(key) === 'error').length,
-  });
-
   let matchingCcxtExchanges = $derived(
     ccxtExchanges
       .filter((exchange) => exchange.toLowerCase().includes(form.exchange.toLowerCase()))
@@ -282,33 +275,6 @@
       <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={openAddDialog}>+ add key</button>
     {/snippet}
   </PageHeader>
-
-  <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">active keys</span>
-        <span class="font-mono text-2xl font-semibold text-success">{counts.active}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">pending validation</span>
-        <span class="font-mono text-2xl font-semibold" class:text-info={counts.pending > 0}>{counts.pending}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">read + trade</span>
-        <span class="font-mono text-2xl font-semibold">{counts.readTrade}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">errors</span>
-        <span class="font-mono text-2xl font-semibold" class:text-error={counts.errors > 0}>{counts.errors}</span>
-      </div>
-    </div>
-  </div>
 
   <div class="card border border-base-300 bg-base-100 shadow-none">
     <div class="card-body gap-4 p-5">

@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
   Query,
   Req,
@@ -62,6 +64,21 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async logout(@Req() request: { user?: { username?: string } }) {
     return this.authService.logout(request.user);
+  }
+
+  @Get('passkeys')
+  @UseGuards(JwtAuthGuard)
+  async listPasskeys() {
+    return this.authService.listPasskeys();
+  }
+
+  @Delete('passkeys/:credentialId')
+  @UseGuards(JwtAuthGuard)
+  async deletePasskey(
+    @Param('credentialId') credentialId: string,
+    @Req() request: AdminJwtRequest,
+  ) {
+    return this.authService.deletePasskey(credentialId, request.user);
   }
 
   @Post('passkeys/register/options')

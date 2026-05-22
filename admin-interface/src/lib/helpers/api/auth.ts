@@ -78,6 +78,25 @@ export const registerPasskey = async (): Promise<boolean> => {
   return true;
 };
 
+export interface PasskeyCredential {
+  credentialId: string;
+  counter: number;
+  transports: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const listPasskeys = async (): Promise<PasskeyCredential[]> => {
+  const result = await apiFetch<PasskeyCredential[]>('/auth/passkeys');
+  return Array.isArray(result) ? result : [];
+};
+
+export const deletePasskey = async (credentialId: string): Promise<void> => {
+  await apiFetch(`/auth/passkeys/${encodeURIComponent(credentialId)}`, {
+    method: 'DELETE',
+  });
+};
+
 export const loginWithPasskey = async (): Promise<boolean> => {
   try {
     const options = await apiFetch('/auth/passkeys/login/options', {

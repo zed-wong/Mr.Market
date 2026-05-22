@@ -210,6 +210,32 @@ export class AuthService {
     return { ok: true };
   }
 
+  async listPasskeys() {
+    const credentials = await this.passkeyRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+    return credentials.map((c) => ({
+      credentialId: c.credentialId,
+      counter: c.counter,
+      transports: c.transports ? JSON.parse(c.transports) : [],
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    }));
+  }
+
+  async deletePasskey(credentialId: string, payload?: AdminJwtPayload) {
+    this.assertPasswordAuthenticatedAdmin(payload);
+    const credential = await this.passkeyRepository.findOne({
+      where: { credentialId },
+    });
+    if (!credential) {
+      throw new UnauthorizedException('Passkey not found');
+    }
+    await this.passkeyRepository.delete({ credentialId });
+    this.audit('admin.passkey_revoked');
+    return { ok: true };
+  }
+
   async generatePasskeyLoginOptions() {
     const state = await this.getAdminAuthState();
     const credentials = await this.passkeyRepository.find();

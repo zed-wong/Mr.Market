@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { Toaster } from 'svelte-sonner';
   import { initi18n } from '../i18n/i18n';
   import { ADMIN_LIGHT_THEME } from '$lib/theme/themes';
   import { checkSession, logout } from '$lib/helpers/api/auth';
@@ -130,3 +131,5 @@
 {#if i18nReady}
   <SessionExpiredDialog onConfirm={handleSessionExpired} />
 {/if}
+
+<Toaster />
