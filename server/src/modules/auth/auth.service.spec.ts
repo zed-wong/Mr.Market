@@ -15,9 +15,9 @@ import {
 } from '@simplewebauthn/server';
 import axios from 'axios';
 import { createHash } from 'crypto';
+import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
-import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { getUserMe } from 'src/common/helpers/mixin/user';
 
 import { UserService } from '../mixin/user/user.service';
@@ -54,6 +54,7 @@ describe('AuthService', () => {
     const mockUserService = {
       checkAndUpdateUserToken: jest.fn(),
     };
+
     authStateRepository = {
       findOne: jest.fn().mockResolvedValue({
         id: 'admin',

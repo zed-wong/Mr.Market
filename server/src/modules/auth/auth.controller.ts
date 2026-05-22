@@ -1,7 +1,16 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBody, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger'; // Import Swagger decorators
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from 'src/modules/auth/auth.service';
+
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 type AdminJwtRequest = {
@@ -43,7 +52,9 @@ export class AuthController {
 
   @Get('session')
   @UseGuards(JwtAuthGuard)
-  async session(@Req() request: { user?: { username?: string; tokenVersion?: number } }) {
+  async session(
+    @Req() request: { user?: { username?: string; tokenVersion?: number } },
+  ) {
     return this.authService.getSession(request.user);
   }
 
@@ -82,7 +93,10 @@ export class AuthController {
   async passkeyLoginVerify(
     @Body() body: unknown,
   ): Promise<{ access_token: string; expires_in: number }> {
-    const access_token = await this.authService.verifyPasskeyLogin(body as never);
+    const access_token = await this.authService.verifyPasskeyLogin(
+      body as never,
+    );
+
     return { access_token, expires_in: 604800 };
   }
 

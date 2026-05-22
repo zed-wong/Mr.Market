@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+
 import { AuthService } from './auth.service';
 
 @Injectable()
@@ -22,6 +23,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (payload?.username === 'admin') {
       await this.authService.assertAdminTokenVersion(payload.tokenVersion);
     }
+
     // This method is called once the JWT is verified
     return {
       userId: payload.sub,

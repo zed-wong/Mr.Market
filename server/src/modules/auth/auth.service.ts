@@ -1,9 +1,9 @@
 import {
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
   Logger,
-  ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -21,11 +21,11 @@ import type {
 } from '@simplewebauthn/types';
 import axios from 'axios';
 import { createHash } from 'crypto';
+import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
-import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { getUserMe } from 'src/common/helpers/mixin/user';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { Repository } from 'typeorm';
 
 import { UserService } from '../mixin/user/user.service';
@@ -38,6 +38,7 @@ const DEFAULT_PASSKEY_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:5174',
 ];
+
 type AdminAuthMethod = 'password' | 'passkey';
 type AdminJwtPayload = {
   username?: string;
@@ -96,6 +97,7 @@ export class AuthService {
     }
 
     const state = await this.getAdminAuthState();
+
     this.assertNotLocked(state);
 
     const hashedAdminPassword = createHash('sha256')
@@ -122,6 +124,7 @@ export class AuthService {
       return { authenticated: false };
     }
     await this.assertAdminTokenVersion(payload.tokenVersion);
+
     return { authenticated: true, username: ADMIN_AUTH_ID };
   }
 
@@ -129,11 +132,13 @@ export class AuthService {
     if (payload?.username === ADMIN_AUTH_ID) {
       await this.incrementTokenVersion('admin.logout');
     }
+
     return { ok: true };
   }
 
   async assertAdminTokenVersion(tokenVersion?: number): Promise<void> {
     const state = await this.getAdminAuthState();
+
     if (!tokenVersion || tokenVersion !== state.tokenVersion) {
       throw new UnauthorizedException('Invalid admin token');
     }
@@ -161,6 +166,7 @@ export class AuthService {
     state.currentChallenge = options.challenge;
     state.updatedAt = getRFC3339Timestamp();
     await this.adminAuthStateRepository.save(state);
+
     return options;
   }
 
@@ -170,6 +176,7 @@ export class AuthService {
   ) {
     this.assertPasswordAuthenticatedAdmin(payload);
     const state = await this.getAdminAuthState();
+
     if (!state.currentChallenge) {
       throw new UnauthorizedException('Passkey registration challenge missing');
     }
@@ -185,6 +192,7 @@ export class AuthService {
 
     const { credential } = verification.registrationInfo;
     const now = getRFC3339Timestamp();
+
     await this.passkeyRepository.save({
       credentialId: credential.id,
       publicKey: Buffer.from(credential.publicKey).toString('base64url'),
@@ -198,6 +206,7 @@ export class AuthService {
     state.updatedAt = now;
     await this.adminAuthStateRepository.save(state);
     this.audit('admin.passkey_registration.succeeded');
+
     return { ok: true };
   }
 
@@ -218,11 +227,13 @@ export class AuthService {
     state.currentChallenge = options.challenge;
     state.updatedAt = getRFC3339Timestamp();
     await this.adminAuthStateRepository.save(state);
+
     return options;
   }
 
   async verifyPasskeyLogin(body: AuthenticationResponseJSON): Promise<string> {
     const state = await this.getAdminAuthState();
+
     if (!state.currentChallenge) {
       throw new UnauthorizedException('Passkey login challenge missing');
     }
@@ -230,6 +241,7 @@ export class AuthService {
     const credential = await this.passkeyRepository.findOne({
       where: { credentialId: body.id },
     });
+
     if (!credential) {
       this.audit('admin.passkey_login.failed');
       throw new UnauthorizedException('Invalid passkey');
@@ -254,6 +266,7 @@ export class AuthService {
     state.updatedAt = getRFC3339Timestamp();
     await this.adminAuthStateRepository.save(state);
     this.audit('admin.passkey_login.succeeded');
+
     return this.signAdminJwt(state.tokenVersion, 'passkey');
   }
 
@@ -335,6 +348,7 @@ export class AuthService {
     let state = await this.adminAuthStateRepository.findOne({
       where: { id: ADMIN_AUTH_ID },
     });
+
     if (!state) {
       state = this.adminAuthStateRepository.create({
         id: ADMIN_AUTH_ID,
@@ -344,6 +358,7 @@ export class AuthService {
       });
       await this.adminAuthStateRepository.save(state);
     }
+
     return state;
   }
 
@@ -359,6 +374,7 @@ export class AuthService {
     if (state.failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
       state.lockedUntil = new Date(Date.now() + LOCKOUT_MS).toISOString();
       await this.incrementTokenVersion('admin.login.locked', state);
+
       return;
     }
     state.updatedAt = getRFC3339Timestamp();
@@ -377,6 +393,7 @@ export class AuthService {
     state?: AdminAuthStateEntity,
   ) {
     const current = state || (await this.getAdminAuthState());
+
     current.tokenVersion += 1;
     current.updatedAt = getRFC3339Timestamp();
     await this.adminAuthStateRepository.save(current);
@@ -392,6 +409,7 @@ export class AuthService {
 
   private getPasskeyRpId(): string {
     const configured = this.configService.get<string>('admin.passkey_rp_id');
+
     if (configured) {
       return configured;
     }
@@ -403,6 +421,7 @@ export class AuthService {
     const configured =
       this.configService.get<string>('admin.passkey_origin') ||
       this.configService.get<string>('cors.origin');
+
     if (!configured) {
       return DEFAULT_PASSKEY_ORIGINS;
     }
@@ -412,6 +431,7 @@ export class AuthService {
       .map((origin) => origin.trim())
       .filter((origin) => origin.length > 0 && origin !== '*')
       .filter((origin) => this.isValidOrigin(origin));
+
     return origins.length > 0 ? origins : DEFAULT_PASSKEY_ORIGINS;
   }
 
@@ -426,6 +446,7 @@ export class AuthService {
   private isValidOrigin(origin: string): boolean {
     try {
       const parsed = new URL(origin);
+
       return parsed.protocol === 'http:' || parsed.protocol === 'https:';
     } catch {
       return false;
