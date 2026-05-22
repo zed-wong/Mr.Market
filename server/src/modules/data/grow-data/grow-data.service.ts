@@ -1,5 +1,6 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import BigNumber from 'bignumber.js';
 import type { Cache } from 'cache-manager';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
@@ -26,7 +27,7 @@ type ExchangeMarketSnapshot = {
 };
 
 @Injectable()
-export class GrowdataService {
+export class GrowdataService implements OnModuleInit {
   private readonly logger = new CustomLogger(GrowdataService.name);
 
   constructor(
@@ -37,31 +38,36 @@ export class GrowdataService {
   ) {}
 
   private cachingTTL = 60; // 1 minute
+  private growDataCacheTTL = 120;
+  private growDataCacheKey = 'grow_data_info';
+  private growDataSnapshot: unknown | null = null;
+  private growDataRefreshInFlight: Promise<unknown | null> | null = null;
+
+  async onModuleInit() {
+    await this.refreshGrowDataCache('module_init');
+  }
 
   async getGrowData() {
     try {
-      const exchanges = await this.getAllExchanges();
-      const simplyGrowTokens = await this.getAllSimplyGrowTokens();
-      const arbitragePairs = await this.getAllArbitragePairs();
-      const marketMakingPairs = await this.getAllMarketMakingPairs();
+      if (this.growDataSnapshot) {
+        return this.growDataSnapshot;
+      }
 
-      return {
-        exchanges,
-        simply_grow: {
-          tokens: simplyGrowTokens,
-        },
-        arbitrage: {
-          pairs: arbitragePairs,
-        },
-        market_making: {
-          pairs: marketMakingPairs,
-          exchanges: exchanges.filter((exchange) =>
-            marketMakingPairs.some(
-              (pair) => pair.exchange_id === exchange.exchange_id,
-            ),
-          ),
-        },
-      };
+      const cachedGrowData = await this.cacheService.get(this.growDataCacheKey);
+
+      if (cachedGrowData) {
+        this.growDataSnapshot = cachedGrowData;
+
+        return cachedGrowData;
+      }
+
+      const growData = await this.refreshGrowDataCache('request');
+
+      if (growData) {
+        return growData;
+      }
+
+      throw new Error('Grow data cache is not ready');
     } catch (error) {
       this.logger.error('Error fetching grow data', error.stack);
 
@@ -71,6 +77,77 @@ export class GrowdataService {
         error: error.message,
       };
     }
+  }
+
+  @Cron('*/30 * * * * *')
+  async refreshGrowDataCacheFromCron() {
+    await this.refreshGrowDataCache('cron');
+  }
+
+  async refreshGrowDataCache(reason = 'manual'): Promise<unknown | null> {
+    if (this.growDataRefreshInFlight) {
+      return this.growDataRefreshInFlight;
+    }
+
+    this.growDataRefreshInFlight = this.buildGrowData()
+      .then(async (growData) => {
+        this.growDataSnapshot = growData;
+        await this.cacheService.set(
+          this.growDataCacheKey,
+          growData,
+          this.growDataCacheTTL,
+        );
+        if (reason !== 'cron') {
+          this.logger.log(`Grow data cache refreshed (${reason})`);
+        }
+
+        return growData;
+      })
+      .catch((error) => {
+        this.logger.error(
+          `Failed to refresh grow data cache (${reason})`,
+          error.stack || error,
+        );
+
+        return this.growDataSnapshot;
+      })
+      .finally(() => {
+        this.growDataRefreshInFlight = null;
+      });
+
+    return this.growDataRefreshInFlight;
+  }
+
+  private async buildGrowData() {
+    const [
+      exchanges,
+      simplyGrowTokens,
+      arbitragePairs,
+      marketMakingPairs,
+    ] = await Promise.all([
+      this.getAllExchanges(),
+      this.getAllSimplyGrowTokens(),
+      this.getAllArbitragePairs(),
+      this.getAllMarketMakingPairs(),
+    ]);
+
+    return {
+      exchanges,
+      simply_grow: {
+        tokens: simplyGrowTokens,
+      },
+      arbitrage: {
+        pairs: arbitragePairs,
+      },
+      market_making: {
+        pairs: marketMakingPairs,
+        exchanges: exchanges.filter((exchange) =>
+          marketMakingPairs.some(
+            (pair) => pair.exchange_id === exchange.exchange_id,
+          ),
+        ),
+      },
+    };
   }
 
   private normalizeMarketSymbol(symbol?: string) {
@@ -121,9 +198,9 @@ export class GrowdataService {
     return basePrice.dividedBy(quotePrice);
   }
 
-  private async applyExchangeMarketMetadata(
-    pairs: GrowdataMarketMakingPair[],
-  ): Promise<GrowdataMarketMakingPair[]> {
+  private async loadMarketsByExchange(
+    pairs: Pick<GrowdataMarketMakingPair, 'exchange_id'>[],
+  ): Promise<Map<string, ExchangeMarketSnapshot[]>> {
     const exchangeIds = [
       ...new Set(pairs.map((pair) => pair.exchange_id).filter(Boolean)),
     ];
@@ -150,6 +227,13 @@ export class GrowdataService {
       }),
     );
 
+    return marketsByExchange;
+  }
+
+  private applyMarketMakingPairRuntimeMetadata(
+    pairs: GrowdataMarketMakingPair[],
+    marketsByExchange: Map<string, ExchangeMarketSnapshot[]>,
+  ): GrowdataMarketMakingPair[] {
     return pairs.map((pair) => {
       const markets = marketsByExchange.get(pair.exchange_id) || [];
       const normalizedSymbol = this.normalizeMarketSymbol(pair.symbol);
@@ -161,11 +245,27 @@ export class GrowdataService {
         return pair;
       }
 
+      const candidates = [
+        this.readPositiveBigNumber(pair.min_order_amount) ??
+          this.readPositiveBigNumber(market.limits?.amount?.min),
+      ].filter((value): value is BigNumber => value !== undefined);
+      const costMinimum = this.readPositiveBigNumber(market.limits?.cost?.min);
+      const derivedPairPrice = this.resolveDerivedPairPrice(pair);
+
+      if (costMinimum && derivedPairPrice) {
+        candidates.push(costMinimum.dividedBy(derivedPairPrice));
+      }
+
       return {
         ...pair,
         min_order_amount:
-          this.readPositiveString(pair.min_order_amount) ??
-          this.readPositiveString(market.limits?.amount?.min),
+          candidates.length > 0
+            ? candidates
+                .reduce((maximum, candidate) =>
+                  candidate.isGreaterThan(maximum) ? candidate : maximum,
+                )
+                .toString()
+            : pair.min_order_amount,
         max_order_amount:
           this.readPositiveString(pair.max_order_amount) ??
           this.readPositiveString(market.limits?.amount?.max),
@@ -175,66 +275,6 @@ export class GrowdataService {
         price_significant_figures:
           this.readFiniteString(pair.price_significant_figures) ??
           this.readFiniteString(market.precision?.price),
-      };
-    });
-  }
-
-  private async applyEffectiveMinimumOrderAmounts(
-    pairs: GrowdataMarketMakingPair[],
-  ): Promise<GrowdataMarketMakingPair[]> {
-    const exchangeIds = [
-      ...new Set(pairs.map((pair) => pair.exchange_id).filter(Boolean)),
-    ];
-    const marketsByExchange = new Map<string, ExchangeMarketSnapshot[]>();
-
-    await Promise.all(
-      exchangeIds.map(async (exchangeId) => {
-        try {
-          const markets =
-            (await this.exchangeInitService.getCcxtExchangeMarkets(
-              exchangeId,
-            )) as ExchangeMarketSnapshot[];
-
-          marketsByExchange.set(
-            exchangeId,
-            Array.isArray(markets) ? markets : [],
-          );
-        } catch (error) {
-          this.logger.warn(
-            `Failed to resolve cost minimums for ${exchangeId}`,
-            error,
-          );
-        }
-      }),
-    );
-
-    return pairs.map((pair) => {
-      const markets = marketsByExchange.get(pair.exchange_id) || [];
-      const normalizedSymbol = this.normalizeMarketSymbol(pair.symbol);
-      const market = markets.find(
-        (item) => this.normalizeMarketSymbol(item?.symbol) === normalizedSymbol,
-      );
-      const candidates = [
-        this.readPositiveBigNumber(pair.min_order_amount),
-      ].filter((value): value is BigNumber => value !== undefined);
-      const costMinimum = this.readPositiveBigNumber(market?.limits?.cost?.min);
-      const derivedPairPrice = this.resolveDerivedPairPrice(pair);
-
-      if (costMinimum && derivedPairPrice) {
-        candidates.push(costMinimum.dividedBy(derivedPairPrice));
-      }
-
-      if (candidates.length === 0) {
-        return pair;
-      }
-
-      return {
-        ...pair,
-        min_order_amount: candidates
-          .reduce((maximum, candidate) =>
-            candidate.isGreaterThan(maximum) ? candidate : maximum,
-          )
-          .toString(),
       };
     });
   }
@@ -283,7 +323,11 @@ export class GrowdataService {
   async getAllMarketMakingPairs() {
     const storedPairs =
       await this.growdataRepository.findAllMarketMakingPairs();
-    const pairs = await this.applyExchangeMarketMetadata(storedPairs);
+    const marketsByExchange = await this.loadMarketsByExchange(storedPairs);
+    const pairs = this.applyMarketMakingPairRuntimeMetadata(
+      storedPairs,
+      marketsByExchange,
+    );
 
     const assetIds = pairs.flatMap((pair) => [
       pair.base_asset_id,
@@ -296,7 +340,7 @@ export class GrowdataService {
       pair.target_price = priceMap.get(pair.quote_asset_id) || '0';
     }
 
-    return this.applyEffectiveMinimumOrderAmounts(pairs);
+    return pairs;
   }
 
   async getMarketMakingPairById(id: string) {
