@@ -1,6 +1,7 @@
 <script lang="ts">
   import { mockAccountActivityForNamespace } from '$lib/helpers/mock-web3';
   import { balances } from '$lib/stores/balances';
+  import { fundingActivityForNamespace, sessionFundingActivity } from '$lib/stores/funding';
   import {
     openMockWallet,
     setWalletDisconnected,
@@ -16,7 +17,10 @@
 
   let activityEntries = $derived(
     $walletIsConnected && !$walletIsUnsupported
-      ? mockAccountActivityForNamespace($walletAccount?.namespace ?? null)
+      ? [
+          ...fundingActivityForNamespace($walletAccount?.namespace ?? null, $sessionFundingActivity),
+          ...mockAccountActivityForNamespace($walletAccount?.namespace ?? null),
+        ]
       : []
   );
 </script>
@@ -108,7 +112,9 @@
           {#each $balances as balance}
             <div class="rounded-box border border-base-300 bg-base-200 p-4">
               <span class="font-semibold">{balance.symbol}</span>
-              <span class="block text-sm text-base-content/60">{balance.amount} · ${balance.usdValue}</span>
+              <span class="block text-sm text-base-content/60">
+                {balance.amount} available · {balance.pendingAmount ?? '0'} pending · ${balance.usdValue}
+              </span>
             </div>
           {/each}
         </div>

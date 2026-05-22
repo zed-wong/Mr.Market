@@ -10,4 +10,5 @@ export interface BalanceEntry {
   decimals: number;
   amount: string;
   usdValue: string;
+  pendingAmount?: string;
 }

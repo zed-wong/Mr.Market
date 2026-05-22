@@ -330,5 +330,5 @@ export const totalUsdValue = (balances: MockBalance[]): string =>
 
 export const primaryDepositAddress = (namespace: WalletNamespace): string =>
   namespace === 'evm'
-    ? '0xFUND000000000000000000000000000000000001'
+    ? '0x1111111111111111111111111111111111111111'
     : 'FundSoL1111111111111111111111111111111111111';

@@ -1,7 +1,19 @@
 <script lang="ts">
-  import { primaryDepositAddress } from '$lib/helpers/mock-web3';
+  import { balances } from '$lib/stores/balances';
+  import {
+    completeMockDeposit,
+    depositAddressFor,
+    depositInstructionFor,
+    depositTimeline,
+    fundingActivityForNamespace,
+    minimumDepositFor,
+    sessionFundingActivity,
+    suggestedDepositAmountFor,
+    type MockFundingResult,
+  } from '$lib/stores/funding';
   import {
     openMockWallet,
+    walletAccount,
     walletIsConnected,
     walletIsUnsupported,
     walletNamespace,
@@ -11,7 +23,31 @@
   } from '$lib/stores/wallet';
 
   let copied = $state(false);
-  let depositAddress = $derived($walletNamespace ? primaryDepositAddress($walletNamespace) : '');
+  let selectedAsset = $state('');
+  let depositAmount = $state('');
+  let depositResult = $state<MockFundingResult | null>(null);
+
+  let selectedBalance = $derived($balances.find((balance) => balance.asset === selectedAsset));
+  let depositAddress = $derived(depositAddressFor(selectedBalance));
+  let depositInstruction = $derived(depositInstructionFor(selectedBalance));
+  let timeline = $derived(depositResult?.timeline ?? depositTimeline(false));
+  let fundingActivity = $derived(
+    $walletIsConnected && !$walletIsUnsupported
+      ? fundingActivityForNamespace($walletNamespace, $sessionFundingActivity)
+      : []
+  );
+  let simulationDisabled = $derived(!$walletAccount || !selectedBalance || !depositAmount);
+
+  $effect(() => {
+    const availableAssets = $balances.map((balance) => balance.asset);
+    if (!availableAssets.includes(selectedAsset)) {
+      selectedAsset = $balances[0]?.asset ?? '';
+      depositResult = null;
+    }
+    if (selectedBalance && !depositAmount) {
+      depositAmount = suggestedDepositAmountFor(selectedBalance);
+    }
+  });
 
   const copyVaultAddress = () => {
     if (depositAddress) {
@@ -19,6 +55,11 @@
       copied = true;
       setTimeout(() => { copied = false; }, 2000);
     }
+  };
+
+  const simulateDeposit = () => {
+    if (!$walletAccount || !selectedBalance) return;
+    depositResult = completeMockDeposit($walletAccount.id, selectedBalance, depositAmount);
   };
 </script>
 
@@ -48,10 +89,31 @@
           <span class="font-semibold">Account context</span>
           <span class="badge badge-outline w-fit">{$walletNamespaceLabel}</span>
           <span class="text-base-content/70">{$walletNetwork} · {$walletShortAddress}</span>
-          <select class="select select-bordered w-full" data-testid="deposit-asset-select">
-            <option>{$walletNamespace === 'evm' ? 'ETH' : 'SOL'}</option>
-            <option>USDC</option>
-          </select>
+          <label class="form-control">
+            <span class="label-text mb-1">Chain / asset</span>
+            <select class="select select-bordered w-full" bind:value={selectedAsset} data-testid="deposit-asset-select">
+              {#each $balances as balance}
+                <option value={balance.asset}>
+                  {balance.chainNamespace === 'evm' ? 'EVM' : 'Solana / SVM'} · {balance.symbol} · {balance.name}
+                </option>
+              {/each}
+            </select>
+          </label>
+          <label class="form-control">
+            <span class="label-text mb-1">Mock deposit amount</span>
+            <input class="input input-bordered" bind:value={depositAmount} data-testid="deposit-amount-input" />
+            <span class="label-text-alt mt-1 text-base-content/60">
+              Minimum note: {minimumDepositFor(selectedBalance)} {selectedBalance?.symbol ?? 'asset'} · available after simulation.
+            </span>
+          </label>
+          <button class="btn btn-primary" disabled={simulationDisabled} onclick={simulateDeposit} data-testid="simulate-deposit-button">
+            Simulate mocked deposit
+          </button>
+          {#if depositResult}
+            <span class="rounded-box border border-base-300 bg-base-200 p-3 text-sm text-base-content/70" data-testid="deposit-result-summary">
+              {depositResult.id} credited {depositResult.amount} {depositResult.symbol} at {depositResult.timestamp}.
+            </span>
+          {/if}
         </div>
       </div>
 
@@ -65,9 +127,7 @@
             </button>
           </div>
           <span class="text-sm text-base-content/60">
-            {$walletNamespace === 'evm'
-              ? 'Send ETH or USDC on the selected EVM network. The mock timeline shows generated, detected, pending, and credited states.'
-              : 'Send SOL or SPL USDC on Solana. This address and all status updates are deterministic mock data.'}
+            {depositInstruction}
           </span>
         </div>
       </div>
@@ -77,11 +137,25 @@
       <div class="card-body gap-3">
         <span class="font-semibold">Mocked deposit timeline</span>
         <ul class="steps steps-vertical lg:steps-horizontal">
-          <li class="step step-primary">Address generated</li>
-          <li class="step step-primary">Deposit detected</li>
-          <li class="step step-primary">Pending confirmations</li>
-          <li class="step">Credited</li>
+          {#each timeline as step}
+            <li class="step {step.state === 'pending' ? '' : 'step-primary'}">
+              <span class="font-semibold">{step.label}</span>
+              <span class="text-xs text-base-content/60">{step.detail}</span>
+            </li>
+          {/each}
         </ul>
+      </div>
+    </div>
+
+    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="deposit-activity-preview">
+      <div class="card-body gap-3">
+        <span class="font-semibold">Funding activity updated by deposits</span>
+        {#each fundingActivity as entry}
+          <div class="rounded-box border border-base-300 bg-base-200 p-3">
+            <span class="font-semibold">{entry.label}</span>
+            <span class="block text-sm text-base-content/60">{entry.detail}</span>
+          </div>
+        {/each}
       </div>
     </div>
   {/if}

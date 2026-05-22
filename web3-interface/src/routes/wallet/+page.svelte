@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { mockFundingActivityForNamespace } from '$lib/helpers/mock-web3';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
+  import { fundingActivityForNamespace, sessionFundingActivity } from '$lib/stores/funding';
   import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespace, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
 
   let fundingActivity = $derived(
-    $walletIsConnected && !$walletIsUnsupported ? mockFundingActivityForNamespace($walletNamespace) : []
+    $walletIsConnected && !$walletIsUnsupported
+      ? fundingActivityForNamespace($walletNamespace, $sessionFundingActivity)
+      : []
   );
 </script>
 
@@ -55,6 +57,9 @@
                 </div>
                 <span class="mt-2 block text-2xl font-bold">{balance.amount}</span>
                 <span class="text-sm text-base-content/60">${balance.usdValue}</span>
+                <span class="mt-1 block text-xs text-base-content/60">
+                  Pending withdrawal: {balance.pendingAmount ?? '0'} {balance.symbol}
+                </span>
               </div>
             {/each}
           </div>

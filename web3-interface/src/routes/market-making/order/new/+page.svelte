@@ -1,12 +1,25 @@
 <script lang="ts">
+  import BigNumber from 'bignumber.js';
   import { page } from '$app/stores';
-  import { balances } from '$lib/stores/balances';
+  import { balances, totalBalanceUsd } from '$lib/stores/balances';
   import { mockCampaigns } from '$lib/helpers/mock-web3';
   import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
 
   let campaign = $derived(
     mockCampaigns.find((item) => item.id === $page.url.searchParams.get('campaign')) ?? mockCampaigns[0]
   );
+  let contributionAmount = $state('');
+  let campaignMinimumUsd = $derived(new BigNumber(campaign.minimum.replace(/[$,]/g, '')));
+  let requestedContributionUsd = $derived(new BigNumber(contributionAmount || campaignMinimumUsd));
+  let hasLowBalance = $derived(
+    Boolean($walletIsConnected && !$walletIsUnsupported && new BigNumber($totalBalanceUsd).lt(requestedContributionUsd))
+  );
+
+  $effect(() => {
+    if (!contributionAmount) {
+      contributionAmount = campaignMinimumUsd.toFixed(0);
+    }
+  });
 </script>
 
 <section class="space-y-6" data-testid="order-create">
@@ -25,6 +38,14 @@
   {:else if $walletIsUnsupported}
     <div class="alert alert-warning">
       <span>Unsupported chain blocks order creation.</span>
+    </div>
+  {:else if hasLowBalance}
+    <div class="alert alert-warning" data-testid="order-low-balance-funding-cta">
+      <span>
+        Available campaign balance is below {campaign.minimum}. Deposit is the funding remedy for low balance; withdraw is still available only from Wallet / Funding.
+      </span>
+      <a class="btn btn-sm btn-primary" href="/deposit">Deposit funds</a>
+      <a class="btn btn-sm btn-outline" href="/wallet">Wallet / Funding</a>
     </div>
   {/if}
 
@@ -48,13 +69,21 @@
       <div class="card-body gap-4">
         <label class="form-control">
           <span class="label-text mb-1">Contribution amount</span>
-          <input class="input input-bordered" value={campaign.minimum} disabled={!$walletIsConnected || $walletIsUnsupported} />
+          <input
+            class="input input-bordered"
+            bind:value={contributionAmount}
+            disabled={!$walletIsConnected || $walletIsUnsupported}
+            data-testid="order-contribution-amount"
+          />
+          <span class="label-text-alt mt-1 text-base-content/60">
+            Available funding balance: ${$totalBalanceUsd}. Increase this above available balance to see deposit guidance.
+          </span>
         </label>
         <div class="rounded-box border border-base-300 bg-base-200 p-4">
           <span class="font-semibold">Mock fee estimate</span>
           <span class="block text-sm text-base-content/60">0.35% campaign fee · approval, signing, and submission are mocked.</span>
         </div>
-        <button class="btn btn-primary" disabled={!$walletIsConnected || $walletIsUnsupported}>Review mocked order</button>
+        <button class="btn btn-primary" disabled={!$walletIsConnected || $walletIsUnsupported || hasLowBalance}>Review mocked order</button>
       </div>
     </div>
   </div>
