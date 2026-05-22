@@ -3,9 +3,8 @@
     import { toast } from "svelte-sonner";
     import { _ } from "svelte-i18n";
     import { createEventDispatcher } from "svelte";
-    import { getUuid } from "@mixin.dev/mixin-node-sdk";
     import { MIXIN_API_BASE_URL } from "$lib/helpers/constants";
-    import { mixinAsset } from "$lib/helpers/mixin/mixin";
+    import { getUuid } from "$lib/helpers/uuid";
     import {
         addMarketMakingPair,
         getCcxtExchangeMarkets,
@@ -241,7 +240,11 @@
     async function ensureChainInfo(chainId: string) {
         if (!chainId || chainInfoById[chainId]) return;
         try {
-            const asset = await mixinAsset(chainId);
+            const response = await fetch(
+                `${MIXIN_API_BASE_URL}/network/assets/${chainId}`,
+            );
+            const data = await response.json();
+            const asset = data?.data || {};
             chainInfoById = { ...chainInfoById, [chainId]: asset };
         } catch (error) {
             console.error("Failed to fetch chain asset", error);
