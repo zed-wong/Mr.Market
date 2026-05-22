@@ -1,299 +1,434 @@
 # Market Making Flow
 
-This document describes the current backend market making flow.
+This document describes the current backend market-making flow.
 
-It is based on the current implementation in `server/src/modules/market-making/**`.
+Source of truth is the yellowpaper architecture under `docs/`, with the
+current implementation mainly under `server/src/modules/market-making/**`.
 
 ## Architecture Summary
 
-The runtime is tick-driven, intent-driven, and uses pooled executors.
+Market making is split into three layers:
 
-1. Trackers update local exchange state on each tick.
-2. Pooled executors share market data per `exchange:pair`.
-3. Strategy builds intents from current state using pinned config snapshot.
-4. Controllers emit executor actions and orchestrator writes intents.
-5. Intent executor sends exchange actions with idempotency and retries.
-6. Ledger is the only balance mutation entrypoint.
+1. **Funding Layer**: deposits, withdrawals, rewards
+2. **Scheduling Layer**: tick, strategy controllers, intent dispatch
+3. **Trading Layer**: reservation, exchange orders, fills, reconciliation
 
-Key architectural decisions:
+Core invariants:
 
-- **Pinned Snapshot**: Orders store `strategySnapshot` at creation time; runtime never re-resolves config.
-- **Pooled Executors**: `ExecutorRegistry` manages `ExchangePairExecutor` per `exchange:pair` for shared market data.
-- **Fill Routing**: Fills are routed via parseable local `clientOrderId` values when available, with `ExchangeOrderMapping` fallback for exchange-safe submitted IDs.
+- Ledger is the balance source of truth.
+- Market-making balances are scoped by `orderId + assetId`.
+- All balance changes are immutable, idempotent ledger entries.
+- Strategy controllers only produce actions/intents.
+- Intent execution owns risk checks, reservation, exchange mutation, tracked
+  orders, and state transitions.
+- Tick must not perform exchange I/O, REST settlement, or direct balance
+  mutation.
+- External order placement requires risk check and order-level reservation
+  first.
+- Fills, fees, withdrawals, rewards, and reversals must be attributable to an
+  order.
+- Reconciliation pauses or blocks risk-increasing paths when mismatch evidence
+  exists.
 
-## Core Modules
+## Core Runtime
 
-### Strategy and Execution
+The active runtime is tick-driven, intent-driven, and uses pooled executors.
 
-- `server/src/modules/market-making/strategy/strategy.service.ts` - Strategy runtime entry point
-- `server/src/modules/market-making/strategy/execution/executor-registry.ts` - Pooled executor lifecycle
-- `server/src/modules/market-making/strategy/execution/exchange-pair-executor.ts` - Shared market-data/tick boundary
-- `server/src/modules/market-making/strategy/execution/strategy-runtime-dispatcher.service.ts` - Controller dispatch
-- `server/src/modules/market-making/strategy/execution/strategy-intent-execution.service.ts` - Intent execution
-- `server/src/modules/market-making/strategy/dex/strategy-config-resolver.service.ts` - Config resolution
+1. `ClockTickCoordinatorService` drives registered runtime components.
+2. `StrategyService` ticks active `ExchangePairExecutor(exchange, pair)` pools
+   in parallel.
+3. Each executor evaluates due sessions only.
+4. Strategy controllers read cached runtime state and emit actions.
+5. `ExecutorOrchestratorService` persists actions as strategy intents.
+6. Intent worker/execution service processes intents asynchronously.
+7. Create-order intents run risk checks, reserve order funds, submit exchange
+   orders, then track external order state.
+8. Fills route back from private stream or REST recovery into settlement and
+   runtime state.
+9. Reconciliation validates ledger, tracked orders, fills, fees, rewards, and
+   intent consistency.
 
-### Fill Routing
+## Main Modules
 
-- `server/src/modules/market-making/execution/fill-routing.service.ts` - Fill routing with fallback chain
-- `server/src/modules/market-making/execution/exchange-order-mapping.service.ts` - Mapping persistence
-- `server/src/common/helpers/client-order-id.ts` - local parseable and live submitted clientOrderId helpers
+### Funding / User Order Lifecycle
 
-### Infrastructure
+- `market-making/user-orders/user-orders.service.ts`
+- `market-making/user-orders/market-making.processor.ts`
+- `market-making/user-orders/market-making-runtime.service.ts`
+- `market-making/ledger/balance-ledger.service.ts`
+- `market-making/ledger/order-reservation.service.ts`
+- `mixin/snapshots`
+- `mixin/withdrawal`
 
-- `server/src/modules/market-making/tick/clock-tick-coordinator.service.ts` - Tick coordination
-- `server/src/modules/market-making/ledger/balance-ledger.service.ts` - Balance mutations
-- `server/src/modules/market-making/user-orders/market-making.processor.ts` - MM queue processor
+### Strategy / Scheduling
 
-## Flow Diagram
+- `market-making/tick/clock-tick-coordinator.service.ts`
+- `market-making/strategy/strategy.service.ts`
+- `market-making/strategy/execution/executor-registry.ts`
+- `market-making/strategy/execution/exchange-pair-executor.ts`
+- `market-making/strategy/execution/strategy-runtime-dispatcher.service.ts`
+- `market-making/strategy/intent/executor-orchestrator.service.ts`
+- `market-making/strategy/data/strategy-market-data-provider.service.ts`
+- `market-making/strategy/observation/*`
+
+### Trading / Execution
+
+- `market-making/strategy/execution/strategy-intent-worker.service.ts`
+- `market-making/strategy/execution/strategy-intent-execution.service.ts`
+- `market-making/strategy/execution/strategy-intent-store.service.ts`
+- `market-making/execution/exchange-connector-adapter.service.ts`
+- `market-making/execution/exchange-order-mapping.service.ts`
+- `market-making/execution/fill-routing.service.ts`
+- `market-making/strategy/settlement/fill-settlement.service.ts`
+- `market-making/trackers/*`
+
+### Reconciliation / Rewards
+
+- `market-making/reconciliation/reconciliation.service.ts`
+- `market-making/reconciliation/exchange-order-reconciliation-runner.ts`
+- `market-making/rewards/*`
+- `market-making/durability/durability.service.ts`
+
+## User Funding Flow
 
 ```mermaid
 flowchart TD
-  A[Admin manages strategy definitions<br/>JSON configSchema + defaultConfig]
-  B[User fetches enabled strategies<br/>GET /user-orders/market-making/strategies]
-  C[User creates MM intent<br/>POST /user-orders/market-making/intent<br/>userId + marketMakingPairId + strategyDefinitionId + configOverrides]
-  D[Snapshot intake<br/>process_market_making_snapshots<br/>payer must match bound userId]
-  E[Ledger creditDeposit<br/>snapshot-credit:snapshotId]
-  F[check_payment_complete]
-  G[Refund + failed]
-  H[Order persisted with strategySnapshot<br/>state=payment_complete]
-  I{withdraw_to_exchange queued?}
-  J[Default branch: stop at payment_complete]
-  K[withdraw_to_exchange]
-  L[monitor_mixin_withdrawal]
-  M[join_campaign]
-  N[start_mm]
-  O[Load strategySnapshot<br/>controllerType + resolvedConfig]
-  P[Attach to ExchangePairExecutor<br/>exchange:pair pooled execution]
-  Q[Tick loop<br/>ClockTickCoordinator -> StrategyService.onTick]
-  R[ExecutorRegistry active executors run<br/>executor.onTick -> controller.decideActions]
-  S[Intents executed by worker/executor]
-  T[Fill arrives<br/>UserStreamTracker]
-  U[FillRoutingService parses clientOrderId<br/>fallback to ExchangeOrderMapping]
-  V[Route fill to executor session<br/>update trackers and executor hooks]
-  W[stop_mm -> removeOrder from executor<br/>state=stopped]
-
-  A --> B
-  B --> C
-  C --> D
-  D --> E
-  E --> F
-  F -->|incomplete_or_timeout_or_invalid| G
-  F -->|complete| H
-  H --> I
-  I -->|no_default_path| J
-  I -->|yes| K
-  K --> L
-  L --> M
-  M --> N
-  N --> O
-  O --> P
-  P --> Q
-  Q --> R
-  R --> S
-  T --> U
-  U --> V
-  V --> Q
-  P --> W
+  A[User creates MM intent] --> B[Mixin snapshot intake]
+  B --> C[Validate payer, pair, fee requirements]
+  C --> D[Ledger deposit_credit orderId + assetId]
+  D --> E[check_payment_complete]
+  E -->|incomplete timeout invalid| F[failed + refund]
+  E -->|complete| G[Persist MarketMakingOrder with strategySnapshot]
+  G --> H[Queue withdraw_to_exchange]
+  H --> I[Ledger withdraw_debit before external withdrawal]
+  I --> J[Mixin withdrawal execution]
+  J --> K[monitor_mixin_withdrawal]
+  K --> L[join_campaign if applicable]
+  L --> M[start_mm]
+  M --> N[Attach order to pooled ExchangePairExecutor]
 ```
 
-### Main Elements
+### 0. Intent Creation
 
-- **Strategy catalog**: Admin-defined strategy definitions with JSON config schema and defaults.
-- **Config overrides**: User can provide `configOverrides` at intent creation time, but server rejects system-managed fields and schema-invalid overrides immediately.
-- **Snapshot pinning**: Orders store resolved config at creation; runtime reads only from snapshot.
-- **Pooled executors**: `ExecutorRegistry` manages `ExchangePairExecutor` per `exchange:pair`.
-- **Fill routing**: parse local `{orderId}:{seq}` values when available, otherwise fall back to `ExchangeOrderMapping`.
-- **Ledger safety**: All balance mutations go through `BalanceLedgerService`.
+User creates a market-making intent through:
 
-## End-to-End Flow
+`POST /user-orders/market-making/intent`
 
-### 0) User creates a market-making intent
+The intent binds:
 
-1. User fetches enabled strategies from `GET /user-orders/market-making/strategies`.
-2. User creates intent via `POST /user-orders/market-making/intent` with:
-   - `userId` (required, becomes the bound owner/payer for the intent)
-   - `marketMakingPairId`
-   - `strategyDefinitionId` (required, must exist and be enabled)
-   - `configOverrides` (optional, merged with definition defaults after early validation)
-3. Intent row is persisted in `market_making_order_intent` with bound `userId`, `strategyDefinitionId`, and `configOverrides`.
+- `orderId`
+- authenticated `userId`
+- `marketMakingPairId`
+- `strategyDefinitionId`
+- optional `configOverrides`
 
-### 1) Snapshot intake and payment state tracking
+The server validates strategy definition visibility, config schema, and
+reserved/system-managed fields before accepting overrides.
 
-1. Snapshot polling routes market making create snapshots to `process_market_making_snapshots`.
-2. Snapshot intake verifies the incoming payer matches the intent-bound `userId`; mismatches are refunded.
-3. `handleProcessMMSnapshot` validates pair and fee requirements.
-4. Payment state is created or updated and later payments must match the same `userId`.
-5. Snapshot intake is credited to ledger (`creditDeposit`) with idempotency key `snapshot-credit:{snapshotId}`.
-6. `check_payment_complete` is queued.
+### 1. Snapshot Intake
 
-### 2) Payment completion and order creation
+`process_market_making_snapshots`:
 
-1. `handleCheckPaymentComplete` verifies base, quote, and required fee coverage.
-2. If payment is incomplete and timeout/retries are exceeded, order is failed and refunded.
-3. If complete:
-   - Intent state is updated
-   - `StrategyConfigResolverService.resolveForOrderSnapshot()` resolves config:
-     - Load `StrategyDefinition`
-     - Merge `defaultConfig` + `configOverrides`
-     - Validate against `configSchema`
-   - Market making order is created with `strategySnapshot`:
-     ```typescript
-     strategySnapshot: {
-       controllerType: string;
-       resolvedConfig: Record<string, unknown>;
-     }
-     ```
-   - Order state becomes `payment_complete`
+1. Validates the market-making pair.
+2. Verifies snapshot payer matches the intent-bound user.
+3. Computes required fee coverage.
+4. Credits the deposit through `BalanceLedgerService.creditDeposit`.
+5. Uses idempotency key `snapshot-credit:{snapshotId}`.
+6. Updates `PaymentState`.
+7. Queues `check_payment_complete`.
 
-Current behavior:
+Ledger entry scope is `orderId + assetId`, not `userId + assetId`.
 
-- Queueing `withdraw_to_exchange` is still disabled in this flow.
-- This path logs and stops at `payment_complete` unless other jobs/flows continue the lifecycle.
+### 2. Payment Completion
 
-### 3) Withdrawal and campaign stage (when used)
+`check_payment_complete`:
 
-If withdrawal path is enabled and used:
+1. Checks base asset, quote asset, and fee coverage.
+2. Fails and refunds incomplete/invalid orders after timeout or retry
+   exhaustion.
+3. Resolves and stores a pinned `strategySnapshot`.
+4. Creates or updates `MarketMakingOrder`.
+5. Sets order state to `payment_complete`.
+6. Queues `withdraw_to_exchange`.
 
-1. `withdraw_to_exchange` resolves network/deposit addresses.
-2. Current code is validation mode and refunds instead of submitting real withdrawal.
-3. `monitor_mixin_withdrawal` checks confirmation status and can queue `join_campaign`.
-4. `join_campaign` creates local campaign participation and queues `start_mm`.
-   It does not perform direct HuFi Web3 `/campaigns/join` in this runtime path.
+`strategySnapshot` is required for runtime start.
 
-### 4) Start market making (pooled executor)
+Example shape:
+
+```typescript
+strategySnapshot: {
+  strategyDefinitionId: string;
+  definitionKey: string;
+  definitionName: string;
+  controllerType: string;
+  resolvedConfig: Record<string, unknown>;
+  resolvedAt: string;
+  configHash?: string;
+}
+```
+
+### 3. Withdrawal To Exchange
+
+`withdraw_to_exchange`:
+
+1. Sets state to `withdrawing`.
+2. Resolves exchange API key and deposit networks.
+3. Fetches exchange deposit addresses.
+4. Applies `withdraw_debit` ledger entries before external withdrawal.
+5. Calls withdrawal service.
+6. On failure after debit, compensates with `deposit_credit`.
+7. Queues `monitor_mixin_withdrawal`.
+
+This path is not documented as disabled or validation-only. If a deployment
+intentionally disables external withdrawal, that must be represented as runtime
+configuration or operational state, not as the default architecture.
+
+### 4. Campaign Join
+
+`join_campaign`:
+
+1. Optionally joins a HuFi campaign when campaign details are provided.
+2. Updates local order state.
+3. Queues `start_mm`.
+
+Campaign linkage may be asynchronous and may be detached from the direct order
+lifecycle for admin-direct paths.
+
+### 5. Start Runtime
 
 `start_mm`:
 
-- Sets order state to `running`.
-- Loads order's `strategySnapshot` (required, throws if missing).
-- Extracts `controllerType` and `resolvedConfig` from snapshot.
-- Converts `controllerType` to `StrategyType` via dispatcher.
-- Calls `StrategyRuntimeDispatcher.startByStrategyType()`:
-  - Gets or creates `ExchangePairExecutor(exchange, pair)` from `ExecutorRegistry`.
-  - Adds order session to executor with resolved config.
-- Does NOT query `StrategyDefinition` at runtime (snapshot is source of truth).
+1. Sets order state to `running`.
+2. Requires `strategySnapshot.resolvedConfig`.
+3. Converts `controllerType` to runtime `StrategyType`.
+4. Calls `StrategyRuntimeDispatcher.startByStrategyType()`.
+5. Attaches the order to `ExchangePairExecutor(exchange, pair)`.
+6. Links strategy definition metadata to the runtime instance.
 
-### 5) Tick-driven pooled execution
+Runtime does not re-resolve strategy config from current admin definitions when
+starting an order. The pinned snapshot is the source of truth.
 
-1. `ClockTickCoordinatorService` calls `onTick` for registered components.
-2. `StrategyService.onTick` iterates `ExecutorRegistry.getActiveExecutors()`.
-3. For each `ExchangePairExecutor`:
-   - Checks `session.nextRunAtMs` against current time.
-   - Calls `executor.onTick(ts)` which triggers `handlers.onTick(session, ts)`.
-4. Handler invokes controller `decideActions(session, ts, service)` and controllers read market data through the shared runtime services.
-5. Controller emits actions (place/cancel/stop).
-6. Orchestrator writes intents to `StrategyOrderIntentEntity`.
-7. Intent worker/executor processes pending intents asynchronously.
+## Admin Direct Flow
 
-### 6) Fill routing flow
+Admin-direct market making bypasses the user payment flow.
 
-1. `UserStreamTracker` receives fill event with `clientOrderId`.
-2. `FillRoutingService.resolveOrderForFill()` routes the fill:
-   - **Primary path**: Parse local `clientOrderId` format `{orderId}:{seq}` when the incoming value is parseable.
-   - **Fallback 1**: Look up `ExchangeOrderMapping` by `clientOrderId`.
-   - **Fallback 2**: Look up `ExchangeOrderMapping` by `exchangeOrderId`.
-   - **Orphan**: Log for manual review if all fail.
-3. `ExecutorRegistry.findExecutorByOrderId()` resolves executor for order.
-4. `UserStreamTracker` only dispatches fills with the owning `orderId`; when an exchange stream sends cumulative `filled`, it first converts that snapshot to a positive delta against `ExchangeOrderTracker` state.
-5. `StrategyService` builds ledger idempotency from stable fill identity (`fillId` or order+price+side+cumulative state), not local receipt time, so duplicate user-stream replays do not drift balances.
-6. `UserStreamTracker` updates order-tracker state and forwards the normalized fill to `ExchangePairExecutor.onFill(fill)`.
-7. `ExchangePairExecutor` dispatches to the target session handler. In the current pooled runtime, fills update tracker state and runtime bookkeeping for future ticks; controller-specific fill callbacks remain limited.
+1. Admin creates a direct order.
+2. Service resolves a pinned strategy snapshot.
+3. Order is marked with `source=admin_direct`.
+4. Runtime account identity is stored through API-key/account-label metadata.
+5. Direct start reuses the same runtime start path as `start_mm`.
+6. Status endpoints read executor state, tracker state, queue state, exchange
+   balances, and strategy counters.
 
-### 7) Stop market making
+## Adaptive PMM Flow
 
-`stop_mm`:
+Adaptive PMM keeps the same runtime boundary: the PMM strategy path only emits
+intents, while workers still own reservation, exchange mutation, tracked order
+state, settlement, and reconciliation.
 
-- Calls `executorRegistry.findExecutorByOrderId(orderId)`.
-- Calls `executor.removeOrder(orderId)`.
-- Calls `executorRegistry.removeExecutorIfEmpty(exchange, pair)`.
-- Sets order state to `stopped`.
+The adaptive path adds three read-only decision inputs:
+
+1. `OrderBookTrackerService` stores bounded mid-price history from accepted
+   tracked books.
+2. `StrategyMarketDataProviderService` exposes cache-only PMM signal snapshots:
+   reference price, microprice, volatility, imbalance, freshness, and crash
+   state.
+3. Runtime observation services expose fill markout toxicity and recent reject
+   or rate-limit pressure.
+
+On each PMM tick, `StrategyService` reads those inputs and builds effective
+spread, size, layer, cadence, and side-pause parameters for
+`QuoteExecutorManagerService`. The quote manager still returns quote candidates;
+the orchestrator persists create/cancel intents; the intent worker still applies
+risk gates, order-level reservations, exchange calls, tracked-order updates, and
+reservation release.
+
+Safety gates stay ahead of adaptive quoting:
+
+- missing or stale tracked market data, crash signals, connector health issues,
+  or reservation pause block new creates;
+- unsafe PMM ticks may emit cancel intents for existing live orders;
+- warmup uses conservative one-layer quotes with wider spread and smaller size
+  until signal history is sufficient;
+- order-scoped ledger balances are the preferred inventory source.
+
+See `docs/architecture/strategies/adaptive-pmm.md` for formulas, priorities,
+and module ownership.
+
+Admin-direct orders must remain isolated from user-facing order queries while
+sharing the production runtime.
+
+## Tick And Intent Flow
+
+```mermaid
+flowchart TD
+  A[ClockTickCoordinator] --> B[StrategyService.onTick]
+  B --> C[ExecutorRegistry.getActiveExecutors]
+  C --> D[Parallel executor.onTick]
+  D --> E[Due sessions only]
+  E --> F[Controller decideActions]
+  F --> G[Orchestrator persists intents]
+  G --> H[Intent worker]
+  H --> I[Risk check]
+  I --> J[Order-level reservation]
+  J --> K[Exchange mutation]
+  K --> L[Tracked order + mapping updates]
+```
+
+Important rules:
+
+- Controllers must not place exchange orders.
+- Controllers must not mutate balances.
+- Tick should read cached order book, tracked order, balance, and stream-health
+  state.
+- REST balance refresh and REST order reconciliation run outside the shared tick
+  loop.
+- Intent execution may run through worker mode or sync mode, but worker mode is
+  the preferred production boundary.
+
+## Order Reservation
+
+Create-limit-order execution:
+
+1. Validates exchange, pair, side, quantity, price.
+2. Validates market-making order state.
+3. Validates market-data freshness.
+4. Validates API key health and permissions.
+5. Reserves funds through `OrderReservationService.reserveForLimitOrder`.
+6. Submits the exchange order.
+7. Reserves/releases client-order mapping.
+8. On failed create before external acknowledgement, releases reservation.
+9. On cancel/reject/expire terminal states, releases remaining unfilled
+   reservation.
+
+Reservation is expressed through ledger entries:
+
+- `reserve_lock`
+- `reserve_release`
+
+## User Stream And Recovery
+
+Private stream handling is normalized before it reaches strategy runtime:
+
+- `UserStreamIngestionService` reads exchange private events.
+- Exchange-specific normalizers convert order/trade/balance events into the
+  internal user-stream event contract.
+- `UserStreamTrackerService` updates tracked order and balance state.
+- REST recovery paths can re-enter the same routing/settlement boundary when
+  private stream evidence is missing or delayed.
+
+Current operating modes:
+
+- **Full stream**: order, trade, and balance events are available.
+- **Partial stream**: missing event families are filled by REST refresh or
+  reconciliation.
+- **REST-only**: private stream is unavailable, so tracked-order polling and
+  reconciliation provide recovery evidence.
+
+Stream-health and balance-cache state are runtime inputs. Strategy ticks should
+skip risk-increasing decisions when required cached state is stale rather than
+fetching exchange state inline.
+
+## Fill Routing And Settlement
+
+```mermaid
+flowchart TD
+  A[User stream or REST recovered fill] --> B[Normalize fill]
+  B --> C[FillRoutingService]
+  C -->|parseable clientOrderId| D[orderId from local format]
+  C -->|submitted clientOrderId| E[ExchangeOrderMapping by clientOrderId]
+  C -->|exchangeOrderId| F[ExchangeOrderMapping by exchangeOrderId]
+  D --> G[FillSettlementService]
+  E --> G
+  F --> G
+  G --> H[fill_settle ledger entries]
+  G --> I[fee_debit if actual fee exists]
+  G --> J[Executor session onFill]
+```
+
+Fill routing priority:
+
+1. Parse local `{orderId}:{seq}` format when present.
+2. Fall back to `ExchangeOrderMapping` by submitted `clientOrderId`.
+3. Fall back to `ExchangeOrderMapping` by `exchangeOrderId`.
+4. If unresolved, emit manual-review evidence and do not mutate ambiguous
+   balances.
+
+Fill settlement:
+
+- Settles base/quote movement through order-scoped ledger entries.
+- Applies actual fee debit when fee data is available.
+- Uses stable fill identity for idempotency.
+- Does not rely on local receipt time as the only idempotency input.
 
 ## clientOrderId Formats
 
-The runtime now uses two related formats:
-
-- local parseable format: `{orderId}:{seq}`
-- live submitted exchange-safe format: `mm-{sha1(orderId)[0..11]}-{seqBase36}`
+The helper supports two related IDs:
 
 ```typescript
-// Local parseable form for routing-only assertions
-function buildClientOrderId(orderId: string, seq: number): string {
-  return `${orderId}:${seq}`;
-}
+buildClientOrderId(orderId, seq)
+// returns: `${orderId}:${seq}`
+// local parseable format, useful for routing assertions
 
-// Live submitted form for exchange placement
-function buildSubmittedClientOrderId(orderId: string, seq: number): string {
-  return `mm-${hash(orderId).slice(0, 12)}-${seq.toString(36)}`;
-}
+buildSubmittedClientOrderId(orderId, seq)
+// returns: sha1(`${orderId}:${seq}:submitted`).slice(0, 20)
+// exchange-safe submitted format
 
-// Parse local form
-function parseClientOrderId(
-  clientOrderId: string
-): { orderId: string; seq: number } | null {
-  const parts = clientOrderId.split(":");
-  if (parts.length !== 2) return null;
-  const seq = parseInt(parts[1], 10);
-  if (isNaN(seq)) return null;
-  return { orderId: parts[0], seq };
-}
+parseClientOrderId(clientOrderId)
+// parses only local `${orderId}:${seq}` format
 ```
 
-The real implementation in `server/src/common/helpers/client-order-id.ts` keeps the parseable local format for routing-only assertions and uses the submitted exchange-safe format for live order placement.
+The submitted live exchange ID is resolved back to an order through
+`ExchangeOrderMapping`.
 
 Prerequisites:
 
-- local parseable format requires `orderId` with no `:` and `seq` as a non-negative integer
-- submitted format requires a non-empty `orderId` and `seq` as a non-negative integer
+- local parseable format requires a non-empty `orderId` with no `:` and a
+  non-negative integer `seq`
+- submitted format requires a non-empty `orderId` and a non-negative integer
+  `seq`
 
-## Pooled Executor Architecture
+## Ledger Rules
 
-### ExecutorRegistry
+All balance mutations go through `BalanceLedgerService`.
 
-Manages `ExchangePairExecutor` lifecycle:
+Common ledger entry types:
 
-```typescript
-class ExecutorRegistry {
-  getOrCreateExecutor(exchange: string, pair: string): ExchangePairExecutor;
-  removeExecutorIfEmpty(exchange: string, pair: string): void;
-  getExecutor(exchange: string, pair: string): ExchangePairExecutor | undefined;
-  getActiveExecutors(): ExchangePairExecutor[];
-  findExecutorByOrderId(orderId: string): ExchangePairExecutor | undefined;
-}
-```
+- `deposit_credit`
+- `withdraw_debit`
+- `reserve_lock`
+- `reserve_release`
+- `fill_settle`
+- `fee_debit`
+- `reward_credit`
+- `reversal`
 
-Lifecycle:
+Rules:
 
-- Created on-demand when first order is added.
-- Removed automatically when no orders remain.
+- Balance read model is `MarketMakingOrderBalance(orderId, assetId)`.
+- Ledger entries are append-only.
+- Mutations are idempotent by key and reject same-key/different-payload replays.
+- Mutation locking is scoped by `orderId + assetId`.
+- Rebuild can compare read model against ledger facts.
+- Reservation can be paused when reconciliation finds mismatches.
 
-### ExchangePairExecutor
+## Reconciliation
 
-Shared execution boundary per `exchange:pair`:
+Reconciliation covers:
 
-```typescript
-class ExchangePairExecutor {
-  readonly exchange: string;
-  readonly pair: string;
+- ledger balance invariants
+- intent lifecycle consistency
+- tracked order consistency
+- estimated fee aging/correction
+- fill attribution
+- private-trade-backed fill evidence
+- reward allocation consistency
 
-  addOrder(
-    orderId: string,
-    userId: string,
-    config: OrderConfig
-  ): Promise<Session>;
-  removeOrder(orderId: string): Promise<void>;
-  onTick(ts: string): Promise<void>;
-  onFill(fill: Fill): Promise<void>;
-  isEmpty(): boolean;
-}
-```
+On mismatch, reconciliation must not create generic balance adjustments. It
+should emit evidence, pause affected reservation paths where needed, and use
+typed correction/reversal facts.
 
-Benefits:
-
-- Orders on same `exchange:pair` share market data.
-- Execution scheduling is pooled, reducing per-order overhead.
-- Future extension point for `exchange:apiKeyId:pair` multi-account support.
-
-## Queue Jobs Registered
+## Queue Jobs
 
 Queue: `market-making`
 
@@ -307,143 +442,99 @@ Queue: `market-making`
 
 Removed from runtime flow:
 
-- `execute_mm_cycle` (replaced by tick-driven pooled execution)
+- `execute_mm_cycle`
 
-## Balance and Ledger Rules
+## Common States
 
-All balance mutations must go through `BalanceLedgerService`.
+User funding path:
 
-Common mutations in MM flow:
+`payment_pending -> payment_complete -> withdrawing -> joining_campaign -> created -> running -> stopped`
 
-- Snapshot intake: `creditDeposit`
-- Refund path: `debitWithdrawal` before transfer
-- Refund transfer failure: compensation `creditDeposit`
-- Pause/withdraw orchestration: `unlockFunds` then `debitWithdrawal`
-
-Concurrency protection:
-
-- Ledger serializes same `userId:assetId` mutation path in-process.
-
-## State Progression
-
-Common order states in current flow:
-
-`payment_pending -> payment_complete -> campaign_joined -> running -> stopped`
-
-Failure paths can move to:
+Failure path:
 
 `failed`
 
-When `withdraw_to_exchange` remains disabled, the default path stops at `payment_complete`.
-
-## Strategy Definition and Snapshot
-
-### Definition Structure
-
-```typescript
-interface StrategyDefinition {
-  id: string;
-  key: string;
-  name: string;
-  controllerType:
-    | "pureMarketMaking"
-    | "arbitrage"
-    | "volume"
-    | "timeIndicator";
-  configSchema: Record<string, unknown>; // JSON schema
-  defaultConfig: Record<string, unknown>;
-  enabled: boolean;
-  visibility: "public" | "admin";
-}
-```
-
-### Snapshot Resolution Flow
-
-```typescript
-async resolveForOrderSnapshot(strategyDefinitionId: string, overrides?: Record<string, unknown>) {
-  // 1. Load definition
-  const definition = await this.findOne({ where: { id: strategyDefinitionId } });
-  const controllerType = this.getDefinitionControllerType(definition);
-
-  // 2. Merge defaults + overrides, then normalize runtime-only fields
-  const resolvedConfig = this.normalizeAndValidateConfig(definition, {
-    ...this.toConfig(definition.defaultConfig),
-    ...(overrides || {}),
-  });
-
-  // 3. Return snapshot payload
-  return {
-    controllerType,
-    resolvedConfig,
-  };
-}
-```
-
-### Snapshot Requirement
-
-The current prototype only supports orders created after the snapshot cutover.
-If an order does not have `strategySnapshot`, recreate it through the current
-payment flow instead of backfilling legacy rows.
+Admin-direct path may skip funding states and enter runtime through the direct
+start flow.
 
 ## Operational Notes
 
-- `strategy.execute_intents=false` explicitly disables live execution, so intents are created and marked processed but no exchange actions are sent.
-- `strategy.intent_execution_driver=worker` decouples tick from exchange execution and keeps tick latency stable under load.
-- `strategy.intent_execution_driver=sync` keeps legacy inline execution behavior.
-- Strategy definitions are DB-backed and managed via admin APIs.
-- Orders require `strategySnapshot` before `start_mm` can run.
-- `withdraw_to_exchange` path is currently validation/refund mode.
-- Volume routing uses execution categories (`clob_cex`, `amm_dex`); `clob_dex`
-  remains reserved and is rejected during config resolution.
-- Reconciliation and trackers should be monitored for state drift.
+- `strategy.execute_intents=false` persists/skips intents without exchange
+  mutation.
+- `strategy.intent_execution_driver=worker` decouples tick from exchange I/O.
+- `strategy.intent_execution_driver=sync` exists but is not the preferred
+  production boundary.
+- Orders require `strategySnapshot` before runtime start.
+- `dualAccountVolume` uses maker/taker account labels under the same pooled
+  `exchange:pair` executor.
+- REST order reconciliation and balance refresh run outside the shared tick
+  loop.
+- Reconciliation mismatches should block risk-increasing operations instead of
+  being papered over.
 
 ## File Structure
 
 ```text
 server/src/modules/market-making/
-├── strategy/
-│   ├── strategy.service.ts
-│   ├── strategy.module.ts
-│   ├── config/
-│   │   ├── strategy-controller.types.ts
-│   │   └── strategy-controller-aliases.ts
-│   ├── controllers/
-│   │   ├── strategy-controller.registry.ts
-│   │   ├── pure-market-making-strategy.controller.ts
-│   │   ├── arbitrage-strategy.controller.ts
-│   │   ├── volume-strategy.controller.ts
-│   │   └── time-indicator-strategy.controller.ts
-│   ├── execution/
-│   │   ├── executor-registry.ts
-│   │   ├── exchange-pair-executor.ts
-│   │   ├── strategy-runtime-dispatcher.service.ts
-│   │   ├── strategy-intent-execution.service.ts
-│   │   ├── strategy-intent-worker.service.ts
-│   │   └── strategy-intent-store.service.ts
-│   └── dex/
-│       └── strategy-config-resolver.service.ts
+├── balance-state/
+│   ├── balance-refresh-scheduler.ts
+│   ├── balance-state-cache.service.ts
+│   └── balance-state-refresh.service.ts
+├── durability/
+│   └── durability.service.ts
 ├── execution/
 │   ├── exchange-connector-adapter.service.ts
-│   ├── fill-routing.service.ts
-│   └── exchange-order-mapping.service.ts
-├── tick/
-│   └── clock-tick-coordinator.service.ts
-├── trackers/
-│   ├── order-book-tracker.service.ts
-│   ├── user-stream-tracker.service.ts
-│   └── exchange-order-tracker.service.ts
-├── user-orders/
-│   ├── user-orders.controller.ts
-│   ├── user-orders.service.ts
-│   └── market-making.processor.ts
+│   ├── exchange-order-mapping.service.ts
+│   └── fill-routing.service.ts
 ├── ledger/
-│   └── balance-ledger.service.ts
-└── durability/
-    └── durability.service.ts
+│   ├── balance-ledger.service.ts
+│   └── order-reservation.service.ts
+├── reconciliation/
+│   ├── exchange-order-reconciliation-runner.ts
+│   └── reconciliation.service.ts
+├── rewards/
+├── strategy/
+│   ├── controllers/
+│   │   ├── arbitrage-strategy.controller.ts
+│   │   ├── dual-account-best-capacity-volume-strategy.controller.ts
+│   │   ├── dual-account-volume-strategy.controller.ts
+│   │   ├── pure-market-making-strategy.controller.ts
+│   │   ├── time-indicator-strategy.controller.ts
+│   │   └── volume-strategy.controller.ts
+│   ├── data/
+│   │   └── strategy-market-data-provider.service.ts
+│   ├── dex/
+│   │   └── strategy-config-resolver.service.ts
+│   ├── execution/
+│   │   ├── exchange-pair-executor.ts
+│   │   ├── executor-registry.ts
+│   │   ├── strategy-intent-execution.service.ts
+│   │   ├── strategy-intent-store.service.ts
+│   │   ├── strategy-intent-worker.service.ts
+│   │   └── strategy-runtime-dispatcher.service.ts
+│   ├── intent/
+│   │   ├── executor-orchestrator.service.ts
+│   │   └── quote-executor-manager.service.ts
+│   ├── settlement/
+│   │   └── fill-settlement.service.ts
+│   └── strategy.service.ts
+├── tick/
+│   ├── clock-tick-coordinator.service.ts
+│   └── runtime-timing.service.ts
+├── trackers/
+│   ├── exchange-order-tracker.service.ts
+│   ├── order-book-ingestion.service.ts
+│   ├── order-book-tracker.service.ts
+│   ├── user-stream-ingestion.service.ts
+│   └── user-stream-tracker.service.ts
+└── user-orders/
+    ├── market-making.processor.ts
+    ├── market-making-runtime.service.ts
+    └── user-orders.service.ts
 ```
 
 ## Last Updated
 
-- Date: 2026-03-11
+- Date: 2026-05-21
 - Status: Active
-- Architecture: Pooled Executor v3.0
+- Architecture: Yellowpaper-aligned market-making runtime

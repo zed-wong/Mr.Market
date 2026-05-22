@@ -8,13 +8,13 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 
 ### Root Composition
 
-- `AppModule` loads cross-cutting runtime pieces: `ConfigModule`, `TypeOrmModule`, `ScheduleModule`, `BullModule`, and all business domains.
+- `AppModule` loads cross-cutting runtime pieces: `LoggerModule`, `ThrottlerModule`, `ConfigModule`, `EventEmitterModule`, `TypeOrmModule`, `ScheduleModule`, `BullModule`, and all business domains.
 - `AppModule` is the only place where all domains are composed together.
 
 ### admin
 
 - `modules/admin/admin.module.ts`
-  - Depends on: `AdminExchangesModule`, `StrategyModule`, `GrowdataModule`, `SpotdataModule`, `MixinClientModule`, `DexModule`, `Web3Module`.
+  - Depends on: `AdminExchangesModule`, `StrategyModule`, `GrowdataModule`, `SpotdataModule`, `MixinClientModule`, `CampaignModule`, `UserOrdersModule`, `TrackersModule`, `ExecutionModule`, `LedgerModule`, `ExchangeApiKeyModule`, `ExchangeInitModule`, `Web3Module`, TypeORM admin/runtime entities.
   - Main role: admin control plane.
 - `modules/admin/exchanges/exchanges.module.ts`
   - Depends on: `ExchangeModule`.
@@ -59,7 +59,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
     - `adapter-registry.ts` - DexAdapterRegistry for adapter lookup.
     - `adapters/` - DEX adapter implementations (uniswapV3.adapter.ts, pancakeV3.adapter.ts).
     - `abis.ts` - Contract ABI definitions.
-    - `addresses.ts` - Contract addresses by chain.
+    - `common/constants/defi-addresses.ts` - Contract addresses by chain.
     - `utils/` - DEX-related utility functions.
 
 ### infrastructure
@@ -80,11 +80,11 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 ### market-making
 
 - `modules/market-making/strategy/strategy.module.ts`
-  - Depends on: `PerformanceModule`, `LoggerModule`, `FeeModule`, `TickModule`, `DurabilityModule`, `ExecutionModule`, `TrackersModule`, `MarketdataModule`, `DexModule`, `Web3Module`, TypeORM strategy entities.
+  - Depends on: `PerformanceModule`, `LoggerModule`, `FeeModule`, `LedgerModule`, `ExchangeApiKeyModule`, `TickModule`, `DurabilityModule`, `ExecutionModule`, `TrackersModule`, `MarketdataModule`, `DexModule`, `Web3Module`, TypeORM strategy entities.
   - Main role: strategy runtime.
   - Internal structure:
     - `config/` - Type definitions and DTOs (strategy-controller.types.ts, strategy.dto.ts, executor-action.types.ts).
-    - `controllers/` - Controller registry and 4 strategy controllers (ArbitrageStrategyController, PureMarketMakingStrategyController, VolumeStrategyController, TimeIndicatorStrategyController).
+    - `controllers/` - Controller registry and 6 strategy controllers: arbitrage, pure market making, volume, time indicator, dual-account volume, and dual-account best-capacity volume.
     - `data/` - StrategyMarketDataProviderService.
     - `intent/` - ExecutorOrchestratorService, QuoteExecutorManagerService.
     - `execution/` - StrategyIntentExecutionService, StrategyIntentStoreService, StrategyIntentWorkerService, StrategyRuntimeDispatcherService, ExecutorRegistry, ExchangePairExecutor.
@@ -94,15 +94,18 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Depends on: `Web3Module`, `DefiModule`.
   - Main role: DEX strategy execution support.
 - `modules/market-making/user-orders/user-orders.module.ts`
-  - Depends on: `StrategyModule`, `FeeModule`, `GrowdataModule`, `SnapshotsModule`, `TransactionModule`, `WithdrawalModule`, `LocalCampaignModule`, `ExchangeModule`, `NetworkMappingModule`, `CampaignModule`, `MixinClientModule`, `LedgerModule`, queue `market-making`.
+  - Depends on: `ConfigModule`, `StrategyModule`, `FeeModule`, `GrowdataModule`, `SnapshotsModule`, `TransactionModule`, `WithdrawalModule`, `ExchangeModule`, `NetworkMappingModule`, `CampaignModule`, `MixinClientModule`, `LedgerModule`, TypeORM order/intent/strategy entities, queue `market-making`.
   - Main role: market-making user order lifecycle.
 - `modules/market-making/tick/tick.module.ts`
   - Depends on: `ConfigModule`.
   - Main role: tick loop coordinator.
 - `modules/market-making/trackers/trackers.module.ts`
-  - Depends on: `TickModule`, `ExecutionModule`.
+  - Depends on: `TickModule`, `ExecutionModule`, `LedgerModule`, `MarketMakingEventsModule`, `ExchangeInitModule`, `MarketdataModule`, TypeORM tracked-order/runtime entities.
   - Main role: order book/private stream/order trackers.
-  - `modules/market-making/execution/execution.module.ts`
+- `modules/market-making/events/market-making-events.module.ts`
+  - Depends on: none.
+  - Main role: typed internal market-making event bus for order/balance/stream-health/fill-review signals.
+- `modules/market-making/execution/execution.module.ts`
   - Depends on: `ConfigModule`.
   - Main role: exchange execution adapter.
   - Internal structure:
@@ -115,9 +118,6 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Depends on: TypeORM ledger entities, `DurabilityModule`.
   - Main role: order-scoped market-making balance ledger. Mutations append immutable `LedgerEntry` rows keyed by `orderId + assetId`, update `MarketMakingOrderBalance`, reject same-key/different-payload idempotency replays, and can rebuild an order balance from ledger facts.
   - Reservation boundary: `OrderReservationService` converts limit-order intents into `reserve_lock` / `reserve_release` mutations before exchange placement.
-- `modules/market-making/exchange-api-key/exchange-api-key.module.ts`
-  - Depends on: TypeORM API key entities.
-  - Main role: exchange API key storage, validation status, and key-health reads for admin-direct execution.
 - `modules/market-making/durability/durability.module.ts`
   - Depends on: TypeORM durability entities.
   - Main role: outbox and idempotent receipt store.
@@ -144,10 +144,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Main role: fee policy and calculations.
 - `modules/market-making/exchange-api-key/exchange-api-key.module.ts`
   - Depends on: `ConfigModule`, TypeORM key/order/release entities.
-  - Main role: exchange credentials and exchange operation primitives.
-- `modules/market-making/local-campaign/local-campaign.module.ts`
-  - Depends on: TypeORM campaign entities, queue `local-campaigns`.
-  - Main role: local campaign queue processing.
+  - Main role: exchange credentials, validation status, key-health reads, and exchange operation primitives.
 
 ### mixin
 
@@ -178,12 +175,6 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 - `modules/mixin/wallet/wallet.module.ts`
   - Depends on: `MixinClientModule`.
   - Main role: wallet operation abstraction.
-- `modules/mixin/rebalance/rebalance.module.ts`
-  - Depends on: `ConfigModule`, `ExchangeModule`, `SnapshotsModule`.
-  - Main role: rebalance APIs/services.
-- `modules/mixin/listeners/events.module.ts`
-  - Depends on: `ExchangeModule`, `SnapshotsModule`, `CustomConfigModule`, `StrategyModule`, `GrowdataModule`, `LoggerModule`.
-  - Main role: listener wiring composition.
 
 ### web3
 
@@ -413,12 +404,6 @@ This section explains each module with three questions:
 - Why: exchange calls need secure key storage and consistent access semantics.
 - Where: used by exchange endpoints, init service, and execution-adjacent paths.
 
-#### `market-making/local-campaign/local-campaign.module.ts`
-
-- What: local campaign queue and participation processing.
-- Why: some campaign logic is handled in internal queueable jobs.
-- Where: used by market-making processor when user orders should join local campaign workflows.
-
 ### mixin domain
 
 #### `mixin/mixin.module.ts`
@@ -474,18 +459,6 @@ This section explains each module with three questions:
 - What: wallet operation wrapper around Mixin client.
 - Why: withdrawal services need wallet-specific API calls.
 - Where: used by withdrawal module and transfer-related services.
-
-#### `mixin/rebalance/rebalance.module.ts`
-
-- What: rebalancing endpoints/services.
-- Why: system can require rebalance operations across exchanges.
-- Where: used in operations-oriented rebalance flows.
-
-#### `mixin/listeners/events.module.ts`
-
-- What: composition point for listener dependencies.
-- Why: listener/event-driven behaviors need shared module wiring.
-- Where: used by runtime where event/listener-driven integration is enabled.
 
 ### web3 domain
 

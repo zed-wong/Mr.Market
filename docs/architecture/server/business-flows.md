@@ -23,7 +23,6 @@ Main modules:
 - `market-making/fee`
 - `market-making/strategy`
 - `campaign`
-- `market-making/local-campaign`
 
 Why this flow exists:
 
@@ -65,7 +64,7 @@ Summary:
 2. Tick coordination drives active executors in parallel across exchange:pair pools.
 3. Controllers compute actions from market data and pinned config.
 4. Orchestrator writes each action batch through the intent store once, then execution services perform side effects.
-5. Private-stream fills route back to the correct runtime session.
+5. User-stream and REST-recovered fills route back to the correct runtime session.
 
 Main modules:
 
@@ -85,7 +84,7 @@ Why this flow exists:
 - Strategy tick decisions now read cached order/balance state only; when required balance snapshots are stale, the tick skips the decision instead of fetching REST state inline.
 - Order, balance, and stream-health cache changes publish typed internal market-making events, and exchange-scoped listeners can now subscribe without introducing exchange-prefixed event names.
 - REST order reconciliation and REST balance refresh now run outside the shared tick loop through `ExchangeOrderReconciliationRunner` and `BalanceRefreshScheduler`.
-- `dualAccountVolume` reuses the pooled executor on one exchange:pair but sequences maker placement on one account and taker IOC execution on a second account, with restart recovery cancelling dangling maker orders instead of replaying taker legs.
+- `dualAccountVolume` and `dualAccountBestCapacityVolume` reuse the pooled executor on one exchange:pair but sequence maker placement on one account and taker IOC execution on a second account, with restart recovery cancelling dangling maker orders instead of replaying taker legs.
 - `dualAccountVolume.tradedQuoteVolume` is the strategy progress metric for actual taker-leg filled quote only; gross maker+taker turnover stays a separate reporting concept.
 
 Detailed reference:
@@ -163,14 +162,13 @@ Why this flow exists:
 Summary:
 
 1. Scheduler syncs campaign data from external sources.
-2. Join operations are scheduled for active participation.
+2. Join operations are scheduled for active participation through the campaign domain.
 3. Score estimator writes HUFI score snapshots from trading history.
 4. Admin direct campaign joins may pre-bind exchange credentials, then transition through `pending`, `joined`, `linked`, or `detached` as runtime state changes.
 
 Main modules:
 
 - `campaign`
-- `market-making/local-campaign`
 - `market-making/strategy`
 - `admin/market-making`
 
@@ -183,7 +181,7 @@ Why this flow exists:
 
 - HTTP controllers: admin, auth, data, user-orders, mixin, health
 - Cron schedules: snapshots, campaign sync, score estimation, reconciliation, reward checks
-- Queue processors: `snapshots`, `market-making`, `withdrawals`, `withdrawal-confirmations`, `local-campaigns`
+- Queue processors: `snapshots`, `market-making`, `withdrawals`, `withdrawal-confirmations`
 - Runtime worker loops: strategy intent worker and tick coordinator
 
 ## Notes
