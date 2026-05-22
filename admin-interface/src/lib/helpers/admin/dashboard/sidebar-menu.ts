@@ -52,8 +52,8 @@ export const buildAdminSidebarMenu = (): SidebarMenuItem[] => {
         },
         {
           key: "direct-market-making",
-          labelKey: "admin_direct_mm_nav",
-          value: "/market-making/direct",
+          labelKey: "admin.nav.settings_direct_market_making",
+          value: "/trading/direct-market-making",
         },
       ],
     },

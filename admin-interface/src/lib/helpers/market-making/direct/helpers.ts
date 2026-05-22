@@ -542,13 +542,16 @@ export function normalizeConfigOverrides(
 export function buildGenericSchemaConfigOverrides(
   schema: StrategySchema | undefined,
   config: Record<string, unknown>,
+  excludedFields: string[] = [],
 ): Record<string, unknown> {
   const properties = schema?.properties || {};
+  const excluded = new Set(excludedFields);
 
   return Object.entries(config).reduce<Record<string, unknown>>(
     (acc, [key, value]) => {
       if (
         DIRECT_RESERVED_CONFIG_FIELDS.has(key) ||
+        excluded.has(key) ||
         !(key in properties) ||
         value === "" ||
         value === undefined

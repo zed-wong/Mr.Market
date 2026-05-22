@@ -211,6 +211,7 @@ export class AdminDirectMarketMakingService {
       dto.pair,
       executionAccounts.primary.accountLabel,
     );
+
     await this.populateAdminDirectLedgerAllocations(
       dto.exchangeName,
       dto.pair,
@@ -1392,7 +1393,11 @@ export class AdminDirectMarketMakingService {
     const [baseAsset, quoteAsset] = this.parsePair(pair);
     const directSnapshot =
       snapshot ||
-      (await this.resolveDirectMarketSnapshot(exchangeName, pair, accountLabel));
+      (await this.resolveDirectMarketSnapshot(
+        exchangeName,
+        pair,
+        accountLabel,
+      ));
     const balance = directSnapshot.balance;
     const referencePrice = directSnapshot.tickerPrice;
     const desiredBase = this.calculateAdminDirectBaseAllocation(resolvedConfig);

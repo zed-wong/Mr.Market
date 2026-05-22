@@ -23,6 +23,7 @@ export const NAV_ITEMS: NavGroup[] = [
     label: 'admin.nav.trading',
     children: [
       { key: 'trading.strategies', label: 'admin.nav.strategies', href: '/trading/strategies' },
+      { key: 'trading.direct_market_making', label: 'admin.nav.settings_direct_market_making', href: '/trading/direct-market-making' },
       { key: 'trading.positions', label: 'admin.nav.positions', href: '/trading/positions' },
       { key: 'trading.orders', label: 'admin.nav.orders', href: '/trading/orders' },
       { key: 'trading.exchanges', label: 'admin.nav.exchanges', href: '/trading/exchanges' },
