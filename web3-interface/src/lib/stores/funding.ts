@@ -249,6 +249,7 @@ export const completeMockDeposit = (
       category: 'funding',
       label: 'Deposit',
       detail: `${balance.symbol} · ${namespaceLabel(balance.chainNamespace)} · ${balance.name} · credited · ${timestamp} · amount ${normalizedAmount}`,
+      href: '/deposit',
     },
     ...entries,
   ]);
@@ -285,6 +286,7 @@ export const submitMockWithdrawal = (
       category: 'funding',
       label: 'Withdraw',
       detail: `${balance.symbol} · ${namespaceLabel(balance.chainNamespace)} · ${shortDestination(destination)} · reviewing · ${timestamp} · amount ${normalizedAmount}`,
+      href: '/withdraw',
     },
     ...entries,
   ]);

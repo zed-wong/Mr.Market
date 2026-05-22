@@ -2,6 +2,7 @@
   import { mockAccountActivityForNamespace } from '$lib/helpers/mock-web3';
   import { balances } from '$lib/stores/balances';
   import { fundingActivityForNamespace, sessionFundingActivity } from '$lib/stores/funding';
+  import { marketMakingActivityForNamespace, sessionMarketMakingActivity } from '$lib/stores/market-making';
   import {
     openMockWallet,
     setWalletDisconnected,
@@ -18,6 +19,7 @@
   let activityEntries = $derived(
     $walletIsConnected && !$walletIsUnsupported
       ? [
+          ...marketMakingActivityForNamespace($walletAccount?.namespace ?? null, $sessionMarketMakingActivity),
           ...fundingActivityForNamespace($walletAccount?.namespace ?? null, $sessionFundingActivity),
           ...mockAccountActivityForNamespace($walletAccount?.namespace ?? null),
         ]
@@ -86,10 +88,10 @@
       {#if activityEntries.length > 0}
         <div class="grid gap-3 md:grid-cols-3">
           {#each activityEntries as entry}
-            <div class="rounded-box border border-base-300 bg-base-200 p-4">
+            <a href={entry.href} class="rounded-box border border-base-300 bg-base-200 p-4 transition-colors hover:border-primary" data-testid="account-activity-link">
               <span class="font-semibold">{entry.label}</span>
               <span class="block text-sm text-base-content/60">{entry.detail}</span>
-            </div>
+            </a>
           {/each}
         </div>
       {:else if $walletIsUnsupported}

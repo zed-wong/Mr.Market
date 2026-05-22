@@ -2,10 +2,10 @@
   import { page } from '$app/stores';
   import {
     campaignEligibility,
-    mockCampaigns,
     namespaceLabel,
     type WalletNamespace,
   } from '$lib/helpers/mock-web3';
+  import { allCampaigns } from '$lib/stores/market-making';
   import {
     openMockWallet,
     walletIsConnected,
@@ -18,7 +18,7 @@
 
   const indicatorNamespaces: WalletNamespace[] = ['evm', 'solana'];
 
-  let campaign = $derived(mockCampaigns.find((item) => item.id === $page.params.id) ?? null);
+  let campaign = $derived($allCampaigns.find((item) => item.id === $page.params.id) ?? null);
   let eligibility = $derived(
     campaign
       ? campaignEligibility(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported)

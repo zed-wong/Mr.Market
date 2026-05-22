@@ -1,7 +1,11 @@
 <script lang="ts">
+  import { mockAccountActivityForNamespace } from '$lib/helpers/mock-web3';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
+  import { fundingActivityForNamespace, sessionFundingActivity } from '$lib/stores/funding';
+  import { marketMakingActivityForNamespace, sessionMarketMakingActivity } from '$lib/stores/market-making';
   import {
     openMockWallet,
+    walletAccount,
     walletIsConnected,
     walletIsUnsupported,
     walletNamespaceLabel,
@@ -9,6 +13,16 @@
     walletShortAddress,
     walletStatus,
   } from '$lib/stores/wallet';
+
+  let recentActivity = $derived(
+    $walletIsConnected && !$walletIsUnsupported
+      ? [
+          ...marketMakingActivityForNamespace($walletAccount?.namespace ?? null, $sessionMarketMakingActivity),
+          ...fundingActivityForNamespace($walletAccount?.namespace ?? null, $sessionFundingActivity),
+          ...mockAccountActivityForNamespace($walletAccount?.namespace ?? null),
+        ].slice(0, 5)
+      : []
+  );
 </script>
 
 <section class="space-y-6" data-testid="web3-home">
@@ -103,4 +117,20 @@
       {/if}
     </div>
   </div>
+
+  {#if recentActivity.length > 0}
+    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="home-recent-activity">
+      <div class="card-body gap-3">
+        <span class="font-semibold">Recent activity</span>
+        <div class="grid gap-3 md:grid-cols-2">
+          {#each recentActivity as entry}
+            <a href={entry.href} class="rounded-box border border-base-300 bg-base-200 p-4 transition-colors hover:border-primary" data-testid="home-activity-link">
+              <span class="font-semibold">{entry.label}</span>
+              <span class="block text-sm text-base-content/60">{entry.detail}</span>
+            </a>
+          {/each}
+        </div>
+      </div>
+    </div>
+  {/if}
 </section>

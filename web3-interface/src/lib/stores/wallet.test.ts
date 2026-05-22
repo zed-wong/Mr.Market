@@ -75,8 +75,8 @@ describe('mock wallet store', () => {
     expect(mockFundingActivityForNamespace(null)).toEqual([]);
     expect(mockAccountActivityForNamespace(null)).toEqual([]);
 
-    expect(mockOrdersForNamespace('evm').map((order) => order.id)).toEqual(['MM-1001']);
-    expect(mockOrdersForNamespace('solana').map((order) => order.id)).toEqual(['MM-2001']);
+    expect(mockOrdersForNamespace('evm').map((order) => order.id)).toEqual(['MM-1001', 'MM-1002', 'MM-1003']);
+    expect(mockOrdersForNamespace('solana').map((order) => order.id)).toEqual(['MM-2001', 'MM-2002', 'MM-2003']);
     expect(mockAccountActivityForNamespace('evm').some((entry) => entry.detail.includes('MM-2001'))).toBe(false);
     expect(mockAccountActivityForNamespace('solana').some((entry) => entry.detail.includes('MM-1001'))).toBe(false);
   });

@@ -51,9 +51,14 @@ export interface MockCampaign {
 export interface MockOrder {
   id: string;
   campaignId: string;
-  status: 'active' | 'completed' | 'pending';
+  status: MockOrderStatus;
   namespace: WalletNamespace;
   assets: string;
+  contributionAmount: string;
+  feeEstimate: string;
+  liquidityContribution: string;
+  expectedVolume: string;
+  expectedProfit: string;
   createdVolume: string;
   profit: string;
   placedOrders: number;
@@ -61,6 +66,29 @@ export interface MockOrder {
   successCount: number;
   failureCount: number;
   cancelCount: number;
+  createdAt: string;
+  updatedAt: string;
+  participation: 'created' | 'joined';
+  logs: MockOrderLog[];
+}
+
+export type MockOrderStatus =
+  | 'draft'
+  | 'pending'
+  | 'approval'
+  | 'signing'
+  | 'submitted'
+  | 'active'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'paused';
+
+export interface MockOrderLog {
+  timestamp: string;
+  label: string;
+  outcome: string;
+  status: MockOrderStatus;
 }
 
 export interface MockActivityEntry {
@@ -69,6 +97,7 @@ export interface MockActivityEntry {
   category: 'funding' | 'campaign' | 'order';
   label: string;
   detail: string;
+  href: string;
 }
 
 export type CampaignFilter = 'all' | 'evm' | 'solana' | 'eligible' | 'open' | 'active';
@@ -310,6 +339,11 @@ export const mockOrders: MockOrder[] = [
     status: 'active',
     namespace: 'evm',
     assets: 'ETH + USDC',
+    contributionAmount: '$2,500',
+    feeEstimate: '$8.75',
+    liquidityContribution: '$2,491.25',
+    expectedVolume: '$23,000',
+    expectedProfit: '+$60.00',
     createdVolume: '$124,000',
     profit: '+$318.44',
     placedOrders: 42,
@@ -317,6 +351,17 @@ export const mockOrders: MockOrder[] = [
     successCount: 39,
     failureCount: 2,
     cancelCount: 1,
+    createdAt: '2026-05-23 09:00',
+    updatedAt: '2026-05-23 09:45',
+    participation: 'joined',
+    logs: [
+      { timestamp: '2026-05-23 09:00', label: 'Order created', outcome: 'Draft converted into a mocked EVM market-making order.', status: 'pending' },
+      { timestamp: '2026-05-23 09:01', label: 'Mock approval completed', outcome: 'Reown-style token approval was accepted locally.', status: 'approval' },
+      { timestamp: '2026-05-23 09:02', label: 'Mock signing completed', outcome: 'Typed-data signature was simulated without wallet SDK activity.', status: 'signing' },
+      { timestamp: '2026-05-23 09:03', label: 'Submitted', outcome: 'Local submission queued the market-making lifecycle.', status: 'submitted' },
+      { timestamp: '2026-05-23 09:15', label: 'Order placement cycle', outcome: '42 maker orders placed with two retryable failures.', status: 'active' },
+      { timestamp: '2026-05-23 09:45', label: 'Fill update', outcome: '31.80 ETH filled; status remains active.', status: 'active' },
+    ],
   },
   {
     id: 'MM-2001',
@@ -324,6 +369,11 @@ export const mockOrders: MockOrder[] = [
     status: 'pending',
     namespace: 'solana',
     assets: 'SOL + USDC',
+    contributionAmount: '$250',
+    feeEstimate: '$0.88',
+    liquidityContribution: '$249.12',
+    expectedVolume: '$2,300',
+    expectedProfit: '+$6.00',
     createdVolume: '$0',
     profit: '$0.00',
     placedOrders: 0,
@@ -331,6 +381,124 @@ export const mockOrders: MockOrder[] = [
     successCount: 0,
     failureCount: 0,
     cancelCount: 0,
+    createdAt: '2026-05-23 08:30',
+    updatedAt: '2026-05-23 08:32',
+    participation: 'joined',
+    logs: [
+      { timestamp: '2026-05-23 08:30', label: 'Order created', outcome: 'Solana draft entered pending approval.', status: 'pending' },
+      { timestamp: '2026-05-23 08:31', label: 'Awaiting approval', outcome: 'Mocked Reown-style approval is pending; metrics remain zero.', status: 'approval' },
+      { timestamp: '2026-05-23 08:32', label: 'Status update', outcome: 'Order is pending and has not placed maker orders yet.', status: 'pending' },
+    ],
+  },
+  {
+    id: 'MM-1002',
+    campaignId: 'cross-chain-stable',
+    status: 'completed',
+    namespace: 'evm',
+    assets: 'USDC',
+    contributionAmount: '$5,000',
+    feeEstimate: '$17.50',
+    liquidityContribution: '$4,982.50',
+    expectedVolume: '$46,000',
+    expectedProfit: '+$120.00',
+    createdVolume: '$238,900',
+    profit: '+$512.08',
+    placedOrders: 88,
+    filledAmount: '238,900 USDC',
+    successCount: 84,
+    failureCount: 1,
+    cancelCount: 3,
+    createdAt: '2026-05-22 10:00',
+    updatedAt: '2026-05-23 07:30',
+    participation: 'created',
+    logs: [
+      { timestamp: '2026-05-22 10:00', label: 'Order created', outcome: 'Cross-chain stable campaign order was created.', status: 'pending' },
+      { timestamp: '2026-05-22 10:01', label: 'Approval and signing complete', outcome: 'Mock approval and signing completed locally.', status: 'submitted' },
+      { timestamp: '2026-05-22 10:10', label: 'Order placement cycle', outcome: '88 maker orders placed for EVM USDC inventory.', status: 'active' },
+      { timestamp: '2026-05-22 15:45', label: 'Fill update', outcome: '84 orders filled successfully.', status: 'active' },
+      { timestamp: '2026-05-23 07:30', label: 'Completed', outcome: 'Campaign lifecycle completed with positive profit.', status: 'completed' },
+    ],
+  },
+  {
+    id: 'MM-1003',
+    campaignId: 'eth-usdc-depth',
+    status: 'failed',
+    namespace: 'evm',
+    assets: 'ETH + USDC',
+    contributionAmount: '$750',
+    feeEstimate: '$2.63',
+    liquidityContribution: '$747.37',
+    expectedVolume: '$6,900',
+    expectedProfit: '+$18.00',
+    createdVolume: '$4,200',
+    profit: '-$12.40',
+    placedOrders: 9,
+    filledAmount: '1.10 ETH',
+    successCount: 6,
+    failureCount: 3,
+    cancelCount: 0,
+    createdAt: '2026-05-21 12:00',
+    updatedAt: '2026-05-21 12:40',
+    participation: 'joined',
+    logs: [
+      { timestamp: '2026-05-21 12:00', label: 'Order created', outcome: 'EVM order created from campaign detail.', status: 'pending' },
+      { timestamp: '2026-05-21 12:03', label: 'Submitted', outcome: 'Mock submission accepted.', status: 'submitted' },
+      { timestamp: '2026-05-21 12:25', label: 'Order placement cycle', outcome: 'Nine maker orders placed; failures exceeded retry budget.', status: 'active' },
+      { timestamp: '2026-05-21 12:40', label: 'Failure', outcome: 'Order marked failed after three placement failures.', status: 'failed' },
+    ],
+  },
+  {
+    id: 'MM-2002',
+    campaignId: 'sol-usdc-growth',
+    status: 'cancelled',
+    namespace: 'solana',
+    assets: 'SOL + USDC',
+    contributionAmount: '$900',
+    feeEstimate: '$3.15',
+    liquidityContribution: '$896.85',
+    expectedVolume: '$8,280',
+    expectedProfit: '+$21.60',
+    createdVolume: '$18,400',
+    profit: '+$34.25',
+    placedOrders: 21,
+    filledAmount: '83.5 SOL',
+    successCount: 18,
+    failureCount: 0,
+    cancelCount: 3,
+    createdAt: '2026-05-20 11:20',
+    updatedAt: '2026-05-20 14:00',
+    participation: 'joined',
+    logs: [
+      { timestamp: '2026-05-20 11:20', label: 'Order created', outcome: 'Solana market-making order was submitted.', status: 'submitted' },
+      { timestamp: '2026-05-20 11:35', label: 'Order placement cycle', outcome: '21 Solana maker orders placed.', status: 'active' },
+      { timestamp: '2026-05-20 13:10', label: 'Fill update', outcome: '18 orders filled before cancellation request.', status: 'active' },
+      { timestamp: '2026-05-20 14:00', label: 'Cancellation', outcome: 'Three remaining orders cancelled deterministically.', status: 'cancelled' },
+    ],
+  },
+  {
+    id: 'MM-2003',
+    campaignId: 'cross-chain-stable',
+    status: 'draft',
+    namespace: 'solana',
+    assets: 'USDC',
+    contributionAmount: '$1,000',
+    feeEstimate: '$3.50',
+    liquidityContribution: '$996.50',
+    expectedVolume: '$9,200',
+    expectedProfit: '+$24.00',
+    createdVolume: '$0',
+    profit: '$0.00',
+    placedOrders: 0,
+    filledAmount: '0 USDC',
+    successCount: 0,
+    failureCount: 0,
+    cancelCount: 0,
+    createdAt: '2026-05-23 09:10',
+    updatedAt: '2026-05-23 09:10',
+    participation: 'created',
+    logs: [
+      { timestamp: '2026-05-23 09:10', label: 'Draft saved', outcome: 'Draft order keeps zero metrics until approval starts.', status: 'draft' },
+    ],
   },
 ];
 
@@ -341,6 +509,7 @@ export const mockFundingActivity: MockActivityEntry[] = [
     category: 'funding',
     label: 'Deposit',
     detail: 'USDC · EVM · Ethereum · confirmed · 2026-05-23 09:00',
+    href: '/deposit',
   },
   {
     id: 'fund-sol-withdraw-sol',
@@ -348,6 +517,7 @@ export const mockFundingActivity: MockActivityEntry[] = [
     category: 'funding',
     label: 'Withdraw',
     detail: 'SOL · Solana / SVM · reviewing · 2026-05-23 08:30',
+    href: '/withdraw',
   },
 ];
 
@@ -357,42 +527,48 @@ export const mockAccountActivity: MockActivityEntry[] = [
     namespace: 'evm',
     category: 'funding',
     label: 'Funding',
-    detail: 'Deposit USDC confirmed on Ethereum',
+    detail: '2026-05-23 09:00 · Deposit USDC confirmed on Ethereum',
+    href: '/deposit',
   },
   {
     id: 'activity-evm-campaign',
     namespace: 'evm',
     category: 'campaign',
     label: 'Campaigns',
-    detail: 'Joined ETH / USDC Depth Builder',
+    detail: '2026-05-23 09:03 · Joined ETH / USDC Depth Builder',
+    href: '/market-making/campaign/eth-usdc-depth',
   },
   {
     id: 'activity-evm-order',
     namespace: 'evm',
     category: 'order',
     label: 'Market-making orders',
-    detail: 'MM-1001 active',
+    detail: '2026-05-23 09:45 · MM-1001 active',
+    href: '/market-making/order/MM-1001',
   },
   {
     id: 'activity-sol-funding',
     namespace: 'solana',
     category: 'funding',
     label: 'Funding',
-    detail: 'Withdrawal SOL reviewing on Solana / SVM',
+    detail: '2026-05-23 08:30 · Withdrawal SOL reviewing on Solana / SVM',
+    href: '/withdraw',
   },
   {
     id: 'activity-sol-campaign',
     namespace: 'solana',
     category: 'campaign',
     label: 'Campaigns',
-    detail: 'Joined SOL / USDC Growth Campaign',
+    detail: '2026-05-23 08:31 · Joined SOL / USDC Growth Campaign',
+    href: '/market-making/campaign/sol-usdc-growth',
   },
   {
     id: 'activity-sol-order',
     namespace: 'solana',
     category: 'order',
     label: 'Market-making orders',
-    detail: 'MM-2001 pending',
+    detail: '2026-05-23 08:32 · MM-2001 pending',
+    href: '/market-making/order/MM-2001',
   },
 ];
 

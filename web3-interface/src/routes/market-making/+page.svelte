@@ -3,28 +3,48 @@
     campaignEligibility,
     campaignFilterOptions,
     filterMockCampaigns,
-    mockCampaigns,
-    mockOrdersForNamespace,
     namespaceLabel,
     type CampaignFilter,
+    type MockCampaign,
+    type MockOrderStatus,
     type WalletNamespace,
   } from '$lib/helpers/mock-web3';
+  import { allCampaigns, allOrders, sessionCampaigns } from '$lib/stores/market-making';
   import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespace } from '$lib/stores/wallet';
 
   type DiscoveryState = 'loaded' | 'loading' | 'empty' | 'error';
+  type ChainFilter = 'all' | WalletNamespace;
+  type StatusFilter = 'all' | MockOrderStatus;
 
   const indicatorNamespaces: WalletNamespace[] = ['evm', 'solana'];
+  const statusFilterOptions: { value: StatusFilter; label: string }[] = [
+    { value: 'all', label: 'All statuses' },
+    { value: 'draft', label: 'Draft' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'active', label: 'Active' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'failed', label: 'Failed' },
+    { value: 'cancelled', label: 'Cancelled' },
+  ];
 
   let selectedFilter = $state<CampaignFilter>('all');
   let discoveryState = $state<DiscoveryState>('loaded');
+  let orderStatusFilter = $state<StatusFilter>('all');
+  let orderChainFilter = $state<ChainFilter>('all');
   let visibleCampaigns = $derived(
-    discoveryState === 'loaded' ? filterMockCampaigns(mockCampaigns, selectedFilter, $walletNamespace) : []
+    discoveryState === 'loaded' ? filterMockCampaigns($allCampaigns, selectedFilter, $walletNamespace) : []
   );
   let visibleOrders = $derived(
-    $walletIsConnected && !$walletIsUnsupported ? mockOrdersForNamespace($walletNamespace) : []
+    $walletIsConnected && !$walletIsUnsupported
+      ? $allOrders.filter((order) => {
+          const chainMatches = orderChainFilter === 'all' ? order.namespace === $walletNamespace : order.namespace === orderChainFilter;
+          const statusMatches = orderStatusFilter === 'all' || order.status === orderStatusFilter;
+          return chainMatches && statusMatches;
+        })
+      : []
   );
 
-  const actionLabel = (campaign: (typeof mockCampaigns)[number]) => {
+  const actionLabel = (campaign: MockCampaign) => {
     if (!$walletIsConnected && !$walletIsUnsupported) return 'Connect to join';
     if ($walletIsUnsupported) return 'Unsupported chain';
     const eligibility = campaignEligibility(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported);
@@ -80,7 +100,7 @@
         </label>
 
         <span class="rounded-box bg-base-200 px-4 py-3 text-sm text-base-content/70" data-testid="campaign-filter-summary">
-          Showing {visibleCampaigns.length} of {mockCampaigns.length} mocked campaigns.
+          Showing {visibleCampaigns.length} of {$allCampaigns.length} mocked campaigns.
         </span>
       </div>
     </div>
@@ -197,21 +217,53 @@
   <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="my-campaigns-orders">
     <div class="card-body gap-3">
       {#if $walletIsConnected && !$walletIsUnsupported}
-        <span class="font-semibold">My mocked campaigns / orders</span>
-        {#if visibleOrders.length > 0}
-          <div class="grid gap-3 md:grid-cols-2">
-            {#each visibleOrders as order}
-              <a href="/market-making/order/{order.id}" class="rounded-box border border-base-300 bg-base-200 p-4">
-                <span class="font-semibold">{order.id} · {order.assets}</span>
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <span class="font-semibold">My mocked campaigns / orders</span>
+          <div class="flex flex-wrap gap-3">
+            <label class="form-control">
+              <span class="label-text mb-1">Order status</span>
+              <select class="select select-bordered select-sm" bind:value={orderStatusFilter} data-testid="my-orders-status-filter">
+                {#each statusFilterOptions as option}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="form-control">
+              <span class="label-text mb-1">Chain</span>
+              <select class="select select-bordered select-sm" bind:value={orderChainFilter} data-testid="my-orders-chain-filter">
+                <option value="all">Current wallet namespace</option>
+                <option value="evm">EVM</option>
+                <option value="solana">Solana / SVM</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        {#if $sessionCampaigns.length > 0}
+          <div class="grid gap-3 md:grid-cols-2" data-testid="created-campaigns-list">
+            {#each $sessionCampaigns as campaign}
+              <a href="/market-making/campaign/{campaign.id}" class="rounded-box border border-base-300 bg-base-200 p-4">
+                <span class="font-semibold">Created campaign · {campaign.name}</span>
                 <span class="block text-sm text-base-content/60">
-                  {order.status} {namespaceLabel(order.namespace)} order · created volume {order.createdVolume}
+                  {campaign.status} · {campaign.chains.map(namespaceLabel).join(', ')} · {campaign.assets.join(', ')} · goal {campaign.metrics.liquidityGoal}
+                </span>
+              </a>
+            {/each}
+          </div>
+        {/if}
+        {#if visibleOrders.length > 0}
+          <div class="grid gap-3 md:grid-cols-2" data-testid="my-orders-list">
+            {#each visibleOrders as order}
+              <a href="/market-making/order/{order.id}" class="rounded-box border border-base-300 bg-base-200 p-4" data-testid="my-order-{order.status}-{order.namespace}">
+                <span class="font-semibold">{order.participation === 'created' ? 'Created' : 'Joined'} order · {order.id} · {order.assets}</span>
+                <span class="block text-sm text-base-content/60">
+                  {order.status} {namespaceLabel(order.namespace)} order · created volume {order.createdVolume} · profit {order.profit}
                 </span>
               </a>
             {/each}
           </div>
         {:else}
-          <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
-            No campaign participation for the selected mocked account.
+          <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70" data-testid="my-orders-empty-state">
+            No campaign participation matches the selected status and chain filters.
           </span>
         {/if}
       {:else if $walletIsUnsupported}

@@ -151,10 +151,10 @@
       <div class="card-body gap-3">
         <span class="font-semibold">Funding activity updated by deposits</span>
         {#each fundingActivity as entry}
-          <div class="rounded-box border border-base-300 bg-base-200 p-3">
+          <a href={entry.href} class="rounded-box border border-base-300 bg-base-200 p-3 transition-colors hover:border-primary" data-testid="deposit-activity-link">
             <span class="font-semibold">{entry.label}</span>
             <span class="block text-sm text-base-content/60">{entry.detail}</span>
-          </div>
+          </a>
         {/each}
       </div>
     </div>
