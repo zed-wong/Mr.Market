@@ -61,6 +61,8 @@ describe('ExchangeConnectorAdapterService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    exchange.markets['BTC/USDT'].maker = 0.001;
+    exchange.markets['BTC/USDT'].taker = 0.002;
   });
 
   it('places and cancels limit orders through adapter', async () => {
@@ -179,6 +181,23 @@ describe('ExchangeConnectorAdapterService', () => {
     await service.fetchBalance('binance');
 
     expect(exchange.fetchBalance).toHaveBeenCalled();
+  });
+
+  it('loads MEXC trading fees from ccxt market data without overrides', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    exchange.markets['BTC/USDT'].maker = 0.0015;
+    exchange.markets['BTC/USDT'].taker = 0.0025;
+
+    await expect(service.loadTradingRules('mexc', 'BTC/USDT')).resolves.toEqual(
+      expect.objectContaining({
+        makerFee: 0.0015,
+        takerFee: 0.0025,
+      }),
+    );
   });
 
   it('quantizes orders through ccxt precision helpers', () => {

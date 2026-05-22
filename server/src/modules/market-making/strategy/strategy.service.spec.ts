@@ -211,7 +211,12 @@ describe('StrategyService', () => {
     balanceLedgerService = {
       adjust: jest.fn().mockResolvedValue({ applied: true }),
       debitFee: jest.fn().mockResolvedValue({ applied: true }),
-      getExistingBalance: jest.fn().mockResolvedValue(null),
+      getExistingBalance: jest.fn(async (_orderId: string, assetId: string) => {
+        const available =
+          cachedBalancesByAccount.default?.[assetId.toUpperCase()] || '0';
+
+        return { available, total: available };
+      }),
       isReservationPaused: jest.fn().mockReturnValue(false),
     };
     setCachedBalances({
@@ -921,19 +926,19 @@ describe('StrategyService', () => {
       1,
       expect.objectContaining({
         idempotencyKey:
-          'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:1.5:base',
+          'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
     );
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
         idempotencyKey:
-          'mm-fill:client1-pureMarketMaking:ex-1:client1:0:buy:100:1.5:base',
+          'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
     );
   });
 
-  it('prefers fillId over receivedAt when building ledger idempotency keys', async () => {
+  it('uses cumulative order progress before fillId when building ledger idempotency keys', async () => {
     const strategyParamsDto: PureMarketMakingStrategyDto = {
       userId: '1',
       clientId: 'client1',
@@ -980,13 +985,14 @@ describe('StrategyService', () => {
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:client1-pureMarketMaking:fill-123:base',
+        idempotencyKey:
+          'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
     );
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:client1-pureMarketMaking:fill-123:base',
+        idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:99:base',
       }),
     );
   });
@@ -2643,6 +2649,137 @@ describe('StrategyService', () => {
       expect.objectContaining({
         currentBaseRatio: 200 / 300,
       }),
+    );
+  });
+
+  it('uses order-scoped ledger balances for pure market making quote validation', async () => {
+    setCachedBalances({
+      '2': { XIN: 0.02 },
+    });
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(
+      59.635,
+    );
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 59.51,
+      bestAsk: 59.76,
+    });
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (_orderId: string, assetId: string) => {
+        if (assetId === 'XIN') {
+          return { available: '0.02', total: '0.02' };
+        }
+
+        if (assetId === 'USDT') {
+          return { available: '1.193', total: '1.193' };
+        }
+
+        return null;
+      },
+    );
+    exchangeConnectorAdapterService.loadTradingRules.mockResolvedValue({
+      amountMin: 0.001,
+      costMin: 1,
+      makerFee: 0,
+    });
+
+    const actions = await service.buildPureMarketMakingActions(
+      'mm-order-1-pureMarketMaking',
+      {
+        userId: 'user-1',
+        clientId: 'mm-order-1',
+        marketMakingOrderId: 'mm-order-1',
+        pair: 'XIN/USDT',
+        exchangeName: 'mexc',
+        accountLabel: '2',
+        bidSpread: 0.0045,
+        askSpread: 0.0045,
+        orderAmount: 0.02,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'CREATE_LIMIT_ORDER', side: 'buy' }),
+        expect.objectContaining({ type: 'CREATE_LIMIT_ORDER', side: 'sell' }),
+      ]),
+    );
+    expect(balanceStateCacheService.getBalance).not.toHaveBeenCalledWith(
+      'mexc',
+      '2',
+      'USDT',
+    );
+    expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
+      'mm-order-1',
+      'USDT',
+    );
+  });
+
+  it('does not apply a maker fee spread floor when ccxt reports zero maker fee', async () => {
+    (service as any).exchangeInitService.getExchange = jest
+      .fn()
+      .mockReturnValue({
+        id: 'mexc',
+        markets: {
+          'BTC/USDT': {
+            maker: 0,
+          },
+        },
+        fees: {
+          trading: {
+            maker: 0,
+          },
+        },
+      });
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
+      bestBid: 99,
+      bestAsk: 101,
+    });
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (_orderId: string, assetId: string) => {
+        if (assetId === 'BTC') {
+          return { available: '1', total: '1' };
+        }
+
+        if (assetId === 'USDT') {
+          return { available: '1000', total: '1000' };
+        }
+
+        return null;
+      },
+    );
+
+    const actions = await service.buildPureMarketMakingActions(
+      'mm-order-1-pureMarketMaking',
+      {
+        userId: 'user-1',
+        clientId: 'mm-order-1',
+        marketMakingOrderId: 'mm-order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'mexc',
+        bidSpread: 0.001,
+        askSpread: 0.001,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'CREATE_LIMIT_ORDER', side: 'buy' }),
+        expect.objectContaining({ type: 'CREATE_LIMIT_ORDER', side: 'sell' }),
+      ]),
     );
   });
 

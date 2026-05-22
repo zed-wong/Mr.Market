@@ -4137,6 +4137,7 @@ export class StrategyService
       params.exchangeName,
       params.pair,
       params.accountLabel,
+      params.marketMakingOrderId,
     );
     const effectiveNumberOfLayers = warmupState.active
       ? 1
@@ -6889,7 +6890,7 @@ export class StrategyService
       const exchange = this.exchangeInitService.getExchange(exchangeName);
       const market = exchange?.markets?.[pair];
       const makerFee = Number(
-        market?.maker || exchange?.fees?.trading?.maker || 0,
+        market?.maker ?? exchange?.fees?.trading?.maker ?? 0,
       );
 
       return Number.isFinite(makerFee) && makerFee > 0 ? makerFee * 2 : 0;
@@ -6927,6 +6928,7 @@ export class StrategyService
     exchangeName: string,
     pair: string,
     accountLabel?: string,
+    marketMakingOrderId?: string,
   ): Promise<{
     base: BigNumber;
     quote: BigNumber;
@@ -6936,6 +6938,31 @@ export class StrategyService
 
     if (!assets) {
       return null;
+    }
+
+    const orderId = String(marketMakingOrderId || '').trim();
+
+    if (orderId && this.balanceLedgerService) {
+      try {
+        const [baseBalance, quoteBalance] = await Promise.all([
+          this.balanceLedgerService.getExistingBalance(orderId, assets.base),
+          this.balanceLedgerService.getExistingBalance(orderId, assets.quote),
+        ]);
+
+        return {
+          base: new BigNumber(baseBalance?.available || 0),
+          quote: new BigNumber(quoteBalance?.available || 0),
+          assets,
+        };
+      } catch (error) {
+        this.logger.warn(
+          `Failed to read order-scoped balances for ${orderId} ${pair}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+
+        return null;
+      }
     }
 
     const normalizedAccountLabel = accountLabel || 'default';

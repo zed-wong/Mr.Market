@@ -904,10 +904,22 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       status,
       createdAt: previousOrder.createdAt || nextOrder.createdAt,
       clientOrderId: nextOrder.clientOrderId || previousOrder.clientOrderId,
+      price: this.isPositiveFinite(nextOrder.price)
+        ? nextOrder.price
+        : previousOrder.price,
+      qty: this.isPositiveFinite(nextOrder.qty)
+        ? nextOrder.qty
+        : previousOrder.qty,
       cumulativeFilledQty: this.normalizeCumulativeFilledQty(
         BigNumber.max(previousFilledQty, nextFilledQty).toFixed(),
       ),
     };
+  }
+
+  private isPositiveFinite(value: unknown): boolean {
+    const numericValue = new BigNumber(String(value ?? ''));
+
+    return numericValue.isFinite() && numericValue.isGreaterThan(0);
   }
 
   private normalizeCumulativeFilledQty(value: unknown): string | undefined {

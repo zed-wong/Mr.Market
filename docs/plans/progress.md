@@ -1,5 +1,10 @@
 # Execution Flow Changelog
 
+## 2026-05-22
+
+- Fix PMM executable quote checks to use order-scoped ledger available balances when `marketMakingOrderId` is present, and keep PMM spread floors/trading rules tied to ccxt market maker/taker fee data without exchange-specific overrides.
+- Fix tracked-order terminal merge so cancelled/filled updates that omit usable price or quantity preserve the existing tracked order values before releasing order-scoped reservations.
+
 ## 2026-05-21
 
 - Start Phase 0 of `docs/plans/2026-05-21-adaptive-pmm-plan.md`: keep adaptive PMM market signals as optional tracked-data primitives by recording accepted order-book mid-price history, exposing tracked-only reference price snapshots, microprice, depth imbalance, and realized volatility through the strategy market-data provider, and adding focused coverage that these signal reads do not call connector/ticker fallback paths.

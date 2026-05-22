@@ -37,6 +37,7 @@ export class ExchangeConnectorAdapterService {
       costMin?: number;
       costMax?: number;
       makerFee?: number;
+      takerFee?: number;
     }
   >();
 
@@ -306,10 +307,10 @@ export class ExchangeConnectorAdapterService {
           costMin: this.toFiniteNumber(market?.limits?.cost?.min),
           costMax: this.toFiniteNumber(market?.limits?.cost?.max),
           makerFee: this.toFiniteNumber(
-            market?.maker || exchange?.fees?.trading?.maker,
+            market?.maker ?? exchange?.fees?.trading?.maker,
           ),
           takerFee: this.toFiniteNumber(
-            market?.taker || exchange?.fees?.trading?.taker,
+            market?.taker ?? exchange?.fees?.trading?.taker,
           ),
         };
 

@@ -1793,7 +1793,7 @@ export class AdminDirectMarketMakingService {
     );
     const market = exchange?.markets?.[pair];
     const makerFee = Number(
-      market?.maker || exchange?.fees?.trading?.maker || 0,
+      market?.maker ?? exchange?.fees?.trading?.maker ?? 0,
     );
     const feeFloor =
       Number.isFinite(makerFee) && makerFee > 0 ? makerFee * 2 : 0;

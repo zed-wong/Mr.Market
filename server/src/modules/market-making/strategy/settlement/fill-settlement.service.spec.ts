@@ -81,6 +81,52 @@ describe('FillSettlementService', () => {
     });
   });
 
+  it('uses cumulative order progress before fill id for cross-source idempotency', async () => {
+    const service = new FillSettlementService(balanceLedgerService as any);
+
+    await service.settleFill({
+      strategyKey: 'strategy-1',
+      orderId: 'order-1',
+      userId: 'user-1',
+      pair: 'BTC/USDT',
+      fill: {
+        exchangeOrderId: 'ex-1',
+        fillId: 'fill-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        cumulativeQty: '0.5',
+      },
+    });
+    await service.settleFill({
+      strategyKey: 'strategy-1',
+      orderId: 'order-1',
+      userId: 'user-1',
+      pair: 'BTC/USDT',
+      fill: {
+        exchangeOrderId: 'ex-1',
+        clientOrderId: 'client-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        cumulativeQty: '0.5',
+      },
+    });
+
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:base',
+      }),
+    );
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:base',
+      }),
+    );
+  });
+
   it('does not throw when actual fill fee debit requires manual review', async () => {
     const service = new FillSettlementService(balanceLedgerService as any);
     const logger = Reflect.get(service, 'logger') as {

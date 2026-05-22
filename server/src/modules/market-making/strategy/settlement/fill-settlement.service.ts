@@ -159,17 +159,31 @@ export class FillSettlementService {
 
   private buildFillLedgerEventKey(command: FillSettlementCommand): string {
     const fill = command.fill;
+    const cumulativeQty = this.normalizePositiveNumber(fill.cumulativeQty);
+    const orderIdentity = fill.exchangeOrderId || fill.clientOrderId;
     const stableIdentity =
-      fill.fillId ||
-      [
-        fill.exchangeOrderId || '',
-        fill.clientOrderId || '',
-        fill.side || '',
-        fill.price || '',
-        fill.cumulativeQty || fill.qty || '',
-      ].join(':');
+      orderIdentity && fill.side && cumulativeQty
+        ? [orderIdentity, fill.side, cumulativeQty].join(':')
+        : fill.fillId ||
+          [
+            fill.exchangeOrderId || '',
+            fill.clientOrderId || '',
+            fill.side || '',
+            fill.price || '',
+            fill.qty || '',
+          ].join(':');
 
     return ['mm-fill', command.strategyKey, stableIdentity].join(':');
+  }
+
+  private normalizePositiveNumber(value: unknown): string | null {
+    const numericValue = new BigNumber(String(value ?? ''));
+
+    if (!numericValue.isFinite() || numericValue.isLessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    return numericValue.toFixed();
   }
 
   private resolveRefId(command: FillSettlementCommand): string {

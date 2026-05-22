@@ -127,6 +127,70 @@ describe('ExchangeOrderTrackerService', () => {
     });
   });
 
+  it('preserves previous price and qty when a terminal update omits usable values', async () => {
+    const marketMakingOrderRepository = {
+      findOne: jest.fn().mockResolvedValue({ userId: 'admin-direct' }),
+    };
+    const orderReservationService = {
+      releaseLimitOrderReservation: jest.fn().mockResolvedValue({
+        applied: true,
+      }),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      marketMakingOrderRepository as any,
+      undefined,
+      orderReservationService as any,
+    );
+
+    service.upsertOrder({
+      orderId: 'order-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      exchange: 'mexc',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'client-1',
+      side: 'sell',
+      price: '59.65',
+      qty: '0.02',
+      cumulativeFilledQty: '0',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'order-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      exchange: 'mexc',
+      pair: 'XIN/USDT',
+      exchangeOrderId: 'ex-1',
+      clientOrderId: 'client-1',
+      side: 'sell',
+      price: '0',
+      qty: '0',
+      cumulativeFilledQty: '0',
+      status: 'cancelled',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:01.000Z',
+    });
+
+    await flushPromises();
+
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        side: 'sell',
+        price: '59.65',
+        qty: '0.02',
+        reason: 'exchange_order_cancelled',
+      }),
+    );
+  });
+
   it('skips terminal reservation release when disabled by caller', async () => {
     const orderReservationService = {
       releaseLimitOrderReservation: jest.fn().mockResolvedValue({
