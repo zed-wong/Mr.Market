@@ -27,6 +27,7 @@ export const NAV_ITEMS: NavGroup[] = [
       { key: 'trading.positions', label: 'admin.nav.positions', href: '/trading/positions' },
       { key: 'trading.orders', label: 'admin.nav.orders', href: '/trading/orders' },
       { key: 'trading.exchanges', label: 'admin.nav.exchanges', href: '/trading/exchanges' },
+      { key: 'trading.market_making', label: 'admin.nav.market_making', href: '/trading/market-making' },
       { key: 'trading.rebalance', label: 'admin.nav.rebalance', href: '/trading/rebalance' },
     ],
   },
@@ -36,7 +37,7 @@ export const NAV_ITEMS: NavGroup[] = [
     children: [
       { key: 'system.health', label: 'admin.nav.health', href: '/system/health' },
       { key: 'system.logs', label: 'admin.nav.logs', href: '/system/logs' },
-      { key: 'system.users', label: 'admin.nav.users', href: '/system/users' },
+      { key: 'system.passkeys', label: 'admin.nav.passkeys', href: '/system/passkeys' },
       { key: 'system.audit', label: 'admin.nav.audit_log', href: '/system/audit' },
       { key: 'system.api_keys', label: 'admin.nav.api_keys', href: '/system/api-keys' },
       { key: 'system.config', label: 'admin.nav.system_config', href: '/system/config' },
