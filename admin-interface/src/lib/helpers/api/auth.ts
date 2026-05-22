@@ -25,6 +25,7 @@ export const login = async (password: string): Promise<boolean> => {
     const result = await apiFetch<AuthTokenResponse>('/auth/login', {
       method: 'POST',
       json: { password },
+      suppressSessionExpired: true,
     });
     setAccessToken(result.access_token);
   } catch (err) {
@@ -46,7 +47,7 @@ export const checkSession = async (): Promise<AdminSession | null> => {
     });
     return res ?? null;
   } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
+    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       return null;
     }
     throw err;

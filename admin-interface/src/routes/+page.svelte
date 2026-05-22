@@ -29,7 +29,6 @@
     fill: 'bg-success/10 text-success',
     place: 'bg-info/10 text-info',
     cancel: 'bg-base-content/5 text-base-content/60',
-    rebalance: 'bg-warning/10 text-warning',
     reward: 'bg-accent/15 text-accent',
     withdraw: 'bg-error/10 text-error',
   };

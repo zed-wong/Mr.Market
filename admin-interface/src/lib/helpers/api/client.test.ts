@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { get } from 'svelte/store';
 
 const storage = new Map<string, string>();
 
@@ -57,5 +58,25 @@ describe('apiFetch', () => {
 
     await expect(apiFetch('/session', { suppressSessionExpired: true })).rejects.toThrow('Session expired');
     expect(getAccessToken()).toBeNull();
+  });
+
+  it('clears stored token and reports expired sessions on forbidden responses', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ message: 'forbidden' }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    const { apiFetch, getAccessToken, setAccessToken } = await import('./client');
+    const { showSessionExpired } = await import('$lib/stores/auth');
+    setAccessToken('expired-token');
+
+    await expect(apiFetch('/session')).rejects.toThrow('Session expired');
+    expect(getAccessToken()).toBeNull();
+    expect(get(showSessionExpired)).toBe(true);
   });
 });

@@ -25,7 +25,7 @@ export interface Strategy {
 export interface Intent {
   id: string;
   ts: string; // HH:MM:SS
-  kind: 'fill' | 'place' | 'cancel' | 'rebalance' | 'reward' | 'withdraw';
+  kind: 'fill' | 'place' | 'cancel' | 'reward' | 'withdraw';
   side: 'buy' | 'sell' | null;
   symbol: string;
   qty: string;
@@ -187,16 +187,6 @@ export const intents: Intent[] = [
     qty: '24.00',
     exchange: 'okx',
     status: 'ok',
-  },
-  {
-    id: 'i_01HX05',
-    ts: '12:01:47',
-    kind: 'rebalance',
-    side: null,
-    symbol: 'USDT',
-    qty: '12,400.00',
-    exchange: 'binance → okx',
-    status: 'pending',
   },
   {
     id: 'i_01HX06',

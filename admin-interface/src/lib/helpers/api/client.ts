@@ -65,7 +65,7 @@ export const apiFetch = async <T = unknown>(path: string, options: RequestOption
     body: json !== undefined ? JSON.stringify(json) : (rest as RequestInit).body,
   });
 
-  if (response.status === 401) {
+  if (response.status === 401 || response.status === 403) {
     clearAccessToken();
     if (!suppressSessionExpired) {
       showSessionExpired.set(true);
