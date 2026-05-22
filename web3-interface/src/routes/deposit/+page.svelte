@@ -5,10 +5,11 @@
     depositAddressFor,
     depositInstructionFor,
     depositTimeline,
-    fundingActivityForNamespace,
+    fundingActivityForAccount,
     minimumDepositFor,
     sessionFundingActivity,
     suggestedDepositAmountFor,
+    validateMockDeposit,
     type MockFundingResult,
   } from '$lib/stores/funding';
   import {
@@ -16,7 +17,6 @@
     walletAccount,
     walletIsConnected,
     walletIsUnsupported,
-    walletNamespace,
     walletNamespaceLabel,
     walletNetwork,
     walletShortAddress,
@@ -33,10 +33,18 @@
   let timeline = $derived(depositResult?.timeline ?? depositTimeline(false));
   let fundingActivity = $derived(
     $walletIsConnected && !$walletIsUnsupported
-      ? fundingActivityForNamespace($walletNamespace, $sessionFundingActivity)
+      ? fundingActivityForAccount($walletAccount?.id, $walletAccount?.namespace ?? null, $sessionFundingActivity)
       : []
   );
-  let simulationDisabled = $derived(!$walletAccount || !selectedBalance || !depositAmount);
+  let depositValidationErrors = $derived(
+    validateMockDeposit({
+      balance: selectedBalance,
+      amount: depositAmount,
+    })
+  );
+  let simulationDisabled = $derived(
+    !$walletAccount || $walletIsUnsupported || !selectedBalance || Object.keys(depositValidationErrors).length > 0
+  );
 
   $effect(() => {
     const availableAssets = $balances.map((balance) => balance.asset);
@@ -58,7 +66,7 @@
   };
 
   const simulateDeposit = () => {
-    if (!$walletAccount || !selectedBalance) return;
+    if (!$walletAccount || !selectedBalance || simulationDisabled) return;
     depositResult = completeMockDeposit($walletAccount.id, selectedBalance, depositAmount);
   };
 </script>
@@ -105,6 +113,9 @@
             <span class="label-text-alt mt-1 text-base-content/60">
               Minimum note: {minimumDepositFor(selectedBalance)} {selectedBalance?.symbol ?? 'asset'} · available after simulation.
             </span>
+            {#if depositValidationErrors.amount}
+              <span class="label-text-alt mt-1 text-error" data-testid="deposit-amount-error">{depositValidationErrors.amount}</span>
+            {/if}
           </label>
           <button class="btn btn-primary" disabled={simulationDisabled} onclick={simulateDeposit} data-testid="simulate-deposit-button">
             Simulate mocked deposit

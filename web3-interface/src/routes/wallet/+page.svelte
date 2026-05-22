@@ -1,11 +1,11 @@
 <script lang="ts">
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
-  import { fundingActivityForNamespace, sessionFundingActivity } from '$lib/stores/funding';
-  import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespace, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
+  import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
+  import { openMockWallet, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
 
   let fundingActivity = $derived(
     $walletIsConnected && !$walletIsUnsupported
-      ? fundingActivityForNamespace($walletNamespace, $sessionFundingActivity)
+      ? fundingActivityForAccount($walletAccount?.id, $walletAccount?.namespace ?? null, $sessionFundingActivity)
       : []
   );
 </script>

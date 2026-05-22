@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { mockAccountActivityForNamespace } from '$lib/helpers/mock-web3';
+  import { aggregateMockActivityEntries, mockAccountActivityForAccount } from '$lib/helpers/mock-web3';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
-  import { fundingActivityForNamespace, sessionFundingActivity } from '$lib/stores/funding';
-  import { marketMakingActivityForNamespace, sessionMarketMakingActivity } from '$lib/stores/market-making';
+  import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
+  import { marketMakingActivityForAccount, sessionMarketMakingActivity } from '$lib/stores/market-making';
   import {
     openMockWallet,
     walletAccount,
@@ -16,11 +16,11 @@
 
   let recentActivity = $derived(
     $walletIsConnected && !$walletIsUnsupported
-      ? [
-          ...marketMakingActivityForNamespace($walletAccount?.namespace ?? null, $sessionMarketMakingActivity),
-          ...fundingActivityForNamespace($walletAccount?.namespace ?? null, $sessionFundingActivity),
-          ...mockAccountActivityForNamespace($walletAccount?.namespace ?? null),
-        ].slice(0, 5)
+      ? aggregateMockActivityEntries(
+          marketMakingActivityForAccount($walletAccount?.id, $walletAccount?.namespace ?? null, $sessionMarketMakingActivity),
+          fundingActivityForAccount($walletAccount?.id, $walletAccount?.namespace ?? null, $sessionFundingActivity),
+          mockAccountActivityForAccount($walletAccount?.id, $walletAccount?.namespace ?? null)
+        ).slice(0, 5)
       : []
   );
 </script>

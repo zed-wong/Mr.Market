@@ -1,7 +1,7 @@
 <script lang="ts">
   import { namespaceLabel, type MockCampaign, type WalletNamespace } from '$lib/helpers/mock-web3';
   import { createMockCampaign, validateCampaignCreation, type CampaignCreationInput } from '$lib/stores/market-making';
-  import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespace, walletNamespaceLabel } from '$lib/stores/wallet';
+  import { openMockWallet, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespace, walletNamespaceLabel } from '$lib/stores/wallet';
 
   let form = $state<CampaignCreationInput>({
     name: '',
@@ -31,7 +31,7 @@
     attemptedSubmit = true;
     createdCampaign = null;
     if (!canSubmit) return;
-    createdCampaign = createMockCampaign(form);
+    createdCampaign = createMockCampaign(form, $walletAccount?.id);
   };
 </script>
 

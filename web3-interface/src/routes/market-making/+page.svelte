@@ -10,10 +10,10 @@
     type WalletNamespace,
   } from '$lib/helpers/mock-web3';
   import { allCampaigns, allOrders, sessionCampaigns } from '$lib/stores/market-making';
-  import { openMockWallet, walletIsConnected, walletIsUnsupported, walletNamespace } from '$lib/stores/wallet';
+  import { openMockWallet, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespace } from '$lib/stores/wallet';
 
   type DiscoveryState = 'loaded' | 'loading' | 'empty' | 'error';
-  type ChainFilter = 'all' | WalletNamespace;
+  type ChainFilter = 'active-account';
   type StatusFilter = 'all' | MockOrderStatus;
 
   const indicatorNamespaces: WalletNamespace[] = ['evm', 'solana'];
@@ -21,25 +21,39 @@
     { value: 'all', label: 'All statuses' },
     { value: 'draft', label: 'Draft' },
     { value: 'pending', label: 'Pending' },
+    { value: 'approval', label: 'Approval' },
+    { value: 'signing', label: 'Signing' },
+    { value: 'submitted', label: 'Submitted' },
     { value: 'active', label: 'Active' },
     { value: 'completed', label: 'Completed' },
     { value: 'failed', label: 'Failed' },
     { value: 'cancelled', label: 'Cancelled' },
+    { value: 'paused', label: 'Paused' },
   ];
 
   let selectedFilter = $state<CampaignFilter>('all');
   let discoveryState = $state<DiscoveryState>('loaded');
   let orderStatusFilter = $state<StatusFilter>('all');
-  let orderChainFilter = $state<ChainFilter>('all');
+  let orderChainFilter = $state<ChainFilter>('active-account');
   let visibleCampaigns = $derived(
-    discoveryState === 'loaded' ? filterMockCampaigns($allCampaigns, selectedFilter, $walletNamespace) : []
+    discoveryState === 'loaded'
+      ? filterMockCampaigns($allCampaigns, selectedFilter, $walletNamespace, $walletIsConnected, $walletIsUnsupported)
+      : []
+  );
+  let visibleCreatedCampaigns = $derived(
+    $walletIsConnected && !$walletIsUnsupported
+      ? $sessionCampaigns.filter(
+          (campaign) => campaign.accountId === $walletAccount?.id && campaign.chains.includes($walletNamespace as WalletNamespace)
+        )
+      : []
   );
   let visibleOrders = $derived(
     $walletIsConnected && !$walletIsUnsupported
       ? $allOrders.filter((order) => {
-          const chainMatches = orderChainFilter === 'all' ? order.namespace === $walletNamespace : order.namespace === orderChainFilter;
+          const chainMatches = orderChainFilter === 'active-account' && order.namespace === $walletNamespace;
+          const accountMatches = order.accountId === $walletAccount?.id;
           const statusMatches = orderStatusFilter === 'all' || order.status === orderStatusFilter;
-          return chainMatches && statusMatches;
+          return accountMatches && chainMatches && statusMatches;
         })
       : []
   );
@@ -231,16 +245,14 @@
             <label class="form-control">
               <span class="label-text mb-1">Chain</span>
               <select class="select select-bordered select-sm" bind:value={orderChainFilter} data-testid="my-orders-chain-filter">
-                <option value="all">Current wallet namespace</option>
-                <option value="evm">EVM</option>
-                <option value="solana">Solana / SVM</option>
+                <option value="active-account">Active account namespace only</option>
               </select>
             </label>
           </div>
         </div>
-        {#if $sessionCampaigns.length > 0}
+        {#if visibleCreatedCampaigns.length > 0}
           <div class="grid gap-3 md:grid-cols-2" data-testid="created-campaigns-list">
-            {#each $sessionCampaigns as campaign}
+            {#each visibleCreatedCampaigns as campaign}
               <a href="/market-making/campaign/{campaign.id}" class="rounded-box border border-base-300 bg-base-200 p-4">
                 <span class="font-semibold">Created campaign · {campaign.name}</span>
                 <span class="block text-sm text-base-content/60">

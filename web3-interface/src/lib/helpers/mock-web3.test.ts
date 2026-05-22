@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aggregateMockActivityEntries,
   campaignEligibility,
   campaignSupportsNamespace,
   filterMockCampaigns,
+  mockAccountActivityForAccount,
   mockCampaigns,
 } from './mock-web3';
 
@@ -24,7 +26,9 @@ describe('mock campaign discovery helpers', () => {
       'eth-usdc-depth',
       'cross-chain-stable',
     ]);
-    expect(filterMockCampaigns(mockCampaigns, 'eligible', null)).toEqual([]);
+    expect(filterMockCampaigns(mockCampaigns, 'eligible', 'evm', true, true)).toEqual([]);
+    expect(filterMockCampaigns(mockCampaigns, 'eligible', 'evm', false, false)).toEqual([]);
+    expect(filterMockCampaigns(mockCampaigns, 'eligible', null, false, false)).toEqual([]);
   });
 
   it('derives namespace-specific campaign eligibility and unsupported-chain guards', () => {
@@ -58,5 +62,30 @@ describe('mock campaign discovery helpers', () => {
       canParticipate: false,
       label: 'Connect wallet',
     });
+  });
+
+  it('aggregates account activity in deterministic newest-first timestamp order', () => {
+    const activity = aggregateMockActivityEntries(
+      mockAccountActivityForAccount('evm-primary', 'evm'),
+      [
+        {
+          id: 'activity-test-deposit',
+          accountId: 'evm-primary',
+          namespace: 'evm',
+          category: 'funding',
+          label: 'Deposit',
+          detail: 'USDC · EVM · credited · 2026-05-23 09:15',
+          href: '/deposit',
+          timestamp: '2026-05-23 09:15',
+        },
+      ]
+    );
+
+    expect(activity.map((entry) => entry.id)).toEqual([
+      'activity-evm-order',
+      'activity-test-deposit',
+      'activity-evm-campaign',
+      'activity-evm-funding',
+    ]);
   });
 });

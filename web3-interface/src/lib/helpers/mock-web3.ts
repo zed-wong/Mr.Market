@@ -26,6 +26,7 @@ export interface MockBalance {
 
 export interface MockCampaign {
   id: string;
+  accountId?: string;
   name: string;
   status: 'open' | 'active' | 'paused';
   chains: WalletNamespace[];
@@ -50,6 +51,7 @@ export interface MockCampaign {
 
 export interface MockOrder {
   id: string;
+  accountId: string;
   campaignId: string;
   status: MockOrderStatus;
   namespace: WalletNamespace;
@@ -93,11 +95,13 @@ export interface MockOrderLog {
 
 export interface MockActivityEntry {
   id: string;
+  accountId: string;
   namespace: WalletNamespace;
   category: 'funding' | 'campaign' | 'order';
   label: string;
   detail: string;
   href: string;
+  timestamp: string;
 }
 
 export type CampaignFilter = 'all' | 'evm' | 'solana' | 'eligible' | 'open' | 'active';
@@ -335,6 +339,7 @@ export const campaignFilterOptions: { value: CampaignFilter; label: string }[] =
 export const mockOrders: MockOrder[] = [
   {
     id: 'MM-1001',
+    accountId: 'evm-primary',
     campaignId: 'eth-usdc-depth',
     status: 'active',
     namespace: 'evm',
@@ -365,6 +370,7 @@ export const mockOrders: MockOrder[] = [
   },
   {
     id: 'MM-2001',
+    accountId: 'solana-primary',
     campaignId: 'sol-usdc-growth',
     status: 'pending',
     namespace: 'solana',
@@ -392,6 +398,7 @@ export const mockOrders: MockOrder[] = [
   },
   {
     id: 'MM-1002',
+    accountId: 'evm-primary',
     campaignId: 'cross-chain-stable',
     status: 'completed',
     namespace: 'evm',
@@ -421,6 +428,7 @@ export const mockOrders: MockOrder[] = [
   },
   {
     id: 'MM-1003',
+    accountId: 'evm-primary',
     campaignId: 'eth-usdc-depth',
     status: 'failed',
     namespace: 'evm',
@@ -449,6 +457,7 @@ export const mockOrders: MockOrder[] = [
   },
   {
     id: 'MM-2002',
+    accountId: 'solana-primary',
     campaignId: 'sol-usdc-growth',
     status: 'cancelled',
     namespace: 'solana',
@@ -477,6 +486,7 @@ export const mockOrders: MockOrder[] = [
   },
   {
     id: 'MM-2003',
+    accountId: 'solana-primary',
     campaignId: 'cross-chain-stable',
     status: 'draft',
     namespace: 'solana',
@@ -505,70 +515,86 @@ export const mockOrders: MockOrder[] = [
 export const mockFundingActivity: MockActivityEntry[] = [
   {
     id: 'fund-evm-deposit-usdc',
+    accountId: 'evm-primary',
     namespace: 'evm',
     category: 'funding',
     label: 'Deposit',
     detail: 'USDC · EVM · Ethereum · confirmed · 2026-05-23 09:00',
     href: '/deposit',
+    timestamp: '2026-05-23 09:00',
   },
   {
     id: 'fund-sol-withdraw-sol',
+    accountId: 'solana-primary',
     namespace: 'solana',
     category: 'funding',
     label: 'Withdraw',
     detail: 'SOL · Solana / SVM · reviewing · 2026-05-23 08:30',
     href: '/withdraw',
+    timestamp: '2026-05-23 08:30',
   },
 ];
 
 export const mockAccountActivity: MockActivityEntry[] = [
   {
     id: 'activity-evm-funding',
+    accountId: 'evm-primary',
     namespace: 'evm',
     category: 'funding',
     label: 'Funding',
     detail: '2026-05-23 09:00 · Deposit USDC confirmed on Ethereum',
     href: '/deposit',
+    timestamp: '2026-05-23 09:00',
   },
   {
     id: 'activity-evm-campaign',
+    accountId: 'evm-primary',
     namespace: 'evm',
     category: 'campaign',
     label: 'Campaigns',
     detail: '2026-05-23 09:03 · Joined ETH / USDC Depth Builder',
     href: '/market-making/campaign/eth-usdc-depth',
+    timestamp: '2026-05-23 09:03',
   },
   {
     id: 'activity-evm-order',
+    accountId: 'evm-primary',
     namespace: 'evm',
     category: 'order',
     label: 'Market-making orders',
     detail: '2026-05-23 09:45 · MM-1001 active',
     href: '/market-making/order/MM-1001',
+    timestamp: '2026-05-23 09:45',
   },
   {
     id: 'activity-sol-funding',
+    accountId: 'solana-primary',
     namespace: 'solana',
     category: 'funding',
     label: 'Funding',
     detail: '2026-05-23 08:30 · Withdrawal SOL reviewing on Solana / SVM',
     href: '/withdraw',
+    timestamp: '2026-05-23 08:30',
   },
   {
     id: 'activity-sol-campaign',
+    accountId: 'solana-primary',
     namespace: 'solana',
     category: 'campaign',
     label: 'Campaigns',
     detail: '2026-05-23 08:31 · Joined SOL / USDC Growth Campaign',
     href: '/market-making/campaign/sol-usdc-growth',
+    timestamp: '2026-05-23 08:31',
   },
   {
     id: 'activity-sol-order',
+    accountId: 'solana-primary',
     namespace: 'solana',
     category: 'order',
     label: 'Market-making orders',
     detail: '2026-05-23 08:32 · MM-2001 pending',
     href: '/market-making/order/MM-2001',
+    timestamp: '2026-05-23 08:32',
   },
 ];
 
@@ -587,15 +613,60 @@ export const accountBalances = (accountId: string | null): MockBalance[] =>
 export const mockOrdersForNamespace = (namespace: WalletNamespace | null): MockOrder[] =>
   namespace ? mockOrders.filter((order) => order.namespace === namespace) : [];
 
+export const mockOrdersForAccount = (
+  accountId: string | null | undefined,
+  namespace: WalletNamespace | null
+): MockOrder[] =>
+  accountId && namespace
+    ? mockOrders.filter((order) => order.accountId === accountId && order.namespace === namespace)
+    : [];
+
 export const mockFundingActivityForNamespace = (
   namespace: WalletNamespace | null
 ): MockActivityEntry[] =>
   namespace ? mockFundingActivity.filter((entry) => entry.namespace === namespace) : [];
 
+export const mockFundingActivityForAccount = (
+  accountId: string | null | undefined,
+  namespace: WalletNamespace | null
+): MockActivityEntry[] =>
+  accountId && namespace
+    ? aggregateMockActivityEntries(
+        mockFundingActivity.filter((entry) => entry.accountId === accountId && entry.namespace === namespace)
+      )
+    : [];
+
 export const mockAccountActivityForNamespace = (
   namespace: WalletNamespace | null
 ): MockActivityEntry[] =>
   namespace ? mockAccountActivity.filter((entry) => entry.namespace === namespace) : [];
+
+export const mockAccountActivityForAccount = (
+  accountId: string | null | undefined,
+  namespace: WalletNamespace | null
+): MockActivityEntry[] =>
+  accountId && namespace
+    ? aggregateMockActivityEntries(
+        mockAccountActivity.filter((entry) => entry.accountId === accountId && entry.namespace === namespace)
+      )
+    : [];
+
+export const parseMockActivityTimestamp = (entry: MockActivityEntry): number => {
+  const detailTimestamp = entry.detail.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)?.[0];
+  const timestamp = entry.timestamp || detailTimestamp || '';
+  const parsed = Date.parse(`${timestamp.replace(' ', 'T')}:00Z`);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+export const aggregateMockActivityEntries = (
+  ...activityGroups: MockActivityEntry[][]
+): MockActivityEntry[] =>
+  activityGroups
+    .flat()
+    .sort((left, right) => {
+      const timestampDifference = parseMockActivityTimestamp(right) - parseMockActivityTimestamp(left);
+      return timestampDifference || left.id.localeCompare(right.id);
+    });
 
 export const totalUsdValue = (balances: MockBalance[]): string =>
   balances.reduce((sum, balance) => sum.plus(balance.usdValue), new BigNumber('0')).toFixed(2);
@@ -651,14 +722,18 @@ export const campaignEligibility = (
 export const filterMockCampaigns = (
   campaigns: MockCampaign[],
   filter: CampaignFilter,
-  namespace: WalletNamespace | null
+  namespace: WalletNamespace | null,
+  isConnected = Boolean(namespace),
+  isUnsupported = false
 ): MockCampaign[] => {
   if (filter === 'all') return campaigns;
   if (filter === 'evm' || filter === 'solana') {
     return campaigns.filter((campaign) => campaign.chains.includes(filter));
   }
   if (filter === 'eligible') {
-    return namespace ? campaigns.filter((campaign) => campaignSupportsNamespace(campaign, namespace)) : [];
+    return namespace && isConnected && !isUnsupported
+      ? campaigns.filter((campaign) => campaignSupportsNamespace(campaign, namespace))
+      : [];
   }
   return campaigns.filter((campaign) => campaign.status === filter);
 };

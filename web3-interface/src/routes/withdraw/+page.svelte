@@ -4,7 +4,7 @@
     minimumWithdrawFor,
     sessionFundingActivity,
     submitMockWithdrawal,
-    fundingActivityForNamespace,
+    fundingActivityForAccount,
     validateMockWithdrawal,
     withdrawFeeFor,
     type MockFundingResult,
@@ -44,7 +44,7 @@
   );
   let fundingActivity = $derived(
     $walletIsConnected && !$walletIsUnsupported
-      ? fundingActivityForNamespace($walletNamespace, $sessionFundingActivity)
+      ? fundingActivityForAccount($walletAccount?.id, $walletNamespace, $sessionFundingActivity)
       : []
   );
 

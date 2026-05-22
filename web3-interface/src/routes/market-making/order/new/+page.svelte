@@ -15,6 +15,7 @@
   import type { MockOrder } from '$lib/helpers/mock-web3';
   import {
     openMockWallet,
+    walletAccount,
     walletIsConnected,
     walletIsUnsupported,
     walletNamespace,
@@ -84,7 +85,7 @@
     await new Promise((resolve) => setTimeout(resolve, 300));
     flowStep = 'submitting';
     await new Promise((resolve) => setTimeout(resolve, 300));
-    submittedOrder = createMockOrder(campaign, $walletNamespace, contributionAmount);
+    submittedOrder = createMockOrder(campaign, $walletNamespace, contributionAmount, $walletAccount?.id);
     flowStep = 'success';
     attemptedReview = false;
   };

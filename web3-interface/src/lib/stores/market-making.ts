@@ -1,6 +1,7 @@
 import BigNumber from 'bignumber.js';
 import { derived, get, writable } from 'svelte/store';
 import {
+  aggregateMockActivityEntries,
   mockCampaigns,
   mockOrders,
   namespaceLabel,
@@ -65,11 +66,16 @@ export const allOrders = derived(sessionOrders, ($sessionOrders) => [
   ...mockOrders,
 ]);
 
-export const marketMakingActivityForNamespace = (
+export const marketMakingActivityForAccount = (
+  accountId: string | null | undefined,
   namespace: WalletNamespace | null,
   sessionEntries: MockActivityEntry[]
 ): MockActivityEntry[] =>
-  namespace ? sessionEntries.filter((entry) => entry.namespace === namespace) : [];
+  accountId && namespace
+    ? aggregateMockActivityEntries(
+        sessionEntries.filter((entry) => entry.accountId === accountId && entry.namespace === namespace)
+      )
+    : [];
 
 export const resetMarketMakingSession = () => {
   campaignSequence.set(0);
@@ -134,7 +140,7 @@ export const validateCampaignCreation = (input: CampaignCreationInput): Record<s
   return errors;
 };
 
-export const createMockCampaign = (input: CampaignCreationInput): MockCampaign => {
+export const createMockCampaign = (input: CampaignCreationInput, accountId = 'mock-session'): MockCampaign => {
   const sequence = get(campaignSequence) + 1;
   campaignSequence.set(sequence);
   const namespace = input.namespace || 'evm';
@@ -150,6 +156,7 @@ export const createMockCampaign = (input: CampaignCreationInput): MockCampaign =
 
   const campaign: MockCampaign = {
     id: `${idSlug}-${sequence}`,
+    accountId,
     name: input.name.trim(),
     status: input.status,
     chains: [namespace],
@@ -180,11 +187,13 @@ export const createMockCampaign = (input: CampaignCreationInput): MockCampaign =
   sessionMarketMakingActivity.update((entries) => [
     {
       id: `activity-campaign-${campaign.id}`,
+      accountId,
       namespace,
       category: 'campaign',
       label: 'Campaign created',
       detail: `2026-05-23 09:18 · ${campaign.name} · ${namespaceLabel(namespace)} · ${campaign.status}`,
       href: `/market-making/campaign/${campaign.id}`,
+      timestamp: '2026-05-23 09:18',
     },
     ...entries,
   ]);
@@ -244,7 +253,8 @@ const buildOrderLogs = (timestamp: string, status: MockOrderStatus): MockOrderLo
 export const createMockOrder = (
   campaign: MockCampaign,
   namespace: WalletNamespace,
-  amount: string
+  amount: string,
+  accountId = 'mock-session'
 ): MockOrder => {
   const sequence = get(orderSequence) + 1;
   orderSequence.set(sequence);
@@ -253,6 +263,7 @@ export const createMockOrder = (
   const status: MockOrderStatus = 'active';
   const order: MockOrder = {
     id: `MM-${namespace.toUpperCase()}-${sequence}`,
+    accountId,
     campaignId: campaign.id,
     status,
     namespace,
@@ -279,19 +290,23 @@ export const createMockOrder = (
   sessionMarketMakingActivity.update((entries) => [
     {
       id: `activity-order-${order.id}`,
+      accountId,
       namespace,
       category: 'order',
       label: 'Market-making order',
       detail: `2026-05-23 09:22 · ${order.id} · ${campaign.name} · ${namespaceLabel(namespace)} · ${order.status} · ${order.contributionAmount}`,
       href: `/market-making/order/${order.id}`,
+      timestamp: '2026-05-23 09:22',
     },
     {
       id: `activity-campaign-join-${order.id}`,
+      accountId,
       namespace,
       category: 'campaign',
       label: 'Campaign joined',
       detail: `2026-05-23 09:21 · ${campaign.name} joined through ${order.id}`,
       href: `/market-making/campaign/${campaign.id}`,
+      timestamp: '2026-05-23 09:21',
     },
     ...entries,
   ]);

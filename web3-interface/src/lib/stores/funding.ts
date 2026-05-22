@@ -1,7 +1,8 @@
 import BigNumber from 'bignumber.js';
 import { derived, get, writable } from 'svelte/store';
 import {
-  mockFundingActivity,
+  aggregateMockActivityEntries,
+  mockFundingActivityForAccount,
   namespaceLabel,
   type MockActivityEntry,
   type MockBalance,
@@ -16,6 +17,7 @@ export interface FundingTimelineStep {
 
 export interface MockFundingResult {
   id: string;
+  accountId: string;
   type: 'deposit' | 'withdraw';
   namespace: WalletNamespace;
   asset: string;
@@ -33,8 +35,17 @@ export interface WithdrawValidationInput {
   amount: string;
 }
 
+export interface DepositValidationInput {
+  balance: MockBalance | null | undefined;
+  amount: string;
+}
+
 export interface WithdrawValidationResult {
   destination?: string;
+  amount?: string;
+}
+
+export interface DepositValidationResult {
   amount?: string;
 }
 
@@ -73,15 +84,16 @@ export const resetFundingSession = () => {
   sessionFundingActivity.set([]);
 };
 
-export const fundingActivityForNamespace = (
+export const fundingActivityForAccount = (
+  accountId: string | null | undefined,
   namespace: WalletNamespace | null,
   sessionEntries: MockActivityEntry[]
 ): MockActivityEntry[] =>
-  namespace
-    ? [
-        ...sessionEntries.filter((entry) => entry.namespace === namespace),
-        ...mockFundingActivity.filter((entry) => entry.namespace === namespace),
-      ]
+  accountId && namespace
+    ? aggregateMockActivityEntries(
+        sessionEntries.filter((entry) => entry.accountId === accountId && entry.namespace === namespace),
+        mockFundingActivityForAccount(accountId, namespace)
+      )
     : [];
 
 export const minimumDepositFor = (balance: MockBalance | null | undefined): string =>
@@ -95,6 +107,32 @@ export const withdrawFeeFor = (balance: MockBalance | null | undefined): string 
 
 export const suggestedDepositAmountFor = (balance: MockBalance | null | undefined): string =>
   !balance ? '' : nativeSymbols.has(balance.symbol) ? '0.2500' : '250.00';
+
+export const validateMockDeposit = ({
+  balance,
+  amount,
+}: DepositValidationInput): DepositValidationResult => {
+  const errors: DepositValidationResult = {};
+  const trimmedAmount = amount.trim();
+
+  if (!balance) {
+    errors.amount = 'Select a supported asset before simulating a deposit.';
+    return errors;
+  }
+
+  const parsedAmount = new BigNumber(trimmedAmount);
+  if (!trimmedAmount || !parsedAmount.isFinite() || Number.isNaN(parsedAmount.toNumber())) {
+    errors.amount = 'Enter a numeric deposit amount.';
+  } else if (parsedAmount.lte(0)) {
+    errors.amount = 'Deposit amount must be greater than zero.';
+  } else if ((parsedAmount.decimalPlaces() ?? 0) > balance.decimals) {
+    errors.amount = `${balance.symbol} supports up to ${balance.decimals} decimal places.`;
+  } else if (parsedAmount.lt(minimumDepositFor(balance))) {
+    errors.amount = `Minimum mocked deposit is ${minimumDepositFor(balance)} ${balance.symbol}.`;
+  }
+
+  return errors;
+};
 
 export const depositAddressFor = (balance: MockBalance | null | undefined): string => {
   if (!balance) return '';
@@ -236,7 +274,12 @@ export const completeMockDeposit = (
   balance: MockBalance,
   amount: string
 ): MockFundingResult => {
-  const normalizedAmount = normalizeAmount(amount || suggestedDepositAmountFor(balance));
+  const requestedAmount = amount || suggestedDepositAmountFor(balance);
+  const validationErrors = validateMockDeposit({ balance, amount: requestedAmount });
+  if (validationErrors.amount) {
+    throw new Error(validationErrors.amount);
+  }
+  const normalizedAmount = normalizeAmount(requestedAmount);
   const sequence = nextSequence();
   const timestamp = deterministicTimestamps[(sequence - 1) % deterministicTimestamps.length];
   const id = `DEP-${balance.chainNamespace.toUpperCase()}-${sequence.toString().padStart(4, '0')}`;
@@ -245,17 +288,20 @@ export const completeMockDeposit = (
   sessionFundingActivity.update((entries) => [
     {
       id: `activity-${id}`,
+      accountId,
       namespace: balance.chainNamespace,
       category: 'funding',
       label: 'Deposit',
       detail: `${balance.symbol} · ${namespaceLabel(balance.chainNamespace)} · ${balance.name} · credited · ${timestamp} · amount ${normalizedAmount}`,
       href: '/deposit',
+      timestamp,
     },
     ...entries,
   ]);
 
   return {
     id,
+    accountId,
     type: 'deposit',
     namespace: balance.chainNamespace,
     asset: balance.asset,
@@ -282,17 +328,20 @@ export const submitMockWithdrawal = (
   sessionFundingActivity.update((entries) => [
     {
       id: `activity-${id}`,
+      accountId,
       namespace: balance.chainNamespace,
       category: 'funding',
       label: 'Withdraw',
       detail: `${balance.symbol} · ${namespaceLabel(balance.chainNamespace)} · ${shortDestination(destination)} · reviewing · ${timestamp} · amount ${normalizedAmount}`,
       href: '/withdraw',
+      timestamp,
     },
     ...entries,
   ]);
 
   return {
     id,
+    accountId,
     type: 'withdraw',
     namespace: balance.chainNamespace,
     asset: balance.asset,
