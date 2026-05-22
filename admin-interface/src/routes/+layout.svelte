@@ -5,9 +5,11 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { Toaster } from 'svelte-sonner';
+  import { _ } from 'svelte-i18n';
   import { initi18n } from '../i18n/i18n';
   import { ADMIN_LIGHT_THEME } from '$lib/theme/themes';
   import { checkSession, logout } from '$lib/helpers/api/auth';
+  import { getAuthLayoutState } from '$lib/helpers/admin/auth-layout-state';
   import {
     correct,
     checked,
@@ -25,7 +27,14 @@
   let sidebarOpen = $state(false);
 
   let pathname = $derived($page.url.pathname);
-  let onLoginRoute = $derived(pathname === '/login' || pathname.startsWith('/login/'));
+  let authLayoutState = $derived(
+    getAuthLayoutState({
+      pathname,
+      i18nReady,
+      bootstrapped,
+      authenticated: $correct,
+    }),
+  );
 
   $effect(() => {
     if (typeof document !== 'undefined') {
@@ -70,10 +79,10 @@
   });
 
   $effect(() => {
-    if (bootstrapped && i18nReady && !$correct && !onLoginRoute) {
+    if (authLayoutState === 'auth-blocked') {
       goto('/login');
     }
-    if (bootstrapped && i18nReady && $correct && onLoginRoute) {
+    if (authLayoutState === 'login' && $correct) {
       goto('/');
     }
   });
@@ -96,13 +105,22 @@
   };
 </script>
 
-{#if !i18nReady || !bootstrapped}
+{#if authLayoutState === 'bootstrapping'}
   <div class="flex min-h-screen items-center justify-center bg-base-100 text-base-content">
     <span class="loading loading-spinner loading-md"></span>
   </div>
-{:else if onLoginRoute || !$correct}
+{:else if authLayoutState === 'login'}
   {@render children?.()}
-{:else}
+{:else if authLayoutState === 'auth-blocked'}
+  <div
+    class="flex min-h-screen items-center justify-center bg-base-100 text-base-content"
+    data-testid="auth-redirect-blocker"
+    aria-live="polite"
+  >
+    <span class="loading loading-spinner loading-md" aria-hidden="true"></span>
+    <span class="sr-only">{$_('admin.loading')}</span>
+  </div>
+{:else if authLayoutState === 'protected'}
   <main class="min-h-screen bg-base-100">
     <div class="flex h-screen overflow-hidden bg-base-100">
       <Sidebar
