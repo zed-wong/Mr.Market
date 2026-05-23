@@ -79,7 +79,7 @@ export class AdminDashboardService {
     private readonly healthService?: HealthService,
   ) {}
 
-  async getSummary(rangeInput?: string) {
+  async getSummary(rangeInput?: unknown) {
     const range = this.resolveRange(rangeInput);
     const generatedAt = getRFC3339Timestamp();
     const nowMs = Date.parse(generatedAt);
@@ -148,7 +148,19 @@ export class AdminDashboardService {
     };
   }
 
-  private resolveRange(input?: string): DashboardRange {
+  private resolveRange(input?: unknown): DashboardRange {
+    if (input === undefined) {
+      return '24h';
+    }
+
+    if (typeof input !== 'string') {
+      throw new BadRequestException(
+        `Dashboard range must be a single string value. Supported ranges: ${Object.keys(
+          DASHBOARD_RANGES,
+        ).join(', ')}`,
+      );
+    }
+
     const range = (input || '24h').trim();
 
     if (range in DASHBOARD_RANGES) {

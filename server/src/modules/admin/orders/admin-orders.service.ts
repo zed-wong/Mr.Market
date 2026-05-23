@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
+import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
@@ -44,6 +45,8 @@ export class AdminOrdersService {
     private readonly trackedOrderRepository: Repository<TrackedOrderEntity>,
     @InjectRepository(StrategyExecutionHistory)
     private readonly executionHistoryRepository: Repository<StrategyExecutionHistory>,
+    @InjectRepository(ExchangeOrderMapping)
+    private readonly exchangeOrderMappingRepository: Repository<ExchangeOrderMapping>,
   ) {}
 
   async listOrders(input: AdminOrdersQuery) {
@@ -216,6 +219,7 @@ export class AdminOrdersService {
 
   private async loadExecutionSummaries(orders: TrackedOrderEntity[]) {
     const orderIds = [...new Set(orders.map((order) => order.orderId))];
+    const historyIdToOrderId = new Map<string, string>();
     const summaries = new Map<
       string,
       {
@@ -230,8 +234,26 @@ export class AdminOrdersService {
       return summaries;
     }
 
-    const executions = await this.executionHistoryRepository.find({
+    for (const order of orders) {
+      historyIdToOrderId.set(order.orderId, order.orderId);
+
+      if (order.exchangeOrderId) {
+        historyIdToOrderId.set(order.exchangeOrderId, order.orderId);
+      }
+    }
+
+    const mappings = await this.exchangeOrderMappingRepository.find({
       where: { orderId: In(orderIds) },
+    });
+
+    for (const mapping of mappings) {
+      if (mapping.exchangeOrderId && historyIdToOrderId.has(mapping.orderId)) {
+        historyIdToOrderId.set(mapping.exchangeOrderId, mapping.orderId);
+      }
+    }
+
+    const executions = await this.executionHistoryRepository.find({
+      where: { orderId: In([...historyIdToOrderId.keys()]) },
       order: { executedAt: 'DESC' },
       take: EXECUTION_SCAN_LIMIT,
     });
@@ -241,8 +263,14 @@ export class AdminOrdersService {
         continue;
       }
 
+      const internalOrderId = historyIdToOrderId.get(execution.orderId);
+
+      if (!internalOrderId) {
+        continue;
+      }
+
       const summary =
-        summaries.get(execution.orderId) ||
+        summaries.get(internalOrderId) ||
         {
           count: 0,
           lastExecutedAt: null,
@@ -257,7 +285,7 @@ export class AdminOrdersService {
         null;
       this.addUnique(summary.statuses, execution.status);
       this.addUnique(summary.strategyTypes, execution.strategyType);
-      summaries.set(execution.orderId, summary);
+      summaries.set(internalOrderId, summary);
     }
 
     return summaries;

@@ -81,11 +81,19 @@ describe('AdminOrdersService', () => {
         },
       ]),
     };
+    const mappings = {
+      find: jest.fn(async () => []),
+    };
 
     return {
-      service: new AdminOrdersService(trackedOrders as any, executions as any),
+      service: new AdminOrdersService(
+        trackedOrders as any,
+        executions as any,
+        mappings as any,
+      ),
       trackedOrders,
       executions,
+      mappings,
       queryBuilder,
     };
   }
@@ -130,6 +138,42 @@ describe('AdminOrdersService', () => {
       hasPrevious: false,
     });
     expect(executions.find).toHaveBeenCalledTimes(1);
+  });
+
+  it('enriches create-limit-order execution history stored by exchange order id', async () => {
+    const { service, executions, mappings } = buildService();
+
+    mappings.find.mockResolvedValueOnce([
+      {
+        orderId: 'order-1',
+        exchangeOrderId: 'exchange-1',
+        clientOrderId: 'client-1',
+      },
+    ]);
+    executions.find.mockResolvedValueOnce([
+      {
+        id: 'exec-real-create-limit',
+        orderId: 'exchange-1',
+        side: 'buy',
+        amount: '0.5',
+        price: '10',
+        status: 'settled',
+        strategyType: 'market-making',
+        executedAt: ts(4),
+        metadata: { private: 'must-not-leak' },
+      },
+    ]);
+
+    const result = await service.listOrders({});
+
+    expect(mappings.find).toHaveBeenCalledTimes(1);
+    expect(result.items[0].executions).toEqual({
+      count: 1,
+      lastExecutedAt: ts(4),
+      statuses: ['settled'],
+      strategyTypes: ['market-making'],
+    });
+    expect(JSON.stringify(result)).not.toContain('must-not-leak');
   });
 
   it('applies whitelisted status, side, query, limit, and page filters safely', async () => {

@@ -19,7 +19,7 @@ export class AdminDashboardController {
     enum: ['24h', '7d', '30d'],
     description: 'Summary time range. Defaults to 24h.',
   })
-  async getSummary(@Query('range') range?: string) {
+  async getSummary(@Query('range') range?: unknown) {
     return await this.dashboardService.getSummary(range);
   }
 }

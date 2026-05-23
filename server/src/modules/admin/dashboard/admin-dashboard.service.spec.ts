@@ -209,6 +209,17 @@ describe('AdminDashboardService', () => {
     );
   });
 
+  it.each([
+    ['repeated array values', ['24h', '7d']],
+    ['nested object values', { value: '24h' }],
+    ['non-string numeric values', 24],
+    ['non-string boolean values', true],
+  ])('rejects raw %s before using string methods', async (_label, value) => {
+    await expect(buildService().getSummary(value)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
   it('reports tracked order totals consistently with the orders API all-time count', async () => {
     const trackedOrders = createRepository(
       Array.from({ length: 3 }, (_, index) => ({

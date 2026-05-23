@@ -7,6 +7,7 @@ import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { SpotdataTradingPair } from 'src/common/entities/data/spot-data.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
+import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
@@ -78,6 +79,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     ReconciliationModule,
     TypeOrmModule.forFeature([
       StrategyExecutionHistory,
+      ExchangeOrderMapping,
       StrategyInstance,
       StrategyDefinition,
       StrategyOrderIntentEntity,
