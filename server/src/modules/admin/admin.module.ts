@@ -43,6 +43,8 @@ import { AdminDirectMarketMakingController } from './market-making/admin-direct-
 import { AdminDirectMarketMakingService } from './market-making/admin-direct-mm.service';
 import { AdminOrdersController } from './orders/admin-orders.controller';
 import { AdminOrdersService } from './orders/admin-orders.service';
+import { AdminPositionsController } from './positions/admin-positions.controller';
+import { AdminPositionsService } from './positions/admin-positions.service';
 import { AdminSpotService } from './spot/admin-spot.service';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
 
@@ -86,6 +88,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
     AdminController,
     AdminDashboardController,
     AdminOrdersController,
+    AdminPositionsController,
     AdminFeeController,
     AdminDirectMarketMakingController,
   ],
@@ -93,6 +96,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
     AdminStrategyService,
     AdminDashboardService,
     AdminOrdersService,
+    AdminPositionsService,
     AdminDirectMarketMakingService,
     PerformanceService,
     AdminGrowService,
@@ -103,6 +107,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
     AdminStrategyService,
     AdminDashboardService,
     AdminOrdersService,
+    AdminPositionsService,
     AdminDirectMarketMakingService,
     AdminGrowService,
     AdminSpotService,
