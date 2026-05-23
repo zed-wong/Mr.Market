@@ -112,11 +112,17 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
   private static readonly FAST_POLL_INTERVAL_MS = 5_000;
   static readonly DEFAULT_RECONCILIATION_BUDGET = 4;
   static readonly DEFAULT_PER_EXCHANGE_RECONCILIATION_BUDGET = 2;
+  private static readonly SUMMARY_SAMPLE_KEY_LIMIT = 1000;
 
   private readonly orders = new Map<string, TrackedOrder>();
   private readonly fillLog = new Map<string, FillLogEntry[]>();
   private readonly lastUserStreamActivityByKey = new Map<string, number>();
   private readonly lastPolledAtByOrderKey = new Map<string, number>();
+  private readonly trackedOrderStatusCounts = new Map<
+    TrackedOrderState,
+    number
+  >();
+  private readonly trackedOrderSampleKeys: string[] = [];
 
   constructor(
     @Optional()
@@ -171,7 +177,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
       const nextOrder = this.mergeOrder(existingOrder, order, nextStatus);
 
-      this.orders.set(key, nextOrder);
+      this.setTrackedOrder(key, nextOrder);
       this.updatePollingStateForOrder(key, nextOrder.status);
       void this.persistOrder(nextOrder, key).catch(() => {});
       if (options?.releaseReservation !== false) {
@@ -189,7 +195,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       ),
     };
 
-    this.orders.set(key, createdOrder);
+    this.setTrackedOrder(key, createdOrder);
     this.updatePollingStateForOrder(key, createdOrder.status);
     void this.persistOrder(createdOrder, key).catch(() => {});
     if (options?.releaseReservation !== false) {
@@ -235,26 +241,54 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       0,
       Math.min(Number.isSafeInteger(sampleLimit) ? sampleLimit : 0, 1000),
     );
-    const byStatus: Record<string, number> = {};
     const sample: TrackedOrder[] = [];
-    let totalOrders = 0;
 
-    for (const order of this.orders.values()) {
-      totalOrders += 1;
-      byStatus[order.status] = (byStatus[order.status] || 0) + 1;
+    for (const key of this.trackedOrderSampleKeys) {
+      if (sample.length >= boundedSampleLimit) {
+        break;
+      }
 
-      if (sample.length < boundedSampleLimit) {
+      const order = this.orders.get(key);
+
+      if (order) {
         sample.push(order);
       }
     }
 
+    const totalOrders = this.orders.size;
+
     return {
       totalOrders,
       sampledOrders: sample.length,
-      byStatus,
+      byStatus: this.getTrackedOrderStatusSnapshot(),
       sample,
       truncated: totalOrders > sample.length,
     };
+  }
+
+  removeTrackedOrder(
+    exchange: string,
+    exchangeOrderId: string,
+    accountLabel?: string,
+  ): boolean {
+    const key = this.toKey(exchange, accountLabel, exchangeOrderId);
+    const existingOrder = this.orders.get(key);
+
+    if (!existingOrder) {
+      return false;
+    }
+
+    this.orders.delete(key);
+    this.lastPolledAtByOrderKey.delete(key);
+    this.decrementTrackedOrderStatus(existingOrder.status);
+
+    const sampleIndex = this.trackedOrderSampleKeys.indexOf(key);
+
+    if (sampleIndex >= 0) {
+      this.trackedOrderSampleKeys.splice(sampleIndex, 1);
+    }
+
+    return true;
   }
 
   reconcileOpenOrderSnapshot(params: {
@@ -316,7 +350,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
         updatedAt: observedAt,
       };
 
-      this.orders.set(key, placeholder);
+      this.setTrackedOrder(key, placeholder);
       void this.persistOrder(placeholder, key).catch(() => {});
       internalMissing.push(exchangeOrderId);
     }
@@ -347,7 +381,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
         updatedAt: observedAt,
       };
 
-      this.orders.set(key, nextOrder);
+      this.setTrackedOrder(key, nextOrder);
       this.updatePollingStateForOrder(key, nextOrder.status);
       void this.persistOrder(nextOrder, key).catch(() => {});
       externalMissing.push(order.exchangeOrderId);
@@ -670,6 +704,67 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     if (ExchangeOrderTrackerService.terminalStates.has(status)) {
       this.lastPolledAtByOrderKey.delete(orderKey);
     }
+  }
+
+  private setTrackedOrder(key: string, order: TrackedOrder): void {
+    const existingOrder = this.orders.get(key);
+
+    this.orders.set(key, order);
+    this.updateTrackedOrderSummary(existingOrder, order, key);
+  }
+
+  private updateTrackedOrderSummary(
+    previousOrder: TrackedOrder | undefined,
+    nextOrder: TrackedOrder,
+    key: string,
+  ): void {
+    if (!previousOrder) {
+      this.incrementTrackedOrderStatus(nextOrder.status);
+
+      if (
+        this.trackedOrderSampleKeys.length <
+        ExchangeOrderTrackerService.SUMMARY_SAMPLE_KEY_LIMIT
+      ) {
+        this.trackedOrderSampleKeys.push(key);
+      }
+
+      return;
+    }
+
+    if (previousOrder.status !== nextOrder.status) {
+      this.decrementTrackedOrderStatus(previousOrder.status);
+      this.incrementTrackedOrderStatus(nextOrder.status);
+    }
+  }
+
+  private incrementTrackedOrderStatus(status: TrackedOrderState): void {
+    this.trackedOrderStatusCounts.set(
+      status,
+      (this.trackedOrderStatusCounts.get(status) || 0) + 1,
+    );
+  }
+
+  private decrementTrackedOrderStatus(status: TrackedOrderState): void {
+    const nextCount = (this.trackedOrderStatusCounts.get(status) || 0) - 1;
+
+    if (nextCount > 0) {
+      this.trackedOrderStatusCounts.set(status, nextCount);
+      return;
+    }
+
+    this.trackedOrderStatusCounts.delete(status);
+  }
+
+  private getTrackedOrderStatusSnapshot(): Record<string, number> {
+    const byStatus: Record<string, number> = {};
+
+    for (const [status, count] of this.trackedOrderStatusCounts.entries()) {
+      if (count > 0) {
+        byStatus[status] = count;
+      }
+    }
+
+    return byStatus;
   }
 
   private recordFill(
@@ -1004,7 +1099,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     const rows = await this.trackedOrderRepository.find();
 
     for (const row of rows) {
-      this.orders.set(
+      this.setTrackedOrder(
         this.toKey(
           row.exchange,
           row.accountLabel || undefined,

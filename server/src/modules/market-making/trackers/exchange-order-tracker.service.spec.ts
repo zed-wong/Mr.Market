@@ -337,6 +337,174 @@ describe('ExchangeOrderTrackerService', () => {
     });
   });
 
+  it('summarizes tracked orders from maintained counters without iterating the cache', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    Array.from({ length: 12 }, (_, index) => {
+      service.upsertOrder({
+        orderId: `bounded-${index}`,
+        strategyKey: 'summary-boundedness-strategy',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: `bounded-${index}`,
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status:
+          index < 7
+            ? 'open'
+            : index < 10
+              ? 'partially_filled'
+              : 'failed',
+        createdAt: '2026-02-11T00:00:00.000Z',
+        updatedAt: '2026-02-11T00:00:00.000Z',
+      });
+    });
+
+    const valuesSpy = jest
+      .spyOn((service as any).orders, 'values')
+      .mockImplementation(() => {
+        throw new Error('summary must not iterate every tracked order');
+      });
+
+    const summary = service.getTrackedOrderSummary(2);
+
+    expect(valuesSpy).not.toHaveBeenCalled();
+    expect(summary.totalOrders).toBe(12);
+    expect(summary.sample).toHaveLength(2);
+    expect(summary.sampledOrders).toBe(2);
+    expect(summary.truncated).toBe(true);
+    expect(summary.byStatus).toEqual({
+      open: 7,
+      partially_filled: 3,
+      failed: 2,
+    });
+  });
+
+  it('keeps tracked-order summary counts correct across updates and removals', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    service.upsertOrder({
+      orderId: 'summary-update-1',
+      strategyKey: 'summary-update-strategy',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'summary-update-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'summary-update-2',
+      strategyKey: 'summary-update-strategy',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'summary-update-2',
+      side: 'sell',
+      price: '101',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'summary-update-1',
+      strategyKey: 'summary-update-strategy',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'summary-update-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'open',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:01.000Z',
+    });
+    service.upsertOrder({
+      orderId: 'summary-update-1',
+      strategyKey: 'summary-update-strategy',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'summary-update-1',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:02.000Z',
+    });
+
+    expect(service.removeTrackedOrder('binance', 'summary-update-2')).toBe(true);
+    expect(service.removeTrackedOrder('binance', 'missing-order')).toBe(false);
+
+    expect(service.getTrackedOrderSummary(10)).toMatchObject({
+      totalOrders: 1,
+      sampledOrders: 1,
+      byStatus: { open: 1 },
+      truncated: false,
+    });
+  });
+
+  it('hydrates tracked-order summary counts from persisted rows', async () => {
+    const trackedOrderRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          orderId: 'persisted-1',
+          strategyKey: 'persisted-summary-strategy',
+          exchange: 'binance',
+          accountLabel: null,
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'persisted-1',
+          clientOrderId: null,
+          slotKey: null,
+          role: null,
+          side: 'buy',
+          price: '100',
+          qty: '1',
+          cumulativeFilledQty: '0',
+          status: 'open',
+          createdAt: '2026-02-11T00:00:00.000Z',
+          updatedAt: '2026-02-11T00:00:00.000Z',
+        },
+        {
+          orderId: 'persisted-2',
+          strategyKey: 'persisted-summary-strategy',
+          exchange: 'binance',
+          accountLabel: null,
+          pair: 'BTC/USDT',
+          exchangeOrderId: 'persisted-2',
+          clientOrderId: null,
+          slotKey: null,
+          role: null,
+          side: 'sell',
+          price: '101',
+          qty: '1',
+          cumulativeFilledQty: '0',
+          status: 'cancelled',
+          createdAt: '2026-02-11T00:00:00.000Z',
+          updatedAt: '2026-02-11T00:00:00.000Z',
+        },
+      ]),
+    };
+    const service = new ExchangeOrderTrackerService(
+      undefined,
+      undefined,
+      trackedOrderRepository as any,
+    );
+
+    await service.onModuleInit();
+
+    expect(service.getTrackedOrderSummary(10)).toMatchObject({
+      totalOrders: 2,
+      sampledOrders: 2,
+      byStatus: { open: 1, cancelled: 1 },
+      truncated: false,
+    });
+  });
+
   it('reconciles open order snapshots into internal/external mismatch states', () => {
     const service = new ExchangeOrderTrackerService();
 
