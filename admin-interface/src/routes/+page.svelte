@@ -14,6 +14,7 @@
   let loading = $state(true);
   let refreshing = $state(false);
   let error = $state<string | null>(null);
+  let dashboardRequestSequence = 0;
 
   const statusDot: Record<string, string> = {
     healthy: 'bg-success',
@@ -81,6 +82,7 @@
   const statusLabel = (status?: string | null) => status || 'unknown';
 
   const loadDashboard = async (range: DashboardRange = timeRange) => {
+    const requestSequence = ++dashboardRequestSequence;
     const initialLoad = summary === null;
 
     loading = initialLoad;
@@ -90,13 +92,23 @@
     try {
       const next = await fetchDashboardSummary(range);
 
+      if (requestSequence !== dashboardRequestSequence) {
+        return;
+      }
+
       summary = next;
       timeRange = next.range.key;
     } catch (cause) {
+      if (requestSequence !== dashboardRequestSequence) {
+        return;
+      }
+
       error = errorMessage(cause);
     } finally {
-      loading = false;
-      refreshing = false;
+      if (requestSequence === dashboardRequestSequence) {
+        loading = false;
+        refreshing = false;
+      }
     }
   };
 
@@ -579,6 +591,7 @@
       <div class="card border border-base-300 bg-base-100 shadow-none">
         <div class="card-body gap-2 p-5">
           <span class="text-lg font-semibold tracking-tight text-base-content capitalize">range window</span>
+          <span class="font-mono text-xs text-base-content/60" data-testid="dashboard-range-key">{summary.range.key}</span>
           <span class="font-mono text-xs text-base-content/60">{summary.range.startedAt}</span>
           <span class="font-mono text-xs text-base-content/60">{summary.range.endedAt}</span>
         </div>

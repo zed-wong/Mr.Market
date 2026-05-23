@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Response } from '@playwright/test';
+import { inspectResponseBodyForSecrets } from '../../src/lib/helpers/admin/response-secret-check';
 
 const ADMIN_PASSWORD = 'test-admin-password';
 const BACKEND_ORIGIN = 'http://127.0.0.1:3100';
@@ -94,6 +95,82 @@ const expectNoSecrets = (value: string, context: string) => {
   }
 };
 
+const dashboardSummary = (range: '24h' | '7d' | '30d', totalCapital: string) => ({
+  generatedAt: `2026-05-23T0${range === '24h' ? '1' : '2'}:00:00.000Z`,
+  range: {
+    key: range,
+    startedAt: '2026-05-22T00:00:00.000Z',
+    endedAt: '2026-05-23T00:00:00.000Z',
+  },
+  kpis: {
+    activeStrategies: 0,
+    totalStrategies: 0,
+    pendingIntents: 0,
+    openOrders: 0,
+    trackedOrders: 0,
+    totalCapital,
+    reconciliationViolations: 0,
+    runtimeHealth: 'healthy',
+  },
+  strategies: {
+    total: 0,
+    definitions: 0,
+    counts: {},
+    recent: [],
+    updatedSince: '2026-05-22T00:00:00.000Z',
+    truncated: false,
+  },
+  intents: { total: 0, counts: {}, recent: [], truncated: false },
+  orderFlow: {
+    total: 0,
+    counts: {},
+    recent: [],
+    truncated: false,
+    updatedSince: '2026-05-22T00:00:00.000Z',
+    volume: {
+      tradeCount: 0,
+      notionalVolume: '0',
+      scannedRows: 0,
+      truncated: false,
+    },
+  },
+  capital: {
+    total: totalCapital,
+    byAsset: [],
+    scannedRows: 0,
+    totalRows: 0,
+    truncated: false,
+  },
+  exchanges: {
+    total: 0,
+    byValidationStatus: {},
+    accounts: [],
+    scannedRows: 0,
+    truncated: false,
+  },
+  health: {
+    status: 'healthy',
+    timestamp: '2026-05-23T00:00:00.000Z',
+    queue: null,
+    metrics: null,
+    issues: [],
+  },
+  reconciliation: {
+    totalViolations: 0,
+    reports: [],
+  },
+  runtime: {
+    stats: [],
+    recent: [],
+    truncated: false,
+  },
+  limits: {
+    recentItems: 10,
+    capitalScanRows: 500,
+    apiKeyScanRows: 25,
+  },
+});
+
 const login = async (page: Page) => {
   await page.goto('/login');
   await page.locator('input[name="password"]').fill(ADMIN_PASSWORD);
@@ -149,12 +226,11 @@ test.describe.serial('real-data admin smoke', () => {
       }
 
       secretChecks.push(
-        response
-          .text()
-          .then((body) => {
-            expectNoSecrets(body, `response body for ${url}`);
-          })
-          .catch(() => undefined),
+        inspectResponseBodyForSecrets({
+          readText: () => response.text(),
+          assertNoSecrets: expectNoSecrets,
+          context: `response body for ${url}`,
+        }),
       );
     });
 
@@ -219,5 +295,46 @@ test.describe.serial('real-data admin smoke', () => {
 
       await page.unroute(urlPattern);
     }
+  });
+
+  test('dashboard keeps a newer selected range when the initial response finishes last', async ({ page }) => {
+    let delayedInitialReturned = false;
+
+    await page.route(
+      (url) =>
+        url.href.startsWith(`${BACKEND_ORIGIN}/admin/dashboard/summary`) &&
+        url.searchParams.get('range') === '24h',
+      async (interceptedRoute) => {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        delayedInitialReturned = true;
+        await interceptedRoute.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(dashboardSummary('24h', '24')),
+        });
+      },
+    );
+
+    await page.route(
+      (url) =>
+        url.href.startsWith(`${BACKEND_ORIGIN}/admin/dashboard/summary`) &&
+        url.searchParams.get('range') === '7d',
+      async (interceptedRoute) => {
+        await interceptedRoute.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(dashboardSummary('7d', '7')),
+        });
+      },
+    );
+
+    await login(page);
+    await page.getByRole('button', { name: '7d' }).click();
+
+    await expect(page.locator('[data-testid="dashboard-range-key"]')).toHaveText('7d');
+    await expect(page.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => delayedInitialReturned).toBe(true);
+    await expect(page.locator('[data-testid="dashboard-range-key"]')).toHaveText('7d');
+    await expect(page.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'false');
   });
 });
