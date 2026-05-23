@@ -2,7 +2,7 @@
   import Section from '$lib/components/common/Section.svelte';
   import { namespaceLabel, type MockCampaign, type WalletNamespace } from '$lib/helpers/mock-web3';
   import { createMockCampaign, validateCampaignCreation, type CampaignCreationInput } from '$lib/stores/market-making';
-  import { openMockWallet, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespace, walletNamespaceLabel } from '$lib/stores/wallet';
+  import { openMockWallet, openNetworkModal, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespace, walletNamespaceLabel } from '$lib/stores/wallet';
 
   let form = $state<CampaignCreationInput>({
     name: '',
@@ -53,8 +53,9 @@
       <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
     </section>
   {:else if $walletIsUnsupported}
-    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70">
-      Unsupported chain blocks campaign creation.
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="campaign-create-unsupported-gate">
+      <span>Wrong network selected. Campaign creation is blocked until Ethereum, Sepolia, or Solana is selected.</span>
+      <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="campaign-create-switch-network">Switch network</button>
     </section>
   {/if}
 
