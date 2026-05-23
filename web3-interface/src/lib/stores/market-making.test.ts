@@ -1,8 +1,11 @@
 import { get } from 'svelte/store';
 import { describe, expect, it, beforeEach } from 'vitest';
-import { mockCampaigns, type MockCampaign } from '$lib/helpers/mock-web3';
+import { mockCampaigns, type MockCampaign, type MockOrderStatus } from '$lib/helpers/mock-web3';
 import {
   allOrders,
+  canPauseOrder,
+  canResumeOrder,
+  canStopOrder,
   createMockOrder,
   orderDraft,
   resetMarketMakingSession,
@@ -161,6 +164,32 @@ describe('market-making order flow store', () => {
       status: 'active',
     });
     expect(get(sessionOrders).map((order) => order.status)).toEqual(['active']);
+  });
+
+  it('only exposes lifecycle actions for semantically valid active statuses', () => {
+    const preActiveStatuses: MockOrderStatus[] = ['draft', 'pending', 'approval', 'signing', 'submitted'];
+
+    for (const status of preActiveStatuses) {
+      expect(canPauseOrder(status)).toBe(false);
+      expect(canResumeOrder(status)).toBe(false);
+      expect(canStopOrder(status)).toBe(false);
+    }
+
+    expect(canPauseOrder('active')).toBe(true);
+    expect(canStopOrder('active')).toBe(true);
+    expect(canResumeOrder('paused')).toBe(true);
+    expect(canResumeOrder('stopped')).toBe(true);
+  });
+
+  it('does not mutate pending or draft fixture orders with lifecycle actions', () => {
+    for (const orderId of ['MM-2001', 'MM-2003']) {
+      expect(transitionOrderLifecycle(orderId, 'pause')).toBeNull();
+      expect(transitionOrderLifecycle(orderId, 'resume')).toBeNull();
+      expect(transitionOrderLifecycle(orderId, 'stop')).toBeNull();
+    }
+
+    expect(get(sessionOrders)).toEqual([]);
+    expect(get(sessionMarketMakingActivity)).toEqual([]);
   });
 
   it('does not mutate terminal fixture orders with lifecycle actions', () => {

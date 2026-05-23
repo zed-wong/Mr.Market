@@ -257,7 +257,7 @@ const buildOrderLogs = (timestamp: string, status: MockOrderStatus): MockOrderLo
   { timestamp: '2026-05-23 09:22', label: 'Status update', outcome: `Order lifecycle now reports ${status}.`, status },
 ];
 
-const terminalOrderStatuses = new Set<MockOrderStatus>(['completed', 'failed', 'cancelled']);
+const resumableOrderStatuses = new Set<MockOrderStatus>(['paused', 'stopped']);
 
 const lifecycleTimestampFor = (order: MockOrder): string => {
   const minute = String(Math.min(59, order.logs.length)).padStart(2, '0');
@@ -288,10 +288,10 @@ const lifecycleDetails: Record<OrderLifecycleAction, { status: MockOrderStatus; 
 export const canPauseOrder = (status: MockOrderStatus): boolean => status === 'active';
 
 export const canResumeOrder = (status: MockOrderStatus): boolean =>
-  status === 'paused' || status === 'stopped' || status === 'draft';
+  resumableOrderStatuses.has(status);
 
 export const canStopOrder = (status: MockOrderStatus): boolean =>
-  !terminalOrderStatuses.has(status) && status !== 'stopped';
+  status === 'active';
 
 export const transitionOrderLifecycle = (
   orderId: string,

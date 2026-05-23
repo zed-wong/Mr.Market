@@ -782,7 +782,9 @@ export const filterMockCampaigns = (
   }
   if (filter === 'eligible') {
     return namespace && isConnected && !isUnsupported
-      ? campaigns.filter((campaign) => campaignSupportsNamespace(campaign, namespace))
+      ? campaigns.filter((campaign) =>
+          campaignEligibility(campaign, namespace, isConnected, isUnsupported).canParticipate
+        )
       : [];
   }
   return campaigns.filter((campaign) => campaign.status === filter);

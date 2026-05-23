@@ -28,6 +28,15 @@ describe('mock campaign discovery helpers', () => {
       'eth-usdc-depth',
       'cross-chain-stable',
     ]);
+    expect(
+      filterMockCampaigns(
+        [mockCampaigns[0], { ...mockCampaigns[0], id: 'paused-evm-depth', status: 'paused' }],
+        'eligible',
+        'evm',
+        true,
+        false
+      ).map((campaign) => campaign.id)
+    ).toEqual(['eth-usdc-depth']);
     expect(filterMockCampaigns(mockCampaigns, 'eligible', 'evm', true, true)).toEqual([]);
     expect(filterMockCampaigns(mockCampaigns, 'eligible', 'evm', false, false)).toEqual([]);
     expect(filterMockCampaigns(mockCampaigns, 'eligible', null, false, false)).toEqual([]);
