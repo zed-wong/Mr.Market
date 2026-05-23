@@ -30,7 +30,7 @@ describe('AdminDirectMarketMakingService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       findOne: jest.fn(),
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
     };
     const growdataMarketMakingPairRepository = {
       findOne: jest.fn().mockResolvedValue(null),
@@ -194,6 +194,11 @@ describe('AdminDirectMarketMakingService', () => {
     const balanceLedgerService = {
       hasDepositCredit: jest.fn().mockResolvedValue(false),
       creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
+      getExistingBalance: jest.fn().mockResolvedValue(null),
+      unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+    };
+    const orderBalanceRepository = {
+      find: jest.fn().mockResolvedValue([]),
     };
     const balanceStateCacheService = {
       getBalance: jest.fn().mockReturnValue(undefined),
@@ -216,6 +221,7 @@ describe('AdminDirectMarketMakingService', () => {
 
     const service = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
+      orderBalanceRepository as any,
       growdataMarketMakingPairRepository as any,
       strategyDefinitionRepository as any,
       campaignJoinRepository as any,
@@ -261,6 +267,7 @@ describe('AdminDirectMarketMakingService', () => {
       campaignService,
       configService,
       balanceLedgerService,
+      orderBalanceRepository,
       balanceStateCacheService,
       balanceStateRefreshService,
       userStreamCapabilityService,
@@ -658,6 +665,43 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
+  it('rejects direct start when current allocation plus active direct orders exceeds exchange free balance', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      marketMakingRepository,
+      orderBalanceRepository,
+      exchange,
+      userOrdersService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-1',
+      enabled: true,
+      controllerType: 'pureMarketMaking',
+      capabilities: singleAccountLaunchConfig,
+      configSchema: {},
+    });
+    marketMakingRepository.find.mockResolvedValue([{ orderId: 'existing-1' }]);
+    orderBalanceRepository.find.mockResolvedValue([
+      {
+        orderId: 'existing-1',
+        assetId: 'BTC',
+        total: '0.6',
+      },
+    ]);
+    exchange.fetchBalance.mockResolvedValue({
+      free: { BTC: 1, USDT: 2000 },
+      used: {},
+      total: {},
+    });
+
+    await expect(service.directStart(directStartDto)).rejects.toThrow(
+      'Account overlap',
+    );
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
+  });
+
   it('stops a direct order via the shared runtime service', async () => {
     const {
       service,
@@ -684,6 +728,43 @@ describe('AdminDirectMarketMakingService', () => {
       'order-1',
       'stopped',
     );
+  });
+
+  it('does not mark a stopped order successful when locked-balance reconciliation fails', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      balanceLedgerService,
+      userOrdersService,
+    } = buildService();
+
+    marketMakingRepository.findOne
+      .mockResolvedValueOnce({
+        orderId: 'order-1',
+        userId: 'admin-user',
+        source: 'admin_direct',
+        state: 'running',
+        pair: 'BTC/USDT',
+      })
+      .mockResolvedValueOnce({
+        pair: 'BTC/USDT',
+      });
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (_orderId: string, assetId: string) =>
+        assetId === 'BTC'
+          ? {
+              orderId: 'order-1',
+              userId: 'admin-user',
+              assetId,
+              locked: '0.5',
+              updatedAt: '2026-05-23T00:00:00.000Z',
+            }
+          : null,
+    );
+    balanceLedgerService.unlockFunds.mockRejectedValue(new Error('ledger down'));
+
+    await expect(service.directStop('order-1')).rejects.toThrow('ledger down');
+    expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalled();
   });
 
   it('rejects stopping a missing direct order', async () => {

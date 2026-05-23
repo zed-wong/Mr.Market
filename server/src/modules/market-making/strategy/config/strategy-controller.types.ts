@@ -25,6 +25,7 @@ export type StrategyRuntimeSession = {
   tradedQuoteVolume?: number;
   inventoryBaseQty?: number;
   inventoryCostQuote?: number;
+  consecutiveExchangeRejects?: number;
   params: Record<string, unknown>;
 };
 

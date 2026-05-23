@@ -14,7 +14,8 @@ export class PureMarketMakingStrategyController implements StrategyController {
   readonly strategyType = 'pureMarketMaking' as const;
 
   getCadenceMs(parameters: Record<string, unknown>): number {
-    return Math.max(1000, Number(parameters?.orderRefreshTime || 1000));
+    const rawMs = Number(parameters?.orderRefreshTime || 5000);
+    return Math.max(5000, rawMs);
   }
 
   async start(

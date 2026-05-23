@@ -16,6 +16,7 @@ import { CampaignJoin } from 'src/common/entities/campaign/campaign-join.entity'
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import {
   createPureMarketMakingStrategyKey,
   createStrategyKey,
@@ -100,6 +101,8 @@ export class AdminDirectMarketMakingService {
   constructor(
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingRepository: Repository<MarketMakingOrder>,
+    @InjectRepository(MarketMakingOrderBalance)
+    private readonly orderBalanceRepository: Repository<MarketMakingOrderBalance>,
     @InjectRepository(GrowdataMarketMakingPair)
     private readonly growdataMarketMakingPairRepository: Repository<GrowdataMarketMakingPair>,
     @InjectRepository(StrategyDefinition)
@@ -223,6 +226,15 @@ export class AdminDirectMarketMakingService {
       resolvedConfig.resolvedConfig,
     );
 
+    await this.validateAccountAllocationOverlap(
+      dto.exchangeName,
+      dto.pair,
+      executionAccounts.primary.apiKeyId,
+      executionAccounts.primary.accountLabel,
+      resolvedConfig.resolvedConfig,
+      primaryMarketSnapshot,
+    );
+
     const warnings =
       capabilities.directExecutionMode === 'dual_account'
         ? await this.runDualAccountBalancePreCheck(
@@ -292,6 +304,7 @@ export class AdminDirectMarketMakingService {
       throw new NotFoundException('Order not found');
     }
     if (order.state === 'stopped') {
+      await this.reconcileOrderLockedBalances(orderId, order.userId || 'admin-direct');
       return {
         orderId,
         state: 'stopped',
@@ -302,6 +315,7 @@ export class AdminDirectMarketMakingService {
       order,
       order.userId || 'admin-direct',
     );
+    await this.reconcileOrderLockedBalances(orderId, order.userId || 'admin-direct');
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,
       'stopped',
@@ -377,6 +391,16 @@ export class AdminDirectMarketMakingService {
           primaryMarketSnapshot,
         );
 
+    await this.validateAccountAllocationOverlap(
+      order.exchangeName,
+      order.pair,
+      order.apiKeyId,
+      primaryAccountLabel,
+      resolvedConfig,
+      primaryMarketSnapshot,
+      order.orderId,
+    );
+
     try {
       await this.ensureAdminDirectLedgerSeeded(order);
       await this.marketMakingRuntimeService.startOrder(order);
@@ -415,6 +439,8 @@ export class AdminDirectMarketMakingService {
         'Only stopped or failed orders can be removed',
       );
     }
+
+    await this.reconcileOrderLockedBalances(orderId, order.userId || 'admin-direct');
 
     await this.marketMakingRepository.update(
       {
@@ -1234,6 +1260,45 @@ export class AdminDirectMarketMakingService {
     return required.includes(field) || field in properties;
   }
 
+  private async reconcileOrderLockedBalances(
+    orderId: string,
+    userId: string,
+  ): Promise<void> {
+    const [baseAsset, quoteAsset] = (await this.marketMakingRepository.findOne({
+      where: { orderId },
+      select: ['pair'],
+    }))?.pair?.split('/') || [];
+
+    if (!baseAsset || !quoteAsset) {
+      return;
+    }
+
+    for (const assetId of [baseAsset, quoteAsset]) {
+      const balance = await this.balanceLedgerService.getExistingBalance(
+        orderId,
+        assetId,
+      );
+
+      if (!balance || new BigNumber(balance.locked).isLessThanOrEqualTo(0)) {
+        continue;
+      }
+
+      await this.balanceLedgerService.unlockFunds({
+        orderId,
+        userId,
+        assetId,
+        amount: balance.locked,
+        idempotencyKey: `reconcile-stop:${orderId}:${assetId}:${balance.updatedAt}:${balance.locked}`,
+        refType: 'stop_reconciliation',
+        refId: orderId,
+      });
+
+      this.logger.log(
+        `Reconciled locked balance for order ${orderId} asset ${assetId}: released ${balance.locked}`,
+      );
+    }
+  }
+
   private backfillOrderRuntimeSnapshot(order: MarketMakingOrder): void {
     if (!order.strategySnapshot?.resolvedConfig) {
       return;
@@ -1288,6 +1353,95 @@ export class AdminDirectMarketMakingService {
 
     if (!String(resolvedConfig.accountLabel || '').trim()) {
       resolvedConfig.accountLabel = this.readAccountLabel(order);
+    }
+  }
+
+  private async validateAccountAllocationOverlap(
+    exchangeName: string,
+    pair: string,
+    apiKeyId: string | null,
+    accountLabel: string,
+    currentAllocation?: Record<string, unknown>,
+    snapshot?: DirectMarketSnapshot,
+    excludeOrderId?: string,
+  ): Promise<void> {
+    if (!apiKeyId) {
+      return;
+    }
+
+    const [baseAsset, quoteAsset] = this.parsePair(pair);
+
+    const overlappingOrders = await this.marketMakingRepository.find({
+      where: {
+        exchangeName,
+        apiKeyId,
+        source: 'admin_direct',
+        state: In(['running', 'stopped']),
+      },
+      select: ['orderId'],
+    });
+    const overlappingOrderIds = overlappingOrders
+      .map((o) => o.orderId)
+      .filter((id) => id !== excludeOrderId);
+
+    const overlappingBalances = overlappingOrderIds.length
+      ? await this.orderBalanceRepository.find({
+          where: overlappingOrderIds.map((orderId) => ({ orderId })),
+        })
+      : [];
+
+    const alreadyAllocated = new Map<string, BigNumber>();
+
+    for (const bal of overlappingBalances) {
+      if (!bal.assetId) {
+        continue;
+      }
+
+      const current = alreadyAllocated.get(bal.assetId) || new BigNumber(0);
+      alreadyAllocated.set(
+        bal.assetId,
+        current.plus(new BigNumber(bal.total || 0)),
+      );
+    }
+
+    const currentAllocations = new Map<string, BigNumber>();
+
+    if (baseAsset) {
+      currentAllocations.set(
+        baseAsset,
+        new BigNumber(this.readPositiveAmount(currentAllocation?.balanceA) || 0),
+      );
+    }
+    if (quoteAsset) {
+      currentAllocations.set(
+        quoteAsset,
+        new BigNumber(this.readPositiveAmount(currentAllocation?.balanceB) || 0),
+      );
+    }
+
+    const relevantAssets = [baseAsset, quoteAsset].filter(Boolean);
+    const balanceSnapshot =
+      snapshot ||
+      (await this.resolveDirectMarketSnapshot(exchangeName, pair, accountLabel));
+
+    for (const assetId of relevantAssets) {
+      const allocated = (alreadyAllocated.get(assetId) || new BigNumber(0)).plus(
+        currentAllocations.get(assetId) || 0,
+      );
+
+      if (allocated.isLessThanOrEqualTo(0)) {
+        continue;
+      }
+
+      const exchangeFree = new BigNumber(
+        balanceSnapshot.balance?.free?.[assetId] ?? 0,
+      );
+
+      if (allocated.isGreaterThan(exchangeFree)) {
+        throw new BadRequestException(
+          `Account overlap: ${overlappingOrderIds.length} active order(s) already allocate ${allocated.toFixed()} ${assetId}, but exchange free balance is only ${exchangeFree.toFixed()} ${assetId}. Reduce order amount or stop conflicting orders first.`,
+        );
+      }
     }
   }
 

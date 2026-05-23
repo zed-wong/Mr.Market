@@ -27,6 +27,7 @@ describe('FillSettlementService', () => {
           side: 'buy',
           price: '100',
           qty: '0.5',
+          cumulativeQty: '0.5',
         },
       }),
     ).resolves.toBe(true);
@@ -36,7 +37,7 @@ describe('FillSettlementService', () => {
       userId: 'user-1',
       assetId: 'BTC',
       amount: '0.5',
-      idempotencyKey: 'mm-fill:strategy-1:ex-1:order-1:0:buy:100:0.5:base',
+      idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:base',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -45,7 +46,7 @@ describe('FillSettlementService', () => {
       userId: 'user-1',
       assetId: 'USDT',
       amount: '-50',
-      idempotencyKey: 'mm-fill:strategy-1:ex-1:order-1:0:buy:100:0.5:quote',
+      idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -65,6 +66,7 @@ describe('FillSettlementService', () => {
         side: 'buy',
         price: '100',
         qty: '0.5',
+        cumulativeQty: '0.5',
         feeAmount: '0.0005',
         feeAsset: 'BTC',
       },
@@ -75,7 +77,7 @@ describe('FillSettlementService', () => {
       userId: 'user-1',
       assetId: 'BTC',
       amount: '0.0005',
-      idempotencyKey: 'mm-fill:strategy-1:fill-1:fee:BTC',
+      idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:fee:BTC',
       refType: 'market_making_fee',
       refId: 'ex-1',
     });
@@ -152,6 +154,7 @@ describe('FillSettlementService', () => {
           side: 'buy',
           price: '100',
           qty: '0.5',
+          cumulativeQty: '0.5',
           feeAmount: '0.0005',
           feeAsset: 'BTC',
         },

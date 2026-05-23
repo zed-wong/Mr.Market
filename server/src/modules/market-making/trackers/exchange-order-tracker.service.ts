@@ -509,10 +509,15 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
       const nextFilledQty =
         this.normalizeFilledValue(latest?.filled) || order.cumulativeFilledQty;
+      const adjustedStatus = this.adjustPartialFillStatus(
+        normalizedStatus,
+        order.qty,
+        nextFilledQty,
+      );
       const nextOrder: TrackedOrder = {
         ...order,
         cumulativeFilledQty: nextFilledQty,
-        status: normalizedStatus,
+        status: adjustedStatus,
         updatedAt: getRFC3339Timestamp(),
       };
 
@@ -835,6 +840,29 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     this.fillLog.set(strategyKey, fills);
 
     return fills;
+  }
+
+  private adjustPartialFillStatus(
+    status: TrackedOrder['status'],
+    orderQty: string,
+    cumulativeFilledQty: string | undefined,
+  ): TrackedOrder['status'] {
+    if (status !== 'filled') {
+      return status;
+    }
+
+    if (!cumulativeFilledQty || !orderQty) {
+      return status;
+    }
+
+    const filled = new BigNumber(cumulativeFilledQty);
+    const total = new BigNumber(orderQty);
+
+    if (filled.isFinite() && total.isFinite() && filled.isLessThan(total)) {
+      return 'cancelled';
+    }
+
+    return status;
   }
 
   private normalizeStatus(status: string): TrackedOrder['status'] {

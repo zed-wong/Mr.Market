@@ -370,13 +370,14 @@ export class StrategyIntentExecutionService {
               price: intent.price,
               strategyType: this.extractStrategyType(intent.strategyKey),
               runtimeInstanceKey: intent.runtimeInstanceKey,
-              orderId: String(result.id),
+              orderId,
               status:
                 typeof result?.status === 'string' ? result.status : 'open',
               metadata: {
                 intentId: intent.intentId,
                 intentType: intent.type,
                 clientOrderId,
+                exchangeOrderId: String(result.id),
               },
             }),
           );

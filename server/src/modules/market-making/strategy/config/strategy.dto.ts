@@ -186,7 +186,7 @@ export class PureMarketMakingStrategyDto {
   orderAmount: number;
 
   @ApiProperty({
-    description: 'Order refresh time in milliseconds',
+    description: 'Order refresh time in milliseconds (minimum 5000)',
     example: 15000,
   })
   orderRefreshTime: number;
@@ -307,6 +307,13 @@ export class PureMarketMakingStrategyDto {
     example: '5%',
   })
   killSwitchThreshold?: number | string;
+
+  @ApiPropertyOptional({
+    description:
+      'Stop the strategy when this many consecutive intent failures occur within the observation window. 0 or unset disables.',
+    example: 100,
+  })
+  maxConsecutiveRejects?: number;
 
   @ApiPropertyOptional({
     description: 'Enable volatility-based adaptive spread widening',

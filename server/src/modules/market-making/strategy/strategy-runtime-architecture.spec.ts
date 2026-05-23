@@ -348,6 +348,7 @@ const createFixture = () => {
     {
       getReferencePrice: jest.fn().mockResolvedValue(100),
       hasTrackedOrderBook: jest.fn().mockReturnValue(true),
+      getTrackedOrderBookFreshness: jest.fn().mockReturnValue({ fresh: true }),
     } as any,
     executorRegistry,
     undefined,

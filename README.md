@@ -39,11 +39,11 @@ make start-dev
 
 ### Local admin-interface validation
 
-The standalone admin interface is validated locally against the real Nest server. The admin preview runs at `http://localhost:4174`, and the server runs at `http://127.0.0.1:3000`.
+The standalone admin interface is validated locally against the real Nest server. The admin preview runs at `http://localhost:4176`, and the server runs at `http://127.0.0.1:3100`.
 
-The restored admin UI visuals are validated through the same local flow while preserving real local password and passkey authentication. Build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3000`, then run the preview against the local production server.
+The admin dashboard, orders, positions, and system pages use real server-backed data in this flow. Rebalance has been removed; Direct Market Making, Exchanges, and API Keys remain available. Build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3100`, then run the preview against the local production server.
 
-Use inline environment variables for local validation instead of reading `.env` files. At minimum, provide the local server values such as `PORT=3000`, `DATABASE_PATH`, `ADMIN_PASSWORD`, `JWT_SECRET`, `ENCRYPTION_PRIVATE_KEY`, `CORS_ORIGIN=http://localhost:4174`, and passkey origin/RP settings; build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3000`.
+Use inline environment variables for local validation instead of reading `.env` files. At minimum, provide the local server values such as `PORT=3100`, `DATABASE_PATH`, `ADMIN_PASSWORD`, `JWT_SECRET`, `CORS_ORIGIN=http://localhost:4176`, and passkey origin/RP settings; build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3100`.
 
 Key commands:
 
@@ -53,7 +53,7 @@ bun run --cwd server start:prod
 bun run --cwd admin-interface check
 bun run --cwd admin-interface test:unit
 bun run --cwd admin-interface test:e2e
-bun run --cwd admin-interface preview -- --host localhost --port 4174
+bun run --cwd admin-interface preview -- --host localhost --port 4176
 ```
 
 ### Local web3-interface prototype

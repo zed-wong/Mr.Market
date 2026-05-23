@@ -5,6 +5,7 @@ import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-maki
 import { RewardAllocation } from 'src/common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 
 import { ExchangeConnectorRegistry } from '../connector/exchange-connector-registry';
 import { MarketMakingEventsModule } from '../events/market-making-events.module';
@@ -22,6 +23,7 @@ import { ReconciliationService } from './reconciliation.service';
       RewardLedger,
       RewardAllocation,
       StrategyOrderIntentEntity,
+      MarketMakingOrder,
     ]),
     MarketMakingEventsModule,
     ExecutionModule,

@@ -144,10 +144,48 @@ export class StrategyService
     string,
     ConnectorHealthStatus
   >();
+  private readonly slotCancelCooldownByStrategy = new Map<
+    string,
+    Map<string, number>
+  >();
   private detachExchangeReadyListener?: () => void;
 
   private generateRunId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  private recordSlotCancelTimestamp(
+    strategyKey: string,
+    slotKey: string,
+  ): void {
+    let slotMap = this.slotCancelCooldownByStrategy.get(strategyKey);
+
+    if (!slotMap) {
+      slotMap = new Map();
+      this.slotCancelCooldownByStrategy.set(strategyKey, slotMap);
+    }
+
+    slotMap.set(slotKey, Date.now());
+  }
+
+  private isSlotWithinCancelCooldown(
+    strategyKey: string,
+    slotKey: string,
+    cooldownMs = 2000,
+  ): boolean {
+    const slotMap = this.slotCancelCooldownByStrategy.get(strategyKey);
+
+    if (!slotMap) {
+      return false;
+    }
+
+    const lastCancel = slotMap.get(slotKey);
+
+    if (!lastCancel) {
+      return false;
+    }
+
+    return Date.now() - lastCancel < cooldownMs;
   }
 
   constructor(
@@ -1012,6 +1050,15 @@ export class StrategyService
               } clientOrderId=${fill.clientOrderId || ''}: ${errorMessage}`,
               errorTrace,
             );
+
+            if (
+              errorMessage.includes('insufficient locked balance') ||
+              errorMessage.includes('insufficient available balance')
+            ) {
+              this.logger.error(
+                `CRITICAL: Fill ledger error for strategyKey=${session.strategyKey} exchangeOrderId=${fill.exchangeOrderId}: ${errorMessage}`,
+              );
+            }
           },
         },
       );
@@ -3937,6 +3984,36 @@ export class StrategyService
     if (this.getConnectorHealthStatus(params.exchangeName) !== 'CONNECTED') {
       return [];
     }
+
+    if (this.runtimeObservationService) {
+      const pressure = this.runtimeObservationService.getPressure(
+        strategyKey,
+        Number(params.runtimeObservationWindowMs || 60000),
+      );
+      const maxConsecutiveRejects = Number(
+        params.maxConsecutiveRejects || 100,
+      );
+
+      if (
+        Number.isFinite(maxConsecutiveRejects) &&
+        maxConsecutiveRejects > 0 &&
+        pressure.rejectCount >= maxConsecutiveRejects
+      ) {
+        this.logger.warn(
+          `Kill switch triggered for ${strategyKey}: ${pressure.rejectCount} recent intent failures within observation window (threshold ${maxConsecutiveRejects})`,
+        );
+        const session = this.sessions.get(strategyKey);
+        if (session) {
+          await this.stopStrategyForUser(
+            session.userId,
+            session.clientId,
+            session.strategyType,
+          );
+        }
+
+        return [];
+      }
+    }
     let priceSource: BigNumber;
 
     try {
@@ -3977,6 +4054,32 @@ export class StrategyService
         (order) =>
           order.status === 'open' || order.status === 'partially_filled',
       );
+
+    if (this.strategyMarketDataProviderService) {
+      const maxAgeMs = 30000;
+      const freshness =
+        this.strategyMarketDataProviderService.getTrackedOrderBookFreshness(
+          params.exchangeName,
+          params.pair,
+          maxAgeMs,
+        );
+
+      if (!freshness.fresh) {
+        this.appendAdaptivePmmSafetyCancels(
+          actions,
+          cancelledExchangeOrderIds,
+          strategyKey,
+          params,
+          ts,
+          liveOrders,
+        );
+        this.logger.warn(
+          `Skipping creates for ${strategyKey}: stale market data for ${params.exchangeName} ${params.pair}; emitted ${actions.length} cancel action(s)`,
+        );
+
+        return actions;
+      }
+    }
     const session = this.sessions.get(strategyKey);
     const filledOrderDelay = Number(params.filledOrderDelay || 0);
 
@@ -4385,6 +4488,13 @@ export class StrategyService
       const currentOrder = activeOrderBySlot.get(slotKey);
 
       if (!currentOrder && targetAction) {
+        if (this.isSlotWithinCancelCooldown(strategyKey, slotKey)) {
+          this.logger.log(
+            `[${strategyKey}] reason=cancel_cooldown slotKey=${slotKey}`,
+          );
+          continue;
+        }
+
         actions.push(targetAction);
         continue;
       }
@@ -5270,6 +5380,10 @@ export class StrategyService
 
     cancelledExchangeOrderIds.add(action.mixinOrderId);
     actions.push(action);
+
+    if (strategyKey && action.slotKey) {
+      this.recordSlotCancelTimestamp(strategyKey, action.slotKey);
+    }
   }
 
   private consumeCancelBudget(
@@ -5881,6 +5995,7 @@ export class StrategyService
     }
 
     this.sessions.delete(strategyKey);
+    this.slotCancelCooldownByStrategy.delete(strategyKey);
   }
 
   private async cancelTrackedOrdersForStrategy(
@@ -6736,6 +6851,19 @@ export class StrategyService
 
     const quoteAmount = price.multipliedBy(qty);
     const eventKey = this.buildFillLedgerEventKey(session, fill);
+
+    if (!eventKey) {
+      this.logger.warn(
+        `Skipping fill ledger update for strategyKey=${session.strategyKey}: missing canonical fill identity (need exchangeOrderId/clientOrderId AND cumulativeQty). exchangeOrderId=${
+          fill.exchangeOrderId || ''
+        } clientOrderId=${fill.clientOrderId || ''} cumulativeQty=${
+          fill.cumulativeQty || ''
+        } fillId=${fill.fillId || ''}`,
+      );
+
+      return;
+    }
+
     const baseAmount = qty.toFixed();
     const quoteDelta =
       fill.side === 'buy'
@@ -6871,18 +6999,29 @@ export class StrategyService
       feeAsset?: string;
       receivedAt?: string;
     },
-  ): string {
-    const stableIdentity =
-      fill.fillId ||
-      [
-        fill.exchangeOrderId || '',
-        fill.clientOrderId || '',
-        fill.side || '',
-        fill.price || '',
-        fill.cumulativeQty || fill.qty || '',
-      ].join(':');
+  ): string | null {
+    const orderIdentity = fill.exchangeOrderId || fill.clientOrderId;
+    const cumulativeQtyStr = fill.cumulativeQty
+      ? new BigNumber(fill.cumulativeQty)
+      : null;
 
-    return ['mm-fill', session.strategyKey, stableIdentity].join(':');
+    if (
+      !orderIdentity ||
+      !fill.side ||
+      !cumulativeQtyStr ||
+      !cumulativeQtyStr.isFinite() ||
+      cumulativeQtyStr.isLessThanOrEqualTo(0)
+    ) {
+      return null;
+    }
+
+    return [
+      'mm-fill',
+      session.strategyKey,
+      orderIdentity,
+      fill.side,
+      cumulativeQtyStr.toFixed(),
+    ].join(':');
   }
 
   private estimateMakerFeeSpread(exchangeName: string, pair: string): number {
@@ -7252,6 +7391,7 @@ export class StrategyService
         price: order.price,
         qty: order.qty,
         mixinOrderId: order.exchangeOrderId,
+        slotKey: order.slotKey,
         createdAt: ts,
       }));
   }
@@ -7628,10 +7768,37 @@ export class StrategyService
     strategyKey: string,
     params: PureMarketMakingStrategyDto,
   ): Promise<boolean> {
-    const threshold = params.killSwitchThreshold;
     const session = this.sessions.get(strategyKey);
 
-    if (threshold === undefined || threshold === null || !session) {
+    if (!session) {
+      return false;
+    }
+
+    const consecutiveRejects = session.consecutiveExchangeRejects || 0;
+    const maxConsecutiveRejects = Number(
+      params.maxConsecutiveRejects || 100,
+    );
+
+    if (
+      Number.isFinite(maxConsecutiveRejects) &&
+      maxConsecutiveRejects > 0 &&
+      consecutiveRejects >= maxConsecutiveRejects
+    ) {
+      this.logger.warn(
+        `Kill switch triggered for ${strategyKey}: ${consecutiveRejects} consecutive exchange rejects (threshold ${maxConsecutiveRejects})`,
+      );
+      await this.stopStrategyForUser(
+        session.userId,
+        session.clientId,
+        session.strategyType,
+      );
+
+      return true;
+    }
+
+    const threshold = params.killSwitchThreshold;
+
+    if (threshold === undefined || threshold === null) {
       return false;
     }
 

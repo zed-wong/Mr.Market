@@ -610,7 +610,7 @@ export class UserStreamTrackerService
     const side = fill.side || trackedOrder?.side;
     const price = fill.price || trackedOrder?.price;
     let qty = fill.qty;
-    const cumulativeQty = fill.cumulativeQty;
+    let cumulativeQty = fill.cumulativeQty;
 
     if (
       trackedOrder &&
@@ -627,6 +627,17 @@ export class UserStreamTrackerService
 
     if (!qty) {
       return null;
+    }
+
+    if (!cumulativeQty && qty) {
+      const previousCumulative = new BigNumber(
+        trackedOrder?.cumulativeFilledQty || '0',
+      );
+      const deltaQty = new BigNumber(qty);
+
+      if (previousCumulative.isFinite() && deltaQty.isFinite()) {
+        cumulativeQty = previousCumulative.plus(deltaQty).toFixed();
+      }
     }
 
     return {

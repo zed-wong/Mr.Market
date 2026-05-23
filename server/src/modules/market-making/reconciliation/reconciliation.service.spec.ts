@@ -58,6 +58,81 @@ describe('ReconciliationService', () => {
     expect(report.violations).toBe(1);
   });
 
+  it('detects locked balances on non-running market-making orders', async () => {
+    const balanceRepo = {
+      find: jest.fn().mockResolvedValue([
+        {
+          orderId: 'order-stopped',
+          userId: 'u1',
+          assetId: 'usdt',
+          available: '70',
+          locked: '30',
+          total: '100',
+        },
+      ]),
+    };
+    const orderTracker = {
+      getOpenOrders: jest.fn().mockReturnValue([]),
+    };
+    const orderRepo = {
+      find: jest
+        .fn()
+        .mockResolvedValue([{ orderId: 'order-stopped', state: 'stopped' }]),
+    };
+    const service = new ReconciliationService(
+      balanceRepo as any,
+      orderTracker as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      orderRepo as any,
+    );
+
+    const report = await service.reconcileLedgerInvariants();
+
+    expect(report.violations).toBe(1);
+  });
+
+  it('allows locked balances on running market-making orders', async () => {
+    const balanceRepo = {
+      find: jest.fn().mockResolvedValue([
+        {
+          orderId: 'order-running',
+          userId: 'u1',
+          assetId: 'usdt',
+          available: '70',
+          locked: '30',
+          total: '100',
+        },
+      ]),
+    };
+    const orderRepo = {
+      find: jest
+        .fn()
+        .mockResolvedValue([{ orderId: 'order-running', state: 'running' }]),
+    };
+    const service = new ReconciliationService(
+      balanceRepo as any,
+      { getOpenOrders: jest.fn().mockReturnValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      { find: jest.fn().mockResolvedValue([]) } as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      orderRepo as any,
+    );
+
+    const report = await service.reconcileLedgerInvariants();
+
+    expect(report.violations).toBe(0);
+  });
+
   it('accepts reward consistency when allocations, platform fee, and remainder equal reward amount', async () => {
     const service = new ReconciliationService(
       { find: jest.fn().mockResolvedValue([]) } as any,

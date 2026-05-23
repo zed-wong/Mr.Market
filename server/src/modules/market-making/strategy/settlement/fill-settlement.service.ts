@@ -73,6 +73,19 @@ export class FillSettlementService {
 
     const quoteAmount = price.multipliedBy(qty);
     const eventKey = this.buildFillLedgerEventKey(command);
+
+    if (!eventKey) {
+      this.logger.warn(
+        `Skipping fill ledger update for strategyKey=${command.strategyKey}: missing canonical fill identity (need exchangeOrderId/clientOrderId AND cumulativeQty). exchangeOrderId=${
+          command.fill.exchangeOrderId || ''
+        } clientOrderId=${command.fill.clientOrderId || ''} cumulativeQty=${
+          command.fill.cumulativeQty || ''
+        } fillId=${command.fill.fillId || ''}`,
+      );
+
+      return false;
+    }
+
     const baseDelta =
       command.fill.side === 'buy' ? qty.toFixed() : qty.negated().toFixed();
     const quoteDelta =
@@ -157,23 +170,24 @@ export class FillSettlementService {
     }
   }
 
-  private buildFillLedgerEventKey(command: FillSettlementCommand): string {
+  private buildFillLedgerEventKey(
+    command: FillSettlementCommand,
+  ): string | null {
     const fill = command.fill;
     const cumulativeQty = this.normalizePositiveNumber(fill.cumulativeQty);
     const orderIdentity = fill.exchangeOrderId || fill.clientOrderId;
-    const stableIdentity =
-      orderIdentity && fill.side && cumulativeQty
-        ? [orderIdentity, fill.side, cumulativeQty].join(':')
-        : fill.fillId ||
-          [
-            fill.exchangeOrderId || '',
-            fill.clientOrderId || '',
-            fill.side || '',
-            fill.price || '',
-            fill.qty || '',
-          ].join(':');
 
-    return ['mm-fill', command.strategyKey, stableIdentity].join(':');
+    if (!orderIdentity || !fill.side || !cumulativeQty) {
+      return null;
+    }
+
+    return [
+      'mm-fill',
+      command.strategyKey,
+      orderIdentity,
+      fill.side,
+      cumulativeQty,
+    ].join(':');
   }
 
   private normalizePositiveNumber(value: unknown): string | null {

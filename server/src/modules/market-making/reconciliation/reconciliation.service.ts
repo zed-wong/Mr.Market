@@ -7,9 +7,10 @@ import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-maki
 import { RewardAllocation } from 'src/common/entities/ledger/reward-allocation.entity';
 import { RewardLedger } from 'src/common/entities/ledger/reward-ledger.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { MarketMakingEventBus } from '../events/market-making-event-bus.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
@@ -50,6 +51,9 @@ export class ReconciliationService {
     private readonly marketMakingEventBus?: MarketMakingEventBus,
     @Optional()
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
+    @Optional()
+    @InjectRepository(MarketMakingOrder)
+    private readonly marketMakingOrderRepository?: Repository<MarketMakingOrder>,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -97,6 +101,35 @@ export class ReconciliationService {
 
       if (available.isLessThan(0) || locked.isLessThan(0)) {
         violations += 1;
+      }
+    }
+
+    if (this.marketMakingOrderRepository) {
+      const lockedOrderIds = rows
+        .filter((row) => new BigNumber(row.locked).isGreaterThan(0))
+        .map((row) => row.orderId);
+      const uniqueLockedOrderIds = [...new Set(lockedOrderIds)];
+
+      if (uniqueLockedOrderIds.length > 0) {
+        const orders = await this.marketMakingOrderRepository.find({
+          where: { orderId: In(uniqueLockedOrderIds) },
+          select: ['orderId', 'state'],
+        });
+        const stateByOrderId = new Map(
+          orders.map((order) => [order.orderId, order.state]),
+        );
+
+        for (const row of rows) {
+          if (new BigNumber(row.locked).isLessThanOrEqualTo(0)) {
+            continue;
+          }
+
+          const state = stateByOrderId.get(row.orderId);
+
+          if (state && state !== 'running') {
+            violations += 1;
+          }
+        }
       }
     }
 
