@@ -49,6 +49,8 @@ import { AdminSpotService } from './spot/admin-spot.service';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
 import { AdminSystemHealthController } from './system/admin-system-health.controller';
 import { AdminSystemHealthService } from './system/admin-system-health.service';
+import { AdminSystemLogsController } from './system/admin-system-logs.controller';
+import { AdminSystemLogsService } from './system/admin-system-logs.service';
 
 @Module({
   imports: [
@@ -92,6 +94,7 @@ import { AdminSystemHealthService } from './system/admin-system-health.service';
     AdminOrdersController,
     AdminPositionsController,
     AdminSystemHealthController,
+    AdminSystemLogsController,
     AdminFeeController,
     AdminDirectMarketMakingController,
   ],
@@ -101,6 +104,7 @@ import { AdminSystemHealthService } from './system/admin-system-health.service';
     AdminOrdersService,
     AdminPositionsService,
     AdminSystemHealthService,
+    AdminSystemLogsService,
     AdminDirectMarketMakingService,
     PerformanceService,
     AdminGrowService,
@@ -113,6 +117,7 @@ import { AdminSystemHealthService } from './system/admin-system-health.service';
     AdminOrdersService,
     AdminPositionsService,
     AdminSystemHealthService,
+    AdminSystemLogsService,
     AdminDirectMarketMakingService,
     AdminGrowService,
     AdminSpotService,
