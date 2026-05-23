@@ -20,6 +20,7 @@ import { CampaignModule } from '../campaign/campaign.module';
 import { GrowdataModule } from '../data/grow-data/grow-data.module';
 import { SpotdataModule } from '../data/spot-data/spot-data.module';
 import { ExchangeInitModule } from '../infrastructure/exchange-init/exchange-init.module';
+import { CustomConfigModule } from '../infrastructure/custom-config/custom-config.module';
 import { HealthModule } from '../infrastructure/health/health.module';
 import { ExchangeApiKeyModule } from '../market-making/exchange-api-key/exchange-api-key.module';
 import { ExecutionModule } from '../market-making/execution/execution.module';
@@ -49,6 +50,8 @@ import { AdminSpotService } from './spot/admin-spot.service';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
 import { AdminSystemHealthController } from './system/admin-system-health.controller';
 import { AdminSystemHealthService } from './system/admin-system-health.service';
+import { AdminSystemConfigController } from './system/admin-system-config.controller';
+import { AdminSystemConfigService } from './system/admin-system-config.service';
 import { AdminSystemLogsController } from './system/admin-system-logs.controller';
 import { AdminSystemLogsService } from './system/admin-system-logs.service';
 import { AdminAuditModule } from './system/admin-audit.module';
@@ -69,6 +72,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     LedgerModule,
     ExchangeApiKeyModule,
     ExchangeInitModule,
+    CustomConfigModule,
     MetricsModule,
     HealthModule,
     ReconciliationModule,
@@ -97,6 +101,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminOrdersController,
     AdminPositionsController,
     AdminSystemHealthController,
+    AdminSystemConfigController,
     AdminSystemLogsController,
     AdminSystemAuditController,
     AdminFeeController,
@@ -108,6 +113,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminOrdersService,
     AdminPositionsService,
     AdminSystemHealthService,
+    AdminSystemConfigService,
     AdminSystemLogsService,
     AdminDirectMarketMakingService,
     PerformanceService,
@@ -121,6 +127,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminOrdersService,
     AdminPositionsService,
     AdminSystemHealthService,
+    AdminSystemConfigService,
     AdminSystemLogsService,
     AdminDirectMarketMakingService,
     AdminGrowService,

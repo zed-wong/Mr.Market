@@ -37,6 +37,23 @@ export class CustomConfigRepository {
     return config;
   }
 
+  async readPrimaryConfig(): Promise<CustomConfigEntity | null> {
+    const configs = await this.customRepository.find({
+      order: { config_id: 'ASC' },
+      take: 1,
+    });
+
+    return configs[0] || null;
+  }
+
+  createConfig(input: Partial<CustomConfigEntity>): CustomConfigEntity {
+    return this.customRepository.create(input);
+  }
+
+  async saveConfig(config: CustomConfigEntity): Promise<CustomConfigEntity> {
+    return await this.customRepository.save(config);
+  }
+
   async readSpotFee(configId?: number) {
     const config = await this.getConfigById(configId);
 
