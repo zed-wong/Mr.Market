@@ -41,6 +41,8 @@ import { AdminFeeService } from './fee/admin-fee.service';
 import { AdminGrowService } from './growdata/adminGrow.service';
 import { AdminDirectMarketMakingController } from './market-making/admin-direct-mm.controller';
 import { AdminDirectMarketMakingService } from './market-making/admin-direct-mm.service';
+import { AdminOrdersController } from './orders/admin-orders.controller';
+import { AdminOrdersService } from './orders/admin-orders.service';
 import { AdminSpotService } from './spot/admin-spot.service';
 import { AdminStrategyService } from './strategy/adminStrategy.service';
 
@@ -83,12 +85,14 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
   controllers: [
     AdminController,
     AdminDashboardController,
+    AdminOrdersController,
     AdminFeeController,
     AdminDirectMarketMakingController,
   ],
   providers: [
     AdminStrategyService,
     AdminDashboardService,
+    AdminOrdersService,
     AdminDirectMarketMakingService,
     PerformanceService,
     AdminGrowService,
@@ -98,6 +102,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
   exports: [
     AdminStrategyService,
     AdminDashboardService,
+    AdminOrdersService,
     AdminDirectMarketMakingService,
     AdminGrowService,
     AdminSpotService,
