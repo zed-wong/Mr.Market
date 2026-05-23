@@ -84,7 +84,7 @@ export class AuthService {
 
     if (!mixinOauthSecret) {
       this.logger.warn(
-        'MIXIN_OAUTH_SECRET is not defined in .env. Mixin login will fail.',
+        'MIXIN_OAUTH_SECRET is not configured. Mixin login will fail.',
       );
     }
   }

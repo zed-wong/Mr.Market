@@ -185,7 +185,7 @@ export class AdminSystemHealthService {
           group: 'queue',
           name: 'Snapshots queue',
           status: 'critical',
-          message: health.message,
+          message: 'Snapshot queue health source is unavailable.',
           observedAt: generatedAt,
           issues: ['Failed to read snapshot queue health.'],
         },
@@ -263,8 +263,12 @@ export class AdminSystemHealthService {
           slowScopes: slowScopes.length,
         },
         details: {
-          stats: stats.slice(0, MAX_RUNTIME_ROWS),
-          recent: recent.slice(-MAX_RUNTIME_ROWS),
+          stats: stats
+            .slice(0, MAX_RUNTIME_ROWS)
+            .map((row) => this.normalizeTimestampFields(row)),
+          recent: recent
+            .slice(-MAX_RUNTIME_ROWS)
+            .map((row) => this.normalizeTimestampFields(row)),
           truncated:
             stats.length > MAX_RUNTIME_ROWS || recent.length > MAX_RUNTIME_ROWS,
         },
@@ -315,7 +319,7 @@ export class AdminSystemHealthService {
         group: 'connector',
         name: 'Exchange API key metadata',
         status: 'warning',
-        message: result.message,
+        message: 'Exchange API key metadata source is unavailable.',
         observedAt: generatedAt,
         issues: ['Failed to read exchange connector metadata.'],
       };
@@ -408,7 +412,8 @@ export class AdminSystemHealthService {
         message: snapshot?.present
           ? 'Balance cache diagnostics were read from cached stream/rest snapshots.'
           : 'No cached balance snapshot is present for this registered account.',
-        observedAt: snapshot?.freshnessTimestamp || generatedAt,
+        observedAt:
+          this.normalizeTimestamp(snapshot?.freshnessTimestamp) || generatedAt,
         metrics: {
           streamHealth,
           snapshotPresent: Boolean(snapshot?.present),
@@ -419,9 +424,11 @@ export class AdminSystemHealthService {
           exchange: account.exchange,
           accountLabel: account.accountLabel,
           lastRefreshAt:
-            this.balanceStateRefreshService!.getLastRefreshTime(
-              account.exchange,
-              account.accountLabel,
+            this.normalizeTimestamp(
+              this.balanceStateRefreshService!.getLastRefreshTime(
+                account.exchange,
+                account.accountLabel,
+              ),
             ) || null,
           snapshotSource: snapshot?.source || null,
         },
@@ -638,5 +645,25 @@ export class AdminSystemHealthService {
     const ms = Date.parse(value);
 
     return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+  }
+
+  private normalizeTimestampFields<T extends Record<string, unknown>>(row: T): T {
+    const normalized: Record<string, unknown> = { ...row };
+
+    for (const key of Object.keys(normalized)) {
+      if (
+        key === 'timestamp' ||
+        key.endsWith('At') ||
+        key.endsWith('Timestamp')
+      ) {
+        const value = normalized[key];
+
+        if (typeof value === 'string') {
+          normalized[key] = this.normalizeTimestamp(value);
+        }
+      }
+    }
+
+    return normalized as T;
   }
 }

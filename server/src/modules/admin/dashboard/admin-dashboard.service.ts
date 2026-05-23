@@ -30,7 +30,7 @@ type DashboardRange = keyof typeof DASHBOARD_RANGES;
 
 const RECENT_LIMIT = 10;
 const CAPITAL_SCAN_LIMIT = 500;
-const API_KEY_SCAN_LIMIT = 100;
+const API_KEY_SCAN_LIMIT = 25;
 
 const INTENT_STATUSES = [
   'QUEUED',
@@ -234,11 +234,9 @@ export class AdminDashboardService {
   }
 
   private async buildOrderSummary(startAt: string) {
-    const where = { createdAt: MoreThanOrEqual(startAt) };
     const [total, recent] = await Promise.all([
-      this.trackedOrderRepository.count({ where }),
+      this.trackedOrderRepository.count(),
       this.trackedOrderRepository.find({
-        where,
         order: { updatedAt: 'DESC' },
         take: RECENT_LIMIT,
       }),
@@ -247,7 +245,6 @@ export class AdminDashboardService {
       this.trackedOrderRepository,
       'status',
       TRACKED_ORDER_STATUSES,
-      where,
     );
 
     return {
@@ -268,6 +265,7 @@ export class AdminDashboardService {
         updatedAt: this.normalizeTimestamp(order.updatedAt),
       })),
       truncated: recent.length >= RECENT_LIMIT,
+      updatedSince: startAt,
     };
   }
 
@@ -370,8 +368,12 @@ export class AdminDashboardService {
     const snapshot = this.metricsService.getRuntimeMetrics();
 
     return {
-      stats: snapshot.stats.slice(0, RECENT_LIMIT),
-      recent: snapshot.recent.slice(-RECENT_LIMIT),
+      stats: snapshot.stats
+        .slice(0, RECENT_LIMIT)
+        .map((row) => this.normalizeTimestampFields(row)),
+      recent: snapshot.recent
+        .slice(-RECENT_LIMIT)
+        .map((row) => this.normalizeTimestampFields(row)),
       truncated:
         snapshot.stats.length > RECENT_LIMIT ||
         snapshot.recent.length > RECENT_LIMIT,
@@ -405,15 +407,24 @@ export class AdminDashboardService {
   }
 
   private async buildHealthSummary() {
-    const health = this.healthService
-      ? await this.healthService.checkSnapshotPollingHealth()
-      : null;
+    let health: Awaited<
+      ReturnType<HealthService['checkSnapshotPollingHealth']>
+    > | null = null;
+
+    if (this.healthService) {
+      try {
+        health = await this.healthService.checkSnapshotPollingHealth();
+      } catch {
+        health = null;
+      }
+    }
 
     return {
       status: health?.status || 'unknown',
-      timestamp: health?.timestamp || getRFC3339Timestamp(),
-      queue: health?.queue || null,
-      metrics: health?.metrics || null,
+      timestamp:
+        this.normalizeTimestamp(health?.timestamp) || getRFC3339Timestamp(),
+      queue: this.normalizeNestedTimestamps(health?.queue || null),
+      metrics: this.normalizeNestedTimestamps(health?.metrics || null),
       issues: Array.isArray(health?.issues) ? health.issues.slice(0, 5) : [],
     };
   }
@@ -473,5 +484,56 @@ export class AdminDashboardService {
     const ms = Date.parse(value);
 
     return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+  }
+
+  private normalizeTimestampValue(value: unknown): unknown {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return new Date(value).toISOString();
+    }
+
+    if (typeof value === 'string') {
+      return this.normalizeTimestamp(value);
+    }
+
+    return value;
+  }
+
+  private normalizeNestedTimestamps(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.normalizeNestedTimestamps(entry));
+    }
+
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+          key,
+          key === 'timestamp' || key.endsWith('At') || key.endsWith('Timestamp')
+            ? this.normalizeTimestampValue(nested)
+            : this.normalizeNestedTimestamps(nested),
+        ]),
+      );
+    }
+
+    return value;
+  }
+
+  private normalizeTimestampFields<T extends Record<string, unknown>>(row: T): T {
+    const normalized: Record<string, unknown> = { ...row };
+
+    for (const key of Object.keys(normalized)) {
+      if (
+        key === 'timestamp' ||
+        key.endsWith('At') ||
+        key.endsWith('Timestamp')
+      ) {
+        const value = normalized[key];
+
+        if (typeof value === 'string') {
+          normalized[key] = this.normalizeTimestamp(value);
+        }
+      }
+    }
+
+    return normalized as T;
   }
 }

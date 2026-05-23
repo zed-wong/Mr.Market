@@ -53,29 +53,7 @@ export class AdminPositionsService {
       return this.emptyResponse(filters, pagination);
     }
 
-    const query = this.orderBalanceRepository.createQueryBuilder('balance');
-
-    if (filters.asset) {
-      query.andWhere('LOWER(balance.assetId) = :asset', {
-        asset: filters.asset,
-      });
-    }
-
-    if (exchangeOrderIds.length > 0) {
-      query.andWhere('balance.orderId IN (:...orderIds)', {
-        orderIds: exchangeOrderIds,
-      });
-    }
-
-    if (filters.query) {
-      query.andWhere(
-        `(${[
-          "LOWER(balance.orderId) LIKE :query ESCAPE '\\'",
-          "LOWER(balance.assetId) LIKE :query ESCAPE '\\'",
-        ].join(' OR ')})`,
-        { query: `%${this.escapeLike(filters.query.toLowerCase())}%` },
-      );
-    }
+    const query = this.createFilteredBalanceQuery(filters, exchangeOrderIds);
 
     const [balances, total] = await query
       .orderBy('balance.updatedAt', 'DESC')
@@ -84,6 +62,15 @@ export class AdminPositionsService {
       .take(pagination.limit)
       .skip((pagination.page - 1) * pagination.limit)
       .getManyAndCount();
+    const summaryBalances = await this.createFilteredBalanceQuery(
+      filters,
+      exchangeOrderIds,
+    )
+      .orderBy('balance.updatedAt', 'DESC')
+      .addOrderBy('balance.orderId', 'ASC')
+      .addOrderBy('balance.assetId', 'ASC')
+      .take(METADATA_SCAN_LIMIT)
+      .getMany();
 
     const [orderMetadata, strategyMetadata] = await Promise.all([
       this.loadOrderMetadata(balances),
@@ -101,7 +88,7 @@ export class AdminPositionsService {
     return {
       generatedAt: getRFC3339Timestamp(),
       items,
-      summary: this.buildSummary(items, total),
+      summary: this.buildSummary(summaryBalances, total),
       pagination: {
         page: pagination.page,
         limit: pagination.limit,
@@ -241,6 +228,37 @@ export class AdminPositionsService {
       .getMany();
 
     return [...new Set(orders.map((order) => order.orderId).filter(Boolean))];
+  }
+
+  private createFilteredBalanceQuery(
+    filters: PositionFilters,
+    exchangeOrderIds: string[],
+  ) {
+    const query = this.orderBalanceRepository.createQueryBuilder('balance');
+
+    if (filters.asset) {
+      query.andWhere('LOWER(balance.assetId) = :asset', {
+        asset: filters.asset,
+      });
+    }
+
+    if (exchangeOrderIds.length > 0) {
+      query.andWhere('balance.orderId IN (:...orderIds)', {
+        orderIds: exchangeOrderIds,
+      });
+    }
+
+    if (filters.query) {
+      query.andWhere(
+        `(${[
+          "LOWER(balance.orderId) LIKE :query ESCAPE '\\'",
+          "LOWER(balance.assetId) LIKE :query ESCAPE '\\'",
+        ].join(' OR ')})`,
+        { query: `%${this.escapeLike(filters.query.toLowerCase())}%` },
+      );
+    }
+
+    return query;
   }
 
   private async loadOrderMetadata(balances: MarketMakingOrderBalance[]) {
@@ -387,12 +405,7 @@ export class AdminPositionsService {
   }
 
   private buildSummary(
-    items: Array<{
-      asset: string;
-      available: string;
-      locked: string;
-      total: string;
-    }>,
+    balances: MarketMakingOrderBalance[],
     totalRows: number,
   ) {
     const byAsset = new Map<
@@ -405,26 +418,26 @@ export class AdminPositionsService {
       }
     >();
 
-    for (const item of items) {
+    for (const balance of balances) {
       const current =
-        byAsset.get(item.asset) ||
+        byAsset.get(balance.assetId) ||
         {
-          asset: item.asset,
+          asset: balance.assetId,
           available: new BigNumber(0),
           locked: new BigNumber(0),
           total: new BigNumber(0),
         };
 
-      current.available = current.available.plus(item.available || 0);
-      current.locked = current.locked.plus(item.locked || 0);
-      current.total = current.total.plus(item.total || 0);
-      byAsset.set(item.asset, current);
+      current.available = current.available.plus(balance.available || 0);
+      current.locked = current.locked.plus(balance.locked || 0);
+      current.total = current.total.plus(balance.total || 0);
+      byAsset.set(balance.assetId, current);
     }
 
     return {
-      scannedRows: items.length,
+      scannedRows: balances.length,
       totalRows,
-      truncated: totalRows > items.length,
+      truncated: totalRows > balances.length,
       byAsset: [...byAsset.values()]
         .sort((left, right) =>
           right.total.comparedTo(left.total) === 0

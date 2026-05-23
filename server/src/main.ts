@@ -1,15 +1,24 @@
 /* eslint-disable no-console */
-import 'dotenv/config';
-
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as crypto from 'crypto';
+import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
+import { SafeJsonExceptionFilter } from './common/filters/safe-json-exception.filter';
 import * as encryption from './common/helpers/crypto';
 import { CustomLogger } from './modules/infrastructure/logger/logger.service';
+
+const dotenvDisabled =
+  String(process.env.MR_MARKET_DISABLE_DOTENV || '').toLowerCase() === 'true';
+
+if (!dotenvDisabled) {
+  dotenv.config({
+    path: process.env.DOTENV_CONFIG_PATH || undefined,
+  });
+}
 
 async function bootstrap() {
   if (!process.env.JWT_SECRET) {
@@ -18,17 +27,21 @@ async function bootstrap() {
 
     process.env.JWT_SECRET = secret;
 
-    const envFile = '.env';
+    if (dotenvDisabled) {
+      console.log('JWT_SECRET generated for this process only.');
+    } else {
+      const envFile = '.env';
 
-    try {
-      if (fs.existsSync(envFile)) {
-        fs.appendFileSync(envFile, `\nJWT_SECRET=${secret}\n`);
-      } else {
-        fs.writeFileSync(envFile, `JWT_SECRET=${secret}\n`);
+      try {
+        if (fs.existsSync(envFile)) {
+          fs.appendFileSync(envFile, `\nJWT_SECRET=${secret}\n`);
+        } else {
+          fs.writeFileSync(envFile, `JWT_SECRET=${secret}\n`);
+        }
+        console.log(`JWT_SECRET saved to ${envFile}`);
+      } catch (err) {
+        console.error('Failed to write JWT_SECRET to .env file', err);
       }
-      console.log(`JWT_SECRET saved to ${envFile}`);
-    } catch (err) {
-      console.error('Failed to write JWT_SECRET to .env file', err);
     }
   }
 
@@ -38,21 +51,26 @@ async function bootstrap() {
 
     process.env.ENCRYPTION_PRIVATE_KEY = privateKey;
 
-    const envFile = '.env';
+    if (dotenvDisabled) {
+      console.log('ENCRYPTION_PRIVATE_KEY generated for this process only.');
+    } else {
+      const envFile = '.env';
 
-    try {
-      if (fs.existsSync(envFile)) {
-        fs.appendFileSync(envFile, `\nENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
-      } else {
-        fs.writeFileSync(envFile, `ENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
+      try {
+        if (fs.existsSync(envFile)) {
+          fs.appendFileSync(envFile, `\nENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
+        } else {
+          fs.writeFileSync(envFile, `ENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
+        }
+        console.log(`ENCRYPTION_KEYS saved to ${envFile}`);
+      } catch (err) {
+        console.error('Failed to write ENCRYPTION_KEYS to .env file', err);
       }
-      console.log(`ENCRYPTION_KEYS saved to ${envFile}`);
-    } catch (err) {
-      console.error('Failed to write ENCRYPTION_KEYS to .env file', err);
     }
   }
   const logger = new CustomLogger(AppModule.name);
   const app = await NestFactory.create(AppModule);
+  app.useGlobalFilters(new SafeJsonExceptionFilter());
 
   const corsOrigins = (process.env.CORS_ORIGIN || '')
     .split(',')

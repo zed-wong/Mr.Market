@@ -219,6 +219,74 @@ describe('AdminSystemHealthService', () => {
     expect(mocks.balanceCache.isFresh).not.toHaveBeenCalled();
   });
 
+  it('normalizes timestamps and hides internal health source errors', async () => {
+    const { service } = buildService({
+      health: {
+        checkSnapshotPollingHealth: jest.fn(async () => {
+          throw new Error('/tmp/private queue failed with token=secret');
+        }),
+      },
+      metrics: {
+        getRuntimeMetrics: jest.fn(() => ({
+          stats: [
+            {
+              scope: 'tick',
+              maxDurationMs: 1,
+              lastRecordedAt: 'Sat May 23 2026 00:03:00 GMT+0000',
+            },
+          ],
+          recent: [
+            {
+              scope: 'tick',
+              recordedAt: 'Sat May 23 2026 00:04:00 GMT+0000',
+            },
+          ],
+        })),
+      },
+      balanceRefresh: {
+        getRegisteredAccounts: jest.fn(() => [
+          { exchange: 'binance', accountLabel: 'maker' },
+        ]),
+        getHealthState: jest.fn(() => 'healthy'),
+        getLastRefreshTime: jest.fn(
+          () => 'Sat May 23 2026 00:06:00 GMT+0000',
+        ),
+      },
+      balanceCache: {
+        getSnapshotDiagnostic: jest.fn(() => ({
+          present: true,
+          fresh: true,
+          ageMs: 100,
+          freshnessTimestamp: 'Sat May 23 2026 00:05:00 GMT+0000',
+          source: 'ws',
+        })),
+      },
+    });
+
+    const response = await service.getHealth();
+    const runtime = response.services.find((row) => row.id === 'runtime.timing');
+    const queue = response.services.find((row) => row.id === 'queue.snapshots');
+    const balance = response.services.find((row) =>
+      row.id.startsWith('connector.balance-cache.'),
+    );
+
+    expect(runtime?.details?.stats).toEqual([
+      expect.objectContaining({
+        lastRecordedAt: '2026-05-23T00:03:00.000Z',
+      }),
+    ]);
+    expect(runtime?.details?.recent).toEqual([
+      expect.objectContaining({ recordedAt: '2026-05-23T00:04:00.000Z' }),
+    ]);
+    expect(balance?.observedAt).toBe('2026-05-23T00:05:00.000Z');
+    expect(balance?.details?.lastRefreshAt).toBe(
+      '2026-05-23T00:06:00.000Z',
+    );
+    expect(queue?.message).toBe('Snapshot queue health source is unavailable.');
+    expect(JSON.stringify(response)).not.toContain('/tmp/private');
+    expect(JSON.stringify(response)).not.toContain('token=secret');
+  });
+
   it('bounds connector account services and metadata rows', async () => {
     const accounts = Array.from({ length: 40 }, (_, index) => ({
       exchange: 'binance',

@@ -209,6 +209,76 @@ describe('AdminDashboardService', () => {
     );
   });
 
+  it('reports tracked order totals consistently with the orders API all-time count', async () => {
+    const trackedOrders = createRepository(
+      Array.from({ length: 3 }, (_, index) => ({
+        trackingKey: `track-${index}`,
+        orderId: `order-${index}`,
+        strategyKey: '**********',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: `exchange-order-${index}`,
+        side: 'buy',
+        price: '10',
+        qty: '1',
+        cumulativeFilledQty: undefined,
+        status: index === 0 ? 'open' : 'filled',
+        createdAt: '2020-01-01T00:00:00.000Z',
+        updatedAt: ts(index),
+      })),
+    );
+
+    const summary = await buildService({ trackedOrders }).getSummary('24h');
+
+    expect(summary.kpis.trackedOrders).toBe(3);
+    expect(summary.orderFlow.total).toBe(3);
+    expect(trackedOrders.count).toHaveBeenCalledWith();
+  });
+
+  it('normalizes nested runtime and health timestamps to RFC3339 strings', async () => {
+    const metrics = {
+      getRuntimeMetrics: jest.fn(() => ({
+        stats: [
+          {
+            scope: 'tick',
+            lastRecordedAt: 'Sat May 23 2026 00:09:00 GMT+0000',
+          },
+        ],
+        recent: [
+          {
+            scope: 'tick',
+            recordedAt: 'Sat May 23 2026 00:10:00 GMT+0000',
+          },
+        ],
+      })),
+    };
+    const health = {
+      checkSnapshotPollingHealth: jest.fn(async () => ({
+        status: 'healthy',
+        timestamp: 'Sat May 23 2026 00:11:00 GMT+0000',
+        queue: { lastPollTimestamp: Date.parse('2026-05-23T00:12:00.000Z') },
+        metrics: { nested: { updatedAt: 'Sat May 23 2026 00:13:00 GMT+0000' } },
+        issues: [],
+      })),
+    };
+
+    const summary = await buildService({ metrics, health }).getSummary('24h');
+
+    expect(summary.runtime.stats[0].lastRecordedAt).toBe(
+      '2026-05-23T00:09:00.000Z',
+    );
+    expect(summary.runtime.recent[0].recordedAt).toBe(
+      '2026-05-23T00:10:00.000Z',
+    );
+    expect(summary.health.timestamp).toBe('2026-05-23T00:11:00.000Z');
+    expect(summary.health.queue).toEqual({
+      lastPollTimestamp: '2026-05-23T00:12:00.000Z',
+    });
+    expect(summary.health.metrics).toEqual({
+      nested: { updatedAt: '2026-05-23T00:13:00.000Z' },
+    });
+  });
+
   it('uses read-only reconciliation checks and avoids mutating reconciliation methods', async () => {
     const reconciliation = {
       reconcileLedgerInvariants: jest.fn(async () => ({

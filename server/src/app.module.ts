@@ -84,9 +84,15 @@ import { UserOrdersModule } from './modules/market-making/user-orders/user-order
 import { MixinModule } from './modules/mixin/mixin.module';
 import { Web3Module } from './modules/web3/web3.module';
 
-dotenv.config({
-  path: process.env.DOTENV_CONFIG_PATH || undefined,
-});
+const dotenvDisabled =
+  String(process.env.MR_MARKET_DISABLE_DOTENV || '').toLowerCase() === 'true';
+const configuredDotenvPath = process.env.DOTENV_CONFIG_PATH || undefined;
+
+if (!dotenvDisabled) {
+  dotenv.config({
+    path: configuredDotenvPath,
+  });
+}
 
 function buildRedisConfig(configService: ConfigService) {
   const redisUrl = process.env.REDIS_URL;
@@ -124,6 +130,8 @@ function buildRedisConfig(configService: ConfigService) {
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
+      ignoreEnvFile: dotenvDisabled,
+      envFilePath: configuredDotenvPath,
     }),
     EventEmitterModule.forRoot({
       wildcard: true,

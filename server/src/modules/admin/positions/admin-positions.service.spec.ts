@@ -34,6 +34,7 @@ function createQueryBuilder(
       builder.skipValue = value;
       return builder;
     }),
+    getMany: jest.fn(async () => rows),
     getManyAndCount: jest.fn(async () => [rows, total]),
   };
 
@@ -59,8 +60,12 @@ describe('AdminPositionsService', () => {
     total = rows.length,
   ) {
     const queryBuilder = createQueryBuilder(rows, total);
+    const summaryQueryBuilder = createQueryBuilder(rows, total);
     const balances = {
-      createQueryBuilder: jest.fn(() => queryBuilder),
+      createQueryBuilder: jest
+        .fn()
+        .mockReturnValueOnce(queryBuilder)
+        .mockReturnValue(summaryQueryBuilder),
     };
     const trackedOrders = {
       createQueryBuilder: jest.fn(() => ({
@@ -114,6 +119,7 @@ describe('AdminPositionsService', () => {
       trackedOrders,
       strategies,
       queryBuilder,
+      summaryQueryBuilder,
     };
   }
 
@@ -124,6 +130,19 @@ describe('AdminPositionsService', () => {
 
     expect(queryBuilder.take).toHaveBeenCalledWith(25);
     expect(queryBuilder.skip).toHaveBeenCalledWith(0);
+    expect(result.summary).toMatchObject({
+      scannedRows: 1,
+      totalRows: 36,
+      truncated: true,
+      byAsset: [
+        {
+          asset: 'btc',
+          available: '0.25',
+          locked: '0.75',
+          total: '1',
+        },
+      ],
+    });
     expect(result.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
@@ -200,6 +219,42 @@ describe('AdminPositionsService', () => {
     expect(queryBuilder.take).toHaveBeenCalledWith(100);
     expect(result.pagination.limit).toBe(100);
     expect(result.limits.maxLimit).toBe(100);
+  });
+
+  it('builds cross-surface summary totals from the bounded full matched scan', async () => {
+    const rows = [
+      {
+        orderId: 'order-1',
+        assetId: 'btc',
+        available: '1',
+        locked: '2',
+        total: '3',
+        updatedAt: ts(4),
+      },
+      {
+        orderId: 'order-2',
+        assetId: 'btc',
+        available: '4',
+        locked: '5',
+        total: '9',
+        updatedAt: ts(5),
+      },
+    ];
+    const { service, queryBuilder, summaryQueryBuilder } = buildService(rows, 2);
+
+    const result = await service.listPositions({ limit: '1' });
+
+    expect(queryBuilder.take).toHaveBeenCalledWith(1);
+    expect(summaryQueryBuilder.take).toHaveBeenCalledWith(500);
+    expect(result.items).toHaveLength(2);
+    expect(result.summary.byAsset).toEqual([
+      {
+        asset: 'btc',
+        available: '5',
+        locked: '7',
+        total: '12',
+      },
+    ]);
   });
 
   it.each([
