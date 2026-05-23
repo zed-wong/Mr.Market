@@ -27,7 +27,11 @@ export class SafeJsonExceptionFilter implements ExceptionFilter {
       exception instanceof HttpException
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
-    const body = this.buildBody(exception, status, request?.url);
+    const body = this.buildBody(
+      exception,
+      status,
+      this.sanitizePath(request?.url),
+    );
 
     response.status(status).json(body);
   }
@@ -38,6 +42,16 @@ export class SafeJsonExceptionFilter implements ExceptionFilter {
     path?: string,
   ): SafeErrorBody {
     if (!(exception instanceof HttpException)) {
+      return {
+        statusCode,
+        message: 'Internal server error',
+        error: 'Internal Server Error',
+        timestamp: getRFC3339Timestamp(),
+        path,
+      };
+    }
+
+    if (statusCode >= 500) {
       return {
         statusCode,
         message: 'Internal server error',
@@ -98,5 +112,15 @@ export class SafeJsonExceptionFilter implements ExceptionFilter {
     }
 
     return value.replace(/\s+/g, ' ').trim().slice(0, 500);
+  }
+
+  private sanitizePath(path?: string): string | undefined {
+    if (typeof path !== 'string' || path.length === 0) {
+      return undefined;
+    }
+
+    const [safePath] = path.split(/[?#]/);
+
+    return safePath || '/';
   }
 }

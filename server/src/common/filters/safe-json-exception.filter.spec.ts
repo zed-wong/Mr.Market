@@ -1,4 +1,4 @@
-import { BadRequestException, HttpStatus } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 
 import { SafeJsonExceptionFilter } from './safe-json-exception.filter';
 
@@ -20,7 +20,9 @@ function createHost(url = '/admin/system/logs') {
 describe('SafeJsonExceptionFilter', () => {
   it('returns bounded JSON for expected HTTP failures', () => {
     const filter = new SafeJsonExceptionFilter();
-    const { host, response } = createHost('/admin/orders?limit=bad');
+    const { host, response } = createHost(
+      '/admin/orders?limit=bad&password=secret-value',
+    );
 
     filter.catch(new BadRequestException('limit must be a positive integer.'), host);
 
@@ -30,7 +32,7 @@ describe('SafeJsonExceptionFilter', () => {
         statusCode: HttpStatus.BAD_REQUEST,
         message: 'limit must be a positive integer.',
         error: 'Bad Request',
-        path: '/admin/orders?limit=bad',
+        path: '/admin/orders',
       }),
     );
     expect(response.json.mock.calls[0][0].timestamp).toMatch(
@@ -38,6 +40,9 @@ describe('SafeJsonExceptionFilter', () => {
     );
     expect(JSON.stringify(response.json.mock.calls[0][0])).not.toContain(
       'stack',
+    );
+    expect(JSON.stringify(response.json.mock.calls[0][0])).not.toContain(
+      'secret-value',
     );
   });
 
@@ -64,5 +69,37 @@ describe('SafeJsonExceptionFilter', () => {
     expect(JSON.stringify(response.json.mock.calls[0][0])).not.toContain(
       'token=secret',
     );
+  });
+
+  it('masks 5xx HttpException messages behind a generic JSON error', () => {
+    const filter = new SafeJsonExceptionFilter();
+    const { host, response } = createHost('/admin/system/logs?query=token=secret');
+
+    filter.catch(
+      new HttpException(
+        {
+          message: 'SQLite failed at /tmp/private/path with token=secret',
+          error: 'Database failure details',
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      ),
+      host,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        message: 'Internal server error',
+        error: 'Internal Server Error',
+        path: '/admin/system/logs',
+      }),
+    );
+    const body = JSON.stringify(response.json.mock.calls[0][0]);
+    expect(body).not.toContain('/tmp/private/path');
+    expect(body).not.toContain('token=secret');
+    expect(body).not.toContain('Database failure details');
   });
 });
