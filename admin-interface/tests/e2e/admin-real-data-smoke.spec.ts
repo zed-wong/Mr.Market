@@ -280,6 +280,28 @@ test.describe.serial('real-data admin smoke', () => {
     expect(clientErrors).toEqual([]);
   });
 
+  test('direct market-making API key remediation stays in the admin shell', async ({ page, context }) => {
+    await login(page);
+    await page.goto('/trading/direct-market-making');
+    await page.waitForLoadState('networkidle');
+
+    const remediationLink = page.getByRole('link', { name: /manage exchange api keys/i });
+    await expect(remediationLink).toBeVisible();
+    await expect(remediationLink).toHaveAttribute('href', '/system/api-keys');
+
+    const pageCountBefore = context.pages().length;
+    await Promise.all([
+      page.waitForURL('**/system/api-keys'),
+      remediationLink.click(),
+    ]);
+
+    expect(context.pages()).toHaveLength(pageCountBefore);
+    expect(page.url()).toContain(`${PREVIEW_ORIGIN}/system/api-keys`);
+    expect(page.url()).not.toContain('/manage/settings/api-keys');
+    await expect(page.locator('body')).toContainText(/api keys/i);
+    await expect(page.locator('body')).toContainText(/Exchange API credentials/i);
+  });
+
   test('real-data pages show API errors instead of static fixture fallbacks', async ({ page }) => {
     await login(page);
 
