@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import {
+    connectDemoWallet,
     openNetworkModal,
     openWalletModal,
     walletIsConnected,
@@ -8,6 +10,16 @@
     walletNetwork,
     walletShortAddress,
   } from '$lib/stores/wallet';
+
+  const continueWithDemoWallet = () => {
+    connectDemoWallet('evm');
+    void goto('/');
+  };
+
+  const continueWithWrongNetwork = () => {
+    connectDemoWallet('wrong-network');
+    void goto('/market-making');
+  };
 </script>
 
 <section class="flex min-h-[70vh] flex-col justify-center" data-testid="web3-login">
@@ -21,7 +33,12 @@
 
       <div class="mt-10 flex flex-wrap items-center gap-3">
         <button class="btn-pill-primary" onclick={openWalletModal} data-testid="login-connect-wallet">Connect wallet</button>
-        <a href="/" class="btn-pill-ghost" data-testid="login-continue-without-wallet">Continue without connecting →</a>
+        <button class="btn-pill-ghost" onclick={continueWithDemoWallet} data-testid="login-continue-without-wallet">
+          Continue with demo wallet →
+        </button>
+        <button class="btn-pill-ghost" onclick={continueWithWrongNetwork} data-testid="login-demo-wrong-network">
+          Preview wrong network →
+        </button>
       </div>
     </div>
 
@@ -42,7 +59,7 @@
       {:else}
         <span class="mt-3 block text-lg font-semibold text-base-content">Ready to connect</span>
         <span class="mt-2 block text-sm text-base-content/60">
-          Disconnected visitors can still browse public campaign discovery, then connect when a risk action is needed.
+          Browser demos can continue with a deterministic wallet that uses fixture balances and activity without requiring a real extension.
         </span>
       {/if}
     </div>

@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import { balances, totalBalanceUsd } from './balances';
 import { completeMockDeposit, resetFundingSession } from './funding';
 import {
+  connectDemoWallet,
   walletAddress,
   walletChainId,
   walletNamespace,
@@ -25,11 +26,7 @@ describe('deterministic account balance bridge', () => {
   });
 
   it('populates fixture balances for a connected supported EVM wallet', () => {
-    walletStatus.set('connected');
-    walletAddress.set('0x1234567890123456789012345678901234567890');
-    walletNamespace.set('evm');
-    walletChainId.set(1);
-    walletNetwork.set('Ethereum');
+    connectDemoWallet('evm');
 
     expect(get(balances).map((balance) => balance.symbol)).toEqual(['ETH', 'USDC']);
     expect(get(totalBalanceUsd)).toBe('28140.00');

@@ -8,6 +8,9 @@ import {
 } from '$lib/helpers/mock-web3';
 
 export type WalletStatus = 'disconnected' | 'connecting' | 'connected' | 'unsupported';
+export type DemoWalletPreset = 'evm' | 'solana' | 'wrong-network';
+
+const DEMO_WALLET_STORAGE_KEY = 'mrmarket-web3-demo-wallet';
 
 const namespaceLabelFor = (namespace: WalletNamespace | null): string => {
   if (namespace === 'evm') return 'EVM';
@@ -69,10 +72,48 @@ export const walletIsUnsupported = derived(walletStatus, ($status) => $status ==
 export const walletNamespaceLabel = derived(walletNamespace, ($namespace) => namespaceLabelFor($namespace));
 
 let initialized = false;
+let appKitSubscriptionsInitialized = false;
+let demoWalletActive = false;
 
 const namespaceAccounts: Record<WalletNamespace, NamespaceAccount> = {
   evm: { address: null, connected: false, status: 'disconnected' },
   solana: { address: null, connected: false, status: 'disconnected' },
+};
+
+const demoWalletPresets: Record<DemoWalletPreset, { namespace: WalletNamespace; chainId: number | null }> = {
+  evm: { namespace: 'evm', chainId: 1 },
+  solana: { namespace: 'solana', chainId: null },
+  'wrong-network': { namespace: 'evm', chainId: 137 },
+};
+
+const persistDemoWalletPreset = (preset: DemoWalletPreset) => {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.setItem(DEMO_WALLET_STORAGE_KEY, preset);
+};
+
+const clearPersistedDemoWallet = () => {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(DEMO_WALLET_STORAGE_KEY);
+};
+
+const clearWalletState = () => {
+  demoWalletActive = false;
+  clearPersistedDemoWallet();
+  namespaceAccounts.evm = { address: null, connected: false, status: 'disconnected' };
+  namespaceAccounts.solana = { address: null, connected: false, status: 'disconnected' };
+  walletStatus.set('disconnected');
+  walletAddress.set(null);
+  walletNamespace.set(null);
+  walletChainId.set(null);
+  walletNetwork.set(null);
+};
+
+const restoreDemoWalletState = () => {
+  if (typeof sessionStorage === 'undefined') return;
+  const preset = sessionStorage.getItem(DEMO_WALLET_STORAGE_KEY);
+  if (preset === 'evm' || preset === 'solana' || preset === 'wrong-network') {
+    connectDemoWallet(preset, false);
+  }
 };
 
 const recomputeFromAccounts = (activeNamespace: WalletNamespace | null) => {
@@ -105,11 +146,20 @@ const recomputeFromAccounts = (activeNamespace: WalletNamespace | null) => {
 
 export const initWalletStore = () => {
   if (initialized || typeof window === 'undefined') return;
-  const appKit = initAppKit();
-  if (!appKit) return;
+  restoreDemoWalletState();
   initialized = true;
+};
+
+const subscribeAppKitWallet = (appKit: NonNullable<ReturnType<typeof initAppKit>>) => {
+  if (appKitSubscriptionsInitialized) return;
+  appKitSubscriptionsInitialized = true;
 
   const onAccount = (state: { isConnected: boolean; address?: string; status?: string }, namespace: WalletNamespace) => {
+    if (demoWalletActive && !state.isConnected) return;
+    if (state.isConnected) {
+      demoWalletActive = false;
+      clearPersistedDemoWallet();
+    }
     namespaceAccounts[namespace] = {
       address: state.isConnected ? (state.address ?? null) : namespaceAccounts[namespace].address,
       connected: state.isConnected,
@@ -122,6 +172,7 @@ export const initWalletStore = () => {
   appKit.subscribeAccount((state) => onAccount(state, 'solana'), 'solana');
 
   appKit.subscribeNetwork((state) => {
+    if (demoWalletActive) return;
     walletChainId.set(state.chainId ?? null);
     walletNetwork.set(state.caipNetwork?.name ?? null);
 
@@ -142,8 +193,16 @@ export const initWalletStore = () => {
   });
 };
 
-export const openWalletModal = () => {
+const getWalletAppKit = () => {
+  if (typeof window === 'undefined') return null;
+  restoreDemoWalletState();
   const appKit = getAppKit() ?? initAppKit();
+  if (appKit) subscribeAppKitWallet(appKit);
+  return appKit;
+};
+
+export const openWalletModal = () => {
+  const appKit = getWalletAppKit();
   appKit?.open();
 };
 
@@ -153,19 +212,36 @@ export const closeWalletModal = () => {
 };
 
 export const openNetworkModal = () => {
-  const appKit = getAppKit() ?? initAppKit();
+  const appKit = getWalletAppKit();
   appKit?.open({ view: 'Networks' });
+};
+
+export const connectDemoWallet = (preset: DemoWalletPreset = 'evm', persist = true) => {
+  const demoPreset = demoWalletPresets[preset];
+  const demoAccount = deterministicAccountForWallet(demoPreset.namespace, demoPreset.chainId);
+  if (!demoAccount) return;
+
+  demoWalletActive = true;
+  if (persist) persistDemoWalletPreset(preset);
+  namespaceAccounts.evm = { address: null, connected: false, status: 'disconnected' };
+  namespaceAccounts.solana = { address: null, connected: false, status: 'disconnected' };
+  namespaceAccounts[demoPreset.namespace] = {
+    address: demoAccount.address,
+    connected: true,
+    status: demoAccount.unsupported ? 'unsupported' : 'connected',
+  };
+
+  walletStatus.set(demoAccount.unsupported ? 'unsupported' : 'connected');
+  walletAddress.set(demoAccount.address);
+  walletNamespace.set(demoAccount.namespace);
+  walletChainId.set(demoAccount.chainId);
+  walletNetwork.set(demoAccount.network);
 };
 
 export const disconnectWallet = async () => {
   const appKit = getAppKit();
-  if (!appKit) return;
-  await appKit.disconnect();
-  walletStatus.set('disconnected');
-  walletAddress.set(null);
-  walletNamespace.set(null);
-  walletChainId.set(null);
-  walletNetwork.set(null);
+  await appKit?.disconnect();
+  clearWalletState();
 };
 
 export const openMockWallet = openWalletModal;

@@ -2,6 +2,7 @@
   import { openMobileNav } from '$lib/stores/ui';
   import ThemeToggle from './ThemeToggle.svelte';
   import ConnectButton from './ConnectButton.svelte';
+  import DemoWalletControls from './DemoWalletControls.svelte';
 </script>
 
 <header class="flex items-center justify-between gap-3 pb-6" data-testid="top-controls">
@@ -20,6 +21,7 @@
   <span class="hidden md:block"></span>
 
   <div class="flex items-center gap-2">
+    <DemoWalletControls />
     <ThemeToggle />
     <ConnectButton />
   </div>
