@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Section from '$lib/components/common/Section.svelte';
+  import StatRow from '$lib/components/common/StatRow.svelte';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
   import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
   import { openMockWallet, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
@@ -10,99 +12,68 @@
   );
 </script>
 
-<section class="space-y-6" data-testid="web3-wallet-funding">
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-3">
-      <span class="text-2xl font-bold">Wallet / Funding</span>
-      <span class="text-base-content/70">
-        Mock balances, deposit entry points, and withdraw entry points are available without server data.
-      </span>
-      <div class="flex flex-wrap gap-2">
-        <a href="/deposit" class="btn btn-primary" data-testid="deposit-entry">Deposit</a>
-        <a href="/withdraw" class="btn btn-outline" data-testid="withdraw-entry">Withdraw</a>
-      </div>
+<div data-testid="web3-wallet-funding">
+  <section class="pt-2">
+    <span class="eyebrow">Wallet</span>
+    <div class="mt-3 flex items-baseline gap-3">
+      <span class="font-display text-5xl md:text-7xl tracking-tight text-base-content font-mono-num">${$totalBalanceUsd}</span>
     </div>
-  </div>
+    <span class="mt-4 block text-base-content/60">{$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'}</span>
+
+    <div class="mt-6 flex flex-wrap gap-2">
+      <a href="/deposit" class="btn-pill-primary" data-testid="deposit-entry">Deposit</a>
+      <a href="/withdraw" class="btn-pill-outline" data-testid="withdraw-entry">Withdraw</a>
+    </div>
+  </section>
 
   {#if !$walletIsConnected && !$walletIsUnsupported}
-    <div class="alert alert-info" data-testid="wallet-disconnected-gate">
-      <span>Connect a mocked Reown wallet to show account-specific balances and funding instructions.</span>
-      <button class="btn btn-sm btn-primary" onclick={openMockWallet}>Connect Wallet</button>
-    </div>
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="wallet-disconnected-gate">
+      <span class="text-sm text-base-content/70">Connect a wallet to show account-specific balances and funding.</span>
+      <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
+    </section>
   {:else if $walletIsUnsupported}
-    <div class="alert alert-warning" data-testid="wallet-unsupported-gate">
-      <span>Unsupported chain selected. Deposit and withdraw submission are blocked until EVM or Solana is selected.</span>
-    </div>
+    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="wallet-unsupported-gate">
+      Unsupported chain selected. Deposit and withdraw submission are blocked until EVM or Solana is selected.
+    </section>
   {/if}
 
-  <div class="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body">
-        <span class="text-sm text-base-content/60">Connected funding context</span>
-        <span class="text-3xl font-bold">${$totalBalanceUsd}</span>
-        <span class="text-base-content/70">{$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'}</span>
+  <Section title="Assets" eyebrow="Account scoped">
+    {#if $balances.length > 0}
+      <div class="border-t border-base-300">
+        {#each $balances as balance}
+          <StatRow
+            label={balance.symbol}
+            sublabel={`Pending withdrawal: ${balance.pendingAmount ?? '0'} ${balance.symbol}`}
+            value={balance.amount}
+            subvalue={`$${balance.usdValue}`}
+            badge={balance.chainNamespace === 'evm' ? 'EVM' : 'Solana'}
+          />
+        {/each}
       </div>
-    </div>
-
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Assets</span>
-        {#if $balances.length > 0}
-          <div class="grid gap-3 md:grid-cols-2">
-            {#each $balances as balance}
-              <div class="rounded-box border border-base-300 bg-base-200 p-4">
-                <div class="flex items-center justify-between">
-                  <span class="font-semibold">{balance.symbol}</span>
-                  <span class="badge badge-outline">{balance.chainNamespace === 'evm' ? 'EVM' : 'Solana'}</span>
-                </div>
-                <span class="mt-2 block text-2xl font-bold">{balance.amount}</span>
-                <span class="text-sm text-base-content/60">${balance.usdValue}</span>
-                <span class="mt-1 block text-xs text-base-content/60">
-                  Pending withdrawal: {balance.pendingAmount ?? '0'} {balance.symbol}
-                </span>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="rounded-box border border-base-300 bg-base-200 p-5 text-base-content/70">
-            <span>No available balances for the current mocked session.</span>
-          </div>
-        {/if}
+    {:else}
+      <div class="border-t border-base-300 py-10 text-base-content/55">
+        No available balances for the current mocked session.
       </div>
-    </div>
-  </div>
+    {/if}
+  </Section>
 
-  <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="funding-activity">
-    <div class="card-body gap-3">
-      <span class="font-semibold">Recent funding activity</span>
+  <Section title="Funding activity" eyebrow="Recent">
+    <div data-testid="funding-activity">
       {#if fundingActivity.length > 0}
-        <div class="overflow-x-auto">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each fundingActivity as entry}
-                <tr>
-                  <td>{entry.label}</td>
-                  <td>{entry.detail}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+        <div class="border-t border-base-300">
+          {#each fundingActivity as entry}
+            <StatRow label={entry.label} sublabel={entry.detail} value="→" />
+          {/each}
         </div>
       {:else if $walletIsUnsupported}
-        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+        <div class="border-t border-base-300 py-10 text-base-content/55">
           Funding activity is hidden while the selected chain is unsupported.
-        </span>
+        </div>
       {:else}
-        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
-          Connect a mocked Reown wallet to view account-specific funding activity.
-        </span>
+        <div class="border-t border-base-300 py-10 text-base-content/55">
+          Connect a wallet to view account-specific funding activity.
+        </div>
       {/if}
     </div>
-  </div>
-</section>
+  </Section>
+</div>

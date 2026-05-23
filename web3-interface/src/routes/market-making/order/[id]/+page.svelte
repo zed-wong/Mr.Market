@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import Section from '$lib/components/common/Section.svelte';
   import { namespaceLabel } from '$lib/helpers/mock-web3';
   import { allCampaigns, allOrders, statusLabel } from '$lib/stores/market-making';
 
@@ -8,78 +9,96 @@
   let orderedLogs = $derived(order ? [...order.logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) : []);
 </script>
 
-<section class="space-y-6" data-testid="order-detail">
+<div data-testid="order-detail">
   {#if !order}
-    <div class="alert alert-warning" data-testid="order-not-found">
-      <span>Order not found in this mocked session. Open My Campaigns / Orders to select an in-scope order.</span>
-      <a class="btn btn-sm btn-primary" href="/market-making">Open My Orders</a>
-    </div>
-  {:else}
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-3">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="flex flex-col gap-1">
-          <span class="text-2xl font-bold">{order.id}</span>
-          <span class="text-base-content/70">{campaign?.name ?? 'Unknown campaign'} · {namespaceLabel(order.namespace)} · {order.assets}</span>
-        </div>
-        <span class="badge badge-outline">{statusLabel(order.status)}</span>
-      </div>
-      <div class="grid gap-3 md:grid-cols-4" data-testid="order-detail-summary">
-        <span class="rounded-box border border-base-300 bg-base-200 p-3">Contribution<br /><strong>{order.contributionAmount}</strong></span>
-        <span class="rounded-box border border-base-300 bg-base-200 p-3">Fee estimate<br /><strong>{order.feeEstimate}</strong></span>
-        <span class="rounded-box border border-base-300 bg-base-200 p-3">Liquidity contribution<br /><strong>{order.liquidityContribution}</strong></span>
-        <span class="rounded-box border border-base-300 bg-base-200 p-3">Participation<br /><strong>{order.participation}</strong></span>
-      </div>
-    </div>
-  </div>
-
-  <div class="grid gap-3 md:grid-cols-4" data-testid="order-metrics">
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Created volume<br /><strong>{order.createdVolume}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Profit<br /><strong>{order.profit}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Placed orders<br /><strong>{order.placedOrders}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Filled amount<br /><strong>{order.filledAmount}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Success count<br /><strong>{order.successCount}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Failure count<br /><strong>{order.failureCount}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Cancel count<br /><strong>{order.cancelCount}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Status<br /><strong>{statusLabel(order.status)}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Expected volume<br /><strong>{order.expectedVolume}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Expected profit<br /><strong>{order.expectedProfit}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Created at<br /><strong>{order.createdAt}</strong></span>
-    <span class="rounded-box border border-base-300 bg-base-100 p-4">Updated at<br /><strong>{order.updatedAt}</strong></span>
-  </div>
-
-  <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="order-lifecycle-actions">
-    <div class="card-body gap-3">
-      <span class="font-semibold">Lifecycle state actions</span>
-      <span class="text-base-content/70">
-        Status {statusLabel(order.status)} keeps actions deterministic for the UI-only prototype.
+    <section class="pt-2 max-w-xl" data-testid="order-not-found">
+      <span class="eyebrow">Not found</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Order not found</span>
+      <span class="mt-4 block text-base-content/60">
+        Open My Campaigns / Orders to select an in-scope order.
       </span>
-      <div class="flex flex-wrap gap-2">
-        <button class="btn btn-outline" disabled={order.status !== 'draft'}>Resume draft</button>
-        <button class="btn btn-outline" disabled={order.status !== 'active'}>Pause mocked placement</button>
-        <button class="btn btn-outline btn-error" disabled={order.status === 'completed' || order.status === 'failed' || order.status === 'cancelled'}>Cancel mocked order</button>
-      </div>
-    </div>
-  </div>
+      <a class="btn-pill-primary mt-6 inline-flex" href="/market-making">My orders</a>
+    </section>
+  {:else}
+    <section class="pt-2">
+      <span class="eyebrow">{statusLabel(order.status)}</span>
+      <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content font-mono-num">{order.id}</span>
+      <span class="mt-4 block text-base-content/60">
+        {campaign?.name ?? 'Unknown campaign'} · {namespaceLabel(order.namespace)} · {order.assets}
+      </span>
 
-  <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="order-log-timeline">
-    <div class="card-body gap-3">
-      <span class="font-semibold">Mock execution log timeline</span>
-      <ul class="timeline timeline-vertical">
-        {#each orderedLogs as log, index}
-          <li data-testid="order-log-row">
-            {#if index > 0}<hr />{/if}
-            <div class="timeline-start">{log.timestamp}</div>
-            <div class="timeline-middle">●</div>
-            <div class="timeline-end">
-              <span class="font-semibold">{log.label}</span>
-              <span class="block text-sm text-base-content/60">{statusLabel(log.status)} · {log.outcome}</span>
-            </div>
-            {#if index < orderedLogs.length - 1}<hr />{/if}
-          </li>
+      <div class="mt-8 grid gap-px bg-base-300 border border-base-300 rounded-2xl overflow-hidden md:grid-cols-2 lg:grid-cols-4" data-testid="order-detail-summary">
+        <div class="bg-base-100 p-5">
+          <span class="eyebrow">Contribution</span>
+          <span class="mt-2 block font-mono-num text-xl">{order.contributionAmount}</span>
+        </div>
+        <div class="bg-base-100 p-5">
+          <span class="eyebrow">Fee estimate</span>
+          <span class="mt-2 block font-mono-num text-xl">{order.feeEstimate}</span>
+        </div>
+        <div class="bg-base-100 p-5">
+          <span class="eyebrow">Liquidity</span>
+          <span class="mt-2 block font-mono-num text-xl">{order.liquidityContribution}</span>
+        </div>
+        <div class="bg-base-100 p-5">
+          <span class="eyebrow">Participation</span>
+          <span class="mt-2 block text-xl capitalize">{order.participation}</span>
+        </div>
+      </div>
+    </section>
+
+    <Section title="Metrics" eyebrow="Execution">
+      <div class="grid gap-x-6 gap-y-5 border-t border-base-300 pt-6 sm:grid-cols-2 lg:grid-cols-4" data-testid="order-metrics">
+        {#each [
+          ['Created volume', order.createdVolume],
+          ['Profit', order.profit],
+          ['Placed orders', order.placedOrders],
+          ['Filled amount', order.filledAmount],
+          ['Success count', order.successCount],
+          ['Failure count', order.failureCount],
+          ['Cancel count', order.cancelCount],
+          ['Status', statusLabel(order.status)],
+          ['Expected volume', order.expectedVolume],
+          ['Expected profit', order.expectedProfit],
+          ['Created at', order.createdAt],
+          ['Updated at', order.updatedAt],
+        ] as [label, value]}
+          <div class="flex flex-col">
+            <span class="eyebrow">{label}</span>
+            <span class="mt-1 font-mono-num text-sm text-base-content">{value}</span>
+          </div>
         {/each}
-      </ul>
-    </div>
-  </div>
+      </div>
+    </Section>
+
+    <Section title="Lifecycle" eyebrow="Actions" caption={`Status ${statusLabel(order.status)} keeps actions deterministic for the UI-only prototype.`}>
+      <div class="flex flex-wrap gap-2 border-t border-base-300 pt-6" data-testid="order-lifecycle-actions">
+        <button class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed" disabled={order.status !== 'draft'}>Resume draft</button>
+        <button class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed" disabled={order.status !== 'active'}>Pause placement</button>
+        <button
+          class="btn-pill disabled:opacity-40 disabled:cursor-not-allowed border border-error/50 text-error hover:bg-error hover:text-error-content"
+          disabled={order.status === 'completed' || order.status === 'failed' || order.status === 'cancelled'}
+        >
+          Cancel order
+        </button>
+      </div>
+    </Section>
+
+    <Section title="Log timeline" eyebrow="Mock execution">
+      <div class="border-t border-base-300" data-testid="order-log-timeline">
+        {#each orderedLogs as log}
+          <div class="flex items-start gap-4 border-b border-base-300 py-4" data-testid="order-log-row">
+            <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary"></span>
+            <div class="flex flex-1 flex-wrap items-baseline justify-between gap-2">
+              <div class="flex flex-col">
+                <span class="font-medium text-base-content">{log.label}</span>
+                <span class="text-xs text-base-content/55">{statusLabel(log.status)} · {log.outcome}</span>
+              </div>
+              <span class="font-mono-num text-xs text-base-content/50">{log.timestamp}</span>
+            </div>
+          </div>
+        {/each}
+      </div>
+    </Section>
   {/if}
-</section>
+</div>

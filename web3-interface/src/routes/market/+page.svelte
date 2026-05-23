@@ -1,44 +1,50 @@
 <script lang="ts">
+  import Section from '$lib/components/common/Section.svelte';
   import { mockCampaigns, namespaceLabel } from '$lib/helpers/mock-web3';
 </script>
 
-<section class="space-y-6" data-testid="web3-market-safe">
-  <div class="card bg-base-100 border border-base-300 shadow-sm">
-    <div class="card-body gap-4 p-5 md:p-6">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="flex flex-col gap-2">
-          <span class="text-2xl font-bold text-base-content">Campaigns / Market Making</span>
-          <span class="text-base-content/70">
-            This legacy route now exposes only in-scope campaign discovery and market-making guidance.
-          </span>
-        </div>
-        <a href="/market-making" class="btn btn-primary" data-testid="market-safe-campaigns-link">
-          Open campaigns
-        </a>
-      </div>
+<div data-testid="web3-market-safe">
+  <section class="pt-2 flex flex-wrap items-end justify-between gap-4">
+    <div class="flex flex-col">
+      <span class="eyebrow">Markets</span>
+      <span class="mt-3 font-display text-5xl md:text-6xl tracking-tight text-base-content">Campaigns</span>
+      <span class="mt-4 max-w-xl text-base-content/60">
+        This legacy route now exposes only in-scope campaign discovery and market-making guidance.
+      </span>
     </div>
-  </div>
+    <a href="/market-making" class="btn-pill-outline" data-testid="market-safe-campaigns-link">
+      Open campaigns →
+    </a>
+  </section>
 
-  <div class="grid gap-4 xl:grid-cols-3" data-testid="market-safe-campaigns">
-    {#each mockCampaigns as campaign}
-      <a href="/market-making/campaign/{campaign.id}" class="card border border-base-300 bg-base-100 shadow-sm transition-colors hover:border-primary">
-        <div class="card-body gap-3">
-          <div class="flex items-start justify-between gap-3">
-            <span class="font-semibold text-base-content">{campaign.name}</span>
-            <span class="badge badge-outline">{campaign.status}</span>
+  <Section title="Discovery" eyebrow="Mocked listings">
+    <div class="border-t border-base-300" data-testid="market-safe-campaigns">
+      {#each mockCampaigns as campaign}
+        <a
+          href="/market-making/campaign/{campaign.id}"
+          class="group flex flex-col gap-3 border-b border-base-300 py-6 transition-colors hover:bg-base-200/40"
+        >
+          <div class="flex flex-wrap items-baseline justify-between gap-3">
+            <span class="font-medium text-base-content text-lg">{campaign.name}</span>
+            <div class="flex items-center gap-3">
+              <span class="eyebrow">{campaign.status}</span>
+              <span class="text-base-content/40 transition-colors group-hover:text-primary">→</span>
+            </div>
           </div>
           <span class="text-sm text-base-content/60">{campaign.summary}</span>
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-x-3 gap-y-1">
             {#each campaign.chains as chain}
-              <span class="badge badge-ghost">{namespaceLabel(chain)}</span>
+              <span class="text-xs capitalize tracking-wide text-base-content/50">{namespaceLabel(chain)}</span>
             {/each}
             {#each campaign.assets as asset}
-              <span class="badge badge-outline">{asset}</span>
+              <span class="text-xs capitalize tracking-wide text-base-content/50">· {asset}</span>
             {/each}
           </div>
-          <span class="text-sm text-base-content/70">Minimum {campaign.minimum} · liquidity {campaign.liquidity}</span>
-        </div>
-      </a>
-    {/each}
-  </div>
-</section>
+          <span class="text-xs text-base-content/50">
+            Minimum {campaign.minimum} · liquidity {campaign.liquidity}
+          </span>
+        </a>
+      {/each}
+    </div>
+  </Section>
+</div>

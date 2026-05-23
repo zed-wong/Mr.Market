@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Section from '$lib/components/common/Section.svelte';
+  import StatRow from '$lib/components/common/StatRow.svelte';
   import { aggregateMockActivityEntries, mockAccountActivityForAccount } from '$lib/helpers/mock-web3';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
   import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
@@ -11,7 +13,6 @@
     walletNamespaceLabel,
     walletNetwork,
     walletShortAddress,
-    walletStatus,
   } from '$lib/stores/wallet';
 
   let recentActivity = $derived(
@@ -23,114 +24,93 @@
         ).slice(0, 5)
       : []
   );
+
+  const quickActions = [
+    { href: '/wallet', label: 'Wallet', hint: 'Deposit, withdraw, balances' },
+    { href: '/market-making', label: 'Pools', hint: 'Discover and join campaigns' },
+    { href: '/market', label: 'Markets', hint: 'Live pair overview' },
+  ];
 </script>
 
-<section class="space-y-6" data-testid="web3-home">
-  <div class="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body gap-4">
-        <span class="text-sm text-base-content/60">Home portfolio</span>
-        <span class="text-4xl font-bold text-base-content">${$totalBalanceUsd}</span>
-        <span class="text-base-content/70">
-          {$walletIsConnected
-            ? `${$walletNamespaceLabel} on ${$walletNetwork} connected as ${$walletShortAddress}`
-            : $walletIsUnsupported
-              ? 'Unsupported chain selected. Read-only surfaces remain available.'
-              : 'Disconnected. Connect a mocked Reown wallet to unlock account-specific funding and campaign actions.'}
-        </span>
-        {#if !$walletIsConnected && !$walletIsUnsupported}
-          <button class="btn btn-primary w-fit" onclick={openMockWallet} data-testid="home-connect-prompt">
-            Connect mocked Reown wallet
-          </button>
-        {/if}
-      </div>
+<div data-testid="web3-home">
+  <section class="pt-2">
+    <span class="eyebrow">Portfolio</span>
+    <div class="mt-3 flex items-baseline gap-3">
+      <span class="font-display text-5xl md:text-7xl tracking-tight text-base-content font-mono-num">${$totalBalanceUsd}</span>
     </div>
+    <span class="mt-4 block max-w-xl text-base-content/60">
+      {#if $walletIsConnected}
+        {$walletNamespaceLabel} on {$walletNetwork} connected as <span class="font-mono-num">{$walletShortAddress}</span>.
+      {:else if $walletIsUnsupported}
+        Unsupported chain selected. Read-only surfaces remain available.
+      {:else}
+        Disconnected. Connect a wallet to unlock account-specific funding and campaign actions.
+      {/if}
+    </span>
 
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Session control state</span>
-        <div class="stats stats-vertical border border-base-300 bg-base-200">
-          <div class="stat">
-            <span class="stat-title">Wallet</span>
-            <span class="stat-value text-base">{$walletStatus}</span>
-          </div>
-          <div class="stat">
-            <span class="stat-title">Namespace</span>
-            <span class="stat-value text-base">{$walletNamespaceLabel}</span>
-          </div>
-        </div>
-      </div>
+    {#if !$walletIsConnected && !$walletIsUnsupported}
+      <button class="btn-pill-primary mt-6" onclick={openMockWallet} data-testid="home-connect-prompt">
+        Connect wallet
+      </button>
+    {/if}
+  </section>
+
+  <Section title="Quick actions" eyebrow="Jump in">
+    <div class="grid gap-px bg-base-300 border border-base-300 rounded-2xl overflow-hidden md:grid-cols-3" data-testid="home-quick-actions">
+      {#each quickActions as action}
+        <a
+          href={action.href}
+          class="group flex flex-col gap-1 bg-base-100 p-6 transition-colors hover:bg-base-200"
+        >
+          <span class="font-medium text-base-content">{action.label}</span>
+          <span class="text-sm text-base-content/55">{action.hint}</span>
+          <span class="mt-4 text-base-content/40 transition-colors group-hover:text-primary">→</span>
+        </a>
+      {/each}
     </div>
-  </div>
+  </Section>
 
-  <div class="grid gap-3 md:grid-cols-3" data-testid="home-quick-actions">
-    <a href="/wallet" class="card border border-base-300 bg-base-100 shadow-sm transition-colors hover:border-primary">
-      <div class="card-body gap-2 p-4">
-        <span class="font-semibold">Wallet / Funding</span>
-        <span class="text-sm text-base-content/60">Open deposit and withdraw entry points.</span>
-      </div>
-    </a>
-    <a href="/deposit" class="card border border-base-300 bg-base-100 shadow-sm transition-colors hover:border-primary">
-      <div class="card-body gap-2 p-4">
-        <span class="font-semibold">Deposit funds</span>
-        <span class="text-sm text-base-content/60">Preview mocked EVM or Solana deposit instructions.</span>
-      </div>
-    </a>
-    <a href="/market-making" class="card border border-base-300 bg-base-100 shadow-sm transition-colors hover:border-primary">
-      <div class="card-body gap-2 p-4">
-        <span class="font-semibold">Campaigns / Market Making</span>
-        <span class="text-sm text-base-content/60">Browse mocked campaign discovery data.</span>
-      </div>
-    </a>
-  </div>
+  <Section title="Balances" eyebrow="Mocked data" caption="Per-account holdings from local fixtures.">
+    {#snippet actions()}
+      <a href="/wallet" class="btn-pill-ghost">View all →</a>
+    {/snippet}
 
-  <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="home-balances">
-    <div class="card-body gap-4">
-      <div class="flex items-center justify-between">
-        <span class="font-semibold">Mocked balances</span>
-        <span class="badge badge-outline">UI-only data</span>
-      </div>
-
+    <div data-testid="home-balances">
       {#if $balances.length > 0}
-        <div class="grid gap-3 md:grid-cols-2">
+        <div class="border-t border-base-300">
           {#each $balances as balance}
-            <div class="rounded-box border border-base-300 bg-base-200 p-4">
-              <div class="flex items-center justify-between">
-                <span class="font-semibold">{balance.symbol}</span>
-                <span class="badge badge-ghost">{balance.chainNamespace === 'evm' ? 'EVM' : 'Solana'}</span>
-              </div>
-              <div class="mt-3 flex items-end justify-between">
-                <span class="text-2xl font-bold">{balance.amount}</span>
-                <span class="text-base-content/70">${balance.usdValue}</span>
-              </div>
-            </div>
+            <StatRow
+              label={balance.symbol}
+              sublabel={`Pending withdrawal: ${balance.pendingAmount ?? '0'} ${balance.symbol}`}
+              value={balance.amount}
+              subvalue={`$${balance.usdValue}`}
+              badge={balance.chainNamespace === 'evm' ? 'EVM' : 'Solana'}
+            />
           {/each}
         </div>
       {:else}
-        <div class="rounded-box border border-base-300 bg-base-200 p-6 text-center text-base-content/70">
-          <span>
-            {$walletIsUnsupported
-              ? 'Balances are blocked for unsupported chains.'
-              : 'No account-scoped balances are shown while disconnected.'}
-          </span>
+        <div class="border-t border-base-300 py-10 text-base-content/55">
+          {$walletIsUnsupported
+            ? 'Balances are blocked for unsupported chains.'
+            : 'No account-scoped balances are shown while disconnected.'}
         </div>
       {/if}
     </div>
-  </div>
+  </Section>
 
   {#if recentActivity.length > 0}
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="home-recent-activity">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Recent activity</span>
-        <div class="grid gap-3 md:grid-cols-2">
-          {#each recentActivity as entry}
-            <a href={entry.href} class="rounded-box border border-base-300 bg-base-200 p-4 transition-colors hover:border-primary" data-testid="home-activity-link">
-              <span class="font-semibold">{entry.label}</span>
-              <span class="block text-sm text-base-content/60">{entry.detail}</span>
-            </a>
-          {/each}
-        </div>
+    <Section title="Recent activity" eyebrow="Session">
+      <div class="border-t border-base-300" data-testid="home-recent-activity">
+        {#each recentActivity as entry}
+          <StatRow
+            label={entry.label}
+            sublabel={entry.detail}
+            value="→"
+            href={entry.href}
+            testid="home-activity-link"
+          />
+        {/each}
       </div>
-    </div>
+    </Section>
   {/if}
-</section>
+</div>

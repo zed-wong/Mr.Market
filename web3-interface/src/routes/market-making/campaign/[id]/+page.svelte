@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import Section from '$lib/components/common/Section.svelte';
   import {
     campaignEligibility,
     namespaceLabel,
@@ -26,92 +27,124 @@
   );
 </script>
 
-<section class="space-y-6" data-testid="campaign-detail">
+<div data-testid="campaign-detail">
   {#if !campaign}
-    <div class="alert alert-warning" data-testid="campaign-not-found">
-      <span>Campaign not found. Return to mocked campaign discovery to choose a public campaign.</span>
-      <a href="/market-making" class="btn btn-sm btn-primary">Open campaigns</a>
-    </div>
+    <section class="pt-2 max-w-xl" data-testid="campaign-not-found">
+      <span class="eyebrow">Not found</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Campaign not found</span>
+      <span class="mt-4 block text-base-content/60">
+        Return to mocked campaign discovery to choose a public campaign.
+      </span>
+      <a href="/market-making" class="btn-pill-primary mt-6 inline-flex">Open campaigns</a>
+    </section>
   {:else}
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-4">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="flex flex-col gap-2">
-          <span class="text-2xl font-bold">{campaign.name}</span>
-          <span class="text-base-content/70">{campaign.summary}</span>
-        </div>
-        <span class="badge badge-outline">{campaign.status}</span>
-      </div>
+    <section class="pt-2">
+      <span class="eyebrow">{campaign.status}</span>
+      <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content">{campaign.name}</span>
+      <span class="mt-4 block max-w-2xl text-base-content/60">{campaign.summary}</span>
 
-      <div class="grid gap-3 md:grid-cols-3">
-        <span class="rounded-box bg-base-200 p-4">Liquidity goal<br /><strong>{campaign.metrics.liquidityGoal}</strong><br /><span class="text-sm text-base-content/60">Current {campaign.metrics.currentLiquidity}</span></span>
-        <span class="rounded-box bg-base-200 p-4">Volume goal<br /><strong>{campaign.metrics.volumeGoal}</strong><br /><span class="text-sm text-base-content/60">Current {campaign.metrics.currentVolume}</span></span>
-        <span class="rounded-box bg-base-200 p-4">Minimum contribution<br /><strong>{campaign.minimum}</strong></span>
-        <span class="rounded-box bg-base-200 p-4">Projected rewards<br /><strong>{campaign.metrics.projectedReward}</strong><br /><span class="text-sm text-base-content/60">{campaign.rewardRate}</span></span>
-        <span class="rounded-box bg-base-200 p-4">Timing<br /><strong>{campaign.duration}</strong></span>
-        <span class="rounded-box bg-base-200 p-4">Participants<br /><strong>{campaign.participants}</strong></span>
-      </div>
-
-      <div class="flex flex-wrap gap-2" data-testid="campaign-detail-indicators">
+      <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-base-content/50" data-testid="campaign-detail-indicators">
         {#each indicatorNamespaces as chain}
           <span
-            class="badge {campaign.chains.includes(chain) ? (chain === $walletNamespace ? 'badge-primary' : 'badge-ghost') : 'badge-outline'}"
+            class="capitalize {campaign.chains.includes(chain) ? (chain === $walletNamespace ? 'text-primary' : 'text-base-content') : 'text-base-content/35'}"
             data-testid="campaign-detail-chain-{chain}"
           >
-            {namespaceLabel(chain)} {campaign.chains.includes(chain) ? 'supported' : 'not supported'}
+            {namespaceLabel(chain)} {campaign.chains.includes(chain) ? '✓' : '—'}
           </span>
         {/each}
-        {#each campaign.assets as asset}
-          <span class="badge badge-outline">{asset}</span>
-        {/each}
+        <span class="text-base-content/30">·</span>
+        <span>{campaign.assets.join(' / ')}</span>
       </div>
+    </section>
 
-      <div class="rounded-box border border-base-300 bg-base-200 p-4" data-testid="campaign-wallet-context">
-        <span class="font-semibold">Active wallet context</span>
-        <span class="block text-sm text-base-content/70">
-          {$walletNamespaceLabel} · {$walletNetwork ?? 'not selected'} · {$walletShortAddress || 'no address connected'}
+    <Section title="Metrics" eyebrow="Targets">
+      <div class="grid gap-px bg-base-300 border border-base-300 rounded-2xl overflow-hidden md:grid-cols-3">
+        <div class="bg-base-100 p-6">
+          <span class="eyebrow">Liquidity</span>
+          <span class="mt-2 block font-mono-num text-2xl">{campaign.metrics.liquidityGoal}</span>
+          <span class="text-xs text-base-content/50">Current {campaign.metrics.currentLiquidity}</span>
+        </div>
+        <div class="bg-base-100 p-6">
+          <span class="eyebrow">Volume</span>
+          <span class="mt-2 block font-mono-num text-2xl">{campaign.metrics.volumeGoal}</span>
+          <span class="text-xs text-base-content/50">Current {campaign.metrics.currentVolume}</span>
+        </div>
+        <div class="bg-base-100 p-6">
+          <span class="eyebrow">Minimum</span>
+          <span class="mt-2 block font-mono-num text-2xl">{campaign.minimum}</span>
+        </div>
+        <div class="bg-base-100 p-6">
+          <span class="eyebrow">Projected reward</span>
+          <span class="mt-2 block font-mono-num text-2xl">{campaign.metrics.projectedReward}</span>
+          <span class="text-xs text-base-content/50">{campaign.rewardRate}</span>
+        </div>
+        <div class="bg-base-100 p-6">
+          <span class="eyebrow">Timing</span>
+          <span class="mt-2 block text-2xl">{campaign.duration}</span>
+        </div>
+        <div class="bg-base-100 p-6">
+          <span class="eyebrow">Participants</span>
+          <span class="mt-2 block font-mono-num text-2xl">{campaign.participants}</span>
+        </div>
+      </div>
+    </Section>
+
+    <Section title="Wallet context" eyebrow="Active session">
+      <div class="border-t border-base-300 pt-6" data-testid="campaign-wallet-context">
+        <span class="text-sm text-base-content/70">
+          {$walletNamespaceLabel} · {$walletNetwork ?? 'not selected'} · <span class="font-mono-num">{$walletShortAddress || 'no address'}</span>
         </span>
       </div>
 
       <div
-        class="alert {eligibility?.canParticipate ? 'alert-success' : $walletIsUnsupported ? 'alert-warning' : 'alert-info'}"
+        class="mt-6 rounded-2xl border px-5 py-4 text-sm {eligibility?.canParticipate ? 'border-success/40 text-base-content' : $walletIsUnsupported ? 'border-warning/40 text-base-content/70' : 'border-base-300 text-base-content/70'}"
         data-testid="campaign-eligibility"
       >
-        <span>
-          {eligibility?.message}
-        </span>
+        {eligibility?.message}
       </div>
+    </Section>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <div class="rounded-box border border-base-300 bg-base-100 p-4" data-testid="campaign-terms">
-          <span class="font-semibold">Terms</span>
-          <ul class="mt-3 list-disc space-y-2 pl-5 text-sm text-base-content/70">
+    <Section title="Terms & requirements">
+      <div class="grid gap-10 border-t border-base-300 pt-6 md:grid-cols-2">
+        <div data-testid="campaign-terms">
+          <span class="eyebrow">Terms</span>
+          <ul class="mt-3 flex flex-col gap-3">
             {#each campaign.terms as term}
-              <li>{term}</li>
+              <li class="flex gap-3 text-sm text-base-content/70">
+                <span class="text-base-content/30">—</span>
+                <span>{term}</span>
+              </li>
             {/each}
           </ul>
         </div>
 
-        <div class="rounded-box border border-base-300 bg-base-100 p-4" data-testid="campaign-requirements">
-          <span class="font-semibold">Participation requirements</span>
-          <ul class="mt-3 list-disc space-y-2 pl-5 text-sm text-base-content/70">
+        <div data-testid="campaign-requirements">
+          <span class="eyebrow">Requirements</span>
+          <ul class="mt-3 flex flex-col gap-3">
             {#each campaign.requirements as requirement}
-              <li>{requirement}</li>
+              <li class="flex gap-3 text-sm text-base-content/70">
+                <span class="text-base-content/30">—</span>
+                <span>{requirement}</span>
+              </li>
             {/each}
           </ul>
         </div>
       </div>
 
-      {#if !$walletIsConnected && !$walletIsUnsupported}
-        <button class="btn btn-primary w-fit" onclick={openMockWallet}>Connect to join</button>
-      {:else if eligibility?.canParticipate}
-        <a href="/market-making/order/new?campaign={campaign.id}" class="btn btn-primary w-fit" data-testid="campaign-detail-create-order">Create market-making order</a>
-      {:else}
-        <button class="btn btn-primary w-fit" disabled data-testid="campaign-detail-create-order">
-          {eligibility?.state === 'unsupported-chain' ? 'Unsupported chain' : 'Switch wallet namespace'}
-        </button>
-      {/if}
-    </div>
-  </div>
+      <div class="mt-10 flex flex-wrap gap-3">
+        {#if !$walletIsConnected && !$walletIsUnsupported}
+          <button class="btn-pill-primary" onclick={openMockWallet}>Connect to join</button>
+        {:else if eligibility?.canParticipate}
+          <a href="/market-making/order/new?campaign={campaign.id}" class="btn-pill-primary" data-testid="campaign-detail-create-order">
+            Create order
+          </a>
+        {:else}
+          <button class="btn-pill-outline opacity-40 cursor-not-allowed" disabled data-testid="campaign-detail-create-order">
+            {eligibility?.state === 'unsupported-chain' ? 'Unsupported chain' : 'Switch namespace'}
+          </button>
+        {/if}
+        <a href="/market-making" class="btn-pill-ghost">← All pools</a>
+      </div>
+    </Section>
   {/if}
-</section>
+</div>

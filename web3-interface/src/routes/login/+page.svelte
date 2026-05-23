@@ -1,17 +1,23 @@
 <script lang="ts">
-  import { openMockWallet, walletIsConnected, walletNamespaceLabel, walletShortAddress } from '$lib/stores/wallet';
+  import { openWalletModal, walletIsConnected, walletNamespaceLabel, walletShortAddress } from '$lib/stores/wallet';
 </script>
 
-<section class="flex min-h-screen items-center justify-center bg-base-200 px-4" data-testid="mock-login">
-  <div class="card w-full max-w-md border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-4 text-center">
-      <span class="text-2xl font-bold text-base-content">Mock Reown sign-in</span>
-      <span class="text-base-content/70">This prototype uses local deterministic wallet state and does not call authentication endpoints.</span>
-      {#if $walletIsConnected}
-        <span class="badge badge-outline mx-auto">{$walletNamespaceLabel} · {$walletShortAddress}</span>
-      {/if}
-      <button class="btn btn-primary" onclick={openMockWallet}>Open mocked wallet controls</button>
-      <a href="/" class="btn btn-ghost">Continue to shell</a>
+<section class="flex min-h-[70vh] flex-col items-start justify-center max-w-md" data-testid="web3-login">
+  <span class="eyebrow mb-3">web3 · sign in</span>
+  <span class="font-display text-5xl md:text-6xl tracking-tight text-base-content">Sign in</span>
+  <span class="mt-4 text-base-content/60">
+    Connect any supported wallet via Reown AppKit. SIWE authentication is wired in a follow-up step.
+  </span>
+
+  {#if $walletIsConnected}
+    <div class="mt-8 flex items-center gap-2 border-t border-base-300 pt-6">
+      <span class="eyebrow">Connected</span>
+      <span class="font-mono-num text-sm">{$walletNamespaceLabel} · {$walletShortAddress}</span>
     </div>
+  {/if}
+
+  <div class="mt-10 flex flex-wrap items-center gap-3">
+    <button class="btn-pill-primary" onclick={openWalletModal}>Connect wallet</button>
+    <a href="/" class="btn-pill-ghost">Continue without connecting →</a>
   </div>
 </section>

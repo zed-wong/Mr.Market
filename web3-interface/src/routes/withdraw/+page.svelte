@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Section from '$lib/components/common/Section.svelte';
+  import StatRow from '$lib/components/common/StatRow.svelte';
   import { balances } from '$lib/stores/balances';
   import {
     minimumWithdrawFor,
@@ -69,35 +71,36 @@
   };
 </script>
 
-<section class="space-y-4" data-testid="web3-withdraw">
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-3">
-      <span class="text-2xl font-bold text-base-content">Withdraw</span>
-      <span class="text-base-content/70">Mocked withdrawal form with chain-specific context and disabled submission when disconnected or unsupported.</span>
-    </div>
-  </div>
+<div class="max-w-2xl" data-testid="web3-withdraw">
+  <section class="pt-2">
+    <span class="eyebrow">Funding</span>
+    <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content">Withdraw</span>
+    <span class="mt-4 block text-base-content/60">
+      Mocked withdrawal form with chain-specific context. Submission is disabled while disconnected or on an unsupported chain.
+    </span>
+  </section>
 
   {#if !$walletIsConnected && !$walletIsUnsupported}
-    <div class="alert alert-info" data-testid="withdraw-connect-gate">
-      <span>Connect a mocked Reown wallet before preparing a withdrawal.</span>
-      <button class="btn btn-sm btn-primary" onclick={openMockWallet}>Connect Wallet</button>
-    </div>
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="withdraw-connect-gate">
+      <span class="text-sm text-base-content/70">Connect a wallet before preparing a withdrawal.</span>
+      <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
+    </section>
   {:else if $walletIsUnsupported}
-    <div class="alert alert-warning" data-testid="withdraw-unsupported-gate">
-      <span>Unsupported chain selected. Withdrawal submission is blocked until EVM or Solana is selected.</span>
-    </div>
+    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="withdraw-unsupported-gate">
+      Unsupported chain selected. Withdrawal submission is blocked until EVM or Solana is selected.
+    </section>
   {/if}
 
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-4">
-      <div class="rounded-box border border-base-300 bg-base-200 p-4">
-        <span class="font-semibold">Funding context</span>
-        <span class="mt-1 block text-sm text-base-content/70">{$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'}</span>
-      </div>
-
-      <label class="form-control">
-        <span class="label-text mb-1">Asset</span>
-        <select class="select select-bordered" bind:value={selectedAsset} disabled={!$walletIsConnected} data-testid="withdraw-asset-select">
+  <Section title="New withdrawal" eyebrow="Funding context" caption={`${$walletNamespaceLabel} · ${$walletNetwork ?? 'not connected'}`}>
+    <div class="flex flex-col gap-6 border-t border-base-300 pt-6">
+      <label class="flex flex-col gap-2">
+        <span class="eyebrow">Asset</span>
+        <select
+          class="bg-transparent border-b border-base-300 px-0 py-2 focus:outline-none focus:border-base-content disabled:opacity-40"
+          bind:value={selectedAsset}
+          disabled={!$walletIsConnected}
+          data-testid="withdraw-asset-select"
+        >
           <option value="">Select asset</option>
           {#each $balances as balance}
             <option value={balance.asset}>
@@ -107,92 +110,115 @@
         </select>
       </label>
 
-      <label class="form-control">
-        <span class="label-text mb-1">Destination address</span>
-        <input class="input input-bordered" bind:value={destination} oninput={() => { step = 'form'; }} placeholder={destinationExample} disabled={!$walletIsConnected} data-testid="withdraw-destination-input" />
-        <span class="label-text-alt mt-1 text-base-content/60">{destinationExample}</span>
+      <label class="flex flex-col gap-2">
+        <span class="eyebrow">Destination address</span>
+        <input
+          class="bg-transparent border-b border-base-300 px-0 py-2 font-mono-num text-sm focus:outline-none focus:border-base-content disabled:opacity-40"
+          bind:value={destination}
+          oninput={() => { step = 'form'; }}
+          placeholder={destinationExample}
+          disabled={!$walletIsConnected}
+          data-testid="withdraw-destination-input"
+        />
+        <span class="text-xs text-base-content/50">{destinationExample}</span>
         {#if validationErrors.destination}
-          <span class="label-text-alt mt-1 text-error" data-testid="withdraw-destination-error">{validationErrors.destination}</span>
+          <span class="text-xs text-error" data-testid="withdraw-destination-error">{validationErrors.destination}</span>
         {/if}
       </label>
 
-      <label class="form-control">
-        <span class="label-text mb-1">Amount</span>
-        <input class="input input-bordered" bind:value={amount} oninput={() => { step = 'form'; }} placeholder="0.00" disabled={!$walletIsConnected} data-testid="withdraw-amount-input" />
-        <span class="label-text-alt mt-1 text-base-content/60">
-          Available: {selectedBalance?.amount ?? '0'} {selectedBalance?.symbol ?? 'asset'} · pending withdrawal:
-          {selectedBalance?.pendingAmount ?? '0'} {selectedBalance?.symbol ?? 'asset'} · minimum:
-          {minimumWithdrawFor(selectedBalance)} {selectedBalance?.symbol ?? 'asset'}
+      <label class="flex flex-col gap-2">
+        <span class="eyebrow">Amount</span>
+        <input
+          class="bg-transparent border-b border-base-300 px-0 py-2 font-mono-num text-2xl focus:outline-none focus:border-base-content disabled:opacity-40"
+          bind:value={amount}
+          oninput={() => { step = 'form'; }}
+          placeholder="0.00"
+          disabled={!$walletIsConnected}
+          data-testid="withdraw-amount-input"
+        />
+        <span class="text-xs text-base-content/50">
+          Available: {selectedBalance?.amount ?? '0'} {selectedBalance?.symbol ?? 'asset'} · pending: {selectedBalance?.pendingAmount ?? '0'} · minimum: {minimumWithdrawFor(selectedBalance)} {selectedBalance?.symbol ?? ''}
         </span>
         {#if validationErrors.amount}
-          <span class="label-text-alt mt-1 text-error" data-testid="withdraw-amount-error">{validationErrors.amount}</span>
+          <span class="text-xs text-error" data-testid="withdraw-amount-error">{validationErrors.amount}</span>
         {/if}
       </label>
 
       {#if $walletIsUnsupported}
-        <span class="text-sm text-warning" data-testid="withdraw-inline-error">Select a supported EVM or Solana chain before submitting.</span>
+        <span class="text-xs text-warning" data-testid="withdraw-inline-error">Select a supported EVM or Solana chain before submitting.</span>
       {:else if !$walletIsConnected}
-        <span class="text-sm text-info" data-testid="withdraw-inline-error">Connection required before submission.</span>
+        <span class="text-xs text-info" data-testid="withdraw-inline-error">Connection required before submission.</span>
       {/if}
 
-      <button class="btn btn-primary" disabled={!formIsValid} onclick={reviewWithdrawal} data-testid="withdraw-submit-button">
-        Review mocked withdrawal
+      <button
+        class="btn-pill-primary self-start disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={!formIsValid}
+        onclick={reviewWithdrawal}
+        data-testid="withdraw-submit-button"
+      >
+        Review withdrawal
       </button>
     </div>
-  </div>
+  </Section>
 
   {#if step === 'confirm' && selectedBalance}
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="withdraw-confirmation">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Confirm mocked withdrawal</span>
-        <span class="text-base-content/70">
-          Review before local mocked submission. No signature, server withdrawal endpoint, RPC call, or on-chain transaction will be requested.
+    <Section title="Confirm withdrawal" eyebrow="Review">
+      <div class="border-t border-base-300 pt-6" data-testid="withdraw-confirmation">
+        <span class="block text-sm text-base-content/60">
+          No signature, server withdrawal endpoint, RPC call, or on-chain transaction will be requested.
         </span>
-        <div class="grid gap-3 md:grid-cols-2">
-          <span class="rounded-box border border-base-300 bg-base-200 p-3">Asset<br /><strong>{selectedBalance.symbol}</strong></span>
-          <span class="rounded-box border border-base-300 bg-base-200 p-3">Amount<br /><strong>{amount}</strong></span>
-          <span class="rounded-box border border-base-300 bg-base-200 p-3">Chain<br /><strong>{$walletNamespaceLabel} · {$walletNetwork}</strong></span>
-          <span class="rounded-box border border-base-300 bg-base-200 p-3">Mock fee/status<br /><strong>{withdrawFeeFor(selectedBalance)} {selectedBalance.symbol} · reviewing</strong></span>
+
+        <div class="mt-6">
+          <StatRow label="Asset" value={selectedBalance.symbol} />
+          <StatRow label="Amount" value={amount} />
+          <StatRow label="Chain" value={`${$walletNamespaceLabel} · ${$walletNetwork}`} />
+          <StatRow label="Mock fee" value={`${withdrawFeeFor(selectedBalance)} ${selectedBalance.symbol}`} sublabel="reviewing" />
         </div>
-        <code class="rounded bg-base-200 px-3 py-2 text-sm break-all">{destination}</code>
-        <div class="flex flex-wrap gap-2">
-          <button class="btn btn-outline" onclick={() => { step = 'form'; }} data-testid="withdraw-edit-button">Edit</button>
-          <button class="btn btn-primary" onclick={submitWithdrawal} data-testid="withdraw-confirm-button">Submit mocked withdrawal</button>
+
+        <code class="mt-6 block font-mono-num rounded-2xl border border-base-300 px-4 py-3 text-sm break-all">{destination}</code>
+
+        <div class="mt-6 flex flex-wrap gap-2">
+          <button class="btn-pill-outline" onclick={() => { step = 'form'; }} data-testid="withdraw-edit-button">Edit</button>
+          <button class="btn-pill-primary" onclick={submitWithdrawal} data-testid="withdraw-confirm-button">Submit</button>
         </div>
       </div>
-    </div>
+    </Section>
   {/if}
 
   {#if step === 'submitted' && withdrawResult}
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="withdraw-submitted">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Withdrawal submitted</span>
-        <span class="text-base-content/70">
-          {withdrawResult.id} is {withdrawResult.status} for {withdrawResult.amount} {withdrawResult.symbol}. Available balance now excludes the pending withdrawal.
+    <Section title="Submitted" eyebrow="Mocked">
+      <div class="border-t border-base-300 pt-6" data-testid="withdraw-submitted">
+        <span class="block text-sm text-base-content/60">
+          <span class="font-mono-num">{withdrawResult.id}</span> is {withdrawResult.status} for {withdrawResult.amount} {withdrawResult.symbol}.
         </span>
-        <ul class="steps steps-vertical lg:steps-horizontal" data-testid="withdraw-timeline">
+        <div class="mt-6" data-testid="withdraw-timeline">
           {#each withdrawResult.timeline as item}
-            <li class="step {item.state === 'pending' ? '' : 'step-primary'}">
-              <span class="font-semibold">{item.label}</span>
-              <span class="text-xs text-base-content/60">{item.detail}</span>
-            </li>
+            <div class="flex items-start gap-4 border-b border-base-300 py-4">
+              <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full {item.state === 'pending' ? 'bg-base-300' : 'bg-primary'}"></span>
+              <div class="flex flex-col">
+                <span class="font-medium text-base-content">{item.label}</span>
+                <span class="text-xs text-base-content/55">{item.detail}</span>
+              </div>
+            </div>
           {/each}
-        </ul>
+        </div>
       </div>
-    </div>
+    </Section>
   {/if}
 
-  {#if $walletIsConnected}
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="withdraw-activity-preview">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Funding activity after withdrawals</span>
+  {#if $walletIsConnected && fundingActivity.length > 0}
+    <Section title="Funding activity" eyebrow="After withdrawals">
+      <div class="border-t border-base-300" data-testid="withdraw-activity-preview">
         {#each fundingActivity as entry}
-          <a href={entry.href} class="rounded-box border border-base-300 bg-base-200 p-3 transition-colors hover:border-primary" data-testid="withdraw-activity-link">
-            <span class="font-semibold">{entry.label}</span>
-            <span class="block text-sm text-base-content/60">{entry.detail}</span>
-          </a>
+          <StatRow
+            label={entry.label}
+            sublabel={entry.detail}
+            value="→"
+            href={entry.href}
+            testid="withdraw-activity-link"
+          />
         {/each}
       </div>
-    </div>
+    </Section>
   {/if}
-</section>
+</div>

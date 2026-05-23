@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import Section from '$lib/components/common/Section.svelte';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
   import {
     allCampaigns,
@@ -91,131 +92,162 @@
   };
 </script>
 
-<section class="space-y-6" data-testid="order-create">
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-3">
-      <span class="text-2xl font-bold">Create market-making order</span>
-      <span class="text-base-content/70">Campaign: {campaign.name} · minimum {campaign.minimum} · assets {campaign.assets.join(' + ')}</span>
-    </div>
-  </div>
+<div class="max-w-3xl" data-testid="order-create">
+  <section class="pt-2">
+    <span class="eyebrow">Market making · new order</span>
+    <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content">{campaign.name}</span>
+    <span class="mt-4 block text-base-content/60">
+      Minimum {campaign.minimum} · assets {campaign.assets.join(' + ')}
+    </span>
+  </section>
 
   {#if !$walletIsConnected && !$walletIsUnsupported}
-    <div class="alert alert-info">
-      <span>Connect a mocked Reown wallet before preparing an order.</span>
-      <button class="btn btn-sm btn-primary" onclick={openMockWallet}>Connect Wallet</button>
-    </div>
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4">
+      <span class="text-sm text-base-content/70">Connect a wallet before preparing an order.</span>
+      <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
+    </section>
   {:else if $walletIsUnsupported}
-    <div class="alert alert-warning">
-      <span>Unsupported chain blocks order creation.</span>
-    </div>
+    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70">
+      Unsupported chain blocks order creation.
+    </section>
   {:else if hasLowBalance}
-    <div class="alert alert-warning" data-testid="order-low-balance-funding-cta">
-      <span>
-        Available campaign balance is below {campaign.minimum}. Deposit is the funding remedy for low balance; withdraw is still available only from Wallet / Funding.
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 px-5 py-4" data-testid="order-low-balance-funding-cta">
+      <span class="max-w-md text-sm text-base-content/70">
+        Available campaign balance is below {campaign.minimum}. Deposit is the funding remedy; withdraw is still available from Wallet.
       </span>
-      <a class="btn btn-sm btn-primary" href="/deposit">Deposit funds</a>
-      <a class="btn btn-sm btn-outline" href="/wallet">Wallet / Funding</a>
-    </div>
+      <div class="flex gap-2">
+        <a class="btn-pill-primary" href="/deposit">Deposit</a>
+        <a class="btn-pill-outline" href="/wallet">Wallet</a>
+      </div>
+    </section>
   {/if}
 
   {#if $orderDraft && flowStep !== 'success'}
-    <div class="alert alert-info" data-testid="order-draft-state">
-      <span>
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="order-draft-state">
+      <span class="max-w-md text-sm text-base-content/70">
         Draft saved locally for {$orderDraft.selectedAssets} · {$orderDraft.amount} USD · namespace {$orderDraft.namespace ? $walletNamespaceLabel : 'not connected'}.
       </span>
-      <a class="btn btn-sm btn-outline" href="/market-making/campaign/{campaign.id}">Visit campaign detail</a>
-      <a class="btn btn-sm btn-outline" href="/wallet">Visit Wallet / Funding</a>
-    </div>
+      <div class="flex gap-2">
+        <a class="btn-pill-ghost" href="/market-making/campaign/{campaign.id}">Campaign detail →</a>
+        <a class="btn-pill-ghost" href="/wallet">Wallet →</a>
+      </div>
+    </section>
   {/if}
 
-  <div class="grid gap-4 lg:grid-cols-[1fr_1fr]">
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Wallet and balances</span>
-        <span class="text-base-content/70">{$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'} · {$walletShortAddress || 'no address'}</span>
+  <Section title="Wallet & balances" eyebrow="Account">
+    <div class="border-t border-base-300 pt-6">
+      <span class="text-sm text-base-content/70">
+        {$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'} · <span class="font-mono-num">{$walletShortAddress || 'no address'}</span>
+      </span>
+      <div class="mt-4">
         {#each $balances as balance}
-          <div class="rounded-box border border-base-300 bg-base-200 p-3">
-            <span class="font-semibold">{balance.symbol}</span>
-            <span class="block text-sm text-base-content/60">{balance.amount} available</span>
+          <div class="flex items-center justify-between border-b border-base-300 py-3">
+            <span class="font-medium">{balance.symbol}</span>
+            <span class="font-mono-num text-sm text-base-content/70">{balance.amount} available</span>
           </div>
         {:else}
-          <span class="rounded-box border border-base-300 bg-base-200 p-3 text-base-content/70">No account balances available.</span>
+          <div class="py-6 text-sm text-base-content/55">No account balances available.</div>
         {/each}
       </div>
     </div>
+  </Section>
 
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body gap-4">
-        <label class="form-control">
-          <span class="label-text mb-1">Contribution amount</span>
-          <input
-            class="input input-bordered"
-            bind:value={contributionAmount}
-            disabled={!$walletIsConnected || $walletIsUnsupported}
-            data-testid="order-contribution-amount"
-          />
-          <span class="label-text-alt mt-1 text-base-content/60">
-            Available funding balance: ${$totalBalanceUsd}. Increase this above available balance to see deposit guidance.
-          </span>
-          {#if attemptedReview && validationErrors.amount}
-            <span class="label-text-alt mt-1 text-error" data-testid="order-amount-error">{validationErrors.amount}</span>
-          {/if}
-          {#if attemptedReview && validationErrors.wallet}
-            <span class="label-text-alt mt-1 text-error" data-testid="order-wallet-error">{validationErrors.wallet}</span>
-          {/if}
-        </label>
-        <div class="rounded-box border border-base-300 bg-base-200 p-4" data-testid="order-estimate-placeholder">
-          <span class="font-semibold">Fee estimate gate</span>
-          <span class="block text-sm text-base-content/60">A mocked fee estimate appears only after required fields and constraints pass validation.</span>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button class="btn btn-primary" onclick={reviewOrder} disabled={!$walletIsConnected || $walletIsUnsupported} data-testid="order-review-button">Review mocked order</button>
-          <button class="btn btn-outline" onclick={cancelDraft} disabled={!$orderDraft} data-testid="order-cancel-draft">Cancel draft</button>
-        </div>
+  <Section title="Contribution" eyebrow="Order draft">
+    <div class="flex flex-col gap-6 border-t border-base-300 pt-6">
+      <label class="flex flex-col gap-2">
+        <span class="eyebrow">Amount (USD)</span>
+        <input
+          class="bg-transparent border-b border-base-300 px-0 py-2 font-mono-num text-3xl focus:outline-none focus:border-base-content disabled:opacity-40"
+          bind:value={contributionAmount}
+          disabled={!$walletIsConnected || $walletIsUnsupported}
+          data-testid="order-contribution-amount"
+        />
+        <span class="text-xs text-base-content/50">
+          Available funding balance: ${$totalBalanceUsd}. Exceed it to see deposit guidance.
+        </span>
+        {#if attemptedReview && validationErrors.amount}
+          <span class="text-xs text-error" data-testid="order-amount-error">{validationErrors.amount}</span>
+        {/if}
+        {#if attemptedReview && validationErrors.wallet}
+          <span class="text-xs text-error" data-testid="order-wallet-error">{validationErrors.wallet}</span>
+        {/if}
+      </label>
+
+      <div class="rounded-2xl border border-base-300 px-5 py-4 text-sm text-base-content/60" data-testid="order-estimate-placeholder">
+        <span class="eyebrow block">Fee estimate gate</span>
+        <span class="mt-1.5 block">A mocked fee estimate appears only after required fields and constraints pass validation.</span>
+      </div>
+
+      <div class="flex flex-wrap gap-2">
+        <button
+          class="btn-pill-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          onclick={reviewOrder}
+          disabled={!$walletIsConnected || $walletIsUnsupported}
+          data-testid="order-review-button"
+        >
+          Review order
+        </button>
+        <button
+          class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed"
+          onclick={cancelDraft}
+          disabled={!$orderDraft}
+          data-testid="order-cancel-draft"
+        >
+          Cancel draft
+        </button>
       </div>
     </div>
-  </div>
+  </Section>
 
   {#if flowStep === 'review'}
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="order-fee-estimate">
-      <div class="card-body gap-4">
-        <span class="font-semibold">Review mocked fee estimate before confirmation</span>
-        <span class="text-base-content/70">No server endpoint, wallet popup, real signature, RPC call, or on-chain transaction will be used.</span>
-        <div class="grid gap-3 md:grid-cols-4">
-          <span class="rounded-box border border-base-300 bg-base-200 p-3">Campaign fee<br /><strong>{feeEstimate.campaignFee}</strong></span>
-          <span class="rounded-box border border-base-300 bg-base-200 p-3">Liquidity contribution<br /><strong>{feeEstimate.liquidityContribution}</strong></span>
-          <span class="rounded-box border border-base-300 bg-base-200 p-3">Expected volume<br /><strong>{feeEstimate.expectedVolume}</strong></span>
-          <span class="rounded-box border border-base-300 bg-base-200 p-3">Expected profit<br /><strong>{feeEstimate.expectedProfit}</strong></span>
+    <Section title="Fee estimate" eyebrow="Review" caption="No server endpoint, wallet popup, signature, RPC, or on-chain transaction will be used.">
+      <div class="grid gap-px bg-base-300 border border-base-300 rounded-2xl overflow-hidden md:grid-cols-2 lg:grid-cols-4" data-testid="order-fee-estimate">
+        <div class="bg-base-100 p-5">
+          <span class="eyebrow">Campaign fee</span>
+          <span class="mt-2 block font-mono-num text-xl">{feeEstimate.campaignFee}</span>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <button class="btn btn-outline" onclick={() => { flowStep = 'form'; }}>Edit draft</button>
-          <button class="btn btn-primary" onclick={confirmOrder} data-testid="order-confirm-button">Approve and sign mocked order</button>
+        <div class="bg-base-100 p-5">
+          <span class="eyebrow">Liquidity</span>
+          <span class="mt-2 block font-mono-num text-xl">{feeEstimate.liquidityContribution}</span>
+        </div>
+        <div class="bg-base-100 p-5">
+          <span class="eyebrow">Expected volume</span>
+          <span class="mt-2 block font-mono-num text-xl">{feeEstimate.expectedVolume}</span>
+        </div>
+        <div class="bg-base-100 p-5">
+          <span class="eyebrow">Expected profit</span>
+          <span class="mt-2 block font-mono-num text-xl">{feeEstimate.expectedProfit}</span>
         </div>
       </div>
-    </div>
+      <div class="mt-6 flex flex-wrap gap-2">
+        <button class="btn-pill-outline" onclick={() => { flowStep = 'form'; }}>Edit draft</button>
+        <button class="btn-pill-primary" onclick={confirmOrder} data-testid="order-confirm-button">Approve & sign</button>
+      </div>
+    </Section>
   {:else if flowStep === 'approving' || flowStep === 'signing' || flowStep === 'submitting'}
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="order-processing-state">
-      <div class="card-body gap-3">
-        <span class="font-semibold">
-          {flowStep === 'approving' ? 'Mock Reown approval requested' : flowStep === 'signing' ? 'Mock Reown signing requested' : 'Submitting mocked order'}
-        </span>
-        <span class="text-base-content/70">
+    <Section title="Processing" eyebrow="Mocked">
+      <div class="flex items-center gap-3 border-t border-base-300 pt-6 text-base-content/70" data-testid="order-processing-state">
+        <span class="loading loading-spinner loading-sm"></span>
+        <span class="text-sm">
           {flowStep === 'approving'
-            ? 'Approval is visible and local; no wallet extension or SDK request is opened.'
+            ? 'Mock Reown approval requested. No wallet extension or SDK request is opened.'
             : flowStep === 'signing'
-              ? 'Signing is simulated with Reown-style language and no real signature.'
+              ? 'Mock Reown signing requested. No real signature is performed.'
               : 'Submitting the order into local mocked campaign state.'}
         </span>
-        <span class="loading loading-spinner loading-md"></span>
       </div>
-    </div>
+    </Section>
   {:else if flowStep === 'success' && submittedOrder}
-    <div class="alert alert-success" data-testid="order-success-state">
-      <span>
-        Success: {submittedOrder.id} for {campaign.name} · {submittedOrder.contributionAmount} · {submittedOrder.assets} · {$walletNamespaceLabel} · status {submittedOrder.status}.
-      </span>
-      <a class="btn btn-sm btn-primary" href="/market-making/order/{submittedOrder.id}" data-testid="order-success-detail-link">Open order detail</a>
-      <a class="btn btn-sm btn-outline" href="/market-making">View My Campaigns / Orders</a>
-    </div>
+    <Section title="Submitted" eyebrow="Success">
+      <div class="border-t border-base-300 pt-6" data-testid="order-success-state">
+        <span class="block text-sm text-base-content/70">
+          <span class="font-mono-num">{submittedOrder.id}</span> for {campaign.name} · {submittedOrder.contributionAmount} · {submittedOrder.assets} · {$walletNamespaceLabel} · status {submittedOrder.status}.
+        </span>
+        <div class="mt-6 flex flex-wrap gap-2">
+          <a class="btn-pill-primary" href="/market-making/order/{submittedOrder.id}" data-testid="order-success-detail-link">Open order →</a>
+          <a class="btn-pill-outline" href="/market-making">My campaigns / orders</a>
+        </div>
+      </div>
+    </Section>
   {/if}
-</section>
+</div>

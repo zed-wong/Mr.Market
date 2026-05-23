@@ -1,2 +1,57 @@
 @import "tailwindcss";
 @import "./lib/theme/daisyui-themes.css";
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    font-feature-settings: "ss01", "cv11";
+  }
+}
+
+@utility font-display {
+  font-family: "Times New Roman", ui-serif, Georgia, Cambria, serif;
+  font-feature-settings: "ss01";
+  letter-spacing: -0.01em;
+}
+
+@utility font-mono-num {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@utility eyebrow {
+  @apply text-xs capitalize tracking-[0.18em] text-base-content/50;
+}
+
+@utility hairline {
+  @apply border-b border-base-300;
+}
+
+@utility btn-pill {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors;
+}
+
+@utility btn-pill-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors bg-primary text-primary-content;
+}
+.btn-pill-primary:hover {
+  opacity: 0.9;
+}
+
+@utility btn-pill-outline {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors border border-base-300 text-base-content;
+}
+.btn-pill-outline:hover {
+  border-color: var(--color-base-content);
+}
+
+@utility btn-pill-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors text-base-content/70;
+}
+.btn-pill-ghost:hover {
+  color: var(--color-base-content);
+}

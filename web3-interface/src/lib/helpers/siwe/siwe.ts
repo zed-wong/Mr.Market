@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { selectedMockAccountId, switchMockAccount, walletAccount, walletStatus } from '$lib/stores/wallet';
+import { walletAccount, walletStatus } from '$lib/stores/wallet';
 import { isAuthed, authState } from '$lib/stores/auth';
 
 export const buildSiweMessage = (
@@ -28,22 +28,19 @@ export const buildSiweMessage = (
 };
 
 export const signInWithEthereum = async (): Promise<boolean> => {
-  const accountId = get(selectedMockAccountId) ?? 'evm-primary';
-  switchMockAccount(accountId);
-
   const account = get(walletAccount);
-  if (!account || account.unsupported) {
+  if (!account || account.namespace !== 'evm') {
     walletStatus.set('disconnected');
     isAuthed.set(false);
-    throw new Error('Select a supported mocked EVM account');
+    throw new Error('Connect a supported EVM wallet before signing in');
   }
 
   isAuthed.set(true);
   authState.set({
-    token: 'mock-web3-session-token',
+    token: 'mock-pending-real-siwe',
     address: account.address,
     chainId: String(account.chainId ?? 0),
-    userId: account.id,
+    userId: account.address,
   });
 
   return true;

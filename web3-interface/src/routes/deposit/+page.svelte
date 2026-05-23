@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Section from '$lib/components/common/Section.svelte';
+  import StatRow from '$lib/components/common/StatRow.svelte';
   import { balances } from '$lib/stores/balances';
   import {
     completeMockDeposit,
@@ -71,103 +73,112 @@
   };
 </script>
 
-<section class="space-y-4" data-testid="web3-deposit">
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-3">
-      <span class="text-2xl font-bold text-base-content">Deposit</span>
-      <span class="text-base-content/70">Mocked funding instructions for EVM and Solana. No server endpoint or wallet transaction is required.</span>
-    </div>
-  </div>
+<div data-testid="web3-deposit" class="max-w-2xl">
+  <section class="pt-2">
+    <span class="eyebrow">Funding</span>
+    <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content">Deposit</span>
+    <span class="mt-4 block text-base-content/60">
+      Mocked instructions for EVM and Solana. No server endpoint or wallet transaction is required.
+    </span>
+  </section>
 
   {#if !$walletIsConnected && !$walletIsUnsupported}
-    <div class="alert alert-info" data-testid="deposit-connect-gate">
-      <span>Connect a mocked Reown wallet before generating deposit instructions.</span>
-      <button class="btn btn-sm btn-primary" onclick={openMockWallet}>Connect Wallet</button>
-    </div>
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="deposit-connect-gate">
+      <span class="text-sm text-base-content/70">Connect a wallet before generating deposit instructions.</span>
+      <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
+    </section>
   {:else if $walletIsUnsupported}
-    <div class="alert alert-warning" data-testid="deposit-unsupported-gate">
-      <span>Unsupported chain selected. Deposit continuation is blocked until EVM or Solana is selected.</span>
-    </div>
+    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="deposit-unsupported-gate">
+      Unsupported chain selected. Deposit continuation is blocked until EVM or Solana is selected.
+    </section>
   {/if}
 
   {#if $walletIsConnected}
-    <div class="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-      <div class="card border border-base-300 bg-base-100 shadow-sm">
-        <div class="card-body gap-3">
-          <span class="font-semibold">Account context</span>
-          <span class="badge badge-outline w-fit">{$walletNamespaceLabel}</span>
-          <span class="text-base-content/70">{$walletNetwork} · {$walletShortAddress}</span>
-          <label class="form-control">
-            <span class="label-text mb-1">Chain / asset</span>
-            <select class="select select-bordered w-full" bind:value={selectedAsset} data-testid="deposit-asset-select">
-              {#each $balances as balance}
-                <option value={balance.asset}>
-                  {balance.chainNamespace === 'evm' ? 'EVM' : 'Solana / SVM'} · {balance.symbol} · {balance.name}
-                </option>
-              {/each}
-            </select>
-          </label>
-          <label class="form-control">
-            <span class="label-text mb-1">Mock deposit amount</span>
-            <input class="input input-bordered" bind:value={depositAmount} data-testid="deposit-amount-input" />
-            <span class="label-text-alt mt-1 text-base-content/60">
-              Minimum note: {minimumDepositFor(selectedBalance)} {selectedBalance?.symbol ?? 'asset'} · available after simulation.
-            </span>
-            {#if depositValidationErrors.amount}
-              <span class="label-text-alt mt-1 text-error" data-testid="deposit-amount-error">{depositValidationErrors.amount}</span>
-            {/if}
-          </label>
-          <button class="btn btn-primary" disabled={simulationDisabled} onclick={simulateDeposit} data-testid="simulate-deposit-button">
-            Simulate mocked deposit
-          </button>
-          {#if depositResult}
-            <span class="rounded-box border border-base-300 bg-base-200 p-3 text-sm text-base-content/70" data-testid="deposit-result-summary">
-              {depositResult.id} credited {depositResult.amount} {depositResult.symbol} at {depositResult.timestamp}.
-            </span>
-          {/if}
-        </div>
-      </div>
+    <Section title="New deposit" eyebrow="Account context" caption={`${$walletNamespaceLabel} · ${$walletNetwork} · ${$walletShortAddress}`}>
+      <div class="flex flex-col gap-6 border-t border-base-300 pt-6">
+        <label class="flex flex-col gap-2">
+          <span class="eyebrow">Chain / asset</span>
+          <select class="bg-transparent border-b border-base-300 px-0 py-2 focus:outline-none focus:border-base-content" bind:value={selectedAsset} data-testid="deposit-asset-select">
+            {#each $balances as balance}
+              <option value={balance.asset}>
+                {balance.chainNamespace === 'evm' ? 'EVM' : 'Solana / SVM'} · {balance.symbol} · {balance.name}
+              </option>
+            {/each}
+          </select>
+        </label>
 
-      <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="deposit-instructions">
-        <div class="card-body gap-3">
-          <span class="text-sm font-medium text-base-content/60">Deposit address</span>
-          <div class="flex items-center gap-2">
-            <code class="flex-1 rounded bg-base-200 px-3 py-2 text-sm break-all">{depositAddress}</code>
-            <button class="btn btn-sm btn-outline" onclick={copyVaultAddress}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          <span class="text-sm text-base-content/60">
-            {depositInstruction}
+        <label class="flex flex-col gap-2">
+          <span class="eyebrow">Mock deposit amount</span>
+          <input
+            class="bg-transparent border-b border-base-300 px-0 py-2 font-mono-num text-2xl focus:outline-none focus:border-base-content"
+            bind:value={depositAmount}
+            data-testid="deposit-amount-input"
+          />
+          <span class="text-xs text-base-content/50">
+            Minimum: {minimumDepositFor(selectedBalance)} {selectedBalance?.symbol ?? 'asset'}.
           </span>
+          {#if depositValidationErrors.amount}
+            <span class="text-xs text-error" data-testid="deposit-amount-error">{depositValidationErrors.amount}</span>
+          {/if}
+        </label>
+
+        <button
+          class="btn-pill-primary disabled:opacity-40 disabled:cursor-not-allowed self-start"
+          disabled={simulationDisabled}
+          onclick={simulateDeposit}
+          data-testid="simulate-deposit-button"
+        >
+          Simulate deposit
+        </button>
+
+        {#if depositResult}
+          <div class="rounded-2xl border border-base-300 px-4 py-3 text-sm text-base-content/70" data-testid="deposit-result-summary">
+            <span class="font-mono-num">{depositResult.id}</span> credited {depositResult.amount} {depositResult.symbol} at {depositResult.timestamp}.
+          </div>
+        {/if}
+      </div>
+    </Section>
+
+    <Section title="Vault address" eyebrow="Where to send">
+      <div class="flex flex-col gap-3 border-t border-base-300 pt-6" data-testid="deposit-instructions">
+        <div class="flex items-center gap-2">
+          <code class="font-mono-num flex-1 rounded-2xl border border-base-300 px-4 py-3 text-sm break-all">{depositAddress}</code>
+          <button class="btn-pill-outline" onclick={copyVaultAddress}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
         </div>
+        <span class="text-sm text-base-content/55">{depositInstruction}</span>
       </div>
-    </div>
+    </Section>
 
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="deposit-timeline">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Mocked deposit timeline</span>
-        <ul class="steps steps-vertical lg:steps-horizontal">
-          {#each timeline as step}
-            <li class="step {step.state === 'pending' ? '' : 'step-primary'}">
-              <span class="font-semibold">{step.label}</span>
-              <span class="text-xs text-base-content/60">{step.detail}</span>
-            </li>
-          {/each}
-        </ul>
-      </div>
-    </div>
-
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="deposit-activity-preview">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Funding activity updated by deposits</span>
-        {#each fundingActivity as entry}
-          <a href={entry.href} class="rounded-box border border-base-300 bg-base-200 p-3 transition-colors hover:border-primary" data-testid="deposit-activity-link">
-            <span class="font-semibold">{entry.label}</span>
-            <span class="block text-sm text-base-content/60">{entry.detail}</span>
-          </a>
+    <Section title="Timeline" eyebrow="Mocked progression">
+      <div class="border-t border-base-300" data-testid="deposit-timeline">
+        {#each timeline as step}
+          <div class="flex items-start gap-4 border-b border-base-300 py-4">
+            <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full {step.state === 'pending' ? 'bg-base-300' : 'bg-primary'}"></span>
+            <div class="flex flex-col">
+              <span class="font-medium text-base-content">{step.label}</span>
+              <span class="text-xs text-base-content/55">{step.detail}</span>
+            </div>
+          </div>
         {/each}
       </div>
-    </div>
+    </Section>
+
+    {#if fundingActivity.length > 0}
+      <Section title="Funding activity" eyebrow="Updated by deposits">
+        <div class="border-t border-base-300" data-testid="deposit-activity-preview">
+          {#each fundingActivity as entry}
+            <StatRow
+              label={entry.label}
+              sublabel={entry.detail}
+              value="→"
+              href={entry.href}
+              testid="deposit-activity-link"
+            />
+          {/each}
+        </div>
+      </Section>
+    {/if}
   {/if}
-</section>
+</div>

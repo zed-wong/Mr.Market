@@ -1,11 +1,13 @@
 <script lang="ts">
+  import Section from '$lib/components/common/Section.svelte';
+  import StatRow from '$lib/components/common/StatRow.svelte';
   import { aggregateMockActivityEntries, mockAccountActivityForAccount } from '$lib/helpers/mock-web3';
   import { balances } from '$lib/stores/balances';
   import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
   import { marketMakingActivityForAccount, sessionMarketMakingActivity } from '$lib/stores/market-making';
   import {
-    openMockWallet,
-    setWalletDisconnected,
+    disconnectWallet,
+    openWalletModal,
     walletAccount,
     walletAddress,
     walletIsConnected,
@@ -27,102 +29,94 @@
   );
 </script>
 
-<section class="space-y-6" data-testid="web3-account">
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-3">
-      <span class="text-2xl font-bold text-base-content">Account</span>
-      <span class="text-base-content/70">Mocked wallet/session state, funding activity, and market-making settings only.</span>
-    </div>
-  </div>
+<div data-testid="web3-account">
+  <section class="pt-2">
+    <span class="eyebrow">Account · {$walletStatus}</span>
+    <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content font-mono-num">
+      {$walletShortAddress || '—'}
+    </span>
+    <span class="mt-4 block text-base-content/60">
+      {$walletNamespaceLabel} · {$walletNetwork ?? 'not selected'} · {$walletAccount?.label || 'No wallet connected'}
+    </span>
 
-  <div class="grid gap-4 lg:grid-cols-[1fr_1fr]">
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="account-session-summary">
-      <div class="card-body gap-4">
-        <div class="flex items-center justify-between">
-          <span class="font-semibold">Session summary</span>
-          <span class="badge {$walletIsUnsupported ? 'badge-warning' : $walletIsConnected ? 'badge-success' : 'badge-ghost'}">{$walletStatus}</span>
-        </div>
-        <div class="space-y-3">
-          <div>
-            <span class="text-sm text-base-content/60">Address</span>
-            <span class="block font-mono text-sm">{$walletAddress ?? 'Disconnected'}</span>
-          </div>
-          <div>
-            <span class="text-sm text-base-content/60">Short address</span>
-            <span class="block">{$walletShortAddress || '—'}</span>
-          </div>
-          <div>
-            <span class="text-sm text-base-content/60">Namespace / network</span>
-            <span class="block">{$walletNamespaceLabel} · {$walletNetwork ?? 'not selected'}</span>
-          </div>
-          <div>
-            <span class="text-sm text-base-content/60">Account label</span>
-            <span class="block">{$walletAccount?.label ?? 'No mocked account selected'}</span>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button class="btn btn-primary" onclick={openMockWallet} data-testid="account-open-wallet">Open wallet controls</button>
-          <button class="btn btn-outline btn-error" onclick={setWalletDisconnected} disabled={!$walletIsConnected && !$walletIsUnsupported} data-testid="account-disconnect">Disconnect</button>
-        </div>
+    <div class="mt-6 flex flex-wrap gap-2">
+      <button class="btn-pill-primary" onclick={openWalletModal} data-testid="account-open-wallet">Open wallet</button>
+      <button
+        class="btn-pill border border-error/50 text-error hover:bg-error hover:text-error-content disabled:opacity-40 disabled:cursor-not-allowed"
+        onclick={() => void disconnectWallet()}
+        disabled={!$walletIsConnected && !$walletIsUnsupported}
+        data-testid="account-disconnect"
+      >
+        Disconnect
+      </button>
+    </div>
+  </section>
+
+  <Section title="Session" eyebrow="Mocked context">
+    <div class="border-t border-base-300" data-testid="account-session-summary">
+      <StatRow label="Address" value={$walletAddress ?? 'Disconnected'} />
+      <StatRow label="Short address" value={$walletShortAddress || '—'} />
+      <StatRow label="Namespace · network" value={`${$walletNamespaceLabel} · ${$walletNetwork ?? 'not selected'}`} />
+      <StatRow label="Network label" value={$walletAccount?.label || 'No wallet connected'} />
+      <StatRow label="Session status" value={$walletStatus} />
+    </div>
+  </Section>
+
+  <Section title="Settings" eyebrow="Preferences">
+    <div class="border-t border-base-300" data-testid="account-settings">
+      <div class="flex flex-col gap-1 border-b border-base-300 py-5">
+        <span class="font-medium">Mock session persistence</span>
+        <span class="text-sm text-base-content/55">State is local to the current browser context. Fresh contexts start disconnected deterministically.</span>
+      </div>
+      <div class="flex flex-col gap-1 border-b border-base-300 py-5">
+        <span class="font-medium">Funding & campaign notifications</span>
+        <span class="text-sm text-base-content/55">Enabled for mocked deposit, withdraw, and market-making activity.</span>
       </div>
     </div>
+  </Section>
 
-    <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="account-settings">
-      <div class="card-body gap-3">
-        <span class="font-semibold">Settings</span>
-        <div class="rounded-box border border-base-300 bg-base-200 p-4">
-          <span class="font-semibold">Mock session persistence</span>
-          <span class="mt-1 block text-sm text-base-content/70">State is local to the current browser context. Fresh contexts start disconnected deterministically.</span>
-        </div>
-        <div class="rounded-box border border-base-300 bg-base-200 p-4">
-          <span class="font-semibold">Funding and campaign notifications</span>
-          <span class="mt-1 block text-sm text-base-content/70">Enabled for mocked deposit, withdraw, and market-making activity.</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card border border-base-300 bg-base-100 shadow-sm" data-testid="account-activity">
-    <div class="card-body gap-3">
-      <span class="font-semibold">Activity</span>
+  <Section title="Activity" eyebrow="Aggregated">
+    <div data-testid="account-activity">
       {#if activityEntries.length > 0}
-        <div class="grid gap-3 md:grid-cols-3">
+        <div class="border-t border-base-300">
           {#each activityEntries as entry}
-            <a href={entry.href} class="rounded-box border border-base-300 bg-base-200 p-4 transition-colors hover:border-primary" data-testid="account-activity-link">
-              <span class="font-semibold">{entry.label}</span>
-              <span class="block text-sm text-base-content/60">{entry.detail}</span>
-            </a>
+            <StatRow
+              label={entry.label}
+              sublabel={entry.detail}
+              value="→"
+              href={entry.href}
+              testid="account-activity-link"
+            />
           {/each}
         </div>
       {:else if $walletIsUnsupported}
-        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
+        <div class="border-t border-base-300 py-10 text-base-content/55">
           Account activity is hidden while the selected chain is unsupported.
-        </span>
-      {:else}
-        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">
-          No account activity is shown while disconnected. Connect a mocked Reown wallet to view funding, campaign, and market-making history.
-        </span>
-      {/if}
-    </div>
-  </div>
-
-  <div class="card border border-base-300 bg-base-100 shadow-sm">
-    <div class="card-body gap-3">
-      <span class="font-semibold">Account balances</span>
-      {#if $balances.length > 0}
-        <div class="grid gap-3 md:grid-cols-2">
-          {#each $balances as balance}
-            <div class="rounded-box border border-base-300 bg-base-200 p-4">
-              <span class="font-semibold">{balance.symbol}</span>
-              <span class="block text-sm text-base-content/60">
-                {balance.amount} available · {balance.pendingAmount ?? '0'} pending · ${balance.usdValue}
-              </span>
-            </div>
-          {/each}
         </div>
       {:else}
-        <span class="rounded-box border border-base-300 bg-base-200 p-4 text-base-content/70">No account balances while disconnected or unsupported.</span>
+        <div class="border-t border-base-300 py-10 text-base-content/55">
+          No account activity while disconnected. Connect a wallet to view funding, campaign, and market-making history.
+        </div>
       {/if}
     </div>
-  </div>
-</section>
+  </Section>
+
+  <Section title="Balances" eyebrow="Account scoped">
+    {#if $balances.length > 0}
+      <div class="border-t border-base-300">
+        {#each $balances as balance}
+          <StatRow
+            label={balance.symbol}
+            sublabel={`${balance.pendingAmount ?? '0'} pending`}
+            value={balance.amount}
+            subvalue={`$${balance.usdValue}`}
+          />
+        {/each}
+      </div>
+    {:else}
+      <div class="border-t border-base-300 py-10 text-base-content/55">
+        No account balances while disconnected or unsupported.
+      </div>
+    {/if}
+  </Section>
+</div>
