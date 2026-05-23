@@ -15,6 +15,7 @@
   } from '$lib/stores/market-making';
   import type { MockOrder } from '$lib/helpers/mock-web3';
   import {
+    openNetworkModal,
     openMockWallet,
     walletAccount,
     walletIsConnected,
@@ -107,8 +108,9 @@
       <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
     </section>
   {:else if $walletIsUnsupported}
-    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70">
-      Unsupported chain blocks order creation.
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70">
+      <span>Wrong network selected. Order creation is blocked until Ethereum, Sepolia, or Solana is selected.</span>
+      <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="order-switch-network">Switch network</button>
     </section>
   {:else if hasLowBalance}
     <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 px-5 py-4" data-testid="order-low-balance-funding-cta">

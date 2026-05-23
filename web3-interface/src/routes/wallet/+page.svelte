@@ -3,7 +3,7 @@
   import StatRow from '$lib/components/common/StatRow.svelte';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
   import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
-  import { openMockWallet, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
+  import { openMockWallet, openNetworkModal, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
 
   let fundingActivity = $derived(
     $walletIsConnected && !$walletIsUnsupported
@@ -32,8 +32,9 @@
       <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
     </section>
   {:else if $walletIsUnsupported}
-    <section class="mt-6 rounded-2xl bg-warning/10 border border-warning/30 px-5 py-4 text-body-muted" data-testid="wallet-unsupported-gate">
-      Unsupported chain selected. Deposit and withdraw submission are blocked until EVM or Solana is selected.
+    <section class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-warning/10 border border-warning/30 px-5 py-4 text-body-muted" data-testid="wallet-unsupported-gate">
+      <span>Wrong network selected. Deposit and withdraw submission are blocked until Ethereum, Sepolia, or Solana is selected.</span>
+      <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="wallet-switch-network">Switch network</button>
     </section>
   {/if}
 

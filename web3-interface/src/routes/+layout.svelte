@@ -1,11 +1,13 @@
 <script lang="ts">
   import '../app.css';
+  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { initi18n } from '../i18n/i18n';
   import { darkTheme } from '$lib/stores/theme';
   import { toWeb3Theme } from '$lib/theme/themes';
-  import { initWalletStore } from '$lib/stores/wallet';
+  import { initWalletStore, openWalletModal } from '$lib/stores/wallet';
   import { getAppKit } from '$lib/helpers/wallet/appkit';
+  import SessionExpiredDialog from '$lib/components/dialogs/SessionExpiredDialog.svelte';
   import TopBar from '$lib/components/topBar/TopBar.svelte';
   import SideNav from '$lib/components/sideNav/SideNav.svelte';
 
@@ -29,6 +31,11 @@
       initWalletStore();
     })();
   });
+
+  const reconnectSession = () => {
+    void goto('/login');
+    openWalletModal();
+  };
 </script>
 
 {#if !i18nReady}
@@ -44,5 +51,6 @@
         {@render children?.()}
       </div>
     </main>
+    <SessionExpiredDialog onConfirm={reconnectSession} />
   </div>
 {/if}

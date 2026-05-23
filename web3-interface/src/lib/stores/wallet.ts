@@ -1,10 +1,13 @@
 import { derived, writable } from 'svelte/store';
 import { getAppKit, initAppKit } from '$lib/helpers/wallet/appkit';
+import {
+  deterministicAccountForWallet,
+  isSupportedDemoWallet,
+  namespaceLabel,
+  type WalletNamespace,
+} from '$lib/helpers/mock-web3';
 
 export type WalletStatus = 'disconnected' | 'connecting' | 'connected' | 'unsupported';
-export type WalletNamespace = 'evm' | 'solana';
-
-const SUPPORTED_EVM_CHAIN_IDS = new Set<number>([1, 11155111, 42161, 8453, 137, 10]);
 
 const namespaceLabelFor = (namespace: WalletNamespace | null): string => {
   if (namespace === 'evm') return 'EVM';
@@ -37,10 +40,21 @@ export const walletNetwork = writable<string | null>(null);
 
 export const walletAccount = derived(
   [walletAddress, walletNamespace, walletChainId, walletNetwork],
-  ([$address, $namespace, $chainId, $network]) =>
-    $address
-      ? { id: $address, address: $address, namespace: $namespace, chainId: $chainId, network: $network, label: $network ?? '' }
-      : null
+  ([$address, $namespace, $chainId, $network]) => {
+    if (!$address || !$namespace) return null;
+    const demoAccount = deterministicAccountForWallet($namespace, $chainId);
+    if (!demoAccount) return null;
+    return {
+      id: demoAccount.id,
+      address: $address,
+      demoAddress: demoAccount.address,
+      namespace: demoAccount.namespace,
+      chainId: $chainId ?? demoAccount.chainId,
+      network: $network ?? demoAccount.network,
+      label: `${demoAccount.label} · ${namespaceLabel(demoAccount.namespace)}`,
+      unsupported: Boolean(demoAccount.unsupported),
+    };
+  }
 );
 
 export const walletShortAddress = derived(walletAddress, ($addr) => shortenAddress($addr));
@@ -86,8 +100,7 @@ const recomputeFromAccounts = (activeNamespace: WalletNamespace | null) => {
   walletNamespace.set(ns);
   const appKit = getAppKit();
   const chainId = appKit?.getChainId();
-  const isEvmUnsupported = ns === 'evm' && typeof chainId === 'number' && !SUPPORTED_EVM_CHAIN_IDS.has(chainId);
-  walletStatus.set(isEvmUnsupported ? 'unsupported' : 'connected');
+  walletStatus.set(isSupportedDemoWallet(ns, chainId) ? 'connected' : 'unsupported');
 };
 
 export const initWalletStore = () => {
@@ -122,7 +135,7 @@ export const initWalletStore = () => {
       const numericId = typeof state.chainId === 'string' ? Number(state.chainId) : state.chainId;
       if (typeof numericId === 'number' && !Number.isNaN(numericId)) {
         if (namespaceAccounts.evm.connected) {
-          walletStatus.set(!SUPPORTED_EVM_CHAIN_IDS.has(numericId) ? 'unsupported' : 'connected');
+          walletStatus.set(isSupportedDemoWallet('evm', numericId) ? 'connected' : 'unsupported');
         }
       }
     }

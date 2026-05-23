@@ -22,6 +22,7 @@ export interface MockBalance {
   decimals: number;
   amount: string;
   usdValue: string;
+  pendingAmount?: string;
 }
 
 export interface MockCampaign {
@@ -600,6 +601,44 @@ export const mockAccountActivity: MockActivityEntry[] = [
 
 export const namespaceLabel = (namespace: WalletNamespace): string =>
   namespace === 'evm' ? 'EVM' : 'Solana / SVM';
+
+export const supportedDemoEvmChainIds = new Set<number>([1, 11155111]);
+
+export const normalizeDemoChainId = (chainId: number | string | null | undefined): number | null => {
+  if (chainId === null || chainId === undefined || chainId === '') return null;
+  const parsed = typeof chainId === 'string' ? Number(chainId) : chainId;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+export const deterministicAccountForWallet = (
+  namespace: WalletNamespace | null,
+  chainId: number | string | null | undefined
+): MockAccount | null => {
+  if (namespace === 'solana') {
+    return mockAccounts.find((account) => account.id === 'solana-primary') ?? null;
+  }
+
+  if (namespace !== 'evm') return null;
+
+  const numericChainId = normalizeDemoChainId(chainId);
+  if (numericChainId === 11155111) {
+    return mockAccounts.find((account) => account.id === 'evm-secondary') ?? null;
+  }
+  if (numericChainId === 1 || numericChainId === null) {
+    return mockAccounts.find((account) => account.id === 'evm-primary') ?? null;
+  }
+  return mockAccounts.find((account) => account.id === 'unsupported-polygon') ?? null;
+};
+
+export const isSupportedDemoWallet = (
+  namespace: WalletNamespace | null,
+  chainId: number | string | null | undefined
+): boolean => {
+  if (namespace === 'solana') return true;
+  if (namespace !== 'evm') return false;
+  const numericChainId = normalizeDemoChainId(chainId);
+  return numericChainId === null || supportedDemoEvmChainIds.has(numericChainId);
+};
 
 export const shortenMockAddress = (address: string): string => {
   if (!address) return '';

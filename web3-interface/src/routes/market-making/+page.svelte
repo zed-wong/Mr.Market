@@ -12,7 +12,7 @@
     type WalletNamespace,
   } from '$lib/helpers/mock-web3';
   import { allCampaigns, allOrders, sessionCampaigns } from '$lib/stores/market-making';
-  import { openMockWallet, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespace } from '$lib/stores/wallet';
+  import { openMockWallet, openNetworkModal, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespace } from '$lib/stores/wallet';
 
   type DiscoveryState = 'loaded' | 'loading' | 'empty' | 'error';
   type ChainFilter = 'active-account';
@@ -90,8 +90,9 @@
       <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
     </section>
   {:else if $walletIsUnsupported}
-    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="campaign-unsupported-gate">
-      Unsupported chain selected. Market-making create and join actions are blocked globally.
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="campaign-unsupported-gate">
+      <span>Wrong network selected. Market-making create and join actions are blocked until Ethereum, Sepolia, or Solana is selected.</span>
+      <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="campaign-switch-network">Switch network</button>
     </section>
   {/if}
 

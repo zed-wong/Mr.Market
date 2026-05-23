@@ -2,6 +2,7 @@
   import Section from '$lib/components/common/Section.svelte';
   import StatRow from '$lib/components/common/StatRow.svelte';
   import { aggregateMockActivityEntries, mockAccountActivityForAccount } from '$lib/helpers/mock-web3';
+  import { showSessionExpired } from '$lib/stores/auth';
   import { balances } from '$lib/stores/balances';
   import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
   import { marketMakingActivityForAccount, sessionMarketMakingActivity } from '$lib/stores/market-making';
@@ -71,6 +72,15 @@
       <div class="flex flex-col gap-1 border-b border-base-300 py-5">
         <span class="font-medium">Funding & campaign notifications</span>
         <span class="text-sm text-base-content/55">Enabled for mocked deposit, withdraw, and market-making activity.</span>
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 py-5">
+        <div class="flex flex-col gap-1">
+          <span class="font-medium">Session recovery preview</span>
+          <span class="text-sm text-base-content/55">Open the deterministic session-expired dialog without making a backend request.</span>
+        </div>
+        <button class="btn-pill-outline" onclick={() => showSessionExpired.set(true)} data-testid="trigger-session-expired">
+          Preview session expired
+        </button>
       </div>
     </div>
   </Section>

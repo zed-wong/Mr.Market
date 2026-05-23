@@ -12,6 +12,7 @@
     type MockFundingResult,
   } from '$lib/stores/funding';
   import {
+    openNetworkModal,
     openMockWallet,
     walletAccount,
     walletIsConnected,
@@ -86,8 +87,9 @@
       <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
     </section>
   {:else if $walletIsUnsupported}
-    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="withdraw-unsupported-gate">
-      Unsupported chain selected. Withdrawal submission is blocked until EVM or Solana is selected.
+    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="withdraw-unsupported-gate">
+      <span>Wrong network selected. Withdrawal submission is blocked until Ethereum, Sepolia, or Solana is selected.</span>
+      <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="withdraw-switch-network">Switch network</button>
     </section>
   {/if}
 

@@ -3,7 +3,9 @@ import {
   aggregateMockActivityEntries,
   campaignEligibility,
   campaignSupportsNamespace,
+  deterministicAccountForWallet,
   filterMockCampaigns,
+  isSupportedDemoWallet,
   mockAccountActivityForAccount,
   mockCampaigns,
 } from './mock-web3';
@@ -87,5 +89,18 @@ describe('mock campaign discovery helpers', () => {
       'activity-evm-campaign',
       'activity-evm-funding',
     ]);
+  });
+
+  it('maps connected wallet namespaces and networks to deterministic demo accounts', () => {
+    expect(deterministicAccountForWallet('evm', 1)?.id).toBe('evm-primary');
+    expect(deterministicAccountForWallet('evm', '11155111')?.id).toBe('evm-secondary');
+    expect(deterministicAccountForWallet('solana', null)?.id).toBe('solana-primary');
+    expect(deterministicAccountForWallet('evm', 137)?.id).toBe('unsupported-polygon');
+    expect(deterministicAccountForWallet(null, null)).toBeNull();
+
+    expect(isSupportedDemoWallet('evm', 1)).toBe(true);
+    expect(isSupportedDemoWallet('evm', 11155111)).toBe(true);
+    expect(isSupportedDemoWallet('solana', null)).toBe(true);
+    expect(isSupportedDemoWallet('evm', 137)).toBe(false);
   });
 });

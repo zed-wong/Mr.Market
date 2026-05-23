@@ -8,6 +8,7 @@
   } from '$lib/helpers/mock-web3';
   import { allCampaigns } from '$lib/stores/market-making';
   import {
+    openNetworkModal,
     openMockWallet,
     walletIsConnected,
     walletIsUnsupported,
@@ -139,9 +140,15 @@
             Create order
           </a>
         {:else}
-          <button class="btn-pill-outline opacity-40 cursor-not-allowed" disabled data-testid="campaign-detail-create-order">
-            {eligibility?.state === 'unsupported-chain' ? 'Unsupported chain' : 'Switch namespace'}
-          </button>
+          {#if eligibility?.state === 'unsupported-chain'}
+            <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="campaign-detail-create-order">
+              Switch network
+            </button>
+          {:else}
+            <button class="btn-pill-outline opacity-40 cursor-not-allowed" disabled data-testid="campaign-detail-create-order">
+              Switch namespace
+            </button>
+          {/if}
         {/if}
         <a href="/market-making" class="btn-pill-ghost">← All pools</a>
       </div>
