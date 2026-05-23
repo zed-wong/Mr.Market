@@ -67,6 +67,126 @@ export const sessionOrders = writable<MockOrder[]>([]);
 export const sessionMarketMakingActivity = writable<MockActivityEntry[]>([]);
 export const orderDraft = writable<MarketMakingDraft | null>(null);
 
+const orderStatuses = new Set<MockOrderStatus>([
+  'draft',
+  'pending',
+  'approval',
+  'signing',
+  'submitted',
+  'active',
+  'completed',
+  'failed',
+  'cancelled',
+  'paused',
+  'stopped',
+]);
+
+const campaignStatuses = new Set<MockCampaign['status']>(['open', 'active', 'paused']);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isWalletNamespace = (value: unknown): value is WalletNamespace =>
+  value === 'evm' || value === 'solana';
+
+const isOrderStatus = (value: unknown): value is MockOrderStatus =>
+  typeof value === 'string' && orderStatuses.has(value as MockOrderStatus);
+
+const isCampaignStatus = (value: unknown): value is MockCampaign['status'] =>
+  typeof value === 'string' && campaignStatuses.has(value as MockCampaign['status']);
+
+const isActivityCategory = (value: unknown): value is MockActivityEntry['category'] =>
+  value === 'funding' || value === 'campaign' || value === 'order';
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const isMockActivityEntry = (value: unknown): value is MockActivityEntry =>
+  isRecord(value) &&
+  typeof value.id === 'string' &&
+  typeof value.accountId === 'string' &&
+  isWalletNamespace(value.namespace) &&
+  isActivityCategory(value.category) &&
+  typeof value.label === 'string' &&
+  typeof value.detail === 'string' &&
+  typeof value.href === 'string' &&
+  typeof value.timestamp === 'string';
+
+const isMockCampaign = (value: unknown): value is MockCampaign =>
+  isRecord(value) &&
+  (typeof value.accountId === 'undefined' || typeof value.accountId === 'string') &&
+  typeof value.id === 'string' &&
+  typeof value.name === 'string' &&
+  isCampaignStatus(value.status) &&
+  Array.isArray(value.chains) &&
+  value.chains.every(isWalletNamespace) &&
+  isStringArray(value.assets) &&
+  typeof value.liquidity === 'string' &&
+  typeof value.volume === 'string' &&
+  typeof value.minimum === 'string' &&
+  typeof value.summary === 'string' &&
+  typeof value.duration === 'string' &&
+  typeof value.rewardRate === 'string' &&
+  isFiniteNumber(value.participants) &&
+  isStringArray(value.terms) &&
+  isStringArray(value.requirements) &&
+  isRecord(value.metrics) &&
+  typeof value.metrics.liquidityGoal === 'string' &&
+  typeof value.metrics.volumeGoal === 'string' &&
+  typeof value.metrics.currentLiquidity === 'string' &&
+  typeof value.metrics.currentVolume === 'string' &&
+  typeof value.metrics.projectedReward === 'string';
+
+const isMockOrderLog = (value: unknown): value is MockOrderLog =>
+  isRecord(value) &&
+  typeof value.timestamp === 'string' &&
+  typeof value.label === 'string' &&
+  typeof value.outcome === 'string' &&
+  isOrderStatus(value.status);
+
+const isMockOrder = (value: unknown): value is MockOrder =>
+  isRecord(value) &&
+  typeof value.id === 'string' &&
+  typeof value.accountId === 'string' &&
+  typeof value.campaignId === 'string' &&
+  isOrderStatus(value.status) &&
+  isWalletNamespace(value.namespace) &&
+  typeof value.assets === 'string' &&
+  typeof value.contributionAmount === 'string' &&
+  typeof value.feeEstimate === 'string' &&
+  typeof value.liquidityContribution === 'string' &&
+  typeof value.expectedVolume === 'string' &&
+  typeof value.expectedProfit === 'string' &&
+  typeof value.createdVolume === 'string' &&
+  typeof value.profit === 'string' &&
+  isFiniteNumber(value.placedOrders) &&
+  typeof value.filledAmount === 'string' &&
+  isFiniteNumber(value.successCount) &&
+  isFiniteNumber(value.failureCount) &&
+  isFiniteNumber(value.cancelCount) &&
+  typeof value.createdAt === 'string' &&
+  typeof value.updatedAt === 'string' &&
+  (value.participation === 'created' || value.participation === 'joined') &&
+  Array.isArray(value.logs) &&
+  value.logs.every(isMockOrderLog);
+
+const isMarketMakingDraft = (value: unknown): value is MarketMakingDraft =>
+  isRecord(value) &&
+  typeof value.campaignId === 'string' &&
+  (value.namespace === null || isWalletNamespace(value.namespace)) &&
+  typeof value.amount === 'string' &&
+  typeof value.selectedAssets === 'string' &&
+  typeof value.updatedAt === 'string';
+
+const safeSequence = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const safeArray = <T>(value: unknown, isItem: (item: unknown) => item is T): T[] =>
+  Array.isArray(value) ? value.filter(isItem) : [];
+
 export const allCampaigns = derived(sessionCampaigns, ($sessionCampaigns) => [
   ...$sessionCampaigns,
   ...mockCampaigns,
@@ -91,7 +211,7 @@ export const marketMakingActivityForAccount = (
       )
     : [];
 
-const readMarketMakingSessionSnapshot = (): MarketMakingSessionSnapshot | null => {
+const readMarketMakingSessionSnapshot = (): unknown | null => {
   if (typeof sessionStorage === 'undefined') return null;
   const encoded = sessionStorage.getItem(MARKET_MAKING_SESSION_STORAGE_KEY);
   if (!encoded) return null;
@@ -124,12 +244,21 @@ const clearMarketMakingSessionSnapshot = () => {
 export const restoreMarketMakingSession = () => {
   const snapshot = readMarketMakingSessionSnapshot();
   if (!snapshot) return;
-  campaignSequence.set(snapshot.campaignSequence ?? 0);
-  orderSequence.set(snapshot.orderSequence ?? 3000);
-  sessionCampaigns.set(snapshot.sessionCampaigns ?? []);
-  sessionOrders.set(snapshot.sessionOrders ?? []);
-  sessionMarketMakingActivity.set(snapshot.sessionMarketMakingActivity ?? []);
-  orderDraft.set(snapshot.orderDraft ?? null);
+  if (!isRecord(snapshot)) {
+    campaignSequence.set(0);
+    orderSequence.set(3000);
+    sessionCampaigns.set([]);
+    sessionOrders.set([]);
+    sessionMarketMakingActivity.set([]);
+    orderDraft.set(null);
+    return;
+  }
+  campaignSequence.set(safeSequence(snapshot.campaignSequence, 0));
+  orderSequence.set(safeSequence(snapshot.orderSequence, 3000));
+  sessionCampaigns.set(safeArray(snapshot.sessionCampaigns, isMockCampaign));
+  sessionOrders.set(safeArray(snapshot.sessionOrders, isMockOrder));
+  sessionMarketMakingActivity.set(safeArray(snapshot.sessionMarketMakingActivity, isMockActivityEntry));
+  orderDraft.set(isMarketMakingDraft(snapshot.orderDraft) ? snapshot.orderDraft : null);
 };
 
 export const resetMarketMakingSession = () => {

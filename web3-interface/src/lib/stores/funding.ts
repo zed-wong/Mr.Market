@@ -79,13 +79,48 @@ const nativeSymbols = new Set(['ETH', 'SOL']);
 
 const normalizeAmount = (value: string): string => new BigNumber(value || '0').toFixed();
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isWalletNamespace = (value: unknown): value is WalletNamespace =>
+  value === 'evm' || value === 'solana';
+
+const isActivityCategory = (value: unknown): value is MockActivityEntry['category'] =>
+  value === 'funding' || value === 'campaign' || value === 'order';
+
+const isFiniteAmountString = (value: unknown): value is string =>
+  typeof value === 'string' && new BigNumber(value).isFinite();
+
+const isFundingDelta = (value: unknown): value is FundingDelta =>
+  isRecord(value) &&
+  typeof value.accountId === 'string' &&
+  typeof value.asset === 'string' &&
+  isFiniteAmountString(value.amount);
+
+const isMockActivityEntry = (value: unknown): value is MockActivityEntry =>
+  isRecord(value) &&
+  typeof value.id === 'string' &&
+  typeof value.accountId === 'string' &&
+  isWalletNamespace(value.namespace) &&
+  isActivityCategory(value.category) &&
+  typeof value.label === 'string' &&
+  typeof value.detail === 'string' &&
+  typeof value.href === 'string' &&
+  typeof value.timestamp === 'string';
+
+const safeSequence = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const safeArray = <T>(value: unknown, isItem: (item: unknown) => item is T): T[] =>
+  Array.isArray(value) ? value.filter(isItem) : [];
+
 const nextSequence = (): number => {
   const next = get(fundingSequence) + 1;
   fundingSequence.set(next);
   return next;
 };
 
-const readFundingSessionSnapshot = (): FundingSessionSnapshot | null => {
+const readFundingSessionSnapshot = (): unknown | null => {
   if (typeof sessionStorage === 'undefined') return null;
   const encoded = sessionStorage.getItem(FUNDING_SESSION_STORAGE_KEY);
   if (!encoded) return null;
@@ -116,10 +151,17 @@ const clearFundingSessionSnapshot = () => {
 export const restoreFundingSession = () => {
   const snapshot = readFundingSessionSnapshot();
   if (!snapshot) return;
-  fundingSequence.set(snapshot.fundingSequence ?? 0);
-  creditedDeposits.set(snapshot.creditedDeposits ?? []);
-  pendingWithdrawals.set(snapshot.pendingWithdrawals ?? []);
-  sessionFundingActivity.set(snapshot.sessionFundingActivity ?? []);
+  if (!isRecord(snapshot)) {
+    fundingSequence.set(0);
+    creditedDeposits.set([]);
+    pendingWithdrawals.set([]);
+    sessionFundingActivity.set([]);
+    return;
+  }
+  fundingSequence.set(safeSequence(snapshot.fundingSequence, 0));
+  creditedDeposits.set(safeArray(snapshot.creditedDeposits, isFundingDelta));
+  pendingWithdrawals.set(safeArray(snapshot.pendingWithdrawals, isFundingDelta));
+  sessionFundingActivity.set(safeArray(snapshot.sessionFundingActivity, isMockActivityEntry));
 };
 
 export const resetFundingSession = () => {

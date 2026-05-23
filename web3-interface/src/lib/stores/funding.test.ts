@@ -6,11 +6,39 @@ import {
   completeMockDeposit,
   fundingActivityForAccount,
   resetFundingSession,
+  restoreFundingSession,
   sessionFundingActivity,
   submitMockWithdrawal,
   validateMockDeposit,
   validateMockWithdrawal,
 } from './funding';
+
+const installSessionStorageMock = () => {
+  const storage: Record<string, string> = {};
+  const sessionStorageMock = {
+    get length() {
+      return Object.keys(storage).length;
+    },
+    clear: () => {
+      for (const key of Object.keys(storage)) delete storage[key];
+    },
+    getItem: (key: string) => storage[key] ?? null,
+    key: (index: number) => Object.keys(storage)[index] ?? null,
+    removeItem: (key: string) => {
+      delete storage[key];
+    },
+    setItem: (key: string, value: string) => {
+      storage[key] = String(value);
+    },
+  } as Storage;
+
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    value: sessionStorageMock,
+    configurable: true,
+  });
+
+  return storage;
+};
 
 describe('deterministic funding flows', () => {
   beforeEach(() => {
@@ -100,6 +128,38 @@ describe('deterministic funding flows', () => {
       label: 'Withdraw',
       detail: 'ETH · EVM · 0x742d...f44e · reviewing · 2026-05-23 09:15 · amount 0.5',
       href: '/withdraw',
+    });
+  });
+
+  it('restores malformed parseable funding snapshots with safe defaults', () => {
+    const storage = installSessionStorageMock();
+    storage['mrm-web3-funding-session'] = JSON.stringify({
+      fundingSequence: 'not-a-number',
+      creditedDeposits: { accountId: 'evm-primary', asset: 'usdc', amount: '250' },
+      pendingWithdrawals: [
+        null,
+        { accountId: 'evm-primary', asset: 'ethereum', amount: '0.5' },
+        { accountId: 42, asset: 'usdc', amount: '100' },
+      ],
+      sessionFundingActivity: { id: 'activity-bad' },
+    });
+
+    expect(() => restoreFundingSession()).not.toThrow();
+
+    const updatedEth = applyFundingDeltas('evm-primary', accountBalances('evm-primary')).find(
+      (balance) => balance.symbol === 'ETH'
+    );
+    expect(updatedEth).toMatchObject({
+      amount: '3.7500',
+      pendingAmount: '0.5000',
+    });
+    expect(get(sessionFundingActivity)).toEqual([]);
+
+    const usdc = accountBalances('evm-primary').find((balance) => balance.symbol === 'USDC');
+    expect(usdc).toBeDefined();
+    if (!usdc) return;
+    expect(completeMockDeposit('evm-primary', usdc, '250.50')).toMatchObject({
+      id: 'DEP-EVM-0001',
     });
   });
 });

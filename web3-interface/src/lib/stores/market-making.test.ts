@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { describe, expect, it, beforeEach } from 'vitest';
 import { mockCampaigns, type MockCampaign, type MockOrderStatus } from '$lib/helpers/mock-web3';
 import {
+  allCampaigns,
   allOrders,
   canPauseOrder,
   canResumeOrder,
@@ -9,6 +10,8 @@ import {
   createMockOrder,
   orderDraft,
   resetMarketMakingSession,
+  restoreMarketMakingSession,
+  sessionCampaigns,
   sessionMarketMakingActivity,
   sessionOrders,
   transitionOrderLifecycle,
@@ -29,6 +32,33 @@ const evmBalances = [
     usdValue: '2000',
   },
 ];
+
+const installSessionStorageMock = () => {
+  const storage: Record<string, string> = {};
+  const sessionStorageMock = {
+    get length() {
+      return Object.keys(storage).length;
+    },
+    clear: () => {
+      for (const key of Object.keys(storage)) delete storage[key];
+    },
+    getItem: (key: string) => storage[key] ?? null,
+    key: (index: number) => Object.keys(storage)[index] ?? null,
+    removeItem: (key: string) => {
+      delete storage[key];
+    },
+    setItem: (key: string, value: string) => {
+      storage[key] = String(value);
+    },
+  } as Storage;
+
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    value: sessionStorageMock,
+    configurable: true,
+  });
+
+  return storage;
+};
 
 describe('market-making order flow store', () => {
   beforeEach(() => {
@@ -198,5 +228,42 @@ describe('market-making order flow store', () => {
     expect(transitionOrderLifecycle('MM-1002', 'stop')).toBeNull();
     expect(get(sessionOrders)).toEqual([]);
     expect(get(sessionMarketMakingActivity)).toEqual([]);
+  });
+
+  it('restores malformed parseable market-making snapshots with safe defaults', () => {
+    const storage = installSessionStorageMock();
+    storage['mrm-web3-market-making-session'] = JSON.stringify({
+      campaignSequence: 'not-a-number',
+      orderSequence: null,
+      sessionCampaigns: { id: 'bad-campaign' },
+      sessionOrders: [
+        null,
+        { id: 'bad-order', status: 'active' },
+        {
+          id: 'MM-BAD-9999',
+          accountId: 'evm-primary',
+          campaignId: 'eth-usdc-depth',
+          status: 'active',
+          namespace: 'evm',
+          logs: { label: 'not an array' },
+        },
+      ],
+      sessionMarketMakingActivity: { id: 'bad-activity' },
+      orderDraft: { campaignId: 42, namespace: 'evm' },
+    });
+
+    expect(() => restoreMarketMakingSession()).not.toThrow();
+    expect(get(sessionCampaigns)).toEqual([]);
+    expect(get(sessionOrders)).toEqual([]);
+    expect(get(sessionMarketMakingActivity)).toEqual([]);
+    expect(get(orderDraft)).toBeNull();
+    expect(get(allCampaigns).map((campaign) => campaign.id)).toContain('eth-usdc-depth');
+    expect(get(allOrders).map((order) => order.id)).toContain('MM-1001');
+
+    expect(evmCampaign).toBeDefined();
+    if (!evmCampaign) return;
+    expect(createMockOrder(evmCampaign, 'evm', '750', 'evm-primary')).toMatchObject({
+      id: 'MM-EVM-3001',
+    });
   });
 });
