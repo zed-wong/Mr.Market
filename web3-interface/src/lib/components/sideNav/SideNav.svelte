@@ -5,7 +5,7 @@
   const navItems = [
     { href: '/', label: 'Home' },
     { href: '/market', label: 'Markets' },
-    { href: '/market-making', label: 'Pools' },
+    { href: '/market-making', label: 'Market making' },
     { href: '/wallet', label: 'Wallet' },
     { href: '/account', label: 'Account' },
   ];

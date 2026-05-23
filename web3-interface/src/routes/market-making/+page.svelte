@@ -65,6 +65,7 @@
     if (!$walletIsConnected && !$walletIsUnsupported) return 'Connect to join';
     if ($walletIsUnsupported) return 'Unsupported chain';
     const eligibility = campaignEligibility(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported);
+    if (eligibility.state === 'campaign-paused') return 'Paused';
     if (!eligibility.canParticipate) return 'Switch namespace';
     return 'Create order';
   };
@@ -74,14 +75,15 @@
   <section class="pt-2 flex flex-wrap items-end justify-between gap-4">
     <div class="flex flex-col">
       <span class="eyebrow">Market making</span>
-      <span class="mt-3 font-display text-5xl md:text-6xl tracking-tight text-base-content">Pools</span>
+      <span class="mt-3 font-display text-5xl md:text-6xl tracking-tight text-base-content">Market-making campaigns</span>
       <span class="mt-4 max-w-xl text-base-content/60">
-        Mocked campaign discovery for EVM and Solana market-making participation.
+        The primary demo path starts here: choose a deterministic campaign, validate your contribution, approve, sign, submit, and open the created order detail.
       </span>
     </div>
-    <a href="/market-making/create" class="btn-pill-outline" data-testid="create-campaign-link">
-      Create campaign →
-    </a>
+    <div class="flex flex-wrap gap-2">
+      <a href="#campaign-list" class="btn-pill-primary" data-testid="market-making-primary-cta">Explore campaigns →</a>
+      <a href="/market-making/create" class="btn-pill-outline" data-testid="create-campaign-link">Create campaign →</a>
+    </div>
   </section>
 
   {#if !$walletIsConnected && !$walletIsUnsupported}
@@ -139,7 +141,7 @@
         <span class="mt-1 block text-sm">Change the filter or state preview to render public campaign discovery again.</span>
       </div>
     {:else}
-      <div class="mt-8 border-t border-base-300" data-testid="campaign-list">
+      <div id="campaign-list" class="mt-8 border-t border-base-300" data-testid="campaign-list">
         {#each visibleCampaigns as campaign}
           {@const eligibility = campaignEligibility(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported)}
           <article class="flex flex-col gap-4 border-b border-base-300 py-6" data-testid="campaign-card-{campaign.id}">

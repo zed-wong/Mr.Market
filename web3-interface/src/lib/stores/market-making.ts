@@ -215,6 +215,9 @@ export const validateOrderDraft = (
 
   if (!isConnected) errors.wallet = 'Connect a mocked Reown wallet before creating an order.';
   if (isUnsupported) errors.wallet = 'Unsupported chain selected. Switch to EVM or Solana before creating an order.';
+  if (campaign.status === 'paused') {
+    errors.wallet = `${campaign.name} is paused. New market-making orders are temporarily disabled.`;
+  }
   if (namespace && !campaign.chains.includes(namespace)) {
     errors.wallet = `${namespaceLabel(namespace)} is not supported for this campaign.`;
   }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import Section from '$lib/components/common/Section.svelte';
   import { balances, totalBalanceUsd } from '$lib/stores/balances';
@@ -26,18 +27,21 @@
     walletShortAddress,
   } from '$lib/stores/wallet';
 
+  let requestedCampaignId = $derived($page.url.searchParams.get('campaign'));
   let campaign = $derived(
-    $allCampaigns.find((item) => item.id === $page.url.searchParams.get('campaign')) ?? $allCampaigns[0]
+    requestedCampaignId ? $allCampaigns.find((item) => item.id === requestedCampaignId) ?? null : null
   );
   let contributionAmount = $state('');
   let attemptedReview = $state(false);
   let flowStep = $state<OrderFlowStep>('form');
   let submittedOrder = $state<MockOrder | null>(null);
   let initializedCampaignId = $state('');
-  let campaignMinimumUsd = $derived(minimumContributionUsd(campaign));
-  let feeEstimate = $derived(feeEstimateFor(contributionAmount || campaignMinimumUsd.toFixed(0)));
+  let campaignMinimumUsd = $derived(campaign ? minimumContributionUsd(campaign) : null);
+  let feeEstimate = $derived(feeEstimateFor(contributionAmount || campaignMinimumUsd?.toFixed(0) || '0'));
   let validationErrors = $derived(
-    validateOrderDraft(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported, contributionAmount, $balances)
+    campaign
+      ? validateOrderDraft(campaign, $walletNamespace, $walletIsConnected, $walletIsUnsupported, contributionAmount, $balances)
+      : { wallet: 'Choose a valid market-making campaign before creating an order.' }
   );
   let hasValidationErrors = $derived(Object.keys(validationErrors).length > 0);
   let hasLowBalance = $derived(
@@ -49,7 +53,7 @@
     if (campaign && existingDraft?.campaignId === campaign.id) {
       contributionAmount = existingDraft.amount;
       initializedCampaignId = campaign.id;
-    } else if (campaign && initializedCampaignId !== campaign.id) {
+    } else if (campaign && campaignMinimumUsd && initializedCampaignId !== campaign.id) {
       contributionAmount = campaignMinimumUsd.toFixed(0);
       initializedCampaignId = campaign.id;
     }
@@ -68,41 +72,56 @@
 
   const reviewOrder = () => {
     attemptedReview = true;
+    if (!campaign) return;
     if (hasValidationErrors) return;
     flowStep = 'review';
   };
 
   const cancelDraft = () => {
     clearOrderDraft();
-    contributionAmount = campaignMinimumUsd.toFixed(0);
+    contributionAmount = campaignMinimumUsd?.toFixed(0) || '';
     flowStep = 'form';
     attemptedReview = false;
   };
 
   const confirmOrder = async () => {
-    if (!$walletNamespace || hasValidationErrors) return;
+    if (!campaign || !$walletNamespace || hasValidationErrors) return;
     flowStep = 'approving';
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 450));
     flowStep = 'signing';
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 450));
     flowStep = 'submitting';
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 450));
     submittedOrder = createMockOrder(campaign, $walletNamespace, contributionAmount, $walletAccount?.id);
     flowStep = 'success';
     attemptedReview = false;
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    if (submittedOrder) {
+      await goto(`/market-making/order/${submittedOrder.id}`);
+    }
   };
 </script>
 
 <div class="max-w-3xl" data-testid="order-create">
-  <section class="pt-2">
-    <span class="eyebrow">Market making · new order</span>
-    <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content">{campaign.name}</span>
-    <span class="mt-4 block text-base-content/60">
-      Minimum {campaign.minimum} · assets {campaign.assets.join(' + ')}
-    </span>
-  </section>
+  {#if !campaign}
+    <section class="pt-2 max-w-xl" data-testid="order-create-campaign-not-found">
+      <span class="eyebrow">Campaign required</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Choose a campaign before creating an order</span>
+      <span class="mt-4 block text-base-content/60">
+        Order creation starts from campaign detail so contribution minimums, assets, and eligibility are always deterministic.
+      </span>
+      <a class="btn-pill-primary mt-6 inline-flex" href="/market-making">Open campaigns</a>
+    </section>
+  {:else}
+    <section class="pt-2">
+      <span class="eyebrow">Market making · new order</span>
+      <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content">{campaign.name}</span>
+      <span class="mt-4 block text-base-content/60">
+        Minimum {campaign.minimum} · assets {campaign.assets.join(' + ')}
+      </span>
+    </section>
 
-  {#if !$walletIsConnected && !$walletIsUnsupported}
+    {#if !$walletIsConnected && !$walletIsUnsupported}
     <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4">
       <span class="text-sm text-base-content/70">Connect a wallet before preparing an order.</span>
       <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
@@ -122,9 +141,9 @@
         <a class="btn-pill-outline" href="/wallet">Wallet</a>
       </div>
     </section>
-  {/if}
+    {/if}
 
-  {#if $orderDraft && flowStep !== 'success'}
+    {#if $orderDraft && flowStep !== 'success'}
     <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="order-draft-state">
       <span class="max-w-md text-sm text-base-content/70">
         Draft saved locally for {$orderDraft.selectedAssets} · {$orderDraft.amount} USD · namespace {$orderDraft.namespace ? $walletNamespaceLabel : 'not connected'}.
@@ -134,9 +153,9 @@
         <a class="btn-pill-ghost" href="/wallet">Wallet →</a>
       </div>
     </section>
-  {/if}
+    {/if}
 
-  <Section title="Wallet & balances" eyebrow="Account">
+    <Section title="Wallet & balances" eyebrow="Account">
     <div class="border-t border-base-300 pt-6">
       <span class="text-sm text-base-content/70">
         {$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'} · <span class="font-mono-num">{$walletShortAddress || 'no address'}</span>
@@ -152,9 +171,9 @@
         {/each}
       </div>
     </div>
-  </Section>
+    </Section>
 
-  <Section title="Contribution" eyebrow="Order draft">
+    <Section title="Contribution" eyebrow="Order draft">
     <div class="flex flex-col gap-6 border-t border-base-300 pt-6">
       <label class="flex flex-col gap-2">
         <span class="eyebrow">Amount (USD)</span>
@@ -199,9 +218,9 @@
         </button>
       </div>
     </div>
-  </Section>
+    </Section>
 
-  {#if flowStep === 'review'}
+    {#if flowStep === 'review'}
     <Section title="Fee estimate" eyebrow="Review" caption="No server endpoint, wallet popup, signature, RPC, or on-chain transaction will be used.">
       <div class="grid gap-px bg-base-300 border border-base-300 rounded-2xl overflow-hidden md:grid-cols-2 lg:grid-cols-4" data-testid="order-fee-estimate">
         <div class="bg-base-100 p-5">
@@ -226,9 +245,9 @@
         <button class="btn-pill-primary" onclick={confirmOrder} data-testid="order-confirm-button">Approve & sign</button>
       </div>
     </Section>
-  {:else if flowStep === 'approving' || flowStep === 'signing' || flowStep === 'submitting'}
+    {:else if flowStep === 'approving' || flowStep === 'signing' || flowStep === 'submitting'}
     <Section title="Processing" eyebrow="Mocked">
-      <div class="flex items-center gap-3 border-t border-base-300 pt-6 text-base-content/70" data-testid="order-processing-state">
+      <div class="flex items-center gap-3 border-t border-base-300 pt-6 text-base-content/70" data-testid={`order-processing-${flowStep}`}>
         <span class="loading loading-spinner loading-sm"></span>
         <span class="text-sm">
           {flowStep === 'approving'
@@ -239,7 +258,7 @@
         </span>
       </div>
     </Section>
-  {:else if flowStep === 'success' && submittedOrder}
+    {:else if flowStep === 'success' && submittedOrder}
     <Section title="Submitted" eyebrow="Success">
       <div class="border-t border-base-300 pt-6" data-testid="order-success-state">
         <span class="block text-sm text-base-content/70">
@@ -251,5 +270,6 @@
         </div>
       </div>
     </Section>
+    {/if}
   {/if}
 </div>

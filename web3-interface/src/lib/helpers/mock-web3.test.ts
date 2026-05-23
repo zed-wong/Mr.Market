@@ -49,6 +49,11 @@ describe('mock campaign discovery helpers', () => {
       canParticipate: true,
       label: 'EVM eligible',
     });
+    expect(campaignEligibility({ ...evmOnlyCampaign, status: 'paused' }, 'evm', true, false)).toMatchObject({
+      state: 'campaign-paused',
+      canParticipate: false,
+      label: 'Paused',
+    });
     expect(campaignEligibility(solanaOnlyCampaign, 'evm', true, false)).toMatchObject({
       state: 'namespace-unsupported',
       canParticipate: false,

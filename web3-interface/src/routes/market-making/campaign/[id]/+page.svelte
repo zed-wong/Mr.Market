@@ -19,7 +19,9 @@
   } from '$lib/stores/wallet';
 
   const indicatorNamespaces: WalletNamespace[] = ['evm', 'solana'];
+  type DetailState = 'loaded' | 'loading' | 'error';
 
+  let detailState = $state<DetailState>('loaded');
   let campaign = $derived($allCampaigns.find((item) => item.id === $page.params.id) ?? null);
   let eligibility = $derived(
     campaign
@@ -37,6 +39,25 @@
         Return to mocked campaign discovery to choose a public campaign.
       </span>
       <a href="/market-making" class="btn-pill-primary mt-6 inline-flex">Open campaigns</a>
+    </section>
+  {:else if detailState === 'loading'}
+    <section class="pt-2 max-w-xl" data-testid="campaign-detail-loading-state">
+      <span class="eyebrow">Loading</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Loading campaign metrics</span>
+      <span class="mt-4 flex items-center gap-3 text-sm text-base-content/60">
+        <span class="loading loading-spinner loading-sm"></span>
+        Deterministic market-making metrics are being prepared for preview.
+      </span>
+      <button class="btn-pill-primary mt-6" onclick={() => { detailState = 'loaded'; }}>Show loaded campaign</button>
+    </section>
+  {:else if detailState === 'error'}
+    <section class="pt-2 max-w-xl" data-testid="campaign-detail-error-state">
+      <span class="eyebrow">Recovery</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Campaign preview unavailable</span>
+      <span class="mt-4 block text-base-content/60">
+        This mocked error state keeps the page recoverable without backend data.
+      </span>
+      <button class="btn-pill-primary mt-6" onclick={() => { detailState = 'loaded'; }}>Retry campaign detail</button>
     </section>
   {:else}
     <section class="pt-2">
@@ -56,6 +77,18 @@
         <span class="text-base-content/30">·</span>
         <span>{campaign.assets.join(' / ')}</span>
       </div>
+    </section>
+
+    <section class="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="campaign-detail-state-controls">
+      <span class="text-sm text-base-content/60">State preview for validation and demos.</span>
+      <label class="flex items-center gap-2 text-sm">
+        <span class="eyebrow">State</span>
+        <select class="bg-transparent border-b border-base-300 px-0 py-1 focus:outline-none focus:border-base-content" bind:value={detailState} data-testid="campaign-detail-state-select">
+          <option value="loaded">Loaded detail</option>
+          <option value="loading">Loading state</option>
+          <option value="error">Error state</option>
+        </select>
+      </label>
     </section>
 
     <Section title="Metrics" eyebrow="Targets">
@@ -143,6 +176,10 @@
           {#if eligibility?.state === 'unsupported-chain'}
             <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="campaign-detail-create-order">
               Switch network
+            </button>
+          {:else if eligibility?.state === 'campaign-paused'}
+            <button class="btn-pill-outline opacity-40 cursor-not-allowed" disabled data-testid="campaign-detail-create-order">
+              Paused
             </button>
           {:else}
             <button class="btn-pill-outline opacity-40 cursor-not-allowed" disabled data-testid="campaign-detail-create-order">

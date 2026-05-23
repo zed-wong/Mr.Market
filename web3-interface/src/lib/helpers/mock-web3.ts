@@ -110,6 +110,7 @@ export type CampaignFilter = 'all' | 'evm' | 'solana' | 'eligible' | 'open' | 'a
 export type CampaignEligibilityState =
   | 'connect-wallet'
   | 'unsupported-chain'
+  | 'campaign-paused'
   | 'namespace-supported'
   | 'namespace-unsupported';
 
@@ -736,6 +737,15 @@ export const campaignEligibility = (
       canParticipate: false,
       label: 'Connect wallet',
       message: 'Connect a mocked Reown wallet to check namespace-specific campaign eligibility.',
+    };
+  }
+
+  if (campaign.status === 'paused') {
+    return {
+      state: 'campaign-paused',
+      canParticipate: false,
+      label: 'Paused',
+      message: `${campaign.name} is paused. New market-making orders are temporarily disabled while existing placements are reconciled.`,
     };
   }
 
