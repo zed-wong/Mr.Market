@@ -2,11 +2,25 @@
   import { page } from '$app/stores';
   import Section from '$lib/components/common/Section.svelte';
   import { namespaceLabel } from '$lib/helpers/mock-web3';
-  import { allCampaigns, allOrders, statusLabel } from '$lib/stores/market-making';
+  import {
+    allCampaigns,
+    allOrders,
+    canPauseOrder,
+    canResumeOrder,
+    canStopOrder,
+    statusLabel,
+    transitionOrderLifecycle,
+    type OrderLifecycleAction,
+  } from '$lib/stores/market-making';
 
   let order = $derived($allOrders.find((item) => item.id === $page.params.id) ?? null);
   let campaign = $derived(order ? $allCampaigns.find((item) => item.id === order.campaignId) ?? null : null);
   let orderedLogs = $derived(order ? [...order.logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) : []);
+
+  const runLifecycleAction = (action: OrderLifecycleAction) => {
+    if (!order) return;
+    transitionOrderLifecycle(order.id, action);
+  };
 </script>
 
 <div data-testid="order-detail">
@@ -71,15 +85,31 @@
       </div>
     </Section>
 
-    <Section title="Lifecycle" eyebrow="Actions" caption={`Status ${statusLabel(order.status)} keeps actions deterministic for the UI-only prototype.`}>
+    <Section title="Lifecycle" eyebrow="Actions" caption={`Status ${statusLabel(order.status)} keeps actions deterministic for the UI-only prototype and records each local transition.`}>
       <div class="flex flex-wrap gap-2 border-t border-base-300 pt-6" data-testid="order-lifecycle-actions">
-        <button class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed" disabled={order.status !== 'draft'}>Resume draft</button>
-        <button class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed" disabled={order.status !== 'active'}>Pause placement</button>
+        <button
+          class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={!canResumeOrder(order.status)}
+          onclick={() => runLifecycleAction('resume')}
+          data-testid="order-resume-action"
+        >
+          Resume placement
+        </button>
+        <button
+          class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={!canPauseOrder(order.status)}
+          onclick={() => runLifecycleAction('pause')}
+          data-testid="order-pause-action"
+        >
+          Pause placement
+        </button>
         <button
           class="btn-pill disabled:opacity-40 disabled:cursor-not-allowed border border-error/50 text-error hover:bg-error hover:text-error-content"
-          disabled={order.status === 'completed' || order.status === 'failed' || order.status === 'cancelled'}
+          disabled={!canStopOrder(order.status)}
+          onclick={() => runLifecycleAction('stop')}
+          data-testid="order-stop-action"
         >
-          Cancel order
+          Stop order
         </button>
       </div>
     </Section>

@@ -85,7 +85,8 @@ export type MockOrderStatus =
   | 'completed'
   | 'failed'
   | 'cancelled'
-  | 'paused';
+  | 'paused'
+  | 'stopped';
 
 export interface MockOrderLog {
   timestamp: string;

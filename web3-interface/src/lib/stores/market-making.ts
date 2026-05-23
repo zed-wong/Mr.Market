@@ -47,6 +47,7 @@ export interface OrderValidationResult {
 }
 
 export type OrderFlowStep = 'form' | 'review' | 'approving' | 'signing' | 'submitting' | 'success';
+export type OrderLifecycleAction = 'pause' | 'resume' | 'stop';
 
 const campaignSequence = writable(0);
 const orderSequence = writable(3000);
@@ -61,10 +62,13 @@ export const allCampaigns = derived(sessionCampaigns, ($sessionCampaigns) => [
   ...mockCampaigns,
 ]);
 
-export const allOrders = derived(sessionOrders, ($sessionOrders) => [
-  ...$sessionOrders,
-  ...mockOrders,
-]);
+export const allOrders = derived(sessionOrders, ($sessionOrders) => {
+  const sessionOrderIds = new Set($sessionOrders.map((order) => order.id));
+  return [
+    ...$sessionOrders,
+    ...mockOrders.filter((order) => !sessionOrderIds.has(order.id)),
+  ];
+});
 
 export const marketMakingActivityForAccount = (
   accountId: string | null | undefined,
@@ -252,6 +256,100 @@ const buildOrderLogs = (timestamp: string, status: MockOrderStatus): MockOrderLo
   { timestamp: '2026-05-23 09:21', label: 'Submitted', outcome: 'Local mocked submission completed successfully.', status: 'submitted' },
   { timestamp: '2026-05-23 09:22', label: 'Status update', outcome: `Order lifecycle now reports ${status}.`, status },
 ];
+
+const terminalOrderStatuses = new Set<MockOrderStatus>(['completed', 'failed', 'cancelled']);
+
+const lifecycleTimestampFor = (order: MockOrder): string => {
+  const minute = String(Math.min(59, order.logs.length)).padStart(2, '0');
+  return `2026-05-23 10:${minute}`;
+};
+
+const activityTimestampId = (timestamp: string): string =>
+  timestamp.slice(11).replace(':', '-');
+
+const lifecycleDetails: Record<OrderLifecycleAction, { status: MockOrderStatus; label: string; outcome: string }> = {
+  pause: {
+    status: 'paused',
+    label: 'Placement paused',
+    outcome: 'New maker order placement paused while existing fills remain tracked.',
+  },
+  resume: {
+    status: 'active',
+    label: 'Placement resumed',
+    outcome: 'Maker order placement resumed using the existing deterministic contribution.',
+  },
+  stop: {
+    status: 'stopped',
+    label: 'Placement stopped',
+    outcome: 'Active maker order placement stopped; inventory remains reserved for deterministic settlement.',
+  },
+};
+
+export const canPauseOrder = (status: MockOrderStatus): boolean => status === 'active';
+
+export const canResumeOrder = (status: MockOrderStatus): boolean =>
+  status === 'paused' || status === 'stopped' || status === 'draft';
+
+export const canStopOrder = (status: MockOrderStatus): boolean =>
+  !terminalOrderStatuses.has(status) && status !== 'stopped';
+
+export const transitionOrderLifecycle = (
+  orderId: string,
+  action: OrderLifecycleAction
+): MockOrder | null => {
+  const currentSessionOrders = get(sessionOrders);
+  const currentOrder =
+    currentSessionOrders.find((order) => order.id === orderId) ??
+    mockOrders.find((order) => order.id === orderId);
+
+  if (!currentOrder) return null;
+  if (action === 'pause' && !canPauseOrder(currentOrder.status)) return null;
+  if (action === 'resume' && !canResumeOrder(currentOrder.status)) return null;
+  if (action === 'stop' && !canStopOrder(currentOrder.status)) return null;
+
+  const detail = lifecycleDetails[action];
+  const timestamp = lifecycleTimestampFor(currentOrder);
+  const campaign =
+    get(sessionCampaigns).find((item) => item.id === currentOrder.campaignId) ??
+    mockCampaigns.find((item) => item.id === currentOrder.campaignId);
+  const updatedOrder: MockOrder = {
+    ...currentOrder,
+    status: detail.status,
+    updatedAt: timestamp,
+    cancelCount: action === 'stop' ? currentOrder.cancelCount + 1 : currentOrder.cancelCount,
+    logs: [
+      ...currentOrder.logs,
+      {
+        timestamp,
+        label: detail.label,
+        outcome: detail.outcome,
+        status: detail.status,
+      },
+    ],
+  };
+
+  sessionOrders.update((orders) => {
+    const existingIndex = orders.findIndex((order) => order.id === orderId);
+    if (existingIndex === -1) return [updatedOrder, ...orders];
+    return orders.map((order) => (order.id === orderId ? updatedOrder : order));
+  });
+
+  sessionMarketMakingActivity.update((entries) => [
+    {
+      id: `activity-order-lifecycle-${updatedOrder.id}-${activityTimestampId(timestamp)}`,
+      accountId: updatedOrder.accountId,
+      namespace: updatedOrder.namespace,
+      category: 'order',
+      label: detail.label,
+      detail: `${timestamp} · ${updatedOrder.id} · ${campaign?.name ?? 'Unknown campaign'} · ${namespaceLabel(updatedOrder.namespace)} · ${statusLabel(updatedOrder.status)}`,
+      href: `/market-making/order/${updatedOrder.id}`,
+      timestamp,
+    },
+    ...entries,
+  ]);
+
+  return updatedOrder;
+};
 
 export const createMockOrder = (
   campaign: MockCampaign,
