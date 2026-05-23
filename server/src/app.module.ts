@@ -82,7 +82,9 @@ import { UserOrdersModule } from './modules/market-making/user-orders/user-order
 import { MixinModule } from './modules/mixin/mixin.module';
 import { Web3Module } from './modules/web3/web3.module';
 
-dotenv.config();
+dotenv.config({
+  path: process.env.DOTENV_CONFIG_PATH || undefined,
+});
 
 function buildRedisConfig(configService: ConfigService) {
   const redisUrl = process.env.REDIS_URL;

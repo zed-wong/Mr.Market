@@ -10,5 +10,6 @@ import { MetricsService } from './metrics.service';
   imports: [TypeOrmModule.forFeature([StrategyExecutionHistory]), TickModule],
   controllers: [MetricsController],
   providers: [MetricsService],
+  exports: [MetricsService],
 })
 export class MetricsModule {}
