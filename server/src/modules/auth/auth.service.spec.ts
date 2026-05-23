@@ -19,6 +19,7 @@ import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
 import { getUserMe } from 'src/common/helpers/mixin/user';
+import { AdminAuditLogService } from 'src/modules/admin/system/admin-audit-log.service';
 
 import { UserService } from '../mixin/user/user.service';
 import { AuthService } from './auth.service';
@@ -47,6 +48,7 @@ describe('AuthService', () => {
     findOne: jest.Mock;
     save: jest.Mock;
   };
+  let auditLogService: { record: jest.Mock };
   let configValues: Record<string, string | null>;
 
   beforeEach(async () => {
@@ -68,6 +70,9 @@ describe('AuthService', () => {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
       save: jest.fn(async (value) => value),
+    };
+    auditLogService = {
+      record: jest.fn(async () => undefined),
     };
     configValues = {
       'admin.jwt_secret': 'jwt_secret',
@@ -108,6 +113,10 @@ describe('AuthService', () => {
           provide: getRepositoryToken(AdminPasskeyCredentialEntity),
           useValue: passkeyRepository,
         },
+        {
+          provide: AdminAuditLogService,
+          useValue: auditLogService,
+        },
       ],
     }).compile();
 
@@ -136,6 +145,15 @@ describe('AuthService', () => {
       await expect(authService.validateUser(password)).rejects.toThrow(
         UnauthorizedException,
       );
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: 'anonymous',
+          action: 'admin.password_login.failed',
+          resource: 'auth',
+          status: 'denied',
+          metadata: expect.objectContaining({ reason: 'invalid_password' }),
+        }),
+      );
     });
 
     it('should return a signed JWT if password is correct', async () => {
@@ -160,6 +178,34 @@ describe('AuthService', () => {
         { expiresIn: '7d' },
       );
       expect(result).toBe('signed_token');
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: 'admin',
+          action: 'admin.password_login.succeeded',
+          resource: 'auth',
+          status: 'success',
+        }),
+      );
+    });
+
+    it('audits session checks without exposing bearer tokens', async () => {
+      await expect(
+        authService.getSession({
+          username: 'admin',
+          tokenVersion: 1,
+          authMethod: 'password',
+        }),
+      ).resolves.toEqual({ authenticated: true, username: 'admin' });
+
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: 'admin',
+          action: 'admin.session.succeeded',
+          resource: 'auth',
+          status: 'success',
+          requestContext: { source: 'auth-service' },
+        }),
+      );
     });
   });
 

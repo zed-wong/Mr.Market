@@ -12,6 +12,7 @@ import { MixinMessage } from 'src/common/entities/mixin/mixin-message.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
 
 import { AppController } from './app.controller';
+import { AdminAuditLogEntity } from './common/entities/admin/admin-audit-log.entity';
 import { AdminAuthStateEntity } from './common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from './common/entities/admin/admin-passkey-credential.entity';
 import { APIKeysConfig } from './common/entities/admin/api-keys.entity';
@@ -58,6 +59,7 @@ import { OutboxEvent } from './common/entities/system/outbox-event.entity';
 import configuration from './config/configuration';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminModule } from './modules/admin/admin.module';
+import { AdminAuditModule } from './modules/admin/system/admin-audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CampaignModule } from './modules/campaign/campaign.module';
 import { CoingeckoModule } from './modules/data/coingecko/coingecko.module';
@@ -136,6 +138,7 @@ function buildRedisConfig(configService: ConfigService) {
         StrategyDefinition,
         Performance,
         SpotOrder,
+        AdminAuditLogEntity,
         AdminAuthStateEntity,
         AdminPasskeyCredentialEntity,
         APIKeysConfig,
@@ -188,6 +191,7 @@ function buildRedisConfig(configService: ConfigService) {
     HealthModule,
     MixinModule,
     AuthModule,
+    AdminAuditModule,
     AdminModule,
     CampaignModule,
     Web3Module,

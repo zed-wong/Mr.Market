@@ -4,6 +4,7 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -28,6 +29,7 @@ import { getUserMe } from 'src/common/helpers/mixin/user';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { Repository } from 'typeorm';
 
+import { AdminAuditLogService } from '../admin/system/admin-audit-log.service';
 import { UserService } from '../mixin/user/user.service';
 
 const ADMIN_AUTH_ID = 'admin';
@@ -60,6 +62,8 @@ export class AuthService {
     private adminAuthStateRepository: Repository<AdminAuthStateEntity>,
     @InjectRepository(AdminPasskeyCredentialEntity)
     private passkeyRepository: Repository<AdminPasskeyCredentialEntity>,
+    @Optional()
+    private readonly auditLogService?: AdminAuditLogService,
   ) {
     this.secret = this.configService.get<string>('admin.jwt_secret');
     this.adminPassword = this.configService.get<string>('admin.pass');
@@ -93,12 +97,20 @@ export class AuthService {
    */
   async validateUser(password: string): Promise<string> {
     if (!password) {
+      await this.audit('admin.password_login.failed', 'denied', {
+        reason: 'missing_password',
+      });
       throw new UnauthorizedException('Password is required');
     }
 
     const state = await this.getAdminAuthState();
 
-    this.assertNotLocked(state);
+    if (this.isLocked(state)) {
+      await this.audit('admin.password_login.failed', 'denied', {
+        reason: 'locked',
+      });
+      throw new ForbiddenException('Admin login is temporarily locked');
+    }
 
     const hashedAdminPassword = createHash('sha256')
       .update(this.adminPassword)
@@ -109,22 +121,35 @@ export class AuthService {
 
     if (!rawPasswordMatches && !legacyHashMatches) {
       await this.recordFailedLogin(state);
-      this.audit('admin.password_login.failed');
+      await this.audit('admin.password_login.failed', 'denied', {
+        reason: 'invalid_password',
+      });
       throw new UnauthorizedException('Invalid password');
     }
 
     await this.resetFailedLogins(state);
-    this.audit('admin.password_login.succeeded');
+    await this.audit('admin.password_login.succeeded', 'success');
 
     return this.signAdminJwt(state.tokenVersion, 'password');
   }
 
   async getSession(payload?: AdminJwtPayload) {
     if (payload?.username !== ADMIN_AUTH_ID) {
+      await this.audit('admin.session.denied', 'denied', {
+        reason: 'invalid_actor',
+      });
       return { authenticated: false };
     }
-    await this.assertAdminTokenVersion(payload.tokenVersion);
+    try {
+      await this.assertAdminTokenVersion(payload.tokenVersion);
+    } catch (error) {
+      await this.audit('admin.session.denied', 'denied', {
+        reason: 'invalid_token_version',
+      });
+      throw error;
+    }
 
+    await this.audit('admin.session.succeeded', 'success');
     return { authenticated: true, username: ADMIN_AUTH_ID };
   }
 
@@ -205,7 +230,7 @@ export class AuthService {
     state.currentChallenge = null;
     state.updatedAt = now;
     await this.adminAuthStateRepository.save(state);
-    this.audit('admin.passkey_registration.succeeded');
+    await this.audit('admin.passkey_registration.succeeded', 'success');
 
     return { ok: true };
   }
@@ -232,7 +257,7 @@ export class AuthService {
       throw new UnauthorizedException('Passkey not found');
     }
     await this.passkeyRepository.delete({ credentialId });
-    this.audit('admin.passkey_revoked');
+    await this.audit('admin.passkey_revoked', 'success', { credentialId });
     return { ok: true };
   }
 
@@ -269,7 +294,9 @@ export class AuthService {
     });
 
     if (!credential) {
-      this.audit('admin.passkey_login.failed');
+      await this.audit('admin.passkey_login.failed', 'denied', {
+        reason: 'unknown_credential',
+      });
       throw new UnauthorizedException('Invalid passkey');
     }
 
@@ -280,7 +307,9 @@ export class AuthService {
     );
 
     if (!verification.verified) {
-      this.audit('admin.passkey_login.failed');
+      await this.audit('admin.passkey_login.failed', 'denied', {
+        reason: 'verification_failed',
+      });
       throw new UnauthorizedException('Invalid passkey');
     }
 
@@ -291,7 +320,7 @@ export class AuthService {
     state.currentChallenge = null;
     state.updatedAt = getRFC3339Timestamp();
     await this.adminAuthStateRepository.save(state);
-    this.audit('admin.passkey_login.succeeded');
+    await this.audit('admin.passkey_login.succeeded', 'success');
 
     return this.signAdminJwt(state.tokenVersion, 'passkey');
   }
@@ -329,7 +358,9 @@ export class AuthService {
         expectedRPID: this.getPasskeyRpId(),
       });
     } catch (error) {
-      this.audit('admin.passkey_registration.failed');
+      await this.audit('admin.passkey_registration.failed', 'denied', {
+        reason: 'verification_error',
+      });
       this.logger.warn(
         `Passkey registration verification failed: ${
           error instanceof Error ? error.message : String(error)
@@ -360,7 +391,9 @@ export class AuthService {
         },
       });
     } catch (error) {
-      this.audit('admin.passkey_login.failed');
+      await this.audit('admin.passkey_login.failed', 'denied', {
+        reason: 'verification_error',
+      });
       this.logger.warn(
         `Passkey login verification failed: ${
           error instanceof Error ? error.message : String(error)
@@ -388,18 +421,17 @@ export class AuthService {
     return state;
   }
 
-  private assertNotLocked(state: AdminAuthStateEntity) {
-    if (!state.lockedUntil) return;
-    if (new Date(state.lockedUntil).getTime() > Date.now()) {
-      throw new ForbiddenException('Admin login is temporarily locked');
-    }
+  private isLocked(state: AdminAuthStateEntity) {
+    return Boolean(
+      state.lockedUntil && new Date(state.lockedUntil).getTime() > Date.now(),
+    );
   }
 
   private async recordFailedLogin(state: AdminAuthStateEntity) {
     state.failedLoginAttempts += 1;
     if (state.failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
       state.lockedUntil = new Date(Date.now() + LOCKOUT_MS).toISOString();
-      await this.incrementTokenVersion('admin.login.locked', state);
+      await this.incrementTokenVersion('admin.login.locked', state, 'denied');
 
       return;
     }
@@ -417,13 +449,14 @@ export class AuthService {
   private async incrementTokenVersion(
     reason: string,
     state?: AdminAuthStateEntity,
+    status: 'success' | 'denied' | 'error' = 'success',
   ) {
     const current = state || (await this.getAdminAuthState());
 
     current.tokenVersion += 1;
     current.updatedAt = getRFC3339Timestamp();
     await this.adminAuthStateRepository.save(current);
-    this.audit(reason);
+    await this.audit(reason, status);
   }
 
   private getPasskeyRpName(): string {
@@ -479,8 +512,32 @@ export class AuthService {
     }
   }
 
-  private audit(event: string) {
+  private async audit(
+    event: string,
+    status: 'success' | 'denied' | 'error' = 'success',
+    metadata?: Record<string, unknown>,
+  ) {
     this.logger.log(`[admin-audit] ${event}`);
+
+    if (!this.auditLogService) {
+      return;
+    }
+
+    await this.auditLogService.record({
+      actor:
+        status === 'denied' ||
+        event.includes('.failed') ||
+        event.includes('.denied')
+          ? 'anonymous'
+          : ADMIN_AUTH_ID,
+      action: event,
+      resource: 'auth',
+      status,
+      metadata: metadata || null,
+      requestContext: {
+        source: 'auth-service',
+      },
+    });
   }
 
   /**

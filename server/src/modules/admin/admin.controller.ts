@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminAuditInterceptor } from './system/admin-audit.interceptor';
 import {
   GrowdataArbitragePairDto,
   GrowdataExchangeDto,
@@ -41,6 +43,7 @@ import { AdminStrategyService } from './strategy/adminStrategy.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
+@UseInterceptors(AdminAuditInterceptor)
 @ApiBearerAuth()
 @ApiTags('Admin')
 export class AdminController {

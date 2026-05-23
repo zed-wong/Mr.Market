@@ -7,10 +7,12 @@ import {
   Post,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 
+import { AdminAuditInterceptor } from '../system/admin-audit.interceptor';
 import {
   CampaignJoinRequestDto,
   DirectResumeMarketMakingDto,
@@ -24,6 +26,7 @@ import { AdminDirectMarketMakingService } from './admin-direct-mm.service';
 @ApiBearerAuth()
 @Controller('admin/market-making')
 @UseGuards(JwtAuthGuard)
+@UseInterceptors(AdminAuditInterceptor)
 export class AdminDirectMarketMakingController {
   constructor(
     private readonly adminDirectMarketMakingService: AdminDirectMarketMakingService,

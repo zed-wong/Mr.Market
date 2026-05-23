@@ -51,10 +51,13 @@ import { AdminSystemHealthController } from './system/admin-system-health.contro
 import { AdminSystemHealthService } from './system/admin-system-health.service';
 import { AdminSystemLogsController } from './system/admin-system-logs.controller';
 import { AdminSystemLogsService } from './system/admin-system-logs.service';
+import { AdminAuditModule } from './system/admin-audit.module';
+import { AdminSystemAuditController } from './system/admin-system-audit.controller';
 
 @Module({
   imports: [
     AdminExchangesModule,
+    AdminAuditModule,
     StrategyModule,
     GrowdataModule,
     SpotdataModule,
@@ -95,6 +98,7 @@ import { AdminSystemLogsService } from './system/admin-system-logs.service';
     AdminPositionsController,
     AdminSystemHealthController,
     AdminSystemLogsController,
+    AdminSystemAuditController,
     AdminFeeController,
     AdminDirectMarketMakingController,
   ],

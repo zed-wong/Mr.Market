@@ -7,8 +7,10 @@ import {
   Param,
   Post,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { AdminAuditInterceptor } from 'src/modules/admin/system/admin-audit.interceptor';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 
@@ -17,6 +19,7 @@ import { AddAPIKeyDto } from './exchanges.dto';
 @ApiTags('Admin/Exchanges')
 @Controller('admin/exchanges')
 @UseGuards(JwtAuthGuard)
+@UseInterceptors(AdminAuditInterceptor)
 export class AdminExchangesController {
   constructor(private readonly exchangeService: ExchangeApiKeyService) {}
 

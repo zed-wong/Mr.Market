@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
+import { AdminAuditModule } from 'src/modules/admin/system/admin-audit.module';
 import { AuthController } from 'src/modules/auth/auth.controller';
 import { AuthService } from 'src/modules/auth/auth.service';
 import { JwtStrategy } from 'src/modules/auth/jwt.strategy';
@@ -16,6 +17,7 @@ import { UserModule } from '../mixin/user/user.module';
     PassportModule,
     ConfigModule,
     UserModule,
+    AdminAuditModule,
     TypeOrmModule.forFeature([
       AdminAuthStateEntity,
       AdminPasskeyCredentialEntity,
