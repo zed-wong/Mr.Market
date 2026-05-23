@@ -6,9 +6,16 @@ export const getHeaders = (token: string) => ({
 export const handleApiResponse = async (response: Response) => {
   if (!response.ok) {
     if (response.status === 401) {
-      const { showTokenExpired } = await import('$lib/stores/admin');
+      const [{ showTokenExpired }, { clearAccessToken }] = await Promise.all([
+        import('$lib/stores/admin'),
+        import('$lib/helpers/api/client'),
+      ]);
+      clearAccessToken();
       showTokenExpired.set(true);
-      throw new Error('Token expired');
+      throw new Error('Session expired');
+    }
+    if (response.status === 403) {
+      throw new Error('Permission denied. This administrator session cannot access this admin resource.');
     }
     const errorText = await response.text();
     let errorMessage = errorText;

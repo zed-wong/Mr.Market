@@ -48,6 +48,7 @@ export const checkSession = async (): Promise<AdminSession | null> => {
     return res ?? null;
   } catch (err) {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+      clearAccessToken();
       return null;
     }
     throw err;
@@ -58,7 +59,7 @@ export const logout = async (): Promise<void> => {
   try {
     await apiFetch('/auth/logout', { method: 'POST' });
   } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
+    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       return;
     }
     throw err;

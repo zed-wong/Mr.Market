@@ -5,6 +5,8 @@
     import { page } from "$app/stores";
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
+    import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
+    import { classifyAdminError, type AdminErrorState } from "$lib/helpers/admin/common-states";
 
     import {
         getDirectOrderStatus,
@@ -86,6 +88,8 @@
     let initialCampaigns: AdminCampaign[] = [];
     let walletStatus: DirectWalletStatus = { configured: false, address: null };
     let pageLoading = true;
+    let pageLoadError: AdminErrorState | null = null;
+    let supportingLoadErrors: string[] = [];
 
     $: pairs = growInfo?.market_making?.pairs || [];
 
@@ -108,6 +112,19 @@
             initialOrders = orders || [];
             initialCampaigns = camps || [];
             walletStatus = wallet || { configured: false, address: null };
+            pageLoadError = data.directOrdersError
+                ? classifyAdminError(
+                      new Error(String(data.directOrdersError)),
+                      "Direct market-making orders failed to load",
+                  )
+                : null;
+            supportingLoadErrors = [
+                data.growInfoError ? `exchange configuration: ${data.growInfoError}` : "",
+                data.strategiesError ? `strategies: ${data.strategiesError}` : "",
+                data.apiKeysError ? `API keys: ${data.apiKeysError}` : "",
+                data.campaignsError ? `campaigns: ${data.campaignsError}` : "",
+                data.walletStatusError ? `wallet: ${data.walletStatusError}` : "",
+            ].filter(Boolean);
         } finally {
             pageLoading = false;
         }
@@ -894,13 +911,42 @@
 <div class="min-h-screen pb-10 bg-base-100">
     <div class="max-w-350 mx-auto p-4 sm:p-6 md:p-8 space-y-6">
         {#if pageLoading}
+            <AdminStatePanel
+                kind="loading"
+                context="direct market-making"
+                title="loading direct market-making operations"
+                message="Loading wallet status, API-key readiness, campaigns, strategies, and direct order diagnostics."
+                testId="direct-mm-loading"
+            />
             <div class="skeleton h-12 w-full rounded-xl"></div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="skeleton h-48 w-full rounded-xl"></div>
                 <div class="skeleton h-48 w-full rounded-xl"></div>
             </div>
             <div class="skeleton h-64 w-full rounded-xl"></div>
+        {:else if pageLoadError}
+            <AdminStatePanel
+                kind={pageLoadError.kind}
+                context="direct market-making"
+                title={pageLoadError.title}
+                message={pageLoadError.message}
+                actionLabel={pageLoadError.kind === "session" ? "sign in again" : "retry"}
+                actionHref={pageLoadError.kind === "session" ? "/login" : ""}
+                onAction={pageLoadError.kind === "session" ? undefined : () => void refreshPage()}
+                testId="direct-mm-error"
+            />
         {:else}
+            {#if supportingLoadErrors.length > 0}
+                <AdminStatePanel
+                    kind="error"
+                    context="direct market-making supporting data"
+                    title="some setup data failed to load"
+                    message={supportingLoadErrors.join(" · ")}
+                    actionLabel="retry"
+                    onAction={() => void refreshPage()}
+                    testId="direct-mm-supporting-error"
+                />
+            {/if}
             <EvmWalletStatusBar
                 evmAddress={walletStatusAddress}
                 {hasWalletConfigured}

@@ -90,6 +90,7 @@
 
 <button
   type="button"
+  data-testid="add-exchange-trigger"
   class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
   on:click={openDialog}
 >

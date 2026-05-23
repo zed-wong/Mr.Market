@@ -5,6 +5,9 @@
   import { onMount } from "svelte";
   import { page } from "$app/stores";
   import { invalidate } from "$app/navigation";
+  import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
+  import { classifyAdminError, type AdminErrorState } from "$lib/helpers/admin/common-states";
+  import { getAccessToken } from "$lib/helpers/api/client";
   import {
     getSupportedExchanges,
     getAllCcxtExchanges,
@@ -16,6 +19,7 @@
   let supportedExchanges = $state<string[]>([]);
   let allCcxtExchanges = $state<string[]>([]);
   let isRefreshing = $state(false);
+  let metadataError = $state<AdminErrorState | null>(null);
 
   let exchanges = $derived(
     ($page.data.growInfo?.exchanges ?? []) as {
@@ -24,6 +28,12 @@
       icon_url?: string;
       enable: boolean;
     }[],
+  );
+
+  let exchangeLoadError = $derived(
+    $page.data.growInfoError
+      ? classifyAdminError(new Error(String($page.data.growInfoError)), 'Exchange configuration failed to load')
+      : null,
   );
 
   let totals = $derived({
@@ -63,10 +73,15 @@
   }
 
   onMount(async () => {
-    const token = localStorage.getItem("admin-access-token");
+    const token = getAccessToken();
     if (!token) return;
-    supportedExchanges = (await getSupportedExchanges(token)) as string[];
-    allCcxtExchanges = await getAllCcxtExchanges(token);
+    metadataError = null;
+    try {
+      supportedExchanges = (await getSupportedExchanges(token)) as string[];
+      allCcxtExchanges = await getAllCcxtExchanges(token);
+    } catch (cause) {
+      metadataError = classifyAdminError(cause, 'Exchange metadata failed to load');
+    }
   });
 </script>
 
@@ -107,8 +122,50 @@
     {/snippet}
   </PageHeader>
 
-  <!-- KPI row -->
-  <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+  {#if $page.data.waitingForClientSession}
+    <AdminStatePanel
+      kind="loading"
+      context="exchange management"
+      title="loading exchange configuration"
+      message="Waiting for the browser session before loading configured exchanges and supported exchange metadata."
+      testId="exchange-loading"
+    />
+  {:else if exchangeLoadError}
+    <AdminStatePanel
+      kind={exchangeLoadError.kind}
+      context="exchange management"
+      title={exchangeLoadError.title}
+      message={exchangeLoadError.message}
+      actionLabel={exchangeLoadError.kind === 'session' ? 'sign in again' : 'retry'}
+      actionHref={exchangeLoadError.kind === 'session' ? '/login' : ''}
+      onAction={exchangeLoadError.kind === 'session' ? undefined : () => RefreshExchanges(false)}
+      testId="exchange-error"
+    />
+  {:else}
+    {#if metadataError}
+      <AdminStatePanel
+        kind={metadataError.kind}
+        context="exchange metadata"
+        title={metadataError.title}
+        message={metadataError.message}
+        actionLabel="retry metadata"
+        onAction={() => {
+          const token = getAccessToken();
+          if (!token) return;
+          metadataError = null;
+          Promise.all([getSupportedExchanges(token), getAllCcxtExchanges(token)])
+            .then(([supported, ccxt]) => {
+              supportedExchanges = supported as string[];
+              allCcxtExchanges = ccxt;
+            })
+            .catch((cause) => (metadataError = classifyAdminError(cause, 'Exchange metadata failed to load')));
+        }}
+        testId="exchange-metadata-error"
+      />
+    {/if}
+
+    <!-- KPI row -->
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
         <span class="text-xs text-base-content/60 capitalize">total exchanges</span>
@@ -133,7 +190,20 @@
         <span class="font-mono text-2xl font-semibold">{totals.ccxt || "—"}</span>
       </div>
     </div>
-  </div>
+    </div>
 
-  <ExchangeList {exchanges} {supportedExchanges} />
+    {#if exchanges.length === 0}
+      <AdminStatePanel
+        kind="empty"
+        context="exchange management"
+        title="no exchanges configured"
+        message="Add the first exchange before configuring API keys or starting direct market-making operations."
+        actionLabel="add exchange"
+        onAction={() => document.querySelector<HTMLButtonElement>('[data-testid="add-exchange-trigger"]')?.click()}
+        testId="exchange-empty"
+      />
+    {:else}
+      <ExchangeList {exchanges} {supportedExchanges} />
+    {/if}
+  {/if}
 </section>

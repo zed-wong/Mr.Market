@@ -23,6 +23,13 @@ export const getGrowBasicInfo = async (token?: string): Promise<GrowInfo> => {
   return {} as GrowInfo;
 };
 
+export const getGrowBasicInfoStrict = async (token?: string): Promise<GrowInfo> => {
+  const response = await fetch(`${MRM_BACKEND_URL}/grow/info`, {
+    headers: bearerHeaders(token),
+  });
+  return await handleResponse(response);
+};
+
 export interface MarketMakingFee {
   symbol?: string;
   base_asset_id: string;

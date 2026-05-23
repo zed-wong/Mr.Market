@@ -2,6 +2,9 @@
   import { onDestroy, onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
+  import AdminStatePanel from '$lib/components/admin/shared/AdminStatePanel.svelte';
+  import { classifyAdminError, type AdminErrorState } from '$lib/helpers/admin/common-states';
+  import { getAccessToken } from '$lib/helpers/api/client';
   import {
     addAPIKey,
     getAllAPIKeys,
@@ -34,6 +37,8 @@
   let refreshing = $state(false);
   let saving = $state(false);
   let removingKeyId = $state<string | null>(null);
+  let loadError = $state<AdminErrorState | null>(null);
+  let metadataError = $state<AdminErrorState | null>(null);
   let errorMessage = $state('');
   let statusFilter = $state<'all' | Status>('all');
   let exchangeFilter = $state<'all' | string>('all');
@@ -51,7 +56,7 @@
     permissions: 'read' as 'read' | 'read-trade',
   });
 
-  const token = () => localStorage.getItem('admin-access-token') || '';
+  const token = () => getAccessToken() || '';
 
   const keyStatus = (key: AdminSingleKey): Status => {
     if (key.validation_error === 'Validation timeout') return 'pending';
@@ -135,15 +140,26 @@
 
   const loadApiKeys = async (showToast = false) => {
     const adminToken = token();
-    if (!adminToken) return;
+    if (!adminToken) {
+      loadError = {
+        kind: 'session',
+        title: 'session required',
+        message: 'Sign in again before viewing exchange API keys.',
+        actionLabel: 'sign in again',
+      };
+      loading = false;
+      return;
+    }
 
     refreshing = showToast;
+    loadError = null;
     try {
       keys = await getAllAPIKeys(adminToken);
       if (showToast) toast.success('API keys refreshed');
     } catch (error) {
       console.error(error);
-      toast.error('Failed to load API keys');
+      loadError = classifyAdminError(error, 'Failed to load API keys');
+      if (showToast) toast.error(loadError.title, { description: loadError.message });
     } finally {
       loading = false;
       refreshing = false;
@@ -152,8 +168,17 @@
 
   const loadFormMetadata = async () => {
     const adminToken = token();
-    if (!adminToken) return;
+    if (!adminToken) {
+      metadataError = {
+        kind: 'session',
+        title: 'session required',
+        message: 'Sign in again before loading API-key form metadata.',
+        actionLabel: 'sign in again',
+      };
+      return;
+    }
 
+    metadataError = null;
     try {
       const [exchangesResult, publicKeyResult] = await Promise.all([
         getAllCcxtExchanges(adminToken),
@@ -163,7 +188,8 @@
       publicKey = publicKeyResult.publicKey;
     } catch (error) {
       console.error(error);
-      toast.error('Failed to load API key metadata');
+      metadataError = classifyAdminError(error, 'Failed to load API key metadata');
+      toast.error(metadataError.title, { description: metadataError.message });
     }
   };
 
@@ -272,7 +298,7 @@
         {#if refreshing}<span class="loading loading-spinner loading-xs"></span>{/if}
         refresh
       </button>
-      <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={openAddDialog}>+ add key</button>
+      <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={openAddDialog} disabled={!!metadataError || !publicKey}>+ add key</button>
     {/snippet}
   </PageHeader>
 
@@ -307,6 +333,19 @@
       </div>
 
       <div class="overflow-x-auto">
+        {#if metadataError}
+          <div class="mb-4">
+            <AdminStatePanel
+              kind={metadataError.kind}
+              context="API key form metadata"
+              title={metadataError.title}
+              message={metadataError.message}
+              actionLabel="retry metadata"
+              onAction={() => void loadFormMetadata()}
+              testId="api-key-metadata-error"
+            />
+          </div>
+        {/if}
         <table class="table table-sm">
           <thead>
             <tr class="border-b border-base-300 text-xs capitalize text-base-content/50">
@@ -323,13 +362,48 @@
           <tbody>
             {#if loading}
               <tr>
-                <td colspan="8" class="py-10 text-center">
-                  <span class="loading loading-spinner loading-sm"></span>
+                <td colspan="8" class="py-4">
+                  <AdminStatePanel
+                    kind="loading"
+                    context="API key management"
+                    title="loading API keys"
+                    message="Loading encrypted exchange API key readiness, validation status, and permissions."
+                    testId="api-key-loading"
+                  />
+                </td>
+              </tr>
+            {:else if loadError}
+              <tr>
+                <td colspan="8" class="py-4">
+                  <AdminStatePanel
+                    kind={loadError.kind}
+                    context="API key management"
+                    title={loadError.title}
+                    message={loadError.message}
+                    actionLabel={loadError.kind === 'session' ? 'sign in again' : 'retry'}
+                    actionHref={loadError.kind === 'session' ? '/login' : ''}
+                    onAction={loadError.kind === 'session' ? undefined : () => void loadApiKeys(true)}
+                    testId="api-key-error"
+                  />
                 </td>
               </tr>
             {:else if filtered.length === 0}
               <tr>
-                <td colspan="8" class="py-10 text-center text-sm text-base-content/60 capitalize">no API keys found</td>
+                <td colspan="8" class="py-4">
+                  <AdminStatePanel
+                    kind="empty"
+                    context="API key management"
+                    title={keys.length === 0 ? 'no API keys configured' : 'no API keys match the current filters'}
+                    message={keys.length === 0 ? 'Add an exchange API key after configuring an exchange so direct market-making can validate read or trade access.' : 'Clear filters or search for a different key, exchange, or fingerprint.'}
+                    actionLabel={keys.length === 0 ? 'add key' : 'clear filters'}
+                    onAction={keys.length === 0 ? openAddDialog : () => {
+                      statusFilter = 'all';
+                      exchangeFilter = 'all';
+                      query = '';
+                    }}
+                    testId="api-key-empty"
+                  />
+                </td>
               </tr>
             {:else}
               {#each filtered as key (key.key_id)}

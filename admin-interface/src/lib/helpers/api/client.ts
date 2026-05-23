@@ -65,7 +65,7 @@ export const apiFetch = async <T = unknown>(path: string, options: RequestOption
     body: json !== undefined ? JSON.stringify(json) : (rest as RequestInit).body,
   });
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     clearAccessToken();
     if (!suppressSessionExpired) {
       showSessionExpired.set(true);
@@ -77,6 +77,16 @@ export const apiFetch = async <T = unknown>(path: string, options: RequestOption
       // ignore parse error
     }
     throw new ApiError(response.status, parsed, 'Session expired');
+  }
+
+  if (response.status === 403) {
+    let parsed: unknown = null;
+    try {
+      parsed = await response.json();
+    } catch {
+      // ignore parse error
+    }
+    throw new ApiError(response.status, parsed, 'Permission denied');
   }
 
   if (!response.ok) {

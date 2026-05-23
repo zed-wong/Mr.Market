@@ -60,7 +60,7 @@ describe('apiFetch', () => {
     expect(getAccessToken()).toBeNull();
   });
 
-  it('clears stored token and reports expired sessions on forbidden responses', async () => {
+  it('reports permission denied on forbidden responses without clearing the active session', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -75,8 +75,8 @@ describe('apiFetch', () => {
     const { showSessionExpired } = await import('$lib/stores/auth');
     setAccessToken('expired-token');
 
-    await expect(apiFetch('/session')).rejects.toThrow('Session expired');
-    expect(getAccessToken()).toBeNull();
-    expect(get(showSessionExpired)).toBe(true);
+    await expect(apiFetch('/admin/restricted')).rejects.toThrow('Permission denied');
+    expect(getAccessToken()).toBe('expired-token');
+    expect(get(showSessionExpired)).toBe(false);
   });
 });

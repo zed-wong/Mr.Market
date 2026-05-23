@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
+  import AdminStatePanel from '$lib/components/admin/shared/AdminStatePanel.svelte';
   import { checkSession } from '$lib/helpers/api/auth';
+  import { getAccessToken } from '$lib/helpers/api/client';
   import { fetchAdminSystemHealth } from '$lib/helpers/api/system';
   import { MRM_BACKEND_URL } from '$lib/helpers/constants';
   import { getAllAPIKeys } from '$lib/helpers/mrm/admin/exchanges';
@@ -29,7 +31,7 @@
   );
   let failedCount = $derived(readinessAreas.filter((area) => area.status === 'failed').length);
 
-  const getToken = () => localStorage.getItem('admin-access-token') || '';
+  const getToken = () => getAccessToken() || '';
 
   const messageFrom = (cause: unknown, fallback: string) =>
     cause instanceof Error ? cause.message : fallback;
@@ -44,6 +46,12 @@
         }
       } catch {
         message = `${fallback} (${response.status})`;
+      }
+      if (response.status === 401) {
+        throw new Error('Session expired. Sign in again before running setup readiness checks.');
+      }
+      if (response.status === 403) {
+        throw new Error('Permission denied. This administrator session cannot load setup readiness data.');
       }
       throw new Error(message);
     }
@@ -200,6 +208,17 @@
   </div>
 
   <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+    {#if loading}
+      <div class="xl:col-span-2">
+        <AdminStatePanel
+          kind="loading"
+          context="setup guide"
+          title="loading setup readiness"
+          message="Checking backend reachability, admin session, exchange configuration, API keys, system health, wallet status, and direct market-making readiness."
+          testId="setup-readiness-loading"
+        />
+      </div>
+    {/if}
     {#each readinessAreas as area (area.id)}
       <article class="card border border-base-300 bg-base-100 shadow-none">
         <div class="card-body gap-4 p-5">
