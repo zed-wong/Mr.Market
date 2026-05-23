@@ -1,111 +1,226 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
+  import {
+    ORDER_SIDES,
+    ORDER_STATUSES,
+    fetchAdminOrders,
+    type AdminOrder,
+    type AdminOrderSide,
+    type AdminOrderStatus,
+    type AdminOrdersResponse,
+  } from '$lib/helpers/api/trading';
 
-  type Side = 'buy' | 'sell';
-  type Kind = 'limit' | 'market' | 'maker' | 'taker';
-  type Status = 'open' | 'partial' | 'filled' | 'cancelled' | 'rejected';
+  const limitOptions = [10, 25, 50, 100];
+  const statuses: Array<'all' | AdminOrderStatus> = ['all', ...ORDER_STATUSES];
+  const sides: Array<'all' | AdminOrderSide> = ['all', ...ORDER_SIDES];
 
-  interface Order {
-    id: string;
-    ts: string;
-    pair: string;
-    side: Side;
-    kind: Kind;
-    qty: number;
-    filled: number;
-    price: number;
-    exchange: string;
-    strategy: string;
-    status: Status;
-  }
-
-  const orders: Order[] = [
-    { id: 'ord_01HX0082', ts: '12:04:11', pair: 'BTC/USDT',  side: 'buy',  kind: 'maker',  qty: 0.025, filled: 0.0,    price: 68410.50, exchange: 'binance', strategy: 'mm-btc-usdt',  status: 'open' },
-    { id: 'ord_01HX0081', ts: '12:04:08', pair: 'ETH/USDT',  side: 'sell', kind: 'maker',  qty: 1.250, filled: 0.840,  price: 3512.80,  exchange: 'binance', strategy: 'mm-eth-usdt',  status: 'partial' },
-    { id: 'ord_01HX0080', ts: '12:04:05', pair: 'ETH/USDT',  side: 'buy',  kind: 'maker',  qty: 1.250, filled: 1.250,  price: 3511.20,  exchange: 'binance', strategy: 'mm-eth-usdt',  status: 'filled' },
-    { id: 'ord_01HX0079', ts: '12:03:58', pair: 'SOL/USDT',  side: 'buy',  kind: 'limit',  qty: 24.00, filled: 0.0,    price: 138.40,   exchange: 'okx',     strategy: 'mm-sol-usdt',  status: 'cancelled' },
-    { id: 'ord_01HX0078', ts: '12:03:42', pair: 'BTC/USDT',  side: 'sell', kind: 'maker',  qty: 0.018, filled: 0.018,  price: 68420.10, exchange: 'binance', strategy: 'mm-btc-usdt',  status: 'filled' },
-    { id: 'ord_01HX0077', ts: '12:03:31', pair: 'USDC/USDT', side: 'buy',  kind: 'limit',  qty: 5000,  filled: 0.0,    price: 0.9998,   exchange: 'binance', strategy: 'mm-usdc-usdt', status: 'rejected' },
-    { id: 'ord_01HX0076', ts: '12:03:15', pair: 'BNB/USDT',  side: 'sell', kind: 'maker',  qty: 12.4,  filled: 8.20,   price: 624.50,   exchange: 'binance', strategy: 'mm-bnb-usdt',  status: 'partial' },
-    { id: 'ord_01HX0075', ts: '12:02:58', pair: 'LINK/USDT', side: 'buy',  kind: 'limit',  qty: 240,   filled: 240,    price: 14.78,    exchange: 'okx',     strategy: 'mm-link-usdt', status: 'filled' },
-    { id: 'ord_01HX0074', ts: '12:02:41', pair: 'XIN/USDT',  side: 'buy',  kind: 'taker',  qty: 5.00,  filled: 5.00,   price: 234.20,   exchange: 'mixin',   strategy: 'arb-xin',      status: 'filled' },
-    { id: 'ord_01HX0073', ts: '12:02:22', pair: 'ATOM/USDT', side: 'sell', kind: 'limit',  qty: 80.0,  filled: 0.0,    price: 7.18,     exchange: 'bitfinex', strategy: 'mm-atom-usdt', status: 'open' },
-    { id: 'ord_01HX0072', ts: '12:01:55', pair: 'BTC/USDT',  side: 'sell', kind: 'maker',  qty: 0.040, filled: 0.0,    price: 68450.00, exchange: 'okx',     strategy: 'mm-btc-usdt',  status: 'cancelled' },
-  ];
-
-  const statusTone: Record<Status, string> = {
-    open:      'bg-info/10 text-info',
-    partial:   'bg-warning/10 text-warning',
-    filled:    'bg-success/10 text-success',
+  const statusTone: Record<string, string> = {
+    pending_create: 'bg-warning/10 text-warning',
+    open: 'bg-info/10 text-info',
+    partially_filled: 'bg-warning/10 text-warning',
+    pending_cancel: 'bg-warning/10 text-warning',
+    filled: 'bg-success/10 text-success',
     cancelled: 'bg-base-content/5 text-base-content/60',
-    rejected:  'bg-error/10 text-error',
+    failed: 'bg-error/10 text-error',
+    external_missing: 'bg-error/10 text-error',
+    internal_missing: 'bg-error/10 text-error',
   };
 
-  let statusFilter = $state<'all' | Status>('all');
-  let sideFilter = $state<'all' | Side>('all');
+  let response = $state<AdminOrdersResponse | null>(null);
+  let statusFilter = $state<'all' | AdminOrderStatus>('all');
+  let sideFilter = $state<'all' | AdminOrderSide>('all');
   let query = $state('');
+  let page = $state(1);
+  let limit = $state(25);
+  let loading = $state(true);
+  let refreshing = $state(false);
+  let error = $state<string | null>(null);
 
-  let filtered = $derived(
-    orders.filter(
-      (o) =>
-        (statusFilter === 'all' || o.status === statusFilter) &&
-        (sideFilter === 'all' || o.side === sideFilter) &&
-        (query === '' || o.id.includes(query) || o.pair.toLowerCase().includes(query.toLowerCase()) || o.strategy.includes(query)),
-    ),
-  );
+  const rows = $derived(response?.items ?? []);
 
-  const counts = {
-    open: orders.filter((o) => o.status === 'open' || o.status === 'partial').length,
-    filled: orders.filter((o) => o.status === 'filled').length,
-    cancelled: orders.filter((o) => o.status === 'cancelled').length,
-    rejected: orders.filter((o) => o.status === 'rejected').length,
+  const pageStats = $derived.by(() => {
+    const open = rows.filter((order) =>
+      ['pending_create', 'open', 'partially_filled', 'pending_cancel'].includes(order.status),
+    ).length;
+    const filled = rows.filter((order) => order.status === 'filled').length;
+    const cancelled = rows.filter((order) => order.status === 'cancelled').length;
+
+    return { open, filled, cancelled };
+  });
+
+  const formatNumber = (value: string | number, options: Intl.NumberFormatOptions = {}) => {
+    const number = typeof value === 'number' ? value : Number(value);
+
+    if (!Number.isFinite(number)) {
+      return String(value || '0');
+    }
+
+    return new Intl.NumberFormat('en-US', options).format(number);
   };
-  const fillRate = ((counts.filled / orders.length) * 100).toFixed(1);
 
-  const statuses: Array<'all' | Status> = ['all', 'open', 'partial', 'filled', 'cancelled', 'rejected'];
-  const sides: Array<'all' | Side> = ['all', 'buy', 'sell'];
+  const formatTimestamp = (value?: string | null) => {
+    if (!value) {
+      return 'unavailable';
+    }
 
-  const fmtQty = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-  const fmtPx = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-  const pct = (a: number, b: number) => (b === 0 ? 0 : Math.min(100, (a / b) * 100));
+    const date = new Date(value);
+
+    if (!Number.isFinite(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const errorMessage = (cause: unknown) =>
+    cause instanceof Error ? cause.message : 'Unable to load tracked orders';
+
+  const labelize = (value?: string | null) => (value || 'unavailable').replaceAll('_', ' ');
+
+  const percent = (order: AdminOrder) => {
+    const fillPercent = Number(order.fillPercent);
+
+    if (Number.isFinite(fillPercent)) {
+      return Math.max(0, Math.min(100, fillPercent));
+    }
+
+    const quantity = Number(order.quantity);
+    const filled = Number(order.filledQuantity);
+
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(filled)) {
+      return 0;
+    }
+
+    return Math.max(0, Math.min(100, (filled / quantity) * 100));
+  };
+
+  const loadOrders = async () => {
+    const initialLoad = response === null;
+
+    loading = initialLoad;
+    refreshing = !initialLoad;
+    error = null;
+
+    try {
+      response = await fetchAdminOrders({
+        status: statusFilter,
+        side: sideFilter,
+        query,
+        page,
+        limit,
+      });
+      page = response.pagination.page;
+      limit = response.pagination.limit;
+    } catch (cause) {
+      error = errorMessage(cause);
+    } finally {
+      loading = false;
+      refreshing = false;
+    }
+  };
+
+  const changeStatus = (next: 'all' | AdminOrderStatus) => {
+    statusFilter = next;
+    page = 1;
+    void loadOrders();
+  };
+
+  const changeSide = (next: 'all' | AdminOrderSide) => {
+    sideFilter = next;
+    page = 1;
+    void loadOrders();
+  };
+
+  const applySearch = () => {
+    page = 1;
+    void loadOrders();
+  };
+
+  const resetFilters = () => {
+    statusFilter = 'all';
+    sideFilter = 'all';
+    query = '';
+    page = 1;
+    void loadOrders();
+  };
+
+  const goToPage = (next: number) => {
+    if (!response || next < 1 || next > response.pagination.totalPages || next === page) {
+      return;
+    }
+
+    page = next;
+    void loadOrders();
+  };
+
+  const changeLimit = () => {
+    page = 1;
+    void loadOrders();
+  };
+
+  onMount(() => {
+    void loadOrders();
+  });
 </script>
 
-<section class="space-y-6">
+<section class="space-y-6" data-testid="orders-page">
   <PageHeader
     eyebrow="trading"
     title="orders"
-    subtitle="Exchange-tracked orders attributable to a strategy. Reservations are held in the ledger until fill or cancel."
+    subtitle="Exchange-tracked orders loaded from the admin API. Unsafe cancel and export workflows are disabled until a scoped backend action exists."
   >
     {#snippet actions()}
-      <button class="btn btn-ghost btn-sm rounded-full capitalize">export</button>
-      <button class="btn btn-ghost btn-sm rounded-full capitalize">cancel all open</button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm rounded-full capitalize"
+        disabled
+        title="Export is unavailable because no bounded backend export workflow exists for orders."
+      >export unavailable</button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm rounded-full capitalize"
+        disabled
+        title="Bulk cancel is unavailable because no safe scoped cancel workflow exists for this admin surface."
+      >cancel unavailable</button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm rounded-full capitalize"
+        disabled={loading || refreshing}
+        onclick={() => void loadOrders()}
+      >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>
 
-  <!-- KPI row -->
   <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">open + partial</span>
-        <span class="font-mono text-2xl font-semibold text-info">{counts.open}</span>
+        <span class="text-xs text-base-content/60 capitalize">matching orders</span>
+        <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.total ?? 0)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">filled today</span>
-        <span class="font-mono text-2xl font-semibold text-success">{counts.filled}</span>
+        <span class="text-xs text-base-content/60 capitalize">page rows</span>
+        <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(rows.length)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">cancelled</span>
-        <span class="font-mono text-2xl font-semibold">{counts.cancelled}</span>
+        <span class="text-xs text-base-content/60 capitalize">open on page</span>
+        <span class="font-mono text-2xl font-semibold text-info">{formatNumber(pageStats.open)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">fill rate</span>
-        <span class="font-mono text-2xl font-semibold">{fillRate}%</span>
+        <span class="text-xs text-base-content/60 capitalize">updated</span>
+        <span class="font-mono text-sm font-semibold text-base-content">{formatTimestamp(response?.generatedAt)}</span>
       </div>
     </div>
   </div>
@@ -114,101 +229,208 @@
     <div class="card-body gap-4 p-5">
       <div class="flex flex-wrap items-center gap-3">
         <div class="join">
-          {#each statuses as s (s)}
+          {#each statuses as status (status)}
             <button
               type="button"
               class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={statusFilter === s}
-              onclick={() => (statusFilter = s)}
-            >{s}</button>
+              class:btn-primary={statusFilter === status}
+              disabled={loading || refreshing}
+              onclick={() => changeStatus(status)}
+            >{labelize(status)}</button>
           {/each}
         </div>
 
         <div class="join">
-          {#each sides as s (s)}
+          {#each sides as side (side)}
             <button
               type="button"
               class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={sideFilter === s}
-              onclick={() => (sideFilter = s)}
-            >{s}</button>
+              class:btn-primary={sideFilter === side}
+              disabled={loading || refreshing}
+              onclick={() => changeSide(side)}
+            >{side}</button>
           {/each}
         </div>
 
         <input
           type="text"
-          placeholder="order id, pair or strategy…"
-          class="input input-sm input-bordered border-base-300 bg-base-100 flex-1 min-w-[200px] font-mono text-xs"
+          placeholder="order id, pair, exchange or strategy…"
+          class="input input-sm input-bordered min-w-[220px] flex-1 border-base-300 bg-base-100 font-mono text-xs"
+          maxlength={response?.limits.maxQueryLength ?? 100}
           bind:value={query}
+          onkeydown={(event) => {
+            if (event.key === 'Enter') {
+              applySearch();
+            }
+          }}
         />
 
-        <span class="font-mono text-xs text-base-content/50">{filtered.length} / {orders.length}</span>
+        <button
+          type="button"
+          class="btn btn-sm btn-ghost rounded-full capitalize"
+          disabled={loading || refreshing}
+          onclick={applySearch}
+        >search</button>
+
+        <select
+          class="select select-sm select-bordered border-base-300 bg-base-100 font-mono text-xs"
+          bind:value={limit}
+          disabled={loading || refreshing}
+          onchange={changeLimit}
+        >
+          {#each limitOptions as option (option)}
+            <option value={option}>{option}</option>
+          {/each}
+        </select>
       </div>
 
-      <div class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr class="border-b border-base-300 text-xs uppercase tracking-wide text-base-content/50">
-              <th class="font-medium">time</th>
-              <th class="font-medium">order id</th>
-              <th class="font-medium">pair</th>
-              <th class="font-medium">side</th>
-              <th class="font-medium">type</th>
-              <th class="font-medium text-right">qty</th>
-              <th class="font-medium text-right">price</th>
-              <th class="font-medium">fill</th>
-              <th class="font-medium">status</th>
-              <th class="font-medium">strategy</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each filtered as o (o.id)}
-              <tr class="border-b border-base-300 hover:bg-neutral">
-                <td class="font-mono text-xs text-base-content/70">{o.ts}</td>
-                <td class="font-mono text-xs text-base-content">{o.id}</td>
-                <td class="font-mono text-sm">{o.pair}</td>
-                <td>
-                  <span
-                    class="text-xs font-medium uppercase"
-                    class:text-success={o.side === 'buy'}
-                    class:text-error={o.side === 'sell'}
-                  >{o.side}</span>
-                </td>
-                <td class="text-xs text-base-content/70 capitalize">{o.kind}</td>
-                <td class="text-right font-mono text-sm">{fmtQty(o.qty)}</td>
-                <td class="text-right font-mono text-sm">{fmtPx(o.price)}</td>
-                <td>
-                  <div class="flex w-24 flex-col gap-1">
-                    <div class="flex items-center justify-between">
-                      <span class="font-mono text-[10px] text-base-content/60">{fmtQty(o.filled)}</span>
-                      <span class="font-mono text-[10px] text-base-content/40">{pct(o.filled, o.qty).toFixed(0)}%</span>
-                    </div>
-                    <div class="h-1 w-full overflow-hidden rounded-full bg-base-300">
-                      <div class="h-full bg-base-content" style="width: {pct(o.filled, o.qty)}%"></div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span class="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider {statusTone[o.status]}">
-                    {o.status}
-                  </span>
-                </td>
-                <td class="font-mono text-xs text-base-content/70">{o.strategy}</td>
-                <td class="text-right">
-                  <button class="btn btn-ghost btn-xs rounded-full text-base-content/60">⋯</button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-
-      {#if filtered.length === 0}
-        <div class="flex flex-col items-center gap-1 py-12 text-center">
-          <span class="text-sm text-base-content/60 capitalize">no orders match</span>
-          <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={() => { statusFilter = 'all'; sideFilter = 'all'; query = ''; }}>reset</button>
+      {#if loading}
+        <div class="flex items-center gap-3 rounded-lg border border-base-300 p-4" data-testid="orders-loading">
+          <span class="loading loading-spinner loading-sm text-base-content/60"></span>
+          <span class="text-sm text-base-content/60 capitalize">loading backend tracked orders</span>
         </div>
+      {:else if error}
+        <div class="rounded-lg border border-error/30 p-4" data-testid="orders-error">
+          <div class="flex flex-col gap-3">
+            <span class="text-sm font-semibold text-base-content capitalize">orders unavailable</span>
+            <span class="text-sm text-base-content/60">{error}</span>
+            <div class="flex gap-2">
+              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadOrders()}>retry</button>
+              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>reset filters</button>
+            </div>
+          </div>
+        </div>
+      {:else if response}
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="font-mono text-xs text-base-content/50">
+            page {response.pagination.page} / {response.pagination.totalPages} · {rows.length} of {response.pagination.total}
+          </span>
+          {#if refreshing}
+            <span class="loading loading-spinner loading-xs text-base-content/50"></span>
+          {/if}
+          <span class="text-xs text-base-content/50 capitalize">
+            backend filters · status {response.filters.status || 'all'} · side {response.filters.side || 'all'}
+          </span>
+        </div>
+
+        {#if rows.length === 0}
+          <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 py-12 text-center" data-testid="orders-empty">
+            <span class="text-sm font-semibold text-base-content capitalize">no backend orders returned</span>
+            <span class="text-sm text-base-content/60">
+              The admin API returned an empty result for the current filters; no sample orders are shown.
+            </span>
+            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>reset filters</button>
+          </div>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr class="border-b border-base-300 text-xs capitalize tracking-wide text-base-content/50">
+                  <th class="font-medium">time</th>
+                  <th class="font-medium">order id</th>
+                  <th class="font-medium">symbol / pair</th>
+                  <th class="font-medium">side</th>
+                  <th class="font-medium">type</th>
+                  <th class="font-medium text-right">quantity</th>
+                  <th class="font-medium text-right">filled</th>
+                  <th class="font-medium text-right">price</th>
+                  <th class="font-medium">fill</th>
+                  <th class="font-medium">status</th>
+                  <th class="font-medium">exchange</th>
+                  <th class="font-medium">strategy</th>
+                  <th class="font-medium">actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each rows as order (order.trackingKey)}
+                  {@const fillPercent = percent(order)}
+                  <tr class="border-b border-base-300 hover:bg-neutral">
+                    <td class="font-mono text-xs text-base-content/70">{formatTimestamp(order.updatedAt || order.createdAt)}</td>
+                    <td>
+                      <div class="flex flex-col">
+                        <span class="font-mono text-xs text-base-content">{order.orderId}</span>
+                        <span class="font-mono text-[10px] text-base-content/40">{order.exchangeOrderId || 'exchange id unavailable'}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="flex flex-col">
+                        <span class="font-mono text-sm text-base-content">{order.pair}</span>
+                        <span class="font-mono text-[10px] text-base-content/50">{order.symbol || 'symbol unavailable'}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span
+                        class="text-xs font-medium capitalize"
+                        class:text-success={order.side.toLowerCase() === 'buy'}
+                        class:text-error={order.side.toLowerCase() === 'sell'}
+                      >{order.side}</span>
+                    </td>
+                    <td class="text-xs text-base-content/70 capitalize">{labelize(order.type || order.role)}</td>
+                    <td class="text-right font-mono text-sm">{formatNumber(order.quantity, { maximumFractionDigits: 8 })}</td>
+                    <td class="text-right font-mono text-sm">{formatNumber(order.filledQuantity, { maximumFractionDigits: 8 })}</td>
+                    <td class="text-right font-mono text-sm">{formatNumber(order.price, { maximumFractionDigits: 8 })}</td>
+                    <td>
+                      <div class="flex w-24 flex-col gap-1">
+                        <div class="flex items-center justify-between">
+                          <span class="font-mono text-[10px] text-base-content/60">{fillPercent.toFixed(0)}%</span>
+                          <span class="font-mono text-[10px] text-base-content/40">{order.executions.count} exec</span>
+                        </div>
+                        <div class="h-1 w-full overflow-hidden rounded-full bg-base-300">
+                          <div class="h-full bg-base-content" style="width: {fillPercent}%"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider {statusTone[order.status] || 'bg-base-content/5 text-base-content/60'}">
+                        {labelize(order.status)}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="flex flex-col">
+                        <span class="text-sm text-base-content/70 capitalize">{order.exchange}</span>
+                        <span class="text-xs text-base-content/50">{order.accountLabel || 'account unavailable'}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="flex flex-col">
+                        <span class="font-mono text-xs text-base-content/70">{order.strategyKey || 'unattributed'}</span>
+                        <span class="text-xs text-base-content/50">{order.slotKey || order.clientOrderId || 'slot unavailable'}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60"
+                        disabled
+                        title="No safe scoped order mutation endpoint is exposed for this action."
+                      >disabled</button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <span class="text-xs text-base-content/50">
+              API limit max {response.limits.maxLimit}; execution scan limit {response.limits.executionScanLimit}
+            </span>
+            <div class="join">
+              <button
+                type="button"
+                class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
+                disabled={!response.pagination.hasPrevious || refreshing}
+                onclick={() => goToPage(page - 1)}
+              >previous</button>
+              <button
+                type="button"
+                class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
+                disabled={!response.pagination.hasNext || refreshing}
+                onclick={() => goToPage(page + 1)}
+              >next</button>
+            </div>
+          </div>
+        {/if}
       {/if}
     </div>
   </div>
