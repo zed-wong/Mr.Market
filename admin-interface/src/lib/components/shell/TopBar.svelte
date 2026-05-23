@@ -1,6 +1,8 @@
 <script lang="ts">
   import { _ } from 'svelte-i18n';
+  import { page } from '$app/stores';
   import { registerPasskey } from '$lib/helpers/api/auth';
+  import { getActiveNavLocation } from './nav-items';
 
   interface Props {
     onToggleSidebar: () => void;
@@ -9,6 +11,8 @@
   let { onToggleSidebar }: Props = $props();
   let passkeyMessage = $state<string | null>(null);
   let passkeyLoading = $state(false);
+  let pathname = $derived($page.url.pathname.replace(/\/+$/, '') || '/');
+  let activeLocation = $derived(getActiveNavLocation(pathname));
 
   const handleRegisterPasskey = async () => {
     if (passkeyLoading) return;
@@ -48,6 +52,17 @@
         />
       </svg>
     </button>
+
+    {#if activeLocation}
+      <div class="min-w-0">
+        <span class="block text-[10px] font-medium text-base-content/50 capitalize tracking-wide">
+          {$_(activeLocation.group.label)}
+        </span>
+        <span class="block truncate text-sm font-semibold text-base-content capitalize">
+          {activeLocation.child ? $_(activeLocation.child.label) : $_(activeLocation.group.label)}
+        </span>
+      </div>
+    {/if}
 
     <div class="ml-auto flex items-center gap-2">
       {#if passkeyMessage}

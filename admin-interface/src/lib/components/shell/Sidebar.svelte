@@ -3,7 +3,7 @@
   import { _ } from 'svelte-i18n';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { NAV_ITEMS, isActive } from './nav-items';
+  import { NAV_ITEMS, isActive, isGroupActive } from './nav-items';
   import SideBarIcons from '$lib/components/admin/dashboard/sideBarIcons.svelte';
 
   interface Props {
@@ -29,8 +29,10 @@
 
   const iconName = (key: string) => {
     if (key === 'overview') return 'dashboard';
+    if (key === 'setup') return 'settings';
     if (key === 'trading') return 'revenue';
-    if (key === 'system') return 'settings';
+    if (key === 'system-health') return 'health';
+    if (key === 'diagnostics') return 'message';
     return key.replaceAll('.', '_');
   };
 
@@ -60,7 +62,7 @@
 >
   <div class="relative flex h-full flex-1 flex-col border-r border-base-300 bg-base-100">
     <div class="flex items-center justify-between border-b border-base-300 px-5 py-4">
-      <button type="button" class="flex items-center gap-3" onclick={() => navigate('/settings')}>
+      <button type="button" class="flex items-center gap-3" onclick={() => navigate('/')}>
         <span class="flex h-10 w-10 items-center justify-center rounded-full border border-base-300 bg-base-100">
           <img src="/mr-market-logo-transparent.svg" alt="Mr.Market" class="h-8 w-8" />
         </span>
@@ -92,16 +94,18 @@
       </div>
       <ul class="space-y-5">
         {#each NAV_ITEMS as item (item.key)}
+          {@const groupActive = isGroupActive(item, pathname)}
           <li>
             <button
               type="button"
               class={clsx(
                 'mb-1 flex min-h-10 w-full items-center gap-3 rounded-full px-3 py-2 text-left text-sm transition-colors',
-                item.href && isActive(item.href, pathname)
+                groupActive
                   ? 'bg-primary text-primary-content'
                   : 'text-base-content/70 hover:bg-neutral hover:text-base-content',
               )}
               onclick={() => item.href && navigate(item.href)}
+              aria-current={item.href && isActive(item.href, pathname) ? 'page' : groupActive ? 'location' : undefined}
             >
               <SideBarIcons name={iconName(item.key)} />
               <span class="font-medium capitalize">{$_(item.label)}</span>
@@ -118,6 +122,7 @@
                         : 'text-base-content/60 hover:bg-neutral hover:text-base-content',
                     )}
                     onclick={() => navigate(child.href)}
+                    aria-current={isActive(child.href, pathname) ? 'page' : undefined}
                   >
                     <span class="capitalize">{$_(child.label)}</span>
                   </button>

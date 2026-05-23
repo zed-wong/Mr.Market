@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { NAV_ITEMS, isActive } from './nav-items';
+import { NAV_ITEMS, getActiveNavLocation, isActive, isGroupActive } from './nav-items';
 
 const flattenNav = () =>
   NAV_ITEMS.flatMap((item) => [
@@ -25,6 +25,7 @@ describe('admin shell navigation', () => {
     expect(flattenNav().map((entry) => entry.href)).toEqual(
       expect.arrayContaining([
         '/',
+        '/setup',
         '/trading/strategies',
         '/trading/direct-market-making',
         '/trading/positions',
@@ -44,5 +45,23 @@ describe('admin shell navigation', () => {
   it('matches child routes when highlighting active shell items', () => {
     expect(isActive('/trading/orders', '/trading/orders/details')).toBe(true);
     expect(isActive('/', '/trading/orders')).toBe(false);
+  });
+
+  it('groups setup, trading operations, system health, and diagnostics as first-class sections', () => {
+    expect(NAV_ITEMS.map((item) => item.key)).toEqual(
+      expect.arrayContaining(['setup', 'trading', 'system-health', 'diagnostics']),
+    );
+    expect(NAV_ITEMS.find((item) => item.key === 'setup')?.children.map((entry) => entry.href)).toContain('/setup');
+    expect(NAV_ITEMS.find((item) => item.key === 'diagnostics')?.children.map((entry) => entry.href)).toEqual(
+      expect.arrayContaining(['/system/logs', '/system/audit']),
+    );
+  });
+
+  it('exposes active group and child location for collapsed or narrow shell labels', () => {
+    const location = getActiveNavLocation('/system/api-keys');
+
+    expect(location?.group.key).toBe('system-health');
+    expect(location?.child?.href).toBe('/system/api-keys');
+    expect(isGroupActive(location!.group, '/system/api-keys')).toBe(true);
   });
 });

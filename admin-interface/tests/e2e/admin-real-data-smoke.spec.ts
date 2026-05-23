@@ -52,6 +52,11 @@ const realDataRoutes = [
 
 const preservedRoutes = [
   {
+    path: '/setup',
+    label: 'setup guide',
+    text: /first-time admin setup guide|backend reachability|API key validation/i,
+  },
+  {
     path: '/trading/direct-market-making',
     label: 'direct market making',
     text: /direct market making|market making/i,
