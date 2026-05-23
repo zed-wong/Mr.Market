@@ -5,7 +5,7 @@
   import DemoWalletControls from './DemoWalletControls.svelte';
 </script>
 
-<header class="flex items-center justify-between gap-3 pb-6" data-testid="top-controls">
+<header class="flex flex-wrap items-start justify-between gap-3 pb-6" data-testid="top-controls">
   <button
     class="btn-pill-ghost md:hidden -ml-3 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-base-100"
     onclick={openMobileNav}
@@ -20,7 +20,7 @@
 
   <span class="hidden md:block"></span>
 
-  <div class="flex items-center gap-2">
+  <div class="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
     <DemoWalletControls />
     <ThemeToggle />
     <ConnectButton />

@@ -15,7 +15,7 @@
     <span class="dot {$walletIsUnsupported ? 'dot-warning' : 'dot-success'}"></span>
     <span class="font-mono-num">{$walletShortAddress}</span>
     {#if $walletNetwork}
-      <span class="text-xs text-base-content/55">· {$walletNetwork}</span>
+      <span class="hidden sm:inline text-xs text-base-content/55">· {$walletNetwork}</span>
     {/if}
   </button>
 {:else}
@@ -29,6 +29,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    max-width: min(100%, 14rem);
     border-radius: 1rem;
     background-color: var(--color-base-200);
     padding: 0.5rem 0.75rem;
@@ -49,12 +50,14 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    max-width: min(100%, 8rem);
     border-radius: 1rem;
     background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
     padding: 0.5rem 1rem;
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--color-primary);
+    white-space: nowrap;
     transition: transform var(--motion-base) var(--ease-spring),
                 background-color var(--motion-base) var(--ease-smooth),
                 box-shadow var(--motion-base) var(--ease-smooth);
@@ -69,6 +72,7 @@
     transition-duration: var(--motion-fast);
   }
   .dot {
+    flex: 0 0 auto;
     display: inline-block;
     width: 0.5rem;
     height: 0.5rem;
@@ -77,6 +81,11 @@
   }
   .dot-success { background-color: var(--color-success); }
   .dot-warning { background-color: var(--color-warning); }
+  .font-mono-num {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .dot::after {
     content: "";
     position: absolute;

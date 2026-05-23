@@ -46,9 +46,19 @@ export interface OrderValidationResult {
   wallet?: string;
 }
 
+interface MarketMakingSessionSnapshot {
+  campaignSequence: number;
+  orderSequence: number;
+  sessionCampaigns: MockCampaign[];
+  sessionOrders: MockOrder[];
+  sessionMarketMakingActivity: MockActivityEntry[];
+  orderDraft: MarketMakingDraft | null;
+}
+
 export type OrderFlowStep = 'form' | 'review' | 'approving' | 'signing' | 'submitting' | 'success';
 export type OrderLifecycleAction = 'pause' | 'resume' | 'stop';
 
+const MARKET_MAKING_SESSION_STORAGE_KEY = 'mrm-web3-market-making-session';
 const campaignSequence = writable(0);
 const orderSequence = writable(3000);
 
@@ -81,6 +91,47 @@ export const marketMakingActivityForAccount = (
       )
     : [];
 
+const readMarketMakingSessionSnapshot = (): MarketMakingSessionSnapshot | null => {
+  if (typeof sessionStorage === 'undefined') return null;
+  const encoded = sessionStorage.getItem(MARKET_MAKING_SESSION_STORAGE_KEY);
+  if (!encoded) return null;
+  try {
+    return JSON.parse(encoded) as MarketMakingSessionSnapshot;
+  } catch {
+    sessionStorage.removeItem(MARKET_MAKING_SESSION_STORAGE_KEY);
+    return null;
+  }
+};
+
+const persistMarketMakingSession = () => {
+  if (typeof sessionStorage === 'undefined') return;
+  const snapshot: MarketMakingSessionSnapshot = {
+    campaignSequence: get(campaignSequence),
+    orderSequence: get(orderSequence),
+    sessionCampaigns: get(sessionCampaigns),
+    sessionOrders: get(sessionOrders),
+    sessionMarketMakingActivity: get(sessionMarketMakingActivity),
+    orderDraft: get(orderDraft),
+  };
+  sessionStorage.setItem(MARKET_MAKING_SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+};
+
+const clearMarketMakingSessionSnapshot = () => {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(MARKET_MAKING_SESSION_STORAGE_KEY);
+};
+
+export const restoreMarketMakingSession = () => {
+  const snapshot = readMarketMakingSessionSnapshot();
+  if (!snapshot) return;
+  campaignSequence.set(snapshot.campaignSequence ?? 0);
+  orderSequence.set(snapshot.orderSequence ?? 3000);
+  sessionCampaigns.set(snapshot.sessionCampaigns ?? []);
+  sessionOrders.set(snapshot.sessionOrders ?? []);
+  sessionMarketMakingActivity.set(snapshot.sessionMarketMakingActivity ?? []);
+  orderDraft.set(snapshot.orderDraft ?? null);
+};
+
 export const resetMarketMakingSession = () => {
   campaignSequence.set(0);
   orderSequence.set(3000);
@@ -88,6 +139,7 @@ export const resetMarketMakingSession = () => {
   sessionOrders.set([]);
   sessionMarketMakingActivity.set([]);
   orderDraft.set(null);
+  clearMarketMakingSessionSnapshot();
 };
 
 const stripCurrency = (value: string): string => value.replace(/[$,\s]/g, '');
@@ -201,6 +253,7 @@ export const createMockCampaign = (input: CampaignCreationInput, accountId = 'mo
     },
     ...entries,
   ]);
+  persistMarketMakingSession();
   return campaign;
 };
 
@@ -243,10 +296,12 @@ export const validateOrderDraft = (
 
 export const saveOrderDraft = (draft: MarketMakingDraft) => {
   orderDraft.set(draft);
+  persistMarketMakingSession();
 };
 
 export const clearOrderDraft = () => {
   orderDraft.set(null);
+  persistMarketMakingSession();
 };
 
 const buildOrderLogs = (timestamp: string, status: MockOrderStatus): MockOrderLog[] => [
@@ -347,6 +402,7 @@ export const transitionOrderLifecycle = (
     },
     ...entries,
   ]);
+  persistMarketMakingSession();
 
   return updatedOrder;
 };
@@ -412,8 +468,11 @@ export const createMockOrder = (
     ...entries,
   ]);
   clearOrderDraft();
+  persistMarketMakingSession();
   return order;
 };
 
 export const statusLabel = (status: MockOrderStatus): string =>
   status.replace(/-/g, ' ');
+
+restoreMarketMakingSession();

@@ -55,6 +55,14 @@ interface FundingDelta {
   amount: string;
 }
 
+interface FundingSessionSnapshot {
+  fundingSequence: number;
+  creditedDeposits: FundingDelta[];
+  pendingWithdrawals: FundingDelta[];
+  sessionFundingActivity: MockActivityEntry[];
+}
+
+const FUNDING_SESSION_STORAGE_KEY = 'mrm-web3-funding-session';
 const fundingSequence = writable(0);
 const creditedDeposits = writable<FundingDelta[]>([]);
 const pendingWithdrawals = writable<FundingDelta[]>([]);
@@ -77,11 +85,49 @@ const nextSequence = (): number => {
   return next;
 };
 
+const readFundingSessionSnapshot = (): FundingSessionSnapshot | null => {
+  if (typeof sessionStorage === 'undefined') return null;
+  const encoded = sessionStorage.getItem(FUNDING_SESSION_STORAGE_KEY);
+  if (!encoded) return null;
+  try {
+    return JSON.parse(encoded) as FundingSessionSnapshot;
+  } catch {
+    sessionStorage.removeItem(FUNDING_SESSION_STORAGE_KEY);
+    return null;
+  }
+};
+
+const persistFundingSession = () => {
+  if (typeof sessionStorage === 'undefined') return;
+  const snapshot: FundingSessionSnapshot = {
+    fundingSequence: get(fundingSequence),
+    creditedDeposits: get(creditedDeposits),
+    pendingWithdrawals: get(pendingWithdrawals),
+    sessionFundingActivity: get(sessionFundingActivity),
+  };
+  sessionStorage.setItem(FUNDING_SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+};
+
+const clearFundingSessionSnapshot = () => {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(FUNDING_SESSION_STORAGE_KEY);
+};
+
+export const restoreFundingSession = () => {
+  const snapshot = readFundingSessionSnapshot();
+  if (!snapshot) return;
+  fundingSequence.set(snapshot.fundingSequence ?? 0);
+  creditedDeposits.set(snapshot.creditedDeposits ?? []);
+  pendingWithdrawals.set(snapshot.pendingWithdrawals ?? []);
+  sessionFundingActivity.set(snapshot.sessionFundingActivity ?? []);
+};
+
 export const resetFundingSession = () => {
   fundingSequence.set(0);
   creditedDeposits.set([]);
   pendingWithdrawals.set([]);
   sessionFundingActivity.set([]);
+  clearFundingSessionSnapshot();
 };
 
 export const fundingActivityForAccount = (
@@ -298,6 +344,7 @@ export const completeMockDeposit = (
     },
     ...entries,
   ]);
+  persistFundingSession();
 
   return {
     id,
@@ -348,6 +395,7 @@ export const submitMockWithdrawal = (
     },
     ...entries,
   ]);
+  persistFundingSession();
 
   return {
     id,
@@ -367,3 +415,5 @@ const shortDestination = (destination: string): string =>
   destination.startsWith('0x')
     ? `${destination.slice(0, 6)}...${destination.slice(-4)}`
     : `${destination.slice(0, 4)}...${destination.slice(-4)}`;
+
+restoreFundingSession();

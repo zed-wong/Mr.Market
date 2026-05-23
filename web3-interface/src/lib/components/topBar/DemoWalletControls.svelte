@@ -21,8 +21,9 @@
 </script>
 
 <div class="dropdown dropdown-end">
-  <button class="btn-pill-outline" onclick={() => { menuOpen = !menuOpen; }} data-testid="demo-wallet-controls">
-    Demo controls
+  <button class="btn-pill-outline" onclick={() => { menuOpen = !menuOpen; }} aria-label="Demo controls" data-testid="demo-wallet-controls">
+    <span>Demo</span>
+    <span class="hidden sm:inline">controls</span>
   </button>
   {#if menuOpen}
     <div class="dropdown-content z-20 mt-3 w-72 rounded-2xl border border-base-300 bg-base-100 p-3 shadow-xl">
