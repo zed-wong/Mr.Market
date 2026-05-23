@@ -31,6 +31,7 @@
     { value: 'failed', label: 'Failed' },
     { value: 'cancelled', label: 'Cancelled' },
     { value: 'paused', label: 'Paused' },
+    { value: 'stopped', label: 'Stopped' },
   ];
 
   let selectedFilter = $state<CampaignFilter>('all');
@@ -129,16 +130,16 @@
     {#if discoveryState === 'loading'}
       <div class="mt-8 flex items-center gap-3 text-sm text-base-content/70" data-testid="campaign-loading-state">
         <span class="loading loading-spinner loading-sm"></span>
-        <span>Loading mocked campaign discovery data…</span>
+        <span>Refreshing deterministic campaign metrics, wallet eligibility, and participation totals…</span>
       </div>
     {:else if discoveryState === 'error'}
       <div class="mt-8 rounded-2xl border border-error/40 px-5 py-4 text-sm text-error" data-testid="campaign-error-state">
-        Mock discovery error. Switch state preview back to loaded campaigns to retry.
+        Campaign discovery could not be prepared in this preview state. No backend request was made; switch back to loaded campaigns to retry.
       </div>
     {:else if discoveryState === 'empty' || visibleCampaigns.length === 0}
       <div class="mt-8 border-t border-base-300 pt-10 text-base-content/55" data-testid="campaign-empty-state">
-        <span class="block font-medium text-base-content">No campaigns match this state.</span>
-        <span class="mt-1 block text-sm">Change the filter or state preview to render public campaign discovery again.</span>
+        <span class="block font-medium text-base-content">No eligible campaign inventory found</span>
+        <span class="mt-1 block text-sm">Adjust the filter, switch wallet namespace, or return to loaded discovery to show the deterministic public campaigns.</span>
       </div>
     {:else}
       <div id="campaign-list" class="mt-8 border-t border-base-300" data-testid="campaign-list">
@@ -311,7 +312,7 @@
           </div>
         {:else}
           <div class="mt-8 border-t border-base-300 py-10 text-base-content/55" data-testid="my-orders-empty-state">
-            No campaign participation matches the selected filters.
+            No account participation matches these filters. Created and joined orders will appear here with status, volume, and profit once the demo flow submits an order.
           </div>
         {/if}
       {:else if $walletIsUnsupported}

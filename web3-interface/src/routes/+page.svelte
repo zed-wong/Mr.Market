@@ -15,8 +15,11 @@
     walletShortAddress,
   } from '$lib/stores/wallet';
 
+  type HomePageState = 'loaded' | 'loading' | 'empty' | 'error';
+
+  let homePageState = $state<HomePageState>('loaded');
   let recentActivity = $derived(
-    $walletIsConnected && !$walletIsUnsupported
+    homePageState === 'loaded' && $walletIsConnected && !$walletIsUnsupported
       ? aggregateMockActivityEntries(
           marketMakingActivityForAccount($walletAccount?.id, $walletAccount?.namespace ?? null, $sessionMarketMakingActivity),
           fundingActivityForAccount($walletAccount?.id, $walletAccount?.namespace ?? null, $sessionFundingActivity),
@@ -24,6 +27,8 @@
         ).slice(0, 5)
       : []
   );
+  let displayedBalances = $derived(homePageState === 'loaded' ? $balances : []);
+  let displayedTotalBalanceUsd = $derived(homePageState === 'loaded' ? $totalBalanceUsd : '0.00');
 
   const quickActions = [
     { href: '/wallet', label: 'Wallet', hint: 'Deposit, withdraw, balances' },
@@ -36,7 +41,7 @@
   <section class="card-surface p-6 md:p-8">
     <span class="eyebrow">Portfolio balance</span>
     <div class="mt-2 flex items-baseline gap-3">
-      <span class="text-display text-base-content font-mono-num">${$totalBalanceUsd}</span>
+      <span class="text-display text-base-content font-mono-num">${displayedTotalBalanceUsd}</span>
     </div>
     <span class="mt-3 block max-w-xl text-body-muted">
       {#if $walletIsConnected}
@@ -53,6 +58,19 @@
         Connect wallet
       </button>
     {/if}
+  </section>
+
+  <section class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="home-state-controls">
+    <span class="text-sm text-base-content/60">Preview loaded, loading, empty, and recovery states for the deterministic dashboard.</span>
+    <label class="flex items-center gap-2 text-sm">
+      <span class="eyebrow">State</span>
+      <select class="bg-transparent border-b border-base-300 px-0 py-1 focus:outline-none focus:border-base-content" bind:value={homePageState} data-testid="home-state-select">
+        <option value="loaded">Loaded dashboard</option>
+        <option value="loading">Loading state</option>
+        <option value="empty">Empty state</option>
+        <option value="error">Error state</option>
+      </select>
+    </label>
   </section>
 
   <Section title="Quick actions" eyebrow="Jump in">
@@ -76,8 +94,28 @@
     {/snippet}
 
     <div data-testid="home-balances">
-      {#if $balances.length > 0}
-        {#each $balances as balance}
+      {#if homePageState === 'loading'}
+        <div class="card-surface flex items-center justify-center gap-3 px-5 py-10 text-center text-body-muted" data-testid="home-loading-state">
+          <span class="loading loading-spinner loading-sm"></span>
+          <span>Loading portfolio balances from deterministic session fixtures…</span>
+        </div>
+      {:else if homePageState === 'error'}
+        <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="home-error-state">
+          <span class="block font-medium text-base-content">Dashboard preview unavailable</span>
+          <span class="mt-1 block text-sm">Retry the local demo state; no backend balance request was made.</span>
+          <button class="btn-pill-primary mt-4" onclick={() => { homePageState = 'loaded'; }}>Retry dashboard</button>
+        </div>
+      {:else if homePageState === 'empty'}
+        <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="home-empty-state">
+          <span class="block font-medium text-base-content">No portfolio activity yet</span>
+          <span class="mt-1 block text-sm">Start with a deposit or create a market-making order to populate this deterministic account.</span>
+          <div class="mt-4 flex flex-wrap justify-center gap-2">
+            <a href="/deposit" class="btn-pill-primary">Simulate deposit</a>
+            <a href="/market-making" class="btn-pill-outline">Explore campaigns</a>
+          </div>
+        </div>
+      {:else if displayedBalances.length > 0}
+        {#each displayedBalances as balance}
           <StatRow
             label={balance.symbol}
             sublabel={`Pending withdrawal: ${balance.pendingAmount ?? '0'} ${balance.symbol}`}
@@ -96,9 +134,22 @@
     </div>
   </Section>
 
-  {#if recentActivity.length > 0}
-    <Section title="Recent activity" eyebrow="Session">
-      <div data-testid="home-recent-activity">
+  <Section title="Recent activity" eyebrow="Session">
+    <div data-testid="home-recent-activity">
+      {#if homePageState === 'loading'}
+        <div class="card-surface flex items-center justify-center gap-3 px-5 py-10 text-center text-body-muted" data-testid="home-activity-loading-state">
+          <span class="loading loading-spinner loading-sm"></span>
+          <span>Preparing the latest funding and order events…</span>
+        </div>
+      {:else if homePageState === 'error'}
+        <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="home-activity-error-state">
+          Activity timeline is temporarily unavailable in this preview state.
+        </div>
+      {:else if homePageState === 'empty' || recentActivity.length === 0}
+        <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="home-activity-empty-state">
+          No recent activity yet. Funding and order lifecycle events will be timestamped here.
+        </div>
+      {:else}
         {#each recentActivity as entry}
           <StatRow
             label={entry.label}
@@ -108,7 +159,7 @@
             testid="home-activity-link"
           />
         {/each}
-      </div>
-    </Section>
-  {/if}
+      {/if}
+    </div>
+  </Section>
 </div>

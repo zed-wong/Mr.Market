@@ -319,6 +319,16 @@ export const submitMockWithdrawal = (
   amount: string,
   destination: string
 ): MockFundingResult => {
+  const validationErrors = validateMockWithdrawal({
+    namespace: balance.chainNamespace,
+    balance,
+    destination,
+    amount,
+  });
+  if (validationErrors.destination || validationErrors.amount) {
+    throw new Error(validationErrors.destination ?? validationErrors.amount);
+  }
+
   const normalizedAmount = normalizeAmount(amount);
   const sequence = nextSequence();
   const timestamp = deterministicTimestamps[(sequence - 1) % deterministicTimestamps.length];

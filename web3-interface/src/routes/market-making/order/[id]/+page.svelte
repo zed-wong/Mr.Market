@@ -13,6 +13,9 @@
     type OrderLifecycleAction,
   } from '$lib/stores/market-making';
 
+  type OrderDetailState = 'loaded' | 'loading' | 'error';
+
+  let detailState = $state<OrderDetailState>('loaded');
   let order = $derived($allOrders.find((item) => item.id === $page.params.id) ?? null);
   let campaign = $derived(order ? $allCampaigns.find((item) => item.id === order.campaignId) ?? null : null);
   let orderedLogs = $derived(order ? [...order.logs].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) : []);
@@ -24,7 +27,26 @@
 </script>
 
 <div data-testid="order-detail">
-  {#if !order}
+  {#if detailState === 'loading'}
+    <section class="pt-2 max-w-xl" data-testid="order-loading-state">
+      <span class="eyebrow">Loading</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Loading order detail</span>
+      <span class="mt-4 flex items-center gap-3 text-sm text-base-content/60">
+        <span class="loading loading-spinner loading-sm"></span>
+        Preparing deterministic balances, status history, and execution metrics for this order.
+      </span>
+      <button class="btn-pill-primary mt-6" onclick={() => { detailState = 'loaded'; }}>Show loaded order</button>
+    </section>
+  {:else if detailState === 'error'}
+    <section class="pt-2 max-w-xl" data-testid="order-error-state">
+      <span class="eyebrow">Recovery</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Order preview unavailable</span>
+      <span class="mt-4 block text-base-content/60">
+        The local order state could not be prepared for this preview. Retry to restore the deterministic order detail without contacting a backend.
+      </span>
+      <button class="btn-pill-primary mt-6" onclick={() => { detailState = 'loaded'; }}>Retry order detail</button>
+    </section>
+  {:else if !order}
     <section class="pt-2 max-w-xl" data-testid="order-not-found">
       <span class="eyebrow">Not found</span>
       <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Order not found</span>
@@ -40,6 +62,18 @@
       <span class="mt-4 block text-base-content/60">
         {campaign?.name ?? 'Unknown campaign'} · {namespaceLabel(order.namespace)} · {order.assets}
       </span>
+
+      <section class="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="order-detail-state-controls">
+        <span class="text-sm text-base-content/60">State preview for order loading and recovery surfaces.</span>
+        <label class="flex items-center gap-2 text-sm">
+          <span class="eyebrow">State</span>
+          <select class="bg-transparent border-b border-base-300 px-0 py-1 focus:outline-none focus:border-base-content" bind:value={detailState} data-testid="order-state-select">
+            <option value="loaded">Loaded order</option>
+            <option value="loading">Loading state</option>
+            <option value="error">Error state</option>
+          </select>
+        </label>
+      </section>
 
       <div class="mt-8 grid gap-px bg-base-300 border border-base-300 rounded-2xl overflow-hidden md:grid-cols-2 lg:grid-cols-4" data-testid="order-detail-summary">
         <div class="bg-base-100 p-5">

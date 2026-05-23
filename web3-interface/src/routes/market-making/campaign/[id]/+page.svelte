@@ -46,7 +46,7 @@
       <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Loading campaign metrics</span>
       <span class="mt-4 flex items-center gap-3 text-sm text-base-content/60">
         <span class="loading loading-spinner loading-sm"></span>
-        Deterministic market-making metrics are being prepared for preview.
+        Preparing campaign liquidity, eligibility, terms, and reward metrics from deterministic local fixtures.
       </span>
       <button class="btn-pill-primary mt-6" onclick={() => { detailState = 'loaded'; }}>Show loaded campaign</button>
     </section>
@@ -55,7 +55,7 @@
       <span class="eyebrow">Recovery</span>
       <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Campaign preview unavailable</span>
       <span class="mt-4 block text-base-content/60">
-        This mocked error state keeps the page recoverable without backend data.
+        Campaign detail could not be prepared in this preview state. Retry to restore the local deterministic campaign without contacting a backend.
       </span>
       <button class="btn-pill-primary mt-6" onclick={() => { detailState = 'loaded'; }}>Retry campaign detail</button>
     </section>
