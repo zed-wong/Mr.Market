@@ -473,13 +473,20 @@ export class AdminSystemHealthService {
   }
 
   private buildTrackedOrderServices(generatedAt: string): HealthServiceRow[] {
-    const allOrders = this.exchangeOrderTrackerService?.getAllTrackedOrders() || [];
-    const orders = allOrders.slice(0, MAX_TRACKED_ORDER_SAMPLE);
-    const byStatus = orders.reduce<Record<string, number>>((summary, order) => {
-      summary[order.status] = (summary[order.status] || 0) + 1;
-
-      return summary;
-    }, {});
+    const summary: {
+      totalOrders: number;
+      sampledOrders: number;
+      byStatus: Record<string, number>;
+      truncated: boolean;
+    } = this.exchangeOrderTrackerService?.getTrackedOrderSummary(
+      MAX_TRACKED_ORDER_SAMPLE,
+    ) || {
+      totalOrders: 0,
+      sampledOrders: 0,
+      byStatus: {},
+      truncated: false,
+    };
+    const byStatus = summary.byStatus;
     const missing =
       (byStatus.external_missing || 0) + (byStatus.internal_missing || 0);
     const failed = byStatus.failed || 0;
@@ -498,11 +505,12 @@ export class AdminSystemHealthService {
             : 'Tracked order cache contains sampled failed or missing orders.',
         observedAt: generatedAt,
         metrics: {
-          sampledOrders: orders.length,
+          totalOrders: summary.totalOrders,
+          sampledOrders: summary.sampledOrders,
           byStatus,
           missing,
           failed,
-          truncated: allOrders.length > orders.length,
+          truncated: summary.truncated,
         },
       },
     ];

@@ -116,9 +116,9 @@ export class AdminSystemLogsService {
         continue;
       }
 
-      const content = await this.readTail(logFile);
-      readBytes += Buffer.byteLength(content, 'utf8');
-      const lines = content.split(/\r?\n/).filter(Boolean);
+      const tail = await this.readTail(logFile);
+      readBytes += tail.bytesRead;
+      const lines = tail.content.split(/\r?\n/).filter(Boolean);
       scannedLines += lines.length;
 
       for (const line of lines) {
@@ -331,7 +331,10 @@ export class AdminSystemLogsService {
     ];
   }
 
-  private async readTail(filePath: string): Promise<string> {
+  private async readTail(filePath: string): Promise<{
+    content: string;
+    bytesRead: number;
+  }> {
     const details = await stat(filePath);
     const start = Math.max(0, details.size - MAX_READ_BYTES);
     const length = details.size - start;
@@ -349,13 +352,17 @@ export class AdminSystemLogsService {
     const content = buffer.subarray(0, bytesRead).toString('utf8');
 
     if (start === 0) {
-      return content;
+      return { content, bytesRead };
     }
 
-    const tail = content.slice(start);
-    const firstNewline = tail.search(/\r?\n/);
+    const firstNewline = /\r?\n/.exec(content);
 
-    return firstNewline >= 0 ? tail.slice(firstNewline + 1) : tail;
+    return {
+      content: firstNewline
+        ? content.slice(firstNewline.index + firstNewline[0].length)
+        : content,
+      bytesRead,
+    };
   }
 
   private parseLine(
@@ -470,6 +477,11 @@ export class AdminSystemLogsService {
       .replace(
         /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
         '[REDACTED]',
+      )
+      .replace(
+        /(["'])(authorization|password|passwd|pwd|secret|token|jwt|api[_-]?key|apikey|private[_-]?key|privatekey|session[_-]?token|sessiontoken|access[_-]?token|accesstoken|refresh[_-]?token|refreshtoken|encrypted(?:[_-]?(?:secret|material|value))?)\1\s*:\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}\]]+)/gi,
+        (_match: string, quote: string, key: string) =>
+          `${quote}${key}${quote}: "[REDACTED]"`,
       )
       .replace(
         /((?:authorization|password|passwd|pwd|secret|token|jwt|api[_-]?key|private[_-]?key|session[_-]?token|access[_-]?token|refresh[_-]?token|encrypted(?:[_-]?(?:secret|material|value))?)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,

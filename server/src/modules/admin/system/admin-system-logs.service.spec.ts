@@ -98,6 +98,62 @@ describe('AdminSystemLogsService', () => {
     );
   });
 
+  it('redacts quoted JSON-style secret fields in entries and exports', async () => {
+    const service = await buildService({
+      'combined.log':
+        '[2026-05-23T00:00:00.000Z] [INFO] [Auth] {"password":"hunter2","apiKey":"abc123","encryptedSecret":"sealed","nested":{"privateKey":"pem-value"}}',
+    });
+
+    const response = await service.getLogs({
+      source: 'combined',
+      limit: '1',
+      export: 'true',
+    });
+    const serialized = JSON.stringify(response);
+
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).not.toContain('abc123');
+    expect(serialized).not.toContain('sealed');
+    expect(serialized).not.toContain('pem-value');
+    expect(response.entries[0].message).toContain(
+      '"password": "[REDACTED]"',
+    );
+    expect(response.entries[0].message).toContain('"apiKey": "[REDACTED]"');
+    expect(response.entries[0].message).toContain(
+      '"encryptedSecret": "[REDACTED]"',
+    );
+    expect(response.export?.content).toContain('"apiKey": "[REDACTED]"');
+  });
+
+  it('returns recent entries from log files larger than the read window', async () => {
+    for (const oldLineCount of [16, 32]) {
+      const oldLines = Array.from({ length: oldLineCount }, (_, index) => {
+        return `[2026-05-23T00:00:${String(index).padStart(
+          2,
+          '0',
+        )}.000Z] [INFO] [Old] ${'x'.repeat(20_000)}`;
+      }).join('\n');
+      const recentLines = [
+        '[2026-05-23T00:10:00.000Z] [INFO] [Recent] first recent entry',
+        '[2026-05-23T00:11:00.000Z] [ERROR] [Recent] newest recent entry',
+      ].join('\n');
+      const service = await buildService({
+        'combined.log': `${oldLines}\n${recentLines}\n`,
+      });
+
+      const response = await service.getLogs({
+        source: 'combined',
+        limit: '2',
+      });
+
+      expect(response.truncated.readBytes).toBe(true);
+      expect(response.entries.map((entry) => entry.message)).toEqual([
+        'newest recent entry',
+        'first recent entry',
+      ]);
+    }
+  });
+
   it('truncates oversized messages and response bytes without crashing', async () => {
     const service = await buildService({
       'combined.log': Array.from({ length: 50 }, (_, index) => {

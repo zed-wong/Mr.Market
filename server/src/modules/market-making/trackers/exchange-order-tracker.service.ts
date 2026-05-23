@@ -48,6 +48,14 @@ export type TrackedOrder = {
   updatedAt: string;
 };
 
+export type TrackedOrderSummary = {
+  totalOrders: number;
+  sampledOrders: number;
+  byStatus: Record<string, number>;
+  sample: TrackedOrder[];
+  truncated: boolean;
+};
+
 export type UpsertTrackedOrderOptions = {
   releaseReservation?: boolean;
 };
@@ -220,6 +228,33 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
   getAllTrackedOrders(): TrackedOrder[] {
     return [...this.orders.values()];
+  }
+
+  getTrackedOrderSummary(sampleLimit = 100): TrackedOrderSummary {
+    const boundedSampleLimit = Math.max(
+      0,
+      Math.min(Number.isSafeInteger(sampleLimit) ? sampleLimit : 0, 1000),
+    );
+    const byStatus: Record<string, number> = {};
+    const sample: TrackedOrder[] = [];
+    let totalOrders = 0;
+
+    for (const order of this.orders.values()) {
+      totalOrders += 1;
+      byStatus[order.status] = (byStatus[order.status] || 0) + 1;
+
+      if (sample.length < boundedSampleLimit) {
+        sample.push(order);
+      }
+    }
+
+    return {
+      totalOrders,
+      sampledOrders: sample.length,
+      byStatus,
+      sample,
+      truncated: totalOrders > sample.length,
+    };
   }
 
   reconcileOpenOrderSnapshot(params: {

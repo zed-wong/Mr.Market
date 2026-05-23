@@ -108,21 +108,30 @@ describe('AdminSystemHealthService', () => {
       getActiveWatcherCount: jest.fn(() => 1),
     };
     const orderTracker = overrides.orderTracker || {
-      getAllTrackedOrders: jest.fn(() => [
-        {
-          orderId: 'order-1',
-          strategyKey: 'strategy-1',
-          exchange: 'binance',
-          pair: 'BTC/USDT',
-          exchangeOrderId: 'exchange-1',
-          side: 'buy',
-          price: '10',
-          qty: '1',
-          status: 'open',
-          createdAt: ts(0),
-          updatedAt: ts(5),
-        },
-      ]),
+      getTrackedOrderSummary: jest.fn(() => ({
+        totalOrders: 1,
+        sampledOrders: 1,
+        byStatus: { open: 1 },
+        sample: [
+          {
+            orderId: 'order-1',
+            strategyKey: 'health-test-strategy',
+            exchange: 'binance',
+            pair: 'BTC/USDT',
+            exchangeOrderId: 'exchange-1',
+            side: 'buy',
+            price: '10',
+            qty: '1',
+            status: 'open',
+            createdAt: ts(0),
+            updatedAt: ts(5),
+          },
+        ],
+        truncated: false,
+      })),
+      getAllTrackedOrders: jest.fn(() => {
+        throw new Error('health must not copy the full tracked-order cache');
+      }),
     };
 
     return {
@@ -322,5 +331,45 @@ describe('AdminSystemHealthService', () => {
       ),
     ).toHaveLength(25);
     expect(response.services).toHaveLength(26);
+  });
+
+  it('uses bounded tracked-order summaries without copying the full cache', async () => {
+    const orderTracker = {
+      getTrackedOrderSummary: jest.fn(() => ({
+        totalOrders: 10_000,
+        sampledOrders: 500,
+        byStatus: {
+          open: 9_900,
+          failed: 3,
+          external_missing: 7,
+          filled: 90,
+        },
+        sample: [],
+        truncated: true,
+      })),
+      getAllTrackedOrders: jest.fn(() => {
+        throw new Error('health must not copy the full tracked-order cache');
+      }),
+    };
+    const { service } = buildService({ orderTracker });
+
+    const response = await service.getHealth({ service: 'orders.tracker' });
+    const tracker = response.services.find((row) => row.id === 'orders.tracker');
+
+    expect(orderTracker.getTrackedOrderSummary).toHaveBeenCalledWith(500);
+    expect(orderTracker.getAllTrackedOrders).not.toHaveBeenCalled();
+    expect(tracker?.status).toBe('critical');
+    expect(tracker?.metrics).toMatchObject({
+      totalOrders: 10_000,
+      sampledOrders: 500,
+      missing: 7,
+      failed: 3,
+      truncated: true,
+    });
+    expect(tracker?.metrics?.byStatus).toMatchObject({
+      open: 9_900,
+      failed: 3,
+      external_missing: 7,
+    });
   });
 });

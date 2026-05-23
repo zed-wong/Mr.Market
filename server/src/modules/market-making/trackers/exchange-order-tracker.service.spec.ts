@@ -304,6 +304,39 @@ describe('ExchangeOrderTrackerService', () => {
     ).toEqual(['pending-create', 'open-order', 'pending-cancel']);
   });
 
+  it('summarizes tracked orders with bounded sampling', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    Array.from({ length: 8 }, (_, index) => {
+      service.upsertOrder({
+        orderId: `order-${index}`,
+        strategyKey: 'summary-test-strategy',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: `summary-${index}`,
+        side: index % 2 === 0 ? 'buy' : 'sell',
+        price: '100',
+        qty: '1',
+        status:
+          index === 6 ? 'failed' : index === 7 ? 'external_missing' : 'open',
+        createdAt: '2026-02-11T00:00:00.000Z',
+        updatedAt: '2026-02-11T00:00:00.000Z',
+      });
+    });
+
+    const summary = service.getTrackedOrderSummary(3);
+
+    expect(summary.totalOrders).toBe(8);
+    expect(summary.sample).toHaveLength(3);
+    expect(summary.sampledOrders).toBe(3);
+    expect(summary.truncated).toBe(true);
+    expect(summary.byStatus).toEqual({
+      open: 6,
+      failed: 1,
+      external_missing: 1,
+    });
+  });
+
   it('reconciles open order snapshots into internal/external mismatch states', () => {
     const service = new ExchangeOrderTrackerService();
 
