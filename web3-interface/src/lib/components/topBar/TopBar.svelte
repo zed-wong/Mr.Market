@@ -1,11 +1,12 @@
 <script lang="ts">
   import { openMobileNav } from '$lib/stores/ui';
   import ThemeToggle from './ThemeToggle.svelte';
+  import ConnectButton from './ConnectButton.svelte';
 </script>
 
 <header class="flex items-center justify-between gap-3 pb-6" data-testid="top-controls">
   <button
-    class="btn-pill-ghost md:hidden -ml-3"
+    class="btn-pill-ghost md:hidden -ml-3 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-base-100"
     onclick={openMobileNav}
     aria-label="Open navigation"
     data-testid="open-mobile-nav"
@@ -20,7 +21,6 @@
 
   <div class="flex items-center gap-2">
     <ThemeToggle />
-    <appkit-network-button data-testid="network-button"></appkit-network-button>
-    <appkit-button balance="hide" data-testid="connect-wallet-button"></appkit-button>
+    <ConnectButton />
   </div>
 </header>

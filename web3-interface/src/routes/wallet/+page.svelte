@@ -12,46 +12,44 @@
   );
 </script>
 
-<div data-testid="web3-wallet-funding">
-  <section class="pt-2">
-    <span class="eyebrow">Wallet</span>
-    <div class="mt-3 flex items-baseline gap-3">
-      <span class="font-display text-5xl md:text-7xl tracking-tight text-base-content font-mono-num">${$totalBalanceUsd}</span>
+<div class="anim-page-enter" data-testid="web3-wallet-funding">
+  <section class="card-surface p-6 md:p-8">
+    <span class="eyebrow">Wallet balance</span>
+    <div class="mt-2 flex items-baseline gap-3">
+      <span class="text-display text-base-content font-mono-num">${$totalBalanceUsd}</span>
     </div>
-    <span class="mt-4 block text-base-content/60">{$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'}</span>
+    <span class="mt-3 block text-body-muted">{$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'}</span>
 
-    <div class="mt-6 flex flex-wrap gap-2">
+    <div class="mt-5 flex flex-wrap gap-2">
       <a href="/deposit" class="btn-pill-primary" data-testid="deposit-entry">Deposit</a>
       <a href="/withdraw" class="btn-pill-outline" data-testid="withdraw-entry">Withdraw</a>
     </div>
   </section>
 
   {#if !$walletIsConnected && !$walletIsUnsupported}
-    <section class="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="wallet-disconnected-gate">
-      <span class="text-sm text-base-content/70">Connect a wallet to show account-specific balances and funding.</span>
+    <section class="mt-6 card-surface flex flex-wrap items-center justify-between gap-3 px-5 py-4" data-testid="wallet-disconnected-gate">
+      <span class="text-body-muted">Connect a wallet to show account-specific balances and funding.</span>
       <button class="btn-pill-primary" onclick={openMockWallet}>Connect wallet</button>
     </section>
   {:else if $walletIsUnsupported}
-    <section class="mt-10 rounded-2xl border border-warning/40 px-5 py-4 text-sm text-base-content/70" data-testid="wallet-unsupported-gate">
+    <section class="mt-6 rounded-2xl bg-warning/10 border border-warning/30 px-5 py-4 text-body-muted" data-testid="wallet-unsupported-gate">
       Unsupported chain selected. Deposit and withdraw submission are blocked until EVM or Solana is selected.
     </section>
   {/if}
 
   <Section title="Assets" eyebrow="Account scoped">
     {#if $balances.length > 0}
-      <div class="border-t border-base-300">
-        {#each $balances as balance}
-          <StatRow
-            label={balance.symbol}
-            sublabel={`Pending withdrawal: ${balance.pendingAmount ?? '0'} ${balance.symbol}`}
-            value={balance.amount}
-            subvalue={`$${balance.usdValue}`}
-            badge={balance.chainNamespace === 'evm' ? 'EVM' : 'Solana'}
-          />
-        {/each}
-      </div>
+      {#each $balances as balance}
+        <StatRow
+          label={balance.symbol}
+          sublabel={`Pending withdrawal: ${balance.pendingAmount ?? '0'} ${balance.symbol}`}
+          value={balance.amount}
+          subvalue={`$${balance.usdValue}`}
+          badge={balance.chainNamespace === 'evm' ? 'EVM' : 'Solana'}
+        />
+      {/each}
     {:else}
-      <div class="border-t border-base-300 py-10 text-base-content/55">
+      <div class="card-surface px-5 py-10 text-center text-body-muted">
         No available balances for the current mocked session.
       </div>
     {/if}
@@ -60,17 +58,15 @@
   <Section title="Funding activity" eyebrow="Recent">
     <div data-testid="funding-activity">
       {#if fundingActivity.length > 0}
-        <div class="border-t border-base-300">
-          {#each fundingActivity as entry}
-            <StatRow label={entry.label} sublabel={entry.detail} value="→" />
-          {/each}
-        </div>
+        {#each fundingActivity as entry}
+          <StatRow label={entry.label} sublabel={entry.detail} value="→" />
+        {/each}
       {:else if $walletIsUnsupported}
-        <div class="border-t border-base-300 py-10 text-base-content/55">
+        <div class="card-surface px-5 py-10 text-center text-body-muted">
           Funding activity is hidden while the selected chain is unsupported.
         </div>
       {:else}
-        <div class="border-t border-base-300 py-10 text-base-content/55">
+        <div class="card-surface px-5 py-10 text-center text-body-muted">
           Connect a wallet to view account-specific funding activity.
         </div>
       {/if}

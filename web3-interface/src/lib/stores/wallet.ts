@@ -23,6 +23,12 @@ const shortenAddress = (address: string | null): string => {
   return address;
 };
 
+interface NamespaceAccount {
+  address: string | null;
+  connected: boolean;
+  status: string;
+}
+
 export const walletStatus = writable<WalletStatus>('disconnected');
 export const walletAddress = writable<string | null>(null);
 export const walletChainId = writable<number | string | null>(null);
@@ -50,50 +56,73 @@ export const walletNamespaceLabel = derived(walletNamespace, ($namespace) => nam
 
 let initialized = false;
 
+const namespaceAccounts: Record<WalletNamespace, NamespaceAccount> = {
+  evm: { address: null, connected: false, status: 'disconnected' },
+  solana: { address: null, connected: false, status: 'disconnected' },
+};
+
+const recomputeFromAccounts = (activeNamespace: WalletNamespace | null) => {
+  const ns = activeNamespace ?? (namespaceAccounts.evm.connected ? 'evm' : namespaceAccounts.solana.connected ? 'solana' : null);
+  if (!ns) {
+    const anyConnecting = namespaceAccounts.evm.status === 'connecting' || namespaceAccounts.evm.status === 'reconnecting' || namespaceAccounts.solana.status === 'connecting' || namespaceAccounts.solana.status === 'reconnecting';
+    walletStatus.set(anyConnecting ? 'connecting' : 'disconnected');
+    walletAddress.set(null);
+    walletNamespace.set(null);
+    return;
+  }
+  const acc = namespaceAccounts[ns];
+  if (!acc.connected) {
+    const other: WalletNamespace = ns === 'evm' ? 'solana' : 'evm';
+    if (namespaceAccounts[other].connected) {
+      recomputeFromAccounts(other);
+      return;
+    }
+    walletStatus.set(acc.status === 'connecting' || acc.status === 'reconnecting' ? 'connecting' : 'disconnected');
+    walletAddress.set(null);
+    walletNamespace.set(null);
+    return;
+  }
+  walletAddress.set(acc.address);
+  walletNamespace.set(ns);
+  const appKit = getAppKit();
+  const chainId = appKit?.getChainId();
+  const isEvmUnsupported = ns === 'evm' && typeof chainId === 'number' && !SUPPORTED_EVM_CHAIN_IDS.has(chainId);
+  walletStatus.set(isEvmUnsupported ? 'unsupported' : 'connected');
+};
+
 export const initWalletStore = () => {
   if (initialized || typeof window === 'undefined') return;
   const appKit = initAppKit();
   if (!appKit) return;
   initialized = true;
 
-  const applyAccount = (state: { isConnected: boolean; address?: string; status?: string }, namespace: WalletNamespace) => {
-    if (!state.isConnected) {
-      const otherNamespace: WalletNamespace = namespace === 'evm' ? 'solana' : 'evm';
-      const otherAddress = appKit.getAddress(otherNamespace === 'evm' ? 'eip155' : 'solana');
-      if (!otherAddress) {
-        walletStatus.set(state.status === 'connecting' || state.status === 'reconnecting' ? 'connecting' : 'disconnected');
-        walletAddress.set(null);
-        walletNamespace.set(null);
-      }
-      return;
-    }
-    walletAddress.set(state.address ?? null);
-    walletNamespace.set(namespace);
-    if (state.status === 'connecting' || state.status === 'reconnecting') {
-      walletStatus.set('connecting');
-    } else {
-      const chainId = appKit.getChainId();
-      const isEvmUnsupported = namespace === 'evm' && typeof chainId === 'number' && !SUPPORTED_EVM_CHAIN_IDS.has(chainId);
-      walletStatus.set(isEvmUnsupported ? 'unsupported' : 'connected');
-    }
+  const onAccount = (state: { isConnected: boolean; address?: string; status?: string }, namespace: WalletNamespace) => {
+    namespaceAccounts[namespace] = {
+      address: state.isConnected ? (state.address ?? null) : namespaceAccounts[namespace].address,
+      connected: state.isConnected,
+      status: state.status ?? 'disconnected',
+    };
+    recomputeFromAccounts(null);
   };
 
-  appKit.subscribeAccount((state) => applyAccount(state, 'evm'), 'eip155');
-  appKit.subscribeAccount((state) => applyAccount(state, 'solana'), 'solana');
+  appKit.subscribeAccount((state) => onAccount(state, 'evm'), 'eip155');
+  appKit.subscribeAccount((state) => onAccount(state, 'solana'), 'solana');
 
   appKit.subscribeNetwork((state) => {
     walletChainId.set(state.chainId ?? null);
     walletNetwork.set(state.caipNetwork?.name ?? null);
 
-    const namespace = state.caipNetwork?.chainNamespace === 'solana' ? 'solana' : state.caipNetwork?.chainNamespace === 'eip155' ? 'evm' : null;
-    if (namespace) walletNamespace.set(namespace);
+    const namespace: WalletNamespace | null = state.caipNetwork?.chainNamespace === 'solana' ? 'solana' : state.caipNetwork?.chainNamespace === 'eip155' ? 'evm' : null;
+    if (namespace) {
+      walletNamespace.set(namespace);
+      recomputeFromAccounts(namespace);
+    }
 
     if (state.chainId !== undefined && namespace === 'evm') {
       const numericId = typeof state.chainId === 'string' ? Number(state.chainId) : state.chainId;
       if (typeof numericId === 'number' && !Number.isNaN(numericId)) {
-        const isUnsupported = !SUPPORTED_EVM_CHAIN_IDS.has(numericId);
-        if (appKit.getIsConnectedState()) {
-          walletStatus.set(isUnsupported ? 'unsupported' : 'connected');
+        if (namespaceAccounts.evm.connected) {
+          walletStatus.set(!SUPPORTED_EVM_CHAIN_IDS.has(numericId) ? 'unsupported' : 'connected');
         }
       }
     }

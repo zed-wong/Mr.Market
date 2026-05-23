@@ -39,7 +39,7 @@
   <div class="flex min-h-screen bg-base-100 text-base-content">
     <SideNav />
     <main class="min-w-0 flex-1">
-      <div class="mx-auto w-full max-w-6xl px-6 pt-8 pb-20 md:px-12 md:pt-12">
+      <div class="mx-auto w-full max-w-5xl px-5 pt-6 pb-20 md:px-10 md:pt-10">
         <TopBar />
         {@render children?.()}
       </div>

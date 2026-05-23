@@ -10,52 +10,47 @@
   }
 
   let { label, sublabel, value, subvalue, href, badge, testid }: Props = $props();
+
+  const rowClass = 'flex items-center justify-between gap-4 card-surface px-4 py-3.5 mb-2 last:mb-0';
 </script>
 
 {#if href}
-  <a
-    href={href}
-    class="flex items-center justify-between gap-4 border-b border-base-300 py-5 transition-colors hover:bg-base-200/40"
-    data-testid={testid}
-  >
+  <a href={href} class="{rowClass} card-hover" data-testid={testid}>
     <div class="flex min-w-0 flex-col">
       <div class="flex items-center gap-2">
-        <span class="font-medium text-base-content">{label}</span>
+        <span class="font-semibold text-base-content">{label}</span>
         {#if badge}
-          <span class="rounded-full border border-base-300 px-2 py-0.5 text-[10px] capitalize tracking-wider text-base-content/60">{badge}</span>
+          <span class="rounded-full bg-base-100 px-2 py-0.5 text-[10px] font-medium capitalize tracking-tight text-base-content/60">{badge}</span>
         {/if}
       </div>
       {#if sublabel}
-        <span class="mt-0.5 text-xs text-base-content/50">{sublabel}</span>
+        <span class="mt-0.5 text-xs text-base-content/55">{sublabel}</span>
       {/if}
     </div>
     <div class="flex flex-col items-end text-right">
-      <span class="font-mono-num text-base text-base-content">{value}</span>
+      <span class="font-mono-num font-semibold text-base-content">{value}</span>
       {#if subvalue}
-        <span class="mt-0.5 text-xs text-base-content/50">{subvalue}</span>
+        <span class="mt-0.5 text-xs text-base-content/55">{subvalue}</span>
       {/if}
     </div>
   </a>
 {:else}
-  <div
-    class="flex items-center justify-between gap-4 border-b border-base-300 py-5"
-    data-testid={testid}
-  >
+  <div class="{rowClass}" data-testid={testid}>
     <div class="flex min-w-0 flex-col">
       <div class="flex items-center gap-2">
-        <span class="font-medium text-base-content">{label}</span>
+        <span class="font-semibold text-base-content">{label}</span>
         {#if badge}
-          <span class="rounded-full border border-base-300 px-2 py-0.5 text-[10px] capitalize tracking-wider text-base-content/60">{badge}</span>
+          <span class="rounded-full bg-base-100 px-2 py-0.5 text-[10px] font-medium capitalize tracking-tight text-base-content/60">{badge}</span>
         {/if}
       </div>
       {#if sublabel}
-        <span class="mt-0.5 text-xs text-base-content/50">{sublabel}</span>
+        <span class="mt-0.5 text-xs text-base-content/55">{sublabel}</span>
       {/if}
     </div>
     <div class="flex flex-col items-end text-right">
-      <span class="font-mono-num text-base text-base-content">{value}</span>
+      <span class="font-mono-num font-semibold text-base-content">{value}</span>
       {#if subvalue}
-        <span class="mt-0.5 text-xs text-base-content/50">{subvalue}</span>
+        <span class="mt-0.5 text-xs text-base-content/55">{subvalue}</span>
       {/if}
     </div>
   </div>
