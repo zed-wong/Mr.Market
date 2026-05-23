@@ -88,12 +88,13 @@ export class SafeJsonExceptionFilter implements ExceptionFilter {
     if (Array.isArray(value)) {
       const messages = value
         .map((entry) => this.safeString(entry))
+        .map((entry) => this.sanitizeMessagePaths(entry))
         .filter((entry) => entry.length > 0);
 
       return messages.length > 0 ? messages : fallback;
     }
 
-    const message = this.safeString(value);
+    const message = this.sanitizeMessagePaths(this.safeString(value));
 
     return message || fallback;
   }
@@ -112,6 +113,13 @@ export class SafeJsonExceptionFilter implements ExceptionFilter {
     }
 
     return value.replace(/\s+/g, ' ').trim().slice(0, 500);
+  }
+
+  private sanitizeMessagePaths(message: string): string {
+    return message.replace(
+      /((?:https?:\/\/[^\s?#]+|\/[^\s?#]*))(?:[?#][^\s]*)/g,
+      '$1',
+    );
   }
 
   private sanitizePath(path?: string): string | undefined {

@@ -1,4 +1,9 @@
-import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { SafeJsonExceptionFilter } from './safe-json-exception.filter';
 
@@ -45,6 +50,40 @@ describe('SafeJsonExceptionFilter', () => {
       'secret-value',
     );
   });
+
+  it.each([
+    ['/admin/dashboard/missing'],
+    ['/admin/orders/missing'],
+    ['/admin/positions/missing'],
+    ['/admin/system/health/missing'],
+    ['/admin/system/logs/missing'],
+    ['/admin/system/audit/missing'],
+    ['/admin/system/config/missing'],
+  ])(
+    'omits query strings from not-found path and message for %s',
+    (missingPath) => {
+      const filter = new SafeJsonExceptionFilter();
+      const leakedUrl = `${missingPath}?query=DO_NOT_ECHO_QUERY_LEAK&token=secret-value`;
+      const { host, response } = createHost(leakedUrl);
+
+      filter.catch(new NotFoundException(`Cannot GET ${leakedUrl}`), host);
+
+      expect(response.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.NOT_FOUND,
+          message: `Cannot GET ${missingPath}`,
+          error: 'Not Found',
+          path: missingPath,
+        }),
+      );
+
+      const body = JSON.stringify(response.json.mock.calls[0][0]);
+      expect(body).not.toContain('?query=');
+      expect(body).not.toContain('DO_NOT_ECHO_QUERY_LEAK');
+      expect(body).not.toContain('secret-value');
+    },
+  );
 
   it('masks unexpected implementation failures behind a generic JSON error', () => {
     const filter = new SafeJsonExceptionFilter();
