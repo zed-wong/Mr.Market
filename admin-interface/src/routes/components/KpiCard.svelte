@@ -5,11 +5,11 @@
     label: string;
     value: string;
     unit?: string;
-    deltaPct: number;
-    series: number[];
+    deltaPct?: number;
+    series?: number[];
   }
 
-  let { label, value, unit, deltaPct, series }: Props = $props();
+  let { label, value, unit, deltaPct = 0, series = [] }: Props = $props();
 
   let positive = $derived(deltaPct >= 0);
   let deltaText = $derived(
@@ -43,8 +43,12 @@
       {/if}
     </div>
 
-    <div class="h-9">
-      <Sparkline values={series} {positive} width={240} height={36} />
-    </div>
+    {#if series.length > 1}
+      <div class="h-9">
+        <Sparkline values={series} {positive} width={240} height={36} />
+      </div>
+    {:else}
+      <span class="text-xs text-base-content/40 capitalize">trend unavailable</span>
+    {/if}
   </div>
 </div>

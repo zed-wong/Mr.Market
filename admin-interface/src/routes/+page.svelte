@@ -1,43 +1,216 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
   import KpiCard from './components/KpiCard.svelte';
-  import Sparkline from './components/Sparkline.svelte';
   import {
-    kpis,
-    strategies,
-    intents,
-    system,
-    allocations,
-    flowSeries,
-    lastUpdated,
-  } from './components/dashboard-mock';
+    DASHBOARD_RANGES,
+    fetchDashboardSummary,
+    type AdminDashboardSummary,
+    type DashboardRange,
+  } from '$lib/helpers/api/dashboard';
 
-  let timeRange = $state<'1h' | '24h' | '7d' | '30d'>('24h');
+  let summary = $state<AdminDashboardSummary | null>(null);
+  let timeRange = $state<DashboardRange>('24h');
+  let loading = $state(true);
+  let refreshing = $state(false);
+  let error = $state<string | null>(null);
 
   const statusDot: Record<string, string> = {
     healthy: 'bg-success',
+    running: 'bg-success',
     delayed: 'bg-warning',
     paused: 'bg-base-content/30',
+    stopped: 'bg-base-content/30',
     error: 'bg-error',
-    ok: 'bg-success',
-    pending: 'bg-warning',
     failed: 'bg-error',
+    degraded: 'bg-warning',
+    unknown: 'bg-base-content/30',
+    ok: 'bg-success',
+    open: 'bg-success',
+    pending: 'bg-warning',
     warn: 'bg-warning',
+    queued: 'bg-warning',
+    sent: 'bg-info',
+    done: 'bg-success',
+    cancelled: 'bg-base-content/30',
   };
 
   const intentTone: Record<string, string> = {
-    fill: 'bg-success/10 text-success',
-    place: 'bg-info/10 text-info',
-    cancel: 'bg-base-content/5 text-base-content/60',
-    reward: 'bg-accent/15 text-accent',
-    withdraw: 'bg-error/10 text-error',
+    CREATE_LIMIT_ORDER: 'bg-info/10 text-info',
+    CANCEL_ORDER: 'bg-base-content/5 text-base-content/60',
+    SETTLE_ORDER: 'bg-success/10 text-success',
+    SKIP: 'bg-base-content/5 text-base-content/60',
   };
 
-  const ranges: Array<'1h' | '24h' | '7d' | '30d'> = ['1h', '24h', '7d', '30d'];
+  const formatNumber = (value: string | number, options: Intl.NumberFormatOptions = {}) => {
+    const number = typeof value === 'number' ? value : Number(value);
+
+    if (!Number.isFinite(number)) {
+      return String(value);
+    }
+
+    return new Intl.NumberFormat('en-US', options).format(number);
+  };
+
+  const formatTimestamp = (value?: string | null) => {
+    if (!value) {
+      return 'unavailable';
+    }
+
+    const date = new Date(value);
+
+    if (!Number.isFinite(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const errorMessage = (cause: unknown) =>
+    cause instanceof Error ? cause.message : 'Unable to load dashboard summary';
+
+  const safeDot = (status?: string | null) =>
+    statusDot[(status || 'unknown').toLowerCase()] || statusDot.unknown;
+
+  const statusLabel = (status?: string | null) => status || 'unknown';
+
+  const loadDashboard = async (range: DashboardRange = timeRange) => {
+    const initialLoad = summary === null;
+
+    loading = initialLoad;
+    refreshing = !initialLoad;
+    error = null;
+
+    try {
+      const next = await fetchDashboardSummary(range);
+
+      summary = next;
+      timeRange = next.range.key;
+    } catch (cause) {
+      error = errorMessage(cause);
+    } finally {
+      loading = false;
+      refreshing = false;
+    }
+  };
+
+  const selectRange = (range: DashboardRange) => {
+    if (refreshing) {
+      return;
+    }
+
+    timeRange = range;
+    void loadDashboard(range);
+  };
+
+  const refresh = () => {
+    if (refreshing) {
+      return;
+    }
+
+    void loadDashboard(timeRange);
+  };
+
+  onMount(() => {
+    void loadDashboard(timeRange);
+  });
+
+  const kpis = $derived.by(() => {
+    if (!summary) {
+      return [];
+    }
+
+    return [
+      {
+        key: 'capital',
+        label: 'total capital',
+        value: formatNumber(summary.kpis.totalCapital, { maximumFractionDigits: 8 }),
+        unit: 'units',
+      },
+      {
+        key: 'strategies',
+        label: 'active strategies',
+        value: `${formatNumber(summary.kpis.activeStrategies)} / ${formatNumber(summary.kpis.totalStrategies)}`,
+      },
+      {
+        key: 'orders',
+        label: 'open orders',
+        value: formatNumber(summary.kpis.openOrders),
+        unit: `${formatNumber(summary.kpis.trackedOrders)} tracked`,
+      },
+      {
+        key: 'intents',
+        label: 'pending intents',
+        value: formatNumber(summary.kpis.pendingIntents),
+        unit: `${summary.kpis.runtimeHealth} health`,
+      },
+    ];
+  });
+
+  const displayedStrategies = $derived(summary?.strategies.recent ?? []);
+
+  const displayedIntents = $derived(summary?.intents.recent ?? []);
+
+  const displayedOrders = $derived(summary?.orderFlow.recent ?? []);
+
+  const capitalRows = $derived(summary?.capital.byAsset ?? []);
+
+  const capitalTotal = $derived(Number(summary?.capital.total ?? 0));
+
+  const systemRows = $derived.by(() => {
+    if (!summary) {
+      return [];
+    }
+
+    const validationCounts = Object.entries(summary.exchanges.byValidationStatus)
+      .map(([status, count]) => `${count} ${status}`)
+      .join(' · ');
+
+    return [
+      {
+        key: 'health',
+        label: 'runtime health',
+        status: summary.health.status,
+        meta: `snapshot ${formatTimestamp(summary.health.timestamp)}`,
+      },
+      {
+        key: 'exchanges',
+        label: 'exchange accounts',
+        status: summary.exchanges.total > 0 ? 'ok' : 'unknown',
+        meta: validationCounts || 'no accounts returned',
+      },
+      {
+        key: 'reconciliation',
+        label: 'reconciliation',
+        status: summary.reconciliation.totalViolations > 0 ? 'failed' : 'ok',
+        meta: `${formatNumber(summary.reconciliation.totalViolations)} violations`,
+      },
+      {
+        key: 'runtime',
+        label: 'runtime metrics',
+        status: summary.runtime.stats.length > 0 || summary.runtime.recent.length > 0 ? 'ok' : 'unknown',
+        meta: `${formatNumber(summary.runtime.stats.length + summary.runtime.recent.length)} entries`,
+      },
+    ];
+  });
+
+  const isEmpty = $derived(
+    summary !== null &&
+      summary.kpis.totalStrategies === 0 &&
+      summary.kpis.trackedOrders === 0 &&
+      summary.intents.total === 0 &&
+      summary.capital.totalRows === 0 &&
+      summary.exchanges.total === 0,
+  );
 </script>
 
 <section class="space-y-6" data-testid="admin-dashboard-shell">
-  <!-- Header -->
   <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
     <div class="flex flex-col gap-1">
       <span class="text-xs font-medium text-base-content/50 capitalize tracking-wide">
@@ -53,18 +226,25 @@
 
     <div class="flex items-center gap-2">
       <div class="join">
-        {#each ranges as r (r)}
+        {#each DASHBOARD_RANGES as r (r)}
           <button
             type="button"
             class="btn btn-sm join-item border-base-300 bg-base-100 font-mono text-xs"
             class:btn-primary={timeRange === r}
-            onclick={() => (timeRange = r)}
+            disabled={refreshing}
+            aria-pressed={timeRange === r}
+            onclick={() => selectRange(r)}
           >
             {r}
           </button>
         {/each}
       </div>
-      <button type="button" class="btn btn-ghost btn-sm rounded-full gap-2 capitalize">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm rounded-full gap-2 capitalize"
+        disabled={loading || refreshing}
+        onclick={refresh}
+      >
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
@@ -79,239 +259,349 @@
             d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
           />
         </svg>
-        <span>refresh</span>
+        <span>{refreshing ? 'refreshing' : 'refresh'}</span>
       </button>
       <span class="hidden text-xs text-base-content/50 md:inline">
-        updated <span class="font-mono">{lastUpdated}</span>
+        updated <span class="font-mono">{summary ? formatTimestamp(summary.generatedAt) : 'pending'}</span>
       </span>
     </div>
   </div>
 
-  <!-- KPI row -->
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-    {#each kpis as kpi (kpi.key)}
-      <KpiCard
-        label={kpi.label}
-        value={kpi.value}
-        unit={kpi.unit}
-        deltaPct={kpi.deltaPct}
-        series={kpi.series}
-      />
-    {/each}
-  </div>
-
-  <!-- Strategy Health + Recent Intents -->
-  <div class="grid grid-cols-1 gap-4 xl:grid-cols-5">
-    <!-- Strategy Health (spans 3) -->
-    <div class="card border border-base-300 bg-base-100 shadow-none xl:col-span-3">
-      <div class="card-body gap-4 p-5">
-        <div class="flex items-center justify-between">
-          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-            strategy health
-          </span>
-          <button class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
-            view all →
-          </button>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr class="text-xs font-medium uppercase tracking-wide text-base-content/50 border-b border-base-300">
-                <th class="font-medium">strategy</th>
-                <th class="font-medium">status</th>
-                <th class="font-medium text-right">24h pnl</th>
-                <th class="font-medium text-right">inv. bps</th>
-                <th class="font-medium text-right">spread</th>
-                <th class="font-medium text-right">fills</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each strategies as s (s.id)}
-                <tr class="border-b border-base-300 hover:bg-neutral">
-                  <td>
-                    <div class="flex flex-col">
-                      <span class="text-sm font-medium text-base-content capitalize">{s.name}</span>
-                      <span class="text-xs text-base-content/50 capitalize">{s.exchange}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div class="flex items-center gap-2">
-                      <span class="h-1.5 w-1.5 rounded-full {statusDot[s.status]}"></span>
-                      <span class="text-xs text-base-content/70 capitalize">{s.status}</span>
-                    </div>
-                  </td>
-                  <td class="text-right">
-                    <span
-                      class="font-mono text-sm"
-                      class:text-success={s.pnl24hPositive && s.pnl24h !== '0.00'}
-                      class:text-error={!s.pnl24hPositive}
-                      class:text-base-content={s.pnl24h === '0.00'}
-                    >
-                      {s.pnl24h}
-                    </span>
-                  </td>
-                  <td class="text-right">
-                    <span
-                      class="font-mono text-sm"
-                      class:text-base-content={Math.abs(s.inventoryBps) < 30}
-                      class:text-warning={Math.abs(s.inventoryBps) >= 30 && Math.abs(s.inventoryBps) < 60}
-                      class:text-error={Math.abs(s.inventoryBps) >= 60}
-                    >
-                      {s.inventoryBps > 0 ? '+' : ''}{s.inventoryBps}
-                    </span>
-                  </td>
-                  <td class="text-right">
-                    <span class="font-mono text-sm text-base-content/80">
-                      {s.spreadBps === 0 ? '—' : s.spreadBps}
-                    </span>
-                  </td>
-                  <td class="text-right">
-                    <span class="font-mono text-sm text-base-content/80">{s.fillsToday}</span>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+  {#if loading}
+    <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="dashboard-loading">
+      <div class="card-body flex-row items-center gap-3 p-5">
+        <span class="loading loading-spinner loading-sm text-base-content/60"></span>
+        <span class="text-sm text-base-content/60 capitalize">loading backend dashboard summary</span>
       </div>
     </div>
-
-    <!-- Recent Intents (spans 2) -->
-    <div class="card border border-base-300 bg-base-100 shadow-none xl:col-span-2">
+  {:else if error}
+    <div class="card border border-error/30 bg-base-100 shadow-none" data-testid="dashboard-error">
       <div class="card-body gap-3 p-5">
-        <div class="flex items-center justify-between">
-          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-            recent intents
-          </span>
-          <span class="text-xs text-base-content/50 capitalize">live · last 8</span>
+        <span class="text-lg font-semibold text-base-content capitalize">dashboard summary unavailable</span>
+        <span class="text-sm text-base-content/60">{error}</span>
+        <div>
+          <button type="button" class="btn btn-sm btn-primary capitalize" onclick={refresh}>retry</button>
         </div>
-
-        <ul class="divide-y divide-base-300">
-          {#each intents as it (it.id)}
-            <li class="flex items-center gap-3 py-2.5">
-              <span class="font-mono text-xs text-base-content/50 w-16 shrink-0">{it.ts}</span>
-              <span
-                class="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider {intentTone[it.kind]}"
-              >
-                {it.kind}
-              </span>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5">
-                  {#if it.side}
-                    <span
-                      class="text-xs font-medium uppercase"
-                      class:text-success={it.side === 'buy'}
-                      class:text-error={it.side === 'sell'}
-                    >
-                      {it.side}
-                    </span>
-                  {/if}
-                  <span class="font-mono text-sm text-base-content">{it.symbol}</span>
-                  <span class="font-mono text-xs text-base-content/60">{it.qty}</span>
-                  {#if it.price}
-                    <span class="font-mono text-xs text-base-content/40">@ {it.price}</span>
-                  {/if}
-                </div>
-                <span class="text-xs text-base-content/50 capitalize">{it.exchange}</span>
-              </div>
-              <span class="h-1.5 w-1.5 rounded-full {statusDot[it.status]}"></span>
-            </li>
-          {/each}
-        </ul>
       </div>
     </div>
-  </div>
-
-  <!-- Capital Distribution + Order Flow -->
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-4 p-5">
-        <div class="flex items-center justify-between">
-          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-            capital by exchange
+  {:else if summary}
+    {#if isEmpty}
+      <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="dashboard-empty">
+        <div class="card-body gap-2 p-5">
+          <span class="text-lg font-semibold text-base-content capitalize">no dashboard activity yet</span>
+          <span class="text-sm text-base-content/60">
+            The backend summary returned zero strategies, orders, intents, capital rows, and exchange accounts for
+            {summary.range.key}.
           </span>
-          <span class="font-mono text-xs text-base-content/50">USD</span>
         </div>
-
-        <ul class="space-y-3">
-          {#each allocations as a (a.exchange)}
-            <li class="flex flex-col gap-1">
-              <div class="flex items-center justify-between">
-                <span class="text-sm text-base-content capitalize">{a.exchange}</span>
-                <div class="flex items-center gap-3">
-                  <span class="font-mono text-sm text-base-content">{a.amount.toLocaleString()}</span>
-                  <span class="font-mono text-xs text-base-content/50 w-12 text-right">{a.pct.toFixed(1)}%</span>
-                </div>
-              </div>
-              <div class="h-1.5 w-full overflow-hidden rounded-full bg-base-300">
-                <div class="h-full bg-base-content" style="width: {a.pct}%"></div>
-              </div>
-            </li>
-          {/each}
-        </ul>
       </div>
+    {/if}
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {#each kpis as kpi (kpi.key)}
+        <KpiCard label={kpi.label} value={kpi.value} unit={kpi.unit} deltaPct={0} series={[]} />
+      {/each}
     </div>
 
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-4 p-5">
-        <div class="flex items-center justify-between">
-          <div class="flex flex-col">
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-5">
+      <div class="card border border-base-300 bg-base-100 shadow-none xl:col-span-3">
+        <div class="card-body gap-4 p-5">
+          <div class="flex items-center justify-between">
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-              order flow
+              strategy health
             </span>
-            <span class="text-xs text-base-content/50 capitalize">orders / minute · last hour</span>
+            <a href="/trading/strategies" class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
+              view strategies →
+            </a>
           </div>
-          <div class="flex flex-col items-end">
-            <span class="font-mono text-2xl font-semibold text-base-content">92</span>
-            <span class="font-mono text-xs text-success">+14.8%</span>
-          </div>
-        </div>
 
-        <div class="-mx-1">
-          <Sparkline values={flowSeries} width={520} height={120} positive={true} />
+          {#if displayedStrategies.length === 0}
+            <div class="rounded-lg border border-base-300 p-4">
+              <span class="text-sm text-base-content/60">No strategy rows were returned by the backend summary.</span>
+            </div>
+          {:else}
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead>
+                  <tr class="border-b border-base-300 text-xs font-medium capitalize tracking-wide text-base-content/50">
+                    <th class="font-medium">strategy</th>
+                    <th class="font-medium">status</th>
+                    <th class="font-medium">definition</th>
+                    <th class="font-medium text-right">updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each displayedStrategies as strategy (strategy.strategyKey)}
+                    <tr class="border-b border-base-300 hover:bg-neutral">
+                      <td>
+                        <div class="flex flex-col">
+                          <span class="text-sm font-medium text-base-content">{strategy.strategyKey}</span>
+                          <span class="text-xs text-base-content/50 capitalize">{strategy.strategyType || 'type unavailable'}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="flex items-center gap-2">
+                          <span class="h-1.5 w-1.5 rounded-full {safeDot(strategy.status)}"></span>
+                          <span class="text-xs text-base-content/70 capitalize">{statusLabel(strategy.status)}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="text-sm text-base-content/70">{strategy.definitionName || strategy.strategyDefinitionId || 'unavailable'}</span>
+                      </td>
+                      <td class="text-right">
+                        <span class="font-mono text-xs text-base-content/60">{formatTimestamp(strategy.updatedAt)}</span>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
         </div>
+      </div>
 
-        <div class="grid grid-cols-3 gap-3 border-t border-base-300 pt-3">
-          <div class="flex flex-col">
-            <span class="text-xs text-base-content/50 capitalize">avg / min</span>
-            <span class="font-mono text-sm text-base-content">52.4</span>
+      <div class="card border border-base-300 bg-base-100 shadow-none xl:col-span-2">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
+              recent intents
+            </span>
+            <span class="text-xs text-base-content/50 capitalize">
+              backend · last {summary.limits.recentItems}
+            </span>
           </div>
-          <div class="flex flex-col">
-            <span class="text-xs text-base-content/50 capitalize">peak</span>
-            <span class="font-mono text-sm text-base-content">92</span>
-          </div>
-          <div class="flex flex-col">
-            <span class="text-xs text-base-content/50 capitalize">failed</span>
-            <span class="font-mono text-sm text-error">0.8%</span>
-          </div>
+
+          {#if displayedIntents.length === 0}
+            <div class="rounded-lg border border-base-300 p-4">
+              <span class="text-sm text-base-content/60">No recent intents were returned for {summary.range.key}.</span>
+            </div>
+          {:else}
+            <ul class="divide-y divide-base-300">
+              {#each displayedIntents as intent (intent.intentId)}
+                <li class="flex items-center gap-3 py-2.5">
+                  <span class="font-mono text-xs text-base-content/50 w-28 shrink-0">{formatTimestamp(intent.createdAt)}</span>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wider {intentTone[intent.type] || 'bg-base-content/5 text-base-content/60'}"
+                  >
+                    {intent.type}
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                      {#if intent.side}
+                        <span
+                          class="text-xs font-medium"
+                          class:text-success={intent.side.toLowerCase() === 'buy'}
+                          class:text-error={intent.side.toLowerCase() === 'sell'}
+                        >
+                          {intent.side}
+                        </span>
+                      {/if}
+                      <span class="font-mono text-sm text-base-content">{intent.pair}</span>
+                    </div>
+                    <span class="text-xs text-base-content/50 capitalize">
+                      {intent.exchange}{intent.accountLabel ? ` · ${intent.accountLabel}` : ''}
+                    </span>
+                  </div>
+                  <span class="h-1.5 w-1.5 rounded-full {safeDot(intent.status)}"></span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- System Status -->
-  <div class="card border border-base-300 bg-base-100 shadow-none">
-    <div class="card-body gap-4 p-5">
-      <div class="flex items-center justify-between">
-        <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-          system status
-        </span>
-        <span class="text-xs text-base-content/50">all systems operational</span>
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div class="card border border-base-300 bg-base-100 shadow-none">
+        <div class="card-body gap-4 p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
+              capital by asset
+            </span>
+            <a href="/trading/positions" class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
+              view positions →
+            </a>
+          </div>
+
+          {#if capitalRows.length === 0}
+            <div class="rounded-lg border border-base-300 p-4">
+              <span class="text-sm text-base-content/60">No capital rows were returned by the backend summary.</span>
+            </div>
+          {:else}
+            <ul class="space-y-3">
+              {#each capitalRows as asset (asset.asset)}
+                {@const amount = Number(asset.total)}
+                {@const pct = capitalTotal > 0 && Number.isFinite(amount) ? (amount / capitalTotal) * 100 : 0}
+                <li class="flex flex-col gap-1">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm text-base-content capitalize">{asset.asset}</span>
+                    <div class="flex items-center gap-3">
+                      <span class="font-mono text-sm text-base-content">{formatNumber(asset.total, { maximumFractionDigits: 8 })}</span>
+                      <span class="font-mono text-xs text-base-content/50 w-12 text-right">{pct.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <div class="h-1.5 w-full overflow-hidden rounded-full bg-base-300">
+                    <div class="h-full bg-base-content" style="width: {Math.max(0, Math.min(100, pct))}%"></div>
+                  </div>
+                  <span class="text-xs text-base-content/50">
+                    available {formatNumber(asset.available, { maximumFractionDigits: 8 })} · locked {formatNumber(asset.locked, { maximumFractionDigits: 8 })}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {#each system as s (s.key)}
-          <div class="flex items-start gap-3 rounded-lg border border-base-300 p-3">
-            <span class="mt-1 h-2 w-2 shrink-0 rounded-full {statusDot[s.status]}"></span>
-            <div class="flex min-w-0 flex-col">
-              <span class="text-sm font-medium text-base-content capitalize">{s.label}</span>
-              <span class="font-mono text-xs text-base-content/50 truncate">{s.meta}</span>
+      <div class="card border border-base-300 bg-base-100 shadow-none">
+        <div class="card-body gap-4 p-5">
+          <div class="flex items-center justify-between">
+            <div class="flex flex-col">
+              <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
+                order flow
+              </span>
+              <span class="text-xs text-base-content/50 capitalize">
+                backend tracked orders · {summary.range.key}
+              </span>
+            </div>
+            <a href="/trading/orders" class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
+              view orders →
+            </a>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div class="flex flex-col rounded-lg border border-base-300 p-3">
+              <span class="text-xs text-base-content/50 capitalize">tracked</span>
+              <span class="font-mono text-lg font-semibold text-base-content">{formatNumber(summary.orderFlow.total)}</span>
+            </div>
+            <div class="flex flex-col rounded-lg border border-base-300 p-3">
+              <span class="text-xs text-base-content/50 capitalize">trades</span>
+              <span class="font-mono text-lg font-semibold text-base-content">{formatNumber(summary.orderFlow.volume.tradeCount)}</span>
+            </div>
+            <div class="flex flex-col rounded-lg border border-base-300 p-3">
+              <span class="text-xs text-base-content/50 capitalize">notional</span>
+              <span class="font-mono text-lg font-semibold text-base-content">
+                {formatNumber(summary.orderFlow.volume.notionalVolume, { maximumFractionDigits: 8 })}
+              </span>
+            </div>
+            <div class="flex flex-col rounded-lg border border-base-300 p-3">
+              <span class="text-xs text-base-content/50 capitalize">open</span>
+              <span class="font-mono text-lg font-semibold text-base-content">{formatNumber(summary.kpis.openOrders)}</span>
             </div>
           </div>
-        {/each}
+
+          {#if displayedOrders.length === 0}
+            <div class="rounded-lg border border-base-300 p-4">
+              <span class="text-sm text-base-content/60">No recent tracked orders were returned by the backend summary.</span>
+            </div>
+          {:else}
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead>
+                  <tr class="border-b border-base-300 text-xs font-medium capitalize tracking-wide text-base-content/50">
+                    <th class="font-medium">order</th>
+                    <th class="font-medium">pair</th>
+                    <th class="font-medium">side</th>
+                    <th class="font-medium text-right">filled</th>
+                    <th class="font-medium">status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each displayedOrders.slice(0, 5) as order (order.orderId)}
+                    <tr class="border-b border-base-300 hover:bg-neutral">
+                      <td><span class="font-mono text-xs text-base-content/70">{order.orderId}</span></td>
+                      <td><span class="font-mono text-sm text-base-content">{order.pair}</span></td>
+                      <td>
+                        <span
+                          class="text-xs font-medium"
+                          class:text-success={order.side.toLowerCase() === 'buy'}
+                          class:text-error={order.side.toLowerCase() === 'sell'}
+                        >
+                          {order.side}
+                        </span>
+                      </td>
+                      <td class="text-right">
+                        <span class="font-mono text-xs text-base-content/70">{order.filledQty} / {order.qty}</span>
+                      </td>
+                      <td>
+                        <div class="flex items-center gap-2">
+                          <span class="h-1.5 w-1.5 rounded-full {safeDot(order.status)}"></span>
+                          <span class="text-xs text-base-content/70 capitalize">{order.status}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
-  </div>
 
+    <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card-body gap-4 p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
+            system status
+          </span>
+          <a href="/system/health" class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
+            view health →
+          </a>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {#each systemRows as row (row.key)}
+            <div class="flex items-start gap-3 rounded-lg border border-base-300 p-3">
+              <span class="mt-1 h-2 w-2 shrink-0 rounded-full {safeDot(row.status)}"></span>
+              <div class="flex min-w-0 flex-col">
+                <span class="text-sm font-medium text-base-content capitalize">{row.label}</span>
+                <span class="font-mono text-xs text-base-content/50 truncate">{row.meta}</span>
+              </div>
+            </div>
+          {/each}
+        </div>
+
+        {#if summary.health.issues.length > 0}
+          <div class="rounded-lg border border-base-300 p-4">
+            <span class="text-sm font-medium text-base-content capitalize">reported health issues</span>
+            <ul class="mt-2 space-y-1">
+              {#each summary.health.issues as issue, index (index)}
+                <li class="font-mono text-xs text-base-content/60">{JSON.stringify(issue)}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div class="card border border-base-300 bg-base-100 shadow-none">
+        <div class="card-body gap-2 p-5">
+          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">range window</span>
+          <span class="font-mono text-xs text-base-content/60">{summary.range.startedAt}</span>
+          <span class="font-mono text-xs text-base-content/60">{summary.range.endedAt}</span>
+        </div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 shadow-none">
+        <div class="card-body gap-2 p-5">
+          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">bounded reads</span>
+          <span class="text-sm text-base-content/60">
+            {formatNumber(summary.capital.scannedRows)} / {formatNumber(summary.capital.totalRows)} capital rows scanned
+          </span>
+          <span class="text-sm text-base-content/60">
+            {formatNumber(summary.exchanges.scannedRows)} / {formatNumber(summary.exchanges.total)} exchange accounts scanned
+          </span>
+        </div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 shadow-none">
+        <div class="card-body gap-2 p-5">
+          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">backend limits</span>
+          <span class="text-sm text-base-content/60">recent rows: {summary.limits.recentItems}</span>
+          <span class="text-sm text-base-content/60">capital scan: {summary.limits.capitalScanRows}</span>
+          <span class="text-sm text-base-content/60">exchange scan: {summary.limits.apiKeyScanRows}</span>
+        </div>
+      </div>
+    </div>
+  {/if}
 </section>
