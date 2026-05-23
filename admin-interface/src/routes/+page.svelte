@@ -519,7 +519,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each displayedOrders.slice(0, 5) as order (order.orderId)}
+                  {#each displayedOrders.slice(0, 5) as order, index (`${order.orderId}-${index}`)}
                     <tr class="border-b border-base-300 hover:bg-neutral">
                       <td><span class="font-mono text-xs text-base-content/70">{order.orderId}</span></td>
                       <td><span class="font-mono text-sm text-base-content">{order.pair}</span></td>
