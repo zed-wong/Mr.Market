@@ -1,197 +1,466 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
+  import {
+    AUDIT_STATUSES,
+    fetchAdminSystemAudit,
+    type AdminAuditLogEntry,
+    type AdminAuditStatus,
+    type AdminSystemAuditResponse,
+  } from '$lib/helpers/api/system';
 
-  type Status = 'ok' | 'denied' | 'failed';
-  type Action = 'create' | 'update' | 'delete' | 'login' | 'mfa' | 'rotate' | 'pause' | 'resume' | 'approve';
+  const limitOptions = [25, 50, 100, 200];
+  const statuses: Array<'all' | AdminAuditStatus> = ['all', ...AUDIT_STATUSES];
 
-  interface AuditEntry {
-    id: string;
-    ts: string;
-    actor: string;
-    actorRole: string;
-    action: Action;
-    resource: string;
-    resourceId: string;
-    diff?: { field: string; before: string; after: string }[];
-    ip: string;
-    status: Status;
-  }
-
-  const audit: AuditEntry[] = [
-    { id: 'a01', ts: '2026-05-17 11:58:22', actor: 'alice@mr.market', actorRole: 'admin', action: 'pause', resource: 'strategy', resourceId: 'mm-usdc-usdt', ip: '10.0.0.12', status: 'ok',
-      diff: [{ field: 'status', before: 'healthy', after: 'paused' }] },
-    { id: 'a02', ts: '2026-05-17 11:42:01', actor: 'bob@mr.market', actorRole: 'operator', action: 'update', resource: 'strategy', resourceId: 'mm-btc-usdt',
-      diff: [{ field: 'spread_bps', before: '5', after: '6' }, { field: 'max_inventory_bps', before: '40', after: '60' }],
-      ip: '10.0.0.27', status: 'ok' },
-    { id: 'a03', ts: '2026-05-17 11:30:55', actor: 'system', actorRole: 'system', action: 'rotate', resource: 'api_key', resourceId: 'ak_binance_prod', ip: '127.0.0.1', status: 'ok' },
-    { id: 'a04', ts: '2026-05-17 11:14:08', actor: 'carol@mr.market', actorRole: 'viewer', action: 'login', resource: 'session', resourceId: 's_91022', ip: '203.0.113.42', status: 'ok' },
-    { id: 'a05', ts: '2026-05-17 10:58:30', actor: 'unknown', actorRole: '—', action: 'login', resource: 'session', resourceId: '—', ip: '198.51.100.7', status: 'denied' },
-    { id: 'a06', ts: '2026-05-17 10:32:11', actor: 'alice@mr.market', actorRole: 'admin', action: 'create', resource: 'role', resourceId: 'operator-readonly',
-      diff: [{ field: 'permissions', before: '—', after: 'strategy:read,positions:read' }],
-      ip: '10.0.0.12', status: 'ok' },
-    { id: 'a07', ts: '2026-05-17 09:48:02', actor: 'dave@mr.market', actorRole: 'admin', action: 'delete', resource: 'api_key', resourceId: 'ak_test_okx_dev',
-      ip: '10.0.0.91', status: 'ok' },
-    { id: 'a08', ts: '2026-05-17 09:22:14', actor: 'bob@mr.market', actorRole: 'operator', action: 'approve', resource: 'withdrawal', resourceId: 'w_01HX0014',
-      diff: [{ field: 'amount', before: '—', after: '12,400 USDT' }, { field: 'destination', before: '—', after: 'mixin:7000104242' }],
-      ip: '10.0.0.27', status: 'ok' },
-    { id: 'a09', ts: '2026-05-17 09:01:50', actor: 'alice@mr.market', actorRole: 'admin', action: 'mfa', resource: 'user', resourceId: 'carol@mr.market', ip: '10.0.0.12', status: 'ok' },
-    { id: 'a10', ts: '2026-05-17 08:42:18', actor: 'system', actorRole: 'system', action: 'update', resource: 'config', resourceId: 'reconciliation.interval',
-      diff: [{ field: 'value', before: '60s', after: '30s' }],
-      ip: '127.0.0.1', status: 'ok' },
-    { id: 'a11', ts: '2026-05-17 08:11:00', actor: 'eve@mr.market', actorRole: 'viewer', action: 'update', resource: 'strategy', resourceId: 'mm-eth-usdt', ip: '198.51.100.91', status: 'denied' },
-  ];
-
-  const statusTone: Record<Status, string> = {
-    ok: 'bg-success/10 text-success',
+  const statusTone: Record<AdminAuditStatus, string> = {
+    success: 'bg-success/10 text-success',
     denied: 'bg-warning/10 text-warning',
-    failed: 'bg-error/10 text-error',
+    error: 'bg-error/10 text-error',
   };
 
-  const actionTone: Record<Action, string> = {
-    create:  'bg-success/10 text-success',
-    update:  'bg-info/10 text-info',
-    delete:  'bg-error/10 text-error',
-    login:   'bg-base-content/5 text-base-content/70',
-    mfa:     'bg-accent/15 text-accent',
-    rotate:  'bg-info/10 text-info',
-    pause:   'bg-warning/10 text-warning',
-    resume:  'bg-success/10 text-success',
-    approve: 'bg-success/10 text-success',
+  const actionTone: Record<string, string> = {
+    login: 'bg-base-content/5 text-base-content/70',
+    logout: 'bg-base-content/5 text-base-content/70',
+    session: 'bg-info/10 text-info',
+    update: 'bg-info/10 text-info',
+    reset: 'bg-warning/10 text-warning',
+    create: 'bg-success/10 text-success',
+    delete: 'bg-error/10 text-error',
   };
 
+  let response = $state<AdminSystemAuditResponse | null>(null);
   let actorFilter = $state('');
-  let statusFilter = $state<'all' | Status>('all');
-  let resourceFilter = $state<'all' | string>('all');
+  let actionFilter = $state('');
+  let resourceFilter = $state('');
+  let statusFilter = $state<'all' | AdminAuditStatus>('all');
+  let fromFilter = $state('');
+  let toFilter = $state('');
+  let page = $state(1);
+  let limit = $state(50);
+  let loading = $state(true);
+  let refreshing = $state(false);
+  let exporting = $state(false);
+  let verifying = $state(false);
+  let actionMessage = $state<string | null>(null);
+  let error = $state<string | null>(null);
   let expanded = $state<Record<string, boolean>>({});
 
-  const resources = ['all', ...Array.from(new Set(audit.map((a) => a.resource)))];
-  const statuses: Array<'all' | Status> = ['all', 'ok', 'denied', 'failed'];
+  const rows = $derived(response?.entries ?? []);
 
-  let filtered = $derived(
-    audit.filter(
-      (a) =>
-        (actorFilter === '' || a.actor.toLowerCase().includes(actorFilter.toLowerCase())) &&
-        (statusFilter === 'all' || a.status === statusFilter) &&
-        (resourceFilter === 'all' || a.resource === resourceFilter),
-    ),
-  );
+  const formatNumber = (value: number | string | undefined) => {
+    const number = Number(value ?? 0);
 
-  const toggle = (id: string) => (expanded = { ...expanded, [id]: !expanded[id] });
+    if (!Number.isFinite(number)) {
+      return String(value ?? '0');
+    }
+
+    return new Intl.NumberFormat('en-US').format(number);
+  };
+
+  const formatTimestamp = (value?: string | null) => {
+    if (!value) {
+      return 'unavailable';
+    }
+
+    const date = new Date(value);
+
+    if (!Number.isFinite(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const errorMessage = (cause: unknown) =>
+    cause instanceof Error ? cause.message : 'Unable to load audit records';
+
+  const toBackendDate = (value: string) => {
+    if (!value.trim()) {
+      return undefined;
+    }
+
+    const parsed = new Date(value);
+
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : value.trim();
+  };
+
+  const jsonPreview = (value: unknown) => {
+    if (value === null || value === undefined) {
+      return 'null';
+    }
+
+    return JSON.stringify(value, null, 2);
+  };
+
+  const hasDetails = (record: AdminAuditLogEntry) =>
+    record.metadata !== null || record.diff !== null || record.requestContext !== null;
+
+  const toggle = (id: string) => {
+    expanded = { ...expanded, [id]: !expanded[id] };
+  };
+
+  const loadAudit = async (options: { exportAudit?: boolean; integrity?: boolean } = {}) => {
+    const initialLoad = response === null && !options.exportAudit && !options.integrity;
+
+    if (options.exportAudit) {
+      exporting = true;
+    } else if (options.integrity) {
+      verifying = true;
+    } else {
+      loading = initialLoad;
+      refreshing = !initialLoad;
+      error = null;
+    }
+    actionMessage = null;
+
+    try {
+      const next = await fetchAdminSystemAudit({
+        actor: actorFilter,
+        action: actionFilter,
+        resource: resourceFilter,
+        status: statusFilter,
+        from: toBackendDate(fromFilter),
+        to: toBackendDate(toFilter),
+        page,
+        limit,
+        exportAudit: options.exportAudit,
+        integrity: options.integrity,
+      });
+
+      response = next;
+      page = next.pagination.page;
+      limit = next.pagination.limit;
+
+      if (options.exportAudit) {
+        const content = next.export?.content ?? '';
+        const blob = new Blob([content], { type: next.export?.format ?? 'application/x-ndjson' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.download = `admin-audit-${new Date(next.generatedAt).toISOString()}.ndjson`;
+        link.click();
+        URL.revokeObjectURL(url);
+        actionMessage = `Exported ${formatNumber(next.pagination.returned)} redacted audit records (${formatNumber(next.export?.byteLength ?? 0)} bytes).`;
+      }
+
+      if (options.integrity) {
+        actionMessage = next.integrity
+          ? `Verified ${formatNumber(next.integrity.checked)} records; chain valid: ${next.integrity.valid ? 'yes' : 'no'}.`
+          : 'Integrity verification response was unavailable.';
+      }
+    } catch (cause) {
+      if (options.exportAudit || options.integrity) {
+        actionMessage = errorMessage(cause);
+      } else {
+        error = errorMessage(cause);
+      }
+    } finally {
+      loading = false;
+      refreshing = false;
+      exporting = false;
+      verifying = false;
+    }
+  };
+
+  const applyFilters = () => {
+    page = 1;
+    void loadAudit();
+  };
+
+  const resetFilters = () => {
+    actorFilter = '';
+    actionFilter = '';
+    resourceFilter = '';
+    statusFilter = 'all';
+    fromFilter = '';
+    toFilter = '';
+    page = 1;
+    void loadAudit();
+  };
+
+  const changeLimit = () => {
+    page = 1;
+    void loadAudit();
+  };
+
+  const goToPage = (next: number) => {
+    if (!response || next < 1 || (next === page) || (next > page && !response.pagination.hasMore)) {
+      return;
+    }
+
+    page = next;
+    void loadAudit();
+  };
+
+  onMount(() => {
+    void loadAudit();
+  });
 </script>
 
-<section class="space-y-6">
+<section class="space-y-6" data-testid="system-audit-page">
   <PageHeader
     eyebrow="system"
     title="audit log"
-    subtitle="Immutable record of every administrative action. Tamper-evident, retained 365 days."
+    subtitle="Persisted append-only admin audit records with bounded filters, redacted export, and read-only integrity verification."
   >
     {#snippet actions()}
-      <button class="btn btn-ghost btn-sm rounded-full capitalize">export csv</button>
-      <button class="btn btn-ghost btn-sm rounded-full capitalize">verify chain</button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm rounded-full capitalize"
+        disabled={loading || refreshing || exporting || verifying}
+        onclick={() => void loadAudit({ exportAudit: true })}
+      >{exporting ? 'exporting' : 'export bounded'}</button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm rounded-full capitalize"
+        disabled={loading || refreshing || exporting || verifying}
+        onclick={() => void loadAudit({ integrity: true })}
+      >{verifying ? 'verifying' : 'verify chain'}</button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm rounded-full capitalize"
+        disabled={loading || refreshing || exporting || verifying}
+        onclick={() => void loadAudit()}
+      >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>
 
-  <!-- Filters -->
+  <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+    <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card-body gap-1 p-4">
+        <span class="text-xs text-base-content/60 capitalize">matching records</span>
+        <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.total)}</span>
+      </div>
+    </div>
+    <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card-body gap-1 p-4">
+        <span class="text-xs text-base-content/60 capitalize">returned</span>
+        <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.returned)}</span>
+      </div>
+    </div>
+    <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card-body gap-1 p-4">
+        <span class="text-xs text-base-content/60 capitalize">page</span>
+        <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.page ?? page)}</span>
+      </div>
+    </div>
+    <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card-body gap-1 p-4">
+        <span class="text-xs text-base-content/60 capitalize">updated</span>
+        <span class="font-mono text-sm font-semibold text-base-content">{formatTimestamp(response?.generatedAt)}</span>
+      </div>
+    </div>
+  </div>
+
   <div class="card border border-base-300 bg-base-100 shadow-none">
     <div class="card-body gap-4 p-5">
       <div class="flex flex-wrap items-center gap-3">
         <input
           type="text"
-          placeholder="filter actor…"
-          class="input input-sm input-bordered border-base-300 bg-base-100 min-w-[200px] font-mono text-xs"
+          placeholder="actor exact filter…"
+          class="input input-sm input-bordered min-w-[180px] border-base-300 bg-base-100 font-mono text-xs"
+          maxlength={response?.limits.maxFilterLength ?? 120}
           bind:value={actorFilter}
+          onkeydown={(event) => event.key === 'Enter' && applyFilters()}
         />
-
-        <select class="select select-sm select-bordered border-base-300 bg-base-100 capitalize" bind:value={resourceFilter}>
-          {#each resources as r (r)}
-            <option value={r}>{r === 'all' ? 'all resources' : r}</option>
-          {/each}
-        </select>
-
+        <input
+          type="text"
+          placeholder="action exact filter…"
+          class="input input-sm input-bordered min-w-[160px] border-base-300 bg-base-100 font-mono text-xs"
+          maxlength={response?.limits.maxFilterLength ?? 120}
+          bind:value={actionFilter}
+          onkeydown={(event) => event.key === 'Enter' && applyFilters()}
+        />
+        <input
+          type="text"
+          placeholder="resource exact filter…"
+          class="input input-sm input-bordered min-w-[170px] border-base-300 bg-base-100 font-mono text-xs"
+          maxlength={response?.limits.maxFilterLength ?? 120}
+          bind:value={resourceFilter}
+          onkeydown={(event) => event.key === 'Enter' && applyFilters()}
+        />
         <div class="join">
-          {#each statuses as s (s)}
+          {#each statuses as status (status)}
             <button
               type="button"
               class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={statusFilter === s}
-              onclick={() => (statusFilter = s)}
-            >
-              {s}
-            </button>
+              class:btn-primary={statusFilter === status}
+              disabled={loading || refreshing}
+              onclick={() => {
+                statusFilter = status;
+                applyFilters();
+              }}
+            >{status}</button>
           {/each}
         </div>
-
-        <span class="ml-auto font-mono text-xs text-base-content/50">{filtered.length} / {audit.length}</span>
+        <input
+          type="datetime-local"
+          class="input input-sm input-bordered border-base-300 bg-base-100 font-mono text-xs"
+          bind:value={fromFilter}
+          aria-label="from timestamp"
+        />
+        <input
+          type="datetime-local"
+          class="input input-sm input-bordered border-base-300 bg-base-100 font-mono text-xs"
+          bind:value={toFilter}
+          aria-label="to timestamp"
+        />
+        <button type="button" class="btn btn-sm btn-ghost rounded-full capitalize" disabled={loading || refreshing} onclick={applyFilters}>filter</button>
+        <select
+          class="select select-sm select-bordered border-base-300 bg-base-100 font-mono text-xs"
+          bind:value={limit}
+          disabled={loading || refreshing}
+          onchange={changeLimit}
+        >
+          {#each limitOptions as option (option)}
+            <option value={option}>{option}</option>
+          {/each}
+        </select>
       </div>
 
-      <div class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr class="border-b border-base-300 text-xs uppercase tracking-wide text-base-content/50">
-              <th class="font-medium">timestamp</th>
-              <th class="font-medium">actor</th>
-              <th class="font-medium">action</th>
-              <th class="font-medium">resource</th>
-              <th class="font-medium">ip</th>
-              <th class="font-medium">status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each filtered as a (a.id)}
-              <tr class="border-b border-base-300 hover:bg-neutral">
-                <td class="font-mono text-xs text-base-content/80">{a.ts}</td>
-                <td>
-                  <div class="flex flex-col">
-                    <span class="font-mono text-sm text-base-content">{a.actor}</span>
-                    <span class="text-xs text-base-content/50 capitalize">{a.actorRole}</span>
-                  </div>
-                </td>
-                <td>
-                  <span class="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider {actionTone[a.action]}">
-                    {a.action}
-                  </span>
-                </td>
-                <td>
-                  <div class="flex flex-col">
-                    <span class="text-sm text-base-content capitalize">{a.resource}</span>
-                    <span class="font-mono text-xs text-base-content/50">{a.resourceId}</span>
-                  </div>
-                </td>
-                <td class="font-mono text-xs text-base-content/70">{a.ip}</td>
-                <td>
-                  <span class="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider {statusTone[a.status]}">
-                    {a.status}
-                  </span>
-                </td>
-                <td class="text-right">
-                  {#if a.diff && a.diff.length > 0}
-                    <button class="btn btn-ghost btn-xs rounded-full text-base-content/60 capitalize" onclick={() => toggle(a.id)}>
-                      {expanded[a.id] ? 'hide' : 'diff'}
-                    </button>
-                  {/if}
-                </td>
-              </tr>
-              {#if expanded[a.id] && a.diff && a.diff.length > 0}
-                <tr class="bg-neutral border-b border-base-300">
-                  <td colspan="7" class="p-4">
-                    <div class="flex flex-col gap-2">
-                      <span class="text-xs text-base-content/50 uppercase tracking-wider">changes</span>
-                      {#each a.diff as d (d.field)}
-                        <div class="grid grid-cols-3 items-center gap-3 rounded-md border border-base-300 bg-base-100 p-2">
-                          <span class="font-mono text-xs text-base-content/70">{d.field}</span>
-                          <span class="font-mono text-xs text-error line-through">{d.before}</span>
-                          <span class="font-mono text-xs text-success">{d.after}</span>
-                        </div>
-                      {/each}
-                    </div>
-                  </td>
+      {#if loading}
+        <div class="flex items-center gap-3 rounded-lg border border-base-300 p-4" data-testid="audit-loading">
+          <span class="loading loading-spinner loading-sm text-base-content/60"></span>
+          <span class="text-sm text-base-content/60 capitalize">loading persisted audit records</span>
+        </div>
+      {:else if error}
+        <div class="rounded-lg border border-error/30 p-4" data-testid="audit-error">
+          <div class="flex flex-col gap-3">
+            <span class="text-sm font-semibold text-base-content capitalize">audit unavailable</span>
+            <span class="text-sm text-base-content/60">{error}</span>
+            <div class="flex gap-2">
+              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadAudit()}>retry</button>
+              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>reset filters</button>
+            </div>
+          </div>
+        </div>
+      {:else if response}
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="font-mono text-xs text-base-content/50">
+            page {response.pagination.page} · {response.pagination.returned} of {response.pagination.total}
+          </span>
+          <span class="text-xs text-base-content/50 capitalize">
+            backend filters · actor {response.filters.actor || 'all'} · resource {response.filters.resource || 'all'} · status {response.filters.status || 'all'}
+          </span>
+          <span class="text-xs text-base-content/50">max {response.limits.maxLimit} records per page</span>
+          {#if refreshing}
+            <span class="loading loading-spinner loading-xs text-base-content/50"></span>
+          {/if}
+        </div>
+
+        {#if actionMessage}
+          <div class="rounded-lg border border-base-300 p-3">
+            <span class="text-sm text-base-content/70">{actionMessage}</span>
+          </div>
+        {/if}
+
+        {#if rows.length === 0}
+          <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 py-12 text-center" data-testid="audit-empty">
+            <span class="text-sm font-semibold text-base-content capitalize">no persisted audit records returned</span>
+            <span class="text-sm text-base-content/60">The audit API returned no records for the current filters; no demo audit rows are shown.</span>
+            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>reset filters</button>
+          </div>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr class="border-b border-base-300 text-xs capitalize tracking-wide text-base-content/50">
+                  <th class="font-medium">timestamp</th>
+                  <th class="font-medium">actor</th>
+                  <th class="font-medium">action</th>
+                  <th class="font-medium">resource</th>
+                  <th class="font-medium">request context</th>
+                  <th class="font-medium">status</th>
+                  <th class="font-medium">hash</th>
+                  <th></th>
                 </tr>
-              {/if}
-            {/each}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {#each rows as record (record.id)}
+                  <tr class="border-b border-base-300 hover:bg-neutral">
+                    <td class="font-mono text-xs text-base-content/80">{formatTimestamp(record.timestamp)}</td>
+                    <td class="font-mono text-xs text-base-content">{record.actor}</td>
+                    <td>
+                      <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider {actionTone[record.action] || 'bg-base-content/5 text-base-content/60'}">
+                        {record.action}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="flex flex-col">
+                        <span class="font-mono text-xs text-base-content">{record.resource}</span>
+                        <span class="font-mono text-[10px] text-base-content/40">{record.id}</span>
+                      </div>
+                    </td>
+                    <td class="max-w-xs truncate font-mono text-xs text-base-content/60" title={jsonPreview(record.requestContext)}>{jsonPreview(record.requestContext)}</td>
+                    <td>
+                      <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider {statusTone[record.status]}">
+                        {record.status}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="font-mono text-[10px] text-base-content/50">{record.contentHash.slice(0, 12)}…</span>
+                    </td>
+                    <td class="text-right">
+                      <button
+                        class="btn btn-ghost btn-xs rounded-full text-base-content/60 capitalize"
+                        disabled={!hasDetails(record)}
+                        onclick={() => toggle(record.id)}
+                      >{expanded[record.id] ? 'hide' : 'details'}</button>
+                    </td>
+                  </tr>
+                  {#if expanded[record.id]}
+                    <tr class="border-b border-base-300 bg-neutral">
+                      <td colspan="8" class="p-4">
+                        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                          <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+                            <span class="text-xs text-base-content/50 capitalize">metadata</span>
+                            <pre class="mt-2 whitespace-pre-wrap break-all font-mono text-xs text-base-content/70">{jsonPreview(record.metadata)}</pre>
+                          </div>
+                          <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+                            <span class="text-xs text-base-content/50 capitalize">diff</span>
+                            <pre class="mt-2 whitespace-pre-wrap break-all font-mono text-xs text-base-content/70">{jsonPreview(record.diff)}</pre>
+                          </div>
+                          <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+                            <span class="text-xs text-base-content/50 capitalize">request context</span>
+                            <pre class="mt-2 whitespace-pre-wrap break-all font-mono text-xs text-base-content/70">{jsonPreview(record.requestContext)}</pre>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  {/if}
+                {/each}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <span class="text-xs text-base-content/50">
+              Export and integrity checks use authenticated read-only backend responses for the same bounded dataset.
+            </span>
+            <div class="join">
+              <button
+                type="button"
+                class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
+                disabled={page <= 1 || refreshing}
+                onclick={() => goToPage(page - 1)}
+              >previous</button>
+              <button
+                type="button"
+                class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
+                disabled={!response.pagination.hasMore || refreshing}
+                onclick={() => goToPage(page + 1)}
+              >next</button>
+            </div>
+          </div>
+        {/if}
+      {/if}
     </div>
   </div>
 </section>
