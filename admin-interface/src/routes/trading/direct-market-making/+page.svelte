@@ -1,8 +1,6 @@
 <script lang="ts">
     import BigNumber from "bignumber.js";
     import { onDestroy, onMount } from "svelte";
-    import { invalidate } from "$app/navigation";
-    import { page } from "$app/stores";
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
     import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
@@ -11,17 +9,21 @@
         type AdminErrorState,
     } from "$lib/helpers/admin/common-states";
 
+    import { getAllAPIKeys } from "$lib/helpers/mrm/admin/exchanges";
     import {
+        getDirectWalletStatus,
         getDirectOrderStatus,
         joinAdminCampaign,
         listAdminCampaigns,
         listDirectOrders,
+        listDirectStrategies,
         removeDirectOrder,
         resumeDirectOrder,
         startDirectOrder,
         stopDirectOrder,
     } from "$lib/helpers/mrm/admin/direct-market-making";
     import { getCcxtExchangeMarkets } from "$lib/helpers/mrm/admin/growdata";
+    import { getGrowBasicInfoStrict } from "$lib/helpers/mrm/grow";
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type {
@@ -98,43 +100,101 @@
     let pageLoading = true;
     let pageLoadError: AdminErrorState | null = null;
     let supportingLoadErrors: string[] = [];
+    let pageLoadRequestId = 0;
 
     $: pairs = growInfo?.market_making?.pairs || [];
 
-    async function resolvePageData() {
-        pageLoading = true;
+    const DIRECT_MM_SESSION_ERROR =
+        "Session expired. Sign in again before viewing direct market-making operations.";
+
+    async function settle<T>(task: Promise<T>, fallback: T) {
         try {
-            const data = $page.data;
-            const [gInfo, strats, keys, orders, camps, wallet] =
-                await Promise.all([
-                    data.growInfo,
-                    data.strategies,
-                    data.apiKeys,
-                    data.directOrders,
-                    data.campaigns,
-                    data.walletStatus,
-                ]);
-            growInfo = gInfo || null;
-            strategies = strats || [];
-            apiKeys = keys || [];
-            initialOrders = orders || [];
-            initialCampaigns = camps || [];
-            walletStatus = wallet || { configured: false, address: null };
-            pageLoadError = data.directOrdersError
+            return { value: await task, error: null };
+        } catch (cause) {
+            return {
+                value: fallback,
+                error:
+                    cause instanceof Error
+                        ? cause.message
+                        : "Direct market-making data failed to load",
+            };
+        }
+    }
+
+    function clearPageData() {
+        growInfo = null;
+        strategies = [];
+        apiKeys = [];
+        initialOrders = [];
+        initialCampaigns = [];
+        walletStatus = { configured: false, address: null };
+        pageLoadError = null;
+        supportingLoadErrors = [];
+    }
+
+    async function loadPageData(options: { showLoading?: boolean } = {}) {
+        const requestId = ++pageLoadRequestId;
+        const showLoading = options.showLoading ?? true;
+        const token = getToken();
+
+        if (!token) {
+            clearPageData();
+            pageLoadError = classifyAdminError(
+                new Error(DIRECT_MM_SESSION_ERROR),
+                "Direct market-making orders failed to load",
+            );
+            pageLoading = false;
+            return;
+        }
+
+        if (showLoading) {
+            pageLoading = true;
+            clearPageData();
+        } else {
+            pageLoadError = null;
+            supportingLoadErrors = [];
+        }
+
+        try {
+            const [gInfo, strats, keys, orders, camps, wallet] = await Promise.all([
+                settle(getGrowBasicInfoStrict(token), null),
+                settle(listDirectStrategies(token), []),
+                settle(getAllAPIKeys(token), []),
+                settle(listDirectOrders(token), []),
+                settle(listAdminCampaigns(token), []),
+                settle(getDirectWalletStatus(token), {
+                    configured: false,
+                    address: null,
+                }),
+            ]);
+
+            if (requestId !== pageLoadRequestId) {
+                return;
+            }
+
+            growInfo = gInfo.value || null;
+            strategies = strats.value || [];
+            apiKeys = keys.value || [];
+            initialOrders = orders.value || [];
+            initialCampaigns = camps.value || [];
+            walletStatus = wallet.value || { configured: false, address: null };
+            pageLoadError = orders.error
                 ? classifyAdminError(
-                      new Error(String(data.directOrdersError)),
+                      new Error(String(orders.error)),
                       "Direct market-making orders failed to load",
                   )
                 : null;
             supportingLoadErrors = [
-                data.growInfoError ? `exchange configuration: ${data.growInfoError}` : "",
-                data.strategiesError ? `strategies: ${data.strategiesError}` : "",
-                data.apiKeysError ? `API keys: ${data.apiKeysError}` : "",
-                data.campaignsError ? `campaigns: ${data.campaignsError}` : "",
-                data.walletStatusError ? `wallet: ${data.walletStatusError}` : "",
+                gInfo.error ? `exchange configuration: ${gInfo.error}` : "",
+                strats.error ? `strategies: ${strats.error}` : "",
+                keys.error ? `API keys: ${keys.error}` : "",
+                camps.error ? `campaigns: ${camps.error}` : "",
+                wallet.error ? `wallet: ${wallet.error}` : "",
             ].filter(Boolean);
         } finally {
-            pageLoading = false;
+            if (requestId === pageLoadRequestId) {
+                pageLoading = false;
+            }
         }
     }
 
@@ -157,14 +217,12 @@
     }
 
     onMount(() => {
-        resolvePageData();
+        void loadPageData();
         pageRefreshTimer = setInterval(
             silentRefresh,
             PAGE_AUTO_REFRESH_INTERVAL_MS,
         );
     });
-
-    $: if ($page.data) resolvePageData();
 
     let orders = initialOrders;
     let campaigns = initialCampaigns;
@@ -315,7 +373,7 @@
     }
 
     async function refreshPage() {
-        await invalidate("admin:market-making:direct");
+        await loadPageData();
     }
 
     function isOrderStoppable(order: DirectOrderSummary): boolean {
@@ -851,6 +909,7 @@
     }
 
     onDestroy(() => {
+        pageLoadRequestId += 1;
         stopOrderDetailsPolling();
         if (pageRefreshTimer) {
             clearInterval(pageRefreshTimer);

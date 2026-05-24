@@ -1511,6 +1511,119 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('body')).not.toContainText('No active orders yet');
   });
 
+  test('direct market-making sidebar navigation shows contextual loading while orders are delayed', async ({ page }) => {
+    await login(page);
+
+    await page.goto('/setup');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('body')).toContainText(/first-time admin setup guide/i);
+
+    await page.route(`${BACKEND_ORIGIN}/grow/info`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+          simply_grow: { tokens: [] },
+          arbitrage: { pairs: [] },
+          market_making: {
+            exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+            pairs: [{ exchange_id: 'binance', symbol: 'BTC/USDT', min_order_amount: '0.01' }],
+          },
+        }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            key_id: 'ready-key',
+            exchange: 'binance',
+            name: 'Ready key',
+            state: 'active',
+            validation_status: 'succeeded',
+            permissions: ['read', 'trade'],
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-strategies`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'pure-mm',
+            key: 'pure-mm',
+            name: 'Pure MM',
+            controllerType: 'pureMarketMaking',
+            directExecutionMode: 'single_account',
+            defaultConfig: {},
+            configSchema: {},
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/campaigns`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/wallet-status`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ configured: true, address: '0x0000000000000000000000000000000000000000' }),
+      });
+    });
+
+    let releaseDirectOrders!: () => void;
+    const delayedDirectOrders = new Promise<void>((resolve) => {
+      releaseDirectOrders = resolve;
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders`, async (route) => {
+      await delayedDirectOrders;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            orderId: 'order-delayed-sidebar-loading',
+            exchangeName: 'binance',
+            pair: 'BTC/USDT',
+            state: 'running',
+            runtimeState: 'running',
+            strategyDefinitionId: 'pure-mm',
+            strategyName: 'Pure MM',
+            controllerType: 'pureMarketMaking',
+            directExecutionMode: 'single_account',
+            createdAt: '2026-05-23T00:00:00.000Z',
+            lastTickAt: '2026-05-23T00:01:00.000Z',
+            accountLabel: 'main',
+            makerAccountLabel: '',
+            takerAccountLabel: '',
+            apiKeyId: 'ready-key',
+            makerApiKeyId: null,
+            takerApiKeyId: null,
+            warnings: [],
+          },
+        ]),
+      });
+    });
+
+    await page.getByTestId('old-admin-sidebar').getByRole('button', { name: /direct market making/i }).click();
+
+    await expect(page).toHaveURL(/\/trading\/direct-market-making$/);
+    await expect(page.getByTestId('direct-mm-loading')).toBeVisible();
+    await expect(page.getByTestId('direct-mm-loading')).toContainText(/direct market-making/i);
+    await expect(page.locator('body')).not.toContainText(/first-time admin setup guide/i);
+    await expect(page.locator('body')).not.toContainText('No active orders yet');
+
+    releaseDirectOrders();
+    await expect(page.getByTestId('direct-mm-loading')).not.toBeVisible();
+    await expect(page.getByRole('button', { name: /open diagnosis details for BTC\/USDT on binance/i })).toBeVisible();
+  });
+
   test('real-data pages show API errors instead of static fixture fallbacks', async ({ page }) => {
     await login(page);
 
