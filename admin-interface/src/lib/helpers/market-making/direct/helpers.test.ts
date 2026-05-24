@@ -25,6 +25,8 @@ const baseDiagnosisStatus = {
   lastTickAt: '2026-05-23T23:59:50.000Z',
   lastUpdatedAt: '2026-05-23T23:59:55.000Z',
   privateStreamEventAt: '2026-05-23T23:59:55.000Z',
+  openOrders: [],
+  intents: [],
   recentErrors: [],
   streamHealth: [
     {
@@ -138,6 +140,35 @@ describe('buildDirectOrderDiagnosis', () => {
     expect(diagnosis.risks.join(' ')).toContain('balance cache is stale');
   });
 
+  it.each(['degraded', 'reconnecting', 'silent', 'unknown'])(
+    'treats %s stream health as operational risk',
+    (streamState) => {
+      const diagnosis = buildDirectOrderDiagnosis(
+        {
+          ...baseDiagnosisStatus,
+          runtimeState: 'running',
+          streamHealth: [
+            {
+              accountLabel: 'main',
+              state: streamState,
+              order: true,
+              trade: true,
+              balance: true,
+              lastEventAt: '2026-05-23T23:59:55.000Z',
+            },
+          ],
+        },
+        { runtimeState: 'running', warnings: [] },
+        diagnosisNow,
+      );
+
+      expect(diagnosis.kind).toBe('risky');
+      expect(diagnosis.title).toBe('Operational risk detected');
+      expect(diagnosis.risks.join(' ')).toContain(`stream health is ${streamState}`);
+      expect(diagnosis.summary).not.toContain('running normally');
+    },
+  );
+
   it('treats partial running diagnostics as unknown risk instead of healthy', () => {
     const diagnosis = buildDirectOrderDiagnosis(
       {
@@ -155,6 +186,34 @@ describe('buildDirectOrderDiagnosis', () => {
     expect(diagnosis.title).toBe('Operational risk detected');
     expect(diagnosis.risks.join(' ')).toContain('Stream health evidence is missing');
     expect(diagnosis.risks.join(' ')).toContain('Balance cache evidence is missing');
+    expect(diagnosis.summary).not.toContain('running normally');
+  });
+
+  it('treats omitted diagnostic arrays as unknown risk instead of empty healthy evidence', () => {
+    const { openOrders, intents, recentErrors, ...statusWithoutArrays } = baseDiagnosisStatus;
+
+    const diagnosis = buildDirectOrderDiagnosis(
+      {
+        ...statusWithoutArrays,
+        runtimeState: 'running',
+      },
+      { runtimeState: 'running', warnings: [] },
+      diagnosisNow,
+    );
+
+    expect(diagnosis.kind).toBe('risky');
+    expect(diagnosis.risks.join(' ')).toContain('Open-order diagnostics were not returned');
+    expect(diagnosis.risks.join(' ')).toContain('Recent-intent diagnostics were not returned');
+    expect(diagnosis.risks.join(' ')).toContain('Recent-error diagnostics were not returned');
+    expect(diagnosis.evidence.find((item) => item.label === 'Open orders')?.value).toContain(
+      'current exchange exposure is unknown',
+    );
+    expect(diagnosis.evidence.find((item) => item.label === 'Recent intents')?.value).toContain(
+      'idle state are unknown',
+    );
+    expect(diagnosis.evidence.find((item) => item.label === 'Recent errors')?.value).toContain(
+      'absence of blocking errors is unknown',
+    );
     expect(diagnosis.summary).not.toContain('running normally');
   });
 

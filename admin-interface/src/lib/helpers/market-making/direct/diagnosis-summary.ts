@@ -22,6 +22,8 @@ interface DirectOrderDiagnosisInput {
   lastTickAt?: string | null;
   lastUpdatedAt?: string | null;
   privateStreamEventAt?: string | null;
+  openOrders?: unknown[];
+  intents?: unknown[];
   recentErrors?: Array<{ ts?: string | null; message?: string | null }>;
   balanceCacheStatus?: Array<{
     asset?: string | null;
@@ -82,6 +84,29 @@ function ageMsFromIso(value: string | null | undefined, nowMs: number): number |
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return null;
   return nowMs - parsed;
+}
+
+function hasOwnDiagnosticField(status: DirectOrderDiagnosisInput, field: keyof DirectOrderDiagnosisInput): boolean {
+  return Object.prototype.hasOwnProperty.call(status, field);
+}
+
+function isRunningRuntimeState(runtimeState: string): boolean {
+  return runtimeState === "running" || runtimeState === "active";
+}
+
+function isHealthyStreamState(state: string): boolean {
+  return ["live", "healthy", "active", "ok", "ready"].includes(state);
+}
+
+function streamStateNeedsAttention(stream: {
+  state?: string | null;
+  order?: boolean | null;
+  trade?: boolean | null;
+  balance?: boolean | null;
+}): boolean {
+  const state = normalizeToken(stream.state);
+  if (state) return !isHealthyStreamState(state);
+  return stream.order === false && stream.trade === false && stream.balance === false;
 }
 
 export function explainDirectOrderWarning(warning: string): string {
@@ -160,19 +185,9 @@ function buildStreamEvidence(
   const streams = status.streamHealth || [];
   const runtime = status.userStreamRuntime;
   const capabilities = status.userStreamCapabilities || [];
-  const expectsRuntime = runtimeState === "running" || runtimeState === "active";
+  const expectsRuntime = isRunningRuntimeState(runtimeState);
   const risks = streams
-    .filter((stream) => {
-      const state = normalizeToken(stream.state);
-      return (
-        state === "stale" ||
-        state === "missing" ||
-        state === "failed" ||
-        state === "error" ||
-        state === "unavailable" ||
-        (state === "" && stream.order === false && stream.trade === false && stream.balance === false)
-      );
-    })
+    .filter(streamStateNeedsAttention)
     .map((stream) => `${stream.accountLabel || "account"} stream health is ${stream.state || "missing"}.`);
 
   if (risks.length > 0) {
@@ -230,7 +245,7 @@ function buildBalanceEvidence(
   runtimeState: string,
 ): { evidence: DirectOrderDiagnosisEvidence; risks: string[] } {
   const balances = status.balanceCacheStatus || [];
-  const expectsRuntime = runtimeState === "running" || runtimeState === "active";
+  const expectsRuntime = isRunningRuntimeState(runtimeState);
   const risky = balances.filter(
     (balance) => balance.stale || normalizeToken(balance.source) === "missing",
   );
@@ -294,7 +309,13 @@ export function buildDirectOrderDiagnosis(
 ): DirectOrderDiagnosis {
   const runtimeState = normalizeToken(status.runtimeState || order?.runtimeState || status.state || order?.state);
   const warnings = order?.warnings || [];
+  const expectsRuntime = isRunningRuntimeState(runtimeState);
+  const hasRecentErrors = hasOwnDiagnosticField(status, "recentErrors");
+  const hasOpenOrders = hasOwnDiagnosticField(status, "openOrders");
+  const hasIntents = hasOwnDiagnosticField(status, "intents");
   const recentErrors = status.recentErrors || [];
+  const openOrders = status.openOrders || [];
+  const intents = status.intents || [];
   const firstError = recentErrors.find((error) => error.message)?.message || "";
   const blockingWarning = warnings.find((warning) => {
     const normalized = normalizeToken(warning);
@@ -314,12 +335,20 @@ export function buildDirectOrderDiagnosis(
     executorHealth === "stale" || executorHealth === "gone"
       ? [`Executor health is ${executorHealth}.`]
       : [];
+  const missingArrayRisks = expectsRuntime
+    ? [
+        !hasOpenOrders ? "Open-order diagnostics were not returned for this running order." : "",
+        !hasIntents ? "Recent-intent diagnostics were not returned for this running order." : "",
+        !hasRecentErrors ? "Recent-error diagnostics were not returned for this running order." : "",
+      ].filter(Boolean)
+    : [];
   const staleRisks = [
     ...(status.stale ? ["The status endpoint marked this order as stale."] : []),
     ...(tick.risk ? [tick.risk] : []),
     ...stream.risks,
     ...balance.risks,
     ...executorRisk,
+    ...missingArrayRisks,
   ];
   const errorEvidence: DirectOrderDiagnosisEvidence = firstError
     ? {
@@ -327,10 +356,46 @@ export function buildDirectOrderDiagnosis(
         value: firstError,
         tone: "error",
       }
+    : !hasRecentErrors
+      ? {
+          label: "Recent errors",
+          value: "Recent error diagnostics were not returned; absence of blocking errors is unknown.",
+          tone: "warning",
+        }
     : {
         label: "Recent errors",
         value: "No recent blocking errors were returned.",
         tone: "success",
+      };
+
+  const openOrdersEvidence: DirectOrderDiagnosisEvidence = !hasOpenOrders
+    ? {
+        label: "Open orders",
+        value: "Open-order diagnostics were not returned; current exchange exposure is unknown.",
+        tone: "warning",
+      }
+    : {
+        label: "Open orders",
+        value:
+          openOrders.length > 0
+            ? `${openOrders.length} open exchange order${openOrders.length === 1 ? "" : "s"} returned as current exposure evidence.`
+            : "No open exchange orders were returned.",
+        tone: "info",
+      };
+
+  const intentsEvidence: DirectOrderDiagnosisEvidence = !hasIntents
+    ? {
+        label: "Recent intents",
+        value: "Recent-intent diagnostics were not returned; current work and idle state are unknown.",
+        tone: "warning",
+      }
+    : {
+        label: "Recent intents",
+        value:
+          intents.length > 0
+            ? `${intents.length} recent intent${intents.length === 1 ? "" : "s"} returned as current work evidence.`
+            : "No recent intents were returned.",
+        tone: "info",
       };
 
   const executorEvidence: DirectOrderDiagnosisEvidence = {
@@ -349,6 +414,8 @@ export function buildDirectOrderDiagnosis(
     executorEvidence,
     stream.evidence,
     balance.evidence,
+    openOrdersEvidence,
+    intentsEvidence,
     errorEvidence,
     {
       label: "Account/API key",

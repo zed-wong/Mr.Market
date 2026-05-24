@@ -52,7 +52,7 @@ export interface DirectOrderStatus {
   lastTickAt: string | null;
   lastUpdatedAt: string | null;
   privateStreamEventAt: string | null;
-  openOrders: Array<{
+  openOrders?: Array<{
     orderId: string;
     strategyKey: string;
     exchange: string;
@@ -69,7 +69,7 @@ export interface DirectOrderStatus {
     status: string;
     updatedAt: string;
   }>;
-  intents: Array<{
+  intents?: Array<{
     intentId?: string;
     type?: string;
     accountLabel?: string;

@@ -1018,6 +1018,207 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toHaveCount(0);
   });
 
+  test('direct market-making diagnostics classify unhealthy streams and omitted evidence arrays conservatively', async ({ page }) => {
+    await login(page);
+
+    const nowMs = Date.now();
+    const secondsAgo = (seconds: number) => new Date(nowMs - seconds * 1000).toISOString();
+    const order = {
+      orderId: 'order-conservative-evidence',
+      exchangeName: 'binance',
+      pair: 'RISK/USDT',
+      state: 'running',
+      runtimeState: 'running',
+      strategyDefinitionId: 'pure-mm',
+      strategyName: 'Pure MM',
+      controllerType: 'pureMarketMaking',
+      directExecutionMode: 'single_account',
+      createdAt: secondsAgo(120),
+      lastTickAt: secondsAgo(5),
+      accountLabel: 'main',
+      makerAccountLabel: '',
+      takerAccountLabel: '',
+      apiKeyId: 'ready-key',
+      makerApiKeyId: null,
+      takerApiKeyId: null,
+      warnings: [],
+    };
+    const status = {
+      ...order,
+      executorHealth: 'active',
+      lastUpdatedAt: secondsAgo(3),
+      privateStreamEventAt: secondsAgo(3),
+      orderConfig: {
+        orderAmount: '0.01',
+        bidSpread: '0.001',
+        askSpread: '0.001',
+        numberOfLayers: '1',
+        baseIntervalTime: 30,
+        numTrades: 100,
+        baseIncrementPercentage: null,
+        pricePushRate: null,
+        postOnlySide: 'buy',
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: null,
+        cadenceVariance: null,
+        tradeAmountVariance: null,
+        priceOffsetVariance: null,
+        publishedCycles: 0,
+        completedCycles: 0,
+        tradedQuoteVolume: null,
+        realizedPnlQuote: null,
+      },
+      spread: { bid: '0.001', ask: '0.001', absolute: '0.002' },
+      inventoryBalances: [],
+      balanceCacheStatus: [
+        {
+          accountLabel: 'main',
+          asset: 'USDT',
+          source: 'user_stream',
+          freshnessTimestamp: secondsAgo(3),
+          stale: false,
+        },
+      ],
+      streamHealth: [
+        {
+          accountLabel: 'maker',
+          state: 'degraded',
+          order: true,
+          trade: true,
+          balance: true,
+          lastEventAt: secondsAgo(3),
+          lastBalanceRefreshAt: secondsAgo(3),
+        },
+        {
+          accountLabel: 'taker',
+          state: 'reconnecting',
+          order: true,
+          trade: true,
+          balance: true,
+          lastEventAt: secondsAgo(4),
+          lastBalanceRefreshAt: secondsAgo(4),
+        },
+        {
+          accountLabel: 'backup',
+          state: 'silent',
+          order: true,
+          trade: false,
+          balance: true,
+          lastEventAt: secondsAgo(90),
+          lastBalanceRefreshAt: secondsAgo(90),
+        },
+        {
+          accountLabel: 'observer',
+          state: 'unknown',
+          order: null,
+          trade: null,
+          balance: null,
+          lastEventAt: null,
+          lastBalanceRefreshAt: null,
+        },
+      ],
+      userStreamRuntime: {
+        activeWatcherCount: 1,
+        queueDepth: 0,
+        duplicateFillSuppressionCount: 0,
+      },
+      userStreamCapabilities: [],
+      stale: false,
+    };
+
+    await page.route(`${BACKEND_ORIGIN}/grow/info`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+          simply_grow: { tokens: [] },
+          arbitrage: { pairs: [] },
+          market_making: {
+            exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+            pairs: [{ exchange_id: 'binance', symbol: 'RISK/USDT', min_order_amount: '0.01' }],
+          },
+        }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            key_id: 'ready-key',
+            exchange: 'binance',
+            name: 'Ready key',
+            state: 'active',
+            validation_status: 'succeeded',
+            permissions: ['read', 'trade'],
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-strategies`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'pure-mm',
+            key: 'pure-mm',
+            name: 'Pure MM',
+            controllerType: 'pureMarketMaking',
+            directExecutionMode: 'single_account',
+            defaultConfig: {},
+            configSchema: {},
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([order]) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders/order-conservative-evidence/status`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/campaigns`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/wallet-status`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ configured: true, address: '0x0000000000000000000000000000000000000000' }),
+      });
+    });
+
+    await page.goto('/trading/direct-market-making');
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: /open diagnosis details for RISK\/USDT on binance/i }).click();
+
+    const modal = page.locator('.modal-open');
+    const summary = page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]');
+    const evidence = page.locator('[data-testid="direct-mm-diagnostic-evidence"]');
+    await expect(summary).toContainText('Operational risk detected');
+    await expect(summary).not.toContainText('Running normally');
+    await expect(summary).toContainText('stream health is degraded');
+    await expect(summary).toContainText('Open-order diagnostics were not returned');
+    await expect(summary).toContainText('Recent-intent diagnostics were not returned');
+    await expect(summary).toContainText('Recent-error diagnostics were not returned');
+    await expect(evidence).toContainText('partial diagnostics');
+    await expect(evidence).toContainText('open exchange orders were not returned');
+    await expect(evidence).toContainText('recent intents were not returned');
+    await expect(evidence).toContainText('recent errors were not returned');
+    await expect(evidence).toContainText('degraded');
+    await expect(evidence).toContainText('reconnecting');
+    await expect(evidence).toContainText('silent');
+    await expect(evidence).toContainText('unknown');
+    await expect(evidence).toContainText('current exchange exposure is unknown');
+    await expect(evidence).toContainText('current work and idle state are unknown');
+    await expect(evidence).toContainText('absence of blocking errors is unknown');
+    await expect(modal).not.toContainText('This running order is idle');
+    await expect(modal).not.toContainText('No recent blocking errors were returned.');
+  });
+
   test('direct market-making gates actions by backend-supported persisted lifecycle state', async ({ page }) => {
     await login(page);
 

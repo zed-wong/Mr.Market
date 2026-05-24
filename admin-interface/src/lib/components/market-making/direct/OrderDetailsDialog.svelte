@@ -135,7 +135,7 @@
     function getStreamTone(state?: string | null): DirectOrderDiagnosisTone {
         const value = normalize(state);
         if (["live", "healthy", "active", "ok", "ready"].includes(value)) return "success";
-        if (["stale", "missing", "failed", "error", "unavailable"].includes(value)) return "warning";
+        if (value) return "warning";
         return "info";
     }
 
@@ -266,9 +266,12 @@
     $: userStreamCapabilities = data?.userStreamCapabilities ?? [];
     $: userStreamRuntime = data?.userStreamRuntime;
     $: balanceCacheStatus = data?.balanceCacheStatus ?? [];
+    $: hasOpenOrdersEvidence = data ? Object.prototype.hasOwnProperty.call(data, "openOrders") : false;
+    $: hasIntentEvidence = data ? Object.prototype.hasOwnProperty.call(data, "intents") : false;
+    $: hasRecentErrorEvidence = data ? Object.prototype.hasOwnProperty.call(data, "recentErrors") : false;
     $: openOrders = data?.openOrders ?? [];
     $: intents = data?.intents ?? [];
-    $: hasNoCurrentWork = isRunning && openOrders.length === 0 && intents.length === 0;
+    $: hasNoCurrentWork = isRunning && hasOpenOrdersEvidence && hasIntentEvidence && openOrders.length === 0 && intents.length === 0;
     $: partialDiagnosticGaps =
         data
             ? [
@@ -280,6 +283,15 @@
                       : "",
                   data.balanceCacheStatus === undefined
                       ? "balance cache status was not returned"
+                      : "",
+                  data.openOrders === undefined
+                      ? "open exchange orders were not returned"
+                      : "",
+                  data.intents === undefined
+                      ? "recent intents were not returned"
+                      : "",
+                  data.recentErrors === undefined
+                      ? "recent errors were not returned"
                       : "",
               ].filter(Boolean)
             : [];
@@ -708,8 +720,8 @@
                                         <span class="text-[10px] font-semibold text-base-content/50 capitalize">
                                             open exchange orders
                                         </span>
-                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(openOrders.length > 0 ? "warning" : "success")}">
-                                            {openOrders.length > 0 ? `${openOrders.length} open` : "none open"}
+                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(!hasOpenOrdersEvidence ? "warning" : openOrders.length > 0 ? "warning" : "success")}">
+                                            {!hasOpenOrdersEvidence ? "unavailable" : openOrders.length > 0 ? `${openOrders.length} open` : "none open"}
                                         </span>
                                     </div>
                                     {#if openOrders.length > 0}
@@ -733,6 +745,10 @@
                                                 </div>
                                             {/each}
                                         </div>
+                                    {:else if !hasOpenOrdersEvidence}
+                                        <span class="mt-2 block text-xs text-warning">
+                                            Open exchange order diagnostics were not returned; current exchange exposure is unknown.
+                                        </span>
                                     {:else}
                                         <span class="mt-2 block text-xs text-base-content/60">
                                             No open exchange orders were returned, so no current exchange exposure is visible.
@@ -745,11 +761,15 @@
                                         <span class="text-[10px] font-semibold text-base-content/50 capitalize">
                                             recent intents and idle state
                                         </span>
-                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(hasNoCurrentWork ? "info" : intents.length > 0 ? "warning" : "success")}">
-                                            {hasNoCurrentWork ? "idle" : intents.length > 0 ? `${intents.length} intent${intents.length === 1 ? "" : "s"}` : "no intents"}
+                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(!hasIntentEvidence ? "warning" : hasNoCurrentWork ? "info" : intents.length > 0 ? "warning" : "success")}">
+                                            {!hasIntentEvidence ? "unavailable" : hasNoCurrentWork ? "idle" : intents.length > 0 ? `${intents.length} intent${intents.length === 1 ? "" : "s"}` : "no intents"}
                                         </span>
                                     </div>
-                                    {#if hasNoCurrentWork}
+                                    {#if !hasIntentEvidence}
+                                        <span class="mt-2 block text-xs text-warning">
+                                            Recent-intent diagnostics were not returned; current work and idle state are unknown.
+                                        </span>
+                                    {:else if hasNoCurrentWork}
                                         <span class="mt-2 block text-xs text-info">
                                             This running order is idle: no current intents and no open exchange orders were returned.
                                         </span>
@@ -805,6 +825,10 @@
                                             </div>
                                         {/each}
                                     </div>
+                                {:else if !hasRecentErrorEvidence}
+                                    <span class="mt-2 block text-xs text-warning">
+                                        Recent error diagnostics were not returned; absence of blocking errors is unknown.
+                                    </span>
                                 {:else}
                                     <span class="mt-2 block text-xs text-success">
                                         No recent blocking errors were returned.
