@@ -123,12 +123,13 @@ export function getDirectOrderActionAvailability(
 ): DirectOrderActionAvailability {
   const persistedState = normalizeOrderLifecycleState(order?.state);
   const runtimeState = normalizeOrderLifecycleState(order?.runtimeState);
+  const effectiveRuntimeState = runtimeState || persistedState;
   const isPersistedStopped = persistedState === "stopped";
   const isPersistedFailed = persistedState === "failed";
   const canStop =
     !isPersistedStopped &&
     !isPersistedFailed &&
-    ["active", "created", "gone", "running", "stale"].includes(runtimeState);
+    ["active", "created", "gone", "running", "stale"].includes(effectiveRuntimeState);
 
   return {
     canStop,

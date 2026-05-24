@@ -1031,12 +1031,17 @@
 <div class="min-h-screen pb-10 bg-base-100">
     <div class="max-w-350 mx-auto p-4 sm:p-6 md:p-8 space-y-6">
         {#if pageLoading}
-            <div class="skeleton h-12 w-full rounded-xl"></div>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="skeleton h-48 w-full rounded-xl"></div>
-                <div class="skeleton h-48 w-full rounded-xl"></div>
+            <div data-testid="direct-mm-loading" class="space-y-6">
+                <span class="block text-sm text-base-content/60">
+                    Loading direct market-making orders.
+                </span>
+                <div class="skeleton h-12 w-full rounded-xl"></div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="skeleton h-48 w-full rounded-xl"></div>
+                    <div class="skeleton h-48 w-full rounded-xl"></div>
+                </div>
+                <div class="skeleton h-64 w-full rounded-xl"></div>
             </div>
-            <div class="skeleton h-64 w-full rounded-xl"></div>
         {:else if pageLoadError}
             <AdminStatePanel
                 kind={pageLoadError.kind}

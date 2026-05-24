@@ -259,6 +259,19 @@ describe('getDirectOrderActionAvailability', () => {
     });
   });
 
+  it('falls back to persisted state when runtime state is missing', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'running',
+        runtimeState: '',
+      }),
+    ).toEqual({
+      canStop: true,
+      canResume: false,
+      canRemove: false,
+    });
+  });
+
   it('treats created orders conservatively by hiding resume and remove', () => {
     expect(
       getDirectOrderActionAvailability({

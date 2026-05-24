@@ -812,7 +812,7 @@ test.describe.serial('real-data admin smoke', () => {
       exchangeName: 'binance',
       pair: 'BTC/USDT',
       state: 'running',
-      runtimeState: 'running',
+      runtimeState: '',
       strategyDefinitionId: 'dual-mm',
       strategyName: 'Dual MM',
       controllerType: 'dualAccountVolume',
@@ -1008,30 +1008,24 @@ test.describe.serial('real-data admin smoke', () => {
     ]);
     await page.waitForLoadState('networkidle');
 
+    const stopAllButton = page.getByRole('button', { name: /^stop all$/i });
+    await expect(stopAllButton).toBeEnabled();
+    await stopAllButton.click();
+    await expect(page.locator('.modal-open')).toContainText(/confirm stop all orders/i);
+    await page.locator('.modal-open').getByRole('button', { name: /cancel/i }).click();
+    await expect(page.locator('.modal-open')).toHaveCount(0);
+
     const diagnosisButton = page.getByRole('button', { name: /open diagnosis details for BTC\/USDT on binance/i });
     await diagnosisButton.focus();
     await expect(diagnosisButton).toBeFocused();
     await page.keyboard.press('Enter');
 
     await expect(page.locator('[data-testid="direct-mm-detail-loading"]')).toBeVisible();
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toBeVisible();
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Running normally');
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Tick freshness');
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Stream health');
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Balance cache');
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Recent errors');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('diagnosis evidence');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('stream runtime');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('watch orders: available');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('maker capabilities');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('taker capabilities');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('balance cache status');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('open exchange orders');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('idle');
-    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('No recent blocking errors were returned.');
     await expect(page.locator('.modal-open')).toContainText('maker linkage');
     await expect(page.locator('.modal-open')).toContainText('taker linkage');
     await expect(page.locator('.modal-open')).toContainText(/running/i);
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toHaveCount(0);
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
 
     await page.locator('.modal-open').getByRole('button', { name: /refresh order diagnosis/i }).click();
@@ -1040,13 +1034,13 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('.modal-open')).not.toContainText('executor health');
 
     await page.locator('.modal-open').getByRole('button', { name: /retry diagnosis/i }).click();
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Intentionally stopped');
     await expect(page.locator('.modal-open')).toContainText(/stopped/i);
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toHaveCount(0);
     await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toBeVisible();
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toHaveCount(0);
   });
 
-  test('direct market-making diagnostics classify unhealthy streams and omitted evidence arrays conservatively', async ({ page }) => {
+  test('direct market-making order detail omits diagnosis evidence sections', async ({ page }) => {
     await login(page);
 
     const nowMs = Date.now();
@@ -1226,25 +1220,13 @@ test.describe.serial('real-data admin smoke', () => {
     const modal = page.locator('.modal-open');
     const summary = page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]');
     const evidence = page.locator('[data-testid="direct-mm-diagnostic-evidence"]');
-    await expect(summary).toContainText('Operational risk detected');
-    await expect(summary).not.toContainText('Running normally');
-    await expect(summary).toContainText('stream health is degraded');
-    await expect(summary).toContainText('Open-order diagnostics were not returned');
-    await expect(summary).toContainText('Recent-intent diagnostics were not returned');
-    await expect(summary).toContainText('Recent-error diagnostics were not returned');
-    await expect(evidence).toContainText('partial diagnostics');
-    await expect(evidence).toContainText('open exchange orders were not returned');
-    await expect(evidence).toContainText('recent intents were not returned');
-    await expect(evidence).toContainText('recent errors were not returned');
-    await expect(evidence).toContainText('degraded');
-    await expect(evidence).toContainText('reconnecting');
-    await expect(evidence).toContainText('silent');
-    await expect(evidence).toContainText('unknown');
-    await expect(evidence).toContainText('current exchange exposure is unknown');
-    await expect(evidence).toContainText('current work and idle state are unknown');
-    await expect(evidence).toContainText('absence of blocking errors is unknown');
-    await expect(modal).not.toContainText('This running order is idle');
-    await expect(modal).not.toContainText('No recent blocking errors were returned.');
+    await expect(modal).toContainText(/general status/i);
+    await expect(modal).toContainText(/exchange and API key readiness/i);
+    await expect(summary).toHaveCount(0);
+    await expect(evidence).toHaveCount(0);
+    await expect(modal).not.toContainText('Operational risk detected');
+    await expect(modal).not.toContainText('diagnosis evidence');
+    await expect(modal).not.toContainText('partial diagnostics');
   });
 
   test('direct market-making gates actions by backend-supported persisted lifecycle state', async ({ page }) => {
@@ -1474,7 +1456,8 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(failedRow.getByRole('button', { name: /^play$/i })).toHaveCount(0);
 
     await page.getByRole('button', { name: /open diagnosis details for STALE\/USDT on binance/i }).click();
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toBeVisible();
+    await expect(page.locator('.modal-open')).toContainText(/stale/i);
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toHaveCount(0);
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
     await expect(page.locator('.modal-open').getByRole('button', { name: /^remove$/i })).toHaveCount(0);
     await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toHaveCount(0);
@@ -1482,14 +1465,16 @@ test.describe.serial('real-data admin smoke', () => {
     await page.locator('.modal-open').getByLabel(/close/i).click();
 
     await page.getByRole('button', { name: /open diagnosis details for CREATED\/USDT on binance/i }).click();
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toBeVisible();
+    await expect(page.locator('.modal-open')).toContainText(/created/i);
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toHaveCount(0);
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
     await expect(page.locator('.modal-open').getByRole('button', { name: /^remove$/i })).toHaveCount(0);
     await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toHaveCount(0);
     await page.locator('.modal-open').getByLabel(/close/i).click();
 
     await page.getByRole('button', { name: /open diagnosis details for STOPPED\/USDT on binance/i }).click();
-    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toBeVisible();
+    await expect(page.locator('.modal-open')).toContainText(/stopped/i);
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toHaveCount(0);
     await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toBeVisible();
     await expect(page.locator('.modal-open').getByRole('button', { name: /^remove$/i })).toBeVisible();
   });
