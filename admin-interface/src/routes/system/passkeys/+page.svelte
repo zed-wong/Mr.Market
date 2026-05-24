@@ -105,6 +105,17 @@
     {#snippet actions()}
       <button
         type="button"
+        class="btn btn-primary btn-sm rounded-full capitalize"
+        onclick={handleRegister}
+        disabled={registering}
+      >
+        {#if registering}
+          <span class="loading loading-spinner loading-xs"></span>
+        {/if}
+        <span>{$_('admin.register_passkey')}</span>
+      </button>
+      <button
+        type="button"
         class="btn btn-ghost btn-sm rounded-full capitalize"
         onclick={() => void refresh()}
         disabled={loading}
@@ -160,14 +171,6 @@
       {:else if passkeys.length === 0}
         <div class="flex flex-col items-center gap-2 py-12 text-center">
           <span class="text-sm text-base-content/60">{$_('admin.passkey_empty')}</span>
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm rounded-full capitalize"
-            onclick={handleRegister}
-            disabled={registering}
-          >
-            <span>{$_('admin.register_passkey')}</span>
-          </button>
         </div>
       {:else}
         <div class="overflow-x-auto">
