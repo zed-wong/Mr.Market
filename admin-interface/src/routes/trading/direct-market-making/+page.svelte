@@ -35,6 +35,7 @@
     import {
         buildGenericSchemaConfigOverrides,
         formatOrderAmountForDisplay,
+        getDirectOrderActionAvailability,
         getErrorMessage,
         getRecoveryHint,
         isDualDirectOrderControllerType,
@@ -318,9 +319,7 @@
     }
 
     function isOrderStoppable(order: DirectOrderSummary): boolean {
-        return ["active", "created", "running", "stale"].includes(
-            order.runtimeState,
-        );
+        return getDirectOrderActionAvailability(order).canStop;
     }
 
     function applyOrderPatch(
@@ -975,9 +974,9 @@
         {#if pageLoading}
             <AdminStatePanel
                 kind="loading"
-                context="direct market-making"
-                title="loading direct market-making operations"
-                message="Loading wallet status, API-key readiness, campaigns, strategies, and direct order diagnostics."
+                context={$_("admin_direct_mm_context")}
+                title={$_("admin_direct_mm_loading_title")}
+                message={$_("admin_direct_mm_loading_message")}
                 testId="direct-mm-loading"
             />
             <div class="skeleton h-12 w-full rounded-xl"></div>
@@ -989,10 +988,10 @@
         {:else if pageLoadError}
             <AdminStatePanel
                 kind={pageLoadError.kind}
-                context="direct market-making"
+                context={$_("admin_direct_mm_context")}
                 title={pageLoadError.title}
                 message={pageLoadError.message}
-                actionLabel={pageLoadError.kind === "session" ? "sign in again" : "retry"}
+                actionLabel={pageLoadError.kind === "session" ? $_("admin_sign_in_again") : $_("admin_retry")}
                 actionHref={pageLoadError.kind === "session" ? "/login" : ""}
                 onAction={pageLoadError.kind === "session" ? undefined : () => void refreshPage()}
                 testId="direct-mm-error"
@@ -1001,10 +1000,10 @@
             {#if supportingLoadErrors.length > 0}
                 <AdminStatePanel
                     kind="error"
-                    context="direct market-making supporting data"
-                    title="some setup data failed to load"
+                    context={$_("admin_direct_mm_supporting_data_context")}
+                    title={$_("admin_direct_mm_supporting_data_error_title")}
                     message={supportingLoadErrors.join(" · ")}
-                    actionLabel="retry"
+                    actionLabel={$_("admin_retry")}
                     onAction={() => void refreshPage()}
                     testId="direct-mm-supporting-error"
                 />

@@ -5,6 +5,7 @@ import {
   buildDirectOrderDiagnosis,
   buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
+  getDirectOrderActionAvailability,
   isBestCapacityDirectOrderControllerType,
   isDualAccountOrder,
   isDualDirectOrderControllerType,
@@ -182,6 +183,73 @@ describe('buildDirectOrderDiagnosis', () => {
 
     const streamEvidence = diagnosis.evidence.find((item) => item.label === 'Stream health');
     expect(streamEvidence?.value).toContain('Capabilities returned for 2 accounts');
+  });
+});
+
+describe('getDirectOrderActionAvailability', () => {
+  it('offers stop but not remove or resume for stale persisted running orders', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'running',
+        runtimeState: 'stale',
+      }),
+    ).toEqual({
+      canStop: true,
+      canResume: false,
+      canRemove: false,
+    });
+  });
+
+  it('treats created orders conservatively by hiding resume and remove', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'created',
+        runtimeState: 'created',
+      }),
+    ).toEqual({
+      canStop: true,
+      canResume: false,
+      canRemove: false,
+    });
+  });
+
+  it('only allows resume and remove for persisted stopped orders', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'stopped',
+        runtimeState: 'stopped',
+      }),
+    ).toEqual({
+      canStop: false,
+      canResume: true,
+      canRemove: true,
+    });
+  });
+
+  it('allows remove but not resume for persisted failed orders', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'failed',
+        runtimeState: 'failed',
+      }),
+    ).toEqual({
+      canStop: false,
+      canResume: false,
+      canRemove: true,
+    });
+  });
+
+  it('does not infer removal from a derived gone runtime state', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'running',
+        runtimeState: 'gone',
+      }),
+    ).toEqual({
+      canStop: true,
+      canResume: false,
+      canRemove: false,
+    });
   });
 });
 

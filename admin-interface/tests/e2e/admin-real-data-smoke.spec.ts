@@ -1018,6 +1018,253 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toHaveCount(0);
   });
 
+  test('direct market-making gates actions by backend-supported persisted lifecycle state', async ({ page }) => {
+    await login(page);
+
+    const now = new Date().toISOString();
+    const orders = [
+      {
+        orderId: 'order-stale-running',
+        exchangeName: 'binance',
+        pair: 'STALE/USDT',
+        state: 'running',
+        runtimeState: 'stale',
+        strategyDefinitionId: 'pure-mm',
+        strategyName: 'Pure MM',
+        controllerType: 'pureMarketMaking',
+        directExecutionMode: 'single_account',
+        createdAt: now,
+        lastTickAt: now,
+        accountLabel: 'main',
+        makerAccountLabel: '',
+        takerAccountLabel: '',
+        apiKeyId: 'ready-key',
+        makerApiKeyId: null,
+        takerApiKeyId: null,
+        warnings: ['executor_stale'],
+      },
+      {
+        orderId: 'order-created',
+        exchangeName: 'binance',
+        pair: 'CREATED/USDT',
+        state: 'created',
+        runtimeState: 'created',
+        strategyDefinitionId: 'pure-mm',
+        strategyName: 'Pure MM',
+        controllerType: 'pureMarketMaking',
+        directExecutionMode: 'single_account',
+        createdAt: now,
+        lastTickAt: null,
+        accountLabel: 'main',
+        makerAccountLabel: '',
+        takerAccountLabel: '',
+        apiKeyId: 'ready-key',
+        makerApiKeyId: null,
+        takerApiKeyId: null,
+        warnings: [],
+      },
+      {
+        orderId: 'order-stopped',
+        exchangeName: 'binance',
+        pair: 'STOPPED/USDT',
+        state: 'stopped',
+        runtimeState: 'stopped',
+        strategyDefinitionId: 'pure-mm',
+        strategyName: 'Pure MM',
+        controllerType: 'pureMarketMaking',
+        directExecutionMode: 'single_account',
+        createdAt: now,
+        lastTickAt: null,
+        accountLabel: 'main',
+        makerAccountLabel: '',
+        takerAccountLabel: '',
+        apiKeyId: 'ready-key',
+        makerApiKeyId: null,
+        takerApiKeyId: null,
+        warnings: [],
+      },
+      {
+        orderId: 'order-failed',
+        exchangeName: 'binance',
+        pair: 'FAILED/USDT',
+        state: 'failed',
+        runtimeState: 'failed',
+        strategyDefinitionId: 'pure-mm',
+        strategyName: 'Pure MM',
+        controllerType: 'pureMarketMaking',
+        directExecutionMode: 'single_account',
+        createdAt: now,
+        lastTickAt: null,
+        accountLabel: 'main',
+        makerAccountLabel: '',
+        takerAccountLabel: '',
+        apiKeyId: 'ready-key',
+        makerApiKeyId: null,
+        takerApiKeyId: null,
+        warnings: ['execution_blocked'],
+      },
+    ];
+    const statusBody = (order: (typeof orders)[number]) => ({
+      ...order,
+      executorHealth: order.runtimeState === 'stale' ? 'stale' : 'active',
+      lastUpdatedAt: now,
+      privateStreamEventAt: order.runtimeState === 'running' ? now : null,
+      openOrders: [],
+      intents: [],
+      recentErrors:
+        order.runtimeState === 'failed'
+          ? [{ ts: now, message: 'forced failed order evidence' }]
+          : [],
+      orderConfig: {
+        orderAmount: '0.01',
+        bidSpread: '0.001',
+        askSpread: '0.001',
+        numberOfLayers: '1',
+        baseIntervalTime: 30,
+        numTrades: 100,
+        baseIncrementPercentage: null,
+        pricePushRate: null,
+        postOnlySide: 'buy',
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: null,
+        cadenceVariance: null,
+        tradeAmountVariance: null,
+        priceOffsetVariance: null,
+        publishedCycles: 0,
+        completedCycles: 0,
+        tradedQuoteVolume: null,
+        realizedPnlQuote: null,
+      },
+      spread: null,
+      inventoryBalances: [],
+      balanceCacheStatus: [],
+      streamHealth: [],
+      userStreamRuntime: {
+        activeWatcherCount: 0,
+        queueDepth: 0,
+        duplicateFillSuppressionCount: 0,
+      },
+      userStreamCapabilities: [],
+      stale: order.runtimeState === 'stale',
+    });
+
+    await page.route(`${BACKEND_ORIGIN}/grow/info`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+          simply_grow: { tokens: [] },
+          arbitrage: { pairs: [] },
+          market_making: {
+            exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+            pairs: orders.map((order) => ({
+              exchange_id: 'binance',
+              symbol: order.pair,
+              min_order_amount: '0.01',
+            })),
+          },
+        }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            key_id: 'ready-key',
+            exchange: 'binance',
+            name: 'Ready key',
+            state: 'active',
+            validation_status: 'succeeded',
+            permissions: ['read', 'trade'],
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-strategies`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'pure-mm',
+            key: 'pure-mm',
+            name: 'Pure MM',
+            controllerType: 'pureMarketMaking',
+            directExecutionMode: 'single_account',
+            defaultConfig: {},
+            configSchema: {},
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(orders) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders/*/status`, async (route) => {
+      const orderId = new URL(route.request().url()).pathname.split('/').at(-2);
+      const order = orders.find((item) => item.orderId === orderId);
+      await route.fulfill({
+        status: order ? 200 : 404,
+        contentType: 'application/json',
+        body: JSON.stringify(order ? statusBody(order) : { message: 'order not found' }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/campaigns`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/wallet-status`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ configured: true, address: '0x0000000000000000000000000000000000000000' }),
+      });
+    });
+
+    await page.goto('/trading/direct-market-making');
+    await page.waitForLoadState('networkidle');
+
+    const staleRow = page.getByRole('row').filter({ hasText: 'STALE/USDT' });
+    await expect(staleRow.getByRole('button', { name: /^stop$/i })).toBeVisible();
+    await expect(staleRow.getByRole('button', { name: /^remove$/i })).toHaveCount(0);
+    await expect(staleRow.getByRole('button', { name: /^play$/i })).toHaveCount(0);
+
+    const createdRow = page.getByRole('row').filter({ hasText: 'CREATED/USDT' });
+    await expect(createdRow.getByRole('button', { name: /^stop$/i })).toBeVisible();
+    await expect(createdRow.getByRole('button', { name: /^remove$/i })).toHaveCount(0);
+    await expect(createdRow.getByRole('button', { name: /^play$/i })).toHaveCount(0);
+
+    const stoppedRow = page.getByRole('row').filter({ hasText: 'STOPPED/USDT' });
+    await expect(stoppedRow.getByRole('button', { name: /^play$/i })).toBeVisible();
+    await expect(stoppedRow.getByRole('button', { name: /^remove$/i })).toBeVisible();
+
+    const failedRow = page.getByRole('row').filter({ hasText: 'FAILED/USDT' });
+    await expect(failedRow.getByRole('button', { name: /^remove$/i })).toBeVisible();
+    await expect(failedRow.getByRole('button', { name: /^play$/i })).toHaveCount(0);
+
+    await page.getByRole('button', { name: /open diagnosis details for STALE\/USDT on binance/i }).click();
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toBeVisible();
+    await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
+    await expect(page.locator('.modal-open').getByRole('button', { name: /^remove$/i })).toHaveCount(0);
+    await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toHaveCount(0);
+    await expect(page.locator('.modal-open').getByRole('button', { name: /refresh order diagnosis/i })).toBeVisible();
+    await page.locator('.modal-open').getByLabel(/close/i).click();
+
+    await page.getByRole('button', { name: /open diagnosis details for CREATED\/USDT on binance/i }).click();
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toBeVisible();
+    await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
+    await expect(page.locator('.modal-open').getByRole('button', { name: /^remove$/i })).toHaveCount(0);
+    await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toHaveCount(0);
+    await page.locator('.modal-open').getByLabel(/close/i).click();
+
+    await page.getByRole('button', { name: /open diagnosis details for STOPPED\/USDT on binance/i }).click();
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toBeVisible();
+    await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toBeVisible();
+    await expect(page.locator('.modal-open').getByRole('button', { name: /^remove$/i })).toBeVisible();
+  });
+
   test('direct market-making order list failures show an error instead of the empty state', async ({ page }) => {
     await login(page);
 

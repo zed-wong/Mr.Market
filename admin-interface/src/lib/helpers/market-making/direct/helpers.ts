@@ -31,6 +31,17 @@ export interface InventorySkewAllocation {
   quotePercent: number;
 }
 
+export interface DirectOrderActionState {
+  state?: string | null;
+  runtimeState?: string | null;
+}
+
+export interface DirectOrderActionAvailability {
+  canStop: boolean;
+  canResume: boolean;
+  canRemove: boolean;
+}
+
 export type {
   DirectOrderDiagnosis,
   DirectOrderDiagnosisEvidence,
@@ -101,6 +112,29 @@ export function getStateLabel(state: string): string {
   };
 
   return $_(map[state] || "admin_direct_mm_state_unknown");
+}
+
+function normalizeOrderLifecycleState(value?: string | null): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+export function getDirectOrderActionAvailability(
+  order: DirectOrderActionState | null | undefined,
+): DirectOrderActionAvailability {
+  const persistedState = normalizeOrderLifecycleState(order?.state);
+  const runtimeState = normalizeOrderLifecycleState(order?.runtimeState);
+  const isPersistedStopped = persistedState === "stopped";
+  const isPersistedFailed = persistedState === "failed";
+  const canStop =
+    !isPersistedStopped &&
+    !isPersistedFailed &&
+    ["active", "created", "gone", "running", "stale"].includes(runtimeState);
+
+  return {
+    canStop,
+    canResume: isPersistedStopped,
+    canRemove: isPersistedStopped || isPersistedFailed,
+  };
 }
 
 export function formatTimestamp(value: string | null): string {

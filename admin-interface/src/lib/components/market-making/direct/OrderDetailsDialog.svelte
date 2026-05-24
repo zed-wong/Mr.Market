@@ -25,6 +25,7 @@
         getStateLabel,
         buildDirectOrderDiagnosis,
         explainDirectOrderWarning,
+        getDirectOrderActionAvailability,
         type DirectOrderDiagnosisTone,
     } from "$lib/helpers/market-making/direct/helpers";
 
@@ -229,8 +230,7 @@
         : "";
     $: runtimeState = currentRuntimeState;
     $: isRunning = runtimeState === "running" || runtimeState === "active";
-    $: isStale = runtimeState === "stale";
-    $: isResumable = runtimeState === "stopped" || runtimeState === "created";
+    $: actionAvailability = getDirectOrderActionAvailability(data || order);
     $: resolvedControllerType = data?.controllerType || order?.controllerType;
     $: isDualAccountStrategy = isDualAccountOrder({
         directExecutionMode: data?.directExecutionMode,
@@ -373,9 +373,9 @@
                 <div class="px-7 pb-16 py-12">
                     <AdminStatePanel
                         kind="loading"
-                        context="order diagnosis"
-                        title="loading order diagnosis"
-                        message="Loading status, runtime health, account linkage, balances, intents, open orders, and recent errors for this direct order."
+                        context={$_("admin_direct_mm_order_diagnosis_context")}
+                        title={$_("admin_direct_mm_detail_loading_title")}
+                        message={$_("admin_direct_mm_detail_loading_message")}
                         testId="direct-mm-detail-loading"
                     />
                 </div>
@@ -383,10 +383,10 @@
                 <div class="px-7 pb-16 py-12">
                     <AdminStatePanel
                         kind={error.kind}
-                        context="order diagnosis"
+                        context={$_("admin_direct_mm_order_diagnosis_context")}
                         title={error.title}
                         message={error.message}
-                        actionLabel={error.kind === "session" ? "sign in again" : "retry diagnosis"}
+                        actionLabel={error.kind === "session" ? $_("admin_sign_in_again") : $_("admin_direct_mm_retry_diagnosis")}
                         actionHref={error.kind === "session" ? "/login" : ""}
                         onAction={error.kind === "session" ? undefined : onRefresh}
                         disabled={loading || refreshing}
@@ -422,7 +422,7 @@
                             class="btn btn-ghost btn-xs rounded-full capitalize"
                             on:click={onRefresh}
                             disabled={loading || refreshing}
-                            aria-label="Refresh order diagnosis"
+                            aria-label={$_("admin_direct_mm_refresh_order_diagnosis")}
                         >
                             {#if refreshing}
                                 <span class="loading loading-spinner loading-xs" aria-hidden="true"></span>
@@ -1731,7 +1731,7 @@
                         >
                             {$_("close")}
                         </button>
-                        {#if isRunning || isStale}
+                        {#if actionAvailability.canStop}
                             <button
                                 class="btn flex-1 bg-red-600 hover:bg-red-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(220,38,38,0.9)] flex items-center justify-center gap-1.5"
                                 on:click={onStopOrder}
@@ -1753,7 +1753,7 @@
                                     <path d="m6 6 12 12" />
                                 </svg>
                             </button>
-                            {#if isStale}
+                            {#if actionAvailability.canRemove}
                                 <button
                                     class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
                                     on:click={onRemoveOrder}
@@ -1762,7 +1762,7 @@
                                 </button>
                             {/if}
                         {:else}
-                            {#if isResumable}
+                            {#if actionAvailability.canResume}
                                 <button
                                     class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
                                     on:click={onStartOrder}
@@ -1783,14 +1783,16 @@
                                     </svg>
                                 </button>
                             {/if}
-                            <button
-                                class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 {isResumable
-                                    ? ''
-                                    : 'flex-1'} h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
-                                on:click={onRemoveOrder}
-                            >
-                                {$_("admin_direct_mm_remove")}
-                            </button>
+                            {#if actionAvailability.canRemove}
+                                <button
+                                    class="btn bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 {actionAvailability.canResume
+                                        ? ''
+                                        : 'flex-1'} h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+                                    on:click={onRemoveOrder}
+                                >
+                                    {$_("admin_direct_mm_remove")}
+                                </button>
+                            {/if}
                         {/if}
                     </div>
                 </div>
