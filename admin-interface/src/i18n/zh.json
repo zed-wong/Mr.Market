@@ -219,8 +219,6 @@
   "admin_direct_mm_order_parameters": "订单参数",
   "admin_direct_mm_order_parameters_hint": "配置在订单簿每侧部署多少流动性。",
   "admin_direct_mm_orders_subtitle": "策略执行与实时流动性管理。",
-  "admin_direct_mm_loading_title": "正在加载直接做市操作",
-  "admin_direct_mm_loading_message": "正在加载钱包状态、API 密钥就绪状态、活动、策略和直接订单诊断。",
   "admin_direct_mm_play": "启动",
   "admin_direct_mm_post_only_side": "挂单方向",
   "admin_direct_mm_post_only_side_buy": "买入",

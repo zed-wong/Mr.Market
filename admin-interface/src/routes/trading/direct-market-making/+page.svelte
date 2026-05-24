@@ -1031,13 +1031,6 @@
 <div class="min-h-screen pb-10 bg-base-100">
     <div class="max-w-350 mx-auto p-4 sm:p-6 md:p-8 space-y-6">
         {#if pageLoading}
-            <AdminStatePanel
-                kind="loading"
-                context={$_("admin_direct_mm_context")}
-                title={$_("admin_direct_mm_loading_title")}
-                message={$_("admin_direct_mm_loading_message")}
-                testId="direct-mm-loading"
-            />
             <div class="skeleton h-12 w-full rounded-xl"></div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="skeleton h-48 w-full rounded-xl"></div>

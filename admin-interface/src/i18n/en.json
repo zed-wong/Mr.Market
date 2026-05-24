@@ -241,8 +241,6 @@
   "admin_direct_mm_order_parameters_hint": "Configure how much liquidity to deploy on each side of the order book.",
   "admin_direct_mm_order_state": "Order State",
   "admin_direct_mm_orders_subtitle": "Strategic execution and real-time liquidity management.",
-  "admin_direct_mm_loading_title": "loading direct market-making operations",
-  "admin_direct_mm_loading_message": "Loading wallet status, API-key readiness, campaigns, strategies, and direct order diagnostics.",
   "admin_direct_mm_play": "Play",
   "admin_direct_mm_post_only_side": "Post-Only Side",
   "admin_direct_mm_post_only_side_buy": "Buy",
