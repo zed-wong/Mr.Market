@@ -446,7 +446,7 @@ export class Web3MarketMakingService {
   ) {
     return {
       ...this.serializeOrderSummary(order, balances, definition),
-      events: this.serializeEvents(ledgerEntries, executionEvents),
+      events: this.serializeEvents(order, ledgerEntries, executionEvents),
       performance: {
         ...this.serializeBalancePerformance(balances),
         snapshots: performanceRows.map((row) => ({
@@ -537,10 +537,35 @@ export class Web3MarketMakingService {
   }
 
   private serializeEvents(
+    order: MarketMakingOrder,
     ledgerEntries: LedgerEntry[],
     executionEvents: StrategyExecutionHistory[],
   ) {
     return [
+      {
+        orderId: order.orderId,
+        type: 'order_created',
+        timestamp: order.createdAt,
+        assetId: null,
+        amount: null,
+        refType: 'market_making_order',
+        refId: order.orderId,
+        metadata: { state: 'created' },
+      },
+      ...(order.state !== 'created'
+        ? [
+            {
+              orderId: order.orderId,
+              type: `order_state_${order.state}`,
+              timestamp: order.createdAt,
+              assetId: null,
+              amount: null,
+              refType: 'market_making_order_lifecycle',
+              refId: order.orderId,
+              metadata: { state: order.state },
+            },
+          ]
+        : []),
       ...ledgerEntries.map((entry) => ({
         orderId: entry.orderId,
         type: entry.type,

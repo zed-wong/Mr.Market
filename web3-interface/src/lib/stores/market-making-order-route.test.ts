@@ -71,16 +71,41 @@ describe('market-making campaign detail to order route', () => {
     expect(source).toContain('campaign-detail-state-select');
   });
 
-  it('wires order detail lifecycle buttons to deterministic store transitions', () => {
+  it('wires order detail to server-backed detail and mutation helpers', () => {
     const source = orderDetailSource();
+    const helper = readFileSync(
+      fileURLToPath(new URL('../helpers/api/web3.ts', import.meta.url)),
+      'utf8'
+    );
 
-    expect(source).toContain('transitionOrderLifecycle');
-    expect(source).toContain("runLifecycleAction('pause')");
-    expect(source).toContain("runLifecycleAction('resume')");
-    expect(source).toContain("runLifecycleAction('stop')");
-    expect(source).toContain('canPauseOrder(order.status)');
-    expect(source).toContain('canResumeOrder(order.status)');
-    expect(source).toContain('canStopOrder(order.status)');
-    expect(source).toContain('order-log-timeline');
+    expect(helper).toContain('getMarketMakingOrderDetail');
+    expect(helper).toContain('depositMarketMakingOrder');
+    expect(helper).toContain('withdrawMarketMakingOrder');
+    expect(helper).toContain('startMarketMakingOrder');
+    expect(helper).toContain('pauseMarketMakingOrder');
+    expect(helper).toContain('resumeMarketMakingOrder');
+    expect(helper).toContain('/orders/${orderId}');
+    expect(helper).toContain('/orders/${orderId}/deposit');
+    expect(helper).toContain('/orders/${orderId}/withdraw');
+    expect(helper).toContain('/orders/${orderId}/start');
+    expect(helper).toContain('/orders/${orderId}/pause');
+    expect(helper).toContain('/orders/${orderId}/resume');
+
+    expect(source).toContain('getMarketMakingOrderDetail');
+    expect(source).toContain('depositMarketMakingOrder');
+    expect(source).toContain('withdrawMarketMakingOrder');
+    expect(source).toContain('startMarketMakingOrder');
+    expect(source).toContain('pauseMarketMakingOrder');
+    expect(source).toContain('resumeMarketMakingOrder');
+    expect(source).toContain('order.validActions.start');
+    expect(source).toContain('order.validActions.pause');
+    expect(source).toContain('order.validActions.resume');
+    expect(source).toContain('order.validActions.deposit');
+    expect(source).toContain('order.validActions.withdraw');
+    expect(source).toContain('order-event-timeline');
+    expect(source).toContain('walletInteractionMode');
+    expect(source).not.toContain('transitionOrderLifecycle');
+    expect(source).not.toContain('allCampaigns');
+    expect(source).not.toContain('Unknown campaign');
   });
 });

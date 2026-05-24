@@ -42,6 +42,7 @@ export interface Web3MarketMakingOrderPerformance {
   realizedDeltaByAsset: Record<string, string>;
   feePaidByAsset: Record<string, string>;
   pnlByAsset: Record<string, string>;
+  snapshots?: Web3MarketMakingPerformanceSnapshot[];
 }
 
 export interface Web3MarketMakingOrderActions {
@@ -65,6 +66,39 @@ export interface Web3MarketMakingOrderSummary {
   validActions: Web3MarketMakingOrderActions;
   lifecycleError: string | null;
   createdAt: string;
+}
+
+export interface Web3MarketMakingPerformanceSnapshot {
+  userId: string;
+  orderId: string;
+  strategyType: string | null;
+  profitLoss: string;
+  additionalMetrics: Record<string, unknown>;
+  executedAt: string;
+}
+
+export interface Web3MarketMakingOrderEvent {
+  orderId: string;
+  type: string;
+  timestamp: string;
+  assetId: string | null;
+  amount: string | null;
+  refType: string | null;
+  refId: string | null;
+  idempotencyKey?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface Web3MarketMakingOrderDetail extends Web3MarketMakingOrderSummary {
+  events: Web3MarketMakingOrderEvent[];
+  performance: Web3MarketMakingOrderPerformance & {
+    snapshots: Web3MarketMakingPerformanceSnapshot[];
+  };
+}
+
+export interface Web3MarketMakingOrderDetailResponse {
+  namespace: '/api/v1/web3/market-making';
+  order: Web3MarketMakingOrderDetail;
 }
 
 export interface Web3MarketMakingOrderListResponse {
@@ -155,4 +189,21 @@ export interface Web3MarketMakingCreateResponse {
     } | null;
     message: string;
   };
+}
+
+export interface Web3MarketMakingMoneyMovementRequest {
+  assetId: string;
+  amount: string;
+  idempotencyKey: string;
+}
+
+export interface Web3MarketMakingMutationResponse {
+  namespace: '/api/v1/web3/market-making';
+  mutation: {
+    type: 'deposit' | 'withdraw' | 'start' | 'pause' | 'resume';
+    applied: boolean;
+    idempotencyKey?: string;
+  };
+  balance?: Web3MarketMakingOrderBalance;
+  order: Web3MarketMakingOrderDetail;
 }

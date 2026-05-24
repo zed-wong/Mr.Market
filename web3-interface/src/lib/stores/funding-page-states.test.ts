@@ -28,12 +28,14 @@ describe('funding and dashboard page state previews', () => {
     expect(homeSource).toContain('home-error-state');
   });
 
-  it('keeps order detail loading, error, and not-found states discoverable', () => {
+  it('keeps order detail loading, error, gating, and not-found states discoverable', () => {
     const orderDetailSource = source('../../routes/market-making/order/[id]/+page.svelte');
 
-    expect(orderDetailSource).toContain('order-state-select');
     expect(orderDetailSource).toContain('order-loading-state');
     expect(orderDetailSource).toContain('order-error-state');
+    expect(orderDetailSource).toContain('order-detail-retry');
+    expect(orderDetailSource).toContain('order-detail-connect-gate');
+    expect(orderDetailSource).toContain('order-detail-unsupported-gate');
     expect(orderDetailSource).toContain('order-not-found');
   });
 });

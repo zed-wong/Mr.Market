@@ -273,6 +273,39 @@ describe('Web3MarketMakingService', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
+  it('returns complete order detail with balances, PnL, actions, and timeline events', async () => {
+    const { service } = buildService({
+      orders: [createOrder({ state: 'running' })],
+    });
+
+    const result = await service.getOrderDetail('user-1', 'order-1');
+
+    expect(result.order).toMatchObject({
+      orderId: 'order-1',
+      state: 'running',
+      pair: 'BTC/USDT',
+      strategy: { id: 'strategy-1', name: 'Pure MM' },
+      specs: { pair: 'BTC/USDT', exchangeName: 'binance' },
+      balances: [expect.objectContaining({ assetId: 'USDT', total: '100' })],
+      performance: expect.objectContaining({
+        pnlByAsset: { USDT: '4' },
+        snapshots: [],
+      }),
+      validActions: expect.objectContaining({
+        pause: true,
+        start: false,
+        resume: false,
+      }),
+      events: expect.arrayContaining([
+        expect.objectContaining({ type: 'order_created', orderId: 'order-1' }),
+        expect.objectContaining({
+          type: 'order_state_running',
+          refType: 'market_making_order_lifecycle',
+        }),
+      ]),
+    });
+  });
+
   it('rejects caller-supplied userId overrides during create', async () => {
     const { service, userOrdersService } = buildService();
 
