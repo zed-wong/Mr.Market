@@ -6,14 +6,18 @@
     updateExchange,
     removeExchange,
   } from "$lib/helpers/mrm/admin/growdata";
-  import { getExchangeReadiness } from "$lib/helpers/admin/exchange-readiness";
+  import {
+    getExchangeReadiness,
+    type ExchangeReadinessSource,
+  } from "$lib/helpers/admin/exchange-readiness";
 
-  export let exchanges: {
+  type ExchangeListItem = ExchangeReadinessSource & {
     exchange_id: string;
     name: string;
     icon_url?: string;
-    enable: boolean;
-  }[] = [];
+  };
+
+  export let exchanges: ExchangeListItem[] = [];
   export let supportedExchanges: string[] = [];
 
   let updatingIds: Record<string, boolean> = {};
@@ -145,6 +149,7 @@
 
           {#each paginatedExchanges as exchange}
             {@const readiness = getExchangeReadiness(exchange)}
+            {@const enablement = readiness.enablement}
             <tr class="hover:bg-base-200/30 transition-colors">
               <td class="p-3">
                 {#if exchange.icon_url}
@@ -205,26 +210,24 @@
                   <button
                     class={clsx(
                       "btn btn-xs btn-circle transition-all",
-                      exchange.enable
-                        ? "btn-success text-base-100"
-                        : "btn-ghost text-base-content",
+                      enablement.tone,
                     )}
-                    aria-label={`${exchange.enable ? 'disable' : 'enable'} ${exchange.name || exchange.exchange_id}`}
-                    title={`${exchange.enable ? 'enabled' : 'disabled'} exchange; click to ${exchange.enable ? 'disable' : 'enable'}`}
+                    aria-label={`${enablement.actionLabel} ${exchange.name || exchange.exchange_id}`}
+                    title={enablement.actionTitle}
                     on:click={async () => {
-                      const newEnable = !exchange.enable;
+                      if (!enablement.canToggle || enablement.nextEnable === null) return;
                       await UpdateExchange(
                         exchange.exchange_id,
                         exchange.name,
-                        newEnable,
+                        enablement.nextEnable,
                         exchange.icon_url || "",
                       );
                     }}
-                    disabled={!!updatingIds[exchange.exchange_id]}
+                    disabled={!!updatingIds[exchange.exchange_id] || !enablement.canToggle}
                   >
                     {#if updatingIds[exchange.exchange_id]}
                       <span class="loading loading-spinner loading-xs"></span>
-                    {:else if exchange.enable}
+                    {:else if readiness.status === 'ready'}
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 20 20"
@@ -237,7 +240,7 @@
                           clip-rule="evenodd"
                         />
                       </svg>
-                    {:else}
+                    {:else if readiness.status === 'disabled'}
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 20 20"
@@ -250,10 +253,12 @@
                           clip-rule="evenodd"
                         />
                       </svg>
+                    {:else}
+                      <span class="text-xs font-semibold">?</span>
                     {/if}
                   </button>
                   <span class="text-xs text-base-content/60 capitalize">
-                    {exchange.enable ? 'enabled' : 'disabled'}
+                    {enablement.label}
                   </span>
                 </div>
               </td>

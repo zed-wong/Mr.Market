@@ -210,6 +210,23 @@ const routeApiKeyMetadata = async (page: Page) => {
   });
 };
 
+const routeExchangeMetadata = async (page: Page) => {
+  await page.route(`${BACKEND_ORIGIN}/admin/grow/exchange/supported`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(['binance', 'okx']),
+    });
+  });
+  await page.route(`${BACKEND_ORIGIN}/admin/grow/exchange/ccxt-supported`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(['binance', 'okx', 'mystery']),
+    });
+  });
+};
+
 test.describe.serial('real-data admin smoke', () => {
   test('visits every target admin surface in one authenticated isolated session', async ({ page }) => {
     const unexpectedResponses: string[] = [];
@@ -453,6 +470,7 @@ test.describe.serial('real-data admin smoke', () => {
 
   test('direct market-making reuses API key readiness vocabulary and remediation routes', async ({ page, context }) => {
     await login(page);
+    await routeExchangeMetadata(page);
 
     const keys = [
       {
@@ -521,7 +539,10 @@ test.describe.serial('real-data admin smoke', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+          exchanges: [
+            { exchange_id: 'binance', name: 'binance', enable: true },
+            { exchange_id: 'mystery', name: 'Mystery Exchange' },
+          ],
           simply_grow: { tokens: [] },
           arbitrage: { pairs: [] },
           market_making: {
@@ -614,6 +635,16 @@ test.describe.serial('real-data admin smoke', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
+    let updateRequests = 0;
+    await page.route(`${BACKEND_ORIGIN}/admin/grow/exchange/update/*`, async (route) => {
+      updateRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true }),
+      });
+    });
+
     await page.goto('/trading/direct-market-making');
     await page.waitForLoadState('networkidle');
 
@@ -623,6 +654,21 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('body')).toContainText('Invalid signature');
     await expect(page.locator('body')).toContainText('read only');
     await expect(page.locator('body')).toContainText('trade enabled');
+
+    await page.goto('/trading/exchanges');
+    await page.waitForLoadState('networkidle');
+    const mysteryRow = page.getByRole('row').filter({ hasText: 'Mystery Exchange' });
+    await expect(mysteryRow).toContainText('unknown');
+    await expect(mysteryRow).not.toContainText('disabled');
+
+    const unknownToggle = mysteryRow.getByRole('button', { name: /enablement unknown mystery exchange/i });
+    await expect(unknownToggle).toBeDisabled();
+    await expect(unknownToggle).toHaveAttribute('title', /enablement is unknown/i);
+    await expect(unknownToggle).not.toHaveAttribute('title', /click to enable/i);
+    expect(updateRequests).toBe(0);
+
+    await page.goto('/trading/direct-market-making');
+    await page.waitForLoadState('networkidle');
 
     await page.getByRole('button', { name: /create new order/i }).click();
     await page.locator('select').first().selectOption('binance');

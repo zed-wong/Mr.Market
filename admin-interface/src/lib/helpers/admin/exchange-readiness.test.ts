@@ -9,6 +9,12 @@ describe('exchange readiness', () => {
     expect(readiness.status).toBe('ready');
     expect(readiness.label).toBe('ready');
     expect(readiness.description).toContain('configured and enabled');
+    expect(readiness.enablement).toMatchObject({
+      label: 'enabled',
+      actionLabel: 'disable',
+      canToggle: true,
+      nextEnable: false,
+    });
   });
 
   it('maps disabled exchanges to configured but not usable language', () => {
@@ -17,12 +23,51 @@ describe('exchange readiness', () => {
     expect(readiness.status).toBe('disabled');
     expect(readiness.label).toBe('disabled');
     expect(readiness.description).toContain('not usable for trading');
+    expect(readiness.enablement).toMatchObject({
+      label: 'disabled',
+      actionLabel: 'enable',
+      canToggle: true,
+      nextEnable: true,
+    });
   });
 
   it('classifies missing and malformed exchange records conservatively', () => {
-    expect(getExchangeReadiness(null).status).toBe('missing');
-    expect(getExchangeReadiness({ exchange_id: 'binance', name: 'Binance' }).status).toBe('unknown');
-    expect(getExchangeReadiness({ enable: true }).status).toBe('unknown');
+    expect(getExchangeReadiness(null)).toMatchObject({
+      status: 'missing',
+      enablement: {
+        label: 'unavailable',
+        actionLabel: 'enablement unavailable',
+        canToggle: false,
+        nextEnable: null,
+      },
+    });
+    expect(getExchangeReadiness({ exchange_id: 'binance', name: 'Binance' })).toMatchObject({
+      status: 'unknown',
+      enablement: {
+        label: 'unknown',
+        actionLabel: 'enablement unknown',
+        canToggle: false,
+        nextEnable: null,
+      },
+    });
+    expect(getExchangeReadiness({ enable: true })).toMatchObject({
+      status: 'unknown',
+      enablement: {
+        label: 'unknown',
+        actionLabel: 'enablement unknown',
+        canToggle: false,
+        nextEnable: null,
+      },
+    });
+    expect(getExchangeReadiness({ exchange_id: 'binance', name: 'Binance', enable: 'false' })).toMatchObject({
+      status: 'unknown',
+      enablement: {
+        label: 'unknown',
+        actionLabel: 'enablement unknown',
+        canToggle: false,
+        nextEnable: null,
+      },
+    });
   });
 
   it('summarizes ready disabled missing and unknown exchange readiness', () => {

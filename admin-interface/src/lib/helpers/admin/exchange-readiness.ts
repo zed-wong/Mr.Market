@@ -2,13 +2,26 @@ import type { Exchange } from '$lib/types/hufi/grow';
 
 export type ExchangeReadinessStatus = 'ready' | 'disabled' | 'missing' | 'unknown';
 
+export interface ExchangeEnablementActionView {
+  label: string;
+  title: string;
+  actionLabel: string;
+  actionTitle: string;
+  canToggle: boolean;
+  nextEnable: boolean | null;
+  tone: string;
+}
+
 export interface ExchangeReadinessView {
   status: ExchangeReadinessStatus;
   label: string;
   title: string;
   description: string;
   tone: string;
+  enablement: ExchangeEnablementActionView;
 }
+
+export type ExchangeReadinessSource = Partial<Omit<Exchange, 'enable'>> & { enable?: unknown };
 
 export const exchangeReadinessLabels: Record<ExchangeReadinessStatus, string> = {
   ready: 'ready',
@@ -24,10 +37,24 @@ export const exchangeReadinessTone: Record<ExchangeReadinessStatus, string> = {
   unknown: 'badge-ghost text-base-content',
 };
 
-const hasIdentity = (exchange: Partial<Exchange>) =>
+const hasIdentity = (exchange: ExchangeReadinessSource) =>
   Boolean(String(exchange.exchange_id || '').trim() || String(exchange.name || '').trim());
 
-export const getExchangeReadiness = (exchange?: Partial<Exchange> | null): ExchangeReadinessView => {
+const enablementUnavailable = (
+  label: string,
+  actionLabel: string,
+  title: string,
+): ExchangeEnablementActionView => ({
+  label,
+  title,
+  actionLabel,
+  actionTitle: title,
+  canToggle: false,
+  nextEnable: null,
+  tone: 'btn-ghost text-base-content',
+});
+
+export const getExchangeReadiness = (exchange?: ExchangeReadinessSource | null): ExchangeReadinessView => {
   if (!exchange) {
     return {
       status: 'missing',
@@ -35,6 +62,11 @@ export const getExchangeReadiness = (exchange?: Partial<Exchange> | null): Excha
       title: 'exchange missing',
       description: 'No configured exchange record was returned.',
       tone: exchangeReadinessTone.missing,
+      enablement: enablementUnavailable(
+        'unavailable',
+        'enablement unavailable',
+        'Exchange enablement is unavailable because no exchange record was returned.',
+      ),
     };
   }
 
@@ -45,6 +77,11 @@ export const getExchangeReadiness = (exchange?: Partial<Exchange> | null): Excha
       title: 'exchange readiness unknown',
       description: 'The exchange record is present, but its enabled state could not be classified.',
       tone: exchangeReadinessTone.unknown,
+      enablement: enablementUnavailable(
+        'unknown',
+        'enablement unknown',
+        'Exchange enablement is unknown; refresh or reconfigure this exchange before changing it.',
+      ),
     };
   }
 
@@ -55,6 +92,15 @@ export const getExchangeReadiness = (exchange?: Partial<Exchange> | null): Excha
       title: 'configured and enabled',
       description: 'This exchange is configured and enabled for operations.',
       tone: exchangeReadinessTone.ready,
+      enablement: {
+        label: 'enabled',
+        title: 'enabled exchange; click to disable',
+        actionLabel: 'disable',
+        actionTitle: 'enabled exchange; click to disable',
+        canToggle: true,
+        nextEnable: false,
+        tone: 'btn-success text-base-100',
+      },
     };
   }
 
@@ -64,10 +110,19 @@ export const getExchangeReadiness = (exchange?: Partial<Exchange> | null): Excha
     title: 'configured but disabled',
     description: 'This exchange is configured, but it is disabled and not usable for trading.',
     tone: exchangeReadinessTone.disabled,
+    enablement: {
+      label: 'disabled',
+      title: 'disabled exchange; click to enable',
+      actionLabel: 'enable',
+      actionTitle: 'disabled exchange; click to enable',
+      canToggle: true,
+      nextEnable: true,
+      tone: 'btn-ghost text-base-content',
+    },
   };
 };
 
-export const summarizeExchangeReadiness = (exchanges: Partial<Exchange>[] | null | undefined) => {
+export const summarizeExchangeReadiness = (exchanges: ExchangeReadinessSource[] | null | undefined) => {
   const views = (exchanges ?? []).map(getExchangeReadiness);
   return {
     total: views.length,
