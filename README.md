@@ -58,12 +58,12 @@ bun run --cwd admin-interface preview -- --host localhost --port 4176
 
 ### Local web3-interface prototype
 
-`web3-interface` is a UI-only SvelteKit prototype for the Web3 user flows. It uses mocked Reown wallet UI for EVM and Solana wallet states, and focuses on deposit, withdraw, campaign discovery, and market-making screens. It intentionally excludes swap/spot flows and does not call server endpoints.
+`web3-interface` is a UI-only SvelteKit demo for the Web3 user flows. It can use Reown wallet connection state, but campaign, balance, funding, order, session, and activity data are deterministic mocks. The demo path covers login/demo wallet states, wrong network, session expired, market-making campaign discovery, order creation, order detail lifecycle actions, deposit, withdraw, responsive layouts, and empty/loading/error states. It intentionally excludes swap/spot flows and does not call server endpoints for business data.
 
 Run the prototype locally:
 
 ```
-bun run --cwd web3-interface dev
+CHOKIDAR_USEPOLLING=1 bun run --cwd web3-interface dev -- --host 127.0.0.1 --port 5178
 ```
 
 Validate the prototype:
@@ -72,6 +72,7 @@ Validate the prototype:
 bun run --cwd web3-interface check
 bun run --cwd web3-interface lint
 bun run --cwd web3-interface test:unit
+bun run --cwd web3-interface build
 ```
 
 Future server endpoint contracts are documented in [`docs/plans/2026-05-23-future-web3-endpoint-documentation.md`](./docs/plans/2026-05-23-future-web3-endpoint-documentation.md).
