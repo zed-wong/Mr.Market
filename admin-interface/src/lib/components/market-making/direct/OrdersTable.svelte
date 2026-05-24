@@ -62,41 +62,41 @@
 
   function getStatusClasses(runtimeState: string): string {
     if (isActiveState(runtimeState)) {
-      return "bg-green-50 text-green-600";
+      return "bg-success/10 text-success";
     }
 
     if (runtimeState === "stopped") {
-      return "bg-slate-100 text-slate-500";
+      return "bg-base-300/50 text-base-content/55";
     }
 
     if (runtimeState === "failed" || runtimeState === "gone") {
-      return "bg-red-50 text-red-600";
+      return "bg-error/10 text-error";
     }
 
     if (runtimeState === "created" || runtimeState === "stale") {
-      return "bg-amber-50 text-amber-600";
+      return "bg-warning/10 text-warning";
     }
 
-    return "bg-slate-100 text-slate-500";
+    return "bg-base-300/50 text-base-content/55";
   }
 </script>
 
-<div class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50">
+<div class="card-surface p-6">
   <div
     class="flex flex-col sm:flex-row justify-between items-start xl:items-center gap-4 mb-6"
   >
     <div>
-      <h2 class="text-[1.1rem] font-bold text-base-content">
+      <span class="text-title block text-base-content">
         {$_("admin_direct_mm_title")}
-      </h2>
-      <span class="text-[13px] text-base-content/50 mt-1">
+      </span>
+      <span class="text-body-muted mt-1 block">
         {$_("admin_direct_mm_orders_subtitle")}
       </span>
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
       <button
-        class="btn bg-blue-600 hover:bg-blue-700 text-white border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
+        class="btn-pill-primary"
         on:click={onCreateClick}
       >
         <svg
@@ -117,7 +117,7 @@
         {$_("admin_direct_mm_create_new_order")}
       </button>
       <button
-        class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm text-opacity-90"
+        class="btn-pill-outline"
         on:click={onStartAllClick}
         disabled={resumableOrdersCount === 0}
         title={resumableOrdersCount === 0 ? $_("admin_direct_mm_no_stopped_orders_to_resume") : $_("admin_direct_mm_resume_stopped_orders")}
@@ -133,7 +133,7 @@
         {$_("admin_direct_mm_start_all")}
       </button>
       <button
-        class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
+        class="btn-pill-outline"
         on:click={onStopAllClick}
         disabled={stoppableOrdersCount === 0}
         title={stoppableOrdersCount === 0 ? $_("admin_direct_mm_no_running_orders_to_stop") : $_("admin_direct_mm_stop_running_orders")}
@@ -198,7 +198,7 @@
             <td class="py-4 px-4">
               <div class="flex items-center gap-3">
                 <div
-                  class="bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center border border-slate-100"
+                  class="bg-base-100 w-8 h-8 rounded-full flex items-center justify-center border border-base-300"
                 >
                   <ExchangeIcon
                     exchangeName={order.exchangeName}
@@ -218,7 +218,7 @@
             </td>
             <td class="py-4 px-2">
               <span
-                class="inline-flex bg-indigo-50 text-blue-600 px-2.5 py-1 rounded-[6px] text-xs font-semibold whitespace-nowrap"
+                class="inline-flex bg-base-100 text-base-content px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap border border-base-300"
               >
                 {getStrategyLabel(order)}
               </span>
@@ -243,7 +243,7 @@
             <td class="py-4 px-4 flex justify-end items-center gap-3">
               {#if canStop(order)}
                 <button
-                  class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-red-600 hover:bg-red-50 transition-colors"
+                  class="w-6 h-6 flex items-center justify-center rounded-full bg-base-100 border border-base-300 text-error hover:bg-error/10 transition-colors"
                   aria-label={$_("admin_direct_mm_stop")}
                   on:click|stopPropagation={() => onStopOrder(order)}
                 >
@@ -272,7 +272,7 @@
                 <div class="flex items-center gap-2">
                   {#if canResume(order)}
                     <button
-                      class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-blue-600 hover:bg-blue-50 transition-colors"
+                      class="w-6 h-6 flex items-center justify-center rounded-full bg-base-100 border border-base-300 text-info hover:bg-info/10 transition-colors"
                       aria-label={$_("admin_direct_mm_play")}
                       on:click|stopPropagation={() => onResumeOrder(order)}
                     >
@@ -292,7 +292,7 @@
                   {/if}
                   {#if canRemove(order)}
                     <button
-                      class="w-6 h-6 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-red-600 hover:bg-red-50 transition-colors"
+                      class="w-6 h-6 flex items-center justify-center rounded-full bg-base-100 border border-base-300 text-error hover:bg-error/10 transition-colors"
                       aria-label={$_("admin_direct_mm_remove")}
                       on:click|stopPropagation={() => onRemoveOrder(order)}
                     >
@@ -318,7 +318,7 @@
                 </div>
               {/if}
               <button
-                class="bg-indigo-50 text-blue-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                class="bg-base-100 text-base-content px-3.5 py-1.5 rounded-full text-xs font-semibold hover:bg-base-300 transition-colors whitespace-nowrap border border-base-300"
                 type="button"
                 aria-label={`Open diagnosis details for ${order.pair} on ${order.exchangeName}`}
                 on:click|stopPropagation={() => onOrderClick(order)}

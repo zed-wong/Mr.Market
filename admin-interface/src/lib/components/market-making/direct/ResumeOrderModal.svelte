@@ -16,13 +16,13 @@
 <svelte:window on:keydown={(e) => order && e.key === 'Escape' && onCancel()} />
 
 {#if order}
-  <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
+  <div class="modal modal-open bg-base-content/20 backdrop-blur-[2px]">
     <div
-      class="modal-box bg-white p-0 rounded-[20px] max-w-[440px] overflow-hidden shadow-[0_24px_80px_-20px_rgba(15,23,42,0.25)] border border-white/70 text-left"
+      class="modal-box bg-base-100 p-0 rounded-2xl max-w-[440px] overflow-hidden shadow-2xl border border-base-300 text-left"
     >
-      <div class="px-6 pt-6 pb-5 bg-violet-50/60">
+      <div class="px-6 pt-6 pb-5 bg-info/10">
         <div
-          class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-indigo-600 ring-1 ring-blue-100"
+          class="w-10 h-10 rounded-full bg-info/10 flex items-center justify-center text-info ring-1 ring-info/20"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -35,13 +35,13 @@
           </svg>
         </div>
 
-        <h3 class="mt-5 font-bold text-[22px] text-slate-900 tracking-tight leading-[1.15]">
+        <span class="mt-5 block font-display text-[22px] text-base-content leading-[1.15]">
           {$_("admin_direct_mm_resume_confirm_title")}
-        </h3>
+        </span>
       </div>
 
-      <div class="px-6 py-5 bg-white border-t border-slate-100">
-        <span class="text-[15px] text-slate-700 leading-relaxed">
+      <div class="px-6 py-5 bg-base-100 border-t border-base-300">
+        <span class="text-[15px] text-base-content/70 leading-relaxed">
           {$_("admin_direct_mm_resume_confirm_body", {
             values: { pair: order.pair },
           })}
@@ -49,20 +49,20 @@
 
         <div class="mt-4 flex flex-col gap-2">
           <div class="flex justify-between items-center text-[13px]">
-            <span class="text-slate-500">{$_("admin_direct_mm_resume_confirm_order_id")}</span>
-            <span class="text-slate-800 font-mono">{truncateId(order.orderId)}</span>
+            <span class="text-base-content/55">{$_("admin_direct_mm_resume_confirm_order_id")}</span>
+            <span class="text-base-content font-mono-num">{truncateId(order.orderId)}</span>
           </div>
           <div class="flex justify-between items-center text-[13px]">
-            <span class="text-slate-500">{$_("admin_direct_mm_resume_confirm_trading_pair")}</span>
-            <span class="text-slate-800 font-semibold">{order.pair}</span>
+            <span class="text-base-content/55">{$_("admin_direct_mm_resume_confirm_trading_pair")}</span>
+            <span class="text-base-content font-semibold">{order.pair}</span>
           </div>
         </div>
 
         <div
-          class="mt-5 bg-violet-50/70 rounded-xl px-4 py-3 flex gap-3 items-center relative overflow-hidden border border-violet-100"
+          class="mt-5 bg-info/10 rounded-xl px-4 py-3 flex gap-3 items-center relative overflow-hidden border border-info/20"
         >
-          <div class="absolute inset-y-0 left-0 w-[3px] bg-blue-600 rounded-full"></div>
-          <div class="text-indigo-600 flex-shrink-0 ml-1">
+          <div class="absolute inset-y-0 left-0 w-[3px] bg-info rounded-full"></div>
+          <div class="text-info flex-shrink-0 ml-1">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="18"
@@ -73,20 +73,20 @@
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
             </svg>
           </div>
-          <span class="text-[12.5px] leading-relaxed text-slate-600 pr-2">
+          <span class="text-[12.5px] leading-relaxed text-base-content/70 pr-2">
             {$_("admin_direct_mm_resume_confirm_warning")}
           </span>
         </div>
 
         <div class="flex gap-3 mt-6">
           <button
-            class="btn bg-violet-50 hover:bg-violet-100 border-none text-slate-700 w-[120px] h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14px] shadow-none"
+            class="btn-pill-outline w-[120px]"
             on:click={onCancel}
           >
             {$_("admin_direct_mm_cancel")}
           </button>
           <button
-            class="btn bg-indigo-600 hover:bg-indigo-700 border-none text-white flex-1 h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
+            class="btn-pill-primary flex-1"
             disabled={isResuming}
             on:click={onConfirm}
           >

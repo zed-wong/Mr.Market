@@ -16,12 +16,12 @@
 <svelte:window on:keydown={(e) => order && e.key === 'Escape' && onCancel()} />
 
 {#if order}
-  <div class="modal modal-open bg-black/10 backdrop-blur-sm">
+  <div class="modal modal-open bg-base-content/20 backdrop-blur-sm">
     <div
-      class="modal-box bg-white p-8 rounded-3xl max-w-md overflow-hidden shadow-[0_24px_80px_-20px_rgba(15,23,42,0.25)] text-left"
+      class="modal-box bg-base-100 p-8 rounded-3xl max-w-md overflow-hidden shadow-2xl border border-base-300 text-left"
     >
-      <div class="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500">
+      <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-error">
           <path d="M3 6h18"/>
           <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
           <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
@@ -43,7 +43,7 @@
       <div class="mt-5 flex flex-col gap-2">
         <div class="flex justify-between items-center text-[13px]">
           <span class="text-base-content/40">{$_("admin_direct_mm_stop_confirm_order_id")}</span>
-          <span class="text-base-content/70 font-mono">{truncateId(order.orderId)}</span>
+          <span class="text-base-content/70 font-mono-num">{truncateId(order.orderId)}</span>
         </div>
         <div class="flex justify-between items-center text-[13px]">
           <span class="text-base-content/40">{$_("admin_direct_mm_stop_confirm_trading_pair")}</span>
@@ -52,7 +52,7 @@
       </div>
 
       <div
-        class="mt-5 flex gap-3 px-4 py-3 rounded-xl bg-red-50/50 border-l-2 border-red-500 relative"
+        class="mt-5 flex gap-3 px-4 py-3 rounded-xl bg-error/10 border-l-2 border-error relative"
       >
         <div class="mt-0.5 shrink-0">
           <svg
@@ -61,7 +61,7 @@
             height="16"
             viewBox="0 0 24 24"
             fill="none"
-            class="text-red-500"
+            class="text-error"
             stroke="currentColor"
             stroke-width="2.5"
             stroke-linecap="round"
@@ -79,13 +79,13 @@
 
       <div class="flex gap-3 w-full mt-8">
         <button
-          class="btn flex-1 bg-base-200 hover:bg-base-300 border-none text-base-content h-[44px] min-h-[44px] rounded-lg font-semibold shadow-none"
+          class="btn-pill-outline flex-1"
           on:click={onCancel}
         >
           {$_("admin_direct_mm_cancel")}
         </button>
         <button
-          class="btn flex-1 bg-red-600 hover:bg-red-700 border-none text-white h-[44px] min-h-[44px] rounded-lg font-semibold shadow-none"
+          class="btn-pill-primary flex-1 bg-error text-error-content"
           on:click={onConfirm}
           disabled={isRemoving}
         >
