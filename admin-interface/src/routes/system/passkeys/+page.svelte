@@ -114,17 +114,6 @@
         {/if}
         <span>{$_('refresh')}</span>
       </button>
-      <button
-        type="button"
-        class="btn btn-primary btn-sm rounded-full capitalize"
-        onclick={handleRegister}
-        disabled={registering}
-      >
-        {#if registering}
-          <span class="loading loading-spinner loading-xs"></span>
-        {/if}
-        <span>{$_('admin.register_passkey')}</span>
-      </button>
     {/snippet}
   </PageHeader>
 
