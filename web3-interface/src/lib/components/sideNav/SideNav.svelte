@@ -25,7 +25,7 @@
   data-testid="desktop-primary-navigation"
 >
   <a href="/" class="mb-10 flex items-center gap-2 px-2" onclick={closeMobileNav}>
-    <span class="inline-flex size-8 items-center justify-center rounded-full bg-primary text-primary-content font-bold">M</span>
+    <img src="/mr-market-logo-bg.png" alt="Mr.Market logo" class="size-8 rounded-full" />
     <span class="font-display text-lg tracking-tight text-base-content">Mr.Market</span>
   </a>
 
@@ -67,7 +67,7 @@
   >
     <div class="mb-10 flex items-start justify-between">
       <a href="/" class="flex items-center gap-2" onclick={closeMobileNav}>
-        <span class="inline-flex size-8 items-center justify-center rounded-full bg-primary text-primary-content font-bold">M</span>
+        <img src="/mr-market-logo-bg.png" alt="Mr.Market logo" class="size-8 rounded-full" />
         <span class="font-display text-lg tracking-tight text-base-content">Mr.Market</span>
       </a>
       <button class="btn-pill-ghost" onclick={closeMobileNav} aria-label="Close navigation">
