@@ -10,7 +10,7 @@
     "prepare": "svelte-kit sync",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "lint": "echo \"lint not configured yet\"",
+    "lint": "bun run check",
     "test:unit": "vitest --run --passWithNoTests",
     "test:e2e": "playwright test --workers=1"
   },
