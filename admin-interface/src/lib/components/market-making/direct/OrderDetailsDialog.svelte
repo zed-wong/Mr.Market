@@ -23,6 +23,8 @@
         isDualAccountOrder,
         isKnownDirectStrategyControllerType,
         getStateLabel,
+        buildDirectOrderDiagnosis,
+        type DirectOrderDiagnosisTone,
     } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
@@ -65,6 +67,27 @@
         if (!d.privateStreamEventAt)
             return $_("admin_direct_mm_connectivity_inactive");
         return $_("admin_direct_mm_connectivity_active");
+    }
+
+    function getDiagnosisCardClass(tone: DirectOrderDiagnosisTone): string {
+        if (tone === "success") return "border-success/30 bg-success/10";
+        if (tone === "error") return "border-error/30 bg-error/10";
+        if (tone === "warning") return "border-warning/30 bg-warning/10";
+        return "border-info/30 bg-info/10";
+    }
+
+    function getDiagnosisBadgeClass(tone: DirectOrderDiagnosisTone): string {
+        if (tone === "success") return "badge-success text-base-100";
+        if (tone === "error") return "badge-error text-base-100";
+        if (tone === "warning") return "badge-warning";
+        return "badge-info text-base-100";
+    }
+
+    function getDiagnosisTextClass(tone: DirectOrderDiagnosisTone): string {
+        if (tone === "success") return "text-success";
+        if (tone === "error") return "text-error";
+        if (tone === "warning") return "text-warning";
+        return "text-info";
     }
 
     function formatTimeAgo(iso: string | null): string {
@@ -184,6 +207,7 @@
     $: takerBalances =
         data?.inventoryBalances.filter((b) => b.accountLabel === "taker") ?? [];
     $: recentErrors = data?.recentErrors ?? [];
+    $: diagnosis = data && order ? buildDirectOrderDiagnosis(data, order) : null;
 </script>
 
 <svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
@@ -357,6 +381,64 @@
                                     >
                                 </div>
                             {/each}
+                        </div>
+                    {/if}
+
+                    {#if diagnosis}
+                        <div
+                            class="rounded-2xl border p-4 {getDiagnosisCardClass(diagnosis.tone)}"
+                            data-testid="direct-mm-ops-diagnosis-summary"
+                        >
+                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <span class="badge badge-sm capitalize {getDiagnosisBadgeClass(diagnosis.tone)}">
+                                        ops diagnosis
+                                    </span>
+                                    <span class="mt-2 block text-base font-bold text-base-content">
+                                        {diagnosis.title}
+                                    </span>
+                                    <span class="mt-1 block text-sm leading-relaxed text-base-content/70">
+                                        {diagnosis.summary}
+                                    </span>
+                                </div>
+                                {#if diagnosis.risks.length > 0}
+                                    <span class="badge badge-sm badge-warning capitalize">
+                                        {diagnosis.risks.length} evidence risk{diagnosis.risks.length === 1 ? "" : "s"}
+                                    </span>
+                                {:else}
+                                    <span class="badge badge-sm badge-success text-base-100 capitalize">
+                                        no blocking evidence
+                                    </span>
+                                {/if}
+                            </div>
+
+                            <div class="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+                                {#each diagnosis.evidence as item (item.label)}
+                                    <div class="rounded-xl border border-base-300 bg-base-100 p-3">
+                                        <span class="block text-[10px] font-semibold text-base-content/50 capitalize">
+                                            {item.label}
+                                        </span>
+                                        <span class="mt-1 block text-xs leading-relaxed {getDiagnosisTextClass(item.tone)}">
+                                            {item.value}
+                                        </span>
+                                    </div>
+                                {/each}
+                            </div>
+
+                            {#if diagnosis.risks.length > 0}
+                                <div class="mt-3 rounded-xl border border-base-300 bg-base-100 p-3">
+                                    <span class="block text-[10px] font-semibold text-base-content/50 capitalize">
+                                        operator attention
+                                    </span>
+                                    <ul class="mt-2 flex flex-col gap-1">
+                                        {#each diagnosis.risks as risk}
+                                            <li class="text-xs text-base-content/70">
+                                                {risk}
+                                            </li>
+                                        {/each}
+                                    </ul>
+                                </div>
+                            {/if}
                         </div>
                     {/if}
 

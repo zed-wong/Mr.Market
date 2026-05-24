@@ -176,7 +176,19 @@ const dashboardSummary = (range: '24h' | '7d' | '30d', totalCapital: string) => 
   },
 });
 
+let cachedAdminAccessToken: string | null = null;
+
 const login = async (page: Page) => {
+  if (cachedAdminAccessToken) {
+    await page.goto('/login');
+    await page.evaluate((token) => {
+      localStorage.setItem('admin-access-token', token);
+    }, cachedAdminAccessToken);
+    await page.goto('/');
+    await expect(page.locator('[data-testid="admin-dashboard-shell"]')).toBeVisible();
+    return;
+  }
+
   await page.goto('/login');
   await page.locator('input[name="password"]').fill(ADMIN_PASSWORD);
   await Promise.all([
@@ -191,6 +203,7 @@ const login = async (page: Page) => {
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('admin-access-token') !== null))
     .toBe(true);
+  cachedAdminAccessToken = await page.evaluate(() => localStorage.getItem('admin-access-token'));
 };
 
 const routeApiKeyMetadata = async (page: Page) => {
@@ -764,6 +777,8 @@ test.describe.serial('real-data admin smoke', () => {
   test('direct market-making list and detail diagnosis states are explicit and keyboard reachable', async ({ page }) => {
     await login(page);
 
+    const nowMs = Date.now();
+    const secondsAgo = (seconds: number) => new Date(nowMs - seconds * 1000).toISOString();
     const order = {
       orderId: 'order-state-handling',
       exchangeName: 'binance',
@@ -774,8 +789,8 @@ test.describe.serial('real-data admin smoke', () => {
       strategyName: 'Pure MM',
       controllerType: 'pureMarketMaking',
       directExecutionMode: 'single_account',
-      createdAt: '2026-05-23T00:00:00.000Z',
-      lastTickAt: '2026-05-23T00:01:00.000Z',
+      createdAt: secondsAgo(120),
+      lastTickAt: secondsAgo(5),
       accountLabel: 'main',
       makerAccountLabel: 'maker',
       takerAccountLabel: 'taker',
@@ -789,8 +804,9 @@ test.describe.serial('real-data admin smoke', () => {
       state: runtimeState,
       runtimeState,
       executorHealth: 'active',
-      lastUpdatedAt: runtimeState === 'running' ? '2026-05-23T00:01:00.000Z' : '2026-05-23T00:02:00.000Z',
-      privateStreamEventAt: '2026-05-23T00:01:00.000Z',
+      lastTickAt: runtimeState === 'running' ? secondsAgo(5) : null,
+      lastUpdatedAt: runtimeState === 'running' ? secondsAgo(3) : secondsAgo(1),
+      privateStreamEventAt: runtimeState === 'running' ? secondsAgo(3) : null,
       openOrders: [],
       intents: [],
       recentErrors: [],
@@ -816,6 +832,31 @@ test.describe.serial('real-data admin smoke', () => {
       },
       spread: { bid: '0.001', ask: '0.001', absolute: '0.002' },
       inventoryBalances: [],
+      balanceCacheStatus: [
+        {
+          accountLabel: 'main',
+          asset: 'BTC',
+          source: 'user_stream',
+          freshnessTimestamp: secondsAgo(3),
+          stale: false,
+        },
+      ],
+      streamHealth: [
+        {
+          accountLabel: 'main',
+          state: 'live',
+          order: true,
+          trade: true,
+          balance: true,
+          lastEventAt: secondsAgo(3),
+          lastBalanceRefreshAt: secondsAgo(3),
+        },
+      ],
+      userStreamRuntime: {
+        activeWatcherCount: 1,
+        queueDepth: 0,
+        duplicateFillSuppressionCount: 0,
+      },
       stale: false,
     });
 
@@ -892,7 +933,13 @@ test.describe.serial('real-data admin smoke', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(statusBody('stopped')) });
     });
 
-    await page.goto('/trading/direct-market-making');
+    await page.goto('/setup');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('body')).toContainText(/first-time admin setup guide/i);
+    await Promise.all([
+      page.waitForURL('**/trading/direct-market-making'),
+      page.getByRole('link', { name: /direct diagnostics/i }).click(),
+    ]);
     await page.waitForLoadState('networkidle');
 
     const diagnosisButton = page.getByRole('button', { name: /open diagnosis details for BTC\/USDT on binance/i });
@@ -901,6 +948,12 @@ test.describe.serial('real-data admin smoke', () => {
     await page.keyboard.press('Enter');
 
     await expect(page.locator('[data-testid="direct-mm-detail-loading"]')).toBeVisible();
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Running normally');
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Tick freshness');
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Stream health');
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Balance cache');
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Recent errors');
     await expect(page.locator('.modal-open')).toContainText(/running/i);
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
 
@@ -910,6 +963,7 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('.modal-open')).not.toContainText('executor health');
 
     await page.locator('.modal-open').getByRole('button', { name: /retry diagnosis/i }).click();
+    await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Intentionally stopped');
     await expect(page.locator('.modal-open')).toContainText(/stopped/i);
     await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toBeVisible();
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toHaveCount(0);

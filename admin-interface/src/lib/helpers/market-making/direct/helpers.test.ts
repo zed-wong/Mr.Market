@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   aggregateBalancesByAsset,
+  buildDirectOrderDiagnosis,
   buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
   isBestCapacityDirectOrderControllerType,
@@ -13,6 +14,129 @@ import {
   resolveInventorySkewAllocation,
   resolveMinOrderAmount,
 } from './helpers';
+
+const diagnosisNow = Date.parse('2026-05-24T00:00:00.000Z');
+
+const baseDiagnosisStatus = {
+  state: 'running',
+  runtimeState: 'running',
+  executorHealth: 'active',
+  lastTickAt: '2026-05-23T23:59:50.000Z',
+  lastUpdatedAt: '2026-05-23T23:59:55.000Z',
+  privateStreamEventAt: '2026-05-23T23:59:55.000Z',
+  recentErrors: [],
+  streamHealth: [
+    {
+      accountLabel: 'main',
+      state: 'live',
+      order: true,
+      trade: true,
+      balance: true,
+      lastEventAt: '2026-05-23T23:59:55.000Z',
+    },
+  ],
+  balanceCacheStatus: [
+    {
+      accountLabel: 'main',
+      asset: 'BTC',
+      source: 'user_stream',
+      freshnessTimestamp: '2026-05-23T23:59:55.000Z',
+      stale: false,
+    },
+  ],
+  userStreamRuntime: {
+    activeWatcherCount: 1,
+    queueDepth: 0,
+    duplicateFillSuppressionCount: 0,
+  },
+  stale: false,
+};
+
+describe('buildDirectOrderDiagnosis', () => {
+  it('diagnoses a healthy active order as running normally with evidence', () => {
+    const diagnosis = buildDirectOrderDiagnosis(
+      baseDiagnosisStatus,
+      { runtimeState: 'running', warnings: [] },
+      diagnosisNow,
+    );
+
+    expect(diagnosis.kind).toBe('normal');
+    expect(diagnosis.title).toBe('Running normally');
+    expect(diagnosis.summary).toContain('running normally');
+    expect(diagnosis.evidence.map((item) => item.label)).toEqual(
+      expect.arrayContaining([
+        'Tick freshness',
+        'Stream health',
+        'Balance cache',
+        'Recent errors',
+      ]),
+    );
+  });
+
+  it('diagnoses a stopped order as intentionally stopped instead of failed', () => {
+    const diagnosis = buildDirectOrderDiagnosis(
+      {
+        ...baseDiagnosisStatus,
+        state: 'stopped',
+        runtimeState: 'stopped',
+        lastTickAt: null,
+      },
+      { runtimeState: 'stopped', warnings: [] },
+      diagnosisNow,
+    );
+
+    expect(diagnosis.kind).toBe('stopped');
+    expect(diagnosis.title).toBe('Intentionally stopped');
+    expect(diagnosis.summary).toContain('intentionally stopped');
+    expect(diagnosis.summary).toContain('not being treated as a runtime failure');
+  });
+
+  it('diagnoses failed or blocked orders with the blocking reason', () => {
+    const diagnosis = buildDirectOrderDiagnosis(
+      {
+        ...baseDiagnosisStatus,
+        runtimeState: 'failed',
+        recentErrors: [{ ts: '2026-05-23T23:59:55.000Z', message: 'Exchange authentication failed' }],
+      },
+      { runtimeState: 'failed', warnings: ['execution_blocked'] },
+      diagnosisNow,
+    );
+
+    expect(diagnosis.kind).toBe('blocked');
+    expect(diagnosis.title).toBe('Failed or blocked');
+    expect(diagnosis.summary).toContain('Blocking reason');
+    expect(diagnosis.risks[0]).toContain('Execution is blocked');
+  });
+
+  it('diagnoses stale ticks, streams, or balances as operational risk', () => {
+    const diagnosis = buildDirectOrderDiagnosis(
+      {
+        ...baseDiagnosisStatus,
+        runtimeState: 'running',
+        lastTickAt: '2026-05-23T23:55:00.000Z',
+        streamHealth: [{ accountLabel: 'main', state: 'stale' }],
+        balanceCacheStatus: [
+          {
+            accountLabel: 'main',
+            asset: 'USDT',
+            source: 'missing',
+            freshnessTimestamp: null,
+            stale: true,
+          },
+        ],
+      },
+      { runtimeState: 'running', warnings: [] },
+      diagnosisNow,
+    );
+
+    expect(diagnosis.kind).toBe('risky');
+    expect(diagnosis.title).toBe('Operational risk detected');
+    expect(diagnosis.summary).toContain('operational risk');
+    expect(diagnosis.risks.join(' ')).toContain('Last tick is stale');
+    expect(diagnosis.risks.join(' ')).toContain('stream health is stale');
+    expect(diagnosis.risks.join(' ')).toContain('balance cache is stale');
+  });
+});
 
 describe('normalizeConfigOverrides', () => {
   it('maps PMM quick fields to order amount and symmetric spreads', () => {

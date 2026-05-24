@@ -31,6 +31,16 @@ export interface InventorySkewAllocation {
   quotePercent: number;
 }
 
+export type {
+  DirectOrderDiagnosis,
+  DirectOrderDiagnosisEvidence,
+  DirectOrderDiagnosisTone,
+} from "./diagnosis-summary";
+export {
+  buildDirectOrderDiagnosis,
+  explainDirectOrderWarning,
+} from "./diagnosis-summary";
+
 const errorKeyMap: Record<string, string> = {
   "API key not found": "admin_direct_mm_error_api_key_not_found",
   "API key exchange does not match request":

@@ -111,6 +111,34 @@ export interface DirectOrderStatus {
     used: string;
     total: string;
     accountLabel?: string;
+    source?: string;
+  }>;
+  balanceCacheStatus?: Array<{
+    asset: string;
+    accountLabel: string;
+    source: string;
+    freshnessTimestamp: string | null;
+    stale: boolean;
+  }>;
+  userStreamCapabilities?: Array<{
+    accountLabel: string;
+    watchOrders?: boolean;
+    watchTrades?: boolean;
+    watchBalance?: boolean;
+  }>;
+  userStreamRuntime?: {
+    activeWatcherCount: number;
+    queueDepth: number;
+    duplicateFillSuppressionCount: number;
+  };
+  streamHealth?: Array<{
+    accountLabel: string;
+    state?: string;
+    order?: boolean;
+    trade?: boolean;
+    balance?: boolean;
+    lastEventAt?: string | null;
+    lastBalanceRefreshAt?: string | null;
   }>;
   stale: boolean;
 }
