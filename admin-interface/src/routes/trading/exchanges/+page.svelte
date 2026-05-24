@@ -4,11 +4,11 @@
   import { toast } from "svelte-sonner";
   import { onMount } from "svelte";
   import { page } from "$app/stores";
-  import { invalidate } from "$app/navigation";
   import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
   import { classifyAdminError, type AdminErrorState } from "$lib/helpers/admin/common-states";
   import { summarizeExchangeReadiness } from "$lib/helpers/admin/exchange-readiness";
   import { getAccessToken } from "$lib/helpers/api/client";
+  import { getGrowBasicInfoStrict } from "$lib/helpers/mrm/grow";
   import {
     getSupportedExchanges,
     getAllCcxtExchanges,
@@ -16,25 +16,23 @@
   import PageHeader from "$lib/components/admin/shared/PageHeader.svelte";
   import AddExchange from "$lib/components/admin/exchanges/addExchange.svelte";
   import ExchangeList from "$lib/components/admin/exchanges/exchangeList.svelte";
+  import type { GrowInfo } from "$lib/types/hufi/grow";
 
   let supportedExchanges = $state<string[]>([]);
   let allCcxtExchanges = $state<string[]>([]);
+  let growInfo = $state<GrowInfo | null>(null);
+  let loading = $state(true);
   let isRefreshing = $state(false);
+  let exchangeError = $state<AdminErrorState | null>(null);
   let metadataError = $state<AdminErrorState | null>(null);
 
   let exchanges = $derived(
-    ($page.data.growInfo?.exchanges ?? []) as {
+    (growInfo?.exchanges ?? []) as {
       exchange_id: string;
       name: string;
       icon_url?: string;
       enable: boolean;
     }[],
-  );
-
-  let exchangeLoadError = $derived(
-    $page.data.growInfoError
-      ? classifyAdminError(new Error(String($page.data.growInfoError)), 'Exchange configuration failed to load')
-      : null,
   );
 
   let totals = $derived({
@@ -45,34 +43,58 @@
     ccxt: allCcxtExchanges.length,
   });
 
-  function getRandomDelay() {
-    return Math.floor(Math.random() * (3000 - 2000 + 1)) + 2000;
+  async function loadExchangeManagement(showLoading = true) {
+    const token = getAccessToken();
+    if (!token) {
+      growInfo = null;
+      exchangeError = classifyAdminError(
+        new Error('Session expired. Sign in again before viewing exchange management.'),
+        'Exchange configuration failed to load',
+      );
+      loading = false;
+      return;
+    }
+
+    if (showLoading) {
+      loading = true;
+      growInfo = null;
+    }
+    exchangeError = null;
+
+    try {
+      growInfo = await getGrowBasicInfoStrict(token);
+    } catch (cause) {
+      growInfo = null;
+      exchangeError = classifyAdminError(cause, 'Exchange configuration failed to load');
+    } finally {
+      loading = false;
+    }
   }
 
   async function RefreshExchanges(showToast = true) {
     isRefreshing = true;
-    const refreshTask = new Promise<void>((resolve, reject) => {
-      setTimeout(() => {
-        invalidate("admin:settings:exchanges")
-          .then(() => resolve())
-          .catch((error) => reject(error))
-          .finally(() => {
-            isRefreshing = false;
-          });
-      }, getRandomDelay());
+    const refreshTask = loadExchangeManagement(false).finally(() => {
+      isRefreshing = false;
     });
     if (showToast) {
-      await toast.promise(refreshTask, {
-        loading: $_("refreshing_msg"),
-        success: $_("refresh_success_msg"),
-        error: $_("refresh_failed_msg"),
-      });
+      await toast.promise(
+        refreshTask.then(() => {
+          if (exchangeError) {
+            throw new Error(exchangeError.message);
+          }
+        }),
+        {
+          loading: $_("refreshing_msg"),
+          success: $_("refresh_success_msg"),
+          error: $_("refresh_failed_msg"),
+        },
+      );
     } else {
       await refreshTask;
     }
   }
 
-  onMount(async () => {
+  async function loadMetadata() {
     const token = getAccessToken();
     if (!token) return;
     metadataError = null;
@@ -82,6 +104,19 @@
     } catch (cause) {
       metadataError = classifyAdminError(cause, 'Exchange metadata failed to load');
     }
+  }
+
+  onMount(() => {
+    if ($page.data.growInfoError) {
+      exchangeError = classifyAdminError(
+        new Error(String($page.data.growInfoError)),
+        'Exchange configuration failed to load',
+      );
+      loading = false;
+    } else {
+      void loadExchangeManagement();
+    }
+    void loadMetadata();
   });
 </script>
 
@@ -92,7 +127,11 @@
     subtitle={$_("manage_connected_exchanges")}
   >
     {#snippet actions()}
-      <AddExchange {allCcxtExchanges} existingExchanges={exchanges} />
+      <AddExchange
+        {allCcxtExchanges}
+        existingExchanges={exchanges}
+        onRefresh={() => RefreshExchanges(false)}
+      />
       <button
         class="btn btn-square btn-outline btn-sm"
         onclick={() => RefreshExchanges()}
@@ -122,23 +161,29 @@
     {/snippet}
   </PageHeader>
 
-  {#if $page.data.waitingForClientSession}
+  {#if $page.data.waitingForClientSession || loading}
     <AdminStatePanel
       kind="loading"
       context="exchange management"
-      title="loading exchange configuration"
-      message="Waiting for the browser session before loading configured exchanges and supported exchange metadata."
+      title="loading exchange management"
+      message="Loading configured exchanges, readiness status, and enablement before showing empty or completed exchange-management content."
       testId="exchange-loading"
     />
-  {:else if exchangeLoadError}
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-5" aria-hidden="true">
+      {#each Array(5) as _}
+        <div class="skeleton h-24 rounded-xl"></div>
+      {/each}
+    </div>
+    <div class="skeleton h-64 w-full rounded-xl" aria-hidden="true"></div>
+  {:else if exchangeError}
     <AdminStatePanel
-      kind={exchangeLoadError.kind}
+      kind={exchangeError.kind}
       context="exchange management"
-      title={exchangeLoadError.title}
-      message={exchangeLoadError.message}
-      actionLabel={exchangeLoadError.kind === 'session' ? 'sign in again' : 'retry'}
-      actionHref={exchangeLoadError.kind === 'session' ? '/login' : ''}
-      onAction={exchangeLoadError.kind === 'session' ? undefined : () => RefreshExchanges(false)}
+      title={exchangeError.title}
+      message={exchangeError.message}
+      actionLabel={exchangeError.kind === 'session' ? 'sign in again' : 'retry'}
+      actionHref={exchangeError.kind === 'session' ? '/login' : ''}
+      onAction={exchangeError.kind === 'session' ? undefined : () => RefreshExchanges(false)}
       testId="exchange-error"
     />
   {:else}
@@ -209,7 +254,7 @@
         testId="exchange-empty"
       />
     {:else}
-      <ExchangeList {exchanges} {supportedExchanges} />
+      <ExchangeList {exchanges} {supportedExchanges} onRefresh={() => RefreshExchanges(false)} />
     {/if}
   {/if}
 </section>

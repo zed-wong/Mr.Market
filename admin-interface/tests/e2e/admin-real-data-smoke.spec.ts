@@ -472,6 +472,37 @@ test.describe.serial('real-data admin smoke', () => {
     await login(page);
     await routeExchangeMetadata(page);
 
+    let resolveGrowInfo!: () => void;
+    const delayedGrowInfo = new Promise<void>((resolve) => {
+      resolveGrowInfo = resolve;
+    });
+
+    await page.route(`${BACKEND_ORIGIN}/grow/info`, async (route) => {
+      await delayedGrowInfo;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          exchanges: [{ exchange_id: 'binance', name: 'Binance', enable: true }],
+          simply_grow: { tokens: [] },
+          arbitrage: { pairs: [] },
+          market_making: { pairs: [], exchanges: [] },
+        }),
+      });
+    });
+
+    await page.goto('/trading/exchanges');
+    await expect(page.getByTestId('exchange-loading')).toBeVisible();
+    await expect(page.getByTestId('exchange-loading')).toContainText(/exchange management/i);
+    await expect(page.getByTestId('exchange-loading')).toContainText(/loading exchange management/i);
+    await expect(page.getByTestId('exchange-empty')).not.toBeVisible();
+    await expect(page.locator('body')).not.toContainText('No exchanges are configured yet');
+
+    resolveGrowInfo();
+    await expect(page.getByRole('row').filter({ hasText: 'Binance' })).toBeVisible();
+    await expect(page.getByTestId('exchange-loading')).not.toBeVisible();
+    await page.unroute(`${BACKEND_ORIGIN}/grow/info`);
+
     const keys = [
       {
         key_id: 'ready-key',

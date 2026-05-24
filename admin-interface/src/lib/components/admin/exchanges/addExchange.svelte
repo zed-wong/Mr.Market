@@ -15,6 +15,7 @@
     icon_url?: string;
     enable: boolean;
   }[] = [];
+  export let onRefresh: (() => Promise<void> | void) | undefined = undefined;
 
   let AddNewName = "";
   let AddNewExchangeId = "";
@@ -50,6 +51,7 @@
         token,
       );
       await invalidate("admin:settings:exchanges");
+      await onRefresh?.();
       closeDialog();
     } catch (error) {
       console.error("Failed to add exchange:", error);

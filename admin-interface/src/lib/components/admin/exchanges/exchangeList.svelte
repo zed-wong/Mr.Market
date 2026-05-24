@@ -19,6 +19,7 @@
 
   export let exchanges: ExchangeListItem[] = [];
   export let supportedExchanges: string[] = [];
+  export let onRefresh: (() => Promise<void> | void) | undefined = undefined;
 
   let updatingIds: Record<string, boolean> = {};
   let deletingIds: Record<string, boolean> = {};
@@ -58,9 +59,14 @@
       return;
     }
 
-    invalidate("admin:settings:exchanges").finally(() => {
+    try {
+      await invalidate("admin:settings:exchanges");
+      await onRefresh?.();
+    } catch (error) {
+      console.error("Failed to refresh exchanges:", error);
+    } finally {
       updatingIds = { ...updatingIds, [exchange_id]: false };
-    });
+    }
   }
 
   async function DeleteExchange(exchange_id: string) {
@@ -80,9 +86,14 @@
       return;
     }
 
-    invalidate("admin:settings:exchanges").finally(() => {
+    try {
+      await invalidate("admin:settings:exchanges");
+      await onRefresh?.();
+    } catch (error) {
+      console.error("Failed to refresh exchanges:", error);
+    } finally {
       deletingIds = { ...deletingIds, [exchange_id]: false };
-    });
+    }
   }
 </script>
 
