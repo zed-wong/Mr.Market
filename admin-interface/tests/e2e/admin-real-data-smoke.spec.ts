@@ -193,6 +193,23 @@ const login = async (page: Page) => {
     .toBe(true);
 };
 
+const routeApiKeyMetadata = async (page: Page) => {
+  await page.route(`${BACKEND_ORIGIN}/admin/grow/exchange/ccxt-supported`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(['binance', 'okx']),
+    });
+  });
+  await page.route(`${BACKEND_ORIGIN}/admin/exchanges/key-pair`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ publicKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=' }),
+    });
+  });
+};
+
 test.describe.serial('real-data admin smoke', () => {
   test('visits every target admin surface in one authenticated isolated session', async ({ page }) => {
     const unexpectedResponses: string[] = [];
@@ -278,6 +295,160 @@ test.describe.serial('real-data admin smoke', () => {
     expect(requestedUrls.join('\n')).not.toMatch(/localhost:3000|127\.0\.0\.1:3000|localhost:5174/);
     expect(unexpectedResponses).toEqual([]);
     expect(clientErrors).toEqual([]);
+  });
+
+  test('API key management shows readiness labels, permission labels, form validation, and removal refresh', async ({ page }) => {
+    await login(page);
+    await routeApiKeyMetadata(page);
+
+    let keys = [
+      {
+        key_id: 'ready-key',
+        exchange: 'binance',
+        name: 'ready account',
+        api_key: 'ready-api-key-1234',
+        api_secret: '',
+        permissions: 'read-trade',
+        state: 'alive',
+        validation_status: 'valid',
+        created_at: '2026-05-23T00:00:00.000Z',
+        last_update: '2026-05-23T00:00:00.000Z',
+      },
+      {
+        key_id: 'pending-key',
+        exchange: 'binance',
+        name: 'pending account',
+        api_key: 'pending-api-key-1234',
+        api_secret: '',
+        permissions: 'read',
+        validation_status: 'pending',
+      },
+      {
+        key_id: 'failed-key',
+        exchange: 'okx',
+        name: 'failed account',
+        api_key: 'failed-api-key-1234',
+        api_secret: '',
+        permissions: 'read-trade',
+        validation_status: 'failed',
+        validation_error: 'Invalid signature',
+      },
+      {
+        key_id: 'disabled-key',
+        exchange: 'okx',
+        name: 'disabled account',
+        api_key: 'disabled-api-key-1234',
+        api_secret: '',
+        permissions: 'read',
+        state: 'disabled',
+        validation_status: 'valid',
+      },
+      {
+        key_id: 'unknown-key',
+        exchange: 'kraken',
+        name: 'unknown account',
+        api_key: 'unknown-api-key-1234',
+        api_secret: '',
+        permissions: 'custom',
+        state: 'mystery',
+      },
+    ];
+    let keyListLoads = 0;
+
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      if (route.request().method() === 'GET') {
+        keyListLoads += 1;
+        if (keyListLoads === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(keys),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys/*`, async (route) => {
+      if (route.request().method() === 'DELETE') {
+        keys = [];
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto('/system/api-keys');
+    await expect(page.getByTestId('api-key-loading')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('body')).toContainText('ready');
+    await expect(page.locator('body')).toContainText('validation pending');
+    await expect(page.locator('body')).toContainText('validation failed');
+    await expect(page.locator('body')).toContainText('Invalid signature');
+    await expect(page.locator('body')).toContainText('disabled');
+    await expect(page.locator('body')).toContainText('unknown');
+    await expect(page.locator('body')).toContainText('read only');
+    await expect(page.locator('body')).toContainText('trade enabled');
+    await expect(page.locator('body')).toContainText('permission unknown');
+
+    await page.getByRole('button', { name: /^\+ add key$/i }).click();
+    await page.getByRole('button', { name: /^add key$/i }).click();
+    await expect(page.locator('body')).toContainText('Choose or enter an exchange.');
+    await expect(page.locator('body')).toContainText('Enter a display name.');
+    await expect(page.locator('body')).toContainText('Paste the exchange API key.');
+    await expect(page.locator('body')).toContainText('Paste the exchange API secret.');
+    await page.getByRole('button', { name: /^cancel$/i }).click();
+
+    await page.locator('button[aria-label="delete API key"]').first().click();
+    await page.locator('.modal-open').getByRole('button', { name: /^delete$/i }).click();
+    await expect(page.getByTestId('api-key-empty')).toBeVisible();
+    await expect(page.locator('body')).toContainText('no API keys configured');
+
+    await page.unroute(`${BACKEND_ORIGIN}/admin/exchanges/keys`);
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'forced API key load failure' }),
+      });
+    });
+
+    await page.goto('/system/api-keys');
+    await expect(page.getByTestId('api-key-error')).toBeVisible();
+    await expect(page.locator('body')).toContainText('forced API key load failure');
+    await expect(page.getByTestId('api-key-empty')).not.toBeVisible();
+
+    await page.unroute(`${BACKEND_ORIGIN}/admin/exchanges/key-pair`);
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/key-pair`, async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'forced encryption metadata failure' }),
+      });
+    });
+    await page.unroute(`${BACKEND_ORIGIN}/admin/exchanges/keys`);
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    });
+
+    await page.goto('/system/api-keys');
+    await expect(page.getByTestId('api-key-metadata-error')).toBeVisible();
+    await expect(page.locator('body')).toContainText('forced encryption metadata failure');
+    await expect(page.getByRole('button', { name: /^\+ add key$/i })).toBeDisabled();
   });
 
   test('direct market-making API key remediation stays in the admin shell', async ({ page, context }) => {

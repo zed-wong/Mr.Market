@@ -4,6 +4,7 @@ import type { AdminSingleKey } from '$lib/types/hufi/admin';
 import type { DirectOrderSummary, DirectWalletStatus } from '$lib/types/hufi/admin-direct-market-making';
 import type { GrowInfo } from '$lib/types/hufi/grow';
 import type { StrategyDefinition } from '$lib/types/hufi/strategy-definition';
+import { getApiKeyReadiness, summarizeApiKeyReadiness } from './api-key-readiness';
 import { summarizeExchangeReadiness } from './exchange-readiness';
 
 export type SetupReadinessStatus = 'loading' | 'ready' | 'needs_attention' | 'unknown' | 'failed';
@@ -58,37 +59,17 @@ const hasValue = <T>(value: T | null | undefined): value is T => value !== null 
 const errorText = (value?: string | null) => value || 'The readiness request did not complete.';
 
 export const apiKeyReadiness = (key: AdminSingleKey): SetupReadinessStatus => {
-  const state = String(key.state || '').toLowerCase();
-  const validation = String(key.validation_status || '').toLowerCase();
-  const validationError = String(key.validation_error || '').toLowerCase();
-
-  if (['disabled', 'inactive', 'deleted', 'revoked'].includes(state)) {
-    return 'needs_attention';
-  }
-
-  if (validation === 'pending' || validationError === 'validation timeout') {
-    return 'needs_attention';
-  }
-
-  if (['invalid', 'failed', 'error'].includes(validation) || state === 'error') {
-    return 'needs_attention';
-  }
-
-  if (
-    ['alive', 'active', 'enabled'].includes(state) ||
-    ['valid', 'validated', 'succeeded', 'success'].includes(validation)
-  ) {
-    return 'ready';
-  }
-
-  return 'unknown';
+  const readiness = getApiKeyReadiness(key);
+  if (readiness.status === 'ready') return 'ready';
+  if (readiness.status === 'unknown') return 'unknown';
+  return 'needs_attention';
 };
 
 export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessArea[] => {
   const exchanges = input.growInfo?.exchanges ?? [];
   const exchangeSummary = summarizeExchangeReadiness(exchanges);
   const keys = input.apiKeys ?? [];
-  const readyKeys = keys.filter((key) => apiKeyReadiness(key) === 'ready');
+  const keySummary = summarizeApiKeyReadiness(keys);
   const activeOrders = (input.directOrders ?? []).filter((order) =>
     ['running', 'active', 'created'].includes(String(order.runtimeState || order.state).toLowerCase()),
   );
@@ -227,16 +208,39 @@ export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessA
       ? {
           id: 'api-keys',
           title: 'API key validation',
-          status: readyKeys.length > 0 ? 'ready' : keys.length > 0 ? 'needs_attention' : 'needs_attention',
+          status:
+            keySummary.ready > 0 &&
+            keySummary.validation_pending === 0 &&
+            keySummary.validation_failed === 0 &&
+            keySummary.disabled === 0 &&
+            keySummary.unknown === 0
+              ? 'ready'
+              : keySummary.unknown > 0
+                ? 'unknown'
+                : 'needs_attention',
           summary:
-            readyKeys.length > 0
-              ? `${readyKeys.length} API key${readyKeys.length === 1 ? '' : 's'} are ready or validated.`
-              : keys.length > 0
-                ? 'API keys exist but none are ready for trading.'
-                : 'No exchange API keys are configured yet.',
+            keySummary.ready > 0 &&
+            keySummary.validation_pending === 0 &&
+            keySummary.validation_failed === 0 &&
+            keySummary.disabled === 0 &&
+            keySummary.unknown === 0
+              ? `${keySummary.ready} API key${keySummary.ready === 1 ? ' is' : 's are'} ready.`
+              : keySummary.unknown > 0
+                ? 'API key readiness is unknown for at least one configured key.'
+                : keySummary.validation_failed > 0
+                  ? 'API key validation failed for at least one configured key.'
+                  : keySummary.validation_pending > 0
+                    ? 'API key validation pending for at least one configured key.'
+                    : keySummary.disabled > 0
+                      ? 'API keys are configured but disabled and not usable for trading.'
+                      : 'API key readiness is missing because no exchange API keys are configured yet.',
           evidence: [
             `${keys.length} API key${keys.length === 1 ? '' : 's'} returned.`,
-            `${readyKeys.length} ready or validated key${readyKeys.length === 1 ? '' : 's'} returned.`,
+            `${keySummary.ready} ready key${keySummary.ready === 1 ? '' : 's'} returned.`,
+            `${keySummary.validation_pending} validation pending key${keySummary.validation_pending === 1 ? '' : 's'} returned.`,
+            `${keySummary.validation_failed} validation failed key${keySummary.validation_failed === 1 ? '' : 's'} returned.`,
+            `${keySummary.disabled} disabled key${keySummary.disabled === 1 ? '' : 's'} returned.`,
+            `${keySummary.unknown} unknown key${keySummary.unknown === 1 ? '' : 's'} returned.`,
           ],
           href: '/system/api-keys',
           actionLabel: 'manage API keys',

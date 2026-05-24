@@ -132,4 +132,31 @@ describe('setup readiness', () => {
     expect(unknown.find((area) => area.id === 'exchanges')?.status).toBe('unknown');
     expect(unknown.find((area) => area.id === 'exchanges')?.summary).toContain('unknown');
   });
+
+  it('uses API key readiness vocabulary that matches API key management labels', () => {
+    const ready = buildSetupReadiness({
+      apiKeys: [{ key_id: 'key-1', exchange: 'binance', name: 'main', api_key: 'abc', api_secret: '', state: 'alive', validation_status: 'valid' }],
+    });
+    const pending = buildSetupReadiness({
+      apiKeys: [{ key_id: 'key-2', exchange: 'binance', name: 'pending', api_key: 'def', api_secret: '', validation_status: 'pending' }],
+    });
+    const failed = buildSetupReadiness({
+      apiKeys: [{ key_id: 'key-3', exchange: 'binance', name: 'failed', api_key: 'ghi', api_secret: '', validation_status: 'failed' }],
+    });
+    const disabled = buildSetupReadiness({
+      apiKeys: [{ key_id: 'key-4', exchange: 'binance', name: 'disabled', api_key: 'jkl', api_secret: '', state: 'disabled', validation_status: 'valid' }],
+    });
+    const missing = buildSetupReadiness({ apiKeys: [] });
+    const unknown = buildSetupReadiness({
+      apiKeys: [{ key_id: 'key-5', exchange: 'binance', name: 'unknown', api_key: 'mno', api_secret: '', state: 'mystery' }],
+    });
+
+    expect(ready.find((area) => area.id === 'api-keys')?.summary).toContain('1 API key is ready');
+    expect(pending.find((area) => area.id === 'api-keys')?.summary).toContain('validation pending');
+    expect(failed.find((area) => area.id === 'api-keys')?.summary).toContain('validation failed');
+    expect(disabled.find((area) => area.id === 'api-keys')?.summary).toContain('disabled');
+    expect(missing.find((area) => area.id === 'api-keys')?.summary).toContain('missing');
+    expect(unknown.find((area) => area.id === 'api-keys')?.status).toBe('unknown');
+    expect(unknown.find((area) => area.id === 'api-keys')?.summary).toContain('unknown');
+  });
 });

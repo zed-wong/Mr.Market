@@ -3,6 +3,12 @@
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import AdminStatePanel from '$lib/components/admin/shared/AdminStatePanel.svelte';
+  import {
+    getApiKeyPermissionViews,
+    getApiKeyReadiness,
+    summarizeApiKeyReadiness,
+    type ApiKeyReadinessStatus,
+  } from '$lib/helpers/admin/api-key-readiness';
   import { classifyAdminError, type AdminErrorState } from '$lib/helpers/admin/common-states';
   import { getAccessToken } from '$lib/helpers/api/client';
   import {
@@ -15,32 +21,21 @@
   import { encryptSecret } from '$lib/helpers/encryption/crypto';
   import type { AdminSingleKey } from '$lib/types/hufi/admin';
 
-  type Permission = 'read' | 'trade';
-  type Status = 'active' | 'pending' | 'error' | 'unknown';
-
-  const statusTone: Record<Status, string> = {
-    active: 'bg-success/10 text-success',
-    pending: 'bg-info/10 text-info',
-    error: 'bg-error/10 text-error',
-    unknown: 'bg-base-content/5 text-base-content/60',
-  };
-
-  const scopeTone: Record<Permission, string> = {
-    read: 'bg-base-content/5 text-base-content/60',
-    trade: 'bg-info/10 text-info',
-  };
+  type FormErrors = Partial<Record<'exchange' | 'name' | 'apiKey' | 'apiSecret' | 'metadata' | 'duplicate', string>>;
 
   let keys = $state<AdminSingleKey[]>([]);
   let ccxtExchanges = $state<string[]>([]);
   let publicKey = $state('');
   let loading = $state(true);
+  let metadataLoading = $state(true);
   let refreshing = $state(false);
   let saving = $state(false);
   let removingKeyId = $state<string | null>(null);
   let loadError = $state<AdminErrorState | null>(null);
   let metadataError = $state<AdminErrorState | null>(null);
   let errorMessage = $state('');
-  let statusFilter = $state<'all' | Status>('all');
+  let formErrors = $state<FormErrors>({});
+  let statusFilter = $state<'all' | ApiKeyReadinessStatus>('all');
   let exchangeFilter = $state<'all' | string>('all');
   let query = $state('');
   let addDialogEl = $state<HTMLDialogElement | null>(null);
@@ -57,17 +52,6 @@
   });
 
   const token = () => getAccessToken() || '';
-
-  const keyStatus = (key: AdminSingleKey): Status => {
-    if (key.validation_error === 'Validation timeout') return 'pending';
-    if (key.validation_status === 'pending') return 'pending';
-    if (key.validation_status === 'invalid' || key.validation_status === 'failed' || key.state === 'error') return 'error';
-    if (key.state === 'alive' || key.validation_status === 'valid' || key.validation_status === 'validated') return 'active';
-    return 'unknown';
-  };
-
-  const keyScopes = (key: AdminSingleKey): Permission[] =>
-    key.permissions === 'read-trade' ? ['read', 'trade'] : ['read'];
 
   const fingerprint = (value?: string): string => {
     const raw = String(value || '').replace(/\s/g, '');
@@ -98,11 +82,20 @@
     'all',
     ...Array.from(new Set(keys.map((key) => key.exchange).filter(Boolean))).sort(),
   ]);
-  const statuses: Array<'all' | Status> = ['all', 'active', 'pending', 'error', 'unknown'];
+  const statuses: Array<'all' | ApiKeyReadinessStatus> = [
+    'all',
+    'ready',
+    'validation_pending',
+    'validation_failed',
+    'disabled',
+    'unknown',
+  ];
+  let totals = $derived(summarizeApiKeyReadiness(keys));
+  let encryptionReady = $derived(Boolean(publicKey) && !metadataLoading && !metadataError);
 
   let filtered = $derived(
     keys.filter((key) => {
-      const status = keyStatus(key);
+      const status = getApiKeyReadiness(key).status;
       const normalizedQuery = query.trim().toLowerCase();
       return (
         (statusFilter === 'all' || status === statusFilter) &&
@@ -135,6 +128,7 @@
       permissions: 'read',
     };
     errorMessage = '';
+    formErrors = {};
     exchangeDropdownOpen = false;
   };
 
@@ -151,7 +145,9 @@
       return;
     }
 
+    const retryingInitialLoad = Boolean(loadError) && keys.length === 0;
     refreshing = showToast;
+    if (retryingInitialLoad) loading = true;
     loadError = null;
     try {
       keys = await getAllAPIKeys(adminToken);
@@ -168,6 +164,7 @@
 
   const loadFormMetadata = async () => {
     const adminToken = token();
+    metadataLoading = true;
     if (!adminToken) {
       metadataError = {
         kind: 'session',
@@ -175,6 +172,7 @@
         message: 'Sign in again before loading API-key form metadata.',
         actionLabel: 'sign in again',
       };
+      metadataLoading = false;
       return;
     }
 
@@ -185,11 +183,17 @@
         getEncryptionPublicKey(adminToken),
       ]);
       ccxtExchanges = exchangesResult;
+      if (!publicKeyResult.publicKey) {
+        throw new Error('Encryption public key was not returned by the backend.');
+      }
       publicKey = publicKeyResult.publicKey;
     } catch (error) {
       console.error(error);
+      publicKey = '';
       metadataError = classifyAdminError(error, 'Failed to load API key metadata');
       toast.error(metadataError.title, { description: metadataError.message });
+    } finally {
+      metadataLoading = false;
     }
   };
 
@@ -202,7 +206,34 @@
     addDialogEl?.close();
   };
 
-  const hasPendingKeys = () => keys.some((key) => keyStatus(key) === 'pending');
+  const hasPendingKeys = () => keys.some((key) => getApiKeyReadiness(key).status === 'validation_pending');
+
+  const validateForm = () => {
+    const exchange = form.exchange.trim();
+    const name = form.name.trim();
+    const apiKey = form.apiKey.trim();
+    const apiSecret = form.apiSecret.trim();
+    const nextErrors: FormErrors = {};
+
+    if (!exchange) nextErrors.exchange = 'Choose or enter an exchange.';
+    if (!name) nextErrors.name = 'Enter a display name.';
+    if (!apiKey) nextErrors.apiKey = 'Paste the exchange API key.';
+    if (!apiSecret) nextErrors.apiSecret = 'Paste the exchange API secret.';
+    if (apiKey && apiKey.length < 4) nextErrors.apiKey = 'API key must be at least 4 characters.';
+    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = 'API secret must be at least 4 characters.';
+    if (apiKey && existingExchangeApiKeys.has(`${exchange.toLowerCase()}:${apiKey}`)) {
+      nextErrors.duplicate = 'API key already exists for this exchange.';
+    }
+    if (!encryptionReady) {
+      nextErrors.metadata = metadataError
+        ? 'Encryption metadata failed to load. Retry metadata before submitting a secret.'
+        : 'Encryption metadata is still loading. Wait for it to finish before submitting a secret.';
+    }
+
+    formErrors = nextErrors;
+    errorMessage = Object.values(nextErrors)[0] || '';
+    return Object.keys(nextErrors).length === 0;
+  };
 
   const submitApiKey = async () => {
     const adminToken = token();
@@ -213,21 +244,13 @@
     const apiKey = form.apiKey.trim();
     const apiSecret = form.apiSecret.trim();
 
-    if (!exchange || !name || !apiKey || !apiSecret) {
-      errorMessage = 'Fill exchange, display name, API key, and API secret.';
-      return;
-    }
-    if (existingExchangeApiKeys.has(`${exchange.toLowerCase()}:${apiKey}`)) {
-      errorMessage = 'API key already exists for this exchange.';
-      return;
-    }
-    if (!publicKey) {
-      errorMessage = 'Encryption public key is not ready.';
+    if (!validateForm()) {
       return;
     }
 
     saving = true;
     errorMessage = '';
+    formErrors = {};
     try {
       const encryptedSecret = await encryptSecret(apiSecret, publicKey);
       await addAPIKey(
@@ -298,7 +321,7 @@
         {#if refreshing}<span class="loading loading-spinner loading-xs"></span>{/if}
         refresh
       </button>
-      <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={openAddDialog} disabled={!!metadataError || !publicKey}>+ add key</button>
+      <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={openAddDialog} disabled={!encryptionReady}>+ add key</button>
     {/snippet}
   </PageHeader>
 
@@ -312,7 +335,7 @@
               class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
               class:btn-primary={statusFilter === s}
               onclick={() => (statusFilter = s)}
-            >{s}</button>
+            >{s === 'all' ? 'all' : s.replace('_', ' ')}</button>
           {/each}
         </div>
 
@@ -332,8 +355,45 @@
         <span class="font-mono text-xs text-base-content/50">{filtered.length} / {keys.length}</span>
       </div>
 
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-6">
+        <div class="rounded-lg border border-base-300 p-3">
+          <span class="block text-xs text-base-content/60 capitalize">total keys</span>
+          <span class="font-mono text-xl font-semibold">{totals.total}</span>
+        </div>
+        <div class="rounded-lg border border-base-300 p-3">
+          <span class="block text-xs text-base-content/60 capitalize">ready</span>
+          <span class="font-mono text-xl font-semibold text-success">{totals.ready}</span>
+        </div>
+        <div class="rounded-lg border border-base-300 p-3">
+          <span class="block text-xs text-base-content/60 capitalize">validation pending</span>
+          <span class="font-mono text-xl font-semibold text-warning">{totals.validation_pending}</span>
+        </div>
+        <div class="rounded-lg border border-base-300 p-3">
+          <span class="block text-xs text-base-content/60 capitalize">validation failed</span>
+          <span class="font-mono text-xl font-semibold text-error">{totals.validation_failed}</span>
+        </div>
+        <div class="rounded-lg border border-base-300 p-3">
+          <span class="block text-xs text-base-content/60 capitalize">disabled</span>
+          <span class="font-mono text-xl font-semibold">{totals.disabled}</span>
+        </div>
+        <div class="rounded-lg border border-base-300 p-3">
+          <span class="block text-xs text-base-content/60 capitalize">unknown</span>
+          <span class="font-mono text-xl font-semibold">{totals.unknown}</span>
+        </div>
+      </div>
+
       <div class="overflow-x-auto">
-        {#if metadataError}
+        {#if metadataLoading}
+          <div class="mb-4">
+            <AdminStatePanel
+              kind="loading"
+              context="API key form metadata"
+              title="loading encryption metadata"
+              message="Loading the exchange list and encryption public key before secrets can be submitted."
+              testId="api-key-metadata-loading"
+            />
+          </div>
+        {:else if metadataError}
           <div class="mb-4">
             <AdminStatePanel
               kind={metadataError.kind}
@@ -407,7 +467,7 @@
               </tr>
             {:else}
               {#each filtered as key (key.key_id)}
-                {@const status = keyStatus(key)}
+                {@const readiness = getApiKeyReadiness(key)}
                 <tr class="border-b border-base-300 hover:bg-base-200">
                   <td>
                     <div class="flex flex-col">
@@ -419,19 +479,23 @@
                   <td class="font-mono text-xs text-base-content/70">{fingerprint(key.api_key)}</td>
                   <td>
                     <div class="flex flex-wrap gap-1">
-                      {#each keyScopes(key) as scope (scope)}
-                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {scopeTone[scope]}">
-                          {scope}
+                      {#each getApiKeyPermissionViews(key) as permission (permission.capability)}
+                        <span
+                          class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {permission.tone}"
+                          title={permission.description}
+                        >
+                          {permission.label}
                         </span>
                       {/each}
                     </div>
                   </td>
                   <td>
                     <div class="flex flex-col gap-1">
-                      <span class="w-fit rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {statusTone[status]}">
-                        {status}
+                      <span class="w-fit rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {readiness.tone}" title={readiness.description}>
+                        {readiness.label}
                       </span>
-                      {#if status === 'error' && key.validation_error}
+                      <span class="max-w-[240px] truncate text-xs text-base-content/60" title={readiness.description}>{readiness.title}</span>
+                      {#if readiness.status === 'validation_failed' && key.validation_error}
                         <span class="max-w-[220px] truncate text-xs text-error" title={key.validation_error}>{key.validation_error}</span>
                       {/if}
                     </div>
@@ -466,6 +530,18 @@
     </div>
 
     <div class="mt-5 grid gap-4">
+      {#if !encryptionReady}
+        <div class="alert alert-warning py-2 text-sm" data-testid="api-key-encryption-not-ready">
+          {#if metadataLoading}
+            Encryption metadata is loading. Secret submission is disabled until the public key is ready.
+          {:else if metadataError}
+            Encryption metadata failed to load. Retry metadata before submitting an API secret.
+          {:else}
+            Encryption public key is not ready. Secret submission is disabled.
+          {/if}
+        </div>
+      {/if}
+
       <label class="flex flex-col gap-1">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">exchange</span>
         <div class="dropdown w-full" class:dropdown-open={exchangeDropdownOpen}>
@@ -492,21 +568,25 @@
             </ul>
           {/if}
         </div>
+        {#if formErrors.exchange}<span class="text-xs text-error">{formErrors.exchange}</span>{/if}
       </label>
 
       <label class="flex flex-col gap-1">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">display name</span>
         <input class="input input-bordered border-base-300 bg-base-100" placeholder="e.g. account@email.com" bind:value={form.name} />
+        {#if formErrors.name}<span class="text-xs text-error">{formErrors.name}</span>{/if}
       </label>
 
       <label class="flex flex-col gap-1">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">API key</span>
         <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" placeholder="paste API key" bind:value={form.apiKey} />
+        {#if formErrors.apiKey}<span class="text-xs text-error">{formErrors.apiKey}</span>{/if}
       </label>
 
       <label class="flex flex-col gap-1">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">API secret</span>
         <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder="paste API secret" bind:value={form.apiSecret} />
+        {#if formErrors.apiSecret}<span class="text-xs text-error">{formErrors.apiSecret}</span>{/if}
       </label>
 
       <div class="flex flex-wrap gap-4">
@@ -523,11 +603,17 @@
       {#if errorMessage}
         <div class="alert alert-error py-2 text-sm">{errorMessage}</div>
       {/if}
+      {#if formErrors.duplicate && formErrors.duplicate !== errorMessage}
+        <div class="alert alert-error py-2 text-sm">{formErrors.duplicate}</div>
+      {/if}
+      {#if formErrors.metadata && formErrors.metadata !== errorMessage}
+        <div class="alert alert-warning py-2 text-sm">{formErrors.metadata}</div>
+      {/if}
     </div>
 
     <div class="modal-action">
       <button class="btn btn-ghost capitalize" onclick={closeAddDialog}>cancel</button>
-      <button class="btn btn-primary capitalize" onclick={submitApiKey} disabled={saving}>
+      <button class="btn btn-primary capitalize" onclick={submitApiKey} disabled={saving || !encryptionReady}>
         {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
         add key
       </button>
