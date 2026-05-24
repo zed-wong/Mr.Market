@@ -57,6 +57,9 @@ export interface DirectOrderStatus {
     strategyKey: string;
     exchange: string;
     pair: string;
+    accountLabel?: string;
+    accountSide?: string;
+    source?: string;
     exchangeOrderId: string;
     clientOrderId?: string;
     side: 'buy' | 'sell';
@@ -69,6 +72,8 @@ export interface DirectOrderStatus {
   intents: Array<{
     intentId?: string;
     type?: string;
+    accountLabel?: string;
+    accountSide?: string;
     side?: string;
     price?: string;
     qty?: string;
@@ -79,6 +84,9 @@ export interface DirectOrderStatus {
   recentErrors?: Array<{
     ts: string;
     message: string;
+    accountLabel?: string;
+    accountSide?: string;
+    source?: string;
   }>;
   orderConfig: {
     orderAmount: string | null;

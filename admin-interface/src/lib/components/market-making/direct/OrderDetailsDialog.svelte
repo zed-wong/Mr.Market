@@ -24,6 +24,7 @@
         isKnownDirectStrategyControllerType,
         getStateLabel,
         buildDirectOrderDiagnosis,
+        explainDirectOrderWarning,
         type DirectOrderDiagnosisTone,
     } from "$lib/helpers/market-making/direct/helpers";
 
@@ -104,6 +105,60 @@
             });
         const hours = Math.floor(minutes / 60);
         return $_("admin_direct_mm_hours_ago", { values: { h: hours } });
+    }
+
+    function formatEvidenceTimestamp(iso?: string | null): string {
+        if (!iso) return "unavailable";
+        return `${formatTimestamp(iso)} · ${formatTimeAgo(iso)}`;
+    }
+
+    function getDiagnosticPillClass(tone: DirectOrderDiagnosisTone): string {
+        if (tone === "success") return "bg-success/10 text-success";
+        if (tone === "error") return "bg-error/10 text-error";
+        if (tone === "warning") return "bg-warning/10 text-warning";
+        return "bg-info/10 text-info";
+    }
+
+    function getBooleanCapabilityLabel(value?: boolean | null): string {
+        if (value === true) return "available";
+        if (value === false) return "unavailable";
+        return "unknown";
+    }
+
+    function getBooleanCapabilityTone(value?: boolean | null): DirectOrderDiagnosisTone {
+        if (value === true) return "success";
+        if (value === false) return "warning";
+        return "info";
+    }
+
+    function getStreamTone(state?: string | null): DirectOrderDiagnosisTone {
+        const value = normalize(state);
+        if (["live", "healthy", "active", "ok", "ready"].includes(value)) return "success";
+        if (["stale", "missing", "failed", "error", "unavailable"].includes(value)) return "warning";
+        return "info";
+    }
+
+    function getBalanceCacheTone(stale?: boolean | null, source?: string | null): DirectOrderDiagnosisTone {
+        if (stale || normalize(source) === "missing") return "warning";
+        if (source) return "success";
+        return "info";
+    }
+
+    function getAttributionLabel(value?: string | null): string {
+        const normalized = normalize(value);
+        if (normalized === "maker") return "maker";
+        if (normalized === "taker") return "taker";
+        if (normalized === "account" || normalized === "main") return "account";
+        return value || "account";
+    }
+
+    function inferAttribution(item: { accountLabel?: string | null; accountSide?: string | null; source?: string | null; strategyKey?: string | null }): string {
+        const explicit = item.accountLabel || item.accountSide || item.source;
+        if (explicit) return getAttributionLabel(explicit);
+        const key = normalize(item.strategyKey);
+        if (key.includes("maker")) return "maker";
+        if (key.includes("taker")) return "taker";
+        return isDualAccountStrategy ? "maker/taker not returned" : "account";
     }
 
     function formatSpread(val: string | null | undefined): string {
@@ -207,6 +262,27 @@
     $: takerBalances =
         data?.inventoryBalances.filter((b) => b.accountLabel === "taker") ?? [];
     $: recentErrors = data?.recentErrors ?? [];
+    $: streamHealth = data?.streamHealth ?? [];
+    $: userStreamCapabilities = data?.userStreamCapabilities ?? [];
+    $: userStreamRuntime = data?.userStreamRuntime;
+    $: balanceCacheStatus = data?.balanceCacheStatus ?? [];
+    $: openOrders = data?.openOrders ?? [];
+    $: intents = data?.intents ?? [];
+    $: hasNoCurrentWork = isRunning && openOrders.length === 0 && intents.length === 0;
+    $: partialDiagnosticGaps =
+        data
+            ? [
+                  data.streamHealth === undefined
+                      ? "stream health was not returned"
+                      : "",
+                  data.userStreamCapabilities === undefined
+                      ? "stream capabilities were not returned"
+                      : "",
+                  data.balanceCacheStatus === undefined
+                      ? "balance cache status was not returned"
+                      : "",
+              ].filter(Boolean)
+            : [];
     $: diagnosis = data && order ? buildDirectOrderDiagnosis(data, order) : null;
 </script>
 
@@ -377,7 +453,7 @@
                                         />
                                     </svg>
                                     <span class="text-xs text-warning"
-                                        >{warning}</span
+                                        >{explainDirectOrderWarning(warning)}</span
                                     >
                                 </div>
                             {/each}
@@ -439,6 +515,302 @@
                                     </ul>
                                 </div>
                             {/if}
+                        </div>
+                    {/if}
+
+                    {#if data}
+                        <div
+                            class="rounded-2xl border border-base-300 bg-base-100 p-4"
+                            data-testid="direct-mm-diagnostic-evidence"
+                        >
+                            <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <span class="block text-xs font-bold text-base-content capitalize">
+                                        diagnosis evidence
+                                    </span>
+                                    <span class="mt-1 block text-xs text-base-content/60">
+                                        Auditable runtime, stream, balance, exchange exposure, intent, warning, and account evidence returned by the status endpoint.
+                                    </span>
+                                </div>
+                                {#if partialDiagnosticGaps.length > 0}
+                                    <span class="badge badge-sm badge-warning capitalize">
+                                        partial diagnostics
+                                    </span>
+                                {:else}
+                                    <span class="badge badge-sm badge-info text-base-100 capitalize">
+                                        evidence returned
+                                    </span>
+                                {/if}
+                            </div>
+
+                            {#if partialDiagnosticGaps.length > 0}
+                                <div class="mb-4 rounded-xl border border-warning/30 bg-warning/10 p-3">
+                                    <span class="block text-[10px] font-semibold text-warning capitalize">
+                                        conservative partial response
+                                    </span>
+                                    <span class="mt-1 block text-xs text-base-content/70">
+                                        Missing diagnostic sections are treated as unknown rather than healthy: {partialDiagnosticGaps.join(", ")}.
+                                    </span>
+                                </div>
+                            {/if}
+
+                            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <span class="text-[10px] font-semibold text-base-content/50 capitalize">
+                                            tick freshness
+                                        </span>
+                                        <span
+                                            class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(
+                                                diagnosis?.evidence.find((item) => item.label === "Tick freshness")?.tone || "info",
+                                            )}"
+                                        >
+                                            {diagnosis?.evidence.find((item) => item.label === "Tick freshness")?.tone || "unknown"}
+                                        </span>
+                                    </div>
+                                    <span class="mt-2 block text-xs text-base-content/70">
+                                        Last tick: {formatEvidenceTimestamp(data.lastTickAt ?? order.lastTickAt)}
+                                    </span>
+                                    <span class="mt-1 block text-xs {getDiagnosisTextClass(diagnosis?.evidence.find((item) => item.label === "Tick freshness")?.tone || "info")}">
+                                        {diagnosis?.evidence.find((item) => item.label === "Tick freshness")?.value}
+                                    </span>
+                                </div>
+
+                                <div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <span class="text-[10px] font-semibold text-base-content/50 capitalize">
+                                            stream runtime
+                                        </span>
+                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(userStreamRuntime ? "info" : "warning")}">
+                                            {userStreamRuntime ? "returned" : "unavailable"}
+                                        </span>
+                                    </div>
+                                    {#if userStreamRuntime}
+                                        <div class="mt-2 grid grid-cols-3 gap-2 text-center">
+                                            <div>
+                                                <span class="block text-[10px] text-base-content/40">watchers</span>
+                                                <span class="block text-xs font-bold text-base-content">{userStreamRuntime.activeWatcherCount ?? 0}</span>
+                                            </div>
+                                            <div>
+                                                <span class="block text-[10px] text-base-content/40">queue depth</span>
+                                                <span class="block text-xs font-bold text-base-content">{userStreamRuntime.queueDepth ?? 0}</span>
+                                            </div>
+                                            <div>
+                                                <span class="block text-[10px] text-base-content/40">duplicates</span>
+                                                <span class="block text-xs font-bold text-base-content">{userStreamRuntime.duplicateFillSuppressionCount ?? 0}</span>
+                                            </div>
+                                        </div>
+                                    {:else}
+                                        <span class="mt-2 block text-xs text-warning">
+                                            Stream runtime was not returned; watcher count and queue depth are unknown.
+                                        </span>
+                                    {/if}
+                                </div>
+                            </div>
+
+                            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                    <span class="block text-[10px] font-semibold text-base-content/50 capitalize">
+                                        stream health and capability
+                                    </span>
+                                    {#if streamHealth.length > 0}
+                                        <div class="mt-2 flex flex-col gap-2">
+                                            {#each streamHealth as stream}
+                                                <div class="rounded-lg bg-base-100 p-2">
+                                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="text-xs font-semibold text-base-content capitalize">
+                                                            {getAttributionLabel(stream.accountLabel)}
+                                                        </span>
+                                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(getStreamTone(stream.state))}">
+                                                            {stream.state || "state unknown"}
+                                                        </span>
+                                                    </div>
+                                                    <span class="mt-1 block text-[11px] text-base-content/60">
+                                                        orders {getBooleanCapabilityLabel(stream.order)} · trades {getBooleanCapabilityLabel(stream.trade)} · balances {getBooleanCapabilityLabel(stream.balance)}
+                                                    </span>
+                                                    <span class="mt-1 block text-[11px] text-base-content/50">
+                                                        last event {formatEvidenceTimestamp(stream.lastEventAt)} · balance refresh {formatEvidenceTimestamp(stream.lastBalanceRefreshAt)}
+                                                    </span>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {:else if data.streamHealth === undefined}
+                                        <span class="mt-2 block text-xs text-warning">
+                                            Stream health diagnostics were not returned.
+                                        </span>
+                                    {:else}
+                                        <span class="mt-2 block text-xs text-base-content/60">
+                                            No stream health rows were returned.
+                                        </span>
+                                    {/if}
+
+                                    {#if userStreamCapabilities.length > 0}
+                                        <div class="mt-3 flex flex-col gap-2">
+                                            {#each userStreamCapabilities as capability}
+                                                <div class="rounded-lg border border-base-300 bg-base-100 p-2">
+                                                    <span class="block text-[10px] font-semibold text-base-content/50 capitalize">
+                                                        {getAttributionLabel(capability.accountLabel)} capabilities
+                                                    </span>
+                                                    <div class="mt-1 flex flex-wrap gap-1">
+                                                        {#each [{ label: "watch orders", value: capability.watchOrders }, { label: "watch trades", value: capability.watchTrades }, { label: "watch balances", value: capability.watchBalance }] as item}
+                                                            <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(getBooleanCapabilityTone(item.value))}">
+                                                                {item.label}: {getBooleanCapabilityLabel(item.value)}
+                                                            </span>
+                                                        {/each}
+                                                    </div>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {:else if data.userStreamCapabilities === undefined}
+                                        <span class="mt-2 block text-xs text-warning">
+                                            Stream capabilities were not returned.
+                                        </span>
+                                    {/if}
+                                </div>
+
+                                <div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                    <span class="block text-[10px] font-semibold text-base-content/50 capitalize">
+                                        balance cache status
+                                    </span>
+                                    {#if balanceCacheStatus.length > 0}
+                                        <div class="mt-2 flex flex-col gap-2">
+                                            {#each balanceCacheStatus as balance}
+                                                <div class="rounded-lg bg-base-100 p-2">
+                                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="text-xs font-semibold text-base-content">
+                                                            {getAttributionLabel(balance.accountLabel)} · {balance.asset}
+                                                        </span>
+                                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(getBalanceCacheTone(balance.stale, balance.source))}">
+                                                            {balance.stale ? "stale" : balance.source || "source unknown"}
+                                                        </span>
+                                                    </div>
+                                                    <span class="mt-1 block text-[11px] text-base-content/60">
+                                                        source {balance.source || "unknown"} · freshness {formatEvidenceTimestamp(balance.freshnessTimestamp)}
+                                                    </span>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {:else if data.balanceCacheStatus === undefined}
+                                        <span class="mt-2 block text-xs text-warning">
+                                            Balance cache status was not returned; inventory balances are the only balance evidence.
+                                        </span>
+                                    {:else}
+                                        <span class="mt-2 block text-xs text-base-content/60">
+                                            No balance cache rows were returned.
+                                        </span>
+                                    {/if}
+                                </div>
+                            </div>
+
+                            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <span class="text-[10px] font-semibold text-base-content/50 capitalize">
+                                            open exchange orders
+                                        </span>
+                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(openOrders.length > 0 ? "warning" : "success")}">
+                                            {openOrders.length > 0 ? `${openOrders.length} open` : "none open"}
+                                        </span>
+                                    </div>
+                                    {#if openOrders.length > 0}
+                                        <div class="mt-2 flex flex-col gap-2">
+                                            {#each openOrders as exchangeOrder}
+                                                <div class="rounded-lg bg-base-100 p-2">
+                                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="text-xs font-semibold text-base-content">
+                                                            {exchangeOrder.side} {exchangeOrder.qty} @ {exchangeOrder.price}
+                                                        </span>
+                                                        <span class="text-[10px] text-base-content/50 capitalize">
+                                                            {inferAttribution(exchangeOrder)} · {exchangeOrder.status}
+                                                        </span>
+                                                    </div>
+                                                    <span class="mt-1 block font-mono text-[11px] text-base-content/50">
+                                                        exchange order {exchangeOrder.exchangeOrderId || "unavailable"} · client {exchangeOrder.clientOrderId || "unavailable"}
+                                                    </span>
+                                                    <span class="mt-1 block text-[11px] text-base-content/50">
+                                                        updated {formatEvidenceTimestamp(exchangeOrder.updatedAt)}
+                                                    </span>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {:else}
+                                        <span class="mt-2 block text-xs text-base-content/60">
+                                            No open exchange orders were returned, so no current exchange exposure is visible.
+                                        </span>
+                                    {/if}
+                                </div>
+
+                                <div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <span class="text-[10px] font-semibold text-base-content/50 capitalize">
+                                            recent intents and idle state
+                                        </span>
+                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {getDiagnosticPillClass(hasNoCurrentWork ? "info" : intents.length > 0 ? "warning" : "success")}">
+                                            {hasNoCurrentWork ? "idle" : intents.length > 0 ? `${intents.length} intent${intents.length === 1 ? "" : "s"}` : "no intents"}
+                                        </span>
+                                    </div>
+                                    {#if hasNoCurrentWork}
+                                        <span class="mt-2 block text-xs text-info">
+                                            This running order is idle: no current intents and no open exchange orders were returned.
+                                        </span>
+                                    {:else if intents.length === 0}
+                                        <span class="mt-2 block text-xs text-base-content/60">
+                                            No recent intents were returned.
+                                        </span>
+                                    {/if}
+                                    {#if intents.length > 0}
+                                        <div class="mt-2 flex flex-col gap-2">
+                                            {#each intents as intent}
+                                                <div class="rounded-lg bg-base-100 p-2">
+                                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="text-xs font-semibold text-base-content">
+                                                            {intent.type || "intent"} {intent.side || ""}
+                                                        </span>
+                                                        <span class="text-[10px] text-base-content/50 capitalize">
+                                                            {getAttributionLabel(intent.accountLabel || intent.accountSide)} · {intent.status || "status unknown"}
+                                                        </span>
+                                                    </div>
+                                                    <span class="mt-1 block text-[11px] text-base-content/60">
+                                                        qty {intent.qty || "unknown"} · price {intent.price || "unknown"} · updated {formatEvidenceTimestamp(intent.updatedAt)}
+                                                    </span>
+                                                    {#if intent.intentId}
+                                                        <span class="mt-1 block font-mono text-[11px] text-base-content/50">
+                                                            {intent.intentId}
+                                                        </span>
+                                                    {/if}
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </div>
+                            </div>
+
+                            <div class="mt-3 rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                <span class="block text-[10px] font-semibold text-base-content/50 capitalize">
+                                    recent error evidence
+                                </span>
+                                {#if recentErrors.length > 0}
+                                    <div class="mt-2 flex flex-col gap-2">
+                                        {#each recentErrors as err}
+                                            <div class="rounded-lg bg-base-100 p-2">
+                                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                                    <span class="text-xs text-error">{err.message}</span>
+                                                    <span class="text-[10px] text-base-content/50 capitalize">
+                                                        {getAttributionLabel(err.accountLabel || err.accountSide || err.source)}
+                                                    </span>
+                                                </div>
+                                                <span class="mt-1 block text-[11px] text-base-content/50">
+                                                    {formatEvidenceTimestamp(err.ts)}
+                                                </span>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {:else}
+                                    <span class="mt-2 block text-xs text-success">
+                                        No recent blocking errors were returned.
+                                    </span>
+                                {/if}
+                            </div>
                         </div>
                     {/if}
 

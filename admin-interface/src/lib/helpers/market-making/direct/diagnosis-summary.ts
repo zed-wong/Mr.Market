@@ -39,6 +39,12 @@ interface DirectOrderDiagnosisInput {
     lastEventAt?: string | null;
     lastBalanceRefreshAt?: string | null;
   }>;
+  userStreamCapabilities?: Array<{
+    accountLabel?: string | null;
+    watchOrders?: boolean | null;
+    watchTrades?: boolean | null;
+    watchBalance?: boolean | null;
+  }>;
   userStreamRuntime?: {
     activeWatcherCount?: number | null;
     queueDepth?: number | null;
@@ -149,9 +155,12 @@ function buildTickEvidence(
 
 function buildStreamEvidence(
   status: DirectOrderDiagnosisInput,
+  runtimeState: string,
 ): { evidence: DirectOrderDiagnosisEvidence; risks: string[] } {
   const streams = status.streamHealth || [];
   const runtime = status.userStreamRuntime;
+  const capabilities = status.userStreamCapabilities || [];
+  const expectsRuntime = runtimeState === "running" || runtimeState === "active";
   const risks = streams
     .filter((stream) => {
       const state = normalizeToken(stream.state);
@@ -181,13 +190,28 @@ function buildStreamEvidence(
     const watcherCopy = runtime
       ? ` Runtime watchers: ${runtime.activeWatcherCount ?? 0}; queue depth: ${runtime.queueDepth ?? 0}.`
       : "";
+    const capabilityCopy =
+      capabilities.length > 0
+        ? ` Capabilities returned for ${capabilities.length} account${capabilities.length === 1 ? "" : "s"}.`
+        : "";
     return {
       evidence: {
         label: "Stream health",
-        value: `${streams.length} linked stream${streams.length === 1 ? "" : "s"} reported without stale or failed state.${watcherCopy}`,
+        value: `${streams.length} linked stream${streams.length === 1 ? "" : "s"} reported without stale or failed state.${watcherCopy}${capabilityCopy}`,
         tone: "success",
       },
       risks: [],
+    };
+  }
+
+  if (expectsRuntime) {
+    return {
+      evidence: {
+        label: "Stream health",
+        value: "No stream health payload was returned for this running order; stream state is unknown.",
+        tone: "warning",
+      },
+      risks: ["Stream health evidence is missing for a running order."],
     };
   }
 
@@ -203,8 +227,10 @@ function buildStreamEvidence(
 
 function buildBalanceEvidence(
   status: DirectOrderDiagnosisInput,
+  runtimeState: string,
 ): { evidence: DirectOrderDiagnosisEvidence; risks: string[] } {
   const balances = status.balanceCacheStatus || [];
+  const expectsRuntime = runtimeState === "running" || runtimeState === "active";
   const risky = balances.filter(
     (balance) => balance.stale || normalizeToken(balance.source) === "missing",
   );
@@ -240,6 +266,17 @@ function buildBalanceEvidence(
     };
   }
 
+  if (expectsRuntime) {
+    return {
+      evidence: {
+        label: "Balance cache",
+        value: "No balance cache payload was returned for this running order; balance freshness is unknown.",
+        tone: "warning",
+      },
+      risks: ["Balance cache evidence is missing for a running order."],
+    };
+  }
+
   return {
     evidence: {
       label: "Balance cache",
@@ -270,8 +307,8 @@ export function buildDirectOrderDiagnosis(
   });
 
   const tick = buildTickEvidence(status.lastTickAt || order?.lastTickAt, runtimeState, nowMs);
-  const stream = buildStreamEvidence(status);
-  const balance = buildBalanceEvidence(status);
+  const stream = buildStreamEvidence(status, runtimeState);
+  const balance = buildBalanceEvidence(status, runtimeState);
   const executorHealth = normalizeToken(status.executorHealth);
   const executorRisk =
     executorHealth === "stale" || executorHealth === "gone"

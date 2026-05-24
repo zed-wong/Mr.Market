@@ -785,18 +785,18 @@ test.describe.serial('real-data admin smoke', () => {
       pair: 'BTC/USDT',
       state: 'running',
       runtimeState: 'running',
-      strategyDefinitionId: 'pure-mm',
-      strategyName: 'Pure MM',
-      controllerType: 'pureMarketMaking',
-      directExecutionMode: 'single_account',
+      strategyDefinitionId: 'dual-mm',
+      strategyName: 'Dual MM',
+      controllerType: 'dualAccountVolume',
+      directExecutionMode: 'dual_account',
       createdAt: secondsAgo(120),
       lastTickAt: secondsAgo(5),
       accountLabel: 'main',
       makerAccountLabel: 'maker',
       takerAccountLabel: 'taker',
-      apiKeyId: 'ready-key',
-      makerApiKeyId: null,
-      takerApiKeyId: null,
+      apiKeyId: null,
+      makerApiKeyId: 'ready-maker-key',
+      takerApiKeyId: 'ready-taker-key',
       warnings: [],
     };
     const statusBody = (runtimeState: 'running' | 'stopped') => ({
@@ -834,8 +834,15 @@ test.describe.serial('real-data admin smoke', () => {
       inventoryBalances: [],
       balanceCacheStatus: [
         {
-          accountLabel: 'main',
+          accountLabel: 'maker',
           asset: 'BTC',
+          source: 'user_stream',
+          freshnessTimestamp: secondsAgo(3),
+          stale: false,
+        },
+        {
+          accountLabel: 'taker',
+          asset: 'USDT',
           source: 'user_stream',
           freshnessTimestamp: secondsAgo(3),
           stale: false,
@@ -843,7 +850,7 @@ test.describe.serial('real-data admin smoke', () => {
       ],
       streamHealth: [
         {
-          accountLabel: 'main',
+          accountLabel: 'maker',
           state: 'live',
           order: true,
           trade: true,
@@ -851,12 +858,35 @@ test.describe.serial('real-data admin smoke', () => {
           lastEventAt: secondsAgo(3),
           lastBalanceRefreshAt: secondsAgo(3),
         },
+        {
+          accountLabel: 'taker',
+          state: 'live',
+          order: true,
+          trade: true,
+          balance: true,
+          lastEventAt: secondsAgo(4),
+          lastBalanceRefreshAt: secondsAgo(4),
+        },
       ],
       userStreamRuntime: {
         activeWatcherCount: 1,
         queueDepth: 0,
         duplicateFillSuppressionCount: 0,
       },
+      userStreamCapabilities: [
+        {
+          accountLabel: 'maker',
+          watchOrders: true,
+          watchTrades: true,
+          watchBalance: true,
+        },
+        {
+          accountLabel: 'taker',
+          watchOrders: true,
+          watchTrades: true,
+          watchBalance: true,
+        },
+      ],
       stale: false,
     });
 
@@ -881,9 +911,17 @@ test.describe.serial('real-data admin smoke', () => {
         contentType: 'application/json',
         body: JSON.stringify([
           {
-            key_id: 'ready-key',
+            key_id: 'ready-maker-key',
             exchange: 'binance',
-            name: 'Ready key',
+            name: 'Ready maker key',
+            state: 'active',
+            validation_status: 'succeeded',
+            permissions: ['read', 'trade'],
+          },
+          {
+            key_id: 'ready-taker-key',
+            exchange: 'binance',
+            name: 'Ready taker key',
             state: 'active',
             validation_status: 'succeeded',
             permissions: ['read', 'trade'],
@@ -897,11 +935,11 @@ test.describe.serial('real-data admin smoke', () => {
         contentType: 'application/json',
         body: JSON.stringify([
           {
-            id: 'pure-mm',
-            key: 'pure-mm',
-            name: 'Pure MM',
-            controllerType: 'pureMarketMaking',
-            directExecutionMode: 'single_account',
+            id: 'dual-mm',
+            key: 'dual-mm',
+            name: 'Dual MM',
+            controllerType: 'dualAccountVolume',
+            directExecutionMode: 'dual_account',
             defaultConfig: {},
             configSchema: {},
           },
@@ -954,6 +992,17 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Stream health');
     await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Balance cache');
     await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toContainText('Recent errors');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('diagnosis evidence');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('stream runtime');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('watch orders: available');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('maker capabilities');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('taker capabilities');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('balance cache status');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('open exchange orders');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('idle');
+    await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toContainText('No recent blocking errors were returned.');
+    await expect(page.locator('.modal-open')).toContainText('maker linkage');
+    await expect(page.locator('.modal-open')).toContainText('taker linkage');
     await expect(page.locator('.modal-open')).toContainText(/running/i);
     await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
 

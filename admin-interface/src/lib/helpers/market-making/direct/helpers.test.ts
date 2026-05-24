@@ -136,6 +136,53 @@ describe('buildDirectOrderDiagnosis', () => {
     expect(diagnosis.risks.join(' ')).toContain('stream health is stale');
     expect(diagnosis.risks.join(' ')).toContain('balance cache is stale');
   });
+
+  it('treats partial running diagnostics as unknown risk instead of healthy', () => {
+    const diagnosis = buildDirectOrderDiagnosis(
+      {
+        ...baseDiagnosisStatus,
+        runtimeState: 'running',
+        streamHealth: undefined,
+        userStreamCapabilities: undefined,
+        balanceCacheStatus: undefined,
+      },
+      { runtimeState: 'running', warnings: [] },
+      diagnosisNow,
+    );
+
+    expect(diagnosis.kind).toBe('risky');
+    expect(diagnosis.title).toBe('Operational risk detected');
+    expect(diagnosis.risks.join(' ')).toContain('Stream health evidence is missing');
+    expect(diagnosis.risks.join(' ')).toContain('Balance cache evidence is missing');
+    expect(diagnosis.summary).not.toContain('running normally');
+  });
+
+  it('includes stream capability evidence when returned', () => {
+    const diagnosis = buildDirectOrderDiagnosis(
+      {
+        ...baseDiagnosisStatus,
+        userStreamCapabilities: [
+          {
+            accountLabel: 'maker',
+            watchOrders: true,
+            watchTrades: true,
+            watchBalance: true,
+          },
+          {
+            accountLabel: 'taker',
+            watchOrders: true,
+            watchTrades: false,
+            watchBalance: true,
+          },
+        ],
+      },
+      { runtimeState: 'running', warnings: [] },
+      diagnosisNow,
+    );
+
+    const streamEvidence = diagnosis.evidence.find((item) => item.label === 'Stream health');
+    expect(streamEvidence?.value).toContain('Capabilities returned for 2 accounts');
+  });
 });
 
 describe('normalizeConfigOverrides', () => {
