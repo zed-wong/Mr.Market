@@ -95,17 +95,20 @@
       <ul class="space-y-5">
         {#each NAV_ITEMS as item (item.key)}
           {@const groupActive = isGroupActive(item, pathname)}
+          {@const groupDirectActive = Boolean(item.href && isActive(item.href, pathname))}
           <li>
             <button
               type="button"
               class={clsx(
                 'mb-1 flex min-h-10 w-full items-center gap-3 rounded-full px-3 py-2 text-left text-sm transition-colors',
-                groupActive
+                groupDirectActive
                   ? 'bg-primary text-primary-content'
+                  : groupActive
+                    ? 'bg-base-200 text-base-content'
                   : 'text-base-content/70 hover:bg-neutral hover:text-base-content',
               )}
               onclick={() => item.href && navigate(item.href)}
-              aria-current={item.href && isActive(item.href, pathname) ? 'page' : groupActive ? 'location' : undefined}
+              aria-current={groupDirectActive ? 'page' : groupActive ? 'location' : undefined}
             >
               <SideBarIcons name={iconName(item.key)} />
               <span class="font-medium capitalize">{$_(item.label)}</span>

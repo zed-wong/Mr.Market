@@ -327,6 +327,34 @@ test.describe.serial('real-data admin smoke', () => {
     expect(clientErrors).toEqual([]);
   });
 
+  test('sidebar highlights only the active child for nested admin locations', async ({ page }) => {
+    await login(page);
+    await routeApiKeyMetadata(page);
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    });
+
+    await page.goto('/system/api-keys');
+    await page.waitForLoadState('networkidle');
+
+    const sidebar = page.getByTestId('old-admin-sidebar');
+    const parentGroup = sidebar.getByRole('button', { name: /system health/i });
+    const activeChild = sidebar.getByRole('button', { name: /^api keys$/i });
+
+    await expect(parentGroup).toHaveAttribute('aria-current', 'location');
+    await expect(parentGroup).toHaveClass(/(?:^|\s)bg-base-200(?:\s|$)/);
+    await expect(parentGroup).not.toHaveClass(/(?:^|\s)bg-primary(?:\s|$)/);
+    await expect(parentGroup).not.toHaveClass(/(?:^|\s)text-primary-content(?:\s|$)/);
+
+    await expect(activeChild).toHaveAttribute('aria-current', 'page');
+    await expect(activeChild).toHaveClass(/(?:^|\s)bg-primary(?:\s|$)/);
+    await expect(activeChild).toHaveClass(/(?:^|\s)text-primary-content(?:\s|$)/);
+  });
+
   test('API key management shows readiness labels, permission labels, form validation, and removal refresh', async ({ page }) => {
     await login(page);
     await routeApiKeyMetadata(page);
