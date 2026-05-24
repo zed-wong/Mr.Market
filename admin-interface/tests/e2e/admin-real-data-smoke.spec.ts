@@ -761,6 +761,177 @@ test.describe.serial('real-data admin smoke', () => {
     expect(page.url()).toContain(`${PREVIEW_ORIGIN}/system/api-keys`);
   });
 
+  test('direct market-making list and detail diagnosis states are explicit and keyboard reachable', async ({ page }) => {
+    await login(page);
+
+    const order = {
+      orderId: 'order-state-handling',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      runtimeState: 'running',
+      strategyDefinitionId: 'pure-mm',
+      strategyName: 'Pure MM',
+      controllerType: 'pureMarketMaking',
+      directExecutionMode: 'single_account',
+      createdAt: '2026-05-23T00:00:00.000Z',
+      lastTickAt: '2026-05-23T00:01:00.000Z',
+      accountLabel: 'main',
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      apiKeyId: 'ready-key',
+      makerApiKeyId: null,
+      takerApiKeyId: null,
+      warnings: [],
+    };
+    const statusBody = (runtimeState: 'running' | 'stopped') => ({
+      ...order,
+      state: runtimeState,
+      runtimeState,
+      executorHealth: 'active',
+      lastUpdatedAt: runtimeState === 'running' ? '2026-05-23T00:01:00.000Z' : '2026-05-23T00:02:00.000Z',
+      privateStreamEventAt: '2026-05-23T00:01:00.000Z',
+      openOrders: [],
+      intents: [],
+      recentErrors: [],
+      orderConfig: {
+        orderAmount: '0.01',
+        bidSpread: '0.001',
+        askSpread: '0.001',
+        numberOfLayers: '1',
+        baseIntervalTime: 30,
+        numTrades: 100,
+        baseIncrementPercentage: null,
+        pricePushRate: null,
+        postOnlySide: 'buy',
+        dynamicRoleSwitching: false,
+        targetQuoteVolume: null,
+        cadenceVariance: null,
+        tradeAmountVariance: null,
+        priceOffsetVariance: null,
+        publishedCycles: 0,
+        completedCycles: 0,
+        tradedQuoteVolume: null,
+        realizedPnlQuote: null,
+      },
+      spread: { bid: '0.001', ask: '0.001', absolute: '0.002' },
+      inventoryBalances: [],
+      stale: false,
+    });
+
+    await page.route(`${BACKEND_ORIGIN}/grow/info`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+          simply_grow: { tokens: [] },
+          arbitrage: { pairs: [] },
+          market_making: {
+            exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+            pairs: [{ exchange_id: 'binance', symbol: 'BTC/USDT', min_order_amount: '0.01' }],
+          },
+        }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            key_id: 'ready-key',
+            exchange: 'binance',
+            name: 'Ready key',
+            state: 'active',
+            validation_status: 'succeeded',
+            permissions: ['read', 'trade'],
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-strategies`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'pure-mm',
+            key: 'pure-mm',
+            name: 'Pure MM',
+            controllerType: 'pureMarketMaking',
+            directExecutionMode: 'single_account',
+            defaultConfig: {},
+            configSchema: {},
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([order]) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/campaigns`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/wallet-status`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ configured: true, address: '0x0000000000000000000000000000000000000000' }) });
+    });
+
+    let statusRequests = 0;
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders/order-state-handling/status`, async (route) => {
+      statusRequests += 1;
+      if (statusRequests === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(statusBody('running')) });
+        return;
+      }
+      if (statusRequests === 2) {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'forced diagnosis failure' }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(statusBody('stopped')) });
+    });
+
+    await page.goto('/trading/direct-market-making');
+    await page.waitForLoadState('networkidle');
+
+    const diagnosisButton = page.getByRole('button', { name: /open diagnosis details for BTC\/USDT on binance/i });
+    await diagnosisButton.focus();
+    await expect(diagnosisButton).toBeFocused();
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('[data-testid="direct-mm-detail-loading"]')).toBeVisible();
+    await expect(page.locator('.modal-open')).toContainText(/running/i);
+    await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toBeVisible();
+
+    await page.locator('.modal-open').getByRole('button', { name: /refresh order diagnosis/i }).click();
+    await expect(page.locator('[data-testid="direct-mm-detail-error"]')).toBeVisible();
+    await expect(page.locator('.modal-open')).toContainText('forced diagnosis failure');
+    await expect(page.locator('.modal-open')).not.toContainText('executor health');
+
+    await page.locator('.modal-open').getByRole('button', { name: /retry diagnosis/i }).click();
+    await expect(page.locator('.modal-open')).toContainText(/stopped/i);
+    await expect(page.locator('.modal-open').getByRole('button', { name: /resume order/i })).toBeVisible();
+    await expect(page.locator('.modal-open').getByRole('button', { name: /stop order/i })).toHaveCount(0);
+  });
+
+  test('direct market-making order list failures show an error instead of the empty state', async ({ page }) => {
+    await login(page);
+
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders`, async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'forced direct order list failure' }),
+      });
+    });
+
+    await page.goto('/trading/direct-market-making');
+    await expect(page.locator('[data-testid="direct-mm-error"]')).toBeVisible();
+    await expect(page.locator('[data-testid="direct-mm-error"]')).toContainText('forced direct order list failure');
+    await expect(page.locator('body')).not.toContainText('No active orders yet');
+  });
+
   test('real-data pages show API errors instead of static fixture fallbacks', async ({ page }) => {
     await login(page);
 

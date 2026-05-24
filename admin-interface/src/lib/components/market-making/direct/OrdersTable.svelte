@@ -13,6 +13,9 @@
   export let onRemoveOrder: (order: DirectOrderSummary) => void;
   export let onOrderClick: (order: DirectOrderSummary) => void;
 
+  $: resumableOrdersCount = orders.filter((order) => canResume(order)).length;
+  $: stoppableOrdersCount = orders.filter((order) => canStop(order)).length;
+
   function formatPair(pair: string): string {
     return pair.replace(/[-_]/g, " / ");
   }
@@ -43,15 +46,15 @@
   }
 
   function canStop(order: DirectOrderSummary): boolean {
-    return order.runtimeState !== "stopped";
+    return ["active", "created", "running", "stale"].includes(order.runtimeState);
   }
 
   function canResume(order: DirectOrderSummary): boolean {
-    return order.state === "stopped";
+    return order.runtimeState === "stopped";
   }
 
   function canRemove(order: DirectOrderSummary): boolean {
-    return order.state === "stopped" || order.state === "failed";
+    return ["failed", "gone", "stale", "stopped"].includes(order.runtimeState);
   }
 
   function getStatusClasses(runtimeState: string): string {
@@ -113,6 +116,8 @@
       <button
         class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm text-opacity-90"
         on:click={onStartAllClick}
+        disabled={resumableOrdersCount === 0}
+        title={resumableOrdersCount === 0 ? $_("admin_direct_mm_no_stopped_orders_to_resume") : $_("admin_direct_mm_resume_stopped_orders")}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -127,6 +132,8 @@
       <button
         class="btn bg-indigo-50 hover:bg-indigo-100 text-base-content border-none min-h-[42px] h-[42px] px-5 rounded-lg text-sm font-semibold shadow-sm"
         on:click={onStopAllClick}
+        disabled={stoppableOrdersCount === 0}
+        title={stoppableOrdersCount === 0 ? $_("admin_direct_mm_no_running_orders_to_stop") : $_("admin_direct_mm_stop_running_orders")}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -309,6 +316,8 @@
               {/if}
               <button
                 class="bg-indigo-50 text-blue-600 px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                type="button"
+                aria-label={`Open diagnosis details for ${order.pair} on ${order.exchangeName}`}
                 on:click|stopPropagation={() => onOrderClick(order)}
               >
                 {$_("admin_direct_mm_details")}

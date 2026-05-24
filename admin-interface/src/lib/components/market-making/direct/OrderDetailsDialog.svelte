@@ -2,6 +2,8 @@
     import BigNumber from "bignumber.js";
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
+    import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
+    import type { AdminErrorState } from "$lib/helpers/admin/common-states";
     import {
         getApiKeyPermissionViews,
         getApiKeyReadiness,
@@ -20,6 +22,7 @@
         isBestCapacityDirectOrderControllerType,
         isDualAccountOrder,
         isKnownDirectStrategyControllerType,
+        getStateLabel,
     } from "$lib/helpers/market-making/direct/helpers";
 
     export let show = false;
@@ -28,7 +31,10 @@
     export let apiKeys: AdminSingleKey[] = [];
     export let exchanges: Partial<Exchange>[] = [];
     export let loading = false;
+    export let refreshing = false;
+    export let error: AdminErrorState | null = null;
     export let onClose: () => void;
+    export let onRefresh: () => void;
     export let onStartOrder: () => void;
     export let onStopOrder: () => void;
     export let onRemoveOrder: () => void;
@@ -137,17 +143,13 @@
         return [buildRow("account", d.accountLabel, d.apiKeyId)];
     }
 
-    $: stateLabel = data
-        ? data.runtimeState.charAt(0).toUpperCase() + data.runtimeState.slice(1)
-        : order?.runtimeState
-          ? order.runtimeState.charAt(0).toUpperCase() +
-            order.runtimeState.slice(1)
-          : "";
+    $: currentRuntimeState = data?.runtimeState ?? order?.runtimeState ?? "";
+    $: stateLabel = currentRuntimeState ? getStateLabel(currentRuntimeState) : "";
 
     $: lastUpdated = data?.lastUpdatedAt
         ? data.lastUpdatedAt.replace("T", " ").slice(0, 19)
         : "";
-    $: runtimeState = order?.runtimeState;
+    $: runtimeState = currentRuntimeState;
     $: isRunning = runtimeState === "running" || runtimeState === "active";
     $: isStale = runtimeState === "stale";
     $: isResumable = runtimeState === "stopped" || runtimeState === "created";
@@ -267,11 +269,29 @@
                 </div>
             </div>
 
-            {#if loading && !data}
-                <div class="px-7 pb-16 flex items-center justify-center py-12">
-                    <span
-                        class="loading loading-spinner loading-md text-primary"
-                    ></span>
+            {#if loading && !data && !error}
+                <div class="px-7 pb-16 py-12">
+                    <AdminStatePanel
+                        kind="loading"
+                        context="order diagnosis"
+                        title="loading order diagnosis"
+                        message="Loading status, runtime health, account linkage, balances, intents, open orders, and recent errors for this direct order."
+                        testId="direct-mm-detail-loading"
+                    />
+                </div>
+            {:else if error}
+                <div class="px-7 pb-16 py-12">
+                    <AdminStatePanel
+                        kind={error.kind}
+                        context="order diagnosis"
+                        title={error.title}
+                        message={error.message}
+                        actionLabel={error.kind === "session" ? "sign in again" : "retry diagnosis"}
+                        actionHref={error.kind === "session" ? "/login" : ""}
+                        onAction={error.kind === "session" ? undefined : onRefresh}
+                        disabled={loading || refreshing}
+                        testId="direct-mm-detail-error"
+                    />
                 </div>
             {:else}
                 <div class="px-7 pb-7 flex flex-col gap-5">
@@ -297,6 +317,20 @@
                                 )}</span
                             >
                         {/if}
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-xs rounded-full capitalize"
+                            on:click={onRefresh}
+                            disabled={loading || refreshing}
+                            aria-label="Refresh order diagnosis"
+                        >
+                            {#if refreshing}
+                                <span class="loading loading-spinner loading-xs" aria-hidden="true"></span>
+                                {$_("admin_direct_mm_refreshing_diagnosis")}
+                            {:else}
+                                {$_("admin_direct_mm_refresh_diagnosis")}
+                            {/if}
+                        </button>
                     </div>
 
                     <!-- Warnings Banner -->

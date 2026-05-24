@@ -6,7 +6,10 @@
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
     import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
-    import { classifyAdminError, type AdminErrorState } from "$lib/helpers/admin/common-states";
+    import {
+        classifyAdminError,
+        type AdminErrorState,
+    } from "$lib/helpers/admin/common-states";
 
     import {
         getDirectOrderStatus,
@@ -205,6 +208,7 @@
     let showOrderDetails = false;
     let detailsOrder: DirectOrderSummary | null = null;
     let detailsData: DirectOrderStatus | null = null;
+    let detailsError: AdminErrorState | null = null;
     let detailsLoading = false;
     let detailsRefreshTimer: ReturnType<typeof setInterval> | null = null;
     let detailsRefreshing = false;
@@ -227,7 +231,7 @@
 
     $: orders = initialOrders;
     $: campaigns = initialCampaigns;
-    $: stoppableOrdersCount = orders.length;
+    $: stoppableOrdersCount = orders.filter(isOrderStoppable).length;
     $: stoppedOrdersCount = orders.filter(
         (o) => o.runtimeState === "stopped",
     ).length;
@@ -311,6 +315,43 @@
 
     async function refreshPage() {
         await invalidate("admin:market-making:direct");
+    }
+
+    function isOrderStoppable(order: DirectOrderSummary): boolean {
+        return ["active", "created", "running", "stale"].includes(
+            order.runtimeState,
+        );
+    }
+
+    function applyOrderPatch(
+        orderId: string,
+        patch: Partial<DirectOrderSummary>,
+    ) {
+        initialOrders = initialOrders.map((o) =>
+            o.orderId === orderId ? { ...o, ...patch } : o,
+        );
+        orders = orders.map((o) =>
+            o.orderId === orderId ? { ...o, ...patch } : o,
+        );
+        if (detailsOrder?.orderId === orderId) {
+            detailsOrder = { ...detailsOrder, ...patch };
+        }
+    }
+
+    function applyStatusToOrderSummary(status: DirectOrderStatus) {
+        applyOrderPatch(status.orderId, {
+            state: status.state,
+            runtimeState: status.runtimeState,
+            lastTickAt: status.lastTickAt,
+            apiKeyId: status.apiKeyId,
+            makerApiKeyId: status.makerApiKeyId,
+            takerApiKeyId: status.takerApiKeyId,
+            accountLabel: status.accountLabel,
+            makerAccountLabel: status.makerAccountLabel,
+            takerAccountLabel: status.takerAccountLabel,
+            makerAccountName: status.makerAccountName,
+            takerAccountName: status.takerAccountName,
+        });
     }
 
     async function ensureExchangeMarketsLoaded(exchangeId: string) {
@@ -564,20 +605,26 @@
         isStoppingAll = true;
 
         try {
-            const stoppableOrders = orders;
+            const stoppableOrders = orders.filter(isOrderStoppable);
+            if (stoppableOrders.length === 0) {
+                showStopAllConfirm = false;
+                return;
+            }
             const stoppableIds = new Set(stoppableOrders.map((o) => o.orderId));
             await Promise.all(
                 stoppableOrders.map((o) => stopDirectOrder(o.orderId, token)),
             );
-            orders = orders.map((o) =>
+            initialOrders = initialOrders.map((o) =>
                 stoppableIds.has(o.orderId)
-                    ? {
-                          ...o,
-                          runtimeState: "stopped" as const,
-                          state: "stopped",
-                      }
+                    ? { ...o, runtimeState: "stopped" as const, state: "stopped" }
                     : o,
             );
+            orders = orders.map((o) =>
+                stoppableIds.has(o.orderId)
+                    ? { ...o, runtimeState: "stopped" as const, state: "stopped" }
+                    : o,
+            );
+            await silentRefresh();
             toast.success($_("admin_direct_mm_stop_all_success"), {
                 description: $_("admin_direct_mm_recovery_refresh_status"),
             });
@@ -602,15 +649,11 @@
         try {
             const stoppedOrderId = stopOrderCandidate.orderId;
             await stopDirectOrder(stoppedOrderId, token);
-            orders = orders.map((o) =>
-                o.orderId === stoppedOrderId
-                    ? {
-                          ...o,
-                          runtimeState: "stopped" as const,
-                          state: "stopped",
-                      }
-                    : o,
-            );
+            applyOrderPatch(stoppedOrderId, {
+                runtimeState: "stopped",
+                state: "stopped",
+            });
+            await silentRefresh();
             toast.success($_("admin_direct_mm_stop_success"), {
                 description: $_("admin_direct_mm_recovery_refresh_status"),
             });
@@ -643,15 +686,11 @@
 
         try {
             const result = await resumeDirectOrder(order.orderId, token);
-            orders = orders.map((o) =>
-                o.orderId === order.orderId
-                    ? {
-                          ...o,
-                          runtimeState: "running" as const,
-                          state: "running",
-                      }
-                    : o,
-            );
+            applyOrderPatch(order.orderId, {
+                runtimeState: "running",
+                state: "running",
+            });
+            await silentRefresh();
             toast.success(
                 $_("admin_direct_mm_start_success", {
                     values: { exchange: order.exchangeName, pair: order.pair },
@@ -688,9 +727,7 @@
 
         try {
             await removeDirectOrder(order.orderId, token);
-            initialOrders = initialOrders.filter(
-                (o) => o.orderId !== order.orderId,
-            );
+            initialOrders = initialOrders.filter((o) => o.orderId !== order.orderId);
             orders = orders.filter((o) => o.orderId !== order.orderId);
             toast.success($_("admin_direct_mm_remove_success"), {
                 description: $_("admin_direct_mm_remove_success_hint", {
@@ -713,6 +750,8 @@
 
     async function openOrderDetails(order: DirectOrderSummary) {
         detailsOrder = order;
+        detailsData = null;
+        detailsError = null;
         showOrderDetails = true;
         await loadOrderDetails(order.orderId);
     }
@@ -764,6 +803,10 @@
         try {
             const token = getToken();
             if (!token) {
+                detailsError = classifyAdminError(
+                    new Error("Session expired. Sign in again before viewing direct market-making operations."),
+                    "Direct market-making order diagnosis failed to load",
+                );
                 return;
             }
 
@@ -771,10 +814,15 @@
 
             if (detailsOrder?.orderId === orderId) {
                 detailsData = nextDetails;
+                detailsError = null;
+                applyStatusToOrderSummary(nextDetails);
             }
-        } catch {
+        } catch (error) {
             if (detailsOrder?.orderId === orderId) {
-                detailsData = null;
+                detailsError = classifyAdminError(
+                    error,
+                    "Direct market-making order diagnosis failed to load",
+                );
             }
         } finally {
             detailsRefreshing = false;
@@ -799,6 +847,7 @@
         showOrderDetails = false;
         detailsOrder = null;
         detailsData = null;
+        detailsError = null;
         detailsLoading = false;
     }
 
@@ -893,9 +942,15 @@
             );
             orders = orders.map((o) =>
                 stoppedIds.has(o.orderId)
-                    ? { ...o, runtimeState: "running" as const }
+                    ? { ...o, runtimeState: "running" as const, state: "running" }
                     : o,
             );
+            initialOrders = initialOrders.map((o) =>
+                stoppedIds.has(o.orderId)
+                    ? { ...o, runtimeState: "running" as const, state: "running" }
+                    : o,
+            );
+            await silentRefresh();
             showStartAllModal = false;
 
             const warnings = results.flatMap((result) => result.warnings);
@@ -1071,7 +1126,14 @@
     {apiKeys}
     exchanges={growInfo?.exchanges || []}
     loading={detailsLoading}
+    refreshing={detailsRefreshing && !detailsLoading}
+    error={detailsError}
     onClose={closeOrderDetails}
+    onRefresh={() => {
+        if (detailsOrder) {
+            void loadOrderDetails(detailsOrder.orderId);
+        }
+    }}
     onStartOrder={() => {
         if (detailsOrder) {
             const order = detailsOrder;
