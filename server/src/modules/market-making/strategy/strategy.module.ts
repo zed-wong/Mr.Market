@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
@@ -67,8 +67,8 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     ExecutionModule,
     TrackersModule,
     MarketdataModule,
-    DexModule,
-    Web3Module,
+    forwardRef(() => DexModule),
+    forwardRef(() => Web3Module),
   ],
   providers: [
     StrategyService,

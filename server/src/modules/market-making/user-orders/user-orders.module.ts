@@ -1,5 +1,5 @@
 import { BullModule } from '@nestjs/bull';
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -41,7 +41,7 @@ import { UserOrdersService } from './user-orders.service';
     BullModule.registerQueue({
       name: 'market-making',
     }),
-    StrategyModule,
+    forwardRef(() => StrategyModule),
     FeeModule,
     GrowdataModule,
     SnapshotsModule,
@@ -49,7 +49,7 @@ import { UserOrdersService } from './user-orders.service';
     WithdrawalModule,
     ExchangeModule,
     NetworkMappingModule,
-    CampaignModule,
+    forwardRef(() => CampaignModule),
     MixinClientModule,
     LedgerModule,
   ],

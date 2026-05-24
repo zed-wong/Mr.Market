@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
@@ -23,7 +23,7 @@ import { Web3Service } from './web3.service';
       Performance,
       StrategyExecutionHistory,
     ]),
-    UserOrdersModule,
+    forwardRef(() => UserOrdersModule),
     LedgerModule,
   ],
   controllers: [Web3MarketMakingController],
