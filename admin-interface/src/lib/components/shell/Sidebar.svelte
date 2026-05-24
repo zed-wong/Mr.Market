@@ -46,7 +46,7 @@
   type="button"
   aria-label={$_('close_sidebar_backdrop')}
   class={clsx(
-    'fixed inset-0 z-30 bg-base-content/30 transition-opacity duration-300 lg:hidden',
+    'fixed inset-0 z-30 bg-base-content/30 backdrop-blur-sm transition-opacity duration-300 lg:hidden',
     open ? 'opacity-100' : 'pointer-events-none opacity-0',
   )}
   onclick={onClose}
@@ -54,45 +54,36 @@
 
 <aside
   class={clsx(
-    'fixed top-0 left-0 z-40 h-screen w-72 shrink-0 transition-transform duration-300 ease-in-out',
+    'fixed top-0 left-0 z-40 h-screen w-72 shrink-0 transition-transform duration-300 ease-in-out lg:w-64',
     open ? 'translate-x-0' : '-translate-x-full',
   )}
   aria-label={$_('sidebar')}
   data-testid="old-admin-sidebar"
 >
-  <div class="relative flex h-full flex-1 flex-col border-r border-base-300 bg-base-100">
-    <div class="flex items-center justify-between border-b border-base-300 px-5 py-4">
+  <div class="relative flex h-full flex-1 flex-col bg-base-100 px-5 py-7">
+    <div class="mb-8 flex items-center justify-between">
       <button type="button" class="flex items-center gap-3" onclick={() => navigate('/')}>
-        <span class="flex h-10 w-10 items-center justify-center rounded-full border border-base-300 bg-base-100">
-          <img src="/mr-market-logo-transparent.svg" alt="Mr.Market" class="h-8 w-8" />
+        <span class="flex h-9 w-9 items-center justify-center rounded-full border border-base-300 bg-base-200">
+          <img src="/mr-market-logo-transparent.svg" alt="Mr.Market" class="h-7 w-7" />
         </span>
-        <span class="text-lg font-semibold tracking-tight text-base-content">Mr.Market</span>
+        <span class="font-display text-lg text-base-content">Mr.Market</span>
       </button>
 
       <button
         type="button"
-        class="btn btn-ghost btn-sm rounded-full lg:hidden"
+        class="btn-pill-ghost lg:hidden"
         onclick={onClose}
         aria-label={$_('close_sidebar')}
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="h-5 w-5"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-        </svg>
+        <span class="text-lg leading-none">×</span>
       </button>
     </div>
 
-    <nav class="flex-1 overflow-y-auto px-3 py-4">
+    <nav class="flex-1 overflow-y-auto">
       <div class="mb-3 px-2">
-        <span class="text-xs font-medium text-base-content/50 capitalize">{$_('menu')}</span>
+        <span class="eyebrow">{$_('menu')}</span>
       </div>
-      <ul class="space-y-5">
+      <ul class="space-y-4">
         {#each NAV_ITEMS as item (item.key)}
           {@const groupActive = isGroupActive(item, pathname)}
           {@const groupDirectActive = Boolean(item.href && isActive(item.href, pathname))}
@@ -100,32 +91,30 @@
             <button
               type="button"
               class={clsx(
-                'mb-1 flex min-h-10 w-full items-center gap-3 rounded-full px-3 py-2 text-left text-sm transition-colors',
-                groupDirectActive
-                  ? 'bg-primary text-primary-content'
-                  : groupActive
-                    ? 'bg-base-200 text-base-content'
-                  : 'text-base-content/70 hover:bg-neutral hover:text-base-content',
+                'mb-1 flex min-h-10 w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-colors',
               )}
               onclick={() => item.href && navigate(item.href)}
               aria-current={groupDirectActive ? 'page' : groupActive ? 'location' : undefined}
             >
-              <SideBarIcons name={iconName(item.key)} />
-              <span class="font-medium capitalize">{$_(item.label)}</span>
+              <span class="flex min-w-0 items-center gap-3">
+                <SideBarIcons name={iconName(item.key)} />
+                <span class="truncate capitalize">{$_(item.label)}</span>
+              </span>
             </button>
-            <ul class="space-y-1 pl-3">
+            <ul class="space-y-1 pl-5">
               {#each item.children as child (child.key)}
+                {@const childActive = isActive(child.href, pathname)}
                 <li>
                   <button
                     type="button"
                     class={clsx(
-                      'min-h-9 w-full rounded-full px-4 py-2 text-left text-sm transition-colors',
-                      isActive(child.href, pathname)
-                        ? 'bg-primary text-primary-content'
-                        : 'text-base-content/60 hover:bg-neutral hover:text-base-content',
+                      'min-h-9 w-full rounded-2xl px-4 py-2 text-left text-sm font-medium transition-colors',
+                      childActive
+                        ? 'bg-base-200 text-base-content'
+                        : 'text-base-content/55 hover:bg-base-200/60 hover:text-base-content',
                     )}
                     onclick={() => navigate(child.href)}
-                    aria-current={isActive(child.href, pathname) ? 'page' : undefined}
+                    aria-current={childActive ? 'page' : undefined}
                   >
                     <span class="capitalize">{$_(child.label)}</span>
                   </button>
@@ -137,10 +126,14 @@
       </ul>
     </nav>
 
-    <div class="border-t border-base-300 px-3 py-4">
+    <div class="mt-auto px-3 pt-8">
+      <div class="mb-3 flex flex-col gap-0.5">
+        <span class="eyebrow">admin console</span>
+        <span class="text-xs text-base-content/40">Operational preview</span>
+      </div>
       <button
         type="button"
-        class="btn btn-ghost btn-sm w-full justify-start gap-3 rounded-full text-error hover:bg-error/10"
+        class="btn-pill-ghost w-full justify-start gap-3 text-error hover:bg-error/10"
         onclick={requestLogout}
       >
         <SideBarIcons name="exit" />

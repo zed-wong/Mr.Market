@@ -17,25 +17,25 @@
   );
 </script>
 
-<div class="card border border-base-300 bg-base-100 shadow-none">
-  <div class="card-body gap-3 p-5">
+<div class="card-surface card-hover anim-card-enter p-5">
+  <div class="flex flex-col gap-3">
     <div class="flex items-center justify-between">
-      <span class="text-xs font-medium text-base-content/60 capitalize tracking-wide">{label}</span>
+      <span class="eyebrow">{label}</span>
       {#if deltaPct !== 0}
         <span
-          class="font-mono text-xs"
+          class="font-mono-num text-xs"
           class:text-success={positive}
           class:text-error={!positive}
         >
           {deltaText}
         </span>
       {:else}
-        <span class="font-mono text-xs text-base-content/40">—</span>
+        <span class="font-mono-num text-xs text-base-content/40">—</span>
       {/if}
     </div>
 
     <div class="flex items-baseline gap-1.5">
-      <span class="font-mono text-2xl font-semibold tracking-tight text-base-content md:text-3xl">
+      <span class="font-mono-num text-2xl font-semibold tracking-tight text-base-content md:text-3xl">
         {value}
       </span>
       {#if unit}

@@ -29,36 +29,26 @@
   };
 </script>
 
-<header class="sticky top-0 z-30 border-b border-base-300 bg-base-100/95 backdrop-blur">
-  <div class="flex min-h-15 items-center gap-3 px-3 py-3 sm:px-4 md:px-6">
+<header class="sticky top-0 z-30 bg-base-100/90 backdrop-blur">
+  <div class="flex min-h-15 items-center gap-3 px-5 py-4 md:px-8">
     <button
       type="button"
-      class="btn btn-ghost btn-sm rounded-full"
+      class="btn-pill-ghost -ml-3"
       onclick={onToggleSidebar}
       aria-label={$_('toggle_sidebar')}
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke-width="1.5"
-        stroke="currentColor"
-        class="h-5 w-5"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M3.75 6.75h16.5m-16.5 5.25h16.5m-16.5 5.25h16.5"
-        />
-      </svg>
+      <span class="flex flex-col gap-1">
+        <span class="block h-px w-5 bg-current"></span>
+        <span class="block h-px w-5 bg-current"></span>
+      </span>
     </button>
 
     {#if activeLocation}
       <div class="min-w-0">
-        <span class="block text-[10px] font-medium text-base-content/50 capitalize tracking-wide">
+        <span class="eyebrow block">
           {$_(activeLocation.group.label)}
         </span>
-        <span class="block truncate text-sm font-semibold text-base-content capitalize">
+        <span class="block truncate text-sm font-semibold text-base-content capitalize tracking-tight">
           {activeLocation.child ? $_(activeLocation.child.label) : $_(activeLocation.group.label)}
         </span>
       </div>
@@ -72,7 +62,7 @@
       {/if}
       <button
         type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
+        class="btn-pill-outline capitalize"
         disabled={passkeyLoading}
         onclick={handleRegisterPasskey}
       >

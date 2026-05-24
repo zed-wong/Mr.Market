@@ -132,12 +132,12 @@
       <div
         class={clsx(
           'relative flex flex-1 flex-col overflow-y-auto overflow-x-hidden transition-[margin] duration-300',
-          sidebarOpen ? 'lg:ml-72' : 'lg:ml-0',
+          sidebarOpen ? 'lg:ml-64' : 'lg:ml-0',
         )}
       >
         <TopBar onToggleSidebar={() => (sidebarOpen = !sidebarOpen)} />
         <div class="flex-1">
-          <div class="mx-auto w-full max-w-screen-2xl p-4 md:p-6 2xl:p-8">
+          <div class="mx-auto w-full max-w-screen-2xl p-5 pb-12 md:p-8">
             {@render children?.()}
           </div>
         </div>

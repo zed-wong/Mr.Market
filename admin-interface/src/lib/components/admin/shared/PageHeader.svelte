@@ -11,21 +11,21 @@
   let { eyebrow, title, subtitle, actions }: Props = $props();
 </script>
 
-<div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+<div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
   <div class="flex flex-col gap-1">
     {#if eyebrow}
-      <span class="text-xs font-medium text-base-content/50 capitalize tracking-wide">{eyebrow}</span>
+      <span class="eyebrow">{eyebrow}</span>
     {/if}
-    <span class="text-2xl font-semibold tracking-tight text-base-content md:text-3xl capitalize">
+    <span class="font-display text-3xl text-base-content md:text-4xl capitalize">
       {title}
     </span>
     {#if subtitle}
-      <span class="text-sm text-base-content/60">{subtitle}</span>
+      <span class="text-body-muted max-w-3xl">{subtitle}</span>
     {/if}
   </div>
 
   {#if actions}
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
       {@render actions()}
     </div>
   {/if}

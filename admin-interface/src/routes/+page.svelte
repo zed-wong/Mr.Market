@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
+  import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import KpiCard from './components/KpiCard.svelte';
   import {
     DASHBOARD_RANGES,
@@ -222,26 +223,19 @@
   );
 </script>
 
-<section class="space-y-6" data-testid="admin-dashboard-shell">
-  <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-    <div class="flex flex-col gap-1">
-      <span class="text-xs font-medium text-base-content/50 capitalize tracking-wide">
-        {$_('admin.nav.dashboard')}
-      </span>
-      <span class="text-2xl font-semibold tracking-tight text-base-content md:text-3xl capitalize">
-        {$_('admin.dashboard_overview')}
-      </span>
-      <span class="text-sm text-base-content/60">
-        {$_('admin.dashboard_subtitle')}
-      </span>
-    </div>
-
-    <div class="flex items-center gap-2">
+<section class="space-y-6 anim-page-enter" data-testid="admin-dashboard-shell">
+  <PageHeader
+    eyebrow={$_('admin.nav.dashboard')}
+    title={$_('admin.dashboard_overview')}
+    subtitle={$_('admin.dashboard_subtitle')}
+  >
+    {#snippet actions()}
+      <div class="flex flex-wrap items-center gap-2">
       <div class="join">
         {#each DASHBOARD_RANGES as r (r)}
           <button
             type="button"
-            class="btn btn-sm join-item border-base-300 bg-base-100 font-mono text-xs"
+            class="btn btn-sm join-item border-base-300 bg-base-200 font-mono-num text-xs"
             class:btn-primary={timeRange === r}
             disabled={refreshing}
             aria-pressed={timeRange === r}
@@ -253,7 +247,7 @@
       </div>
       <button
         type="button"
-        class="btn btn-ghost btn-sm rounded-full gap-2 capitalize"
+        class="btn-pill-outline capitalize"
         disabled={loading || refreshing}
         onclick={refresh}
       >
@@ -274,31 +268,32 @@
         <span>{refreshing ? 'refreshing' : 'refresh'}</span>
       </button>
       <span class="hidden text-xs text-base-content/50 md:inline">
-        updated <span class="font-mono">{summary ? formatTimestamp(summary.generatedAt) : 'pending'}</span>
+        updated <span class="font-mono-num">{summary ? formatTimestamp(summary.generatedAt) : 'pending'}</span>
       </span>
-    </div>
-  </div>
+      </div>
+    {/snippet}
+  </PageHeader>
 
   {#if loading}
-    <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="dashboard-loading">
+    <div class="card card-surface shadow-none" data-testid="dashboard-loading">
       <div class="card-body flex-row items-center gap-3 p-5">
         <span class="loading loading-spinner loading-sm text-base-content/60"></span>
         <span class="text-sm text-base-content/60 capitalize">loading backend dashboard summary</span>
       </div>
     </div>
   {:else if error}
-    <div class="card border border-error/30 bg-base-100 shadow-none" data-testid="dashboard-error">
+    <div class="card card-surface border-error/30 shadow-none" data-testid="dashboard-error">
       <div class="card-body gap-3 p-5">
         <span class="text-lg font-semibold text-base-content capitalize">dashboard summary unavailable</span>
         <span class="text-sm text-base-content/60">{error}</span>
         <div>
-          <button type="button" class="btn btn-sm btn-primary capitalize" onclick={refresh}>retry</button>
+          <button type="button" class="btn-pill-primary capitalize" onclick={refresh}>retry</button>
         </div>
       </div>
     </div>
   {:else if summary}
     {#if isEmpty}
-      <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="dashboard-empty">
+      <div class="card card-surface shadow-none" data-testid="dashboard-empty">
         <div class="card-body gap-2 p-5">
           <span class="text-lg font-semibold text-base-content capitalize">no dashboard activity yet</span>
           <span class="text-sm text-base-content/60">
@@ -316,19 +311,19 @@
     </div>
 
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-5">
-      <div class="card border border-base-300 bg-base-100 shadow-none xl:col-span-3">
+      <div class="card card-surface shadow-none xl:col-span-3">
         <div class="card-body gap-4 p-5">
           <div class="flex items-center justify-between">
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
               strategy health
             </span>
-            <a href="/trading/strategies" class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
+            <a href="/trading/strategies" class="btn-pill-ghost text-xs capitalize">
               view strategies →
             </a>
           </div>
 
           {#if displayedStrategies.length === 0}
-            <div class="rounded-lg border border-base-300 p-4">
+            <div class="card-surface-inset p-4">
               <span class="text-sm text-base-content/60">No strategy rows were returned by the backend summary.</span>
             </div>
           {:else}
@@ -361,7 +356,7 @@
                         <span class="text-sm text-base-content/70">{strategy.definitionName || strategy.strategyDefinitionId || 'unavailable'}</span>
                       </td>
                       <td class="text-right">
-                        <span class="font-mono text-xs text-base-content/60">{formatTimestamp(strategy.updatedAt)}</span>
+                        <span class="font-mono-num text-xs text-base-content/60">{formatTimestamp(strategy.updatedAt)}</span>
                       </td>
                     </tr>
                   {/each}
@@ -372,7 +367,7 @@
         </div>
       </div>
 
-      <div class="card border border-base-300 bg-base-100 shadow-none xl:col-span-2">
+      <div class="card card-surface shadow-none xl:col-span-2">
         <div class="card-body gap-3 p-5">
           <div class="flex items-center justify-between">
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
@@ -384,14 +379,14 @@
           </div>
 
           {#if displayedIntents.length === 0}
-            <div class="rounded-lg border border-base-300 p-4">
+            <div class="card-surface-inset p-4">
               <span class="text-sm text-base-content/60">No recent intents were returned for {summary.range.key}.</span>
             </div>
           {:else}
             <ul class="divide-y divide-base-300">
               {#each displayedIntents as intent (intent.intentId)}
                 <li class="flex items-center gap-3 py-2.5">
-                  <span class="font-mono text-xs text-base-content/50 w-28 shrink-0">{formatTimestamp(intent.createdAt)}</span>
+                  <span class="font-mono-num text-xs text-base-content/50 w-28 shrink-0">{formatTimestamp(intent.createdAt)}</span>
                   <span
                     class="rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wider {intentTone[intent.type] || 'bg-base-content/5 text-base-content/60'}"
                   >
@@ -408,7 +403,7 @@
                           {intent.side}
                         </span>
                       {/if}
-                      <span class="font-mono text-sm text-base-content">{intent.pair}</span>
+                      <span class="font-mono-num text-sm text-base-content">{intent.pair}</span>
                     </div>
                     <span class="text-xs text-base-content/50 capitalize">
                       {intent.exchange}{intent.accountLabel ? ` · ${intent.accountLabel}` : ''}
@@ -424,19 +419,19 @@
     </div>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card card-surface shadow-none">
         <div class="card-body gap-4 p-5">
           <div class="flex items-center justify-between">
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
               capital by asset
             </span>
-            <a href="/trading/positions" class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
+            <a href="/trading/positions" class="btn-pill-ghost text-xs capitalize">
               view positions →
             </a>
           </div>
 
           {#if capitalRows.length === 0}
-            <div class="rounded-lg border border-base-300 p-4">
+            <div class="card-surface-inset p-4">
               <span class="text-sm text-base-content/60">No capital rows were returned by the backend summary.</span>
             </div>
           {:else}
@@ -448,8 +443,8 @@
                   <div class="flex items-center justify-between">
                     <span class="text-sm text-base-content capitalize">{asset.asset}</span>
                     <div class="flex items-center gap-3">
-                      <span class="font-mono text-sm text-base-content">{formatNumber(asset.total, { maximumFractionDigits: 8 })}</span>
-                      <span class="font-mono text-xs text-base-content/50 w-12 text-right">{pct.toFixed(1)}%</span>
+                      <span class="font-mono-num text-sm text-base-content">{formatNumber(asset.total, { maximumFractionDigits: 8 })}</span>
+                      <span class="font-mono-num text-xs text-base-content/50 w-12 text-right">{pct.toFixed(1)}%</span>
                     </div>
                   </div>
                   <div class="h-1.5 w-full overflow-hidden rounded-full bg-base-300">
@@ -465,7 +460,7 @@
         </div>
       </div>
 
-      <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card card-surface shadow-none">
         <div class="card-body gap-4 p-5">
           <div class="flex items-center justify-between">
             <div class="flex flex-col">
@@ -476,34 +471,34 @@
                 backend tracked orders · {summary.range.key}
               </span>
             </div>
-            <a href="/trading/orders" class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
+            <a href="/trading/orders" class="btn-pill-ghost text-xs capitalize">
               view orders →
             </a>
           </div>
 
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div class="flex flex-col rounded-lg border border-base-300 p-3">
+            <div class="card-surface-inset flex flex-col p-3">
               <span class="text-xs text-base-content/50 capitalize">tracked</span>
-              <span class="font-mono text-lg font-semibold text-base-content">{formatNumber(summary.orderFlow.total)}</span>
+              <span class="font-mono-num text-lg font-semibold text-base-content">{formatNumber(summary.orderFlow.total)}</span>
             </div>
-            <div class="flex flex-col rounded-lg border border-base-300 p-3">
+            <div class="card-surface-inset flex flex-col p-3">
               <span class="text-xs text-base-content/50 capitalize">trades</span>
-              <span class="font-mono text-lg font-semibold text-base-content">{formatNumber(summary.orderFlow.volume.tradeCount)}</span>
+              <span class="font-mono-num text-lg font-semibold text-base-content">{formatNumber(summary.orderFlow.volume.tradeCount)}</span>
             </div>
-            <div class="flex flex-col rounded-lg border border-base-300 p-3">
+            <div class="card-surface-inset flex flex-col p-3">
               <span class="text-xs text-base-content/50 capitalize">notional</span>
-              <span class="font-mono text-lg font-semibold text-base-content">
+              <span class="font-mono-num text-lg font-semibold text-base-content">
                 {formatNumber(summary.orderFlow.volume.notionalVolume, { maximumFractionDigits: 8 })}
               </span>
             </div>
-            <div class="flex flex-col rounded-lg border border-base-300 p-3">
+            <div class="card-surface-inset flex flex-col p-3">
               <span class="text-xs text-base-content/50 capitalize">open</span>
-              <span class="font-mono text-lg font-semibold text-base-content">{formatNumber(summary.kpis.openOrders)}</span>
+              <span class="font-mono-num text-lg font-semibold text-base-content">{formatNumber(summary.kpis.openOrders)}</span>
             </div>
           </div>
 
           {#if displayedOrders.length === 0}
-            <div class="rounded-lg border border-base-300 p-4">
+            <div class="card-surface-inset p-4">
               <span class="text-sm text-base-content/60">No recent tracked orders were returned by the backend summary.</span>
             </div>
           {:else}
@@ -521,8 +516,8 @@
                 <tbody>
                   {#each displayedOrders.slice(0, 5) as order, index (`${order.orderId}-${index}`)}
                     <tr class="border-b border-base-300 hover:bg-neutral">
-                      <td><span class="font-mono text-xs text-base-content/70">{order.orderId}</span></td>
-                      <td><span class="font-mono text-sm text-base-content">{order.pair}</span></td>
+                      <td><span class="font-mono-num text-xs text-base-content/70">{order.orderId}</span></td>
+                      <td><span class="font-mono-num text-sm text-base-content">{order.pair}</span></td>
                       <td>
                         <span
                           class="text-xs font-medium"
@@ -533,7 +528,7 @@
                         </span>
                       </td>
                       <td class="text-right">
-                        <span class="font-mono text-xs text-base-content/70">{order.filledQty} / {order.qty}</span>
+                        <span class="font-mono-num text-xs text-base-content/70">{order.filledQty} / {order.qty}</span>
                       </td>
                       <td>
                         <div class="flex items-center gap-2">
@@ -551,35 +546,35 @@
       </div>
     </div>
 
-    <div class="card border border-base-300 bg-base-100 shadow-none">
+    <div class="card card-surface shadow-none">
       <div class="card-body gap-4 p-5">
         <div class="flex items-center justify-between">
           <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
             system status
           </span>
-          <a href="/system/health" class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60">
+          <a href="/system/health" class="btn-pill-ghost text-xs capitalize">
             view health →
           </a>
         </div>
 
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {#each systemRows as row (row.key)}
-            <div class="flex items-start gap-3 rounded-lg border border-base-300 p-3">
+            <div class="card-surface-inset flex items-start gap-3 p-3">
               <span class="mt-1 h-2 w-2 shrink-0 rounded-full {safeDot(row.status)}"></span>
               <div class="flex min-w-0 flex-col">
                 <span class="text-sm font-medium text-base-content capitalize">{row.label}</span>
-                <span class="font-mono text-xs text-base-content/50 truncate">{row.meta}</span>
+                <span class="font-mono-num text-xs text-base-content/50 truncate">{row.meta}</span>
               </div>
             </div>
           {/each}
         </div>
 
         {#if summary.health.issues.length > 0}
-          <div class="rounded-lg border border-base-300 p-4">
+          <div class="card-surface-inset p-4">
             <span class="text-sm font-medium text-base-content capitalize">reported health issues</span>
             <ul class="mt-2 space-y-1">
               {#each summary.health.issues as issue, index (index)}
-                <li class="font-mono text-xs text-base-content/60">{JSON.stringify(issue)}</li>
+                <li class="font-mono-num text-xs text-base-content/60">{JSON.stringify(issue)}</li>
               {/each}
             </ul>
           </div>
@@ -588,15 +583,15 @@
     </div>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card card-surface shadow-none">
         <div class="card-body gap-2 p-5">
           <span class="text-lg font-semibold tracking-tight text-base-content capitalize">range window</span>
-          <span class="font-mono text-xs text-base-content/60" data-testid="dashboard-range-key">{summary.range.key}</span>
-          <span class="font-mono text-xs text-base-content/60">{summary.range.startedAt}</span>
-          <span class="font-mono text-xs text-base-content/60">{summary.range.endedAt}</span>
+          <span class="font-mono-num text-xs text-base-content/60" data-testid="dashboard-range-key">{summary.range.key}</span>
+          <span class="font-mono-num text-xs text-base-content/60">{summary.range.startedAt}</span>
+          <span class="font-mono-num text-xs text-base-content/60">{summary.range.endedAt}</span>
         </div>
       </div>
-      <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card card-surface shadow-none">
         <div class="card-body gap-2 p-5">
           <span class="text-lg font-semibold tracking-tight text-base-content capitalize">bounded reads</span>
           <span class="text-sm text-base-content/60">
@@ -607,7 +602,7 @@
           </span>
         </div>
       </div>
-      <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card card-surface shadow-none">
         <div class="card-body gap-2 p-5">
           <span class="text-lg font-semibold tracking-tight text-base-content capitalize">backend limits</span>
           <span class="text-sm text-base-content/60">recent rows: {summary.limits.recentItems}</span>
