@@ -30,6 +30,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       username: payload.username,
       tokenVersion: payload.tokenVersion,
       authMethod: payload.authMethod,
+      address: payload.address,
+      chainId: payload.chainId,
     };
   }
 }

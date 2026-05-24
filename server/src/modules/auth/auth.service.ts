@@ -22,6 +22,7 @@ import type {
 } from '@simplewebauthn/types';
 import axios from 'axios';
 import { createHash } from 'crypto';
+import { verifyMessage } from 'ethers/lib/utils';
 import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
@@ -43,9 +44,19 @@ const DEFAULT_PASSKEY_ORIGINS = [
 
 type AdminAuthMethod = 'password' | 'passkey';
 type AdminJwtPayload = {
+  sub?: string;
   username?: string;
   tokenVersion?: number;
   authMethod?: AdminAuthMethod;
+  address?: string;
+  chainId?: string;
+};
+type Web3JwtPayload = {
+  sub?: string;
+  userId?: string;
+  authMethod?: 'web3';
+  address?: string;
+  chainId?: string;
 };
 
 @Injectable()
@@ -159,6 +170,73 @@ export class AuthService {
     }
 
     return { ok: true };
+  }
+
+  getWeb3Nonce(body: { address?: string; chainId?: string | number }) {
+    const address = this.normalizeWeb3Address(body?.address);
+    const chainId = this.normalizeWeb3ChainId(body?.chainId);
+    const nonce = createHash('sha256')
+      .update(`${address}:${chainId}:${Date.now()}`)
+      .digest('hex')
+      .slice(0, 24);
+
+    return {
+      nonce,
+      domain: 'Mr.Market',
+      statement: 'Sign in to Mr.Market web3 market-making orders',
+      uri: 'https://mr.market/web3',
+    };
+  }
+
+  async loginWeb3(body: {
+    message?: string;
+    signature?: string;
+  }): Promise<{
+    jwt: string;
+    userId: string;
+    address: string;
+    chainId: string;
+    expiresIn: number;
+  }> {
+    const message = String(body?.message || '');
+    const signature = String(body?.signature || '');
+
+    if (!message.trim() || !signature.trim()) {
+      throw new UnauthorizedException('Web3 message and signature are required');
+    }
+
+    const address = this.normalizeWeb3Address(
+      this.extractWeb3MessageValue(message, 'account') ||
+        this.extractFirstAddress(message),
+    );
+    const chainId = this.normalizeWeb3ChainId(
+      this.extractWeb3MessageValue(message, 'chain id'),
+    );
+
+    this.assertWeb3Signature(message, signature, address);
+
+    const userId = this.deriveWeb3UserId(address, chainId);
+    const jwt = this.jwtService.sign(
+      { sub: userId, authMethod: 'web3', address, chainId },
+      { expiresIn: '7d' },
+    );
+
+    return { jwt, userId, address, chainId, expiresIn: ADMIN_JWT_TTL_SECONDS };
+  }
+
+  getWeb3Session(payload?: Web3JwtPayload) {
+    const userId = payload?.sub || payload?.userId;
+
+    if (payload?.authMethod !== 'web3' || !userId) {
+      return { authenticated: false };
+    }
+
+    return {
+      authenticated: true,
+      userId,
+      address: payload.address,
+      chainId: payload.chainId,
+    };
   }
 
   async assertAdminTokenVersion(tokenVersion?: number): Promise<void> {
@@ -333,6 +411,106 @@ export class AuthService {
       { username: ADMIN_AUTH_ID, tokenVersion, authMethod },
       { expiresIn: '7d' },
     );
+  }
+
+  private normalizeWeb3Address(address?: string): string {
+    const normalized = String(address || '').trim();
+
+    if (!normalized) {
+      throw new UnauthorizedException('Web3 address is required');
+    }
+
+    return normalized.startsWith('0x') ? normalized.toLowerCase() : normalized;
+  }
+
+  private normalizeWeb3ChainId(chainId?: string | number): string {
+    const normalized = String(chainId || '').trim();
+
+    if (!normalized) {
+      throw new UnauthorizedException('Web3 chain id is required');
+    }
+
+    return normalized;
+  }
+
+  private deriveWeb3UserId(address: string, chainId: string): string {
+    const hash = createHash('sha256')
+      .update(`${chainId}:${address.toLowerCase()}`)
+      .digest('hex');
+
+    return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(
+      13,
+      16,
+    )}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  }
+
+  private assertWeb3Signature(
+    message: string,
+    signature: string,
+    address: string,
+  ): void {
+    const isDemoSignature = signature.startsWith('demo:') ||
+      signature.startsWith('demo-signature:');
+
+    if (isDemoSignature) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new UnauthorizedException(
+          'Demo web3 signatures are not accepted in production',
+        );
+      }
+
+      return;
+    }
+
+    if (!address.startsWith('0x')) {
+      throw new UnauthorizedException(
+        'Only EVM signatures are supported for web3 login',
+      );
+    }
+
+    try {
+      const recovered = verifyMessage(message, signature).toLowerCase();
+
+      if (recovered !== address.toLowerCase()) {
+        throw new UnauthorizedException('Invalid web3 signature');
+      }
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+
+      throw new UnauthorizedException('Invalid web3 signature');
+    }
+  }
+
+  private extractWeb3MessageValue(
+    message: string,
+    field: 'account' | 'chain id',
+  ): string | null {
+    if (field === 'account') {
+      const accountLineIndex = message
+        .split('\n')
+        .findIndex((line) => line.toLowerCase().includes('account:'));
+      const lines = message.split('\n');
+
+      return accountLineIndex >= 0 ? lines[accountLineIndex + 1] || null : null;
+    }
+
+    const match = message.match(/Chain ID:\s*([^\n]+)/i);
+
+    return match?.[1]?.trim() || null;
+  }
+
+  private extractFirstAddress(message: string): string | null {
+    const evmMatch = message.match(/0x[a-fA-F0-9]{40}/);
+
+    if (evmMatch) {
+      return evmMatch[0];
+    }
+
+    const solanaMatch = message.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
+
+    return solanaMatch?.[0] || null;
   }
 
   private assertPasswordAuthenticatedAdmin(payload?: AdminJwtPayload): void {

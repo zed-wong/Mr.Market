@@ -62,13 +62,14 @@ describe('market-making campaign detail to order route', () => {
     expect(helper).toContain('/orders');
   });
 
-  it('blocks paused campaign details and exposes state variants', () => {
+  it('replaces legacy market-making URLs with order-list navigation', () => {
     const source = campaignDetailSource();
 
-    expect(source).toContain("eligibility?.state === 'campaign-paused'");
-    expect(source).toContain('campaign-detail-loading-state');
-    expect(source).toContain('campaign-detail-error-state');
-    expect(source).toContain('campaign-detail-state-select');
+    expect(source).toContain("goto('/market-making'");
+    expect(source).toContain('legacy-detail-replaced');
+    expect(source).toContain('Open orders');
+    expect(source.toLowerCase()).not.toContain('join');
+    expect(source.toLowerCase()).not.toContain('discovery');
   });
 
   it('wires order detail to server-backed detail and mutation helpers', () => {

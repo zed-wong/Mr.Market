@@ -8,13 +8,13 @@ const routeSource = () =>
     'utf8'
   );
 
-describe('/market-making/create wrong-network recovery', () => {
-  it('shows a switch-network CTA while campaign creation is blocked', () => {
+describe('/market-making/create legacy route', () => {
+  it('redirects to the order-first creation route without rendering removed UX', () => {
     const source = routeSource();
 
-    expect(source).toContain('openNetworkModal');
-    expect(source).toContain('campaign-create-switch-network');
-    expect(source).toContain('Wrong network selected');
-    expect(source).toContain('disabled={!$walletIsConnected || $walletIsUnsupported}');
+    expect(source).toContain("goto('/market-making/order/new'");
+    expect(source).toContain('legacy-create-replaced');
+    expect(source).toContain('Create order');
+    expect(source.toLowerCase()).not.toContain('campaign');
   });
 });

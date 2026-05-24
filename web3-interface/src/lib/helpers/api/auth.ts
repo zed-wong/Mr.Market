@@ -1,5 +1,5 @@
-import { ApiError, apiFetch, clearAccessToken } from './client';
-import { persistAuth } from '$lib/stores/auth';
+import { ApiError, apiFetch, clearAccessToken, setAccessToken } from './client';
+import { clearAuth, persistAuth } from '$lib/stores/auth';
 import type { NonceResponse, LoginRequest, LoginResponse, SessionResponse } from '$lib/types/auth';
 
 export const getNonce = async (address: string, chainId: string): Promise<NonceResponse> => {
@@ -14,6 +14,7 @@ export const login = async (message: string, signature: string): Promise<LoginRe
     method: 'POST',
     json: { message, signature } satisfies LoginRequest,
   });
+  setAccessToken(result.jwt);
   persistAuth(result.jwt, result.address, result.chainId);
   return result;
 };
@@ -44,5 +45,6 @@ export const logout = async (): Promise<void> => {
     throw err;
   } finally {
     clearAccessToken();
+    clearAuth();
   }
 };

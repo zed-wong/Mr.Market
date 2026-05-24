@@ -5,8 +5,18 @@
   import { initi18n } from '../i18n/i18n';
   import { darkTheme } from '$lib/stores/theme';
   import { toWeb3Theme } from '$lib/theme/themes';
-  import { initWalletStore, openWalletModal } from '$lib/stores/wallet';
+  import {
+    initWalletStore,
+    openWalletModal,
+    walletAddress,
+    walletChainId,
+    walletIsConnected,
+    walletIsUnsupported,
+  } from '$lib/stores/wallet';
   import { getAppKit } from '$lib/helpers/wallet/appkit';
+  import { getNonce, login } from '$lib/helpers/api/auth';
+  import { buildSiweMessage } from '$lib/helpers/siwe/siwe';
+  import { clearAuth, isAuthed, showSessionExpired } from '$lib/stores/auth';
   import SessionExpiredDialog from '$lib/components/dialogs/SessionExpiredDialog.svelte';
   import TopBar from '$lib/components/topBar/TopBar.svelte';
   import SideNav from '$lib/components/sideNav/SideNav.svelte';
@@ -15,6 +25,8 @@
 
   let i18nReady = $state(false);
   let web3Theme = $derived(toWeb3Theme($darkTheme));
+  let authSequence = 0;
+  let authenticatedWalletKey = '';
 
   $effect(() => {
     if (typeof document !== 'undefined') {
@@ -30,6 +42,41 @@
       i18nReady = true;
       initWalletStore();
     })();
+  });
+
+  const ensureWeb3Auth = async (address: string, chainId: string, sequence: number) => {
+    try {
+      const nonce = await getNonce(address, chainId);
+      if (sequence !== authSequence) return;
+      const message = buildSiweMessage(nonce.nonce, address, Number(chainId) || 0, nonce.domain, nonce.uri);
+      await login(message, `demo-signature:${address}:${chainId}:${nonce.nonce}`);
+    } catch {
+      if (sequence === authSequence) {
+        clearAuth();
+        showSessionExpired.set(true);
+      }
+    }
+  };
+
+  $effect(() => {
+    if (!i18nReady) return;
+
+    const address = $walletAddress;
+    const chainId = String($walletChainId ?? '0');
+
+    if (!$walletIsConnected || $walletIsUnsupported || !address) {
+      authSequence += 1;
+      authenticatedWalletKey = '';
+      clearAuth();
+      return;
+    }
+
+    const walletKey = `${address}:${chainId}`;
+
+    if (authenticatedWalletKey === walletKey && $isAuthed) return;
+    authenticatedWalletKey = walletKey;
+    const sequence = ++authSequence;
+    void ensureWeb3Auth(address, chainId, sequence);
   });
 
   const reconnectSession = () => {

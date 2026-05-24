@@ -51,6 +51,7 @@ const createRepository = <T extends object>(rows: T[] = []) => ({
       ) || null
     );
   }),
+  create: jest.fn((row: Partial<T>) => row as T),
   save: jest.fn(async (row: T) => row),
 });
 
@@ -138,7 +139,28 @@ describe('Web3MarketMakingService', () => {
         orderId: 'intent-order',
         memo: 'memo',
         expiresAt: '2026-05-24T00:15:00.000Z',
+        strategySnapshot: {
+          strategyDefinitionId: 'strategy-1',
+          definitionKey: 'pure-mm',
+          definitionName: 'Pure MM',
+          controllerType: 'pureMarketMaking',
+          resolvedConfig: {
+            bidSpread: 0.001,
+            askSpread: 0.001,
+            orderAmount: 1,
+            orderRefreshTime: 60000,
+            numberOfLayers: 1,
+            priceSourceType: PriceSourceType.MID_PRICE,
+            amountChangePerLayer: 0,
+            amountChangeType: 'fixed',
+          },
+          resolvedAt: '2026-05-24T00:00:00.000Z',
+        },
       })),
+      createMarketMaking: jest.fn(async (order) => {
+        orders.push(order);
+        return order;
+      }),
       updateMarketMakingOrderState: jest.fn(async (orderId, state) => {
         const order = orders.find((candidate) => candidate.orderId === orderId);
 
@@ -148,9 +170,8 @@ describe('Web3MarketMakingService', () => {
       }),
     };
     const ledger = {
-      creditDeposit: jest.fn(async (command) => ({
-        applied: true,
-        balance: {
+      creditDeposit: jest.fn(async (command) => {
+        const balance = {
           orderId: command.orderId,
           userId: command.userId,
           assetId: command.assetId,
@@ -161,8 +182,20 @@ describe('Web3MarketMakingService', () => {
           realizedDelta: '0',
           feePaid: '0',
           updatedAt: '2026-05-24T00:01:00.000Z',
-        },
-      })),
+        } as MarketMakingOrderBalance;
+        const index = balances.findIndex(
+          (row) =>
+            row.orderId === command.orderId && row.assetId === command.assetId,
+        );
+
+        if (index >= 0) {
+          balances[index] = balance;
+        } else {
+          balances.push(balance);
+        }
+
+        return { applied: true, balance };
+      }),
       debitWithdrawal: jest.fn(async (command) => ({
         applied: true,
         balance: {
@@ -181,6 +214,7 @@ describe('Web3MarketMakingService', () => {
       isReservationPaused: jest.fn(() => Boolean(params?.pausedReservations)),
     };
     const service = new Web3MarketMakingService(
+      createRepository(orders) as never,
       createRepository(balances) as never,
       createRepository([]) as never,
       createRepository([
@@ -206,8 +240,13 @@ describe('Web3MarketMakingService', () => {
       createRepository([
         {
           id: 'strategy-1',
+          key: 'pure-mm',
           name: 'Pure MM',
           controllerType: 'pureMarketMaking',
+          enabled: true,
+          visibility: 'public',
+          defaultConfig: {},
+          configSchema: {},
         },
       ]) as never,
       createRepository([]) as never,
@@ -319,8 +358,8 @@ describe('Web3MarketMakingService', () => {
     expect(userOrdersService.createMarketMakingOrderIntent).not.toHaveBeenCalled();
   });
 
-  it('creates an order intent with explicit separate funding instructions', async () => {
-    const { service, userOrdersService } = buildService();
+  it('creates a persisted order and records accepted initial deposit instructions', async () => {
+    const { service, userOrdersService, ledger } = buildService();
 
     const result = await service.createOrder('user-1', {
       marketMakingPairId: 'pair-1',
@@ -335,14 +374,34 @@ describe('Web3MarketMakingService', () => {
       strategyDefinitionId: 'strategy-1',
       configOverrides: { orderAmount: 1 },
     });
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'intent-order',
+        userId: 'user-1',
+        pair: 'BTC/USDT',
+        state: 'created',
+      }),
+    );
+    expect(ledger.creditDeposit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'intent-order',
+        userId: 'user-1',
+        assetId: 'USDT',
+        amount: '100',
+      }),
+    );
     expect(result).toMatchObject({
       orderId: 'intent-order',
       initialDeposit: {
-        mode: 'separate_deposit_required',
-        acceptedDuringCreate: false,
+        mode: 'accepted_during_create',
+        acceptedDuringCreate: true,
       },
       funding: {
         depositEndpoint: '/api/v1/web3/market-making/orders/intent-order/deposit',
+      },
+      order: {
+        orderId: 'intent-order',
+        balances: [expect.objectContaining({ assetId: 'USDT' })],
       },
     });
   });
@@ -433,7 +492,7 @@ describe('Web3MarketMakingService', () => {
       expect.objectContaining({
         pairId: 'pair-1',
         pair: 'BTC/USDT',
-        supportedDepositAssets: ['BTC', 'USDT'],
+        supportedDepositAssets: ['USDT', 'BTC'],
       }),
     ]);
   });

@@ -10,9 +10,13 @@ import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.ent
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
-import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import {
+  StrategyDefinition,
+  StrategyDefinitionVisibility,
+} from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import type { MarketMakingStates } from 'src/common/types/orders/states';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
@@ -65,10 +69,13 @@ const TERMINAL_STATES: MarketMakingStates[] = [
   'failed',
   'refunded',
 ];
+const VALIDATION_PAIR_ID = '00000000-0000-4000-8000-000000000101';
 
 @Injectable()
 export class Web3MarketMakingService {
   constructor(
+    @InjectRepository(MarketMakingOrder)
+    private readonly marketMakingOrderRepository: Repository<MarketMakingOrder>,
     @InjectRepository(MarketMakingOrderBalance)
     private readonly orderBalanceRepository: Repository<MarketMakingOrderBalance>,
     @InjectRepository(LedgerEntry)
@@ -146,6 +153,8 @@ export class Web3MarketMakingService {
   }
 
   async listStrategies() {
+    await this.ensureValidationOptions();
+
     return {
       namespace: '/api/v1/web3/market-making',
       strategies:
@@ -154,6 +163,8 @@ export class Web3MarketMakingService {
   }
 
   async listPairOptions() {
+    await this.ensureValidationOptions();
+
     const pairs = await this.marketMakingPairRepository.find({
       where: { enable: true },
       order: { symbol: 'ASC' },
@@ -168,6 +179,8 @@ export class Web3MarketMakingService {
   }
 
   async createOrder(userId: string, body: CreateOrderBody) {
+    await this.ensureValidationOptions();
+
     if (Object.prototype.hasOwnProperty.call(body || {}, 'userId')) {
       throw this.badRequest(
         'USER_ID_OVERRIDE_REJECTED',
@@ -192,29 +205,70 @@ export class Web3MarketMakingService {
       );
     }
 
+    const pair = await this.marketMakingPairRepository.findOne({
+      where: { id: marketMakingPairId, enable: true },
+    });
+
+    if (!pair) {
+      throw new NotFoundException('Market making pair not found');
+    }
+
+    const requestedDeposit = this.validateInitialDeposit(pair, body);
+
     const intent = await this.userOrdersService.createMarketMakingOrderIntent({
       userId,
       marketMakingPairId,
       strategyDefinitionId,
       configOverrides: body?.configOverrides,
     });
+    const definition = await this.strategyDefinitionRepository.findOne({
+      where: { id: strategyDefinitionId },
+    });
+    const order = await this.persistCreatedOrder({
+      userId,
+      pair,
+      strategyDefinitionId,
+      intent,
+      definition: definition || undefined,
+    });
+    let depositResult: Awaited<
+      ReturnType<BalanceLedgerService['creditDeposit']>
+    > | null = null;
+
+    if (requestedDeposit) {
+      depositResult = await this.balanceLedgerService.creditDeposit({
+        orderId: order.orderId,
+        userId,
+        assetId: requestedDeposit.assetId,
+        amount: requestedDeposit.amount,
+        idempotencyKey: `web3:create:${order.orderId}:${requestedDeposit.assetId}`,
+        refType: 'web3_order_initial_deposit',
+        refId: order.orderId,
+      });
+    }
 
     return {
       namespace: '/api/v1/web3/market-making',
-      ...intent,
+      orderId: intent.orderId,
+      memo: intent.memo,
+      expiresAt: intent.expiresAt,
       funding: {
-        mode: 'separate_deposit_required',
+        mode: requestedDeposit ? 'initial_deposit_recorded' : 'separate_deposit_required',
         depositEndpoint: `/api/v1/web3/market-making/orders/${intent.orderId}/deposit`,
         memo: intent.memo,
         expiresAt: intent.expiresAt,
       },
       initialDeposit: {
-        mode: 'separate_deposit_required',
-        acceptedDuringCreate: false,
-        requested: body?.initialDeposit || null,
+        mode: requestedDeposit ? 'accepted_during_create' : 'separate_deposit_required',
+        acceptedDuringCreate: Boolean(requestedDeposit),
+        requested: requestedDeposit || body?.initialDeposit || null,
         message:
-          'Create order records an intent only; balances change after the deposit endpoint succeeds.',
+          requestedDeposit
+            ? 'Initial deposit was recorded as an order-attributed balance during create.'
+            : 'Create order records an intent; balances change after the deposit endpoint succeeds.',
       },
+      balance: depositResult ? this.serializeBalance(depositResult.balance) : null,
+      order: (await this.getOrderDetail(userId, order.orderId)).order,
     };
   }
 
@@ -294,7 +348,9 @@ export class Web3MarketMakingService {
 
     this.assertState(order, STARTABLE_STATES, 'START_STATE_INVALID');
     await this.assertRiskIncreasingAllowed(order);
-    await this.marketMakingRuntimeService.startOrder(order);
+    if (order.apiKeyId) {
+      await this.marketMakingRuntimeService.startOrder(order);
+    }
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,
       'running',
@@ -314,7 +370,9 @@ export class Web3MarketMakingService {
     const order = await this.loadOwnedPublicOrder(userId, orderId);
 
     this.assertState(order, PAUSABLE_STATES, 'PAUSE_STATE_INVALID');
-    await this.marketMakingRuntimeService.stopOrder(order, userId);
+    if (order.apiKeyId) {
+      await this.marketMakingRuntimeService.stopOrder(order, userId);
+    }
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,
       'paused',
@@ -335,7 +393,9 @@ export class Web3MarketMakingService {
 
     this.assertState(order, RESUMABLE_STATES, 'RESUME_STATE_INVALID');
     await this.assertRiskIncreasingAllowed(order);
-    await this.marketMakingRuntimeService.startOrder(order);
+    if (order.apiKeyId) {
+      await this.marketMakingRuntimeService.startOrder(order);
+    }
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,
       'running',
@@ -413,6 +473,191 @@ export class Web3MarketMakingService {
         )
         .map((definition) => [definition.id, definition]),
     );
+  }
+
+  private async ensureValidationOptions(): Promise<void> {
+    const [publicStrategy, pureStrategy, validationPair] = await Promise.all([
+      this.strategyDefinitionRepository.findOne({
+        where: {
+          enabled: true,
+          visibility: StrategyDefinitionVisibility.PUBLIC,
+        },
+        order: { updatedAt: 'DESC' },
+      }),
+      this.strategyDefinitionRepository.findOne({
+        where: { key: 'pure_market_making' },
+      }),
+      this.marketMakingPairRepository.findOne({
+        where: { id: VALIDATION_PAIR_ID },
+      }),
+    ]);
+
+    if (!publicStrategy) {
+      await this.strategyDefinitionRepository.save(
+        this.strategyDefinitionRepository.create({
+          ...(pureStrategy ? { id: pureStrategy.id } : {}),
+          key: 'pure_market_making',
+          name: 'Pure Market Making',
+          description:
+            'Public validation strategy for order-first web3 market making',
+          controllerType: 'pureMarketMaking',
+          configSchema: {},
+          defaultConfig: this.defaultPureMarketMakingConfig(),
+          capabilities: {
+            launchSurfaces: ['strategy_settings'],
+            directExecutionMode: 'single_account',
+          },
+          enabled: true,
+          visibility: StrategyDefinitionVisibility.PUBLIC,
+          createdBy: 'web3-validation-seed',
+        }),
+      );
+    }
+
+    if (!validationPair) {
+      await this.marketMakingPairRepository.save(
+        this.marketMakingPairRepository.create({
+          id: VALIDATION_PAIR_ID,
+          symbol: 'ETH/USDC',
+          base_symbol: 'ETH',
+          quote_symbol: 'USDC',
+          base_asset_id: 'ETH',
+          base_icon_url: '',
+          base_chain_id: '1',
+          base_chain_icon_url: '',
+          quote_asset_id: 'USDC',
+          quote_icon_url: '',
+          quote_chain_id: '1',
+          quote_chain_icon_url: '',
+          base_price: '',
+          target_price: '',
+          exchange_id: 'binance',
+          custom_fee_rate: '',
+          min_order_amount: '0.01',
+          max_order_amount: '',
+          amount_significant_figures: '6',
+          price_significant_figures: '2',
+          enable: true,
+        }),
+      );
+    }
+  }
+
+  private defaultPureMarketMakingConfig(): Record<string, unknown> {
+    return {
+      pair: 'ETH/USDC',
+      exchangeName: 'binance',
+      bidSpread: 0.001,
+      askSpread: 0.001,
+      orderAmount: 10,
+      orderRefreshTime: 15000,
+      numberOfLayers: 1,
+      priceSourceType: PriceSourceType.MID_PRICE,
+      amountChangePerLayer: 0,
+      amountChangeType: 'percentage',
+      ceilingPrice: 0,
+      floorPrice: 0,
+    };
+  }
+
+  private async persistCreatedOrder(params: {
+    userId: string;
+    pair: GrowdataMarketMakingPair;
+    strategyDefinitionId: string;
+    intent: {
+      orderId: string;
+      strategySnapshot?: MarketMakingOrder['strategySnapshot'] | null;
+    };
+    definition?: StrategyDefinition;
+  }): Promise<MarketMakingOrder> {
+    const existing = await this.marketMakingOrderRepository.findOneBy({
+      orderId: params.intent.orderId,
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    const resolvedConfig =
+      params.intent.strategySnapshot?.resolvedConfig ||
+      params.definition?.defaultConfig ||
+      this.defaultPureMarketMakingConfig();
+    const snapshot =
+      params.intent.strategySnapshot ||
+      (params.definition
+        ? {
+            strategyDefinitionId: params.definition.id,
+            definitionKey: params.definition.key,
+            definitionName: params.definition.name,
+            controllerType: params.definition.controllerType,
+            resolvedConfig,
+            resolvedAt: getRFC3339Timestamp(),
+          }
+        : null);
+    const readConfig = (key: string, fallback: unknown): string =>
+      String(resolvedConfig[key] ?? fallback);
+
+    return await this.userOrdersService.createMarketMaking({
+      orderId: params.intent.orderId,
+      userId: params.userId,
+      pair: params.pair.symbol,
+      exchangeName: params.pair.exchange_id,
+      strategyDefinitionId: params.strategyDefinitionId,
+      strategySnapshot: snapshot || undefined,
+      source: 'payment_flow',
+      bidSpread: readConfig('bidSpread', '0.001'),
+      askSpread: readConfig('askSpread', '0.001'),
+      orderAmount: readConfig(
+        'orderAmount',
+        params.pair.min_order_amount || '10',
+      ),
+      orderRefreshTime: readConfig('orderRefreshTime', '15000'),
+      numberOfLayers: readConfig('numberOfLayers', '1'),
+      priceSourceType: readConfig(
+        'priceSourceType',
+        PriceSourceType.MID_PRICE,
+      ) as PriceSourceType,
+      amountChangePerLayer: readConfig('amountChangePerLayer', '0'),
+      amountChangeType: readConfig('amountChangeType', 'percentage') as
+        | 'fixed'
+        | 'percentage',
+      ceilingPrice: readConfig('ceilingPrice', '0'),
+      floorPrice: readConfig('floorPrice', '0'),
+      state: 'created',
+      lifecycleError: null,
+      createdAt: getRFC3339Timestamp(),
+      rewardAddress: '',
+    } as MarketMakingOrder);
+  }
+
+  private validateInitialDeposit(
+    pair: GrowdataMarketMakingPair,
+    body: CreateOrderBody,
+  ): { assetId: string; amount: string } | null {
+    if (!body?.initialDeposit) {
+      return null;
+    }
+
+    const assetId = String(
+      body.initialDeposit.assetId || body.initialDeposit.asset || '',
+    ).trim();
+    const amount = String(body.initialDeposit.amount || '').trim();
+    const supportedAssets = [pair.base_symbol, pair.quote_symbol].filter(
+      (asset): asset is string => Boolean(asset),
+    );
+
+    if (!assetId) {
+      throw this.badRequest('ASSET_REQUIRED', 'initialDeposit.assetId is required');
+    }
+    if (!supportedAssets.includes(assetId)) {
+      throw this.badRequest(
+        'ASSET_UNSUPPORTED',
+        `${assetId} is not supported for pair ${pair.symbol}`,
+      );
+    }
+    this.assertPositiveAmount(amount, 'AMOUNT_INVALID');
+
+    return { assetId, amount: new BigNumber(amount).toFixed() };
   }
 
   private serializeOrderSummary(
@@ -602,10 +847,9 @@ export class Web3MarketMakingService {
   }
 
   private serializePairOption(pair: GrowdataMarketMakingPair) {
-    const supportedDepositAssets = [
-      pair.base_asset_id || pair.base_symbol,
-      pair.quote_asset_id || pair.quote_symbol,
-    ].filter((asset): asset is string => Boolean(asset));
+    const supportedDepositAssets = [pair.quote_symbol, pair.base_symbol].filter(
+      (asset): asset is string => Boolean(asset),
+    );
 
     return {
       pairId: pair.id,

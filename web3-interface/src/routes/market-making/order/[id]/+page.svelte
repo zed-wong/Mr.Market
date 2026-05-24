@@ -19,6 +19,7 @@
     walletNamespaceLabel,
     walletShortAddress,
   } from '$lib/stores/wallet';
+  import { isAuthed } from '$lib/stores/auth';
   import type {
     Web3MarketMakingMutationResponse,
     Web3MarketMakingOrderDetail,
@@ -48,7 +49,7 @@
   let walletInteractionMode = $state<WalletInteractionMode>('approve');
 
   const orderId = $derived($page.params.id);
-  const canLoadDetail = $derived($walletIsConnected && !$walletIsUnsupported && Boolean(orderId));
+  const canLoadDetail = $derived($walletIsConnected && $isAuthed && !$walletIsUnsupported && Boolean(orderId));
   const supportedAssets = $derived(order ? supportedAssetsForOrder(order) : []);
   const orderedEvents = $derived(order ? [...order.events].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) : []);
   const selectedWithdrawBalance = $derived(

@@ -26,6 +26,7 @@ export const setAccessToken = (token: string) => {
 
 export const clearAuth = () => {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem('web3-access-token');
   localStorage.removeItem(CHAIN_KEY);
   localStorage.removeItem(ADDRESS_KEY);
   isAuthed.set(false);
@@ -34,6 +35,14 @@ export const clearAuth = () => {
 
 export const persistAuth = (token: string, address: string, chainId: string) => {
   localStorage.setItem(STORAGE_KEY, token);
+  localStorage.setItem('web3-access-token', token);
   localStorage.setItem(ADDRESS_KEY, address);
   localStorage.setItem(CHAIN_KEY, chainId);
+  isAuthed.set(true);
+  authState.set({
+    token,
+    address,
+    chainId,
+    userId: null,
+  });
 };

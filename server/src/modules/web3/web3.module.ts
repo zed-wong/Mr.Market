@@ -6,6 +6,7 @@ import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-maki
 import { Performance } from 'src/common/entities/market-making/performance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { LedgerModule } from 'src/modules/market-making/ledger/ledger.module';
 import { UserOrdersModule } from 'src/modules/market-making/user-orders/user-orders.module';
 
@@ -22,6 +23,7 @@ import { Web3Service } from './web3.service';
       StrategyDefinition,
       Performance,
       StrategyExecutionHistory,
+      MarketMakingOrder,
     ]),
     forwardRef(() => UserOrdersModule),
     LedgerModule,

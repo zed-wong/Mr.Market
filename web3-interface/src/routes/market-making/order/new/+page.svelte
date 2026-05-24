@@ -17,6 +17,7 @@
     walletNetwork,
     walletShortAddress,
   } from '$lib/stores/wallet';
+  import { isAuthed } from '$lib/stores/auth';
   import type { BalanceEntry } from '$lib/types/balances';
   import type {
     Web3MarketMakingPairOption,
@@ -129,6 +130,7 @@
 
     if (!$walletIsConnected) errors.wallet = 'Connect a supported wallet before creating a market-making order.';
     if ($walletIsUnsupported) errors.wallet = 'Switch to a supported network before creating a market-making order.';
+    if ($walletIsConnected && !$walletIsUnsupported && !$isAuthed) errors.wallet = 'Authenticate the connected wallet before creating a market-making order.';
     if (createOptionsState !== 'loaded') errors.options = 'Strategy and pair/spec options must load before submission.';
     if (!selectedStrategyId || !selectedStrategy) errors.strategy = 'Choose a market-making strategy.';
     if (!selectedPairId || !selectedPair) errors.specs = 'Choose a supported pair/spec option.';
@@ -429,8 +431,8 @@
         </div>
         <div class="bg-base-100 p-5">
           <span class="eyebrow">Funding</span>
-          <span class="mt-2 block text-base text-base-content">Separate order deposit</span>
-          <span class="mt-1 block text-xs text-base-content/50">Balances remain order-attributed after the deposit endpoint succeeds.</span>
+          <span class="mt-2 block text-base text-base-content">Initial order deposit</span>
+          <span class="mt-1 block text-xs text-base-content/50">Accepted deposits are recorded as order-attributed balances by the web3 market-making API.</span>
         </div>
       </div>
 

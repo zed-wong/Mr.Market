@@ -361,7 +361,14 @@ export class UserOrdersService {
 
     await this.marketMakingOrderIntentRepository.save(intent);
 
-    return { orderId, memo, expiresAt };
+    return {
+      orderId,
+      memo,
+      expiresAt,
+      marketMakingPairId,
+      strategyDefinitionId,
+      strategySnapshot,
+    };
   }
 
   async findPublicMarketMakingByOrderId(

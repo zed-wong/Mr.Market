@@ -12,6 +12,7 @@
     walletNamespaceLabel,
     walletShortAddress,
   } from '$lib/stores/wallet';
+  import { isAuthed } from '$lib/stores/auth';
   import type { Web3MarketMakingOrderActions, Web3MarketMakingOrderSummary } from '$lib/types/market-making';
 
   let orders = $state<Web3MarketMakingOrderSummary[]>([]);
@@ -128,7 +129,7 @@
   $effect(() => {
     const accountId = $walletAccount?.id ?? '';
     const namespace = $walletNamespace ?? '';
-    const canLoadOrders = $walletIsConnected && !$walletIsUnsupported && Boolean(accountId) && Boolean(namespace);
+    const canLoadOrders = $walletIsConnected && $isAuthed && !$walletIsUnsupported && Boolean(accountId) && Boolean(namespace);
 
     if (!canLoadOrders) {
       loadSequence += 1;

@@ -17,9 +17,18 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 
 type AdminJwtRequest = {
   user?: {
+    userId?: string;
     username?: string;
     tokenVersion?: number;
     authMethod?: 'password' | 'passkey';
+  };
+};
+type Web3JwtRequest = {
+  user?: {
+    userId?: string;
+    authMethod?: 'web3';
+    address?: string;
+    chainId?: string;
   };
 };
 
@@ -28,6 +37,38 @@ type AdminJwtRequest = {
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
+
+  @Post('web3/nonce')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  async web3Nonce(@Body() body: { address?: string; chainId?: string }) {
+    return this.authService.getWeb3Nonce(body);
+  }
+
+  @Post('web3/login')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  async web3Login(
+    @Body() body: { message?: string; signature?: string },
+  ): Promise<{
+    jwt: string;
+    userId: string;
+    address: string;
+    chainId: string;
+    expiresIn: number;
+  }> {
+    return await this.authService.loginWeb3(body);
+  }
+
+  @Get('web3/session')
+  @UseGuards(JwtAuthGuard)
+  async web3Session(@Req() request: Web3JwtRequest) {
+    return this.authService.getWeb3Session(request.user);
+  }
+
+  @Post('web3/logout')
+  @UseGuards(JwtAuthGuard)
+  async web3Logout() {
+    return { ok: true };
+  }
 
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
