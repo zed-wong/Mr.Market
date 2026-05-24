@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AdminSingleKey } from '$lib/types/hufi/admin';
 
 import {
+  buildDirectOrderExchangeOptions,
   filterExecutableApiKeys,
   filterReadableApiKeys,
   getBlockedDirectApiKeyUseViews,
@@ -51,6 +52,67 @@ const apiKeys: AdminSingleKey[] = [
 ];
 
 describe('filterExecutableApiKeys', () => {
+  it('builds direct order exchange options from configured exchanges pairs and api keys', () => {
+    expect(
+      buildDirectOrderExchangeOptions(
+        {
+          exchanges: [
+            { exchange_id: 'binance', name: 'Binance', enable: true },
+            { exchange_id: 'coinbase', name: 'Coinbase', enable: false },
+          ],
+          market_making: {
+            exchanges: [
+              { exchange_id: 'okx', name: 'OKX', enable: true },
+              { exchange_id: 'binance', name: 'Binance', enable: true },
+            ],
+            pairs: [
+              {
+                id: 'okx-btc',
+                exchange_id: 'okx',
+                symbol: 'BTC/USDT',
+                base_symbol: 'BTC',
+                quote_symbol: 'USDT',
+                base_asset_id: 'btc',
+                base_icon_url: '',
+                quote_asset_id: 'usdt',
+                quote_icon_url: '',
+                enable: true,
+              },
+              {
+                id: 'kraken-eth',
+                exchange_id: 'kraken',
+                symbol: 'ETH/USDT',
+                base_symbol: 'ETH',
+                quote_symbol: 'USDT',
+                base_asset_id: 'eth',
+                base_icon_url: '',
+                quote_asset_id: 'usdt',
+                quote_icon_url: '',
+                enable: true,
+              },
+            ],
+          },
+        },
+        apiKeys,
+      ),
+    ).toEqual(['okx', 'binance', 'kraken', 'coinbase', 'mexc']);
+  });
+
+  it('keeps configured direct exchanges visible even when no api key exists', () => {
+    expect(
+      buildDirectOrderExchangeOptions(
+        {
+          exchanges: [],
+          market_making: {
+            exchanges: [{ exchange_id: 'okx', name: 'OKX', enable: true }],
+            pairs: [],
+          },
+        },
+        [],
+      ),
+    ).toEqual(['okx']);
+  });
+
   it('keeps only read-trade keys for the selected exchange', () => {
     expect(filterExecutableApiKeys(apiKeys, 'binance')).toEqual([
       apiKeys[1],

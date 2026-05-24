@@ -42,6 +42,7 @@
         type ExchangeMarketMetadata,
     } from "$lib/helpers/market-making/direct/helpers";
     import {
+        buildDirectOrderExchangeOptions,
         filterExecutableApiKeys,
         getBlockedDirectApiKeyUseViews,
     } from "$lib/helpers/market-making/direct/api-key-filter";
@@ -230,9 +231,7 @@
     $: stoppedOrdersCount = orders.filter(
         (o) => o.runtimeState === "stopped",
     ).length;
-    $: exchangeOptions = Array.from(
-        new Set(apiKeys.map((key) => key.exchange)),
-    );
+    $: exchangeOptions = buildDirectOrderExchangeOptions(growInfo, apiKeys);
     $: filteredPairs = pairs.filter(
         (pair) => !startExchangeName || pair.exchange_id === startExchangeName,
     );

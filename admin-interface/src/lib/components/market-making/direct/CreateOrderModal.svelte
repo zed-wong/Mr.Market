@@ -1,7 +1,10 @@
 <script lang="ts">
     import BigNumber from "bignumber.js";
     import { _ } from "svelte-i18n";
-    import { getApiKeyUseReadiness } from "$lib/helpers/admin/api-key-readiness";
+    import {
+        getApiKeyReadiness,
+        getApiKeyUseReadiness,
+    } from "$lib/helpers/admin/api-key-readiness";
     import type { DirectApiKeyUseView } from "$lib/helpers/market-making/direct/api-key-filter";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
@@ -106,11 +109,16 @@
     $: takerAccountOptions = filteredApiKeys.filter(
         (key) => String(key.key_id) !== String(startMakerApiKeyId),
     );
+    $: selectedExchangeHasAnyApiKey =
+        filteredApiKeys.length > 0 || blockedApiKeyViews.length > 0;
+    $: missingApiKeyReadiness = getApiKeyReadiness(null);
     $: hasDistinctDualAccounts = makerAccountOptions.length >= 2;
     $: dualRequiredMissing =
         isDualAccountStrategy &&
         !isBestCapacityStrategy &&
         (!intervalTime || !numTrades || !pricePushRate);
+    $: singleAccountSelectionMissing =
+        !isDualAccountStrategy && !startApiKeyId;
     $: dualAccountSelectionMissing =
         isDualAccountStrategy && (!startMakerApiKeyId || !startTakerApiKeyId);
     $: dualSameAccount =
@@ -123,6 +131,7 @@
     $: submitDisabled =
         isStarting ||
         !startStrategyDefinitionId ||
+        singleAccountSelectionMissing ||
         orderAmountError ||
         orderAmountBelowMinimum ||
         dualRequiredMissing ||
@@ -143,6 +152,7 @@
         startApiKeyId = String(filteredApiKeys[0].key_id);
     }
     $: if (filteredApiKeys.length === 0) {
+        startApiKeyId = "";
         startMakerApiKeyId = "";
         startTakerApiKeyId = "";
     }
@@ -323,9 +333,48 @@
                             {/if}
                         {:else}
                             <div
-                                class="h-10 min-h-10 px-3 rounded-lg border border-dashed border-base-300 bg-base-100 flex items-center text-sm text-base-content/50"
+                                class="rounded-lg border border-dashed border-base-300 bg-base-100 p-3"
                             >
-                                {$_("admin_direct_mm_no_executable_api_key")}
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <span class="block text-sm font-semibold text-base-content">
+                                            {$_(
+                                                "admin_direct_mm_no_executable_api_key",
+                                            )}
+                                        </span>
+                                        <span class="block text-xs text-base-content/60 mt-1">
+                                            {selectedExchangeHasAnyApiKey
+                                                ? $_(
+                                                      "admin_direct_mm_no_usable_api_key_hint",
+                                                  )
+                                                : $_(
+                                                      "admin_direct_mm_missing_api_key_hint",
+                                                  )}
+                                        </span>
+                                    </div>
+                                    <span
+                                        class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {selectedExchangeHasAnyApiKey
+                                            ? 'bg-warning/10 text-warning'
+                                            : missingApiKeyReadiness.tone}"
+                                        title={selectedExchangeHasAnyApiKey
+                                            ? $_(
+                                                  "admin_direct_mm_no_usable_api_key_title",
+                                              )
+                                            : missingApiKeyReadiness.title}
+                                    >
+                                        {selectedExchangeHasAnyApiKey
+                                            ? $_("admin_direct_mm_not_ready")
+                                            : missingApiKeyReadiness.label}
+                                    </span>
+                                </div>
+                                {#if !selectedExchangeHasAnyApiKey}
+                                    <a
+                                        href="/system/api-keys"
+                                        class="btn btn-ghost btn-xs mt-3 rounded-full capitalize"
+                                    >
+                                        {$_("admin_direct_mm_manage_api_keys")}
+                                    </a>
+                                {/if}
                             </div>
                         {/if}
                         {#if blockedApiKeyViews.length > 0}

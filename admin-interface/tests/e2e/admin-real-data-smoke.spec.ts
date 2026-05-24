@@ -541,13 +541,20 @@ test.describe.serial('real-data admin smoke', () => {
         body: JSON.stringify({
           exchanges: [
             { exchange_id: 'binance', name: 'binance', enable: true },
+            { exchange_id: 'okx', name: 'OKX', enable: true },
             { exchange_id: 'mystery', name: 'Mystery Exchange' },
           ],
           simply_grow: { tokens: [] },
           arbitrage: { pairs: [] },
           market_making: {
-            exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
-            pairs: [{ exchange_id: 'binance', symbol: 'BTC/USDT', min_order_amount: '0.01' }],
+            exchanges: [
+              { exchange_id: 'binance', name: 'binance', enable: true },
+              { exchange_id: 'okx', name: 'OKX', enable: true },
+            ],
+            pairs: [
+              { exchange_id: 'binance', symbol: 'BTC/USDT', min_order_amount: '0.01' },
+              { exchange_id: 'okx', symbol: 'ETH/USDT', min_order_amount: '0.1' },
+            ],
           },
         }),
       });
@@ -634,6 +641,9 @@ test.describe.serial('real-data admin smoke', () => {
     await page.route(`${BACKEND_ORIGIN}/admin/grow/exchange/markets/binance`, async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
+    await page.route(`${BACKEND_ORIGIN}/admin/grow/exchange/markets/okx`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
 
     let updateRequests = 0;
     await page.route(`${BACKEND_ORIGIN}/admin/grow/exchange/update/*`, async (route) => {
@@ -677,6 +687,11 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('.modal-open')).toContainText('validation pending');
     await expect(page.locator('.modal-open')).toContainText('validation failed');
     await expect(page.locator('.modal-open')).toContainText('read only');
+    await page.locator('.modal-open select').first().selectOption('okx');
+    await expect(page.locator('.modal-open')).toContainText('No ready, trade enabled API key is available for this exchange');
+    await expect(page.locator('.modal-open')).toContainText('missing');
+    await expect(page.locator('.modal-open')).toContainText('No API key record was returned for this exchange.');
+    await expect(page.locator('.modal-open').getByRole('link', { name: /manage API keys/i })).toHaveAttribute('href', '/system/api-keys');
     await page.locator('.modal-open').getByLabel(/close/i).click();
 
     await page.getByText('BTC/USDT').click();
