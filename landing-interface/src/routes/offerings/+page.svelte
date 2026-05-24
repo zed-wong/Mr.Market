@@ -27,52 +27,34 @@
   const paths = [
     {
       label: 'For token projects',
-      title: 'Launch liquidity',
-      body: 'Open a public campaign instead of negotiating a private market-making deal.',
+      title: 'Launch community liquidity',
+      body: 'Create HuFi campaigns when your token needs transparent rewards for holding, trading, and durable market depth.',
       href: '/offerings/token-projects',
       cta: 'Open project path',
     },
     {
-      label: 'For makers',
-      title: 'Compete for rewards',
-      body: 'Run the engine, join campaigns, and earn by measurable market quality.',
+      label: 'For exchanges',
+      title: 'Bring activity to listings',
+      body: 'Use campaigns when a market needs more depth, tighter spreads, and visible user participation around public rules.',
+      href: '/offerings/exchange-listings',
+      cta: 'Open exchange path',
+    },
+    {
+      label: 'For traders',
+      title: 'Find reward opportunities',
+      body: 'Join campaigns when you want to support markets through holding and trading while earning from measured contributions.',
+      href: '/offerings/public-liquidity-campaigns',
+      cta: 'Open trader path',
+    },
+    {
+      label: 'For market makers',
+      title: 'Work measurable demand',
+      body: 'Create Mr.Market orders for campaigns that define the pair, budget, depth target, spread goal, and reward logic upfront.',
       href: '/offerings/makers',
       cta: 'Open maker path',
     },
-    {
-      label: 'For treasuries',
-      title: 'Audit execution',
-      body: 'Track order-scoped funds, reservations, fills, fees, and settlement entries.',
-      href: '/offerings/protocol-treasuries',
-      cta: 'Open treasury path',
-    },
-    {
-      label: 'For listings',
-      title: 'Prove market quality',
-      body: 'Show spread, depth, uptime, and ranking during the launch window.',
-      href: '/offerings/exchange-listings',
-      cta: 'Open listing path',
-    },
   ];
 
-  const systemLayers = [
-    {
-      name: 'Funding layer',
-      items: ['campaign treasury', 'order-scoped ledger', 'reward pool'],
-    },
-    {
-      name: 'Scheduling layer',
-      items: ['tick loop', 'strategy controller', 'intent dispatch'],
-    },
-    {
-      name: 'Trading layer',
-      items: ['reservation', 'exchange orders', 'fills & reconciliation'],
-    },
-    {
-      name: 'Proof layer',
-      items: ['score inputs', 'epoch ranking', 'public settlement'],
-    },
-  ];
 </script>
 
 <svelte:head>
@@ -91,19 +73,19 @@
 
       <div class="grid gap-10 pb-16 pt-6 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
         <div class="flex max-w-[44rem] flex-col gap-6">
-          <span class="micro-label text-base-content/46">Product map</span>
-          <h1 class="balance-font m-0 text-[3.45em] font-bold leading-[0.98] tracking-[-0.055em] sm:text-[4.4em]">
-            Mr.Market turns liquidity into an open market.
-          </h1>
+          <span class="micro-label text-base-content/46">What we offer</span>
+          <span class="balance-font m-0 text-[3em] font-bold leading-[0.98] tracking-[-0.055em] sm:text-[3.85em]">
+            Supply your token's liquidity within min
+          </span>
           <span class="max-w-[36rem] text-[1.02rem] leading-8 text-base-content/64">
-            Projects post campaigns. Makers compete. The system measures market quality and settles rewards through public rules.
+            HuFi is the decentralized tradeathon layer where anyone can create campaigns. Mr.Market orders work on those campaigns, measure market quality, and settle rewards through public rules.
           </span>
           <div class="flex flex-col gap-3 sm:flex-row">
             <a href="/leaderboard" class="rounded-full border border-base-content bg-base-content px-6 py-3 text-[0.68rem] font-bold text-base-100 capitalize no-underline hover:no-underline">
               View public proof →
             </a>
-            <a href="/offerings/public-liquidity-campaigns" class="rounded-full border border-base-content/16 bg-base-100/76 px-6 py-3 text-[0.68rem] font-bold text-base-content capitalize no-underline hover:no-underline">
-              Launch campaign →
+            <a href="#hufi-flow" class="rounded-full border border-base-content/16 bg-base-100/76 px-6 py-3 text-[0.68rem] font-bold text-base-content capitalize no-underline hover:no-underline">
+              Learn about HuFi →
             </a>
           </div>
         </div>
@@ -212,11 +194,11 @@
         <span>
           <span class="micro-label block text-base-content/48">Choose your path</span>
           <span class="mt-5 block balance-font text-4xl font-bold leading-[1.05] sm:text-5xl">
-            Start from the job you need done.
+            Meet the product through your market need.
           </span>
         </span>
         <span class="max-w-sm text-sm leading-6 text-base-content/58">
-          Mr.Market has many functions, but users should enter through a concrete liquidity problem.
+          HuFi campaigns start the flow, Mr.Market orders work on them, and each audience enters through a different demand.
         </span>
       </div>
 
@@ -231,38 +213,6 @@
             </span>
           </a>
         {/each}
-      </div>
-    </div>
-  </section>
-
-  <section class="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:px-10">
-    <div class="rounded-[1.65rem] border border-base-content/10 bg-base-100 p-6 sm:p-8">
-      <div class="grid gap-10 lg:grid-cols-[0.72fr_1.28fr]">
-        <div>
-          <span class="micro-label text-base-content/48">System map</span>
-          <span class="mt-5 block balance-font text-4xl font-bold leading-[1.06]">
-            The product is infrastructure, not a menu.
-          </span>
-          <span class="mt-5 block text-sm leading-7 text-base-content/60">
-            The page now explains how funding, scheduling, trading, and public proof connect into one liquidity workflow.
-          </span>
-        </div>
-
-        <div class="grid gap-3 sm:grid-cols-2">
-          {#each systemLayers as layer}
-            <div class="rounded-[1.15rem] border border-base-content/10 bg-base-200/44 p-5">
-              <span class="balance-font text-2xl font-bold">{layer.name}</span>
-              <div class="mt-5 grid gap-2">
-                {#each layer.items as item}
-                  <span class="flex items-center justify-between gap-3 border-t border-base-content/10 pt-3 text-sm text-base-content/64">
-                    <span>{item}</span>
-                    <span class="text-base-content/30">›</span>
-                  </span>
-                {/each}
-              </div>
-            </div>
-          {/each}
-        </div>
       </div>
     </div>
   </section>
