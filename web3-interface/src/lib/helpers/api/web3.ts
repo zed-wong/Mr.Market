@@ -1,7 +1,13 @@
 import { apiFetch } from './client';
 import type { BalanceEntry } from '$lib/types/balances';
 import type { DepositInstructions } from '$lib/types/deposit';
-import type { Web3MarketMakingOrderListResponse } from '$lib/types/market-making';
+import type {
+  Web3MarketMakingCreateRequest,
+  Web3MarketMakingCreateResponse,
+  Web3MarketMakingOptionsResponse,
+  Web3MarketMakingOrderListResponse,
+  Web3MarketMakingStrategiesResponse,
+} from '$lib/types/market-making';
 import type { WithdrawRequest, WithdrawResponse } from '$lib/types/withdraw';
 
 const WEB3_MARKET_MAKING_NAMESPACE = '/api/v1/web3/market-making';
@@ -29,4 +35,21 @@ export const getWithdrawStatus = async (id: string): Promise<WithdrawResponse> =
 
 export const listMarketMakingOrders = async (): Promise<Web3MarketMakingOrderListResponse> => {
   return apiFetch<Web3MarketMakingOrderListResponse>(`${WEB3_MARKET_MAKING_NAMESPACE}/orders`);
+};
+
+export const listMarketMakingStrategies = async (): Promise<Web3MarketMakingStrategiesResponse> => {
+  return apiFetch<Web3MarketMakingStrategiesResponse>(`${WEB3_MARKET_MAKING_NAMESPACE}/strategies`);
+};
+
+export const listMarketMakingOptions = async (): Promise<Web3MarketMakingOptionsResponse> => {
+  return apiFetch<Web3MarketMakingOptionsResponse>(`${WEB3_MARKET_MAKING_NAMESPACE}/options`);
+};
+
+export const createMarketMakingOrder = async (
+  request: Web3MarketMakingCreateRequest
+): Promise<Web3MarketMakingCreateResponse> => {
+  return apiFetch<Web3MarketMakingCreateResponse>(`${WEB3_MARKET_MAKING_NAMESPACE}/orders`, {
+    method: 'POST',
+    json: request,
+  });
 };

@@ -72,3 +72,87 @@ export interface Web3MarketMakingOrderListResponse {
   total: number;
   orders: Web3MarketMakingOrderSummary[];
 }
+
+export interface Web3MarketMakingStrategyOption {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  controllerType?: string | null;
+  controller?: string | null;
+  capabilities: unknown;
+  defaultConfig: unknown;
+  configSchema: unknown;
+}
+
+export interface Web3MarketMakingStrategiesResponse {
+  namespace: '/api/v1/web3/market-making';
+  strategies: Web3MarketMakingStrategyOption[];
+}
+
+export interface Web3MarketMakingAssetOption {
+  assetId: string | null;
+  symbol: string | null;
+  iconUrl?: string | null;
+  chainId?: string | number | null;
+}
+
+export interface Web3MarketMakingPairOption {
+  pairId: string;
+  pair: string;
+  exchangeName: string | null;
+  base: Web3MarketMakingAssetOption;
+  quote: Web3MarketMakingAssetOption;
+  supportedDepositAssets: string[];
+  minimums: {
+    orderAmount: string | null;
+    maximumOrderAmount: string | null;
+  };
+  precision: {
+    amount: number | string | null;
+    price: number | string | null;
+  };
+  prices: {
+    base: string | null;
+    quote: string | null;
+  };
+  strategyCompatibility: string[];
+  unavailable: boolean;
+}
+
+export interface Web3MarketMakingOptionsResponse {
+  namespace: '/api/v1/web3/market-making';
+  options: Web3MarketMakingPairOption[];
+}
+
+export interface Web3MarketMakingCreateRequest {
+  marketMakingPairId: string;
+  strategyDefinitionId: string;
+  initialDeposit: {
+    assetId: string;
+    amount: string;
+  };
+}
+
+export interface Web3MarketMakingCreateResponse {
+  namespace: '/api/v1/web3/market-making';
+  orderId: string;
+  memo?: string | null;
+  expiresAt?: string | null;
+  funding?: {
+    mode: string;
+    depositEndpoint: string;
+    memo?: string | null;
+    expiresAt?: string | null;
+  };
+  initialDeposit?: {
+    mode: string;
+    acceptedDuringCreate: boolean;
+    requested: {
+      assetId?: string;
+      asset?: string;
+      amount?: string;
+    } | null;
+    message: string;
+  };
+}

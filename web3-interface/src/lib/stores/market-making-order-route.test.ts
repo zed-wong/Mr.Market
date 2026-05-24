@@ -21,23 +21,45 @@ const orderDetailSource = () =>
   );
 
 describe('market-making campaign detail to order route', () => {
-  it('requires a campaign query and routes created orders to detail', () => {
+  it('renders order-first creation without a campaign prerequisite', () => {
     const source = orderCreateSource();
 
-    expect(source).toContain('order-create-campaign-not-found');
-    expect(source).toContain('Choose a valid market-making campaign before creating an order.');
-    expect(source).not.toContain('?? $allCampaigns[0]');
-    expect(source).toContain('await goto(`/market-making/order/${submittedOrder.id}`)');
+    expect(source).toContain('loadCreateOptions');
+    expect(source).toContain('listMarketMakingStrategies');
+    expect(source).toContain('listMarketMakingOptions');
+    expect(source).toContain('createMarketMakingOrder');
+    expect(source).toContain('/market-making/order/${response.orderId}');
+    expect(source).not.toContain('order-create-campaign-not-found');
+    expect(source).not.toContain('requestedCampaignId');
+    expect(source).not.toContain('Choose a valid market-making campaign before creating an order.');
+    expect(source).not.toContain('/market-making/campaign/');
   });
 
-  it('surfaces deterministic approval, signing, and submission statuses', () => {
+  it('surfaces wallet interaction recovery states and duplicate submit protection', () => {
     const source = orderCreateSource();
 
-    expect(source).toContain("flowStep = 'approving'");
-    expect(source).toContain("flowStep = 'signing'");
-    expect(source).toContain("flowStep = 'submitting'");
-    expect(source).toContain('order-processing-${flowStep}');
-    expect(source).toContain('No real signature is performed.');
+    expect(source).toContain('walletInteractionMode');
+    expect(source).toContain('Preview user rejection');
+    expect(source).toContain('Preview wallet timeout');
+    expect(source).toContain('Preview network mismatch');
+    expect(source).toContain('if (isSubmitting) return;');
+    expect(source).toContain('disabled={isSubmitting');
+  });
+
+  it('wires the web3 market-making API helpers for create options and submission', () => {
+    const helper = readFileSync(
+      fileURLToPath(new URL('../helpers/api/web3.ts', import.meta.url)),
+      'utf8'
+    );
+
+    expect(helper).toContain('/api/v1/web3/market-making');
+    expect(helper).toContain('listMarketMakingStrategies');
+    expect(helper).toContain('/strategies');
+    expect(helper).toContain('listMarketMakingOptions');
+    expect(helper).toContain('/options');
+    expect(helper).toContain('createMarketMakingOrder');
+    expect(helper).toContain('method: \'POST\'');
+    expect(helper).toContain('/orders');
   });
 
   it('blocks paused campaign details and exposes state variants', () => {
