@@ -5,9 +5,11 @@ export type ApiKeyReadinessStatus =
   | 'validation_pending'
   | 'validation_failed'
   | 'disabled'
+  | 'missing'
   | 'unknown';
 
 export type ApiKeyPermissionCapability = 'read' | 'trade' | 'unknown';
+export type ApiKeyRequiredCapability = 'read' | 'trade';
 
 export interface ApiKeyReadinessView {
   status: ApiKeyReadinessStatus;
@@ -24,11 +26,23 @@ export interface ApiKeyPermissionView {
   tone: string;
 }
 
+export interface ApiKeyUseReadinessView {
+  usable: boolean;
+  requiredCapability: ApiKeyRequiredCapability;
+  readiness: ApiKeyReadinessView;
+  permissions: ApiKeyPermissionView[];
+  label: string;
+  title: string;
+  description: string;
+  tone: string;
+}
+
 export const apiKeyReadinessLabels: Record<ApiKeyReadinessStatus, string> = {
   ready: 'ready',
   validation_pending: 'validation pending',
   validation_failed: 'validation failed',
   disabled: 'disabled',
+  missing: 'missing',
   unknown: 'unknown',
 };
 
@@ -37,6 +51,7 @@ export const apiKeyReadinessTone: Record<ApiKeyReadinessStatus, string> = {
   validation_pending: 'bg-warning/10 text-warning',
   validation_failed: 'bg-error/10 text-error',
   disabled: 'bg-base-content/5 text-base-content/60',
+  missing: 'bg-warning/10 text-warning',
   unknown: 'bg-base-content/5 text-base-content/60',
 };
 
@@ -53,11 +68,11 @@ const normalize = (value?: string | null) => String(value || '').trim().toLowerC
 export const getApiKeyReadiness = (key?: Partial<AdminSingleKey> | null): ApiKeyReadinessView => {
   if (!key) {
     return {
-      status: 'unknown',
-      label: apiKeyReadinessLabels.unknown,
-      title: 'API key readiness unknown',
+      status: 'missing',
+      label: apiKeyReadinessLabels.missing,
+      title: 'API key missing',
       description: 'No API key record was returned.',
-      tone: apiKeyReadinessTone.unknown,
+      tone: apiKeyReadinessTone.missing,
     };
   }
 
@@ -155,7 +170,70 @@ export const getApiKeyPermissionViews = (key: Partial<AdminSingleKey>): ApiKeyPe
   ];
 };
 
-export const summarizeApiKeyReadiness = (keys: Partial<AdminSingleKey>[] | null | undefined) => {
+export const hasApiKeyCapability = (
+  key: Partial<AdminSingleKey>,
+  capability: ApiKeyRequiredCapability,
+): boolean => {
+  const permissions = getApiKeyPermissionViews(key);
+  return permissions.some((view) => view.capability === capability);
+};
+
+export const getApiKeyUseReadiness = (
+  key: Partial<AdminSingleKey>,
+  requiredCapability: ApiKeyRequiredCapability = 'trade',
+): ApiKeyUseReadinessView => {
+  const readiness = getApiKeyReadiness(key);
+  const permissions = getApiKeyPermissionViews(key);
+  const hasRequiredCapability = permissions.some((view) => view.capability === requiredCapability);
+
+  if (readiness.status !== 'ready') {
+    return {
+      usable: false,
+      requiredCapability,
+      readiness,
+      permissions,
+      label: readiness.label,
+      title: readiness.title,
+      description: readiness.description,
+      tone: readiness.tone,
+    };
+  }
+
+  if (!hasRequiredCapability) {
+    const permissionLabel = permissions.map((view) => view.label).join(', ');
+    const isTradeRequired = requiredCapability === 'trade';
+    return {
+      usable: false,
+      requiredCapability,
+      readiness,
+      permissions,
+      label: permissionLabel || 'permission unknown',
+      title: isTradeRequired ? 'trade permission required' : 'read permission required',
+      description: isTradeRequired
+        ? 'This key is ready, but it is read only or lacks trade enabled permission.'
+        : 'This key is ready, but its read access permission could not be confirmed.',
+      tone: permissions.some((view) => view.capability === 'unknown')
+        ? 'bg-base-content/5 text-base-content/60'
+        : 'bg-warning/10 text-warning',
+    };
+  }
+
+  return {
+    usable: true,
+    requiredCapability,
+    readiness,
+    permissions,
+    label: readiness.label,
+    title: requiredCapability === 'trade' ? 'ready with trade enabled' : 'ready with read access',
+    description:
+      requiredCapability === 'trade'
+        ? 'This key is ready and has trade enabled permission.'
+        : 'This key is ready and has read access permission.',
+    tone: readiness.tone,
+  };
+};
+
+export const summarizeApiKeyReadiness = (keys: Array<Partial<AdminSingleKey> | null | undefined> | null | undefined) => {
   const views = (keys ?? []).map(getApiKeyReadiness);
   return {
     total: views.length,
@@ -163,6 +241,7 @@ export const summarizeApiKeyReadiness = (keys: Partial<AdminSingleKey>[] | null 
     validation_pending: views.filter((view) => view.status === 'validation_pending').length,
     validation_failed: views.filter((view) => view.status === 'validation_failed').length,
     disabled: views.filter((view) => view.status === 'disabled').length,
+    missing: views.filter((view) => view.status === 'missing').length,
     unknown: views.filter((view) => view.status === 'unknown').length,
   };
 };

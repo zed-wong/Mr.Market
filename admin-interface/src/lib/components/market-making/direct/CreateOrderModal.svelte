@@ -1,6 +1,8 @@
 <script lang="ts">
     import BigNumber from "bignumber.js";
     import { _ } from "svelte-i18n";
+    import { getApiKeyUseReadiness } from "$lib/helpers/admin/api-key-readiness";
+    import type { DirectApiKeyUseView } from "$lib/helpers/market-making/direct/api-key-filter";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
     import {
@@ -15,6 +17,7 @@
     export let exchangeOptions: string[] = [];
     export let filteredPairs: { symbol: string }[] = [];
     export let filteredApiKeys: AdminSingleKey[] = [];
+    export let blockedApiKeyViews: DirectApiKeyUseView[] = [];
     export let strategies: MarketMakingStrategy[] = [];
     export let selectedControllerType = "";
     export let directExecutionMode:
@@ -184,6 +187,15 @@
             pairDropdownOpen = false;
         }, 150);
     }
+
+    function apiKeyOptionLabel(apiKey: AdminSingleKey): string {
+        const view = getApiKeyUseReadiness(apiKey, "trade");
+        const tradePermission = view.permissions.find(
+            (permission) => permission.capability === "trade",
+        );
+        return `${apiKey.name} (${apiKey.key_id}) · ${view.label}${tradePermission ? ` · ${tradePermission.label}` : ""}`;
+    }
+
     import SchemaConfigForm from "$lib/components/admin/settings/strategies/SchemaConfigForm.svelte";
 </script>
 
@@ -288,7 +300,7 @@
                                     >
                                     {#each filteredApiKeys as apiKey}
                                         <option value={String(apiKey.key_id)}>
-                                            {apiKey.name} ({apiKey.key_id})
+                                            {apiKeyOptionLabel(apiKey)}
                                         </option>
                                     {/each}
                                 </select>
@@ -304,7 +316,7 @@
                                     >
                                     {#each filteredApiKeys as apiKey}
                                         <option value={String(apiKey.key_id)}>
-                                            {apiKey.name} ({apiKey.key_id})
+                                            {apiKeyOptionLabel(apiKey)}
                                         </option>
                                     {/each}
                                 </select>
@@ -314,6 +326,39 @@
                                 class="h-10 min-h-10 px-3 rounded-lg border border-dashed border-base-300 bg-base-100 flex items-center text-sm text-base-content/50"
                             >
                                 {$_("admin_direct_mm_no_executable_api_key")}
+                            </div>
+                        {/if}
+                        {#if blockedApiKeyViews.length > 0}
+                            <div class="mt-3 rounded-lg border border-base-300 bg-base-100 p-3">
+                                <span class="text-xs font-semibold text-base-content/60 capitalize">
+                                    blocked API keys
+                                </span>
+                                <div class="mt-2 flex flex-col gap-2">
+                                    {#each blockedApiKeyViews as view (view.key.key_id)}
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div class="min-w-0">
+                                                <span class="block truncate text-xs font-semibold text-base-content">
+                                                    {view.key.name} · {view.key.exchange}
+                                                </span>
+                                                <span class="block text-[11px] text-base-content/60">
+                                                    {view.description}
+                                                </span>
+                                            </div>
+                                            <span
+                                                class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {view.tone}"
+                                                title={view.description}
+                                            >
+                                                {view.label}
+                                            </span>
+                                        </div>
+                                    {/each}
+                                </div>
+                                <a
+                                    href="/system/api-keys"
+                                    class="btn btn-ghost btn-xs mt-3 rounded-full capitalize"
+                                >
+                                    manage API keys
+                                </a>
                             </div>
                         {/if}
                         {#if dualAccountUnavailable}
@@ -342,7 +387,7 @@
                                     >
                                     {#each takerAccountOptions as apiKey}
                                         <option value={String(apiKey.key_id)}>
-                                            {apiKey.name} ({apiKey.key_id})
+                                            {apiKeyOptionLabel(apiKey)}
                                         </option>
                                     {/each}
                                 </select>

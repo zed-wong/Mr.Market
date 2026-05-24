@@ -451,10 +451,196 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.getByRole('button', { name: /^\+ add key$/i })).toBeDisabled();
   });
 
-  test('direct market-making API key remediation stays in the admin shell', async ({ page, context }) => {
+  test('direct market-making reuses API key readiness vocabulary and remediation routes', async ({ page, context }) => {
     await login(page);
+
+    const keys = [
+      {
+        key_id: 'ready-key',
+        exchange: 'binance',
+        name: 'ready account',
+        api_key: 'ready-api-key-1234',
+        api_secret: '',
+        permissions: 'read-trade',
+        state: 'alive',
+        validation_status: 'valid',
+      },
+      {
+        key_id: 'read-only-key',
+        exchange: 'binance',
+        name: 'read only account',
+        api_key: 'read-only-api-key-1234',
+        api_secret: '',
+        permissions: 'read',
+        state: 'alive',
+        validation_status: 'valid',
+      },
+      {
+        key_id: 'pending-key',
+        exchange: 'binance',
+        name: 'pending account',
+        api_key: 'pending-api-key-1234',
+        api_secret: '',
+        permissions: 'read-trade',
+        validation_status: 'pending',
+      },
+      {
+        key_id: 'failed-key',
+        exchange: 'binance',
+        name: 'failed account',
+        api_key: 'failed-api-key-1234',
+        api_secret: '',
+        permissions: 'read-trade',
+        validation_status: 'failed',
+        validation_error: 'Invalid signature',
+      },
+    ];
+    const order = {
+      orderId: 'order-failed-key',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      runtimeState: 'running',
+      strategyDefinitionId: 'pure-mm',
+      strategyName: 'Pure MM',
+      controllerType: 'pureMarketMaking',
+      directExecutionMode: 'single_account',
+      createdAt: '2026-05-23T00:00:00.000Z',
+      lastTickAt: '2026-05-23T00:00:00.000Z',
+      accountLabel: 'main',
+      makerAccountLabel: 'maker',
+      takerAccountLabel: 'taker',
+      apiKeyId: 'failed-key',
+      makerApiKeyId: null,
+      takerApiKeyId: null,
+      warnings: [],
+    };
+
+    await page.route(`${BACKEND_ORIGIN}/grow/info`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+          simply_grow: { tokens: [] },
+          arbitrage: { pairs: [] },
+          market_making: {
+            exchanges: [{ exchange_id: 'binance', name: 'binance', enable: true }],
+            pairs: [{ exchange_id: 'binance', symbol: 'BTC/USDT', min_order_amount: '0.01' }],
+          },
+        }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/exchanges/keys`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(keys),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-strategies`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'pure-mm',
+            key: 'pure-mm',
+            name: 'Pure MM',
+            controllerType: 'pureMarketMaking',
+            directExecutionMode: 'single_account',
+            defaultConfig: {},
+            configSchema: {},
+          },
+        ]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([order]),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/direct-orders/order-failed-key/status`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...order,
+          executorHealth: 'active',
+          lastUpdatedAt: '2026-05-23T00:01:00.000Z',
+          privateStreamEventAt: '2026-05-23T00:01:00.000Z',
+          openOrders: [],
+          intents: [],
+          recentErrors: [],
+          orderConfig: {
+            orderAmount: '0.01',
+            bidSpread: null,
+            askSpread: null,
+            numberOfLayers: null,
+            baseIntervalTime: 30,
+            numTrades: 100,
+            baseIncrementPercentage: null,
+            pricePushRate: null,
+            postOnlySide: 'buy',
+            dynamicRoleSwitching: false,
+            targetQuoteVolume: null,
+            cadenceVariance: null,
+            tradeAmountVariance: null,
+            priceOffsetVariance: null,
+            publishedCycles: 0,
+            completedCycles: 0,
+            tradedQuoteVolume: null,
+            realizedPnlQuote: null,
+          },
+          spread: null,
+          inventoryBalances: [],
+          stale: false,
+        }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/campaigns`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/market-making/wallet-status`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ configured: true, address: '0x0000000000000000000000000000000000000000' }),
+      });
+    });
+    await page.route(`${BACKEND_ORIGIN}/admin/grow/exchange/markets/binance`, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+
     await page.goto('/trading/direct-market-making');
     await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('body')).toContainText('ready');
+    await expect(page.locator('body')).toContainText('validation pending');
+    await expect(page.locator('body')).toContainText('validation failed');
+    await expect(page.locator('body')).toContainText('Invalid signature');
+    await expect(page.locator('body')).toContainText('read only');
+    await expect(page.locator('body')).toContainText('trade enabled');
+
+    await page.getByRole('button', { name: /create new order/i }).click();
+    await page.locator('select').first().selectOption('binance');
+    await expect(page.locator('.modal-open')).toContainText('ready · trade enabled');
+    await expect(page.locator('.modal-open')).toContainText('blocked API keys');
+    await expect(page.locator('.modal-open')).toContainText('validation pending');
+    await expect(page.locator('.modal-open')).toContainText('validation failed');
+    await expect(page.locator('.modal-open')).toContainText('read only');
+    await page.locator('.modal-open').getByLabel(/close/i).click();
+
+    await page.getByText('BTC/USDT').click();
+    await expect(page.locator('.modal-open')).toContainText('exchange and API key readiness');
+    await expect(page.locator('.modal-open')).toContainText('exchange ready');
+    await expect(page.locator('.modal-open')).toContainText('API key validation failed');
+    await expect(page.locator('.modal-open')).toContainText('Invalid signature');
+    await expect(page.locator('.modal-open').getByRole('link', { name: /manage exchanges/i })).toHaveAttribute('href', '/trading/exchanges');
+    await expect(page.locator('.modal-open').getByRole('link', { name: /manage API keys/i })).toHaveAttribute('href', '/system/api-keys');
+    await page.locator('.modal-open').getByLabel(/close/i).click();
 
     const remediationLink = page.getByRole('link', { name: /manage exchange api keys/i });
     await expect(remediationLink).toBeVisible();
@@ -471,6 +657,16 @@ test.describe.serial('real-data admin smoke', () => {
     expect(page.url()).not.toContain('/manage/settings/api-keys');
     await expect(page.locator('body')).toContainText(/api keys/i);
     await expect(page.locator('body')).toContainText(/Exchange API credentials/i);
+
+    await page.goto('/trading/direct-market-making');
+    await page.waitForLoadState('networkidle');
+    await page.getByText('BTC/USDT').click();
+    const diagnosisRemediationLink = page.locator('.modal-open').getByRole('link', { name: /manage API keys/i });
+    await Promise.all([
+      page.waitForURL('**/system/api-keys'),
+      diagnosisRemediationLink.click(),
+    ]);
+    expect(page.url()).toContain(`${PREVIEW_ORIGIN}/system/api-keys`);
   });
 
   test('real-data pages show API errors instead of static fixture fallbacks', async ({ page }) => {

@@ -2,10 +2,17 @@
     import BigNumber from "bignumber.js";
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
+    import {
+        getApiKeyPermissionViews,
+        getApiKeyReadiness,
+    } from "$lib/helpers/admin/api-key-readiness";
+    import { getExchangeReadiness } from "$lib/helpers/admin/exchange-readiness";
     import type {
         DirectOrderSummary,
         DirectOrderStatus,
     } from "$lib/types/hufi/admin-direct-market-making";
+    import type { AdminSingleKey } from "$lib/types/hufi/admin";
+    import type { Exchange } from "$lib/types/hufi/grow";
     import {
         formatTimestamp,
         resolveInventorySkewAllocation,
@@ -18,6 +25,8 @@
     export let show = false;
     export let order: DirectOrderSummary | null = null;
     export let data: DirectOrderStatus | null = null;
+    export let apiKeys: AdminSingleKey[] = [];
+    export let exchanges: Partial<Exchange>[] = [];
     export let loading = false;
     export let onClose: () => void;
     export let onStartOrder: () => void;
@@ -72,6 +81,60 @@
         if (val === null || val === undefined || val === "")
             return $_("admin_direct_mm_na");
         return new BigNumber(val).multipliedBy(100).toString() + "%";
+    }
+
+    function normalize(value?: string | null): string {
+        return String(value || "")
+            .trim()
+            .toLowerCase();
+    }
+
+    function findExchange(exchangeName?: string | null): Partial<Exchange> | null {
+        const target = normalize(exchangeName);
+        if (!target) return null;
+        return (
+            exchanges.find(
+                (exchange) =>
+                    normalize(exchange.exchange_id) === target ||
+                    normalize(exchange.name) === target,
+            ) || null
+        );
+    }
+
+    function findApiKey(apiKeyId?: string | null): AdminSingleKey | null {
+        const target = String(apiKeyId || "");
+        if (!target) return null;
+        return apiKeys.find((apiKey) => String(apiKey.key_id) === target) || null;
+    }
+
+    function accountLinkageRows(d: DirectOrderStatus) {
+        const exchangeRecord = findExchange(order?.exchangeName);
+        const exchangeReadiness = getExchangeReadiness(exchangeRecord);
+        const buildRow = (
+            label: string,
+            accountName: string | undefined,
+            apiKeyId: string | null,
+        ) => {
+            const apiKey = findApiKey(apiKeyId);
+            return {
+                label,
+                accountName: accountName || $_("admin_direct_mm_na"),
+                apiKeyId,
+                apiKey,
+                apiKeyReadiness: getApiKeyReadiness(apiKey),
+                permissions: apiKey ? getApiKeyPermissionViews(apiKey) : [],
+                exchangeReadiness,
+            };
+        };
+
+        if (isDualAccountStrategy) {
+            return [
+                buildRow("maker", d.makerAccountName, d.makerApiKeyId),
+                buildRow("taker", d.takerAccountName, d.takerApiKeyId),
+            ];
+        }
+
+        return [buildRow("account", d.accountLabel, d.apiKeyId)];
     }
 
     $: stateLabel = data
@@ -577,6 +640,80 @@
                                     </div>
                                 </div>
                             {/if}
+
+                            <div class="mt-3 rounded-xl border border-base-300 bg-base-100 p-3">
+                                <div class="mb-3 flex items-center justify-between gap-3">
+                                    <span class="text-xs font-bold text-base-content capitalize">
+                                        exchange and API key readiness
+                                    </span>
+                                    <div class="flex gap-2">
+                                        <a
+                                            href="/trading/exchanges"
+                                            class="btn btn-ghost btn-xs rounded-full capitalize"
+                                        >
+                                            manage exchanges
+                                        </a>
+                                        <a
+                                            href="/system/api-keys"
+                                            class="btn btn-ghost btn-xs rounded-full capitalize"
+                                        >
+                                            manage API keys
+                                        </a>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-3">
+                                    {#each accountLinkageRows(data) as linkage (linkage.label)}
+                                        <div class="rounded-lg border border-base-300 bg-base-200/40 p-3">
+                                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                                <div class="min-w-0">
+                                                    <span class="block text-[10px] font-semibold text-base-content/50 capitalize">
+                                                        {linkage.label} linkage
+                                                    </span>
+                                                    <span class="block truncate text-sm font-bold text-base-content">
+                                                        {linkage.accountName}
+                                                    </span>
+                                                    <span class="block font-mono text-[11px] text-base-content/50">
+                                                        {linkage.apiKeyId || "missing API key"}
+                                                    </span>
+                                                </div>
+                                                <div class="flex flex-wrap justify-end gap-1">
+                                                    <span
+                                                        class="badge badge-sm text-[10px] font-medium capitalize {linkage.exchangeReadiness.tone}"
+                                                        title={linkage.exchangeReadiness.description}
+                                                    >
+                                                        exchange {linkage.exchangeReadiness.label}
+                                                    </span>
+                                                    <span
+                                                        class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {linkage.apiKeyReadiness.tone}"
+                                                        title={linkage.apiKeyReadiness.description}
+                                                    >
+                                                        API key {linkage.apiKeyReadiness.label}
+                                                    </span>
+                                                    {#each linkage.permissions as permission (permission.capability)}
+                                                        <span
+                                                            class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {permission.tone}"
+                                                            title={permission.description}
+                                                        >
+                                                            {permission.label}
+                                                        </span>
+                                                    {/each}
+                                                </div>
+                                            </div>
+                                            <div class="mt-2 text-xs text-base-content/60">
+                                                {#if linkage.exchangeReadiness.status === "missing"}
+                                                    The exchange is missing. Open exchange management to configure this order's exchange before trading.
+                                                {:else if linkage.apiKeyReadiness.status === "missing"}
+                                                    The exchange is configured, but the linked API key is missing. Open API key management to add or repair the key.
+                                                {:else if linkage.apiKeyReadiness.status !== "ready"}
+                                                    {linkage.apiKeyReadiness.description}
+                                                {:else}
+                                                    Linked exchange and API key readiness match the management pages.
+                                                {/if}
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
                         </div>
                     {/if}
 

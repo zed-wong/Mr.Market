@@ -41,7 +41,10 @@
         type StrategySchema,
         type ExchangeMarketMetadata,
     } from "$lib/helpers/market-making/direct/helpers";
-    import { filterExecutableApiKeys } from "$lib/helpers/market-making/direct/api-key-filter";
+    import {
+        filterExecutableApiKeys,
+        getBlockedDirectApiKeyUseViews,
+    } from "$lib/helpers/market-making/direct/api-key-filter";
     import ApiKeysPanel from "$lib/components/market-making/direct/ApiKeysPanel.svelte";
     import CampaignsPanel from "$lib/components/market-making/direct/CampaignsPanel.svelte";
     import EvmWalletStatusBar from "$lib/components/market-making/direct/EvmWalletStatusBar.svelte";
@@ -268,6 +271,11 @@
     $: isPureMarketMakingStrategy =
         selectedControllerType === "pureMarketMaking";
     $: filteredApiKeys = filterExecutableApiKeys(apiKeys, startExchangeName);
+    $: blockedStartApiKeyViews = getBlockedDirectApiKeyUseViews(
+        apiKeys,
+        startExchangeName,
+        "trade",
+    );
     $: selectedApiKey =
         filteredApiKeys.find((key) => String(key.key_id) === String(startApiKeyId)) || null;
     $: selectedMakerApiKey =
@@ -982,6 +990,7 @@
     {exchangeOptions}
     {filteredPairs}
     {filteredApiKeys}
+    blockedApiKeyViews={blockedStartApiKeyViews}
     {strategies}
     {prefillingFromOrderId}
     {selectedStrategySchema}
@@ -1060,6 +1069,8 @@
     show={showOrderDetails}
     order={detailsOrder}
     data={detailsData}
+    {apiKeys}
+    exchanges={growInfo?.exchanges || []}
     loading={detailsLoading}
     onClose={closeOrderDetails}
     onStartOrder={() => {

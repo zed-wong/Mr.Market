@@ -1,19 +1,15 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import ExchangeIcon from "$lib/components/common/exchangeIcon.svelte";
+    import {
+        getApiKeyPermissionViews,
+        getApiKeyReadiness,
+    } from "$lib/helpers/admin/api-key-readiness";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { DirectOrderSummary } from "$lib/types/hufi/admin-direct-market-making";
 
     export let apiKeys: AdminSingleKey[] = [];
     export let orders: DirectOrderSummary[] = [];
-
-    function isConnected(apiKey: AdminSingleKey): boolean {
-        return (apiKey.state || "").toLowerCase() === "alive";
-    }
-
-    function isPending(apiKey: AdminSingleKey): boolean {
-        return (apiKey.state || "").toLowerCase() === "pending";
-    }
 
     function getActivePairsCount(apiKey: AdminSingleKey): number {
         return orders.filter(
@@ -51,6 +47,7 @@
 
     function getStatusText(apiKey: AdminSingleKey): string {
         const activePairsCount = getActivePairsCount(apiKey);
+        const readiness = getApiKeyReadiness(apiKey);
 
         if (activePairsCount > 0) {
             return $_("admin_direct_mm_api_key_status_active_pairs", {
@@ -58,18 +55,14 @@
             });
         }
 
+        if (readiness.status !== "ready") {
+            return readiness.title;
+        }
+
         if (apiKey.last_update) {
             return $_("admin_direct_mm_api_key_status_last_sync", {
                 values: { value: formatRelativeTime(apiKey.last_update) },
             });
-        }
-
-        if (isPending(apiKey)) {
-            return $_("admin_direct_mm_api_key_status_pending");
-        }
-
-        if (!isConnected(apiKey)) {
-            return $_("admin_direct_mm_api_key_status_expired");
         }
 
         return $_("admin_direct_mm_api_key_status_idle");
@@ -87,12 +80,13 @@
 
     <div class="flex flex-col gap-3 grow mt-2 overflow-y-auto max-h-100">
         {#each apiKeys as apiKey}
+            {@const readiness = getApiKeyReadiness(apiKey)}
             <div
-                class="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-100 shrink-0"
+                class="flex items-center justify-between gap-3 p-4 rounded-xl bg-base-200/60 border border-base-300 shrink-0"
             >
                 <div class="flex items-center gap-4">
                     <div
-                        class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center border border-slate-100"
+                        class="w-10 h-10 bg-base-100 rounded-full shadow-sm flex items-center justify-center border border-base-300"
                     >
                         <ExchangeIcon
                             exchangeName={apiKey.exchange}
@@ -106,28 +100,30 @@
                         <span class="text-xs text-base-content/50 capitalize">
                             {apiKey.exchange} • {getStatusText(apiKey)}
                         </span>
+                        <div class="mt-1 flex flex-wrap gap-1">
+                            {#each getApiKeyPermissionViews(apiKey) as permission (permission.capability)}
+                                <span
+                                    class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {permission.tone}"
+                                    title={permission.description}
+                                >
+                                    {permission.label}
+                                </span>
+                            {/each}
+                        </div>
+                        {#if readiness.status === "validation_failed" && apiKey.validation_error}
+                            <span class="mt-1 max-w-64 truncate text-xs text-error" title={apiKey.validation_error}>
+                                {apiKey.validation_error}
+                            </span>
+                        {/if}
                     </div>
                 </div>
                 <div>
-                    {#if isPending(apiKey)}
-                        <div
-                            class="bg-warning/10 text-warning text-[10px] font-bold px-3 py-1 rounded border border-warning/20 tracking-wide capitalize"
-                        >
-                            {$_("admin_direct_mm_api_key_pending")}
-                        </div>
-                    {:else if !isConnected(apiKey)}
-                        <div
-                            class="bg-red-50 text-red-600 text-[10px] font-bold px-3 py-1 rounded border border-red-100 tracking-wide capitalize"
-                        >
-                            {$_("admin_direct_mm_api_key_disconnected")}
-                        </div>
-                    {:else}
-                        <div
-                            class="bg-success/10 text-success text-[10px] font-bold px-3 py-1 rounded border border-success/20 tracking-wide capitalize"
-                        >
-                            {$_("admin_direct_mm_api_key_connected")}
-                        </div>
-                    {/if}
+                    <div
+                        class="text-[10px] font-bold px-3 py-1 rounded border border-base-300 tracking-wide capitalize {readiness.tone}"
+                        title={readiness.description}
+                    >
+                        {readiness.label}
+                    </div>
                 </div>
             </div>
         {/each}
@@ -140,7 +136,7 @@
 
     <a
         href="/system/api-keys"
-        class="w-full mt-4 py-3 rounded-xl bg-blue-50 text-blue-600 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors border-none"
+        class="w-full mt-4 py-3 rounded-xl bg-primary/10 text-primary font-semibold text-sm flex items-center justify-center gap-2 hover:bg-primary/20 transition-colors border-none"
     >
         <svg
             xmlns="http://www.w3.org/2000/svg"
