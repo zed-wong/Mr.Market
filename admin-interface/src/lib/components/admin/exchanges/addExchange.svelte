@@ -44,16 +44,19 @@
       isAdding = false;
       return;
     }
-    await addExchange(
-      { name, exchange_id: exchangeId, icon_url: iconUrl },
-      token,
-    );
-    setTimeout(() => {
-      invalidate("admin:settings:exchanges").finally(() => {
-        isAdding = false;
-        closeDialog();
-      });
-    }, getRandomDelay());
+    try {
+      await addExchange(
+        { name, exchange_id: exchangeId, icon_url: iconUrl },
+        token,
+      );
+      await invalidate("admin:settings:exchanges");
+      closeDialog();
+    } catch (error) {
+      console.error("Failed to add exchange:", error);
+      toast.error("Failed to add exchange. Review the exchange details and try again.");
+    } finally {
+      isAdding = false;
+    }
   }
 
   const cleanUpStates = () => {
@@ -70,10 +73,6 @@
 
   function closeDialog() {
     addDialogEl?.close();
-  }
-
-  function getRandomDelay() {
-    return Math.floor(Math.random() * (3000 - 2000 + 1)) + 2000;
   }
 
   function handleClickOutside(event: MouseEvent) {

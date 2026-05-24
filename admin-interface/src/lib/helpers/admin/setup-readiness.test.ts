@@ -112,4 +112,24 @@ describe('setup readiness', () => {
     expect(areas.find((area) => area.id === 'wallet-system')?.status).toBe('needs_attention');
     expect(areas.find((area) => area.id === 'direct-market-making')?.status).toBe('needs_attention');
   });
+
+  it('uses exchange readiness vocabulary that matches exchange management labels', () => {
+    const ready = buildSetupReadiness({ growInfo: growInfo(true) });
+    const missing = buildSetupReadiness({ growInfo: { ...growInfo(true), exchanges: [] } });
+    const disabled = buildSetupReadiness({ growInfo: growInfo(false) });
+    const unknown = buildSetupReadiness({
+      growInfo: {
+        ...growInfo(true),
+        exchanges: [{ exchange_id: 'binance', name: 'Binance' } as GrowInfo['exchanges'][number]],
+      },
+    });
+
+    expect(ready.find((area) => area.id === 'exchanges')?.summary).toContain(
+      '1 exchange is ready',
+    );
+    expect(missing.find((area) => area.id === 'exchanges')?.summary).toContain('missing');
+    expect(disabled.find((area) => area.id === 'exchanges')?.summary).toContain('disabled');
+    expect(unknown.find((area) => area.id === 'exchanges')?.status).toBe('unknown');
+    expect(unknown.find((area) => area.id === 'exchanges')?.summary).toContain('unknown');
+  });
 });

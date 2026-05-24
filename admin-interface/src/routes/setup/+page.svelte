@@ -29,6 +29,7 @@
   let attentionCount = $derived(
     readinessAreas.filter((area) => area.status === 'needs_attention').length,
   );
+  let unknownCount = $derived(readinessAreas.filter((area) => area.status === 'unknown').length);
   let failedCount = $derived(readinessAreas.filter((area) => area.status === 'failed').length);
 
   const getToken = () => getAccessToken() || '';
@@ -180,7 +181,7 @@
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-3 p-5">
         <span class="text-lg font-semibold text-base-content capitalize">live readiness summary</span>
-        <div class="grid grid-cols-3 gap-3 text-center">
+        <div class="grid grid-cols-2 gap-3 text-center md:grid-cols-4">
           <div class="rounded-lg border border-base-300 p-3">
             <span class="block font-mono text-2xl font-semibold text-success">{readyCount}</span>
             <span class="text-xs text-base-content/60 capitalize">ready</span>
@@ -188,6 +189,10 @@
           <div class="rounded-lg border border-base-300 p-3">
             <span class="block font-mono text-2xl font-semibold text-warning">{attentionCount}</span>
             <span class="text-xs text-base-content/60 capitalize">attention</span>
+          </div>
+          <div class="rounded-lg border border-base-300 p-3">
+            <span class="block font-mono text-2xl font-semibold">{unknownCount}</span>
+            <span class="text-xs text-base-content/60 capitalize">unknown</span>
           </div>
           <div class="rounded-lg border border-base-300 p-3">
             <span class="block font-mono text-2xl font-semibold text-error">{failedCount}</span>

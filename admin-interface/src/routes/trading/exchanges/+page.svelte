@@ -7,6 +7,7 @@
   import { invalidate } from "$app/navigation";
   import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
   import { classifyAdminError, type AdminErrorState } from "$lib/helpers/admin/common-states";
+  import { summarizeExchangeReadiness } from "$lib/helpers/admin/exchange-readiness";
   import { getAccessToken } from "$lib/helpers/api/client";
   import {
     getSupportedExchanges,
@@ -37,8 +38,7 @@
   );
 
   let totals = $derived({
-    total: exchanges.length,
-    enabled: exchanges.filter((e) => e.enable).length,
+    ...summarizeExchangeReadiness(exchanges),
     supported: exchanges.filter((e) =>
       supportedExchanges.includes(e.exchange_id),
     ).length,
@@ -165,7 +165,7 @@
     {/if}
 
     <!-- KPI row -->
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
         <span class="text-xs text-base-content/60 capitalize">total exchanges</span>
@@ -174,8 +174,14 @@
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">enabled</span>
-        <span class="font-mono text-2xl font-semibold text-success">{totals.enabled}</span>
+        <span class="text-xs text-base-content/60 capitalize">ready</span>
+        <span class="font-mono text-2xl font-semibold text-success">{totals.ready}</span>
+      </div>
+    </div>
+    <div class="card border border-base-300 bg-base-100 shadow-none">
+      <div class="card-body gap-1 p-4">
+        <span class="text-xs text-base-content/60 capitalize">disabled</span>
+        <span class="font-mono text-2xl font-semibold text-warning">{totals.disabled}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
@@ -186,8 +192,8 @@
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">ccxt available</span>
-        <span class="font-mono text-2xl font-semibold">{totals.ccxt || "—"}</span>
+        <span class="text-xs text-base-content/60 capitalize">unknown</span>
+        <span class="font-mono text-2xl font-semibold">{totals.unknown}</span>
       </div>
     </div>
     </div>
@@ -196,8 +202,8 @@
       <AdminStatePanel
         kind="empty"
         context="exchange management"
-        title="no exchanges configured"
-        message="Add the first exchange before configuring API keys or starting direct market-making operations."
+        title="exchange readiness missing"
+        message="No exchanges are configured yet. Add the first exchange before configuring API keys or starting direct market-making operations."
         actionLabel="add exchange"
         onAction={() => document.querySelector<HTMLButtonElement>('[data-testid="add-exchange-trigger"]')?.click()}
         testId="exchange-empty"

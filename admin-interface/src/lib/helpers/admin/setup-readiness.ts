@@ -4,6 +4,7 @@ import type { AdminSingleKey } from '$lib/types/hufi/admin';
 import type { DirectOrderSummary, DirectWalletStatus } from '$lib/types/hufi/admin-direct-market-making';
 import type { GrowInfo } from '$lib/types/hufi/grow';
 import type { StrategyDefinition } from '$lib/types/hufi/strategy-definition';
+import { summarizeExchangeReadiness } from './exchange-readiness';
 
 export type SetupReadinessStatus = 'loading' | 'ready' | 'needs_attention' | 'unknown' | 'failed';
 
@@ -85,7 +86,7 @@ export const apiKeyReadiness = (key: AdminSingleKey): SetupReadinessStatus => {
 
 export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessArea[] => {
   const exchanges = input.growInfo?.exchanges ?? [];
-  const enabledExchanges = exchanges.filter((exchange) => exchange.enable);
+  const exchangeSummary = summarizeExchangeReadiness(exchanges);
   const keys = input.apiKeys ?? [];
   const readyKeys = keys.filter((key) => apiKeyReadiness(key) === 'ready');
   const activeOrders = (input.directOrders ?? []).filter((order) =>
@@ -179,16 +180,25 @@ export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessA
       ? {
           id: 'exchanges',
           title: 'exchange configuration',
-          status: enabledExchanges.length > 0 ? 'ready' : 'needs_attention',
+          status:
+            exchangeSummary.ready > 0 && exchangeSummary.unknown === 0
+              ? 'ready'
+              : exchangeSummary.unknown > 0
+                ? 'unknown'
+                : 'needs_attention',
           summary:
-            enabledExchanges.length > 0
-              ? `${enabledExchanges.length} enabled exchange${enabledExchanges.length === 1 ? '' : 's'} can be used.`
-              : exchanges.length > 0
-                ? 'Exchanges exist but none are enabled for operations.'
-                : 'No exchanges are configured yet.',
+            exchangeSummary.ready > 0 && exchangeSummary.unknown === 0
+              ? `${exchangeSummary.ready} exchange${exchangeSummary.ready === 1 ? ' is' : 's are'} ready and enabled for operations.`
+              : exchangeSummary.unknown > 0
+                ? 'Exchange readiness is unknown for at least one configured exchange.'
+                : exchanges.length > 0
+                  ? 'Exchanges are configured but disabled and not usable for trading.'
+                  : 'Exchange readiness is missing because no exchanges are configured yet.',
           evidence: [
             `${exchanges.length} configured exchange${exchanges.length === 1 ? '' : 's'} returned.`,
-            `${enabledExchanges.length} enabled exchange${enabledExchanges.length === 1 ? '' : 's'} returned.`,
+            `${exchangeSummary.ready} ready exchange${exchangeSummary.ready === 1 ? '' : 's'} returned.`,
+            `${exchangeSummary.disabled} disabled exchange${exchangeSummary.disabled === 1 ? '' : 's'} returned.`,
+            `${exchangeSummary.unknown} unknown exchange${exchangeSummary.unknown === 1 ? '' : 's'} returned.`,
           ],
           href: '/trading/exchanges',
           actionLabel: 'manage exchanges',

@@ -6,6 +6,7 @@
     updateExchange,
     removeExchange,
   } from "$lib/helpers/mrm/admin/growdata";
+  import { getExchangeReadiness } from "$lib/helpers/admin/exchange-readiness";
 
   export let exchanges: {
     exchange_id: string;
@@ -53,11 +54,9 @@
       return;
     }
 
-    setTimeout(() => {
-      invalidate("admin:settings:exchanges").finally(() => {
-        updatingIds = { ...updatingIds, [exchange_id]: false };
-      });
-    }, getRandomDelay());
+    invalidate("admin:settings:exchanges").finally(() => {
+      updatingIds = { ...updatingIds, [exchange_id]: false };
+    });
   }
 
   async function DeleteExchange(exchange_id: string) {
@@ -77,15 +76,9 @@
       return;
     }
 
-    setTimeout(() => {
-      invalidate("admin:settings:exchanges").finally(() => {
-        deletingIds = { ...deletingIds, [exchange_id]: false };
-      });
-    }, getRandomDelay());
-  }
-
-  function getRandomDelay() {
-    return Math.floor(Math.random() * (3000 - 2000 + 1)) + 2000;
+    invalidate("admin:settings:exchanges").finally(() => {
+      deletingIds = { ...deletingIds, [exchange_id]: false };
+    });
   }
 </script>
 
@@ -123,17 +116,20 @@
       <table class="table table-lg">
         <thead class="bg-base-200/50 text-base-content/70">
           <tr>
-            <th class="uppercase text-xs font-semibold">{$_("icon")}</th>
-            <th class="uppercase text-xs font-semibold">{$_("display_name")}</th
+            <th class="capitalize text-xs font-semibold">{$_("icon")}</th>
+            <th class="capitalize text-xs font-semibold">{$_("display_name")}</th
             >
-            <th class="uppercase text-xs font-semibold">{$_("exchange_id")}</th>
-            <th class="text-center uppercase text-xs font-semibold"
+            <th class="capitalize text-xs font-semibold">{$_("exchange_id")}</th>
+            <th class="text-center capitalize text-xs font-semibold"
               >{$_("supported")}</th
             >
-            <th class="text-center uppercase text-xs font-semibold"
-              >{$_("status")}</th
+            <th class="text-center capitalize text-xs font-semibold"
+              >readiness</th
             >
-            <th class="text-right uppercase text-xs font-semibold"
+            <th class="text-center capitalize text-xs font-semibold"
+              >enablement</th
+            >
+            <th class="text-right capitalize text-xs font-semibold"
               >{$_("actions")}</th
             >
           </tr>
@@ -141,13 +137,14 @@
         <tbody>
           {#if paginatedExchanges.length === 0}
             <tr>
-              <td colspan="6" class="text-center py-12 text-base-content/40">
+              <td colspan="7" class="text-center py-12 text-base-content/40">
                 {$_("no_exchanges_found")}
               </td>
             </tr>
           {/if}
 
           {#each paginatedExchanges as exchange}
+            {@const readiness = getExchangeReadiness(exchange)}
             <tr class="hover:bg-base-200/30 transition-colors">
               <td class="p-3">
                 {#if exchange.icon_url}
@@ -196,54 +193,69 @@
                 {/if}
               </td>
               <td class="text-center">
-                <button
-                  class={clsx(
-                    "btn btn-xs btn-circle transition-all",
-                    exchange.enable
-                      ? "btn-success text-white"
-                      : "btn-ghost text-base-content",
-                  )}
-                  on:click={async () => {
-                    const newEnable = !exchange.enable;
-                    await UpdateExchange(
-                      exchange.exchange_id,
-                      exchange.name,
-                      newEnable,
-                      exchange.icon_url || "",
-                    );
-                  }}
-                  disabled={!!updatingIds[exchange.exchange_id]}
-                >
-                  {#if updatingIds[exchange.exchange_id]}
-                    <span class="loading loading-spinner loading-xs"></span>
-                  {:else if exchange.enable}
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      class="w-5 h-5"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
-                        clip-rule="evenodd"
-                      />
-                    </svg>
-                  {:else}
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      class="w-5 h-5"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM6.75 9.25a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z"
-                        clip-rule="evenodd"
-                      />
-                    </svg>
-                  {/if}
-                </button>
+                <div class="flex flex-col items-center gap-1">
+                  <span class={clsx("badge badge-sm capitalize", readiness.tone)}>
+                    {readiness.label}
+                  </span>
+                  <span class="text-xs text-base-content/60 capitalize">{readiness.title}</span>
+                </div>
+              </td>
+              <td class="text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <button
+                    class={clsx(
+                      "btn btn-xs btn-circle transition-all",
+                      exchange.enable
+                        ? "btn-success text-base-100"
+                        : "btn-ghost text-base-content",
+                    )}
+                    aria-label={`${exchange.enable ? 'disable' : 'enable'} ${exchange.name || exchange.exchange_id}`}
+                    title={`${exchange.enable ? 'enabled' : 'disabled'} exchange; click to ${exchange.enable ? 'disable' : 'enable'}`}
+                    on:click={async () => {
+                      const newEnable = !exchange.enable;
+                      await UpdateExchange(
+                        exchange.exchange_id,
+                        exchange.name,
+                        newEnable,
+                        exchange.icon_url || "",
+                      );
+                    }}
+                    disabled={!!updatingIds[exchange.exchange_id]}
+                  >
+                    {#if updatingIds[exchange.exchange_id]}
+                      <span class="loading loading-spinner loading-xs"></span>
+                    {:else if exchange.enable}
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        class="w-5 h-5"
+                      >
+                        <path
+                          fill-rule="evenodd"
+                          d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                    {:else}
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        class="w-5 h-5"
+                      >
+                        <path
+                          fill-rule="evenodd"
+                          d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM6.75 9.25a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                    {/if}
+                  </button>
+                  <span class="text-xs text-base-content/60 capitalize">
+                    {exchange.enable ? 'enabled' : 'disabled'}
+                  </span>
+                </div>
               </td>
               <td class="text-right">
                 <button
