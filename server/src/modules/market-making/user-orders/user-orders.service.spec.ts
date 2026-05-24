@@ -251,6 +251,12 @@ describe('UserOrdersService', () => {
         orderId: expect.any(String),
         memo: expect.any(String),
         expiresAt: expect.any(String),
+        marketMakingPairId: 'pair-1',
+        strategyDefinitionId: 'strategy-1',
+        strategySnapshot: {
+          controllerType: 'pureMarketMaking',
+          resolvedConfig: {},
+        },
       });
       expect(
         strategyConfigResolver.resolveForOrderSnapshot,
