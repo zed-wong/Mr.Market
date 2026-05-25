@@ -6,9 +6,14 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
+import { randomUUID } from 'crypto';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
+import {
+  MarketMakingLifecycleEvent,
+  MarketMakingLifecycleEventType,
+} from 'src/common/entities/market-making/market-making-lifecycle-event.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
 import {
   StrategyDefinition,
@@ -64,15 +69,13 @@ const STARTABLE_STATES: MarketMakingStates[] = [
 ];
 const PAUSABLE_STATES: MarketMakingStates[] = ['running'];
 const RESUMABLE_STATES: MarketMakingStates[] = ['paused'];
-const TERMINAL_STATES: MarketMakingStates[] = [
-  'deleted',
-  'failed',
-  'refunded',
-];
+const TERMINAL_STATES: MarketMakingStates[] = ['deleted', 'failed', 'refunded'];
 const VALIDATION_PAIR_ID = '00000000-0000-4000-8000-000000000101';
 
 @Injectable()
 export class Web3MarketMakingService {
+  private readonly lifecycleMutationLocks = new Map<string, Promise<void>>();
+
   constructor(
     @InjectRepository(MarketMakingOrder)
     private readonly marketMakingOrderRepository: Repository<MarketMakingOrder>,
@@ -88,15 +91,17 @@ export class Web3MarketMakingService {
     private readonly performanceRepository: Repository<Performance>,
     @InjectRepository(StrategyExecutionHistory)
     private readonly strategyExecutionHistoryRepository: Repository<StrategyExecutionHistory>,
+    @InjectRepository(MarketMakingLifecycleEvent)
+    private readonly lifecycleEventRepository: Repository<MarketMakingLifecycleEvent>,
     private readonly userOrdersService: UserOrdersService,
     private readonly marketMakingRuntimeService: MarketMakingRuntimeService,
     private readonly balanceLedgerService: BalanceLedgerService,
   ) {}
 
   async listOrders(userId: string) {
-    const orders = (await this.userOrdersService.findMarketMakingByUserId(
-      userId,
-    )).filter((order) => order.source !== 'admin_direct');
+    const orders = (
+      await this.userOrdersService.findMarketMakingByUserId(userId)
+    ).filter((order) => order.source !== 'admin_direct');
     const balancesByOrderId = await this.loadBalancesByOrderId(
       orders.map((order) => order.orderId),
     );
@@ -117,22 +122,31 @@ export class Web3MarketMakingService {
 
   async getOrderDetail(userId: string, orderId: string) {
     const order = await this.loadOwnedPublicOrder(userId, orderId);
-    const [balances, ledgerEntries, executionEvents, performanceRows] =
-      await Promise.all([
-        this.loadBalances(orderId),
-        this.ledgerEntryRepository.find({
-          where: { orderId },
-          order: { createdAt: 'ASC' },
-        }),
-        this.strategyExecutionHistoryRepository.find({
-          where: [{ orderId }, { clientId: orderId }],
-          order: { executedAt: 'ASC' },
-        }),
-        this.performanceRepository.find({
-          where: { userId, clientId: orderId },
-          order: { executedAt: 'DESC' },
-        }),
-      ]);
+    const [
+      balances,
+      ledgerEntries,
+      executionEvents,
+      performanceRows,
+      lifecycleEvents,
+    ] = await Promise.all([
+      this.loadBalances(orderId),
+      this.ledgerEntryRepository.find({
+        where: { orderId },
+        order: { createdAt: 'ASC' },
+      }),
+      this.strategyExecutionHistoryRepository.find({
+        where: [{ orderId }, { clientId: orderId }],
+        order: { executedAt: 'ASC' },
+      }),
+      this.performanceRepository.find({
+        where: { userId, clientId: orderId },
+        order: { executedAt: 'DESC' },
+      }),
+      this.lifecycleEventRepository.find({
+        where: { orderId },
+        order: { timestamp: 'ASC' },
+      }),
+    ]);
     const definition = order.strategyDefinitionId
       ? await this.strategyDefinitionRepository.findOne({
           where: { id: order.strategyDefinitionId },
@@ -148,6 +162,7 @@ export class Web3MarketMakingService {
         performanceRows,
         ledgerEntries,
         executionEvents,
+        lifecycleEvents,
       ),
     };
   }
@@ -189,14 +204,10 @@ export class Web3MarketMakingService {
     }
 
     const marketMakingPairId = body?.marketMakingPairId || body?.pairId;
-    const strategyDefinitionId =
-      body?.strategyDefinitionId || body?.strategyId;
+    const strategyDefinitionId = body?.strategyDefinitionId || body?.strategyId;
 
     if (!marketMakingPairId) {
-      throw this.badRequest(
-        'PAIR_REQUIRED',
-        'marketMakingPairId is required',
-      );
+      throw this.badRequest('PAIR_REQUIRED', 'marketMakingPairId is required');
     }
     if (!strategyDefinitionId) {
       throw this.badRequest(
@@ -231,6 +242,11 @@ export class Web3MarketMakingService {
       intent,
       definition: definition || undefined,
     });
+
+    await this.appendLifecycleEvent(order, 'order_created', {
+      fromState: null,
+      toState: order.state,
+    });
     let depositResult: Awaited<
       ReturnType<BalanceLedgerService['creditDeposit']>
     > | null = null;
@@ -253,21 +269,26 @@ export class Web3MarketMakingService {
       memo: intent.memo,
       expiresAt: intent.expiresAt,
       funding: {
-        mode: requestedDeposit ? 'initial_deposit_recorded' : 'separate_deposit_required',
+        mode: requestedDeposit
+          ? 'initial_deposit_recorded'
+          : 'separate_deposit_required',
         depositEndpoint: `/api/v1/web3/market-making/orders/${intent.orderId}/deposit`,
         memo: intent.memo,
         expiresAt: intent.expiresAt,
       },
       initialDeposit: {
-        mode: requestedDeposit ? 'accepted_during_create' : 'separate_deposit_required',
+        mode: requestedDeposit
+          ? 'accepted_during_create'
+          : 'separate_deposit_required',
         acceptedDuringCreate: Boolean(requestedDeposit),
         requested: requestedDeposit || body?.initialDeposit || null,
-        message:
-          requestedDeposit
-            ? 'Initial deposit was recorded as an order-attributed balance during create.'
-            : 'Create order records an intent; balances change after the deposit endpoint succeeds.',
+        message: requestedDeposit
+          ? 'Initial deposit was recorded as an order-attributed balance during create.'
+          : 'Create order records an intent; balances change after the deposit endpoint succeeds.',
       },
-      balance: depositResult ? this.serializeBalance(depositResult.balance) : null,
+      balance: depositResult
+        ? this.serializeBalance(depositResult.balance)
+        : null,
       order: (await this.getOrderDetail(userId, order.orderId)).order,
     };
   }
@@ -276,7 +297,7 @@ export class Web3MarketMakingService {
     const order = await this.loadOwnedPublicOrder(userId, orderId);
 
     this.assertMutableFundingState(order, 'DEPOSIT_STATE_INVALID');
-    const command = this.validateMoneyMovement(order, body, 'deposit');
+    const command = await this.validateMoneyMovement(order, body, 'deposit');
     const result = await this.balanceLedgerService.creditDeposit({
       orderId,
       userId,
@@ -295,9 +316,7 @@ export class Web3MarketMakingService {
         idempotencyKey: command.idempotencyKey,
       },
       balance: this.serializeBalance(result.balance),
-      order: (
-        await this.getOrderDetail(userId, orderId)
-      ).order,
+      order: (await this.getOrderDetail(userId, orderId)).order,
     };
   }
 
@@ -305,7 +324,7 @@ export class Web3MarketMakingService {
     const order = await this.loadOwnedPublicOrder(userId, orderId);
 
     this.assertMutableFundingState(order, 'WITHDRAW_STATE_INVALID');
-    const command = this.validateMoneyMovement(order, body, 'withdraw');
+    const command = await this.validateMoneyMovement(order, body, 'withdraw');
     const existingBalance = await this.orderBalanceRepository.findOneBy({
       orderId,
       assetId: command.assetId,
@@ -337,77 +356,87 @@ export class Web3MarketMakingService {
         idempotencyKey: command.idempotencyKey,
       },
       balance: this.serializeBalance(result.balance),
-      order: (
-        await this.getOrderDetail(userId, orderId)
-      ).order,
+      order: (await this.getOrderDetail(userId, orderId)).order,
     };
   }
 
   async start(userId: string, orderId: string) {
-    const order = await this.loadOwnedPublicOrder(userId, orderId);
+    await this.withLifecycleMutationLock(orderId, async () => {
+      const order = await this.loadOwnedPublicOrder(userId, orderId);
 
-    this.assertState(order, STARTABLE_STATES, 'START_STATE_INVALID');
-    await this.assertRiskIncreasingAllowed(order);
-    if (order.apiKeyId) {
-      await this.marketMakingRuntimeService.startOrder(order);
-    }
-    await this.userOrdersService.updateMarketMakingOrderState(
-      orderId,
-      'running',
-    );
-    order.state = 'running';
+      this.assertState(order, STARTABLE_STATES, 'START_STATE_INVALID');
+      await this.assertRiskIncreasingAllowed(order);
+      await this.userOrdersService.updateMarketMakingOrderState(
+        orderId,
+        'running',
+      );
+      await this.appendLifecycleEvent(order, 'order_started', {
+        fromState: order.state,
+        toState: 'running',
+      });
+      order.state = 'running';
+      if (order.apiKeyId) {
+        await this.marketMakingRuntimeService.startOrder(order);
+      }
+    });
 
     return {
       namespace: '/api/v1/web3/market-making',
       mutation: { type: 'start', applied: true },
-      order: (
-        await this.getOrderDetail(userId, orderId)
-      ).order,
+      order: (await this.getOrderDetail(userId, orderId)).order,
     };
   }
 
   async pause(userId: string, orderId: string) {
-    const order = await this.loadOwnedPublicOrder(userId, orderId);
+    await this.withLifecycleMutationLock(orderId, async () => {
+      const order = await this.loadOwnedPublicOrder(userId, orderId);
 
-    this.assertState(order, PAUSABLE_STATES, 'PAUSE_STATE_INVALID');
-    if (order.apiKeyId) {
-      await this.marketMakingRuntimeService.stopOrder(order, userId);
-    }
-    await this.userOrdersService.updateMarketMakingOrderState(
-      orderId,
-      'paused',
-    );
-    order.state = 'paused';
+      this.assertState(order, PAUSABLE_STATES, 'PAUSE_STATE_INVALID');
+      await this.userOrdersService.updateMarketMakingOrderState(
+        orderId,
+        'paused',
+      );
+      await this.appendLifecycleEvent(order, 'order_paused', {
+        fromState: order.state,
+        toState: 'paused',
+      });
+      order.state = 'paused';
+      if (order.apiKeyId) {
+        await this.marketMakingRuntimeService.stopOrder(order, userId);
+      }
+    });
 
     return {
       namespace: '/api/v1/web3/market-making',
       mutation: { type: 'pause', applied: true },
-      order: (
-        await this.getOrderDetail(userId, orderId)
-      ).order,
+      order: (await this.getOrderDetail(userId, orderId)).order,
     };
   }
 
   async resume(userId: string, orderId: string) {
-    const order = await this.loadOwnedPublicOrder(userId, orderId);
+    await this.withLifecycleMutationLock(orderId, async () => {
+      const order = await this.loadOwnedPublicOrder(userId, orderId);
 
-    this.assertState(order, RESUMABLE_STATES, 'RESUME_STATE_INVALID');
-    await this.assertRiskIncreasingAllowed(order);
-    if (order.apiKeyId) {
-      await this.marketMakingRuntimeService.startOrder(order);
-    }
-    await this.userOrdersService.updateMarketMakingOrderState(
-      orderId,
-      'running',
-    );
-    order.state = 'running';
+      this.assertState(order, RESUMABLE_STATES, 'RESUME_STATE_INVALID');
+      await this.assertRiskIncreasingAllowed(order);
+      await this.userOrdersService.updateMarketMakingOrderState(
+        orderId,
+        'running',
+      );
+      await this.appendLifecycleEvent(order, 'order_resumed', {
+        fromState: order.state,
+        toState: 'running',
+      });
+      order.state = 'running';
+      if (order.apiKeyId) {
+        await this.marketMakingRuntimeService.startOrder(order);
+      }
+    });
 
     return {
       namespace: '/api/v1/web3/market-making',
       mutation: { type: 'resume', applied: true },
-      order: (
-        await this.getOrderDetail(userId, orderId)
-      ).order,
+      order: (await this.getOrderDetail(userId, orderId)).order,
     };
   }
 
@@ -642,12 +671,15 @@ export class Web3MarketMakingService {
       body.initialDeposit.assetId || body.initialDeposit.asset || '',
     ).trim();
     const amount = String(body.initialDeposit.amount || '').trim();
-    const supportedAssets = [pair.base_symbol, pair.quote_symbol].filter(
+    const supportedAssets = [pair.base_asset_id, pair.quote_asset_id].filter(
       (asset): asset is string => Boolean(asset),
     );
 
     if (!assetId) {
-      throw this.badRequest('ASSET_REQUIRED', 'initialDeposit.assetId is required');
+      throw this.badRequest(
+        'ASSET_REQUIRED',
+        'initialDeposit.assetId is required',
+      );
     }
     if (!supportedAssets.includes(assetId)) {
       throw this.badRequest(
@@ -688,10 +720,16 @@ export class Web3MarketMakingService {
     performanceRows: Performance[] = [],
     ledgerEntries: LedgerEntry[] = [],
     executionEvents: StrategyExecutionHistory[] = [],
+    lifecycleEvents: MarketMakingLifecycleEvent[] = [],
   ) {
     return {
       ...this.serializeOrderSummary(order, balances, definition),
-      events: this.serializeEvents(order, ledgerEntries, executionEvents),
+      events: this.serializeEvents(
+        order,
+        ledgerEntries,
+        executionEvents,
+        lifecycleEvents,
+      ),
       performance: {
         ...this.serializeBalancePerformance(balances),
         snapshots: performanceRows.map((row) => ({
@@ -785,32 +823,36 @@ export class Web3MarketMakingService {
     order: MarketMakingOrder,
     ledgerEntries: LedgerEntry[],
     executionEvents: StrategyExecutionHistory[],
+    lifecycleEvents: MarketMakingLifecycleEvent[],
   ) {
     return [
-      {
-        orderId: order.orderId,
-        type: 'order_created',
-        timestamp: order.createdAt,
-        assetId: null,
-        amount: null,
-        refType: 'market_making_order',
-        refId: order.orderId,
-        metadata: { state: 'created' },
-      },
-      ...(order.state !== 'created'
-        ? [
+      ...(lifecycleEvents.length > 0
+        ? lifecycleEvents.map((event) => ({
+            orderId: event.orderId,
+            type: event.type,
+            timestamp: event.timestamp,
+            assetId: null,
+            amount: null,
+            refType: event.refType || 'market_making_order_lifecycle',
+            refId: event.refId || event.eventId,
+            metadata: {
+              ...(event.metadata || {}),
+              fromState: event.fromState || null,
+              toState: event.toState || null,
+            },
+          }))
+        : [
             {
               orderId: order.orderId,
-              type: `order_state_${order.state}`,
+              type: 'order_created',
               timestamp: order.createdAt,
               assetId: null,
               amount: null,
-              refType: 'market_making_order_lifecycle',
+              refType: 'market_making_order',
               refId: order.orderId,
-              metadata: { state: order.state },
+              metadata: { state: 'created' },
             },
-          ]
-        : []),
+          ]),
       ...ledgerEntries.map((entry) => ({
         orderId: entry.orderId,
         type: entry.type,
@@ -847,9 +889,10 @@ export class Web3MarketMakingService {
   }
 
   private serializePairOption(pair: GrowdataMarketMakingPair) {
-    const supportedDepositAssets = [pair.quote_symbol, pair.base_symbol].filter(
-      (asset): asset is string => Boolean(asset),
-    );
+    const supportedDepositAssets = [
+      pair.quote_asset_id,
+      pair.base_asset_id,
+    ].filter((asset): asset is string => Boolean(asset));
 
     return {
       pairId: pair.id,
@@ -885,7 +928,7 @@ export class Web3MarketMakingService {
     };
   }
 
-  private validateMoneyMovement(
+  private async validateMoneyMovement(
     order: MarketMakingOrder,
     body: MoneyMovementBody,
     action: 'deposit' | 'withdraw',
@@ -897,7 +940,9 @@ export class Web3MarketMakingService {
     if (!assetId) {
       throw this.badRequest('ASSET_REQUIRED', 'assetId is required');
     }
-    if (!this.getSupportedAssets(order).includes(assetId)) {
+    const supportedAssets = await this.getSupportedAssets(order);
+
+    if (!supportedAssets.includes(assetId)) {
       throw this.badRequest(
         'ASSET_UNSUPPORTED',
         `${assetId} is not supported for order ${order.orderId}`,
@@ -939,9 +984,9 @@ export class Web3MarketMakingService {
     if (!allowedStates.includes(order.state)) {
       throw new ConflictException({
         code,
-        message: `Order ${order.orderId} is ${order.state}; expected one of ${allowedStates.join(
-          ', ',
-        )}`,
+        message: `Order ${order.orderId} is ${
+          order.state
+        }; expected one of ${allowedStates.join(', ')}`,
       });
     }
   }
@@ -976,11 +1021,70 @@ export class Web3MarketMakingService {
     }
   }
 
-  private getSupportedAssets(order: MarketMakingOrder) {
-    return order.pair
-      .split('/')
-      .map((asset) => asset.trim())
+  private async getSupportedAssets(order: MarketMakingOrder) {
+    const pair = await this.marketMakingPairRepository.findOne({
+      where: {
+        symbol: order.pair,
+        exchange_id: order.exchangeName,
+        enable: true,
+      },
+    });
+
+    return [pair?.base_asset_id, pair?.quote_asset_id]
+      .map((asset) => String(asset || '').trim())
       .filter((asset) => asset.length > 0);
+  }
+
+  private async appendLifecycleEvent(
+    order: MarketMakingOrder,
+    type: MarketMakingLifecycleEventType,
+    params: {
+      fromState: MarketMakingStates | null;
+      toState: MarketMakingStates;
+    },
+  ): Promise<void> {
+    const event = this.lifecycleEventRepository.create({
+      eventId: randomUUID(),
+      orderId: order.orderId,
+      userId: order.userId,
+      type,
+      timestamp: getRFC3339Timestamp(),
+      fromState: params.fromState,
+      toState: params.toState,
+      refType: 'market_making_order_lifecycle',
+      refId: order.orderId,
+      metadata: {
+        exchangeName: order.exchangeName,
+        pair: order.pair,
+      },
+    });
+
+    await this.lifecycleEventRepository.save(event);
+  }
+
+  private async withLifecycleMutationLock<T>(
+    orderId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const currentTail =
+      this.lifecycleMutationLocks.get(orderId) || Promise.resolve();
+    let releaseCurrent: () => void = () => {};
+    const nextTail = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const chainedTail = currentTail.then(() => nextTail);
+
+    this.lifecycleMutationLocks.set(orderId, chainedTail);
+    await currentTail;
+
+    try {
+      return await operation();
+    } finally {
+      releaseCurrent();
+      if (this.lifecycleMutationLocks.get(orderId) === chainedTail) {
+        this.lifecycleMutationLocks.delete(orderId);
+      }
+    }
   }
 
   private badRequest(code: string, message: string) {

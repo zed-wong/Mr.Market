@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
+import { Web3LoginNonceEntity } from 'src/common/entities/auth/web3-login-nonce.entity';
 import { AdminAuditModule } from 'src/modules/admin/system/admin-audit.module';
 import { AuthController } from 'src/modules/auth/auth.controller';
 import { AuthService } from 'src/modules/auth/auth.service';
@@ -21,6 +22,7 @@ import { UserModule } from '../mixin/user/user.module';
     TypeOrmModule.forFeature([
       AdminAuthStateEntity,
       AdminPasskeyCredentialEntity,
+      Web3LoginNonceEntity,
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

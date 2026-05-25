@@ -17,6 +17,7 @@ import { AdminAuthStateEntity } from './common/entities/admin/admin-auth-state.e
 import { AdminPasskeyCredentialEntity } from './common/entities/admin/admin-passkey-credential.entity';
 import { APIKeysConfig } from './common/entities/admin/api-keys.entity';
 import { CustomConfigEntity } from './common/entities/admin/custom-config.entity';
+import { Web3LoginNonceEntity } from './common/entities/auth/web3-login-nonce.entity';
 import { CampaignJoin } from './common/entities/campaign/campaign-join.entity';
 import { Contribution } from './common/entities/campaign/contribution.entity';
 import { HufiScoreSnapshot } from './common/entities/campaign/hufi-score-snapshot.entity';
@@ -33,6 +34,7 @@ import { RewardAllocation } from './common/entities/ledger/reward-allocation.ent
 import { RewardLedger } from './common/entities/ledger/reward-ledger.entity';
 import { ShareLedgerEntry } from './common/entities/ledger/share-ledger-entry.entity';
 import { ExchangeOrderMapping } from './common/entities/market-making/exchange-order-mapping.entity';
+import { MarketMakingLifecycleEvent } from './common/entities/market-making/market-making-lifecycle-event.entity';
 import { MarketMakingOrderIntent } from './common/entities/market-making/market-making-order-intent.entity';
 import { Performance } from './common/entities/market-making/performance.entity';
 import { StrategyDefinition } from './common/entities/market-making/strategy-definition.entity';
@@ -149,6 +151,7 @@ function buildRedisConfig(configService: ConfigService) {
         AdminAuditLogEntity,
         AdminAuthStateEntity,
         AdminPasskeyCredentialEntity,
+        Web3LoginNonceEntity,
         APIKeysConfig,
         CampaignJoin,
         CustomConfigEntity,
@@ -168,6 +171,7 @@ function buildRedisConfig(configService: ConfigService) {
         GrowdataMarketMakingPair,
         Withdrawal,
         MarketMakingOrderIntent,
+        MarketMakingLifecycleEvent,
         LedgerEntry,
         MarketMakingOrderBalance,
         OutboxEvent,

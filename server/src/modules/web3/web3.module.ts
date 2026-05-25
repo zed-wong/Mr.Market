@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
+import { MarketMakingLifecycleEvent } from 'src/common/entities/market-making/market-making-lifecycle-event.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
@@ -24,6 +25,7 @@ import { Web3Service } from './web3.service';
       Performance,
       StrategyExecutionHistory,
       MarketMakingOrder,
+      MarketMakingLifecycleEvent,
     ]),
     forwardRef(() => UserOrdersModule),
     LedgerModule,

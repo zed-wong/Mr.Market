@@ -87,13 +87,14 @@ const createOrder = (
     createdAt: '2026-05-24T00:00:00.000Z',
     rewardAddress: '',
     ...overrides,
-  }) as MarketMakingOrder;
+  } as MarketMakingOrder);
 
 describe('Web3MarketMakingService', () => {
   const buildService = (params?: {
     orders?: MarketMakingOrder[];
     balances?: MarketMakingOrderBalance[];
     pausedReservations?: boolean;
+    lifecycleEvents?: object[];
   }) => {
     const orders = params?.orders || [createOrder()];
     const balances =
@@ -102,7 +103,7 @@ describe('Web3MarketMakingService', () => {
         {
           orderId: 'order-1',
           userId: 'user-1',
-          assetId: 'USDT',
+          assetId: 'asset-usdt',
           available: '100',
           locked: '0',
           total: '100',
@@ -133,7 +134,11 @@ describe('Web3MarketMakingService', () => {
         },
       ),
       listEnabledMarketMakingStrategies: jest.fn(async () => [
-        { id: 'strategy-1', key: 'pure-mm', controllerType: 'pureMarketMaking' },
+        {
+          id: 'strategy-1',
+          key: 'pure-mm',
+          controllerType: 'pureMarketMaking',
+        },
       ]),
       createMarketMakingOrderIntent: jest.fn(async () => ({
         orderId: 'intent-order',
@@ -159,6 +164,7 @@ describe('Web3MarketMakingService', () => {
       })),
       createMarketMaking: jest.fn(async (order) => {
         orders.push(order);
+
         return order;
       }),
       updateMarketMakingOrderState: jest.fn(async (orderId, state) => {
@@ -169,6 +175,8 @@ describe('Web3MarketMakingService', () => {
         }
       }),
     };
+
+    const runtime = { startOrder: jest.fn(), stopOrder: jest.fn() };
     const ledger = {
       creditDeposit: jest.fn(async (command) => {
         const balance = {
@@ -223,8 +231,8 @@ describe('Web3MarketMakingService', () => {
           symbol: 'BTC/USDT',
           base_symbol: 'BTC',
           quote_symbol: 'USDT',
-          base_asset_id: 'BTC',
-          quote_asset_id: 'USDT',
+          base_asset_id: 'asset-btc',
+          quote_asset_id: 'asset-usdt',
           exchange_id: 'binance',
           min_order_amount: '0.01',
           amount_significant_figures: '6',
@@ -251,12 +259,13 @@ describe('Web3MarketMakingService', () => {
       ]) as never,
       createRepository([]) as never,
       createRepository([]) as never,
+      createRepository(params?.lifecycleEvents || []) as never,
       userOrdersService as never,
-      { startOrder: jest.fn(), stopOrder: jest.fn() } as never,
+      runtime as never,
       ledger as never,
     );
 
-    return { service, userOrdersService, ledger, orders };
+    return { service, userOrdersService, ledger, orders, runtime };
   };
 
   it('lists only authenticated user non-admin market-making orders with balances and PnL', async () => {
@@ -281,13 +290,13 @@ describe('Web3MarketMakingService', () => {
       balances: [
         expect.objectContaining({
           orderId: 'order-1',
-          assetId: 'USDT',
+          assetId: 'asset-usdt',
           available: '100',
         }),
       ],
       performance: expect.objectContaining({
-        realizedDeltaByAsset: { USDT: '5' },
-        feePaidByAsset: { USDT: '1' },
+        realizedDeltaByAsset: { 'asset-usdt': '5' },
+        feePaidByAsset: { 'asset-usdt': '1' },
       }),
     });
   });
@@ -325,9 +334,11 @@ describe('Web3MarketMakingService', () => {
       pair: 'BTC/USDT',
       strategy: { id: 'strategy-1', name: 'Pure MM' },
       specs: { pair: 'BTC/USDT', exchangeName: 'binance' },
-      balances: [expect.objectContaining({ assetId: 'USDT', total: '100' })],
+      balances: [
+        expect.objectContaining({ assetId: 'asset-usdt', total: '100' }),
+      ],
       performance: expect.objectContaining({
-        pnlByAsset: { USDT: '4' },
+        pnlByAsset: { 'asset-usdt': '4' },
         snapshots: [],
       }),
       validActions: expect.objectContaining({
@@ -337,12 +348,52 @@ describe('Web3MarketMakingService', () => {
       }),
       events: expect.arrayContaining([
         expect.objectContaining({ type: 'order_created', orderId: 'order-1' }),
-        expect.objectContaining({
-          type: 'order_state_running',
-          refType: 'market_making_order_lifecycle',
-        }),
       ]),
     });
+  });
+
+  it('serializes durable lifecycle events chronologically instead of synthesizing current state', async () => {
+    const { service } = buildService({
+      orders: [createOrder({ state: 'paused' })],
+      lifecycleEvents: [
+        {
+          eventId: 'event-2',
+          orderId: 'order-1',
+          userId: 'user-1',
+          type: 'order_paused',
+          timestamp: '2026-05-24T00:03:00.000Z',
+          fromState: 'running',
+          toState: 'paused',
+          refType: 'market_making_order_lifecycle',
+          refId: 'order-1',
+          metadata: {},
+        },
+        {
+          eventId: 'event-1',
+          orderId: 'order-1',
+          userId: 'user-1',
+          type: 'order_started',
+          timestamp: '2026-05-24T00:02:00.000Z',
+          fromState: 'created',
+          toState: 'running',
+          refType: 'market_making_order_lifecycle',
+          refId: 'order-1',
+          metadata: {},
+        },
+      ],
+    });
+
+    const result = await service.getOrderDetail('user-1', 'order-1');
+
+    expect(result.order.events.map((event) => event.type)).toEqual([
+      'order_started',
+      'order_paused',
+    ]);
+    expect(result.order.events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'order_state_paused' }),
+      ]),
+    );
   });
 
   it('rejects caller-supplied userId overrides during create', async () => {
@@ -355,7 +406,9 @@ describe('Web3MarketMakingService', () => {
         strategyDefinitionId: 'strategy-1',
       }),
     ).rejects.toThrow(BadRequestException);
-    expect(userOrdersService.createMarketMakingOrderIntent).not.toHaveBeenCalled();
+    expect(
+      userOrdersService.createMarketMakingOrderIntent,
+    ).not.toHaveBeenCalled();
   });
 
   it('creates a persisted order and records accepted initial deposit instructions', async () => {
@@ -365,10 +418,12 @@ describe('Web3MarketMakingService', () => {
       marketMakingPairId: 'pair-1',
       strategyDefinitionId: 'strategy-1',
       configOverrides: { orderAmount: 1 },
-      initialDeposit: { assetId: 'USDT', amount: '100' },
+      initialDeposit: { assetId: 'asset-usdt', amount: '100' },
     });
 
-    expect(userOrdersService.createMarketMakingOrderIntent).toHaveBeenCalledWith({
+    expect(
+      userOrdersService.createMarketMakingOrderIntent,
+    ).toHaveBeenCalledWith({
       userId: 'user-1',
       marketMakingPairId: 'pair-1',
       strategyDefinitionId: 'strategy-1',
@@ -386,7 +441,7 @@ describe('Web3MarketMakingService', () => {
       expect.objectContaining({
         orderId: 'intent-order',
         userId: 'user-1',
-        assetId: 'USDT',
+        assetId: 'asset-usdt',
         amount: '100',
       }),
     );
@@ -397,20 +452,21 @@ describe('Web3MarketMakingService', () => {
         acceptedDuringCreate: true,
       },
       funding: {
-        depositEndpoint: '/api/v1/web3/market-making/orders/intent-order/deposit',
+        depositEndpoint:
+          '/api/v1/web3/market-making/orders/intent-order/deposit',
       },
       order: {
         orderId: 'intent-order',
-        balances: [expect.objectContaining({ assetId: 'USDT' })],
+        balances: [expect.objectContaining({ assetId: 'asset-usdt' })],
       },
     });
   });
 
-  it('deposits only into the owned order using orderId, asset, and idempotency', async () => {
+  it('deposits only into the owned order using orderId, pair option asset id, and idempotency', async () => {
     const { service, ledger } = buildService();
 
     const result = await service.deposit('user-1', 'order-1', {
-      assetId: 'USDT',
+      assetId: 'asset-usdt',
       amount: '10',
       idempotencyKey: 'deposit-key',
     });
@@ -419,13 +475,26 @@ describe('Web3MarketMakingService', () => {
       expect.objectContaining({
         orderId: 'order-1',
         userId: 'user-1',
-        assetId: 'USDT',
+        assetId: 'asset-usdt',
         amount: '10',
         idempotencyKey: 'web3:deposit:deposit-key',
         refType: 'web3_order_deposit',
       }),
     );
-    expect(result.balance.assetId).toBe('USDT');
+    expect(result.balance.assetId).toBe('asset-usdt');
+  });
+
+  it('rejects parsed pair symbols when asset ids differ from displayed symbols', async () => {
+    const { service, ledger } = buildService();
+
+    await expect(
+      service.deposit('user-1', 'order-1', {
+        assetId: 'USDT',
+        amount: '10',
+        idempotencyKey: 'deposit-key',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(ledger.creditDeposit).not.toHaveBeenCalled();
   });
 
   it('rejects excessive withdrawals without mutating the ledger', async () => {
@@ -433,7 +502,7 @@ describe('Web3MarketMakingService', () => {
 
     await expect(
       service.withdraw('user-1', 'order-1', {
-        assetId: 'USDT',
+        assetId: 'asset-usdt',
         amount: '1000',
         idempotencyKey: 'withdraw-key',
       }),
@@ -453,6 +522,28 @@ describe('Web3MarketMakingService', () => {
     expect(result.order.state).toBe('running');
   });
 
+  it('does not start runtime when lifecycle persistence fails', async () => {
+    const { service, userOrdersService, runtime, orders } = buildService({
+      orders: [
+        createOrder({
+          orderId: 'order-1',
+          state: 'created',
+          apiKeyId: 'api-key-1',
+        }),
+      ],
+    });
+
+    userOrdersService.updateMarketMakingOrderState.mockRejectedValueOnce(
+      new Error('database unavailable'),
+    );
+
+    await expect(service.start('user-1', 'order-1')).rejects.toThrow(
+      'database unavailable',
+    );
+    expect(runtime.startOrder).not.toHaveBeenCalled();
+    expect(orders[0].state).toBe('created');
+  });
+
   it('blocks risk-increasing start when reconciliation has paused reservations', async () => {
     const { service, userOrdersService } = buildService({
       pausedReservations: true,
@@ -461,7 +552,9 @@ describe('Web3MarketMakingService', () => {
     await expect(service.start('user-1', 'order-1')).rejects.toThrow(
       ConflictException,
     );
-    expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalled();
+    expect(
+      userOrdersService.updateMarketMakingOrderState,
+    ).not.toHaveBeenCalled();
   });
 
   it('pauses and resumes only from valid owned states', async () => {
@@ -492,7 +585,7 @@ describe('Web3MarketMakingService', () => {
       expect.objectContaining({
         pairId: 'pair-1',
         pair: 'BTC/USDT',
-        supportedDepositAssets: ['USDT', 'BTC'],
+        supportedDepositAssets: ['asset-usdt', 'asset-btc'],
       }),
     ]);
   });

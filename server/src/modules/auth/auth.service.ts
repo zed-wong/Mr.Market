@@ -21,11 +21,12 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/types';
 import axios from 'axios';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { verifyMessage } from 'ethers/lib/utils';
 import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
+import { Web3LoginNonceEntity } from 'src/common/entities/auth/web3-login-nonce.entity';
 import { getUserMe } from 'src/common/helpers/mixin/user';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { Repository } from 'typeorm';
@@ -37,6 +38,7 @@ const ADMIN_AUTH_ID = 'admin';
 const ADMIN_JWT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
+const WEB3_NONCE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_PASSKEY_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:5174',
@@ -73,6 +75,8 @@ export class AuthService {
     private adminAuthStateRepository: Repository<AdminAuthStateEntity>,
     @InjectRepository(AdminPasskeyCredentialEntity)
     private passkeyRepository: Repository<AdminPasskeyCredentialEntity>,
+    @InjectRepository(Web3LoginNonceEntity)
+    private readonly web3LoginNonceRepository: Repository<Web3LoginNonceEntity>,
     @Optional()
     private readonly auditLogService?: AdminAuditLogService,
   ) {
@@ -149,8 +153,10 @@ export class AuthService {
       await this.audit('admin.session.denied', 'denied', {
         reason: 'invalid_actor',
       });
+
       return { authenticated: false };
     }
+
     try {
       await this.assertAdminTokenVersion(payload.tokenVersion);
     } catch (error) {
@@ -161,6 +167,7 @@ export class AuthService {
     }
 
     await this.audit('admin.session.succeeded', 'success');
+
     return { authenticated: true, username: ADMIN_AUTH_ID };
   }
 
@@ -172,26 +179,37 @@ export class AuthService {
     return { ok: true };
   }
 
-  getWeb3Nonce(body: { address?: string; chainId?: string | number }) {
+  async getWeb3Nonce(body: { address?: string; chainId?: string | number }) {
     const address = this.normalizeWeb3Address(body?.address);
     const chainId = this.normalizeWeb3ChainId(body?.chainId);
-    const nonce = createHash('sha256')
-      .update(`${address}:${chainId}:${Date.now()}`)
-      .digest('hex')
-      .slice(0, 24);
-
-    return {
+    const issuedAt = getRFC3339Timestamp();
+    const expiresAt = new Date(Date.now() + WEB3_NONCE_TTL_MS).toISOString();
+    const nonce = randomBytes(18).toString('hex');
+    const challenge = this.web3LoginNonceRepository.create({
       nonce,
+      address,
+      chainId,
       domain: 'Mr.Market',
       statement: 'Sign in to Mr.Market web3 market-making orders',
       uri: 'https://mr.market/web3',
+      issuedAt,
+      expiresAt,
+      consumedAt: null,
+    });
+
+    await this.web3LoginNonceRepository.save(challenge);
+
+    return {
+      nonce: challenge.nonce,
+      domain: challenge.domain,
+      statement: challenge.statement,
+      uri: challenge.uri,
+      issuedAt: challenge.issuedAt,
+      expiresAt: challenge.expiresAt,
     };
   }
 
-  async loginWeb3(body: {
-    message?: string;
-    signature?: string;
-  }): Promise<{
+  async loginWeb3(body: { message?: string; signature?: string }): Promise<{
     jwt: string;
     userId: string;
     address: string;
@@ -202,7 +220,9 @@ export class AuthService {
     const signature = String(body?.signature || '');
 
     if (!message.trim() || !signature.trim()) {
-      throw new UnauthorizedException('Web3 message and signature are required');
+      throw new UnauthorizedException(
+        'Web3 message and signature are required',
+      );
     }
 
     const address = this.normalizeWeb3Address(
@@ -212,8 +232,16 @@ export class AuthService {
     const chainId = this.normalizeWeb3ChainId(
       this.extractWeb3MessageValue(message, 'chain id'),
     );
+    const nonce = this.extractWeb3MessageValue(message, 'nonce');
+
+    await this.assertActiveWeb3Nonce({
+      nonce,
+      address,
+      chainId,
+    });
 
     this.assertWeb3Signature(message, signature, address);
+    await this.consumeWeb3Nonce(nonce);
 
     const userId = this.deriveWeb3UserId(address, chainId);
     const jwt = this.jwtService.sign(
@@ -317,6 +345,7 @@ export class AuthService {
     const credentials = await this.passkeyRepository.find({
       order: { createdAt: 'DESC' },
     });
+
     return credentials.map((c) => ({
       credentialId: c.credentialId,
       counter: c.counter,
@@ -331,11 +360,14 @@ export class AuthService {
     const credential = await this.passkeyRepository.findOne({
       where: { credentialId },
     });
+
     if (!credential) {
       throw new UnauthorizedException('Passkey not found');
     }
+
     await this.passkeyRepository.delete({ credentialId });
     await this.audit('admin.passkey_revoked', 'success', { credentialId });
+
     return { ok: true };
   }
 
@@ -449,8 +481,8 @@ export class AuthService {
     signature: string,
     address: string,
   ): void {
-    const isDemoSignature = signature.startsWith('demo:') ||
-      signature.startsWith('demo-signature:');
+    const isDemoSignature =
+      signature.startsWith('demo:') || signature.startsWith('demo-signature:');
 
     if (isDemoSignature) {
       if (process.env.NODE_ENV === 'production') {
@@ -485,7 +517,7 @@ export class AuthService {
 
   private extractWeb3MessageValue(
     message: string,
-    field: 'account' | 'chain id',
+    field: 'account' | 'chain id' | 'nonce',
   ): string | null {
     if (field === 'account') {
       const accountLineIndex = message
@@ -494,6 +526,12 @@ export class AuthService {
       const lines = message.split('\n');
 
       return accountLineIndex >= 0 ? lines[accountLineIndex + 1] || null : null;
+    }
+
+    if (field === 'nonce') {
+      const match = message.match(/Nonce:\s*([^\n]+)/i);
+
+      return match?.[1]?.trim() || null;
     }
 
     const match = message.match(/Chain ID:\s*([^\n]+)/i);
@@ -511,6 +549,51 @@ export class AuthService {
     const solanaMatch = message.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
 
     return solanaMatch?.[0] || null;
+  }
+
+  private async assertActiveWeb3Nonce(params: {
+    nonce: string | null;
+    address: string;
+    chainId: string;
+  }): Promise<void> {
+    const nonce = String(params.nonce || '').trim();
+
+    if (!nonce) {
+      throw new UnauthorizedException('Web3 nonce is required');
+    }
+
+    const challenge = await this.web3LoginNonceRepository.findOne({
+      where: { nonce },
+    });
+
+    if (!challenge) {
+      throw new UnauthorizedException('Unknown web3 nonce');
+    }
+    if (challenge.consumedAt) {
+      throw new UnauthorizedException('Web3 nonce has already been used');
+    }
+    if (new Date(challenge.expiresAt).getTime() <= Date.now()) {
+      throw new UnauthorizedException('Web3 nonce has expired');
+    }
+    if (
+      challenge.address !== params.address ||
+      challenge.chainId !== params.chainId
+    ) {
+      throw new UnauthorizedException('Web3 nonce does not match message');
+    }
+  }
+
+  private async consumeWeb3Nonce(nonce: string | null): Promise<void> {
+    const challenge = await this.web3LoginNonceRepository.findOne({
+      where: { nonce: String(nonce || '').trim() },
+    });
+
+    if (!challenge || challenge.consumedAt) {
+      throw new UnauthorizedException('Web3 nonce has already been used');
+    }
+
+    challenge.consumedAt = getRFC3339Timestamp();
+    await this.web3LoginNonceRepository.save(challenge);
   }
 
   private assertPasswordAuthenticatedAdmin(payload?: AdminJwtPayload): void {

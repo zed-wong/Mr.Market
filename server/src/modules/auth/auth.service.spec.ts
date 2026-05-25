@@ -18,6 +18,7 @@ import { createHash } from 'crypto';
 import { MIXIN_OAUTH_URL } from 'src/common/constants/constants';
 import { AdminAuthStateEntity } from 'src/common/entities/admin/admin-auth-state.entity';
 import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-passkey-credential.entity';
+import { Web3LoginNonceEntity } from 'src/common/entities/auth/web3-login-nonce.entity';
 import { getUserMe } from 'src/common/helpers/mixin/user';
 import { AdminAuditLogService } from 'src/modules/admin/system/admin-audit-log.service';
 
@@ -48,6 +49,11 @@ describe('AuthService', () => {
     findOne: jest.Mock;
     save: jest.Mock;
   };
+  let web3LoginNonceRepository: {
+    create: jest.Mock;
+    findOne: jest.Mock;
+    save: jest.Mock;
+  };
   let auditLogService: { record: jest.Mock };
   let configValues: Record<string, string | null>;
 
@@ -68,6 +74,11 @@ describe('AuthService', () => {
     };
     passkeyRepository = {
       find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
+      save: jest.fn(async (value) => value),
+    };
+    web3LoginNonceRepository = {
+      create: jest.fn((value) => value),
       findOne: jest.fn().mockResolvedValue(null),
       save: jest.fn(async (value) => value),
     };
@@ -112,6 +123,10 @@ describe('AuthService', () => {
         {
           provide: getRepositoryToken(AdminPasskeyCredentialEntity),
           useValue: passkeyRepository,
+        },
+        {
+          provide: getRepositoryToken(Web3LoginNonceEntity),
+          useValue: web3LoginNonceRepository,
         },
         {
           provide: AdminAuditLogService,
@@ -362,6 +377,125 @@ describe('AuthService', () => {
         { expiresIn: '7d' },
       );
       expect(result).toBe('passkey_token');
+    });
+  });
+
+  describe('web3 login nonce', () => {
+    const address = '0x1234567890abcdef1234567890abcdef12345678';
+    const normalizedAddress = address.toLowerCase();
+    const chainId = '1';
+    const buildMessage = (nonce: string) =>
+      [
+        'Mr.Market wants you to sign in with your Ethereum account:',
+        normalizedAddress,
+        '',
+        'Sign in to Mr.Market web3 market-making orders',
+        '',
+        'URI: https://mr.market/web3',
+        'Version: 1',
+        `Chain ID: ${chainId}`,
+        `Nonce: ${nonce}`,
+      ].join('\n');
+
+    it('issues and persists a server nonce for the requested wallet', async () => {
+      const result = await authService.getWeb3Nonce({
+        address,
+        chainId,
+      });
+
+      expect(result.nonce).toHaveLength(36);
+      expect(web3LoginNonceRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nonce: result.nonce,
+          address: normalizedAddress,
+          chainId,
+          consumedAt: null,
+          expiresAt: expect.any(String),
+        }),
+      );
+    });
+
+    it('requires an active issued nonce and consumes it on successful login', async () => {
+      const nonce = 'issued-nonce';
+      const challenge = {
+        nonce,
+        address: normalizedAddress,
+        chainId,
+        domain: 'Mr.Market',
+        statement: 'Sign in to Mr.Market web3 market-making orders',
+        uri: 'https://mr.market/web3',
+        issuedAt: new Date(Date.now() - 1000).toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        consumedAt: null,
+      };
+
+      web3LoginNonceRepository.findOne.mockResolvedValue(challenge);
+      jest.spyOn(jwtService, 'sign').mockReturnValue('web3-token');
+
+      const result = await authService.loginWeb3({
+        message: buildMessage(nonce),
+        signature: 'demo:signature',
+      });
+
+      expect(result.jwt).toBe('web3-token');
+      expect(result.address).toBe(normalizedAddress);
+      expect(web3LoginNonceRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nonce,
+          consumedAt: expect.any(String),
+        }),
+      );
+    });
+
+    it('rejects unknown, replayed, expired, and mismatched web3 nonces', async () => {
+      await expect(
+        authService.loginWeb3({
+          message: buildMessage('unknown-nonce'),
+          signature: 'demo:signature',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      web3LoginNonceRepository.findOne.mockResolvedValueOnce({
+        nonce: 'used-nonce',
+        address: normalizedAddress,
+        chainId,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        consumedAt: new Date().toISOString(),
+      });
+      await expect(
+        authService.loginWeb3({
+          message: buildMessage('used-nonce'),
+          signature: 'demo:signature',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      web3LoginNonceRepository.findOne.mockResolvedValueOnce({
+        nonce: 'expired-nonce',
+        address: normalizedAddress,
+        chainId,
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+        consumedAt: null,
+      });
+      await expect(
+        authService.loginWeb3({
+          message: buildMessage('expired-nonce'),
+          signature: 'demo:signature',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      web3LoginNonceRepository.findOne.mockResolvedValueOnce({
+        nonce: 'wrong-chain',
+        address: normalizedAddress,
+        chainId: '137',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        consumedAt: null,
+      });
+      await expect(
+        authService.loginWeb3({
+          message: buildMessage('wrong-chain'),
+          signature: 'demo:signature',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 
