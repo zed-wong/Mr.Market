@@ -442,7 +442,7 @@
         <!-- Payment Success Dialog -->
         <PaymentSuccessDialog
             isOpen={showSuccessDialog}
-            on:confirm={() => goto(`/market-making/orders/${successOrderId}`)}
+            on:confirm={() => goto(`/market-making/order/${successOrderId}`)}
         />
     {/if}
 {/await}

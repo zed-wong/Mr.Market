@@ -8,7 +8,7 @@
 
     const handleBack = () => {
         if (isHistoryPage) {
-            goto(`/market-making/orders/${$page.params.id}`, {
+            goto(`/market-making/order/${$page.params.id}`, {
                 replaceState: true,
                 keepFocus: true,
                 noScroll: true,

@@ -450,6 +450,6 @@
     isOpen={showSuccessDialog}
     on:confirm={() => {
         showDialog = false;
-        goto(`/market-making/orders/${successOrderId}`);
+        goto(`/market-making/order/${successOrderId}`);
     }}
 />

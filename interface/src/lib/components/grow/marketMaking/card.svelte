@@ -29,7 +29,7 @@
 <div class="flex flex-col rounded-xl border border-base-200 relative shadow-sm">
   <button
     class="flex flex-col bg-base-100 rounded-xl p-4 space-y-4"
-    on:click={() => goto(`/market-making/${data.orderId}`)}
+    on:click={() => goto(`/market-making/order/${data.orderId}`)}
   >
     <!-- Title -->
     <div class="flex justify-between items-center w-full">

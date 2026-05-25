@@ -18,7 +18,7 @@
                 {$_("fill_history")}
             </h3>
             <a
-                href={`/market-making/orders/${$page.params.id}/history`}
+                href={`/market-making/order/${$page.params.id}/history`}
                 class="text-xs font-bold text-blue-600 hover:text-blue-700"
                 >{$_("view_all")}</a
             >

@@ -52,9 +52,17 @@ export const getAllStrategyByUser = async (userId: string) => {
   }
 }
 
-export const getAllMarketMakingByUser = async (userId: string) => {
+const authHeaders = (): Record<string, string> => {
+  if (typeof localStorage === 'undefined') return {};
+  const token = localStorage.getItem('mixin-oauth');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+export const getAllMarketMakingByUser = async () => {
   try {
-    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/market-making/all?userId=${userId}`);
+    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/market-making/all`, {
+      headers: authHeaders(),
+    });
     return await handleResponse(response);
   } catch (error) {
     console.error('Error fetching all market making by user:', error);
@@ -63,7 +71,9 @@ export const getAllMarketMakingByUser = async (userId: string) => {
 
 export const getMarketMakingDetailsById = async (id: string) => {
   try {
-    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/market-making/${id}`);
+    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/market-making/${id}`, {
+      headers: authHeaders(),
+    });
     return await handleResponse(response);
   } catch (error) {
     console.error('Error fetching market making details by id:', error);
@@ -72,7 +82,9 @@ export const getMarketMakingDetailsById = async (id: string) => {
 
 export const getUserOrderMarketMakingById = async (id: string) => {
   try {
-    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/market-making/${id}`);
+    const response = await fetch(`${MRM_BACKEND_URL}/user-orders/market-making/${id}`, {
+      headers: authHeaders(),
+    });
     return await handleResponse(response);
   } catch (error) {
     console.error('Error fetching user order market making details by id:', error);

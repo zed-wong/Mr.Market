@@ -3,10 +3,10 @@
   import IntroButtons from "$lib/components/grow/marketMaking/initIntro/introButtons.svelte";
   import BasicStats from "$lib/components/grow/marketMaking/baseSection/basicHuFiStats.svelte";
   import Loading from "$lib/components/common/loading.svelte";
+  import Card from "$lib/components/grow/marketMaking/card.svelte";
 
   import { browser } from "$app/environment";
   import { page } from "$app/stores";
-  import { mixinConnected } from "$lib/stores/home";
   import { isFirstTimeMarketMaking } from "$lib/stores/market_making";
   import Bar from "$lib/components/grow/marketMaking/baseSection/bar.svelte";
   import BaseIntro from "$lib/components/grow/marketMaking/baseSection/baseIntro.svelte";
@@ -22,7 +22,12 @@
     }
   }
 
-  const noMarketMakingCreated = true;
+  const normalizeOrders = (raw: unknown): any[] => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray((raw as any).data)) return (raw as any).data;
+    return [];
+  };
 </script>
 
 <!-- If not connected, show start market making, button redirect to connect wallet -->
@@ -47,12 +52,23 @@
       />
 
       <Bar />
-      {#if noMarketMakingCreated}
-        <BaseIntro />
-      {:else}
-        <!-- Show created market making + create new btn -->
-        <slot />
-      {/if}
+
+      {#await $page.data.orders}
+        <div class="flex flex-col items-center justify-center py-12">
+          <Loading />
+        </div>
+      {:then ordersRaw}
+        {@const orders = normalizeOrders(ordersRaw)}
+        {#if orders.length === 0}
+          <BaseIntro />
+        {:else}
+          <div class="flex flex-col space-y-3 mt-2">
+            {#each orders as order (order.orderId)}
+              <Card data={order} />
+            {/each}
+          </div>
+        {/if}
+      {/await}
     </div>
   {/await}
 {/if}
