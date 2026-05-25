@@ -718,8 +718,7 @@ describe('StrategyService', () => {
       userId: '1',
       assetId: 'BTC',
       amount: '0.5',
-      idempotencyKey:
-        'mm-fill:client1-pureMarketMaking:ex-1:buy:0.5:base',
+      idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:0.5:base',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -728,8 +727,7 @@ describe('StrategyService', () => {
       userId: '1',
       assetId: 'USDT',
       amount: '-50',
-      idempotencyKey:
-        'mm-fill:client1-pureMarketMaking:ex-1:buy:0.5:quote',
+      idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:0.5:quote',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
@@ -930,15 +928,13 @@ describe('StrategyService', () => {
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        idempotencyKey:
-          'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
+        idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
     );
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
-        idempotencyKey:
-          'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
+        idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
     );
   });
@@ -990,8 +986,7 @@ describe('StrategyService', () => {
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        idempotencyKey:
-          'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
+        idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
     );
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
@@ -2984,8 +2979,8 @@ describe('StrategyService', () => {
     strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
       {
         freshness: {
-          status: 'soft_stale',
-          ageMs: 3000,
+          status: 'hard_stale',
+          ageMs: 11000,
           staleSoftMs: 2000,
           staleHardMs: 10000,
         },
@@ -2995,7 +2990,7 @@ describe('StrategyService', () => {
           windowMs: 60000,
           thresholdBps: null,
         },
-        unavailableReasons: ['soft_stale_order_book'],
+        unavailableReasons: ['hard_stale_order_book'],
         midPriceHistory: [],
         realizedVolatility: null,
         imbalance: null,
@@ -3027,6 +3022,99 @@ describe('StrategyService', () => {
       type: 'CANCEL_ORDER',
       mixinOrderId: 'open-buy-1',
     });
+  });
+
+  it('uses conservative PMM quoting instead of safety cancels on soft stale signals', async () => {
+    const buildQuotes = jest.fn().mockReturnValue([
+      {
+        layer: 1,
+        slotKey: 'layer-1-buy',
+        side: 'buy',
+        price: '99',
+        qty: '1',
+      },
+    ]);
+
+    (service as any).quoteExecutorManagerService = { buildQuotes };
+    exchangeOrderTrackerService.getActiveSlotOrders.mockReturnValue([
+      {
+        exchangeOrderId: 'open-buy-1',
+        side: 'buy',
+        price: '99',
+        qty: '1',
+        slotKey: 'layer-1-buy',
+        status: 'open',
+      },
+    ]);
+    exchangeOrderTrackerService.getLiveOrders.mockReturnValue([
+      {
+        exchangeOrderId: 'open-buy-1',
+        side: 'buy',
+        price: '99',
+        qty: '1',
+        slotKey: 'layer-1-buy',
+        status: 'open',
+      },
+    ]);
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
+      {
+        freshness: {
+          status: 'soft_stale',
+          ageMs: 3000,
+          staleSoftMs: 2000,
+          staleHardMs: 10000,
+        },
+        crash: {
+          crashed: false,
+          changeBps: null,
+          windowMs: 60000,
+          thresholdBps: null,
+        },
+        unavailableReasons: ['soft_stale_order_book'],
+        midPriceHistory: [],
+        realizedVolatility: null,
+        imbalance: null,
+      },
+    );
+
+    const actions = await service.buildPureMarketMakingActions(
+      'order-1-pureMarketMaking',
+      {
+        userId: 'user-1',
+        clientId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 10000,
+        numberOfLayers: 3,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        volBasedSpread: true,
+      },
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(actions).toEqual([]);
+    expect(buildQuotes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        numberOfLayers: 1,
+        bidSpread: 0.02,
+        askSpread: 0.02,
+      }),
+    );
+  });
+
+  it('does not read adaptive PMM signals only because stale timers are configured', () => {
+    expect(
+      (service as any).shouldReadAdaptivePmmSignals({
+        staleSoftMs: 2000,
+        staleHardMs: 10000,
+      }),
+    ).toBe(false);
   });
 
   it('cancels live PMM orders and skips creates when tracked order book is stale', async () => {
@@ -3327,6 +3415,83 @@ describe('StrategyService', () => {
     expect(
       (service as any).sessions.get('order-1-pureMarketMaking').cadenceMs,
     ).toBe(12000);
+  });
+
+  it('restores PMM cadence after rate-limit pressure clears', async () => {
+    await registerPooledSession({
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      cadenceMs: 12000,
+      params: {
+        userId: 'user-1',
+        clientId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+      },
+    });
+    const buildQuotes = jest.fn().mockReturnValue([]);
+
+    (service as any).quoteExecutorManagerService = { buildQuotes };
+    (service as any).runtimeObservationService = {
+      getPressure: jest.fn().mockReturnValue({
+        strategyKey: 'order-1-pureMarketMaking',
+        windowMs: 60000,
+        rejectCount: 0,
+        postOnlyRejectCount: 0,
+        rateLimitCount: 0,
+      }),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await service.buildPureMarketMakingActions(
+      'order-1-pureMarketMaking',
+      {
+        userId: 'user-1',
+        clientId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        rateLimitPressureThreshold: 1,
+      },
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(
+      (service as any).sessions.get('order-1-pureMarketMaking').cadenceMs,
+    ).toBe(1000);
+  });
+
+  it('clears adaptive PMM warmup state when removing a session', async () => {
+    (service as any).adaptivePmmWarmupStartedAtByStrategy.set(
+      'order-1-pureMarketMaking',
+      1000,
+    );
+    (service as any).adaptivePmmWarmupTicksByStrategy.set(
+      'order-1-pureMarketMaking',
+      3,
+    );
+
+    await (service as any).removeSession('order-1-pureMarketMaking');
+
+    expect(
+      (service as any).adaptivePmmWarmupStartedAtByStrategy.has(
+        'order-1-pureMarketMaking',
+      ),
+    ).toBe(false);
+    expect(
+      (service as any).adaptivePmmWarmupTicksByStrategy.has(
+        'order-1-pureMarketMaking',
+      ),
+    ).toBe(false);
   });
 
   it('stops PMM session when runtime rejects reach the configured threshold', async () => {

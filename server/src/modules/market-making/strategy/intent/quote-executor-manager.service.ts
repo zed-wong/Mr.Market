@@ -184,8 +184,8 @@ export class QuoteExecutorManagerService {
   private resolveSpreadFloor(input: BuildQuotesInput): BigNumber {
     const bid = new BigNumber(input.bidSpread || 0);
     const ask = new BigNumber(input.askSpread || 0);
-    const candidates = [bid, ask].filter((value) =>
-      value.isFinite() && value.isGreaterThan(0),
+    const candidates = [bid, ask].filter(
+      (value) => value.isFinite() && value.isGreaterThan(0),
     );
 
     if (candidates.length === 0) {

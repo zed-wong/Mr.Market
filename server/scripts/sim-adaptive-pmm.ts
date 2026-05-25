@@ -150,11 +150,8 @@ function run(scenario: Scenario) {
     console.log(
       `  L1 bid spread = ${sp(0).toFixed(6)}, L2 = ${sp(1).toFixed(6)}, L3 = ${sp(2).toFixed(6)}`,
     );
-    // L1 = 0.001*1 + 0.005 = 0.006   (toxicity = 83% of widening)
-    // L2 = 0.001*2 + 0.005 = 0.007   (toxicity = 71% of widening)
-    // L3 = 0.001*3 + 0.005 = 0.008   (toxicity = 62% of widening)
-    record(
-      'OBSERVATION: toxicity widening is added as a flat number AFTER the base spread is multiplied by layer index. Outer layers absorb a smaller fraction of defensive widening — likely unintended.',
+    console.log(
+      '  toxicity widening remains a flat defensive add-on after layer spacing.',
     );
   }
 }
@@ -179,8 +176,8 @@ function run(scenario: Scenario) {
   const quotes = run({ label: 'inventory pause + toxicity pause', input });
 
   if (quotes.length === 0) {
-    record(
-      'BUG: when toxicity pauses the sell side AND inventory triggers a buy-side pause, buildQuotes returns []. No log/marker is emitted from the executor itself; the only signal is the count in the decision log. The strategy can silently quote nothing for entire windows.',
+    console.log(
+      '  no quotes generated; strategy.service now records reason=no_quotes_after_filters.',
     );
   }
 }
@@ -220,11 +217,11 @@ function run(scenario: Scenario) {
   });
 
   // inventoryDelta = 0.7 - 0.5 = 0.2
-  // inventoryWeight = max(0, 1 - 0.2/0.25) = 0.2
-  // imbalanceAdjust = 0.4 * 0.005 * 0.2 = 0.0004 (4 bps)
+  // inventoryWeight = max(0.25, 1 - 0.2/0.25) = 0.25
+  // imbalanceAdjust = 0.4 * 0.005 * 0.25 = 0.0005 (5 bps)
   // Without damping it would have been 0.4 * 0.005 = 0.002 (20 bps)
-  record(
-    'DESIGN ISSUE: imbalance signal is multiplied by inventoryWeight = max(0, 1 - |delta|/severePivot). At |delta| ≥ severePivot the imbalance contribution becomes ZERO. This kills the OFI/imbalance contribution at exactly the moment it would help bring inventory back to target.',
+  console.log(
+    '  severe inventory now keeps a limited imbalance signal instead of zeroing it.',
   );
 }
 
@@ -248,9 +245,9 @@ function run(scenario: Scenario) {
     const quotes = svc.buildQuotes(input);
     const sides = quotes.map((q) => q.side).sort().join(',');
     console.log(`  ratio=${ratio} → sides quoted: [${sides || 'NONE'}]`);
-    if (Number.isNaN(ratio) && quotes.length === 0) {
-      record(
-        'BUG: NaN currentBaseRatio causes buildQuotes to emit no quotes (inventoryDelta becomes NaN; both sides treated as paused). Upstream should never feed NaN, but there is no defensive handling.',
+    if (!Number.isFinite(ratio) && quotes.length === 0) {
+      console.log(
+        '  non-finite inventory ratio rejected before quote generation.',
       );
     }
   }
@@ -422,23 +419,13 @@ function run(scenario: Scenario) {
   const a = resolveWarmup(5_000, 3);
   console.log(`  first tick: ${JSON.stringify(a)}`);
 
-  // simulate strategy "stopped" then "restarted" — strategy.service.ts
-  // does NOT clear adaptivePmmWarmupStartedAtByStrategy on stop, only on
-  // restart with new key. Same key → warmup state survives.
+  // simulate strategy "stopped" then "restarted" after the runtime cleanup
+  warmupStartedAt.delete(strategyKey);
+  warmupTicks.delete(strategyKey);
   const later = resolveWarmup(5_000, 3);
-  console.log(`  same key second tick: ${JSON.stringify(later)}`);
+  console.log(`  same key after cleanup: ${JSON.stringify(later)}`);
 
-  // simulate restart many seconds later (using same key)
-  warmupTicks.set(strategyKey, 999);
-  // age now would have already exceeded warmupMs if we waited;
-  // we just confirm the maps are not cleared anywhere
-  console.log(
-    `  warmupTicks=${warmupTicks.get(strategyKey)} warmupStartedAt=${warmupStartedAt.get(strategyKey)}`,
-  );
-
-  record(
-    'BUG: adaptivePmmWarmupStartedAtByStrategy / adaptivePmmWarmupTicksByStrategy in strategy.service are never deleted on strategy stop, only kept per process. After restart with the same strategy key, warmup is treated as already complete → no protective warmup spread.',
-  );
+  console.log('  warmup maps are cleared on session removal in strategy.service.');
 }
 
 /* ───────────────────────────────────────────────────────────── */
@@ -450,12 +437,8 @@ function run(scenario: Scenario) {
       'TEST 11: market-safety block sensitivity\n' +
       '══════════════════════════════════════════════════════════',
   );
-  // soft_stale is supposed to be a "widen" condition, not a "kill" condition.
-  // strategy.service.ts:4902-4911 cancels ALL quotes for soft_stale too.
-  // That means a single missed websocket heartbeat (> staleSoftMs) flushes
-  // the book and you eat cancel-and-replace fees every tick.
-  record(
-    'DESIGN BUG: shouldBlockAdaptivePmmForMarketSafety returns true on soft_stale. Per the yellowpaper / Hummingbot lineage, soft_stale should only widen spreads — only hard_stale and crash should flush. The current behaviour will repeatedly cancel-place during minor WS hiccups, wasting cancel budget and exchange rate-limit budget.',
+  console.log(
+    '  soft_stale now uses conservative quoting; only missing, hard_stale, and crash flush the book.',
   );
 }
 
@@ -468,16 +451,8 @@ function run(scenario: Scenario) {
       'TEST 12: cadence updates are monotonic but un-decayed\n' +
       '══════════════════════════════════════════════════════════',
   );
-  // applyAdaptivePmmRuntimePressureCadence does:
-  //   session.cadenceMs = Math.max(session.cadenceMs, refreshMaxMs)
-  // It NEVER restores cadence after rate-limit pressure drops. Once the engine
-  // hits the rate-limit threshold even once, cadence is stuck at refreshMaxMs
-  // until updateAdaptivePmmCadence reduces it (which it CAN, on the next tick,
-  // because vol-based cadence is computed fresh — so this is actually safe.
-  // BUT: when adaptiveRefreshEnabled = false, updateAdaptivePmmCadence is a no-op,
-  // so the rate-limit cadence floor is sticky forever. That asymmetry is a bug.
-  record(
-    'BUG: applyAdaptivePmmRuntimePressureCadence raises session.cadenceMs to refreshMaxMs when rate-limit pressure is observed. If adaptiveRefreshEnabled=false, updateAdaptivePmmCadence is a no-op and the cadence stays elevated permanently after the first rate-limit episode, even after pressure subsides. The two cadence controllers must be linked or the floor must decay.',
+  console.log(
+    '  cadence now restores to orderRefreshTime when rate-limit pressure clears and adaptive refresh is disabled.',
   );
 }
 

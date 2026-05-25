@@ -3990,9 +3990,7 @@ export class StrategyService
         strategyKey,
         Number(params.runtimeObservationWindowMs || 60000),
       );
-      const maxConsecutiveRejects = Number(
-        params.maxConsecutiveRejects || 100,
-      );
+      const maxConsecutiveRejects = Number(params.maxConsecutiveRejects || 100);
 
       if (
         Number.isFinite(maxConsecutiveRejects) &&
@@ -4242,13 +4240,19 @@ export class StrategyService
       params.accountLabel,
       params.marketMakingOrderId,
     );
-    const effectiveNumberOfLayers = warmupState.active
-      ? 1
-      : await this.resolveAdaptivePmmLayerCountFromBudget(
-          params,
-          priceSource,
-          availableBalances,
-        );
+    const marketDataSoftStale =
+      signalSnapshot?.freshness.status === 'soft_stale';
+    const softStaleSpreadWiden = marketDataSoftStale
+      ? Math.max(Number(params.bidSpread || 0), Number(params.askSpread || 0))
+      : 0;
+    const effectiveNumberOfLayers =
+      warmupState.active || marketDataSoftStale
+        ? 1
+        : await this.resolveAdaptivePmmLayerCountFromBudget(
+            params,
+            priceSource,
+            availableBalances,
+          );
     const staleCancellationActions = this.buildStaleOrderActions(
       strategyKey,
       params,
@@ -4274,8 +4278,10 @@ export class StrategyService
       ? this.quoteExecutorManagerService.buildQuotes({
           midPrice: priceSource.toFixed(),
           numberOfLayers: effectiveNumberOfLayers,
-          bidSpread: warmupState.bidSpread + runtimePressureWiden,
-          askSpread: warmupState.askSpread + runtimePressureWiden,
+          bidSpread:
+            warmupState.bidSpread + runtimePressureWiden + softStaleSpreadWiden,
+          askSpread:
+            warmupState.askSpread + runtimePressureWiden + softStaleSpreadWiden,
           orderAmount: warmupState.orderAmount,
           amountChangePerLayer: params.amountChangePerLayer,
           amountChangeType: params.amountChangeType,
@@ -4336,6 +4342,7 @@ export class StrategyService
       sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
       warmupActive: warmupState.active,
       warmupReason: warmupState.reason,
+      softStale: marketDataSoftStale,
       buyRecoveryActive: sideRecoveryState.buyActive,
       sellRecoveryActive: sideRecoveryState.sellActive,
       runtimePressure,
@@ -4361,6 +4368,7 @@ export class StrategyService
         sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
         warmupActive: warmupState.active,
         warmupReason: warmupState.reason,
+        softStale: marketDataSoftStale,
         buyRecoveryActive: sideRecoveryState.buyActive,
         sellRecoveryActive: sideRecoveryState.sellActive,
         runtimePressure,
@@ -4759,11 +4767,16 @@ export class StrategyService
       1,
       BigNumber.min(
         configuredLayers,
-        sideBudget.dividedBy(perLayerBudget).integerValue(BigNumber.ROUND_FLOOR),
+        sideBudget
+          .dividedBy(perLayerBudget)
+          .integerValue(BigNumber.ROUND_FLOOR),
       ),
     );
 
-    if (!affordableLayers.isFinite() || affordableLayers.isLessThanOrEqualTo(1)) {
+    if (
+      !affordableLayers.isFinite() ||
+      affordableLayers.isLessThanOrEqualTo(1)
+    ) {
       return 1;
     }
 
@@ -4778,8 +4791,6 @@ export class StrategyService
       Number(params.imbalanceSkewFactor || 0) > 0 ||
       Boolean(params.adaptiveRefreshEnabled) ||
       Boolean(params.adaptiveSizeEnabled) ||
-      Number(params.staleSoftMs || 0) > 0 ||
-      Number(params.staleHardMs || 0) > 0 ||
       Number(params.marketCrashBps || 0) > 0 ||
       Number(params.marketCrashWindowMs || 0) > 0 ||
       Number(params.warmupTicks || 0) > 0 ||
@@ -4911,22 +4922,18 @@ export class StrategyService
     params: PureMarketMakingStrategyDto,
     pressure: StrategyRuntimePressureSnapshot | null,
   ): void {
-    if (!pressure) {
-      return;
-    }
-
     const threshold = Math.max(
       0,
       Math.floor(Number(params.rateLimitPressureThreshold || 0)),
     );
-
-    if (threshold <= 0 || pressure.rateLimitCount < threshold) {
-      return;
-    }
-
     const session = this.sessions.get(strategyKey);
 
     if (!session) {
+      return;
+    }
+
+    if (!pressure || threshold <= 0 || pressure.rateLimitCount < threshold) {
+      this.restoreAdaptivePmmRuntimePressureCadence(params, session);
       return;
     }
 
@@ -4937,6 +4944,30 @@ export class StrategyService
       ),
     );
     this.sessions.set(strategyKey, session);
+  }
+
+  private restoreAdaptivePmmRuntimePressureCadence(
+    params: PureMarketMakingStrategyDto,
+    session: StrategyRuntimeSession,
+  ): void {
+    if (params.adaptiveRefreshEnabled) {
+      return;
+    }
+
+    const baseCadenceMs = Math.max(
+      1_000,
+      Number(params.orderRefreshTime || session.cadenceMs),
+    );
+
+    if (
+      !Number.isFinite(baseCadenceMs) ||
+      session.cadenceMs === baseCadenceMs
+    ) {
+      return;
+    }
+
+    session.cadenceMs = baseCadenceMs;
+    this.sessions.set(session.strategyKey, session);
   }
 
   private resolveAdaptivePmmWarmupSizeRatio(
@@ -5048,7 +5079,6 @@ export class StrategyService
     return (
       signalSnapshot.crash.crashed ||
       signalSnapshot.freshness.status === 'missing' ||
-      signalSnapshot.freshness.status === 'soft_stale' ||
       signalSnapshot.freshness.status === 'hard_stale'
     );
   }
@@ -5126,6 +5156,7 @@ export class StrategyService
       sellPaused?: boolean;
       warmupActive?: boolean;
       warmupReason?: string | null;
+      softStale?: boolean;
       buyRecoveryActive?: boolean;
       sellRecoveryActive?: boolean;
       runtimePressure?: StrategyRuntimePressureSnapshot | null;
@@ -5162,6 +5193,7 @@ export class StrategyService
       sellPaused?: boolean;
       warmupActive?: boolean;
       warmupReason?: string | null;
+      softStale?: boolean;
       buyRecoveryActive?: boolean;
       sellRecoveryActive?: boolean;
       runtimePressure?: StrategyRuntimePressureSnapshot | null;
@@ -5194,6 +5226,7 @@ export class StrategyService
       sellPaused: Boolean(snapshot.sellPaused),
       warmupActive: Boolean(snapshot.warmupActive),
       warmupReason: snapshot.warmupReason || null,
+      softStale: Boolean(snapshot.softStale),
       buyRecoveryActive: Boolean(snapshot.buyRecoveryActive),
       sellRecoveryActive: Boolean(snapshot.sellRecoveryActive),
       runtimeRejectCount: snapshot.runtimePressure?.rejectCount || 0,
@@ -6029,6 +6062,8 @@ export class StrategyService
 
     this.sessions.delete(strategyKey);
     this.slotCancelCooldownByStrategy.delete(strategyKey);
+    this.adaptivePmmWarmupStartedAtByStrategy.delete(strategyKey);
+    this.adaptivePmmWarmupTicksByStrategy.delete(strategyKey);
   }
 
   private async cancelTrackedOrdersForStrategy(
@@ -6887,7 +6922,9 @@ export class StrategyService
 
     if (!eventKey) {
       this.logger.warn(
-        `Skipping fill ledger update for strategyKey=${session.strategyKey}: missing canonical fill identity (need exchangeOrderId/clientOrderId AND cumulativeQty). exchangeOrderId=${
+        `Skipping fill ledger update for strategyKey=${
+          session.strategyKey
+        }: missing canonical fill identity (need exchangeOrderId/clientOrderId AND cumulativeQty). exchangeOrderId=${
           fill.exchangeOrderId || ''
         } clientOrderId=${fill.clientOrderId || ''} cumulativeQty=${
           fill.cumulativeQty || ''
@@ -7808,9 +7845,7 @@ export class StrategyService
     }
 
     const consecutiveRejects = session.consecutiveExchangeRejects || 0;
-    const maxConsecutiveRejects = Number(
-      params.maxConsecutiveRejects || 100,
-    );
+    const maxConsecutiveRejects = Number(params.maxConsecutiveRejects || 100);
 
     if (
       Number.isFinite(maxConsecutiveRejects) &&
