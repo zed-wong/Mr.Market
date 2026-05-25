@@ -48,6 +48,7 @@ type QuoteLevel = {
 @Injectable()
 export class QuoteExecutorManagerService {
   private readonly defaultMaxAdaptiveSpread = new BigNumber(0.95);
+  private readonly minimumImbalanceInventoryWeight = new BigNumber(0.25);
 
   buildQuotes(input: BuildQuotesInput): QuoteLevel[] {
     const mid = new BigNumber(input.midPrice);
@@ -89,14 +90,13 @@ export class QuoteExecutorManagerService {
         }
       }
 
-      let bidSpread = this.applyVolatilitySpread(
-        input.bidSpread,
-        input,
-      ).multipliedBy(layer);
-      let askSpread = this.applyVolatilitySpread(
-        input.askSpread,
-        input,
-      ).multipliedBy(layer);
+      const volatilitySpread = this.calculateVolatilitySpreadAdjustment(input);
+      let bidSpread = new BigNumber(input.bidSpread)
+        .multipliedBy(layer)
+        .plus(volatilitySpread);
+      let askSpread = new BigNumber(input.askSpread)
+        .multipliedBy(layer)
+        .plus(volatilitySpread);
       const buyToxicity = this.calculateToxicityAdjustment('buy', input);
       const sellToxicity = this.calculateToxicityAdjustment('sell', input);
       const buyRecovery = this.resolveSideRecovery('buy', input);
@@ -199,14 +199,11 @@ export class QuoteExecutorManagerService {
     return value.isFinite() && value.isGreaterThan(0);
   }
 
-  private applyVolatilitySpread(
-    baseSpread: number,
+  private calculateVolatilitySpreadAdjustment(
     input: BuildQuotesInput,
   ): BigNumber {
-    const spread = new BigNumber(baseSpread);
-
     if (!input.volBasedSpread) {
-      return spread;
+      return new BigNumber(0);
     }
 
     const sigma = new BigNumber(input.realizedVolatility || 0);
@@ -218,10 +215,10 @@ export class QuoteExecutorManagerService {
       !multiplier.isFinite() ||
       multiplier.isLessThanOrEqualTo(0)
     ) {
-      return spread;
+      return new BigNumber(0);
     }
 
-    return spread.plus(sigma.multipliedBy(multiplier));
+    return sigma.multipliedBy(multiplier);
   }
 
   private resolveLayerCount(input: BuildQuotesInput): number {
@@ -236,7 +233,6 @@ export class QuoteExecutorManagerService {
     const sigma = new BigNumber(input.realizedVolatility || 0);
 
     if (
-      !input.adaptiveSizeEnabled ||
       maxLayersInVol <= 0 ||
       !sigma.isFinite() ||
       sigma.isLessThanOrEqualTo(0)
@@ -480,7 +476,7 @@ export class QuoteExecutorManagerService {
     }
 
     return BigNumber.max(
-      0,
+      this.minimumImbalanceInventoryWeight,
       new BigNumber(1).minus(inventoryDelta.dividedBy(severePivot)),
     );
   }

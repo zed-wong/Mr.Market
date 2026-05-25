@@ -2829,6 +2829,47 @@ describe('StrategyService', () => {
     );
   });
 
+  it('reduces PMM layers gradually from side budget capacity', async () => {
+    setCachedBalances({
+      default: { BTC: 2.5, USDT: 250 },
+      maker: { BTC: 10, USDT: 1000 },
+      taker: { BTC: 10, USDT: 1000 },
+    });
+    (service as any).quoteExecutorManagerService = {
+      buildQuotes: jest.fn().mockReturnValue([]),
+    };
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+
+    await service.buildPureMarketMakingActions(
+      'order-1-pureMarketMaking',
+      {
+        userId: 'user-1',
+        clientId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 4,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+        adaptiveSizeEnabled: true,
+        layeringMinBudgetMultiple: 10,
+      },
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(
+      (service as any).quoteExecutorManagerService.buildQuotes,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        numberOfLayers: 2,
+      }),
+    );
+  });
+
   it('treats quantity drift as outside PMM refresh tolerance', () => {
     const withinTolerance = (service as any).isQuoteWithinTolerance(
       {

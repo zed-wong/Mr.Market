@@ -4751,16 +4751,23 @@ export class StrategyService
       return configuredLayers;
     }
 
-    const requiredBudget = minOrderNotional.multipliedBy(multiple);
+    const perLayerBudget = minOrderNotional.multipliedBy(multiple);
     const buyBudget = availableBalances.quote;
     const sellBudget = availableBalances.base.multipliedBy(referencePrice);
     const sideBudget = BigNumber.min(buyBudget, sellBudget);
+    const affordableLayers = BigNumber.max(
+      1,
+      BigNumber.min(
+        configuredLayers,
+        sideBudget.dividedBy(perLayerBudget).integerValue(BigNumber.ROUND_FLOOR),
+      ),
+    );
 
-    if (sideBudget.isLessThan(requiredBudget)) {
+    if (!affordableLayers.isFinite() || affordableLayers.isLessThanOrEqualTo(1)) {
       return 1;
     }
 
-    return configuredLayers;
+    return affordableLayers.toNumber();
   }
 
   private shouldReadAdaptivePmmSignals(

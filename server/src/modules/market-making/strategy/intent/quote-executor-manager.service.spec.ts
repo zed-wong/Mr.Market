@@ -78,6 +78,38 @@ describe('QuoteExecutorManagerService', () => {
     expect(quotes.find((quote) => quote.side === 'sell')?.price).toBe('105');
   });
 
+  it('adds volatility widening once instead of multiplying it by layer', () => {
+    const service = new QuoteExecutorManagerService();
+
+    const quotes = service.buildQuotes({
+      midPrice: '100',
+      numberOfLayers: 3,
+      bidSpread: 0.001,
+      askSpread: 0.001,
+      orderAmount: '1',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      inventorySkewFactor: 0,
+      inventoryTargetBaseRatio: 0.5,
+      currentBaseRatio: 0.5,
+      makerHeavyMode: false,
+      makerHeavyBiasBps: 0,
+      volBasedSpread: true,
+      realizedVolatility: 0.005,
+      spreadSigmaMultiplier: 1,
+    });
+
+    expect(quotes.find((quote) => quote.slotKey === 'layer-1-buy')?.price).toBe(
+      '99.4',
+    );
+    expect(quotes.find((quote) => quote.slotKey === 'layer-2-buy')?.price).toBe(
+      '99.3',
+    );
+    expect(quotes.find((quote) => quote.slotKey === 'layer-3-buy')?.price).toBe(
+      '99.2',
+    );
+  });
+
   it('keeps base spreads when volatility sample is unavailable', () => {
     const service = new QuoteExecutorManagerService();
 
@@ -177,7 +209,7 @@ describe('QuoteExecutorManagerService', () => {
     expect(quotes.find((quote) => quote.side === 'sell')?.price).toBe('101.5');
   });
 
-  it('suppresses imbalance skew when inventory deviation is severe', () => {
+  it('keeps a limited imbalance signal when inventory deviation is severe', () => {
     const service = new QuoteExecutorManagerService();
 
     const quotes = service.buildQuotes({
@@ -198,8 +230,10 @@ describe('QuoteExecutorManagerService', () => {
       inventorySeverePivot: 0.3,
     });
 
-    expect(quotes.find((quote) => quote.side === 'buy')?.price).toBe('99');
-    expect(quotes.find((quote) => quote.side === 'sell')?.price).toBe('101');
+    expect(quotes.find((quote) => quote.side === 'buy')?.price).toBe('98.875');
+    expect(quotes.find((quote) => quote.side === 'sell')?.price).toBe(
+      '100.875',
+    );
   });
 
   it('reduces quote sizes when volatility is active', () => {
@@ -317,6 +351,33 @@ describe('QuoteExecutorManagerService', () => {
       makerHeavyMode: false,
       makerHeavyBiasBps: 0,
       adaptiveSizeEnabled: true,
+      realizedVolatility: 0.01,
+      maxLayersInVol: 1,
+    });
+
+    expect(quotes.map((quote) => quote.slotKey)).toEqual([
+      'layer-1-buy',
+      'layer-1-sell',
+    ]);
+  });
+
+  it('caps layers in volatility even when adaptive sizing is disabled', () => {
+    const service = new QuoteExecutorManagerService();
+
+    const quotes = service.buildQuotes({
+      midPrice: '100',
+      numberOfLayers: 3,
+      bidSpread: 0.01,
+      askSpread: 0.01,
+      orderAmount: '1',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      inventorySkewFactor: 0,
+      inventoryTargetBaseRatio: 0.5,
+      currentBaseRatio: 0.5,
+      makerHeavyMode: false,
+      makerHeavyBiasBps: 0,
+      adaptiveSizeEnabled: false,
       realizedVolatility: 0.01,
       maxLayersInVol: 1,
     });
