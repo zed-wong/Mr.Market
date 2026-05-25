@@ -11,7 +11,9 @@ import {
   solana,
   type AppKitNetwork,
 } from '@reown/appkit/networks';
+import { get } from 'svelte/store';
 import { getReownProjectId } from '../constants';
+import { darkTheme } from '$lib/stores/theme';
 
 let appKitInstance: ReturnType<typeof createAppKit> | null = null;
 let wagmiAdapter: WagmiAdapter | null = null;
@@ -59,7 +61,7 @@ export const initAppKit = () => {
       email: false,
       socials: false,
     },
-    themeMode: 'light',
+    themeMode: get(darkTheme) ? 'dark' : 'light',
   });
 
   return appKitInstance;
