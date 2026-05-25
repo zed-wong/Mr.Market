@@ -1,5 +1,10 @@
 # Execution Flow Changelog
 
+## 2026-05-25
+
+- Start implementing `docs/plans/one-time-setup-wizard.md`: add server setup state persistence/endpoints/middleware and replace the admin `/setup` readiness dashboard with a pre-auth setup wizard that configures password, exchange/API key steps, optional env/config writes, seed status, completion, sidebar hiding, and dashboard continuation prompt.
+- Move setup-entered env-style config into `SetupConfigEntity`: setup now stores admin password as a hash plus Mixin/Web3/CoinGecko/Discord/Reward values in DB-backed setup config, encrypting sensitive values where an encryption key is available and applying values to runtime config instead of persisting setup values back to `.env`.
+
 ## 2026-05-22
 
 - Fix PMM executable quote checks to use order-scoped ledger available balances when `marketMakingOrderId` is present, and keep PMM spread floors/trading rules tied to ccxt market maker/taker fee data without exchange-specific overrides.

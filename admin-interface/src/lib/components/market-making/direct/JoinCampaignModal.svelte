@@ -2,10 +2,6 @@
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
     import { getApiKeyUseReadiness } from "$lib/helpers/admin/api-key-readiness";
-    import {
-        filterReadableApiKeys,
-        getBlockedDirectApiKeyUseViews,
-    } from "$lib/helpers/market-making/direct/api-key-filter";
     import { formatCampaignType } from "$lib/helpers/market-making/direct/helpers";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
 
@@ -30,14 +26,16 @@
     $: exchange = String(
         campaign.exchange_name || campaign.exchange || $_("admin_direct_mm_na"),
     );
-    $: campaignExchange =
-        exchange === $_("admin_direct_mm_na") ? "" : exchange;
-    $: readOnlyKeys = filterReadableApiKeys(apiKeys, campaignExchange);
-    $: blockedReadKeyViews = getBlockedDirectApiKeyUseViews(
-        apiKeys,
-        campaignExchange,
-        "read",
-    );
+    $: readOnlyKeys = apiKeys.filter((key) => key.permissions === "read");
+    $: if (
+        show &&
+        readOnlyKeys.length > 0 &&
+        !readOnlyKeys.some(
+            (key) => String(key.key_id) === String(joinCampaignApiKeyId),
+        )
+    ) {
+        joinCampaignApiKeyId = String(readOnlyKeys[0].key_id);
+    }
 
     function statusColor(s: string): string {
         switch (s.toLowerCase()) {
@@ -214,34 +212,6 @@
                             <span class="mt-1 text-xs text-warning">
                                 {$_("no_read_only_keys_hint")}
                             </span>
-                        {/if}
-                        {#if blockedReadKeyViews.length > 0}
-                            <div class="mt-3 rounded-xl border border-base-300 bg-base-100 p-3">
-                                <span class="text-xs font-semibold text-base-content/60 capitalize">
-                                    blocked API keys
-                                </span>
-                                <div class="mt-2 flex flex-col gap-2">
-                                    {#each blockedReadKeyViews as view (view.key.key_id)}
-                                        <div class="flex items-start justify-between gap-3">
-                                            <span class="min-w-0 text-xs text-base-content/70">
-                                                {view.key.name} · {view.key.exchange}
-                                            </span>
-                                            <span
-                                                class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {view.tone}"
-                                                title={view.description}
-                                            >
-                                                {view.label}
-                                            </span>
-                                        </div>
-                                    {/each}
-                                </div>
-                                <a
-                                    href="/system/api-keys"
-                                    class="btn btn-ghost btn-xs mt-3 rounded-full capitalize"
-                                >
-                                    manage API keys
-                                </a>
-                            </div>
                         {/if}
                     </label>
                 </div>

@@ -9,6 +9,7 @@
   import { initi18n } from '../i18n/i18n';
   import { ADMIN_LIGHT_THEME } from '$lib/theme/themes';
   import { checkSession, logout } from '$lib/helpers/api/auth';
+  import { fetchSetupStatus } from '$lib/helpers/api/setup';
   import { getAuthLayoutState } from '$lib/helpers/admin/auth-layout-state';
   import {
     correct,
@@ -16,6 +17,7 @@
     submitted,
     showSessionExpired,
   } from '$lib/stores/auth';
+  import { setupStatus } from '$lib/stores/setup';
   import Sidebar from '$lib/components/shell/Sidebar.svelte';
   import TopBar from '$lib/components/shell/TopBar.svelte';
   import SessionExpiredDialog from '$lib/components/shell/SessionExpiredDialog.svelte';
@@ -44,6 +46,15 @@
 
   const bootstrap = async () => {
     try {
+      const status = await fetchSetupStatus();
+      setupStatus.set(status);
+
+      if (!status.initialized) {
+        correct.set(false);
+        checked.set(true);
+        return;
+      }
+
       const session = await checkSession();
       if (session?.authenticated) {
         correct.set(true);
@@ -54,6 +65,7 @@
       }
     } catch (err) {
       console.warn('[admin-interface] session bootstrap failed:', err);
+      setupStatus.set(null);
       correct.set(false);
       checked.set(true);
     } finally {
@@ -79,6 +91,14 @@
   });
 
   $effect(() => {
+    if (bootstrapped && $setupStatus && !$setupStatus.initialized && pathname !== '/setup') {
+      goto('/setup');
+      return;
+    }
+    if (bootstrapped && $setupStatus?.completedAt && pathname === '/setup') {
+      goto('/');
+      return;
+    }
     if (authLayoutState === 'auth-blocked') {
       goto('/login');
     }
@@ -111,6 +131,8 @@
   </div>
 {:else if authLayoutState === 'login'}
   {@render children?.()}
+{:else if authLayoutState === 'setup'}
+  {@render children?.()}
 {:else if authLayoutState === 'auth-blocked'}
   <div
     class="flex min-h-screen items-center justify-center bg-base-100 text-base-content"
@@ -125,6 +147,7 @@
     <div class="flex h-screen overflow-hidden bg-base-100">
       <Sidebar
         open={sidebarOpen}
+        setupCompleted={Boolean($setupStatus?.completedAt)}
         onClose={() => (sidebarOpen = false)}
         onLogout={handleLogout}
       />

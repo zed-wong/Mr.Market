@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getAuthLayoutState, isLoginRoute } from './auth-layout-state';
+import { getAuthLayoutState, isLoginRoute, isSetupRoute } from './auth-layout-state';
 
 const protectedRoutes = [
   '/',
@@ -39,6 +39,19 @@ describe('auth layout state', () => {
         authenticated: false,
       }),
     ).toBe('login');
+  });
+
+  it('keeps setup routes renderable before authentication', () => {
+    expect(isSetupRoute('/setup')).toBe(true);
+    expect(isSetupRoute('/setup/review')).toBe(true);
+    expect(
+      getAuthLayoutState({
+        pathname: '/setup',
+        i18nReady: true,
+        bootstrapped: true,
+        authenticated: false,
+      }),
+    ).toBe('setup');
   });
 
   it('renders authenticated protected routes after bootstrap', () => {

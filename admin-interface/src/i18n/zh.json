@@ -686,7 +686,7 @@
   "admin_strategy_disable": "禁用策略定义",
   "admin_strategy_enable": "启用策略定义",
   "exit_admin_confirm": "退出管理员模式",
-  "no_read_only_keys_hint": "当前活动交易所没有 ready 且具备 read access 的 API 密钥。",
+  "no_read_only_keys_hint": "没有可用的只读 API 密钥。加入活动只能使用只读 API 密钥。",
   "read_only": "Read only",
   "read_trade": "Read + Trade",
   "delete_selected": "删除所选项",

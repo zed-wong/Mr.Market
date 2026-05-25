@@ -129,7 +129,7 @@ export function getDirectOrderActionAvailability(
   const canStop =
     !isPersistedStopped &&
     !isPersistedFailed &&
-    ["active", "created", "gone", "running", "stale"].includes(effectiveRuntimeState);
+    ["active", "created", "failed", "gone", "running", "stale"].includes(effectiveRuntimeState);
 
   return {
     canStop,

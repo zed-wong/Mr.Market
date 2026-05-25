@@ -6,6 +6,7 @@ import {
   buildDirectOrderExchangeOptions,
   filterExecutableApiKeys,
   filterReadableApiKeys,
+  filterReadOnlyApiKeys,
   getBlockedDirectApiKeyUseViews,
 } from './api-key-filter';
 
@@ -137,6 +138,18 @@ describe('filterExecutableApiKeys', () => {
     expect(filterReadableApiKeys(apiKeys, 'binance').map((key) => key.key_id)).toEqual([
       'read-binance',
       'trade-binance',
+    ]);
+  });
+
+  it('keeps only read-only keys for campaign joins', () => {
+    expect(filterReadOnlyApiKeys(apiKeys, 'Binance').map((key) => key.key_id)).toEqual([
+      'read-binance',
+    ]);
+  });
+
+  it('does not filter out read-only keys when campaign exchange is unavailable placeholder', () => {
+    expect(filterReadOnlyApiKeys(apiKeys, '—').map((key) => key.key_id)).toEqual([
+      'read-binance',
     ]);
   });
 });

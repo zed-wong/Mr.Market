@@ -8,11 +8,12 @@
 
   interface Props {
     open: boolean;
+    setupCompleted?: boolean;
     onClose: () => void;
     onLogout: () => void;
   }
 
-  let { open, onClose, onLogout }: Props = $props();
+  let { open, setupCompleted = false, onClose, onLogout }: Props = $props();
 
   const closeOnMobile = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
@@ -26,6 +27,9 @@
   };
 
   let pathname = $derived($page.url.pathname.replace(/\/+$/, '') || '/');
+  let visibleNavItems = $derived(
+    setupCompleted ? NAV_ITEMS.filter((item) => item.key !== 'setup') : NAV_ITEMS,
+  );
 
   const iconName = (key: string) => {
     if (key === 'overview') return 'dashboard';
@@ -84,7 +88,7 @@
         <span class="eyebrow">{$_('menu')}</span>
       </div>
       <ul class="space-y-4">
-        {#each NAV_ITEMS as item (item.key)}
+        {#each visibleNavItems as item (item.key)}
           {@const groupActive = isGroupActive(item, pathname)}
           {@const groupDirectActive = Boolean(item.href && isActive(item.href, pathname))}
           <li>

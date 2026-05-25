@@ -323,6 +323,19 @@ describe('getDirectOrderActionAvailability', () => {
       canRemove: false,
     });
   });
+
+  it('allows stopping a persisted running order with a failed runtime state', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'running',
+        runtimeState: 'failed',
+      }),
+    ).toEqual({
+      canStop: true,
+      canResume: false,
+      canRemove: false,
+    });
+  });
 });
 
 describe('normalizeConfigOverrides', () => {

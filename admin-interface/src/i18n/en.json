@@ -549,7 +549,7 @@
   "no_matching_markets": "No matching markets found.",
   "no_overrides_found": "No overrides found",
   "no_pairs_found": "No pairs found",
-  "no_read_only_keys_hint": "No ready API key with read access is available for this campaign exchange.",
+  "no_read_only_keys_hint": "No read-only API keys available. Only read-only keys can be used to join campaigns.",
   "no_result_found": "no result found",
   "online": "Online",
   "open_orders": "open orders",

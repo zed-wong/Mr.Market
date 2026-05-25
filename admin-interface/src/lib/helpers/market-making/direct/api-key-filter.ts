@@ -2,6 +2,7 @@ import type { AdminSingleKey } from '$lib/types/hufi/admin';
 import type { GrowInfo } from '$lib/types/hufi/grow';
 import {
   getApiKeyUseReadiness,
+  getApiKeyPermissionViews,
   type ApiKeyRequiredCapability,
   type ApiKeyUseReadinessView,
 } from '$lib/helpers/admin/api-key-readiness';
@@ -43,7 +44,17 @@ export function buildDirectOrderExchangeOptions(
 }
 
 export function isApiKeyForExchange(key: AdminSingleKey, exchangeName: string): boolean {
-  return !exchangeName || key.exchange === exchangeName;
+  const normalizedExchange = normalizeExchangeName(exchangeName);
+  return !normalizedExchange || normalizeExchangeName(key.exchange) === normalizedExchange;
+}
+
+export function isReadOnlyApiKey(key: AdminSingleKey): boolean {
+  const permissions = getApiKeyPermissionViews(key);
+
+  return (
+    permissions.some((view) => view.capability === 'read') &&
+    !permissions.some((view) => view.capability === 'trade')
+  );
 }
 
 export function getDirectApiKeyUseView(
@@ -84,6 +95,13 @@ export function filterReadableApiKeys(
     .map((view) => view.key);
 }
 
+export function filterReadOnlyApiKeys(
+  apiKeys: AdminSingleKey[],
+  exchangeName: string,
+): AdminSingleKey[] {
+  return filterReadableApiKeys(apiKeys, exchangeName).filter(isReadOnlyApiKey);
+}
+
 export function getBlockedDirectApiKeyUseViews(
   apiKeys: AdminSingleKey[],
   exchangeName: string,
@@ -92,4 +110,12 @@ export function getBlockedDirectApiKeyUseViews(
   return getDirectApiKeyUseViews(apiKeys, exchangeName, requiredCapability).filter(
     (view) => !view.usable,
   );
+}
+
+function normalizeExchangeName(exchangeName: unknown): string {
+  const normalized = String(exchangeName || '').trim().toLowerCase();
+
+  return normalized === '—' || normalized === '-' || normalized === 'n/a'
+    ? ''
+    : normalized;
 }

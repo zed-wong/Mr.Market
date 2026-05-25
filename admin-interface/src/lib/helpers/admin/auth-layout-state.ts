@@ -1,4 +1,4 @@
-export type AuthLayoutState = 'bootstrapping' | 'login' | 'auth-blocked' | 'protected';
+export type AuthLayoutState = 'bootstrapping' | 'login' | 'setup' | 'auth-blocked' | 'protected';
 
 interface AuthLayoutStateInput {
   pathname: string;
@@ -9,6 +9,9 @@ interface AuthLayoutStateInput {
 
 export const isLoginRoute = (pathname: string) =>
   pathname === '/login' || pathname.startsWith('/login/');
+
+export const isSetupRoute = (pathname: string) =>
+  pathname === '/setup' || pathname.startsWith('/setup/');
 
 export const getAuthLayoutState = ({
   pathname,
@@ -22,6 +25,10 @@ export const getAuthLayoutState = ({
 
   if (isLoginRoute(pathname)) {
     return 'login';
+  }
+
+  if (isSetupRoute(pathname)) {
+    return 'setup';
   }
 
   if (!authenticated) {

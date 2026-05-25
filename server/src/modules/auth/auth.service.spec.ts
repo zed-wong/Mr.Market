@@ -21,6 +21,7 @@ import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-pa
 import { Web3LoginNonceEntity } from 'src/common/entities/auth/web3-login-nonce.entity';
 import { getUserMe } from 'src/common/helpers/mixin/user';
 import { AdminAuditLogService } from 'src/modules/admin/system/admin-audit-log.service';
+import { SetupConfigService } from 'src/modules/setup-config/setup-config.service';
 
 import { UserService } from '../mixin/user/user.service';
 import { AuthService } from './auth.service';
@@ -117,6 +118,15 @@ describe('AuthService', () => {
         {
           provide: UserService,
           useValue: mockUserService, // Use the mock service
+        },
+        {
+          provide: SetupConfigService,
+          useValue: {
+            getAdminPasswordHash: jest.fn(async () => null),
+            setAdminPassword: jest.fn(async (password: string) =>
+              createHash('sha256').update(password).digest('hex'),
+            ),
+          },
         },
         {
           provide: getRepositoryToken(AdminAuthStateEntity),

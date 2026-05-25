@@ -33,6 +33,7 @@ import { IsNull, MoreThan, Repository } from 'typeorm';
 
 import { AdminAuditLogService } from '../admin/system/admin-audit-log.service';
 import { UserService } from '../mixin/user/user.service';
+import { SetupConfigService } from '../setup-config/setup-config.service';
 
 const ADMIN_AUTH_ID = 'admin';
 const ADMIN_JWT_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -65,7 +66,7 @@ type Web3JwtPayload = {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private secret: string;
-  private adminPassword: string;
+  private adminPassword?: string;
 
   constructor(
     private jwtService: JwtService,
@@ -77,6 +78,7 @@ export class AuthService {
     private passkeyRepository: Repository<AdminPasskeyCredentialEntity>,
     @InjectRepository(Web3LoginNonceEntity)
     private readonly web3LoginNonceRepository: Repository<Web3LoginNonceEntity>,
+    private readonly setupConfigService: SetupConfigService,
     @Optional()
     private readonly auditLogService?: AdminAuditLogService,
   ) {
@@ -89,8 +91,8 @@ export class AuthService {
       );
     }
     if (!this.adminPassword) {
-      throw new Error(
-        'AuthService initialization failed: Admin password not found in environment variables',
+      this.logger.warn(
+        'ADMIN_PASSWORD is not configured. Password login is disabled until setup sets an admin password.',
       );
     }
 
@@ -111,6 +113,15 @@ export class AuthService {
    * @throws UnauthorizedException - If the password is invalid or missing.
    */
   async validateUser(password: string): Promise<string> {
+    const configuredHash = await this.resolveAdminPasswordHash();
+
+    if (!configuredHash) {
+      await this.audit('admin.password_login.failed', 'denied', {
+        reason: 'password_not_configured',
+      });
+      throw new UnauthorizedException('Admin password is not configured');
+    }
+
     if (!password) {
       await this.audit('admin.password_login.failed', 'denied', {
         reason: 'missing_password',
@@ -127,14 +138,13 @@ export class AuthService {
       throw new ForbiddenException('Admin login is temporarily locked');
     }
 
-    const hashedAdminPassword = createHash('sha256')
-      .update(this.adminPassword)
-      .digest('hex');
+    const submittedHash = createHash('sha256').update(password).digest('hex');
 
     const rawPasswordMatches = this.adminPassword === password;
-    const legacyHashMatches = hashedAdminPassword === password;
+    const passwordHashMatches = configuredHash === submittedHash;
+    const legacyHashMatches = configuredHash === password;
 
-    if (!rawPasswordMatches && !legacyHashMatches) {
+    if (!rawPasswordMatches && !passwordHashMatches && !legacyHashMatches) {
       await this.recordFailedLogin(state);
       await this.audit('admin.password_login.failed', 'denied', {
         reason: 'invalid_password',
@@ -146,6 +156,30 @@ export class AuthService {
     await this.audit('admin.password_login.succeeded', 'success');
 
     return this.signAdminJwt(state.tokenVersion, 'password');
+  }
+
+  async updateAdminPassword(newPassword: string): Promise<string> {
+    this.adminPassword = newPassword;
+    await this.setupConfigService.setAdminPassword(newPassword);
+
+    const state = await this.getAdminAuthState();
+
+    state.failedLoginAttempts = 0;
+    state.lockedUntil = null;
+    state.tokenVersion += 1;
+    state.updatedAt = getRFC3339Timestamp();
+    await this.adminAuthStateRepository.save(state);
+    await this.audit('admin.password.updated', 'success');
+
+    return this.signAdminJwt(state.tokenVersion, 'password');
+  }
+
+  private async resolveAdminPasswordHash(): Promise<string | null> {
+    if (this.adminPassword) {
+      return createHash('sha256').update(this.adminPassword).digest('hex');
+    }
+
+    return this.setupConfigService.getAdminPasswordHash();
   }
 
   async getSession(payload?: AdminJwtPayload) {

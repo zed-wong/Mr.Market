@@ -1,5 +1,5 @@
 import { BullModule } from '@nestjs/bull';
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -17,6 +17,8 @@ import { AdminAuthStateEntity } from './common/entities/admin/admin-auth-state.e
 import { AdminPasskeyCredentialEntity } from './common/entities/admin/admin-passkey-credential.entity';
 import { APIKeysConfig } from './common/entities/admin/api-keys.entity';
 import { CustomConfigEntity } from './common/entities/admin/custom-config.entity';
+import { SetupConfigEntity } from './common/entities/admin/setup-config.entity';
+import { SetupStateEntity } from './common/entities/admin/setup-state.entity';
 import { Web3LoginNonceEntity } from './common/entities/auth/web3-login-nonce.entity';
 import { CampaignJoin } from './common/entities/campaign/campaign-join.entity';
 import { Contribution } from './common/entities/campaign/contribution.entity';
@@ -84,6 +86,9 @@ import { TickModule } from './modules/market-making/tick/tick.module';
 import { TrackersModule } from './modules/market-making/trackers/trackers.module';
 import { UserOrdersModule } from './modules/market-making/user-orders/user-orders.module';
 import { MixinModule } from './modules/mixin/mixin.module';
+import { SetupModule } from './modules/setup/setup.module';
+import { SetupGuardMiddleware } from './modules/setup/setup-guard.middleware';
+import { SetupConfigModule } from './modules/setup-config/setup-config.module';
 import { Web3Module } from './modules/web3/web3.module';
 
 const dotenvDisabled =
@@ -151,6 +156,8 @@ function buildRedisConfig(configService: ConfigService) {
         AdminAuditLogEntity,
         AdminAuthStateEntity,
         AdminPasskeyCredentialEntity,
+        SetupConfigEntity,
+        SetupStateEntity,
         Web3LoginNonceEntity,
         APIKeysConfig,
         CampaignJoin,
@@ -201,6 +208,8 @@ function buildRedisConfig(configService: ConfigService) {
     ExchangeInitModule,
     CoingeckoModule,
     HealthModule,
+    SetupConfigModule,
+    SetupModule,
     MixinModule,
     AuthModule,
     AdminAuditModule,
@@ -233,4 +242,8 @@ function buildRedisConfig(configService: ConfigService) {
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(SetupGuardMiddleware).forRoutes('*');
+  }
+}

@@ -96,6 +96,7 @@
 
     <div class="flex flex-wrap items-center gap-3">
       <button
+        type="button"
         class="btn-pill-primary"
         on:click={onCreateClick}
       >
@@ -117,6 +118,7 @@
         {$_("admin_direct_mm_create_new_order")}
       </button>
       <button
+        type="button"
         class="btn-pill-outline"
         on:click={onStartAllClick}
         disabled={resumableOrdersCount === 0}
@@ -133,6 +135,7 @@
         {$_("admin_direct_mm_start_all")}
       </button>
       <button
+        type="button"
         class="btn-pill-outline"
         on:click={onStopAllClick}
         disabled={stoppableOrdersCount === 0}

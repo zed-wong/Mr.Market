@@ -3,6 +3,7 @@
   import { _ } from 'svelte-i18n';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import KpiCard from './components/KpiCard.svelte';
+  import { setupStatus } from '$lib/stores/setup';
   import {
     DASHBOARD_RANGES,
     fetchDashboardSummary,
@@ -16,6 +17,7 @@
   let refreshing = $state(false);
   let error = $state<string | null>(null);
   let dashboardRequestSequence = 0;
+  let setupCardDismissed = $state(false);
 
   const statusDot: Record<string, string> = {
     healthy: 'bg-success',
@@ -131,8 +133,14 @@
   };
 
   onMount(() => {
+    setupCardDismissed = localStorage.getItem('admin-setup-card-dismissed') === 'true';
     void loadDashboard(timeRange);
   });
+
+  const dismissSetupCard = () => {
+    setupCardDismissed = true;
+    localStorage.setItem('admin-setup-card-dismissed', 'true');
+  };
 
   const kpis = $derived.by(() => {
     if (!summary) {
@@ -221,6 +229,7 @@
       summary.capital.totalRows === 0 &&
       summary.exchanges.total === 0,
   );
+  let setupStepCount = $derived(Object.values($setupStatus?.completedSteps || {}).filter(Boolean).length);
 </script>
 
 <section class="space-y-6 anim-page-enter" data-testid="admin-dashboard-shell">
@@ -273,6 +282,25 @@
       </div>
     {/snippet}
   </PageHeader>
+
+  {#if $setupStatus?.initialized && !$setupStatus.completedAt && !setupCardDismissed}
+    <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="setup-floating-card">
+      <div class="card-body flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+        <div class="flex flex-col gap-1">
+          <span class="text-lg font-semibold text-base-content capitalize">setup is not complete</span>
+          <span class="text-sm text-base-content/60">
+            {setupStepCount} setup steps are marked complete. Continue the wizard to lock setup-only config writes.
+          </span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <a class="btn btn-primary btn-sm rounded-full capitalize" href="/setup">continue setup</a>
+          <button type="button" class="btn btn-ghost btn-sm rounded-full capitalize" onclick={dismissSetupCard}>
+            dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   {#if loading}
     <div class="card card-surface shadow-none" data-testid="dashboard-loading">
