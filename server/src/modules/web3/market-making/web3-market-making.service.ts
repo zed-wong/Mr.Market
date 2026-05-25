@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
@@ -27,7 +28,7 @@ import type { MarketMakingStates } from 'src/common/types/orders/states';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 
 type CreateOrderBody = {
   userId?: string;
@@ -61,6 +62,8 @@ type OrderBalanceDto = {
   feePaid: string;
   updatedAt: string;
 };
+
+type LifecycleRuntimeAction = 'start' | 'stop' | null;
 
 const STARTABLE_STATES: MarketMakingStates[] = [
   'created',
@@ -96,6 +99,8 @@ export class Web3MarketMakingService {
     private readonly userOrdersService: UserOrdersService,
     private readonly marketMakingRuntimeService: MarketMakingRuntimeService,
     private readonly balanceLedgerService: BalanceLedgerService,
+    @Optional()
+    private readonly dataSource?: DataSource,
   ) {}
 
   async listOrders(userId: string) {
@@ -363,21 +368,32 @@ export class Web3MarketMakingService {
   async start(userId: string, orderId: string) {
     await this.withLifecycleMutationLock(orderId, async () => {
       const order = await this.loadOwnedPublicOrder(userId, orderId);
+      const fromState = order.state;
 
       this.assertState(order, STARTABLE_STATES, 'START_STATE_INVALID');
       await this.assertRiskIncreasingAllowed(order);
-      await this.userOrdersService.updateMarketMakingOrderState(
-        orderId,
-        'running',
-      );
-      await this.appendLifecycleEvent(order, 'order_started', {
-        fromState: order.state,
+
+      const transition = await this.persistLifecycleTransition(order, {
+        type: 'order_started',
+        fromState,
         toState: 'running',
       });
+      const previousLifecycleError = order.lifecycleError ?? null;
+
       order.state = 'running';
-      if (order.apiKeyId) {
-        await this.marketMakingRuntimeService.startOrder(order);
-      }
+      order.lifecycleError = null;
+      await this.runLifecycleRuntimeSideEffect(order, userId, 'start').catch(
+        async (error) => {
+          await this.compensateLifecycleRuntimeFailure(order, {
+            eventId: transition.eventId,
+            fromState,
+            previousLifecycleError,
+            runtimeAction: 'start',
+            userId,
+          });
+          throw error;
+        },
+      );
     });
 
     return {
@@ -390,20 +406,31 @@ export class Web3MarketMakingService {
   async pause(userId: string, orderId: string) {
     await this.withLifecycleMutationLock(orderId, async () => {
       const order = await this.loadOwnedPublicOrder(userId, orderId);
+      const fromState = order.state;
 
       this.assertState(order, PAUSABLE_STATES, 'PAUSE_STATE_INVALID');
-      await this.userOrdersService.updateMarketMakingOrderState(
-        orderId,
-        'paused',
-      );
-      await this.appendLifecycleEvent(order, 'order_paused', {
-        fromState: order.state,
+
+      const transition = await this.persistLifecycleTransition(order, {
+        type: 'order_paused',
+        fromState,
         toState: 'paused',
       });
+      const previousLifecycleError = order.lifecycleError ?? null;
+
       order.state = 'paused';
-      if (order.apiKeyId) {
-        await this.marketMakingRuntimeService.stopOrder(order, userId);
-      }
+      order.lifecycleError = null;
+      await this.runLifecycleRuntimeSideEffect(order, userId, 'stop').catch(
+        async (error) => {
+          await this.compensateLifecycleRuntimeFailure(order, {
+            eventId: transition.eventId,
+            fromState,
+            previousLifecycleError,
+            runtimeAction: 'stop',
+            userId,
+          });
+          throw error;
+        },
+      );
     });
 
     return {
@@ -416,21 +443,32 @@ export class Web3MarketMakingService {
   async resume(userId: string, orderId: string) {
     await this.withLifecycleMutationLock(orderId, async () => {
       const order = await this.loadOwnedPublicOrder(userId, orderId);
+      const fromState = order.state;
 
       this.assertState(order, RESUMABLE_STATES, 'RESUME_STATE_INVALID');
       await this.assertRiskIncreasingAllowed(order);
-      await this.userOrdersService.updateMarketMakingOrderState(
-        orderId,
-        'running',
-      );
-      await this.appendLifecycleEvent(order, 'order_resumed', {
-        fromState: order.state,
+
+      const transition = await this.persistLifecycleTransition(order, {
+        type: 'order_resumed',
+        fromState,
         toState: 'running',
       });
+      const previousLifecycleError = order.lifecycleError ?? null;
+
       order.state = 'running';
-      if (order.apiKeyId) {
-        await this.marketMakingRuntimeService.startOrder(order);
-      }
+      order.lifecycleError = null;
+      await this.runLifecycleRuntimeSideEffect(order, userId, 'start').catch(
+        async (error) => {
+          await this.compensateLifecycleRuntimeFailure(order, {
+            eventId: transition.eventId,
+            fromState,
+            previousLifecycleError,
+            runtimeAction: 'start',
+            userId,
+          });
+          throw error;
+        },
+      );
     });
 
     return {
@@ -1043,7 +1081,20 @@ export class Web3MarketMakingService {
       toState: MarketMakingStates;
     },
   ): Promise<void> {
-    const event = this.lifecycleEventRepository.create({
+    await this.lifecycleEventRepository.save(
+      this.buildLifecycleEvent(order, type, params),
+    );
+  }
+
+  private buildLifecycleEvent(
+    order: MarketMakingOrder,
+    type: MarketMakingLifecycleEventType,
+    params: {
+      fromState: MarketMakingStates | null;
+      toState: MarketMakingStates;
+    },
+  ): MarketMakingLifecycleEvent {
+    return this.lifecycleEventRepository.create({
       eventId: randomUUID(),
       orderId: order.orderId,
       userId: order.userId,
@@ -1058,8 +1109,148 @@ export class Web3MarketMakingService {
         pair: order.pair,
       },
     });
+  }
 
-    await this.lifecycleEventRepository.save(event);
+  private async persistLifecycleTransition(
+    order: MarketMakingOrder,
+    params: {
+      type: MarketMakingLifecycleEventType;
+      fromState: MarketMakingStates;
+      toState: MarketMakingStates;
+    },
+  ): Promise<{ eventId: string }> {
+    const event = this.buildLifecycleEvent(order, params.type, {
+      fromState: params.fromState,
+      toState: params.toState,
+    });
+    const update = {
+      state: params.toState,
+      lifecycleError: null,
+    } as Partial<MarketMakingOrder>;
+
+    const dataSource = this.getTransactionalDataSource();
+
+    if (dataSource) {
+      await dataSource.transaction(async (manager) => {
+        const result = await manager
+          .getRepository(MarketMakingOrder)
+          .update({ orderId: order.orderId, state: params.fromState }, update);
+
+        if (result.affected !== 1) {
+          throw new ConflictException({
+            code: 'LIFECYCLE_STATE_CHANGED',
+            message: `Order ${order.orderId} changed state before lifecycle mutation could be persisted`,
+          });
+        }
+
+        await manager.getRepository(MarketMakingLifecycleEvent).save(event);
+      });
+
+      return { eventId: event.eventId };
+    }
+
+    try {
+      await this.userOrdersService.updateMarketMakingOrderState(
+        order.orderId,
+        params.toState,
+        null,
+      );
+      await this.lifecycleEventRepository.save(event);
+
+      return { eventId: event.eventId };
+    } catch (error) {
+      await this.userOrdersService
+        .updateMarketMakingOrderState(
+          order.orderId,
+          params.fromState,
+          order.lifecycleError ?? null,
+        )
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async runLifecycleRuntimeSideEffect(
+    order: MarketMakingOrder,
+    userId: string,
+    action: LifecycleRuntimeAction,
+  ): Promise<void> {
+    if (!order.apiKeyId || !action) {
+      return;
+    }
+
+    if (action === 'start') {
+      await this.marketMakingRuntimeService.startOrder(order);
+
+      return;
+    }
+
+    await this.marketMakingRuntimeService.stopOrder(order, userId);
+  }
+
+  private async compensateLifecycleRuntimeFailure(
+    order: MarketMakingOrder,
+    params: {
+      eventId: string;
+      fromState: MarketMakingStates;
+      previousLifecycleError: string | null;
+      runtimeAction: LifecycleRuntimeAction;
+      userId: string;
+    },
+  ): Promise<void> {
+    if (params.runtimeAction === 'start' && order.apiKeyId) {
+      await Promise.resolve(
+        this.marketMakingRuntimeService.stopOrder({ ...order }, params.userId),
+      ).catch(() => undefined);
+    }
+
+    await this.rollbackLifecycleTransition(order, params);
+    order.state = params.fromState;
+    order.lifecycleError = params.previousLifecycleError;
+  }
+
+  private async rollbackLifecycleTransition(
+    order: MarketMakingOrder,
+    params: {
+      eventId: string;
+      fromState: MarketMakingStates;
+      previousLifecycleError: string | null;
+    },
+  ): Promise<void> {
+    const dataSource = this.getTransactionalDataSource();
+
+    if (dataSource) {
+      await dataSource.transaction(async (manager) => {
+        await manager
+          .getRepository(MarketMakingLifecycleEvent)
+          .delete({ eventId: params.eventId });
+
+        await manager.getRepository(MarketMakingOrder).update(
+          { orderId: order.orderId },
+          {
+            state: params.fromState,
+            lifecycleError: params.previousLifecycleError,
+          },
+        );
+      });
+
+      return;
+    }
+
+    await this.lifecycleEventRepository
+      .delete({
+        eventId: params.eventId,
+      } as Partial<MarketMakingLifecycleEvent>)
+      .catch(() => undefined);
+    await this.userOrdersService.updateMarketMakingOrderState(
+      order.orderId,
+      params.fromState,
+      params.previousLifecycleError,
+    );
+  }
+
+  private getTransactionalDataSource(): DataSource | null {
+    return this.dataSource?.isInitialized ? this.dataSource : null;
   }
 
   private async withLifecycleMutationLock<T>(

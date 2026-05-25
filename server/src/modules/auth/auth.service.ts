@@ -29,7 +29,7 @@ import { AdminPasskeyCredentialEntity } from 'src/common/entities/admin/admin-pa
 import { Web3LoginNonceEntity } from 'src/common/entities/auth/web3-login-nonce.entity';
 import { getUserMe } from 'src/common/helpers/mixin/user';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
-import { Repository } from 'typeorm';
+import { IsNull, MoreThan, Repository } from 'typeorm';
 
 import { AdminAuditLogService } from '../admin/system/admin-audit-log.service';
 import { UserService } from '../mixin/user/user.service';
@@ -241,7 +241,7 @@ export class AuthService {
     });
 
     this.assertWeb3Signature(message, signature, address);
-    await this.consumeWeb3Nonce(nonce);
+    await this.consumeWeb3Nonce({ nonce, address, chainId });
 
     const userId = this.deriveWeb3UserId(address, chainId);
     const jwt = this.jwtService.sign(
@@ -583,17 +583,32 @@ export class AuthService {
     }
   }
 
-  private async consumeWeb3Nonce(nonce: string | null): Promise<void> {
-    const challenge = await this.web3LoginNonceRepository.findOne({
-      where: { nonce: String(nonce || '').trim() },
-    });
+  private async consumeWeb3Nonce(params: {
+    nonce: string | null;
+    address: string;
+    chainId: string;
+  }): Promise<void> {
+    const nonce = String(params.nonce || '').trim();
 
-    if (!challenge || challenge.consumedAt) {
-      throw new UnauthorizedException('Web3 nonce has already been used');
+    if (!nonce) {
+      throw new UnauthorizedException('Web3 nonce is required');
     }
 
-    challenge.consumedAt = getRFC3339Timestamp();
-    await this.web3LoginNonceRepository.save(challenge);
+    const now = getRFC3339Timestamp();
+    const result = await this.web3LoginNonceRepository.update(
+      {
+        nonce,
+        address: params.address,
+        chainId: params.chainId,
+        consumedAt: IsNull(),
+        expiresAt: MoreThan(now),
+      },
+      { consumedAt: now },
+    );
+
+    if (result.affected !== 1) {
+      throw new UnauthorizedException('Web3 nonce has already been used');
+    }
   }
 
   private assertPasswordAuthenticatedAdmin(payload?: AdminJwtPayload): void {

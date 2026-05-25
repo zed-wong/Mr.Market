@@ -53,6 +53,7 @@ describe('AuthService', () => {
     create: jest.Mock;
     findOne: jest.Mock;
     save: jest.Mock;
+    update: jest.Mock;
   };
   let auditLogService: { record: jest.Mock };
   let configValues: Record<string, string | null>;
@@ -81,6 +82,7 @@ describe('AuthService', () => {
       create: jest.fn((value) => value),
       findOne: jest.fn().mockResolvedValue(null),
       save: jest.fn(async (value) => value),
+      update: jest.fn(async () => ({ affected: 1 })),
     };
     auditLogService = {
       record: jest.fn(async () => undefined),
@@ -439,11 +441,16 @@ describe('AuthService', () => {
 
       expect(result.jwt).toBe('web3-token');
       expect(result.address).toBe(normalizedAddress);
-      expect(web3LoginNonceRepository.save).toHaveBeenCalledWith(
+      expect(web3LoginNonceRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({
           nonce,
-          consumedAt: expect.any(String),
+          address: normalizedAddress,
+          chainId,
         }),
+        { consumedAt: expect.any(String) },
+      );
+      expect(web3LoginNonceRepository.save).not.toHaveBeenCalledWith(
+        expect.objectContaining({ nonce, consumedAt: expect.any(String) }),
       );
     });
 
@@ -496,6 +503,47 @@ describe('AuthService', () => {
           signature: 'demo:signature',
         }),
       ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('allows exactly one concurrent login request to atomically consume a nonce', async () => {
+      const nonce = 'race-nonce';
+      const challenge = {
+        nonce,
+        address: normalizedAddress,
+        chainId,
+        domain: 'Mr.Market',
+        statement: 'Sign in to Mr.Market web3 market-making orders',
+        uri: 'https://mr.market/web3',
+        issuedAt: new Date(Date.now() - 1000).toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        consumedAt: null,
+      };
+
+      web3LoginNonceRepository.findOne.mockResolvedValue(challenge);
+      web3LoginNonceRepository.update
+        .mockResolvedValueOnce({ affected: 1 })
+        .mockResolvedValueOnce({ affected: 0 });
+      jest.spyOn(jwtService, 'sign').mockReturnValue('web3-token');
+
+      const results = await Promise.allSettled([
+        authService.loginWeb3({
+          message: buildMessage(nonce),
+          signature: 'demo:signature',
+        }),
+        authService.loginWeb3({
+          message: buildMessage(nonce),
+          signature: 'demo:signature',
+        }),
+      ]);
+
+      expect(
+        results.filter((result) => result.status === 'fulfilled'),
+      ).toHaveLength(1);
+      expect(
+        results.filter((result) => result.status === 'rejected'),
+      ).toHaveLength(1);
+      expect(jwtService.sign).toHaveBeenCalledTimes(1);
+      expect(web3LoginNonceRepository.update).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -52,7 +52,57 @@ const createRepository = <T extends object>(rows: T[] = []) => ({
     );
   }),
   create: jest.fn((row: Partial<T>) => row as T),
-  save: jest.fn(async (row: T) => row),
+  save: jest.fn(async (row: T) => {
+    const primaryKey = ['eventId', 'orderId', 'id'].find(
+      (key) => row[key] !== undefined,
+    );
+
+    if (primaryKey) {
+      const index = rows.findIndex(
+        (candidate) => candidate[primaryKey] === row[primaryKey],
+      );
+
+      if (index >= 0) {
+        rows[index] = { ...rows[index], ...row };
+      } else {
+        rows.push(row);
+      }
+    }
+
+    return row;
+  }),
+  update: jest.fn(async (where: Partial<T>, update: Partial<T>) => {
+    let affected = 0;
+
+    rows.forEach((row) => {
+      const matches = Object.entries(where).every(
+        ([key, value]) => row[key] === value,
+      );
+
+      if (matches) {
+        Object.assign(row, update);
+        affected += 1;
+      }
+    });
+
+    return { affected };
+  }),
+  delete: jest.fn(async (where: Partial<T>) => {
+    let affected = 0;
+
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const matches = Object.entries(where).every(
+        ([key, value]) => rows[index][key] === value,
+      );
+
+      if (matches) {
+        rows.splice(index, 1);
+        affected += 1;
+      }
+    }
+
+    return { affected };
+  }),
 });
 
 const createOrder = (
@@ -221,6 +271,8 @@ describe('Web3MarketMakingService', () => {
       })),
       isReservationPaused: jest.fn(() => Boolean(params?.pausedReservations)),
     };
+    const lifecycleEvents = params?.lifecycleEvents || [];
+    const lifecycleEventRepository = createRepository(lifecycleEvents);
     const service = new Web3MarketMakingService(
       createRepository(orders) as never,
       createRepository(balances) as never,
@@ -259,13 +311,21 @@ describe('Web3MarketMakingService', () => {
       ]) as never,
       createRepository([]) as never,
       createRepository([]) as never,
-      createRepository(params?.lifecycleEvents || []) as never,
+      lifecycleEventRepository as never,
       userOrdersService as never,
       runtime as never,
       ledger as never,
     );
 
-    return { service, userOrdersService, ledger, orders, runtime };
+    return {
+      service,
+      userOrdersService,
+      ledger,
+      orders,
+      runtime,
+      lifecycleEvents,
+      lifecycleEventRepository,
+    };
   };
 
   it('lists only authenticated user non-admin market-making orders with balances and PnL', async () => {
@@ -518,6 +578,7 @@ describe('Web3MarketMakingService', () => {
     expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
       'order-1',
       'running',
+      null,
     );
     expect(result.order.state).toBe('running');
   });
@@ -544,6 +605,79 @@ describe('Web3MarketMakingService', () => {
     expect(orders[0].state).toBe('created');
   });
 
+  it('rolls back state and skips runtime when lifecycle event persistence fails after state update', async () => {
+    const {
+      service,
+      lifecycleEventRepository,
+      runtime,
+      orders,
+      lifecycleEvents,
+    } = buildService({
+      orders: [
+        createOrder({
+          orderId: 'order-1',
+          state: 'created',
+          apiKeyId: 'api-key-1',
+        }),
+      ],
+    });
+
+    lifecycleEventRepository.save.mockRejectedValueOnce(
+      new Error('event store unavailable'),
+    );
+
+    await expect(service.start('user-1', 'order-1')).rejects.toThrow(
+      'event store unavailable',
+    );
+    expect(orders[0].state).toBe('created');
+    expect(lifecycleEvents).toHaveLength(0);
+    expect(runtime.startOrder).not.toHaveBeenCalled();
+  });
+
+  it('compensates start runtime failures by reverting durable state and lifecycle events', async () => {
+    const { service, runtime, orders, lifecycleEvents } = buildService({
+      orders: [
+        createOrder({
+          orderId: 'order-1',
+          state: 'created',
+          apiKeyId: 'api-key-1',
+        }),
+      ],
+    });
+
+    runtime.startOrder.mockRejectedValueOnce(new Error('runtime unavailable'));
+
+    await expect(service.start('user-1', 'order-1')).rejects.toThrow(
+      'runtime unavailable',
+    );
+    expect(orders[0].state).toBe('created');
+    expect(lifecycleEvents).toHaveLength(0);
+    expect(runtime.stopOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: 'order-1', state: 'running' }),
+      'user-1',
+    );
+  });
+
+  it('compensates pause runtime failures by reverting durable state and lifecycle events', async () => {
+    const { service, runtime, orders, lifecycleEvents } = buildService({
+      orders: [
+        createOrder({
+          orderId: 'order-1',
+          state: 'running',
+          apiKeyId: 'api-key-1',
+        }),
+      ],
+    });
+
+    runtime.stopOrder.mockRejectedValueOnce(new Error('runtime still active'));
+
+    await expect(service.pause('user-1', 'order-1')).rejects.toThrow(
+      'runtime still active',
+    );
+    expect(orders[0].state).toBe('running');
+    expect(lifecycleEvents).toHaveLength(0);
+  });
+
   it('blocks risk-increasing start when reconciliation has paused reservations', async () => {
     const { service, userOrdersService } = buildService({
       pausedReservations: true,
@@ -568,6 +702,7 @@ describe('Web3MarketMakingService', () => {
     expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
       'order-1',
       'paused',
+      null,
     );
 
     orders[0].state = 'paused';
@@ -581,12 +716,21 @@ describe('Web3MarketMakingService', () => {
 
     const result = await service.listPairOptions();
 
-    expect(result.options).toEqual([
-      expect.objectContaining({
-        pairId: 'pair-1',
-        pair: 'BTC/USDT',
-        supportedDepositAssets: ['asset-usdt', 'asset-btc'],
-      }),
-    ]);
+    expect(result.options).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pairId: 'pair-1',
+          pair: 'BTC/USDT',
+          supportedDepositAssets: ['asset-usdt', 'asset-btc'],
+        }),
+      ]),
+    );
+    expect(result.options).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pairId: 'pair-disabled',
+        }),
+      ]),
+    );
   });
 });
