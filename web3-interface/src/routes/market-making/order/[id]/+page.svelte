@@ -84,6 +84,35 @@
     return amount.isGreaterThan(0) ? `+${formatted}` : formatted;
   };
 
+  const formatMetricLabel = (key: string): string =>
+    key
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .trim()
+      .replace(/^./, (letter) => letter.toUpperCase()) || 'Metric';
+
+  const formatAdditionalMetricValue = (value: unknown): string => {
+    if (value === null || value === undefined || value === '') return 'Unavailable';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'number' || typeof value === 'bigint') {
+      const amount = new BigNumber(String(value));
+      if (!amount.isFinite()) return String(value);
+      return amount.toFormat(amount.isInteger() ? 0 : Math.min(6, amount.decimalPlaces() ?? 6));
+    }
+    if (typeof value === 'string') {
+      const amount = new BigNumber(value);
+      if (amount.isFinite()) {
+        return amount.toFormat(amount.isInteger() ? 0 : Math.min(6, amount.decimalPlaces() ?? 6));
+      }
+      return value;
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+
   const formatDate = (value: string | null | undefined): string => {
     if (!value) return 'Unavailable';
     const date = new Date(value);
@@ -567,6 +596,16 @@
               <div class="flex flex-col">
                 <span class="font-medium text-base-content">{formatText(snapshot.strategyType)}</span>
                 <span class="mt-1 font-mono-num text-sm text-base-content/70">Profit/Loss {formatSignedAmount(snapshot.profitLoss)}</span>
+                {#if Object.entries(snapshot.additionalMetrics || {}).length > 0}
+                  <div class="mt-3 grid gap-2 sm:grid-cols-2" data-testid="order-performance-additional-metrics">
+                    {#each Object.entries(snapshot.additionalMetrics || {}) as [key, value]}
+                      <span class="flex flex-col rounded-2xl border border-base-300 px-3 py-2" data-testid="order-performance-metric-{key}">
+                        <span class="text-xs text-base-content/50">{formatMetricLabel(key)}</span>
+                        <span class="font-mono-num text-sm text-base-content">{formatAdditionalMetricValue(value)}</span>
+                      </span>
+                    {/each}
+                  </div>
+                {/if}
               </div>
               <span class="font-mono-num text-xs text-base-content/50">{formatDate(snapshot.executedAt)}</span>
             </div>

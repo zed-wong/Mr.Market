@@ -1,5 +1,5 @@
 import { getMrmBackendUrl } from '../constants';
-import { showSessionExpired } from '$lib/stores/auth';
+import { expireAuthSession } from '$lib/stores/auth';
 
 const WEB3_ACCESS_TOKEN_KEY = 'web3-access-token';
 
@@ -64,10 +64,7 @@ export const apiFetch = async <T = unknown>(path: string, options: RequestOption
   });
 
   if (response.status === 401) {
-    clearAccessToken();
-    if (!suppressSessionExpired) {
-      showSessionExpired.set(true);
-    }
+    expireAuthSession({ showDialog: !suppressSessionExpired });
     let parsed: unknown = null;
     try {
       parsed = await response.json();

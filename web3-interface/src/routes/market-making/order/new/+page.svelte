@@ -7,6 +7,7 @@
     listMarketMakingOptions,
     listMarketMakingStrategies,
   } from '$lib/helpers/api/web3';
+  import { getCreateOrderSessionBlockReason, getCreateOrderSubmissionBlockReason } from '$lib/helpers/market-making/create-session';
   import { balances } from '$lib/stores/balances';
   import {
     openMockWallet,
@@ -17,7 +18,7 @@
     walletNetwork,
     walletShortAddress,
   } from '$lib/stores/wallet';
-  import { isAuthed } from '$lib/stores/auth';
+  import { hasUsableAuthSession, isAuthed } from '$lib/stores/auth';
   import type { BalanceEntry } from '$lib/types/balances';
   import type {
     Web3MarketMakingPairOption,
@@ -124,13 +125,19 @@
     return parts.length > 0 ? parts.join(' · ') : 'Specs available from the web3 market-making API';
   };
 
+  const currentCreateSessionContext = () => ({
+    walletConnected: $walletIsConnected,
+    walletUnsupported: $walletIsUnsupported,
+    isAuthed: $isAuthed,
+    hasUsableAuthSession: hasUsableAuthSession(),
+  });
+
   function validateCreateOrder(): Record<string, string> {
     const errors: Record<string, string> = {};
     const amount = new BigNumber(depositAmount || '');
+    const walletError = getCreateOrderSessionBlockReason(currentCreateSessionContext());
 
-    if (!$walletIsConnected) errors.wallet = 'Connect a supported wallet before creating a market-making order.';
-    if ($walletIsUnsupported) errors.wallet = 'Switch to a supported network before creating a market-making order.';
-    if ($walletIsConnected && !$walletIsUnsupported && !$isAuthed) errors.wallet = 'Authenticate the connected wallet before creating a market-making order.';
+    if (walletError) errors.wallet = walletError;
     if (createOptionsState !== 'loaded') errors.options = 'Strategy and pair/spec options must load before submission.';
     if (!selectedStrategyId || !selectedStrategy) errors.strategy = 'Choose a market-making strategy.';
     if (!selectedPairId || !selectedPair) errors.specs = 'Choose a supported pair/spec option.';
@@ -204,7 +211,17 @@
     attemptedSubmit = true;
     submitError = null;
     fundingInstruction = null;
-    if (isSubmitting) return;
+    const submissionBlockReason = getCreateOrderSubmissionBlockReason({
+      ...currentCreateSessionContext(),
+      isSubmitting,
+    });
+    if (submissionBlockReason) {
+      if (!isSubmitting) {
+        submitError = submissionBlockReason;
+        flowStep = 'submit-error';
+      }
+      return;
+    }
     if (hasValidationErrors || !selectedPair || !selectedStrategy || !selectedDepositAsset) return;
 
     isSubmitting = true;
@@ -221,6 +238,10 @@
       if (walletInteractionMode === 'network-mismatch') {
         throw new Error('Wallet network changed during approval. Switch back to a supported network and retry.');
       }
+      const preCreateBlockReason = getCreateOrderSessionBlockReason(currentCreateSessionContext());
+      if (preCreateBlockReason) {
+        throw new Error(preCreateBlockReason);
+      }
 
       flowStep = 'submitting';
       const response = await createMarketMakingOrder({
@@ -233,7 +254,7 @@
       });
       fundingInstruction = response.funding?.depositEndpoint || response.initialDeposit?.message || null;
       flowStep = 'success';
-      await goto(`/market-making/order/${response.orderId}`);
+      await goto(`/market-making/order/${encodeURIComponent(response.orderId)}`);
     } catch (error) {
       submitError = errorMessage(error);
       flowStep = 'submit-error';

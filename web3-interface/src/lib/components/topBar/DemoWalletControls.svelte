@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { showSessionExpired } from '$lib/stores/auth';
+  import { expireAuthSession } from '$lib/stores/auth';
   import { connectDemoWallet, disconnectWallet } from '$lib/stores/wallet';
 
   let menuOpen = $state(false);
@@ -10,7 +10,7 @@
   };
 
   const triggerSessionExpired = () => {
-    showSessionExpired.set(true);
+    expireAuthSession();
     menuOpen = false;
   };
 

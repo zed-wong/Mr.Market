@@ -15,7 +15,7 @@ export const login = async (message: string, signature: string): Promise<LoginRe
     json: { message, signature } satisfies LoginRequest,
   });
   setAccessToken(result.jwt);
-  persistAuth(result.jwt, result.address, result.chainId);
+  persistAuth(result.jwt, result.address, result.chainId, result.expiresIn);
   return result;
 };
 

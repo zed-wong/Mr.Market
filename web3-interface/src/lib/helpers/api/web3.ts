@@ -15,6 +15,9 @@ import type { WithdrawRequest, WithdrawResponse } from '$lib/types/withdraw';
 
 const WEB3_MARKET_MAKING_NAMESPACE = '/api/v1/web3/market-making';
 
+const orderEndpoint = (orderId: string, suffix = ''): string =>
+  `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${encodeURIComponent(orderId)}${suffix}`;
+
 export const getBalances = async (): Promise<BalanceEntry[]> => {
   return apiFetch<BalanceEntry[]>('/web3/balances');
 };
@@ -60,9 +63,7 @@ export const createMarketMakingOrder = async (
 export const getMarketMakingOrderDetail = async (
   orderId: string
 ): Promise<Web3MarketMakingOrderDetailResponse> => {
-  return apiFetch<Web3MarketMakingOrderDetailResponse>(
-    `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${orderId}`
-  );
+  return apiFetch<Web3MarketMakingOrderDetailResponse>(orderEndpoint(orderId));
 };
 
 export const depositMarketMakingOrder = async (
@@ -70,7 +71,7 @@ export const depositMarketMakingOrder = async (
   request: Web3MarketMakingMoneyMovementRequest
 ): Promise<Web3MarketMakingMutationResponse> => {
   return apiFetch<Web3MarketMakingMutationResponse>(
-    `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${orderId}/deposit`,
+    orderEndpoint(orderId, '/deposit'),
     {
       method: 'POST',
       json: request,
@@ -83,7 +84,7 @@ export const withdrawMarketMakingOrder = async (
   request: Web3MarketMakingMoneyMovementRequest
 ): Promise<Web3MarketMakingMutationResponse> => {
   return apiFetch<Web3MarketMakingMutationResponse>(
-    `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${orderId}/withdraw`,
+    orderEndpoint(orderId, '/withdraw'),
     {
       method: 'POST',
       json: request,
@@ -94,32 +95,23 @@ export const withdrawMarketMakingOrder = async (
 export const startMarketMakingOrder = async (
   orderId: string
 ): Promise<Web3MarketMakingMutationResponse> => {
-  return apiFetch<Web3MarketMakingMutationResponse>(
-    `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${orderId}/start`,
-    {
-      method: 'POST',
-    }
-  );
+  return apiFetch<Web3MarketMakingMutationResponse>(orderEndpoint(orderId, '/start'), {
+    method: 'POST',
+  });
 };
 
 export const pauseMarketMakingOrder = async (
   orderId: string
 ): Promise<Web3MarketMakingMutationResponse> => {
-  return apiFetch<Web3MarketMakingMutationResponse>(
-    `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${orderId}/pause`,
-    {
-      method: 'POST',
-    }
-  );
+  return apiFetch<Web3MarketMakingMutationResponse>(orderEndpoint(orderId, '/pause'), {
+    method: 'POST',
+  });
 };
 
 export const resumeMarketMakingOrder = async (
   orderId: string
 ): Promise<Web3MarketMakingMutationResponse> => {
-  return apiFetch<Web3MarketMakingMutationResponse>(
-    `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${orderId}/resume`,
-    {
-      method: 'POST',
-    }
-  );
+  return apiFetch<Web3MarketMakingMutationResponse>(orderEndpoint(orderId, '/resume'), {
+    method: 'POST',
+  });
 };

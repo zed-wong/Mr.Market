@@ -28,7 +28,7 @@ describe('market-making campaign detail to order route', () => {
     expect(source).toContain('listMarketMakingStrategies');
     expect(source).toContain('listMarketMakingOptions');
     expect(source).toContain('createMarketMakingOrder');
-    expect(source).toContain('/market-making/order/${response.orderId}');
+    expect(source).toContain('/market-making/order/${encodeURIComponent(response.orderId)}');
     expect(source).not.toContain('order-create-campaign-not-found');
     expect(source).not.toContain('requestedCampaignId');
     expect(source).not.toContain('Choose a valid market-making campaign before creating an order.');
@@ -39,10 +39,12 @@ describe('market-making campaign detail to order route', () => {
     const source = orderCreateSource();
 
     expect(source).toContain('walletInteractionMode');
+    expect(source).toContain('getCreateOrderSubmissionBlockReason');
+    expect(source).toContain('getCreateOrderSessionBlockReason');
     expect(source).toContain('Preview user rejection');
     expect(source).toContain('Preview wallet timeout');
     expect(source).toContain('Preview network mismatch');
-    expect(source).toContain('if (isSubmitting) return;');
+    expect(source).toContain('isSubmitting,');
     expect(source).toContain('disabled={isSubmitting');
   });
 
@@ -85,12 +87,12 @@ describe('market-making campaign detail to order route', () => {
     expect(helper).toContain('startMarketMakingOrder');
     expect(helper).toContain('pauseMarketMakingOrder');
     expect(helper).toContain('resumeMarketMakingOrder');
-    expect(helper).toContain('/orders/${orderId}');
-    expect(helper).toContain('/orders/${orderId}/deposit');
-    expect(helper).toContain('/orders/${orderId}/withdraw');
-    expect(helper).toContain('/orders/${orderId}/start');
-    expect(helper).toContain('/orders/${orderId}/pause');
-    expect(helper).toContain('/orders/${orderId}/resume');
+    expect(helper).toContain('encodeURIComponent(orderId)');
+    expect(helper).toContain("orderEndpoint(orderId, '/deposit')");
+    expect(helper).toContain("orderEndpoint(orderId, '/withdraw')");
+    expect(helper).toContain("orderEndpoint(orderId, '/start')");
+    expect(helper).toContain("orderEndpoint(orderId, '/pause')");
+    expect(helper).toContain("orderEndpoint(orderId, '/resume')");
 
     expect(source).toContain('getMarketMakingOrderDetail');
     expect(source).toContain('depositMarketMakingOrder');
@@ -104,6 +106,8 @@ describe('market-making campaign detail to order route', () => {
     expect(source).toContain('order.validActions.deposit');
     expect(source).toContain('order.validActions.withdraw');
     expect(source).toContain('order-event-timeline');
+    expect(source).toContain('snapshot.additionalMetrics');
+    expect(source).toContain('formatAdditionalMetricValue');
     expect(source).toContain('walletInteractionMode');
     expect(source).not.toContain('transitionOrderLifecycle');
     expect(source).not.toContain('allCampaigns');

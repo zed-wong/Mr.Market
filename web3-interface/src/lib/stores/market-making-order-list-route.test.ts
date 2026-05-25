@@ -34,7 +34,8 @@ describe('/market-making order list route', () => {
     expect(source).toContain('order-list-error-state');
     expect(source).toContain('order-list-retry');
     expect(source).toContain('order-list');
-    expect(source).toContain('/market-making/order/{order.orderId}');
+    expect(source).toContain('orderDetailHref(order.orderId)');
+    expect(source).toContain('encodeURIComponent(orderId)');
   });
 
   it('removes campaign discovery controls and terminology from the list page', () => {

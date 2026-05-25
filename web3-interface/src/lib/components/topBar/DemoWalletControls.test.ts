@@ -22,7 +22,7 @@ describe('browser-visible deterministic wallet demo controls', () => {
     expect(source).toContain('demo-wallet-solana');
     expect(source).toContain('demo-wallet-wrong-network');
     expect(source).toContain('demo-session-expired');
-    expect(source).toContain('showSessionExpired.set(true)');
+    expect(source).toContain('expireAuthSession()');
     expect(source).toContain('Demo controls');
   });
 

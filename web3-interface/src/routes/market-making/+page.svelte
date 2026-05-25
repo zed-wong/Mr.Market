@@ -54,6 +54,9 @@
   const compactOrderId = (orderId: string): string =>
     orderId.length > 18 ? `${orderId.slice(0, 10)}…${orderId.slice(-6)}` : orderId;
 
+  const orderDetailHref = (orderId: string): string =>
+    `/market-making/order/${encodeURIComponent(orderId)}`;
+
   const strategyLabel = (order: Web3MarketMakingOrderSummary): string =>
     order.strategy?.name || order.strategy?.key || order.strategy?.controller || 'Strategy unavailable';
 
@@ -204,7 +207,7 @@
         <div class="mt-8 border-t border-base-300" data-testid="order-list">
           {#each orders as order}
             <a
-              href="/market-making/order/{order.orderId}"
+              href={orderDetailHref(order.orderId)}
               class="flex flex-col gap-4 border-b border-base-300 py-6 transition-colors hover:bg-base-300/30"
               data-testid="order-row-{order.orderId}"
             >
