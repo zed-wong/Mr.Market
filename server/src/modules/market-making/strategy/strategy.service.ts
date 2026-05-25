@@ -4342,6 +4342,32 @@ export class StrategyService
       runtimePressureWiden,
     });
 
+    if (quotes.length === 0) {
+      this.logger.warn(
+        `[${strategyKey}] reason=no_quotes_after_filters layers=${effectiveNumberOfLayers} buyPaused=${Boolean(
+          toxicityState?.buyPausedUntilMs,
+        )} sellPaused=${Boolean(toxicityState?.sellPausedUntilMs)}`,
+      );
+      this.logAdaptivePmmDecisionSnapshot(strategyKey, {
+        params,
+        reason: 'no_quotes_after_filters',
+        signalSnapshot,
+        toxicityState,
+        actions: 0,
+        layers: effectiveNumberOfLayers,
+        realizedVolatility,
+        orderBookImbalance,
+        buyPaused: Boolean(toxicityState?.buyPausedUntilMs),
+        sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
+        warmupActive: warmupState.active,
+        warmupReason: warmupState.reason,
+        buyRecoveryActive: sideRecoveryState.buyActive,
+        sellRecoveryActive: sideRecoveryState.sellActive,
+        runtimePressure,
+        runtimePressureWiden,
+      });
+    }
+
     const minimumSpread = Number(params.minimumSpread || 0);
     const targetActionBySlot = new Map<string, ExecutorAction>();
 

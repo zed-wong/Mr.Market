@@ -47,18 +47,33 @@ type QuoteLevel = {
 
 @Injectable()
 export class QuoteExecutorManagerService {
+  private readonly defaultMaxAdaptiveSpread = new BigNumber(0.95);
+
   buildQuotes(input: BuildQuotesInput): QuoteLevel[] {
     const mid = new BigNumber(input.midPrice);
+    const baseOrderAmount = new BigNumber(input.orderAmount);
     const inventoryDelta = new BigNumber(input.currentBaseRatio).minus(
       input.inventoryTargetBaseRatio,
     );
+
+    if (
+      !mid.isFinite() ||
+      mid.isLessThanOrEqualTo(0) ||
+      !baseOrderAmount.isFinite() ||
+      baseOrderAmount.isLessThanOrEqualTo(0) ||
+      !inventoryDelta.isFinite()
+    ) {
+      return [];
+    }
+
     const skewAdjust = inventoryDelta.multipliedBy(input.inventorySkewFactor);
     const makerBias = new BigNumber(input.makerHeavyBiasBps || 0).dividedBy(
       10_000,
     );
+    const spreadFloor = this.resolveSpreadFloor(input);
 
     const quotes: QuoteLevel[] = [];
-    let currentQty = new BigNumber(input.orderAmount);
+    let currentQty = baseOrderAmount;
     const layerCount = this.resolveLayerCount(input);
 
     for (let layer = 1; layer <= layerCount; layer++) {
@@ -93,8 +108,8 @@ export class QuoteExecutorManagerService {
         askSpread = askSpread.plus(makerBias);
       }
 
-      bidSpread = BigNumber.max(0, bidSpread.plus(skewAdjust));
-      askSpread = BigNumber.max(0, askSpread.minus(skewAdjust));
+      bidSpread = BigNumber.max(spreadFloor, bidSpread.plus(skewAdjust));
+      askSpread = BigNumber.max(spreadFloor, askSpread.minus(skewAdjust));
 
       const imbalanceAdjust = this.calculateImbalanceAdjust(input);
 
@@ -133,7 +148,12 @@ export class QuoteExecutorManagerService {
         input,
       ).multipliedBy(sellRecovery.sizeRatio);
 
-      if (!input.buyPaused && !inventoryPause.buy) {
+      if (
+        !input.buyPaused &&
+        !inventoryPause.buy &&
+        this.isValidQuoteValue(buyPrice) &&
+        this.isValidQuoteValue(buyQty)
+      ) {
         quotes.push({
           layer,
           slotKey: `layer-${layer}-buy`,
@@ -142,7 +162,12 @@ export class QuoteExecutorManagerService {
           qty: buyQty.toFixed(),
         });
       }
-      if (!input.sellPaused && !inventoryPause.sell) {
+      if (
+        !input.sellPaused &&
+        !inventoryPause.sell &&
+        this.isValidQuoteValue(sellPrice) &&
+        this.isValidQuoteValue(sellQty)
+      ) {
         quotes.push({
           layer,
           slotKey: `layer-${layer}-sell`,
@@ -154,6 +179,24 @@ export class QuoteExecutorManagerService {
     }
 
     return quotes;
+  }
+
+  private resolveSpreadFloor(input: BuildQuotesInput): BigNumber {
+    const bid = new BigNumber(input.bidSpread || 0);
+    const ask = new BigNumber(input.askSpread || 0);
+    const candidates = [bid, ask].filter((value) =>
+      value.isFinite() && value.isGreaterThan(0),
+    );
+
+    if (candidates.length === 0) {
+      return new BigNumber(0);
+    }
+
+    return BigNumber.min(...candidates);
+  }
+
+  private isValidQuoteValue(value: BigNumber): boolean {
+    return value.isFinite() && value.isGreaterThan(0);
   }
 
   private applyVolatilitySpread(
@@ -325,10 +368,10 @@ export class QuoteExecutorManagerService {
     const maxSpread = new BigNumber(maxAdaptiveSpread || 0);
 
     if (!maxSpread.isFinite() || maxSpread.isLessThanOrEqualTo(0)) {
-      return spread;
+      return BigNumber.min(spread, this.defaultMaxAdaptiveSpread);
     }
 
-    return BigNumber.min(spread, maxSpread);
+    return BigNumber.min(spread, maxSpread, this.defaultMaxAdaptiveSpread);
   }
 
   private calculateImbalanceAdjust(input: BuildQuotesInput): BigNumber {

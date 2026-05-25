@@ -400,4 +400,98 @@ describe('QuoteExecutorManagerService', () => {
     expect(quotes.find((quote) => quote.side === 'sell')?.price).toBe('101');
     expect(quotes.find((quote) => quote.side === 'sell')?.qty).toBe('10');
   });
+
+  it('does not emit quotes when adaptive size reduces quantity to zero', () => {
+    const service = new QuoteExecutorManagerService();
+
+    const quotes = service.buildQuotes({
+      midPrice: '100',
+      numberOfLayers: 1,
+      bidSpread: 0.01,
+      askSpread: 0.01,
+      orderAmount: '10',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      inventorySkewFactor: 0,
+      inventoryTargetBaseRatio: 0.5,
+      currentBaseRatio: 0.5,
+      makerHeavyMode: false,
+      makerHeavyBiasBps: 0,
+      adaptiveSizeEnabled: true,
+      realizedVolatility: 1,
+      sizeVolScalingFactor: 2,
+      sizeFloor: 0,
+    });
+
+    expect(quotes).toEqual([]);
+  });
+
+  it('clamps extreme spreads before they can create negative bid prices', () => {
+    const service = new QuoteExecutorManagerService();
+
+    const quotes = service.buildQuotes({
+      midPrice: '100',
+      numberOfLayers: 1,
+      bidSpread: 0.01,
+      askSpread: 0.01,
+      orderAmount: '1',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      inventorySkewFactor: 0,
+      inventoryTargetBaseRatio: 0.5,
+      currentBaseRatio: 0.5,
+      makerHeavyMode: false,
+      makerHeavyBiasBps: 0,
+      volBasedSpread: true,
+      realizedVolatility: 1,
+      spreadSigmaMultiplier: 2,
+    });
+
+    expect(Number(quotes.find((quote) => quote.side === 'buy')?.price)).toBe(5);
+    expect(
+      Number(quotes.find((quote) => quote.side === 'sell')?.price),
+    ).toBeGreaterThan(100);
+  });
+
+  it('returns no quotes when current inventory ratio is not finite', () => {
+    const service = new QuoteExecutorManagerService();
+
+    const quotes = service.buildQuotes({
+      midPrice: '100',
+      numberOfLayers: 1,
+      bidSpread: 0.01,
+      askSpread: 0.01,
+      orderAmount: '1',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      inventorySkewFactor: 0,
+      inventoryTargetBaseRatio: 0.5,
+      currentBaseRatio: Number.NaN,
+      makerHeavyMode: false,
+      makerHeavyBiasBps: 0,
+    });
+
+    expect(quotes).toEqual([]);
+  });
+
+  it('keeps inventory skew from collapsing a spread to mid', () => {
+    const service = new QuoteExecutorManagerService();
+
+    const quotes = service.buildQuotes({
+      midPrice: '100',
+      numberOfLayers: 1,
+      bidSpread: 0.001,
+      askSpread: 0.001,
+      orderAmount: '1',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      inventorySkewFactor: 1,
+      inventoryTargetBaseRatio: 0.5,
+      currentBaseRatio: 0.502,
+      makerHeavyMode: false,
+      makerHeavyBiasBps: 0,
+    });
+
+    expect(quotes.find((quote) => quote.side === 'sell')?.price).toBe('100.1');
+  });
 });
