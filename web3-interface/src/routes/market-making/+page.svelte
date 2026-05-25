@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import BigNumber from 'bignumber.js';
   import Section from '$lib/components/common/Section.svelte';
   import { listMarketMakingOrders } from '$lib/helpers/api/web3';
+  import { authMatchesWalletScope } from '$lib/helpers/market-making/wallet-scope';
   import {
     openMockWallet,
     openNetworkModal,
@@ -12,7 +14,7 @@
     walletNamespaceLabel,
     walletShortAddress,
   } from '$lib/stores/wallet';
-  import { isAuthed } from '$lib/stores/auth';
+  import { authState, hasUsableAuthSession } from '$lib/stores/auth';
   import type { Web3MarketMakingOrderActions, Web3MarketMakingOrderSummary } from '$lib/types/market-making';
 
   let orders = $state<Web3MarketMakingOrderSummary[]>([]);
@@ -108,6 +110,28 @@
     return 'Orders could not be loaded right now.';
   };
 
+  const activeWalletChainId = $derived(String($walletAccount?.chainId ?? '0'));
+  const activeWalletAddress = $derived($walletAccount?.address ?? '');
+  const authMatchesActiveWallet = $derived(
+    authMatchesWalletScope({
+      auth: $authState,
+      address: activeWalletAddress,
+      chainId: activeWalletChainId,
+      hasUsableSession: hasUsableAuthSession(),
+    })
+  );
+  const hasActiveOrderScope = $derived(
+    $walletIsConnected &&
+      !$walletIsUnsupported &&
+      Boolean($walletAccount?.id) &&
+      Boolean($walletNamespace) &&
+      authMatchesActiveWallet
+  );
+  const validationListState = $derived(page.url.searchParams.get('validationListState') || '');
+  const validationLoadingRequested = $derived(
+    validationListState === 'loading' || page.url.searchParams.get('validationLoading') === '1'
+  );
+
   const loadOrders = async () => {
     const sequence = ++loadSequence;
     isLoading = true;
@@ -130,15 +154,19 @@
   };
 
   $effect(() => {
-    const accountId = $walletAccount?.id ?? '';
-    const namespace = $walletNamespace ?? '';
-    const canLoadOrders = $walletIsConnected && $isAuthed && !$walletIsUnsupported && Boolean(accountId) && Boolean(namespace);
-
-    if (!canLoadOrders) {
+    if (!hasActiveOrderScope) {
       loadSequence += 1;
       orders = [];
       listError = null;
       isLoading = false;
+      return;
+    }
+
+    if (validationLoadingRequested) {
+      loadSequence += 1;
+      orders = [];
+      listError = null;
+      isLoading = true;
       return;
     }
 
@@ -181,7 +209,7 @@
             {$walletNamespaceLabel} · <span class="font-mono-num">{$walletShortAddress}</span>
           </span>
         </div>
-        <button class="btn-pill-outline" onclick={() => void loadOrders()} disabled={isLoading} data-testid="order-list-retry">
+        <button class="btn-pill-outline" onclick={() => { if (hasActiveOrderScope) void loadOrders(); }} disabled={isLoading || !hasActiveOrderScope} data-testid="order-list-retry">
           {isLoading ? 'Loading orders…' : 'Retry orders'}
         </button>
       </div>
@@ -190,6 +218,10 @@
         <div class="mt-8 flex items-center gap-3 text-sm text-base-content/70" data-testid="order-list-loading-state">
           <span class="loading loading-spinner loading-sm"></span>
           <span>Loading market-making orders from the web3 market-making API…</span>
+        </div>
+      {:else if !hasActiveOrderScope}
+        <div class="mt-8 rounded-2xl border border-base-300 px-5 py-4 text-sm text-base-content/70" data-testid="order-list-authenticating-state">
+          Authenticating the active wallet before loading account-scoped market-making orders. Previous wallet order data has been cleared.
         </div>
       {:else if listError}
         <div class="mt-8 rounded-2xl border border-error/40 px-5 py-4" data-testid="order-list-error-state">

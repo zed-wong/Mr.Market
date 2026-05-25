@@ -14,6 +14,12 @@ const apiHelperSource = () =>
     'utf8'
   );
 
+const layoutSource = () =>
+  readFileSync(
+    fileURLToPath(new URL('../../routes/+layout.svelte', import.meta.url)),
+    'utf8'
+  );
+
 describe('/market-making order list route', () => {
   it('loads market-making orders from the web3 market-making API namespace', () => {
     const route = listRouteSource();
@@ -29,6 +35,8 @@ describe('/market-making order list route', () => {
 
     expect(source).toContain('Market-making orders');
     expect(source).toContain('/market-making/order/new');
+    expect(source).toContain('validationListState');
+    expect(source).toContain('validationLoadingRequested');
     expect(source).toContain('order-list-loading-state');
     expect(source).toContain('order-list-empty-state');
     expect(source).toContain('order-list-error-state');
@@ -36,6 +44,22 @@ describe('/market-making order list route', () => {
     expect(source).toContain('order-list');
     expect(source).toContain('orderDetailHref(order.orderId)');
     expect(source).toContain('encodeURIComponent(orderId)');
+  });
+
+  it('clears stale rows and waits for auth that matches the active wallet scope', () => {
+    const source = listRouteSource();
+    const layout = layoutSource();
+
+    expect(source).toContain('authMatchesActiveWallet');
+    expect(source).toContain('hasUsableAuthSession');
+    expect(source).toContain('authMatchesWalletScope');
+    expect(source).toContain('address: activeWalletAddress');
+    expect(source).toContain('chainId: activeWalletChainId');
+    expect(source).toContain('orders = [];');
+    expect(source).toContain('order-list-authenticating-state');
+    expect(layout).toContain('authenticatedWalletKey !== walletKey');
+    expect(layout).toContain('clearAuth();');
+    expect(layout).toContain('ensureWeb3Auth(address, chainId, sequence)');
   });
 
   it('removes campaign discovery controls and terminology from the list page', () => {

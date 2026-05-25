@@ -268,8 +268,8 @@
   });
 
   $effect(() => {
-    if (!selectedStrategyId && strategies.length > 0) {
-      selectedStrategyId = strategies[0].id;
+    if (selectedStrategyId && !strategies.some((strategy) => strategy.id === selectedStrategyId)) {
+      selectedStrategyId = '';
     }
   });
 
@@ -338,6 +338,7 @@
             disabled={isSubmitting}
             data-testid="order-strategy-select"
           >
+            <option value="">Choose a strategy…</option>
             {#each strategies as strategy}
               <option value={strategy.id}>{strategyLabel(strategy)}</option>
             {/each}

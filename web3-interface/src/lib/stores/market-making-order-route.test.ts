@@ -48,6 +48,15 @@ describe('market-making campaign detail to order route', () => {
     expect(source).toContain('disabled={isSubmitting');
   });
 
+  it('keeps strategy selection explicitly unselected until the user chooses one', () => {
+    const source = orderCreateSource();
+
+    expect(source).toContain('<option value="">Choose a strategy…</option>');
+    expect(source).toContain('Choose a market-making strategy.');
+    expect(source).toContain('selectedStrategyId && !strategies.some');
+    expect(source).not.toContain('selectedStrategyId = strategies[0].id');
+  });
+
   it('wires the web3 market-making API helpers for create options and submission', () => {
     const helper = readFileSync(
       fileURLToPath(new URL('../helpers/api/web3.ts', import.meta.url)),

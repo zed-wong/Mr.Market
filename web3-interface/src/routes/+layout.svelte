@@ -73,8 +73,11 @@
 
     const walletKey = `${address}:${chainId}`;
 
-    if (authenticatedWalletKey === walletKey && $isAuthed) return;
-    authenticatedWalletKey = walletKey;
+    if (authenticatedWalletKey !== walletKey) {
+      authenticatedWalletKey = walletKey;
+      clearAuth();
+    }
+    if ($isAuthed) return;
     const sequence = ++authSequence;
     void ensureWeb3Auth(address, chainId, sequence);
   });
