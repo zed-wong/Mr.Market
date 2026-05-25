@@ -20,6 +20,8 @@ const orderDetailSource = () =>
     'utf8'
   );
 
+const legacyWeb3MarketMakingNamespace = () => ['/api/v1/web3', 'market-making'].join('/');
+
 describe('market-making campaign detail to order route', () => {
   it('renders order-first creation without a campaign prerequisite', () => {
     const source = orderCreateSource();
@@ -63,7 +65,8 @@ describe('market-making campaign detail to order route', () => {
       'utf8'
     );
 
-    expect(helper).toContain('/api/v1/web3/market-making');
+    expect(helper).toContain('/web3/market-making');
+    expect(helper).not.toContain(legacyWeb3MarketMakingNamespace());
     expect(helper).toContain('listMarketMakingStrategies');
     expect(helper).toContain('/strategies');
     expect(helper).toContain('listMarketMakingOptions');

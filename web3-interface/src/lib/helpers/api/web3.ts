@@ -13,7 +13,7 @@ import type {
 } from '$lib/types/market-making';
 import type { WithdrawRequest, WithdrawResponse } from '$lib/types/withdraw';
 
-const WEB3_MARKET_MAKING_NAMESPACE = '/api/v1/web3/market-making';
+const WEB3_MARKET_MAKING_NAMESPACE = '/web3/market-making';
 
 const orderEndpoint = (orderId: string, suffix = ''): string =>
   `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${encodeURIComponent(orderId)}${suffix}`;

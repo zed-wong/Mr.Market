@@ -27,7 +27,7 @@ describe('Web3MarketMakingController', () => {
 
   it('uses a single web3 market-making namespace', () => {
     expect(Reflect.getMetadata(PATH_METADATA, Web3MarketMakingController)).toBe(
-      'api/v1/web3/market-making',
+      'web3/market-making',
     );
   });
 

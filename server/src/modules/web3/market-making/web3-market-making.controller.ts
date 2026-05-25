@@ -22,7 +22,7 @@ type AuthenticatedRequest = {
 };
 
 @ApiTags('Web3 Market Making')
-@Controller('api/v1/web3/market-making')
+@Controller('web3/market-making')
 export class Web3MarketMakingController {
   constructor(
     private readonly web3MarketMakingService: Web3MarketMakingService,

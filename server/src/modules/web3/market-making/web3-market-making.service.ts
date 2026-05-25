@@ -82,6 +82,7 @@ const PAUSABLE_STATES: MarketMakingStates[] = ['running'];
 const RESUMABLE_STATES: MarketMakingStates[] = ['paused'];
 const TERMINAL_STATES: MarketMakingStates[] = ['deleted', 'failed', 'refunded'];
 const VALIDATION_PAIR_ID = '00000000-0000-4000-8000-000000000101';
+const WEB3_MARKET_MAKING_NAMESPACE = '/web3/market-making';
 
 @Injectable()
 export class Web3MarketMakingService {
@@ -130,7 +131,7 @@ export class Web3MarketMakingService {
     const definitionMap = await this.loadStrategyDefinitions(orders);
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       total: orders.length,
       orders: orders.map((order) =>
         this.serializeOrderSummary(
@@ -176,7 +177,7 @@ export class Web3MarketMakingService {
       : null;
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       order: this.serializeOrderDetail(
         order,
         balances,
@@ -195,7 +196,7 @@ export class Web3MarketMakingService {
       await this.userOrdersService.listEnabledMarketMakingStrategies();
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       strategies: strategies.map((strategy) => ({
         ...strategy,
         name: strategy.name || strategy.key || null,
@@ -218,7 +219,7 @@ export class Web3MarketMakingService {
     });
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       options: pairs
         .filter((pair) => pair.enable !== false)
         .map((pair) => this.serializePairOption(pair)),
@@ -304,7 +305,7 @@ export class Web3MarketMakingService {
     }
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       orderId: intent.orderId,
       memo: intent.memo,
       expiresAt: intent.expiresAt,
@@ -312,7 +313,7 @@ export class Web3MarketMakingService {
         mode: requestedDeposit
           ? 'initial_deposit_recorded'
           : 'separate_deposit_required',
-        depositEndpoint: `/api/v1/web3/market-making/orders/${intent.orderId}/deposit`,
+        depositEndpoint: `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${intent.orderId}/deposit`,
         memo: intent.memo,
         expiresAt: intent.expiresAt,
       },
@@ -349,7 +350,7 @@ export class Web3MarketMakingService {
     });
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       mutation: {
         type: 'deposit',
         applied: result.applied,
@@ -389,7 +390,7 @@ export class Web3MarketMakingService {
     });
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       mutation: {
         type: 'withdraw',
         applied: result.applied,
@@ -449,7 +450,7 @@ export class Web3MarketMakingService {
     });
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       mutation: { type: 'start', applied: true },
       order: (await this.getOrderDetail(userId, orderId)).order,
     };
@@ -486,7 +487,7 @@ export class Web3MarketMakingService {
     });
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       mutation: { type: 'pause', applied: true },
       order: (await this.getOrderDetail(userId, orderId)).order,
     };
@@ -541,7 +542,7 @@ export class Web3MarketMakingService {
     });
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       mutation: { type: 'resume', applied: true },
       order: (await this.getOrderDetail(userId, orderId)).order,
     };
@@ -574,7 +575,7 @@ export class Web3MarketMakingService {
     this.balanceLedgerService.pauseReservations(order.orderId, balance.assetId);
 
     return {
-      namespace: '/api/v1/web3/market-making',
+      namespace: WEB3_MARKET_MAKING_NAMESPACE,
       fixture: 'reconciliation_mismatch',
       orderId: order.orderId,
       assetId: balance.assetId,

@@ -31,7 +31,7 @@
   type WalletInteractionMode = 'approve' | 'reject' | 'timeout' | 'network-mismatch';
 
   let order = $state<Web3MarketMakingOrderDetail | null>(null);
-  let detailNamespace = $state('/api/v1/web3/market-making');
+  let detailNamespace = $state('/web3/market-making');
   let isLoading = $state(false);
   let detailError = $state<string | null>(null);
   let isNotFound = $state(false);

@@ -20,13 +20,16 @@ const layoutSource = () =>
     'utf8'
   );
 
+const legacyWeb3MarketMakingNamespace = () => ['/api/v1/web3', 'market-making'].join('/');
+
 describe('/market-making order list route', () => {
   it('loads market-making orders from the web3 market-making API namespace', () => {
     const route = listRouteSource();
     const helper = apiHelperSource();
 
     expect(route).toContain('listMarketMakingOrders');
-    expect(helper).toContain('/api/v1/web3/market-making');
+    expect(helper).toContain('/web3/market-making');
+    expect(helper).not.toContain(legacyWeb3MarketMakingNamespace());
     expect(helper).toContain('listMarketMakingOrders');
   });
 

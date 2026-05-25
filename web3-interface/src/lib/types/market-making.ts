@@ -97,12 +97,12 @@ export interface Web3MarketMakingOrderDetail extends Web3MarketMakingOrderSummar
 }
 
 export interface Web3MarketMakingOrderDetailResponse {
-  namespace: '/api/v1/web3/market-making';
+  namespace: '/web3/market-making';
   order: Web3MarketMakingOrderDetail;
 }
 
 export interface Web3MarketMakingOrderListResponse {
-  namespace: '/api/v1/web3/market-making';
+  namespace: '/web3/market-making';
   total: number;
   orders: Web3MarketMakingOrderSummary[];
 }
@@ -120,7 +120,7 @@ export interface Web3MarketMakingStrategyOption {
 }
 
 export interface Web3MarketMakingStrategiesResponse {
-  namespace: '/api/v1/web3/market-making';
+  namespace: '/web3/market-making';
   strategies: Web3MarketMakingStrategyOption[];
 }
 
@@ -155,7 +155,7 @@ export interface Web3MarketMakingPairOption {
 }
 
 export interface Web3MarketMakingOptionsResponse {
-  namespace: '/api/v1/web3/market-making';
+  namespace: '/web3/market-making';
   options: Web3MarketMakingPairOption[];
 }
 
@@ -169,7 +169,7 @@ export interface Web3MarketMakingCreateRequest {
 }
 
 export interface Web3MarketMakingCreateResponse {
-  namespace: '/api/v1/web3/market-making';
+  namespace: '/web3/market-making';
   orderId: string;
   memo?: string | null;
   expiresAt?: string | null;
@@ -198,7 +198,7 @@ export interface Web3MarketMakingMoneyMovementRequest {
 }
 
 export interface Web3MarketMakingMutationResponse {
-  namespace: '/api/v1/web3/market-making';
+  namespace: '/web3/market-making';
   mutation: {
     type: 'deposit' | 'withdraw' | 'start' | 'pause' | 'resume';
     applied: boolean;

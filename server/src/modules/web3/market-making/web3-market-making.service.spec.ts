@@ -589,7 +589,7 @@ describe('Web3MarketMakingService', () => {
       },
       funding: {
         depositEndpoint:
-          '/api/v1/web3/market-making/orders/intent-order/deposit',
+          '/web3/market-making/orders/intent-order/deposit',
       },
       order: {
         orderId: 'intent-order',

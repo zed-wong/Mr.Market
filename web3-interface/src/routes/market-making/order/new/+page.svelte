@@ -486,7 +486,7 @@
       {:else if flowStep === 'submitting'}
         <div class="mt-6 flex items-center gap-3 rounded-2xl border border-base-300 px-5 py-4 text-sm text-base-content/70" data-testid="order-submit-pending">
           <span class="loading loading-spinner loading-sm"></span>
-          <span>Submitting the order through /api/v1/web3/market-making/orders…</span>
+          <span>Submitting the order through /web3/market-making/orders…</span>
         </div>
       {:else if flowStep === 'submit-error' && submitError}
         <div class="mt-6 rounded-2xl border border-error/40 px-5 py-4" data-testid="order-submit-error">
