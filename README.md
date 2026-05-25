@@ -58,7 +58,7 @@ bun run --cwd admin-interface preview -- --host localhost --port 4176
 
 ### Local web3-interface prototype
 
-`web3-interface` is a UI-only SvelteKit demo for the Web3 user flows. It can use Reown wallet connection state, but campaign, balance, funding, order, session, and activity data are deterministic mocks. The demo path covers login/demo wallet states, wrong network, session expired, market-making campaign discovery, order creation, order detail lifecycle actions, deposit, withdraw, responsive layouts, and empty/loading/error states. It intentionally excludes swap/spot flows and does not call server endpoints for business data.
+`web3-interface` is a SvelteKit prototype for Web3 user flows. It can use Reown wallet connection state and now presents an order-first market-making experience: `/market-making` shows wallet-scoped orders with a create action, order creation captures strategy/spec/deposit inputs, and order detail shows PnL, specs, balances, events, and start/pause/resume/deposit/withdraw actions. Market-making order surfaces use the server-backed Web3 market-making API and no longer show campaign UX. It intentionally excludes swap/spot flows.
 
 Run the prototype locally:
 
@@ -74,6 +74,8 @@ bun run --cwd web3-interface lint
 bun run --cwd web3-interface test:unit
 bun run --cwd web3-interface build
 ```
+
+The mission validation gate for the Web3 market-making order UX also passed all assertions in `validation-state.json` (75/75).
 
 Future server endpoint contracts are documented in [`docs/plans/2026-05-23-future-web3-endpoint-documentation.md`](./docs/plans/2026-05-23-future-web3-endpoint-documentation.md).
 
