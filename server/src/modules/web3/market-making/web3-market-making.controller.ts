@@ -43,7 +43,9 @@ export class Web3MarketMakingController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get authenticated user market-making order detail' })
+  @ApiOperation({
+    summary: 'Get authenticated user market-making order detail',
+  })
   async getOrderDetail(
     @Param('orderId') orderId: string,
     @Req() request: AuthenticatedRequest,
@@ -56,7 +58,9 @@ export class Web3MarketMakingController {
 
   @Get('strategies')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'List public enabled web3 market-making strategies' })
+  @ApiOperation({
+    summary: 'List public enabled web3 market-making strategies',
+  })
   async listStrategies() {
     return await this.web3MarketMakingService.listStrategies();
   }
@@ -159,6 +163,26 @@ export class Web3MarketMakingController {
     return await this.web3MarketMakingService.resume(
       this.getAuthenticatedUserId(request),
       orderId,
+    );
+  }
+
+  @Post('validation/orders/:orderId/reconciliation-mismatch')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Validation-only fixture that marks an owned order balance as reconciliation-mismatched',
+  })
+  async createValidationReconciliationMismatch(
+    @Param('orderId') orderId: string,
+    @Body() body: Record<string, unknown>,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return await this.web3MarketMakingService.createValidationReconciliationMismatch(
+      this.getAuthenticatedUserId(request),
+      orderId,
+      body,
     );
   }
 

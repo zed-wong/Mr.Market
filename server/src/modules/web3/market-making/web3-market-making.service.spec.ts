@@ -269,7 +269,65 @@ describe('Web3MarketMakingService', () => {
           updatedAt: '2026-05-24T00:01:00.000Z',
         },
       })),
+      lockFunds: jest.fn(async (command) => {
+        const balance =
+          balances.find(
+            (row) =>
+              row.orderId === command.orderId &&
+              row.assetId === command.assetId,
+          ) ||
+          ({
+            orderId: command.orderId,
+            userId: command.userId,
+            assetId: command.assetId,
+            available: '0',
+            locked: '0',
+            total: '0',
+            initialDeposit: '0',
+            realizedDelta: '0',
+            feePaid: '0',
+            updatedAt: '2026-05-24T00:01:00.000Z',
+          } as MarketMakingOrderBalance);
+
+        balance.available = String(
+          Number(balance.available) - Number(command.amount),
+        );
+        balance.locked = String(
+          Number(balance.locked) + Number(command.amount),
+        );
+        balance.total = String(
+          Number(balance.available) + Number(balance.locked),
+        );
+        balance.updatedAt = '2026-05-24T00:02:00.000Z';
+        if (!balances.includes(balance)) {
+          balances.push(balance);
+        }
+
+        return { applied: true, balance };
+      }),
+      unlockFunds: jest.fn(async (command) => {
+        const balance = balances.find(
+          (row) =>
+            row.orderId === command.orderId && row.assetId === command.assetId,
+        ) as MarketMakingOrderBalance;
+
+        balance.available = String(
+          Number(balance.available) + Number(command.amount),
+        );
+        balance.locked = String(
+          Number(balance.locked) - Number(command.amount),
+        );
+        balance.total = String(
+          Number(balance.available) + Number(balance.locked),
+        );
+        balance.updatedAt = '2026-05-24T00:03:00.000Z';
+
+        return { applied: true, balance };
+      }),
       isReservationPaused: jest.fn(() => Boolean(params?.pausedReservations)),
+      pauseReservations: jest.fn((_orderId: string, _assetId: string) => {
+        params = { ...(params || {}), pausedReservations: true };
+      }),
     };
     const lifecycleEvents = params?.lifecycleEvents || [];
     const lifecycleEventRepository = createRepository(lifecycleEvents);
@@ -325,8 +383,26 @@ describe('Web3MarketMakingService', () => {
       runtime,
       lifecycleEvents,
       lifecycleEventRepository,
+      balances,
     };
   };
+
+  it('lists strategies with the contract-required controller field and compatibility controllerType', async () => {
+    const { service } = buildService();
+
+    const result = await service.listStrategies();
+
+    expect(result.strategies).toEqual([
+      expect.objectContaining({
+        id: 'strategy-1',
+        key: 'pure-mm',
+        controller: 'pureMarketMaking',
+        controllerType: 'pureMarketMaking',
+        defaultConfig: expect.any(Object),
+        configSchema: expect.any(Object),
+      }),
+    ]);
+  });
 
   it('lists only authenticated user non-admin market-making orders with balances and PnL', async () => {
     const { service } = buildService({
@@ -522,6 +598,55 @@ describe('Web3MarketMakingService', () => {
     });
   });
 
+  it('deduplicates concurrent create submissions with the same request payload', async () => {
+    const { service, userOrdersService, orders } = buildService({ orders: [] });
+    const intent = (orderId: string) => ({
+      orderId,
+      memo: `memo:${orderId}`,
+      expiresAt: '2026-05-24T00:15:00.000Z',
+      marketMakingPairId: 'pair-1',
+      strategyDefinitionId: 'strategy-1',
+      strategySnapshot: {
+        strategyDefinitionId: 'strategy-1',
+        definitionKey: 'pure-mm',
+        definitionName: 'Pure MM',
+        controllerType: 'pureMarketMaking',
+        resolvedConfig: {
+          bidSpread: 0.001,
+          askSpread: 0.001,
+          orderAmount: 1,
+          orderRefreshTime: 60000,
+          numberOfLayers: 1,
+          priceSourceType: PriceSourceType.MID_PRICE,
+          amountChangePerLayer: 0,
+          amountChangeType: 'fixed',
+        },
+        resolvedAt: '2026-05-24T00:00:00.000Z',
+      },
+    });
+
+    userOrdersService.createMarketMakingOrderIntent
+      .mockResolvedValueOnce(intent('intent-order-a'))
+      .mockResolvedValueOnce(intent('intent-order-b'));
+
+    const body = {
+      marketMakingPairId: 'pair-1',
+      strategyDefinitionId: 'strategy-1',
+      configOverrides: { orderAmount: 1 },
+      initialDeposit: { assetId: 'asset-usdt', amount: '100' },
+    };
+    const [first, second] = await Promise.all([
+      service.createOrder('user-1', body),
+      service.createOrder('user-1', body),
+    ]);
+
+    expect(first.orderId).toBe(second.orderId);
+    expect(
+      userOrdersService.createMarketMakingOrderIntent,
+    ).toHaveBeenCalledTimes(1);
+    expect(orders).toHaveLength(1);
+  });
+
   it('deposits only into the owned order using orderId, pair option asset id, and idempotency', async () => {
     const { service, ledger } = buildService();
 
@@ -571,7 +696,7 @@ describe('Web3MarketMakingService', () => {
   });
 
   it('starts only startable orders with funding and without reconciliation mismatch', async () => {
-    const { service, userOrdersService } = buildService();
+    const { service, userOrdersService, ledger } = buildService();
 
     const result = await service.start('user-1', 'order-1');
 
@@ -580,7 +705,26 @@ describe('Web3MarketMakingService', () => {
       'running',
       null,
     );
+    expect(ledger.lockFunds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        userId: 'user-1',
+        assetId: 'asset-usdt',
+        amount: '1',
+        idempotencyKey: 'web3:runtime-reservation:order-1:asset-usdt',
+        refType: 'web3_order_runtime_reservation',
+      }),
+    );
     expect(result.order.state).toBe('running');
+    expect(result.order.balances).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetId: 'asset-usdt',
+          available: '99',
+          locked: '1',
+        }),
+      ]),
+    );
   });
 
   it('does not start runtime when lifecycle persistence fails', async () => {
@@ -689,6 +833,30 @@ describe('Web3MarketMakingService', () => {
     expect(
       userOrdersService.updateMarketMakingOrderState,
     ).not.toHaveBeenCalled();
+  });
+
+  it('exposes a validation fixture to pause reservations for an owned order balance', async () => {
+    const { service, ledger } = buildService();
+
+    const result = await service.createValidationReconciliationMismatch(
+      'user-1',
+      'order-1',
+      { assetId: 'asset-usdt' },
+    );
+
+    expect(ledger.pauseReservations).toHaveBeenCalledWith(
+      'order-1',
+      'asset-usdt',
+    );
+    expect(result).toMatchObject({
+      fixture: 'reconciliation_mismatch',
+      orderId: 'order-1',
+      assetId: 'asset-usdt',
+      blocks: ['start', 'resume'],
+    });
+    await expect(service.start('user-1', 'order-1')).rejects.toThrow(
+      ConflictException,
+    );
   });
 
   it('pauses and resumes only from valid owned states', async () => {

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { LedgerEntry } from 'src/common/entities/ledger/ledger-entry.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
@@ -32,6 +32,9 @@ import { DataSource, Repository } from 'typeorm';
 
 type CreateOrderBody = {
   userId?: string;
+  clientRequestId?: string;
+  idempotencyKey?: string;
+  requestId?: string;
   marketMakingPairId?: string;
   pairId?: string;
   strategyDefinitionId?: string;
@@ -49,6 +52,11 @@ type MoneyMovementBody = {
   asset?: string;
   amount?: string;
   idempotencyKey?: string;
+};
+
+type ValidationMismatchBody = {
+  assetId?: string;
+  asset?: string;
 };
 
 type OrderBalanceDto = {
@@ -78,6 +86,15 @@ const VALIDATION_PAIR_ID = '00000000-0000-4000-8000-000000000101';
 @Injectable()
 export class Web3MarketMakingService {
   private readonly lifecycleMutationLocks = new Map<string, Promise<void>>();
+  private readonly createOrderRequests = new Map<
+    string,
+    {
+      payloadHash: string;
+      expiresAt: number;
+      promise?: Promise<unknown>;
+      result?: unknown;
+    }
+  >();
 
   constructor(
     @InjectRepository(MarketMakingOrder)
@@ -174,11 +191,21 @@ export class Web3MarketMakingService {
 
   async listStrategies() {
     await this.ensureValidationOptions();
+    const strategies =
+      await this.userOrdersService.listEnabledMarketMakingStrategies();
 
     return {
       namespace: '/api/v1/web3/market-making',
-      strategies:
-        await this.userOrdersService.listEnabledMarketMakingStrategies(),
+      strategies: strategies.map((strategy) => ({
+        ...strategy,
+        name: strategy.name || strategy.key || null,
+        description: strategy.description || null,
+        controller: strategy.controller || strategy.controllerType || null,
+        controllerType: strategy.controllerType || strategy.controller || null,
+        capabilities: strategy.capabilities || null,
+        defaultConfig: strategy.defaultConfig || {},
+        configSchema: strategy.configSchema || {},
+      })),
     };
   }
 
@@ -199,6 +226,14 @@ export class Web3MarketMakingService {
   }
 
   async createOrder(userId: string, body: CreateOrderBody) {
+    const request = this.buildCreateOrderRequest(userId, body || {});
+
+    return await this.withCreateOrderDeduplication(request, async () =>
+      this.createOrderInternal(userId, body || {}),
+    );
+  }
+
+  private async createOrderInternal(userId: string, body: CreateOrderBody) {
     await this.ensureValidationOptions();
 
     if (Object.prototype.hasOwnProperty.call(body || {}, 'userId')) {
@@ -379,21 +414,38 @@ export class Web3MarketMakingService {
         toState: 'running',
       });
       const previousLifecycleError = order.lifecycleError ?? null;
+      let runtimeReservation: {
+        assetId: string;
+        amount: string;
+        applied: boolean;
+      } | null = null;
 
       order.state = 'running';
       order.lifecycleError = null;
-      await this.runLifecycleRuntimeSideEffect(order, userId, 'start').catch(
-        async (error) => {
-          await this.compensateLifecycleRuntimeFailure(order, {
-            eventId: transition.eventId,
-            fromState,
-            previousLifecycleError,
-            runtimeAction: 'start',
+      try {
+        runtimeReservation = await this.ensureRuntimeStartReservation(
+          order,
+          userId,
+        );
+        await this.runLifecycleRuntimeSideEffect(order, userId, 'start');
+      } catch (error) {
+        if (runtimeReservation?.applied) {
+          await this.releaseRuntimeStartReservation(
+            order,
             userId,
-          });
-          throw error;
-        },
-      );
+            runtimeReservation,
+            'start_failed',
+          ).catch(() => undefined);
+        }
+        await this.compensateLifecycleRuntimeFailure(order, {
+          eventId: transition.eventId,
+          fromState,
+          previousLifecycleError,
+          runtimeAction: 'start',
+          userId,
+        });
+        throw error;
+      }
     });
 
     return {
@@ -454,27 +506,82 @@ export class Web3MarketMakingService {
         toState: 'running',
       });
       const previousLifecycleError = order.lifecycleError ?? null;
+      let runtimeReservation: {
+        assetId: string;
+        amount: string;
+        applied: boolean;
+      } | null = null;
 
       order.state = 'running';
       order.lifecycleError = null;
-      await this.runLifecycleRuntimeSideEffect(order, userId, 'start').catch(
-        async (error) => {
-          await this.compensateLifecycleRuntimeFailure(order, {
-            eventId: transition.eventId,
-            fromState,
-            previousLifecycleError,
-            runtimeAction: 'start',
+      try {
+        runtimeReservation = await this.ensureRuntimeStartReservation(
+          order,
+          userId,
+        );
+        await this.runLifecycleRuntimeSideEffect(order, userId, 'start');
+      } catch (error) {
+        if (runtimeReservation?.applied) {
+          await this.releaseRuntimeStartReservation(
+            order,
             userId,
-          });
-          throw error;
-        },
-      );
+            runtimeReservation,
+            'resume_failed',
+          ).catch(() => undefined);
+        }
+        await this.compensateLifecycleRuntimeFailure(order, {
+          eventId: transition.eventId,
+          fromState,
+          previousLifecycleError,
+          runtimeAction: 'start',
+          userId,
+        });
+        throw error;
+      }
     });
 
     return {
       namespace: '/api/v1/web3/market-making',
       mutation: { type: 'resume', applied: true },
       order: (await this.getOrderDetail(userId, orderId)).order,
+    };
+  }
+
+  async createValidationReconciliationMismatch(
+    userId: string,
+    orderId: string,
+    body: ValidationMismatchBody = {},
+  ) {
+    this.assertValidationFixtureEnabled();
+    const order = await this.loadOwnedPublicOrder(userId, orderId);
+    const balances = await this.loadBalances(order.orderId);
+    const requestedAssetId = String(body?.assetId || body?.asset || '').trim();
+    const balance = requestedAssetId
+      ? balances.find((candidate) => candidate.assetId === requestedAssetId)
+      : balances.find((candidate) =>
+          new BigNumber(candidate.total || 0).isGreaterThan(0),
+        );
+
+    if (!balance) {
+      throw this.badRequest(
+        'FIXTURE_BALANCE_REQUIRED',
+        requestedAssetId
+          ? `${requestedAssetId} does not have an order-attributed balance for this order`
+          : 'reconciliation mismatch fixture requires an order-attributed balance',
+      );
+    }
+
+    this.balanceLedgerService.pauseReservations(order.orderId, balance.assetId);
+
+    return {
+      namespace: '/api/v1/web3/market-making',
+      fixture: 'reconciliation_mismatch',
+      orderId: order.orderId,
+      assetId: balance.assetId,
+      status: 'active',
+      blocks: ['start', 'resume'],
+      message:
+        'Validation fixture marked this order balance as reconciliation-mismatched; risk-increasing operations are blocked until the process is reset or the balance is rebuilt.',
     };
   }
 
@@ -1059,6 +1166,91 @@ export class Web3MarketMakingService {
     }
   }
 
+  private async ensureRuntimeStartReservation(
+    order: MarketMakingOrder,
+    userId: string,
+  ): Promise<{ assetId: string; amount: string; applied: boolean } | null> {
+    const balances = await this.loadBalances(order.orderId);
+    const existingLocked = balances.find((balance) =>
+      new BigNumber(balance.locked || 0).isGreaterThan(0),
+    );
+
+    if (existingLocked) {
+      return {
+        assetId: existingLocked.assetId,
+        amount: '0',
+        applied: false,
+      };
+    }
+
+    const candidates = balances
+      .filter((balance) =>
+        new BigNumber(balance.available || 0).isGreaterThan(0),
+      )
+      .sort((left, right) =>
+        new BigNumber(right.available || 0)
+          .minus(left.available || 0)
+          .toNumber(),
+      );
+    const balance = candidates[0];
+
+    if (!balance) {
+      throw new ConflictException({
+        code: 'ORDER_RESERVATION_REQUIRED',
+        message:
+          'Order requires available order-attributed funds before runtime reservation',
+      });
+    }
+
+    const available = new BigNumber(balance.available);
+    const configuredOrderAmount = new BigNumber(order.orderAmount || 0);
+    const amount =
+      configuredOrderAmount.isFinite() && configuredOrderAmount.isGreaterThan(0)
+        ? BigNumber.minimum(configuredOrderAmount, available)
+        : available;
+
+    if (!amount.isFinite() || amount.isLessThanOrEqualTo(0)) {
+      throw new ConflictException({
+        code: 'ORDER_RESERVATION_REQUIRED',
+        message:
+          'Order requires positive available order-attributed funds before runtime reservation',
+      });
+    }
+
+    const result = await this.balanceLedgerService.lockFunds({
+      orderId: order.orderId,
+      userId,
+      assetId: balance.assetId,
+      amount: amount.toFixed(),
+      idempotencyKey: `web3:runtime-reservation:${order.orderId}:${balance.assetId}`,
+      refType: 'web3_order_runtime_reservation',
+      refId: order.orderId,
+    });
+
+    return {
+      assetId: balance.assetId,
+      amount: amount.toFixed(),
+      applied: result.applied,
+    };
+  }
+
+  private async releaseRuntimeStartReservation(
+    order: MarketMakingOrder,
+    userId: string,
+    reservation: { assetId: string; amount: string },
+    reason: 'start_failed' | 'resume_failed',
+  ): Promise<void> {
+    await this.balanceLedgerService.unlockFunds({
+      orderId: order.orderId,
+      userId,
+      assetId: reservation.assetId,
+      amount: reservation.amount,
+      idempotencyKey: `web3:runtime-reservation-release:${order.orderId}:${reservation.assetId}:${reason}`,
+      refType: `web3_order_runtime_reservation_${reason}`,
+      refId: order.orderId,
+    });
+  }
+
   private async getSupportedAssets(order: MarketMakingOrder) {
     const pair = await this.marketMakingPairRepository.findOne({
       where: {
@@ -1251,6 +1443,122 @@ export class Web3MarketMakingService {
 
   private getTransactionalDataSource(): DataSource | null {
     return this.dataSource?.isInitialized ? this.dataSource : null;
+  }
+
+  private buildCreateOrderRequest(userId: string, body: CreateOrderBody) {
+    const explicitKey = String(
+      body?.clientRequestId || body?.idempotencyKey || body?.requestId || '',
+    ).trim();
+    const payload = {
+      userId,
+      marketMakingPairId: body?.marketMakingPairId || body?.pairId || null,
+      strategyDefinitionId:
+        body?.strategyDefinitionId || body?.strategyId || null,
+      configOverrides: body?.configOverrides || null,
+      initialDeposit: body?.initialDeposit || null,
+    };
+    const payloadHash = createHash('sha256')
+      .update(this.stableStringify(payload))
+      .digest('hex');
+
+    return {
+      key: explicitKey
+        ? `explicit:${userId}:${explicitKey}`
+        : `fingerprint:${payloadHash}`,
+      payloadHash,
+    };
+  }
+
+  private async withCreateOrderDeduplication<T>(
+    request: { key: string; payloadHash: string },
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    this.pruneCreateOrderRequests();
+    const existing = this.createOrderRequests.get(request.key);
+
+    if (existing) {
+      if (existing.payloadHash !== request.payloadHash) {
+        throw new ConflictException({
+          code: 'CREATE_IDEMPOTENCY_CONFLICT',
+          message:
+            'create-order idempotency key was reused with a different payload',
+        });
+      }
+      if (existing.result !== undefined) {
+        return existing.result as T;
+      }
+      if (existing.promise) {
+        return (await existing.promise) as T;
+      }
+    }
+
+    const record = {
+      payloadHash: request.payloadHash,
+      expiresAt: Date.now() + 2 * 60 * 1000,
+    } as {
+      payloadHash: string;
+      expiresAt: number;
+      promise?: Promise<unknown>;
+      result?: unknown;
+    };
+    const promise = operation()
+      .then((result) => {
+        record.result = result;
+        record.expiresAt = Date.now() + 2 * 60 * 1000;
+
+        return result;
+      })
+      .catch((error) => {
+        this.createOrderRequests.delete(request.key);
+        throw error;
+      });
+
+    record.promise = promise;
+    this.createOrderRequests.set(request.key, record);
+
+    return await promise;
+  }
+
+  private pruneCreateOrderRequests(): void {
+    const now = Date.now();
+
+    for (const [key, record] of this.createOrderRequests.entries()) {
+      if (record.expiresAt <= now) {
+        this.createOrderRequests.delete(key);
+      }
+    }
+  }
+
+  private stableStringify(value: unknown): string {
+    if (value === null || typeof value !== 'object') {
+      return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+      return `[${value.map((entry) => this.stableStringify(entry)).join(',')}]`;
+    }
+
+    const objectValue = value as Record<string, unknown>;
+
+    return `{${Object.keys(objectValue)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${this.stableStringify(objectValue[key])}`,
+      )
+      .join(',')}}`;
+  }
+
+  private assertValidationFixtureEnabled(): void {
+    if (
+      process.env.NODE_ENV === 'test' ||
+      String(process.env.MR_MARKET_ENABLE_VALIDATION_FIXTURES || '')
+        .toLowerCase()
+        .trim() === 'true'
+    ) {
+      return;
+    }
+
+    throw new NotFoundException('Validation fixture surface is not enabled');
   }
 
   private async withLifecycleMutationLock<T>(

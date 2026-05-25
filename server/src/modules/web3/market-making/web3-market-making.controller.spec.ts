@@ -1,5 +1,5 @@
-import { PATH_METADATA } from '@nestjs/common/constants';
 import { UnauthorizedException } from '@nestjs/common';
+import { PATH_METADATA } from '@nestjs/common/constants';
 
 import { Web3MarketMakingController } from './web3-market-making.controller';
 
@@ -15,6 +15,7 @@ describe('Web3MarketMakingController', () => {
     start: jest.fn(),
     pause: jest.fn(),
     resume: jest.fn(),
+    createValidationReconciliationMismatch: jest.fn(),
   };
 
   let controller: Web3MarketMakingController;
@@ -63,5 +64,23 @@ describe('Web3MarketMakingController', () => {
       UnauthorizedException,
     );
     expect(service.listOrders).not.toHaveBeenCalled();
+  });
+
+  it('binds validation reconciliation mismatch fixture setup to the authenticated owner', async () => {
+    service.createValidationReconciliationMismatch.mockResolvedValueOnce({
+      fixture: 'reconciliation_mismatch',
+    });
+
+    await controller.createValidationReconciliationMismatch(
+      'order-1',
+      { assetId: 'asset-usdt' },
+      { user: { userId: 'user-1' } },
+    );
+
+    expect(service.createValidationReconciliationMismatch).toHaveBeenCalledWith(
+      'user-1',
+      'order-1',
+      { assetId: 'asset-usdt' },
+    );
   });
 });

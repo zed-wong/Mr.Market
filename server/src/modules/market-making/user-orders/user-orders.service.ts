@@ -421,6 +421,7 @@ export class UserOrdersService {
         key: definition.key,
         name: definition.name,
         description: definition.description,
+        controller: definition.controllerType,
         controllerType: definition.controllerType,
         capabilities: definition.capabilities,
         defaultConfig: definition.defaultConfig || {},
