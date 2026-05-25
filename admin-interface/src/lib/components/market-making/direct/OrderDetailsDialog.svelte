@@ -272,7 +272,6 @@
                 <div class="px-7 pb-16 py-12">
                     <AdminStatePanel
                         kind="loading"
-                        context={$_("admin_direct_mm_order_diagnosis_context")}
                         title={$_("admin_direct_mm_detail_loading_title")}
                         message={$_("admin_direct_mm_detail_loading_message")}
                         testId="direct-mm-detail-loading"

@@ -4,7 +4,7 @@
 
   const navItems = [
     { href: '/', label: 'Home' },
-    { href: '/market', label: 'Markets' },
+    { href: '/market', label: 'Campaigns' },
     { href: '/market-making', label: 'Market making' },
     { href: '/wallet', label: 'Wallet' },
     { href: '/account', label: 'Account' },

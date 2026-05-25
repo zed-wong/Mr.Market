@@ -138,7 +138,7 @@ export const getApiKeyPermissionViews = (key: Partial<AdminSingleKey>): ApiKeyPe
         capability: 'read',
         label: 'read access',
         description: 'Can read exchange account data.',
-        tone: 'bg-base-content/5 text-base-content/60',
+        tone: 'bg-base-content/5 text-base-content/80',
       },
       {
         capability: 'trade',
@@ -155,7 +155,7 @@ export const getApiKeyPermissionViews = (key: Partial<AdminSingleKey>): ApiKeyPe
         capability: 'read',
         label: 'read only',
         description: 'Can read exchange account data but cannot trade.',
-        tone: 'bg-base-content/5 text-base-content/60',
+        tone: 'bg-base-content/5 text-base-content/80',
       },
     ];
   }

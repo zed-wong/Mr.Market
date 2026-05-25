@@ -73,7 +73,7 @@
 <div class="anim-page-enter" data-testid="web3-market-safe">
   <section class="flex flex-wrap items-end justify-between gap-4 px-1">
     <div class="flex flex-col">
-      <span class="eyebrow">Markets</span>
+      <span class="eyebrow">Campaigns</span>
       <span class="mt-1 text-display text-base-content">HuFi campaigns</span>
       <span class="mt-3 max-w-xl text-body-muted">
         Browse live active Polygon campaigns from the public HuFi Campaign Launcher. Discovery is public and does not require a wallet connection.

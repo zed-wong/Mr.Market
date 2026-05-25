@@ -25,7 +25,6 @@
 <section class="flex min-h-[70vh] flex-col justify-center" data-testid="web3-login">
   <div class="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
     <div class="max-w-xl">
-      <span class="eyebrow mb-3">web3 · sign in</span>
       <span class="font-display text-5xl md:text-6xl tracking-tight text-base-content">Connect to Mr.Market</span>
       <span class="mt-4 block text-base-content/60">
         Use Reown AppKit for wallet identity. Portfolio, balances, campaign eligibility, and activity are deterministic demo state scoped to your connected namespace.
