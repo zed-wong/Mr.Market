@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -159,8 +160,16 @@ export class AuthService {
   }
 
   async updateAdminPassword(newPassword: string): Promise<string> {
-    this.adminPassword = newPassword;
-    await this.setupConfigService.setAdminPassword(newPassword);
+    const normalized = String(newPassword || '').trim();
+
+    if (normalized.length < 8) {
+      throw new BadRequestException(
+        'Admin password must be at least 8 characters',
+      );
+    }
+
+    this.adminPassword = normalized;
+    await this.setupConfigService.setAdminPassword(normalized);
 
     const state = await this.getAdminAuthState();
 

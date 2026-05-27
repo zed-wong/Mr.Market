@@ -9,8 +9,6 @@ type ConfigField =
   | 'market_making_fee'
   | 'enable_spot_fee'
   | 'enable_market_making_fee'
-  | 'max_balance_mixin_bot'
-  | 'max_balance_single_api_key'
   | 'funding_account';
 
 type ConfigValue = string | boolean;
@@ -90,8 +88,6 @@ const DEFAULT_CUSTOM_CONFIG: Pick<CustomConfigEntity, ConfigField> = {
   market_making_fee: '0.001',
   enable_spot_fee: true,
   enable_market_making_fee: true,
-  max_balance_mixin_bot: '0',
-  max_balance_single_api_key: '0',
   funding_account: '',
 };
 
@@ -147,37 +143,6 @@ const CONFIG_DEFINITIONS: ConfigDefinition[] = [
     mutable: true,
     defaultValue: DEFAULT_CUSTOM_CONFIG.enable_market_making_fee,
     validation: { allowedValues: 'true,false' },
-  },
-  {
-    key: 'limits.max_balance_mixin_bot',
-    field: 'max_balance_mixin_bot',
-    label: 'Maximum Mixin bot balance',
-    category: 'limits',
-    description: 'Maximum configured balance retained by the Mixin bot.',
-    type: 'decimal',
-    mutable: true,
-    defaultValue: DEFAULT_CUSTOM_CONFIG.max_balance_mixin_bot,
-    validation: {
-      min: '0',
-      max: '1000000000000',
-      maxDecimalPlaces: MAX_DECIMAL_PLACES,
-    },
-  },
-  {
-    key: 'limits.max_balance_single_api_key',
-    field: 'max_balance_single_api_key',
-    label: 'Maximum single API key balance',
-    category: 'limits',
-    description:
-      'Maximum configured balance retained by a single exchange API key.',
-    type: 'decimal',
-    mutable: true,
-    defaultValue: DEFAULT_CUSTOM_CONFIG.max_balance_single_api_key,
-    validation: {
-      min: '0',
-      max: '1000000000000',
-      maxDecimalPlaces: MAX_DECIMAL_PLACES,
-    },
   },
   {
     key: 'funding.funding_account',
@@ -505,7 +470,6 @@ export class AdminSystemConfigService {
   private labelForCategory(category: string): string {
     const labels: Record<string, string> = {
       fees: 'Fees',
-      limits: 'Limits',
       funding: 'Funding',
     };
 

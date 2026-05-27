@@ -53,8 +53,6 @@ export const defaultCustomConfig: CustomConfigEntity = {
   market_making_fee: '0.001',
   enable_spot_fee: true,
   enable_market_making_fee: true,
-  max_balance_mixin_bot: '0',
-  max_balance_single_api_key: '0',
   funding_account: '',
 };
 

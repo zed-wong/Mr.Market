@@ -20,6 +20,7 @@ describe('AuthController guarded routes', () => {
     getSession: jest.Mock;
     validateUser: jest.Mock;
     logout: jest.Mock;
+    updateAdminPassword: jest.Mock;
     listPasskeys: jest.Mock;
     deletePasskey: jest.Mock;
     generatePasskeyRegistrationOptions: jest.Mock;
@@ -39,6 +40,7 @@ describe('AuthController guarded routes', () => {
       })),
       validateUser: jest.fn(),
       logout: jest.fn(),
+      updateAdminPassword: jest.fn(),
       listPasskeys: jest.fn(),
       deletePasskey: jest.fn(),
       generatePasskeyRegistrationOptions: jest.fn(),

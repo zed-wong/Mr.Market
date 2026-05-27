@@ -1,5 +1,5 @@
 /**
- * Stores global admin runtime configuration values (fees, limits, funding account).
+ * Stores global admin runtime configuration values (fees and funding account).
  * Used by app.module, database seeders, and admin/infrastructure config services.
  */
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
@@ -8,12 +8,6 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 export class CustomConfigEntity {
   @PrimaryGeneratedColumn()
   config_id: number; // The index config, 0 by default
-
-  @Column()
-  max_balance_mixin_bot: string; // Max amount of money to keep in mixin bot
-
-  @Column()
-  max_balance_single_api_key: string; // Max amount of money to keep in single exchange API Key
 
   @Column()
   funding_account: string; // The address or info about a safe place for storing profit

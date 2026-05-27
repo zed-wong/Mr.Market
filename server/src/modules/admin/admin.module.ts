@@ -15,7 +15,10 @@ import { StrategyInstance } from 'src/common/entities/market-making/strategy-ins
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { MixinUser } from 'src/common/entities/mixin/mixin-user.entity';
-import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import {
+  MarketMakingOrder,
+  SimplyGrowOrder,
+} from 'src/common/entities/orders/user-orders.entity';
 
 import { CampaignModule } from '../campaign/campaign.module';
 import { GrowdataModule } from '../data/grow-data/grow-data.module';
@@ -45,6 +48,8 @@ import { AdminDirectMarketMakingController } from './market-making/admin-direct-
 import { AdminDirectMarketMakingService } from './market-making/admin-direct-mm.service';
 import { AdminOrdersController } from './orders/admin-orders.controller';
 import { AdminOrdersService } from './orders/admin-orders.service';
+import { AdminUserOrdersController } from './orders/admin-user-orders.controller';
+import { AdminUserOrdersService } from './orders/admin-user-orders.service';
 import { AdminPositionsController } from './positions/admin-positions.controller';
 import { AdminPositionsService } from './positions/admin-positions.service';
 import { AdminSpotService } from './spot/admin-spot.service';
@@ -85,6 +90,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
       StrategyOrderIntentEntity,
       TrackedOrderEntity,
       MarketMakingOrder,
+      SimplyGrowOrder,
       MarketMakingOrderBalance,
       APIKeysConfig,
       MixinUser,
@@ -101,6 +107,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminController,
     AdminDashboardController,
     AdminOrdersController,
+    AdminUserOrdersController,
     AdminPositionsController,
     AdminSystemHealthController,
     AdminSystemConfigController,
@@ -113,6 +120,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminStrategyService,
     AdminDashboardService,
     AdminOrdersService,
+    AdminUserOrdersService,
     AdminPositionsService,
     AdminSystemHealthService,
     AdminSystemConfigService,
@@ -127,6 +135,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminStrategyService,
     AdminDashboardService,
     AdminOrdersService,
+    AdminUserOrdersService,
     AdminPositionsService,
     AdminSystemHealthService,
     AdminSystemConfigService,

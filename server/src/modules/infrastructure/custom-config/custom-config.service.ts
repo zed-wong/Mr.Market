@@ -20,14 +20,6 @@ export class CustomConfigService {
   async modifySpotFee(newSpotFee: string) {
     return await this.configRepository.modifySpotFee(newSpotFee);
   }
-  async modifyMaxBalanceInMixinBot(newMaxBalance: string) {
-    return await this.configRepository.modifyMaxBalanceInMixinBot(
-      newMaxBalance,
-    );
-  }
-  async modifyMaxBalanceInAPIKey(newMaxBalance: string) {
-    return await this.configRepository.modifyMaxBalanceInAPIKey(newMaxBalance);
-  }
   async readFundingAccountStatus() {
     return await this.configRepository.readFundingAccountStatus();
   }

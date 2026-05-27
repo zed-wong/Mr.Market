@@ -10,8 +10,6 @@ describe('AdminSystemConfigService', () => {
     market_making_fee: '0.001',
     enable_spot_fee: true,
     enable_market_making_fee: true,
-    max_balance_mixin_bot: '100',
-    max_balance_single_api_key: '25',
     funding_account: 'safe-wallet-address',
   };
 
@@ -38,15 +36,13 @@ describe('AdminSystemConfigService', () => {
 
     const response = await service.getConfig();
 
-    expect(response.items).toHaveLength(7);
+    expect(response.items).toHaveLength(5);
     expect(response.items.map((item) => item.key).sort()).toEqual([
       'fees.enable_market_making_fee',
       'fees.enable_spot_fee',
       'fees.market_making_fee',
       'fees.spot_fee',
       'funding.funding_account',
-      'limits.max_balance_mixin_bot',
-      'limits.max_balance_single_api_key',
     ]);
     expect(response.items[0]).toEqual(
       expect.objectContaining({

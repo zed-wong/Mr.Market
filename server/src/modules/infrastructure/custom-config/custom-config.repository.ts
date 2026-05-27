@@ -67,20 +67,6 @@ export class CustomConfigRepository {
     await this.customRepository.save(config);
   }
 
-  async modifyMaxBalanceInMixinBot(newMaxBalance: string, configId?: number) {
-    const config = await this.getConfigById(configId);
-
-    config.max_balance_mixin_bot = newMaxBalance;
-    await this.customRepository.save(config);
-  }
-
-  async modifyMaxBalanceInAPIKey(newMaxBalance: string, configId?: number) {
-    const config = await this.getConfigById(configId);
-
-    config.max_balance_single_api_key = newMaxBalance;
-    await this.customRepository.save(config);
-  }
-
   async readFundingAccountStatus(configId?: number) {
     const config = await this.getConfigById(configId);
 

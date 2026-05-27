@@ -107,6 +107,16 @@ export class AuthController {
     return this.authService.logout(request.user);
   }
 
+  @Post('password')
+  @UseGuards(JwtAuthGuard)
+  async updatePassword(
+    @Body('password') password: string,
+  ): Promise<{ access_token: string; expires_in: number }> {
+    const access_token = await this.authService.updateAdminPassword(password);
+
+    return { access_token, expires_in: 604800 };
+  }
+
   @Get('passkeys')
   @UseGuards(JwtAuthGuard)
   async listPasskeys() {
