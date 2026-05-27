@@ -111,6 +111,61 @@ describe('trading API helpers', () => {
     expect(url.searchParams.has('query')).toBe(false);
   });
 
+  it('requests authenticated admin user orders with backend filters and pagination', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          generatedAt: '2026-05-23T00:00:00.000Z',
+          items: [],
+          pagination: {
+            page: 2,
+            limit: 50,
+            total: 0,
+            totalPages: 1,
+            hasNext: false,
+            hasPrevious: true,
+          },
+          filters: { type: 'market_making', state: 'active', query: 'btc' },
+          limits: {
+            defaultLimit: 25,
+            maxLimit: 100,
+            maxPage: 1000,
+            maxQueryLength: 100,
+            maxScanRows: 1000,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { setAccessToken } = await import('./client');
+    const { fetchAdminUserOrders } = await import('./trading');
+
+    setAccessToken('admin-token');
+    const result = await fetchAdminUserOrders({
+      type: 'market_making',
+      state: ' active ',
+      query: ' btc ',
+      limit: 50,
+      page: 2,
+    });
+
+    expect(result.filters).toEqual({ type: 'market_making', state: 'active', query: 'btc' });
+    const url = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(url.pathname).toBe('/admin/user-orders');
+    expect(url.searchParams.get('type')).toBe('market_making');
+    expect(url.searchParams.get('state')).toBe('active');
+    expect(url.searchParams.get('query')).toBe('btc');
+    expect(url.searchParams.get('limit')).toBe('50');
+    expect(url.searchParams.get('page')).toBe('2');
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get('Authorization')).toBe('Bearer admin-token');
+  });
+
   it('requests authenticated admin positions with backend filters and pagination', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

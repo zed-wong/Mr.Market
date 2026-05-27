@@ -34,6 +34,16 @@ export interface AdminOrdersQuery {
   page?: number;
 }
 
+export type AdminUserOrderType = 'market_making' | 'simply_grow';
+
+export interface AdminUserOrdersQuery {
+  type?: AdminUserOrderType | 'all';
+  state?: string;
+  query?: string;
+  limit?: number;
+  page?: number;
+}
+
 export interface AdminOrder {
   trackingKey: string;
   orderId: string;
@@ -78,6 +88,42 @@ export interface AdminOrdersResponse {
     maxPage: number;
     maxQueryLength: number;
     executionScanLimit: number;
+  };
+}
+
+export interface AdminUserOrder {
+  orderId: string;
+  userId: string;
+  type: AdminUserOrderType;
+  state: string;
+  createdAt: string | null;
+  rewardAddress: string | null;
+  pair: string | null;
+  exchangeName: string | null;
+  source: string | null;
+  strategyKey: string | null;
+  apiKeyId: string | null;
+  amount: string | null;
+  baseBalance: string | null;
+  quoteBalance: string | null;
+  mixinAssetId: string | null;
+}
+
+export interface AdminUserOrdersResponse {
+  generatedAt: string;
+  items: AdminUserOrder[];
+  pagination: AdminPagination;
+  filters: {
+    type: string | null;
+    state: string | null;
+    query: string | null;
+  };
+  limits: {
+    defaultLimit: number;
+    maxLimit: number;
+    maxPage: number;
+    maxQueryLength: number;
+    maxScanRows: number;
   };
 }
 
@@ -171,6 +217,17 @@ export const fetchAdminOrders = (query: AdminOrdersQuery = {}) =>
     query: cleanQuery({
       status: query.status && query.status !== 'all' ? query.status : undefined,
       side: query.side && query.side !== 'all' ? query.side : undefined,
+      query: query.query?.trim(),
+      limit: query.limit,
+      page: query.page,
+    }),
+  });
+
+export const fetchAdminUserOrders = (query: AdminUserOrdersQuery = {}) =>
+  apiFetch<AdminUserOrdersResponse>('/admin/user-orders', {
+    query: cleanQuery({
+      type: query.type && query.type !== 'all' ? query.type : undefined,
+      state: query.state?.trim(),
       query: query.query?.trim(),
       limit: query.limit,
       page: query.page,

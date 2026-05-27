@@ -35,7 +35,8 @@
     if (key === 'overview') return 'dashboard';
     if (key === 'setup') return 'settings';
     if (key === 'trading') return 'revenue';
-    if (key === 'system-health') return 'health';
+    if (key === 'connectivity') return 'exchanges';
+    if (key === 'system') return 'health';
     if (key === 'diagnostics') return 'message';
     return key.replaceAll('.', '_');
   };

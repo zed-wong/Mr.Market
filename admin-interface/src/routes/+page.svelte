@@ -499,7 +499,7 @@
                 backend tracked orders · {summary.range.key}
               </span>
             </div>
-            <a href="/trading/orders" class="btn-pill-ghost text-xs capitalize">
+            <a href="/trading/exchange-orders" class="btn-pill-ghost text-xs capitalize">
               view orders →
             </a>
           </div>

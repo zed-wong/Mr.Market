@@ -3,12 +3,14 @@ import { getAuthLayoutState, isLoginRoute, isSetupRoute } from './auth-layout-st
 
 const protectedRoutes = [
   '/',
-  '/trading/orders',
+  '/trading/exchange-orders',
+  '/trading/user-orders',
   '/trading/positions',
   '/system/health',
   '/system/logs',
   '/system/audit',
   '/system/config',
+  '/system/password',
   '/trading/direct-market-making',
   '/trading/exchanges',
   '/system/api-keys',
@@ -57,7 +59,7 @@ describe('auth layout state', () => {
   it('renders authenticated protected routes after bootstrap', () => {
     expect(
       getAuthLayoutState({
-        pathname: '/trading/orders',
+        pathname: '/trading/exchange-orders',
         i18nReady: true,
         bootstrapped: true,
         authenticated: true,
@@ -68,7 +70,7 @@ describe('auth layout state', () => {
   it('shows bootstrap loading until i18n and session checks finish', () => {
     expect(
       getAuthLayoutState({
-        pathname: '/trading/orders',
+        pathname: '/trading/exchange-orders',
         i18nReady: false,
         bootstrapped: true,
         authenticated: false,
@@ -76,7 +78,7 @@ describe('auth layout state', () => {
     ).toBe('bootstrapping');
     expect(
       getAuthLayoutState({
-        pathname: '/trading/orders',
+        pathname: '/trading/exchange-orders',
         i18nReady: true,
         bootstrapped: false,
         authenticated: false,

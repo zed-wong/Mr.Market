@@ -68,6 +68,14 @@ export const logout = async (): Promise<void> => {
   }
 };
 
+export const updateAdminPassword = async (password: string): Promise<void> => {
+  const result = await apiFetch<AuthTokenResponse>('/auth/password', {
+    method: 'POST',
+    json: { password },
+  });
+  setAccessToken(result.access_token);
+};
+
 export const registerPasskey = async (): Promise<boolean> => {
   const options = await apiFetch('/auth/passkeys/register/options', {
     method: 'POST',

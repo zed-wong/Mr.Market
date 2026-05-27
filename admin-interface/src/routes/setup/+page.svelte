@@ -59,12 +59,11 @@
     api_secret: '',
     permissions: 'read-trade',
   });
+
   let configForm = $state({
-    max_balance_mixin_bot: '',
-    max_balance_single_api_key: '',
-    funding_account: '',
-    spot_fee: '',
-    market_making_fee: '',
+    'funding.funding_account': '',
+    'fees.spot_fee': '',
+    'fees.market_making_fee': '',
   });
   let mixinEnv = $state({
     MIXIN_APP_ID: '',
@@ -82,6 +81,39 @@
     COINGECKO_API_KEY: '',
     DISCORD_WEBHOOK_URL: '',
   });
+
+  const apiPermissionOptions: Array<{ value: string; label: string; hint: string }> = [
+    { value: 'read-trade', label: 'read + trade', hint: 'Required for market making and order execution.' },
+    { value: 'read', label: 'read only', hint: 'Safe for monitoring; cannot place or cancel orders.' },
+  ];
+
+  const configFields: Array<{ key: keyof typeof configForm; label: string; placeholder: string; hint: string }> = [
+    { key: 'funding.funding_account', label: 'funding account', placeholder: '0x… or mixin uuid', hint: 'Account that receives user deposits.' },
+    { key: 'fees.spot_fee', label: 'spot fee (bps)', placeholder: 'e.g. 10', hint: 'Per-trade fee charged for spot orders, in basis points.' },
+    { key: 'fees.market_making_fee', label: 'market making fee (bps)', placeholder: 'e.g. 5', hint: 'Per-fill fee charged on market-making orders.' },
+  ];
+
+  const mixinFields: Array<{ key: keyof typeof mixinEnv; label: string; placeholder: string; secret: boolean }> = [
+    { key: 'MIXIN_APP_ID', label: 'app id (UUID)', placeholder: '00000000-0000-0000-0000-000000000000', secret: false },
+    { key: 'MIXIN_SESSION_ID', label: 'session id (UUID)', placeholder: '00000000-0000-0000-0000-000000000000', secret: false },
+    { key: 'MIXIN_SERVER_PUBLIC_KEY', label: 'server public key', placeholder: 'hex string from Mixin dashboard', secret: false },
+    { key: 'MIXIN_SESSION_PRIVATE_KEY', label: 'session private key', placeholder: 'ed25519 private key', secret: true },
+    { key: 'MIXIN_SPEND_PRIVATE_KEY', label: 'spend private key', placeholder: 'hex spend key', secret: true },
+    { key: 'MIXIN_OAUTH_SECRET', label: 'oauth secret', placeholder: 'optional, for OAuth login', secret: true },
+  ];
+
+  const web3Fields: Array<{ key: keyof typeof web3Env; label: string; placeholder: string; secret: boolean }> = [
+    { key: 'WEB3_MAINNET_RPC_URL', label: 'mainnet RPC URL', placeholder: 'https://…', secret: false },
+    { key: 'WEB3_SEPOLIA_RPC_URL', label: 'sepolia RPC URL', placeholder: 'https://…', secret: false },
+    { key: 'WEB3_POLYGON_RPC_URL', label: 'polygon RPC URL', placeholder: 'https://…', secret: false },
+    { key: 'WEB3_PRIVATE_KEY', label: 'operator private key', placeholder: '0x…', secret: true },
+    { key: 'COINGECKO_API_KEY', label: 'coingecko API key', placeholder: 'optional, for price data', secret: true },
+    { key: 'DISCORD_WEBHOOK_URL', label: 'discord webhook URL', placeholder: 'optional, for alerts', secret: false },
+  ];
+
+  let passwordsMatch = $derived(
+    !passwordForm.confirm || passwordForm.password === passwordForm.confirm,
+  );
 
   let progressCount = $derived(
     steps.filter((step) =>
@@ -259,6 +291,15 @@
       await completeSetupStep(step);
     }, 'optional step skipped');
 
+  const jumpToStep = (key: StepKey) => {
+    if (!$setupStatus?.initialized && key !== 'password') return;
+    activeStep = key;
+  };
+
+  const goPrev = () => {
+    if (stepIndex > 0) activeStep = steps[stepIndex - 1].key;
+  };
+
   onMount(() => {
     void bootstrap();
   });
@@ -289,23 +330,46 @@
               <span class="text-xs text-base-content/60">{progressCount} of {steps.length} setup areas complete</span>
             </div>
 
-            <div class="flex flex-col gap-2">
+            <ul class="flex flex-col gap-1">
               {#each steps as step, index (step.key)}
                 {@const completed = step.key === 'review' ? Boolean($setupStatus?.completedAt) : Boolean($setupStatus?.completedSteps?.[step.key])}
-                <button
-                  type="button"
-                  class="btn justify-start rounded-full capitalize"
-                  class:btn-primary={activeStep === step.key}
-                  class:btn-ghost={activeStep !== step.key}
-                  disabled={!$setupStatus?.initialized && step.key !== 'password'}
-                  onclick={() => (activeStep = step.key)}
-                >
-                  <span class="badge {completed ? 'badge-success' : 'badge-ghost'}">{index + 1}</span>
-                  <span>{step.label}</span>
-                  {#if step.required}<span class="badge badge-xs badge-outline">required</span>{/if}
-                </button>
+                {@const isCurrent = activeStep === step.key}
+                {@const locked = !$setupStatus?.initialized && step.key !== 'password'}
+                <li>
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left transition-colors capitalize disabled:cursor-not-allowed disabled:opacity-50"
+                    class:border-primary={isCurrent}
+                    class:bg-primary={isCurrent}
+                    class:text-primary-content={isCurrent}
+                    class:border-base-300={!isCurrent}
+                    class:hover:bg-base-300={!isCurrent}
+                    disabled={locked}
+                    aria-current={isCurrent ? 'step' : undefined}
+                    onclick={() => (activeStep = step.key)}
+                  >
+                    <span
+                      class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                      class:bg-success={completed}
+                      class:text-success-content={completed}
+                      class:bg-base-300={!completed && !isCurrent}
+                      class:bg-primary-content={!completed && isCurrent}
+                      class:text-primary={!completed && isCurrent}
+                    >
+                      {#if completed}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      {:else}
+                        {index + 1}
+                      {/if}
+                    </span>
+                    <span class="flex-1 text-sm font-medium">{step.label}</span>
+                    {#if !step.required}
+                      <span class="text-[10px] opacity-60">optional</span>
+                    {/if}
+                  </button>
+                </li>
               {/each}
-            </div>
+            </ul>
           </div>
         </div>
 
@@ -328,7 +392,7 @@
                   {:else if activeStep === 'apiKeys'}
                     Add the first encrypted exchange API key.
                   {:else if activeStep === 'customConfig'}
-                    Optionally tune global limits and fee settings.
+                    Optionally tune global fee and funding settings.
                   {:else if activeStep === 'mixin'}
                     Optionally save Mixin credentials in the setup config database.
                   {:else if activeStep === 'web3'}
@@ -346,165 +410,226 @@
             </div>
 
             {#if activeStep === 'password'}
-              <form class="grid gap-4 md:grid-cols-2" onsubmit={(event) => { event.preventDefault(); void submitPassword(); }}>
-                <label class="form-control gap-2">
-                  <span class="label-text capitalize">admin password</span>
-                  <input class="input input-bordered" type="password" minlength="8" bind:value={passwordForm.password} required />
-                </label>
-                <label class="form-control gap-2">
-                  <span class="label-text capitalize">confirm password</span>
-                  <input class="input input-bordered" type="password" minlength="8" bind:value={passwordForm.confirm} required />
-                </label>
-                <div class="md:col-span-2">
-                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">
-                    {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
-                    save password and sign in
-                  </button>
-                </div>
+              <form onsubmit={(event) => { event.preventDefault(); void submitPassword(); }}>
+                <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
+                  <label class="form-control gap-2">
+                    <span class="label-text capitalize">admin password</span>
+                    <input class="input input-bordered" type="password" minlength="8" autocomplete="new-password" placeholder="at least 8 characters" bind:value={passwordForm.password} required />
+                    <span class="text-xs text-base-content/60">Used to sign in to the admin console afterwards.</span>
+                  </label>
+                  <label class="form-control gap-2">
+                    <span class="label-text capitalize">confirm password</span>
+                    <input class="input input-bordered" type="password" minlength="8" autocomplete="new-password" placeholder="re-enter the password" bind:value={passwordForm.confirm} required />
+                    {#if !passwordsMatch}
+                      <span class="text-xs text-error">Passwords do not match.</span>
+                    {/if}
+                  </label>
+                  <div class="md:col-span-2">
+                    <button class="btn btn-primary rounded-full capitalize" disabled={saving || !passwordsMatch} type="submit">
+                      {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
+                      save password and sign in
+                    </button>
+                  </div>
+                </fieldset>
               </form>
             {:else if activeStep === 'exchange'}
-              <form class="grid gap-4 md:grid-cols-2" onsubmit={(event) => { event.preventDefault(); void submitExchange(); }}>
-                <label class="form-control gap-2">
-                  <span class="label-text capitalize">exchange id</span>
-                  <input class="input input-bordered" list="ccxt-exchanges" bind:value={exchangeForm.exchange_id} required />
-                </label>
-                <label class="form-control gap-2">
-                  <span class="label-text capitalize">display name</span>
-                  <input class="input input-bordered" bind:value={exchangeForm.name} required />
-                </label>
-                <datalist id="ccxt-exchanges">
-                  {#each ccxtExchanges.slice(0, 300) as exchange (exchange)}
-                    <option value={exchange}>{exchange}</option>
-                  {/each}
-                </datalist>
-                <div class="md:col-span-2">
-                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save exchange</button>
-                </div>
+              <form onsubmit={(event) => { event.preventDefault(); void submitExchange(); }}>
+                <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
+                  <label class="form-control gap-2">
+                    <span class="label-text capitalize">exchange id</span>
+                    <input class="input input-bordered" list="ccxt-exchanges" placeholder="e.g. binance, okx, bybit" bind:value={exchangeForm.exchange_id} required />
+                    <span class="text-xs text-base-content/60">Lowercase CCXT identifier. Start typing to see suggestions.</span>
+                  </label>
+                  <label class="form-control gap-2">
+                    <span class="label-text capitalize">display name</span>
+                    <input class="input input-bordered" placeholder="Shown in admin UI" bind:value={exchangeForm.name} required />
+                  </label>
+                  <datalist id="ccxt-exchanges">
+                    {#each ccxtExchanges.slice(0, 300) as exchange (exchange)}
+                      <option value={exchange}>{exchange}</option>
+                    {/each}
+                  </datalist>
+                  <div class="flex flex-wrap gap-2 md:col-span-2">
+                    <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save exchange</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={goPrev}>previous</button>
+                  </div>
+                </fieldset>
               </form>
             {:else if activeStep === 'apiKeys'}
-              <form class="grid gap-4 md:grid-cols-2" onsubmit={(event) => { event.preventDefault(); void submitApiKey(); }}>
-                <label class="form-control gap-2">
-                  <span class="label-text capitalize">exchange</span>
-                  <input class="input input-bordered" bind:value={apiKeyForm.exchange} required />
-                </label>
-                <label class="form-control gap-2">
-                  <span class="label-text capitalize">key name</span>
-                  <input class="input input-bordered" bind:value={apiKeyForm.name} required />
-                </label>
-                <label class="form-control gap-2">
-                  <span class="label-text capitalize">API key</span>
-                  <input class="input input-bordered" bind:value={apiKeyForm.api_key} required />
-                </label>
-                <label class="form-control gap-2">
-                  <span class="label-text capitalize">API secret</span>
-                  <input class="input input-bordered" type="password" bind:value={apiKeyForm.api_secret} required />
-                </label>
-                <div class="md:col-span-2">
-                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save encrypted API key</button>
-                </div>
+              <form onsubmit={(event) => { event.preventDefault(); void submitApiKey(); }}>
+                <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
+                  <label class="form-control gap-2">
+                    <span class="label-text capitalize">exchange</span>
+                    <input class="input input-bordered" placeholder="must match an enabled exchange id" bind:value={apiKeyForm.exchange} required />
+                  </label>
+                  <label class="form-control gap-2">
+                    <span class="label-text capitalize">key name</span>
+                    <input class="input input-bordered" placeholder="e.g. Primary key" bind:value={apiKeyForm.name} required />
+                  </label>
+                  <label class="form-control gap-2">
+                    <span class="label-text capitalize">API key</span>
+                    <input class="input input-bordered font-mono text-sm" autocomplete="off" placeholder="public key from exchange" bind:value={apiKeyForm.api_key} required />
+                  </label>
+                  <label class="form-control gap-2">
+                    <span class="label-text capitalize">API secret</span>
+                    <input class="input input-bordered font-mono text-sm" type="password" autocomplete="off" placeholder="encrypted in transit and at rest" bind:value={apiKeyForm.api_secret} required />
+                  </label>
+                  <label class="form-control gap-2 md:col-span-2">
+                    <span class="label-text capitalize">permissions</span>
+                    <select class="select select-bordered" bind:value={apiKeyForm.permissions}>
+                      {#each apiPermissionOptions as option (option.value)}
+                        <option value={option.value}>{option.label}</option>
+                      {/each}
+                    </select>
+                    <span class="text-xs text-base-content/60">
+                      {apiPermissionOptions.find((o) => o.value === apiKeyForm.permissions)?.hint}
+                    </span>
+                  </label>
+                  <div class="flex flex-wrap gap-2 md:col-span-2">
+                    <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save encrypted API key</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={goPrev}>previous</button>
+                  </div>
+                </fieldset>
               </form>
             {:else if activeStep === 'customConfig'}
-              <form class="grid gap-4 md:grid-cols-2" onsubmit={(event) => { event.preventDefault(); void submitConfig(); }}>
-                {#each Object.keys(configForm) as key (key)}
-                  <label class="form-control gap-2">
-                    <span class="label-text capitalize">{key.replaceAll('_', ' ')}</span>
-                    <input
-                      class="input input-bordered"
-                      value={configForm[key as keyof typeof configForm]}
-                      oninput={(event) =>
-                        (configForm = {
-                          ...configForm,
-                          [key]: (event.currentTarget as HTMLInputElement).value,
-                        })}
-                    />
-                  </label>
-                {/each}
-                <div class="flex flex-wrap gap-2 md:col-span-2">
-                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save custom config</button>
-                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={() => void skipStep('customConfig')}>skip</button>
-                </div>
+              <form onsubmit={(event) => { event.preventDefault(); void submitConfig(); }}>
+                <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
+                  {#each configFields as field (field.key)}
+                    <label class="form-control gap-2">
+                      <span class="label-text capitalize">{field.label}</span>
+                      <input
+                        class="input input-bordered"
+                        placeholder={field.placeholder}
+                        value={configForm[field.key]}
+                        oninput={(event) =>
+                          (configForm = {
+                            ...configForm,
+                            [field.key]: (event.currentTarget as HTMLInputElement).value,
+                          })}
+                      />
+                      <span class="text-xs text-base-content/60">{field.hint}</span>
+                    </label>
+                  {/each}
+                  <div class="flex flex-wrap gap-2 md:col-span-2">
+                    <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save custom config</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={() => void skipStep('customConfig')}>skip</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={goPrev}>previous</button>
+                  </div>
+                </fieldset>
               </form>
             {:else if activeStep === 'mixin'}
-              <form class="grid gap-4 md:grid-cols-2" onsubmit={(event) => { event.preventDefault(); void submitEnv('mixin'); }}>
-                {#each Object.keys(mixinEnv) as key (key)}
-                  <label class="form-control gap-2">
-                    <span class="label-text">{key}</span>
-                    <input
-                      class="input input-bordered"
-                      type={key.includes('KEY') || key.includes('SECRET') ? 'password' : 'text'}
-                      value={mixinEnv[key as keyof typeof mixinEnv]}
-                      oninput={(event) =>
-                        (mixinEnv = {
-                          ...mixinEnv,
-                          [key]: (event.currentTarget as HTMLInputElement).value,
-                        })}
-                    />
-                  </label>
-                {/each}
-                <div class="alert alert-warning md:col-span-2">
-                  <span>Credentials are stored in the setup config database and applied to runtime config when possible.</span>
-                </div>
-                <div class="flex flex-wrap gap-2 md:col-span-2">
-                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save Mixin config</button>
-                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={() => void skipStep('mixin')}>skip</button>
-                </div>
+              <form onsubmit={(event) => { event.preventDefault(); void submitEnv('mixin'); }}>
+                <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
+                  {#each mixinFields as field (field.key)}
+                    <label class="form-control gap-2">
+                      <span class="label-text capitalize">{field.label}</span>
+                      <input
+                        class="input input-bordered font-mono text-sm"
+                        type={field.secret ? 'password' : 'text'}
+                        autocomplete="off"
+                        placeholder={field.placeholder}
+                        value={mixinEnv[field.key]}
+                        oninput={(event) =>
+                          (mixinEnv = {
+                            ...mixinEnv,
+                            [field.key]: (event.currentTarget as HTMLInputElement).value,
+                          })}
+                      />
+                    </label>
+                  {/each}
+                  <div class="alert alert-warning md:col-span-2 text-sm">
+                    <span>Credentials are stored in the setup config database and applied to runtime config when possible.</span>
+                  </div>
+                  <div class="flex flex-wrap gap-2 md:col-span-2">
+                    <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save Mixin config</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={() => void skipStep('mixin')}>skip</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={goPrev}>previous</button>
+                  </div>
+                </fieldset>
               </form>
             {:else if activeStep === 'web3'}
-              <form class="grid gap-4 md:grid-cols-2" onsubmit={(event) => { event.preventDefault(); void submitEnv('web3'); }}>
-                {#each Object.keys(web3Env) as key (key)}
-                  <label class="form-control gap-2">
-                    <span class="label-text">{key}</span>
-                    <input
-                      class="input input-bordered"
-                      type={key.includes('KEY') ? 'password' : 'text'}
-                      value={web3Env[key as keyof typeof web3Env]}
-                      oninput={(event) =>
-                        (web3Env = {
-                          ...web3Env,
-                          [key]: (event.currentTarget as HTMLInputElement).value,
-                        })}
-                    />
-                  </label>
-                {/each}
-                <div class="alert alert-warning md:col-span-2">
-                  <span>Values are stored in the setup config database and applied to runtime config when possible.</span>
-                </div>
-                <div class="flex flex-wrap gap-2 md:col-span-2">
-                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save Web3 config</button>
-                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={() => void skipStep('web3')}>skip</button>
-                </div>
+              <form onsubmit={(event) => { event.preventDefault(); void submitEnv('web3'); }}>
+                <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
+                  {#each web3Fields as field (field.key)}
+                    <label class="form-control gap-2">
+                      <span class="label-text capitalize">{field.label}</span>
+                      <input
+                        class="input input-bordered font-mono text-sm"
+                        type={field.secret ? 'password' : 'text'}
+                        autocomplete="off"
+                        placeholder={field.placeholder}
+                        value={web3Env[field.key]}
+                        oninput={(event) =>
+                          (web3Env = {
+                            ...web3Env,
+                            [field.key]: (event.currentTarget as HTMLInputElement).value,
+                          })}
+                      />
+                    </label>
+                  {/each}
+                  <div class="alert alert-warning md:col-span-2 text-sm">
+                    <span>Values are stored in the setup config database and applied to runtime config when possible.</span>
+                  </div>
+                  <div class="flex flex-wrap gap-2 md:col-span-2">
+                    <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save Web3 config</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={() => void skipStep('web3')}>skip</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={goPrev}>previous</button>
+                  </div>
+                </fieldset>
               </form>
             {:else if activeStep === 'seed'}
+              {@const seedMissing = seedStatus?.seedRequired ?? $setupStatus?.seedRequired}
               <div class="space-y-4">
-                <div class="rounded-xl border border-base-300 p-4">
+                <div class="rounded-xl border p-4 {seedMissing ? 'border-warning/40 bg-warning/10' : 'border-success/40 bg-success/10'}">
                   <span class="block font-semibold capitalize">seed status</span>
-                  <span class="text-sm text-base-content/60">
-                    {seedStatus?.seedRequired ?? $setupStatus?.seedRequired ? 'Seed data is missing.' : 'Required seed data is already present.'}
+                  <span class="text-sm text-base-content/70">
+                    {seedMissing ? 'Reference data (exchanges, tokens, pairs, strategies) is missing and will be inserted.' : 'Required seed data is already present.'}
                   </span>
                 </div>
-                <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="button" onclick={() => void submitSeed()}>
-                  {seedStatus?.seedRequired ?? $setupStatus?.seedRequired ? 'run database seed' : 'mark seed complete'}
-                </button>
+                <div class="flex flex-wrap gap-2">
+                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="button" onclick={() => void submitSeed()}>
+                    {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
+                    {seedMissing ? 'run database seed' : 'mark seed complete'}
+                  </button>
+                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={goPrev}>previous</button>
+                </div>
               </div>
             {:else}
               <div class="space-y-4">
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {#each steps.filter((step) => step.key !== 'review') as step (step.key)}
                     {@const done = Boolean($setupStatus?.completedSteps?.[step.key]) || (step.key === 'seed' && !$setupStatus?.seedRequired)}
-                    <div class="rounded-xl border border-base-300 p-4">
-                      <span class="block font-semibold capitalize">{step.label}</span>
-                      <span class="text-sm {done ? 'text-success' : step.required ? 'text-error' : 'text-base-content/60'}">
-                        {done ? 'complete' : step.required ? 'required before completion' : 'optional'}
+                    <button
+                      type="button"
+                      class="rounded-xl border border-base-300 p-4 text-left transition-colors hover:border-primary hover:bg-base-200"
+                      onclick={() => jumpToStep(step.key)}
+                    >
+                      <span class="flex items-center justify-between gap-2">
+                        <span class="font-semibold capitalize">{step.label}</span>
+                        {#if done}
+                          <span class="badge badge-success badge-sm capitalize">complete</span>
+                        {:else if step.required}
+                          <span class="badge badge-error badge-sm capitalize">required</span>
+                        {:else}
+                          <span class="badge badge-ghost badge-sm capitalize">optional</span>
+                        {/if}
                       </span>
-                    </div>
+                      <span class="mt-1 block text-xs text-base-content/60 capitalize">
+                        {done ? 'no action needed' : 'click to open this step'}
+                      </span>
+                    </button>
                   {/each}
                 </div>
-                <div class="alert alert-info">
+                <div class="alert alert-info text-sm">
                   <span>After completion, setup config writes are disabled and this route redirects to the dashboard.</span>
                 </div>
-                <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="button" onclick={() => void finishSetup()}>
-                  complete setup
-                </button>
+                <div class="flex flex-wrap gap-2">
+                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="button" onclick={() => void finishSetup()}>
+                    {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
+                    complete setup
+                  </button>
+                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={goPrev}>previous</button>
+                </div>
               </div>
             {/if}
           </div>
