@@ -1176,8 +1176,6 @@
     show={showOrderDetails}
     order={detailsOrder}
     data={detailsData}
-    {apiKeys}
-    exchanges={growInfo?.exchanges || []}
     loading={detailsLoading}
     refreshing={detailsRefreshing && !detailsLoading}
     error={detailsError}
