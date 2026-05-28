@@ -200,57 +200,6 @@ export class ExchangeApiKeyService {
     return decryptedKeys;
   }
 
-  async seedApiKeysFromEnv(
-    exchangeConfigs: Array<{
-      name: string;
-      accounts: Array<{ label: string; apiKey?: string; secret?: string }>;
-    }>,
-  ): Promise<number> {
-    const existing = await this.exchangeRepository.readAllAPIKeys();
-
-    if (existing.length > 0) {
-      return 0;
-    }
-
-    const privateKey =
-      this.configService.get<string>('admin.encryption_private_key') || '';
-
-    if (!privateKey) {
-      this.logger.warn(
-        'Encryption private key not set; skipping .env API key seed.',
-      );
-
-      return 0;
-    }
-
-    const publicKey = getPublicKeyFromPrivate(privateKey);
-    let savedCount = 0;
-
-    for (const config of exchangeConfigs) {
-      for (const account of config.accounts) {
-        if (!account.apiKey || !account.secret) {
-          continue;
-        }
-
-        const apiKeyConfig = new APIKeysConfig();
-
-        apiKeyConfig.exchange = config.name;
-        apiKeyConfig.name =
-          String(account.label || 'default').trim() || 'default';
-        apiKeyConfig.api_key = account.apiKey;
-        apiKeyConfig.api_secret = encrypt(account.secret, publicKey);
-        apiKeyConfig.permissions =
-          account.label === 'read-only' ? 'read' : 'read-trade';
-        apiKeyConfig.created_at = getRFC3339Timestamp();
-
-        await this.exchangeRepository.addAPIKey(apiKeyConfig);
-        savedCount += 1;
-      }
-    }
-
-    return savedCount;
-  }
-
   async readSupportedExchanges(): Promise<string[]> {
     return this.exchangeRepository.readSupportedExchanges();
   }

@@ -117,30 +117,6 @@ describe('ExchangeApiKeyService', () => {
     expect(result[0].state).toBe('pending');
   });
 
-  it('seeds API keys from env configs when DB is empty', async () => {
-    const readAllAPIKeys = jest.fn().mockResolvedValue([]);
-    const addAPIKey = jest.fn().mockResolvedValue(undefined);
-    const { service } = makeService({ readAllAPIKeys, addAPIKey });
-
-    const seeded = await service.seedApiKeysFromEnv([
-      {
-        name: 'binance',
-        accounts: [{ label: 'default', apiKey: 'key', secret: 'secret' }],
-      },
-    ]);
-
-    expect(seeded).toBe(1);
-    expect(addAPIKey).toHaveBeenCalledWith(
-      expect.objectContaining({
-        exchange: 'binance',
-        name: 'default',
-        api_key: 'key',
-        api_secret: 'enc(secret)',
-        created_at: expect.any(String),
-      }),
-    );
-  });
-
   it('trims name when adding an api key', async () => {
     const addAPIKey = jest.fn().mockImplementation(async (value) => value);
     const { service } = makeService({ addAPIKey });

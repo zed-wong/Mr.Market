@@ -8,26 +8,6 @@ export default () => ({
   redis: {
     url: process.env.REDIS_URL || 'redis://localhost:6379/0',
   },
-  apiKeys: {
-    binance: [
-      {
-        key: process.env.BINANCE_API_KEY,
-        secret: process.env.BINANCE_SECRET,
-      },
-    ],
-    mexc: [
-      {
-        key: process.env.MEXC_API_KEY,
-        secret: process.env.MEXC_SECRET,
-      },
-    ],
-    bitfinex: [
-      {
-        key: process.env.BITFINEX_API_KEY,
-        secret: process.env.BITFINEX_SECRET,
-      },
-    ],
-  },
   admin: {
     pass: process.env.ADMIN_PASSWORD,
     jwt_secret: process.env.JWT_SECRET,
