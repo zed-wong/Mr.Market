@@ -35,8 +35,6 @@ type ExchangeReadyListener = (
   exchangeName: string,
   accountLabel: string,
 ) => void | Promise<void>;
-const SYSTEM_TEST_SANDBOX_EXCHANGE_FLAG =
-  'MR_MARKET_SYSTEM_TEST_SANDBOX_EXCHANGE';
 
 @Injectable({ scope: Scope.DEFAULT })
 export class ExchangeInitService {
@@ -72,9 +70,7 @@ export class ExchangeInitService {
         }
 
         this.startKeepAlive();
-        if (!this.buildSandboxExchangeConfig()) {
-          this.startRefresh();
-        }
+        this.startRefresh();
       })
       .catch((error) =>
         this.logger.error(
@@ -82,321 +78,6 @@ export class ExchangeInitService {
           error.message,
         ),
       );
-  }
-
-  private getEnvExchangeConfigs(): ExchangeConfig[] {
-    return [
-      {
-        name: 'okx',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.OKX_API_KEY,
-            secret: process.env.OKX_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.OKX_API_KEY_2,
-            secret: process.env.OKX_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.OKX_API_KEY_READ_ONLY,
-            secret: process.env.OKX_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.okx,
-      },
-      {
-        name: 'alpaca',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.ALPACA_KEY,
-            secret: process.env.ALPACA_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.ALPACA_KEY_2,
-            secret: process.env.ALPACA_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.ALPACA_KEY_READ_ONLY,
-            secret: process.env.ALPACA_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.alpaca,
-      },
-      {
-        name: 'bitfinex',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.BITFINEX_API_KEY,
-            secret: process.env.BITFINEX_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.BITFINEX_API_KEY_2,
-            secret: process.env.BITFINEX_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.BITFINEX_API_KEY_READ_ONLY,
-            secret: process.env.BITFINEX_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.bitfinex,
-      },
-      {
-        name: 'gate',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.GATE_API_KEY,
-            secret: process.env.GATE_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.GATE_API_KEY_2,
-            secret: process.env.GATE_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.GATE_API_KEY_READ_ONLY,
-            secret: process.env.GATE_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.gate,
-      },
-      {
-        name: 'mexc',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.MEXC_API_KEY,
-            secret: process.env.MEXC_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.MEXC_API_KEY_2,
-            secret: process.env.MEXC_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.MEXC_API_KEY_READ_ONLY,
-            secret: process.env.MEXC_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.mexc,
-      },
-      {
-        name: 'binance',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.BINANCE_API_KEY,
-            secret: process.env.BINANCE_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.BINANCE_API_KEY_2,
-            secret: process.env.BINANCE_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.BINANCE_API_KEY_READ_ONLY,
-            secret: process.env.BINANCE_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.binance,
-      },
-      {
-        name: 'lbank',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.LBANK_API_KEY,
-            secret: process.env.LBANK_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.LBANK_API_KEY_2,
-            secret: process.env.LBANK_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.LBANK_API_KEY_READ_ONLY,
-            secret: process.env.LBANK_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.lbank,
-      },
-      {
-        name: 'bitmart',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.BITMART_API_KEY,
-            secret: process.env.BITMART_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.BITMART_API_KEY_2,
-            secret: process.env.BITMART_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.BITMART_API_KEY_READ_ONLY,
-            secret: process.env.BITMART_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.bitmart,
-      },
-      {
-        name: 'bigone',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.BIGONE_API_KEY,
-            secret: process.env.BIGONE_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.BIGONE_API_KEY_2,
-            secret: process.env.BIGONE_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.BIGONE_API_KEY_READ_ONLY,
-            secret: process.env.BIGONE_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.bigone,
-      },
-      {
-        name: 'p2b',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.P2B_API_KEY,
-            secret: process.env.P2B_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.P2B_API_KEY_2,
-            secret: process.env.P2B_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.P2B_API_KEY_READ_ONLY,
-            secret: process.env.P2B_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.pro.p2b,
-      },
-      {
-        name: 'probit',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.PROBIT_API_KEY,
-            secret: process.env.PROBIT_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.PROBIT_API_KEY_2,
-            secret: process.env.PROBIT_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.PROBIT_API_KEY_READ_ONLY,
-            secret: process.env.PROBIT_SECRET_READ_ONLY,
-          },
-        ],
-        class: (ccxt as any).pro?.probit || (ccxt as any).probit,
-      },
-      {
-        name: 'digifinex',
-        accounts: [
-          {
-            label: 'default',
-            apiKey: process.env.DIGIFINEX_API_KEY,
-            secret: process.env.DIGIFINEX_SECRET,
-          },
-          {
-            label: 'account2',
-            apiKey: process.env.DIGIFINEX_API_KEY_2,
-            secret: process.env.DIGIFINEX_SECRET_2,
-          },
-          {
-            label: 'read-only',
-            apiKey: process.env.DIGIFINEX_API_KEY_READ_ONLY,
-            secret: process.env.DIGIFINEX_SECRET_READ_ONLY,
-          },
-        ],
-        class: ccxt.digifinex,
-      },
-    ];
-  }
-
-  private buildSandboxExchangeConfig(): ExchangeConfig | null {
-    if (!this.isSystemTestSandboxExchangeEnabled()) {
-      return null;
-    }
-
-    const exchangeName =
-      process.env.CCXT_SANDBOX_EXCHANGE?.trim().toLowerCase();
-    const apiKey = process.env.CCXT_SANDBOX_API_KEY?.trim();
-    const secret = process.env.CCXT_SANDBOX_SECRET?.trim();
-
-    if (!exchangeName || !apiKey || !secret) {
-      return null;
-    }
-
-    const ExchangeClass = this.resolveExchangeClass(exchangeName);
-
-    if (!ExchangeClass) {
-      this.logger.warn(
-        `Sandbox exchange ${exchangeName} is not supported by CCXT. Falling back to standard exchange initialization.`,
-      );
-
-      return null;
-    }
-
-    const sandboxAccounts: ExchangeAccountConfig[] = [
-      {
-        label: process.env.CCXT_SANDBOX_ACCOUNT_LABEL?.trim() || 'default',
-        apiKey,
-        secret,
-        password: process.env.CCXT_SANDBOX_PASSWORD?.trim() || undefined,
-        uid: process.env.CCXT_SANDBOX_UID?.trim() || undefined,
-        sandboxMode: true,
-      },
-    ];
-    const secondAccountApiKey =
-      process.env.CCXT_SANDBOX_ACCOUNT2_API_KEY?.trim() || undefined;
-    const secondAccountSecret =
-      process.env.CCXT_SANDBOX_ACCOUNT2_SECRET?.trim() || undefined;
-
-    if (secondAccountApiKey && secondAccountSecret) {
-      sandboxAccounts.push({
-        label: process.env.CCXT_SANDBOX_ACCOUNT2_LABEL?.trim() || 'account2',
-        apiKey: secondAccountApiKey,
-        secret: secondAccountSecret,
-        password:
-          process.env.CCXT_SANDBOX_ACCOUNT2_PASSWORD?.trim() || undefined,
-        uid: process.env.CCXT_SANDBOX_ACCOUNT2_UID?.trim() || undefined,
-        sandboxMode: true,
-      });
-    }
-
-    return {
-      name: exchangeName,
-      accounts: sandboxAccounts,
-      class: ExchangeClass,
-    };
   }
 
   private resolveExchangeClass(exchangeName: string): any {
@@ -438,30 +119,6 @@ export class ExchangeInitService {
         defaultType: 'spot',
       },
     };
-  }
-
-  private computeSandboxConfigSignature(config: ExchangeConfig): string {
-    const account = config.accounts[0];
-
-    return [
-      'sandbox',
-      config.name,
-      account?.label || 'default',
-      account?.apiKey || '',
-      account?.secret || '',
-      account?.password || '',
-      account?.uid || '',
-    ].join('::');
-  }
-
-  private isTruthyEnvValue(value: string): boolean {
-    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
-  }
-
-  private isSystemTestSandboxExchangeEnabled(): boolean {
-    return this.isTruthyEnvValue(
-      process.env[SYSTEM_TEST_SANDBOX_EXCHANGE_FLAG] || '',
-    );
   }
 
   private buildExchangeConfigsFromDb(
@@ -700,30 +357,8 @@ export class ExchangeInitService {
   }
 
   private async initializeExchanges() {
-    const sandboxConfig = this.buildSandboxExchangeConfig();
-
-    if (sandboxConfig) {
-      this.apiKeysSignature = this.computeSandboxConfigSignature(sandboxConfig);
-      await this.initializeExchangeConfigs([sandboxConfig]);
-
-      return;
-    }
-
-    let apiKeys = await this.exchangeService.readDecryptedAPIKeys();
-
-    if (!apiKeys.length) {
-      const seededCount = await this.exchangeService.seedApiKeysFromEnv(
-        this.getEnvExchangeConfigs(),
-      );
-
-      if (seededCount > 0) {
-        apiKeys = await this.exchangeService.readDecryptedAPIKeys();
-      }
-    }
-
-    const exchangeConfigs = apiKeys.length
-      ? this.buildExchangeConfigsFromDb(apiKeys)
-      : this.getEnvExchangeConfigs();
+    const apiKeys = await this.exchangeService.readDecryptedAPIKeys();
+    const exchangeConfigs = this.buildExchangeConfigsFromDb(apiKeys);
 
     this.apiKeysSignature = apiKeys.length
       ? this.computeApiKeysSignature(apiKeys)
@@ -744,9 +379,7 @@ export class ExchangeInitService {
           return;
         }
 
-        const exchangeConfigs = apiKeys.length
-          ? this.buildExchangeConfigsFromDb(apiKeys)
-          : this.getEnvExchangeConfigs();
+        const exchangeConfigs = this.buildExchangeConfigsFromDb(apiKeys);
 
         this.apiKeysSignature = signature;
         await this.initializeExchangeConfigs(exchangeConfigs);
@@ -913,12 +546,6 @@ export class ExchangeInitService {
   }
 
   async getSupportedExchanges(): Promise<string[]> {
-    const sandboxConfig = this.buildSandboxExchangeConfig();
-
-    if (sandboxConfig) {
-      return [sandboxConfig.name];
-    }
-
     const dbExchanges = await this.exchangeService.readSupportedExchanges();
 
     if (dbExchanges.length > 0) {

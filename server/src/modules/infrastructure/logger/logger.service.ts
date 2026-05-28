@@ -15,8 +15,7 @@ export class CustomLogger extends Logger {
     const isTestRuntime =
       process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
 
-    this.silentForTests =
-      isTestRuntime && process.env.JEST_VERBOSE_LOGS !== '1';
+    this.silentForTests = isTestRuntime;
     const logsDir =
       process.env.NODE_ENV !== 'production'
         ? path.join(__dirname, '..', '..', 'logs')

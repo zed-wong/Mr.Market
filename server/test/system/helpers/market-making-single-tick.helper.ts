@@ -66,7 +66,6 @@ import type { Repository } from 'typeorm';
 
 import {
   createSystemTestDatabaseConfig,
-  readSystemSandboxConfig,
   type SandboxExchangeTestConfig,
   waitForInitializedExchange,
 } from './sandbox-system.helper';
@@ -144,7 +143,7 @@ export class MarketMakingSingleTickHelper {
   private strategyOrderIntentRepository!: Repository<StrategyOrderIntentEntity>;
 
   constructor(
-    config: SandboxExchangeTestConfig = readSystemSandboxConfig(),
+    config: SandboxExchangeTestConfig,
     options: SingleTickHelperOptions = {},
   ) {
     this.config = config;
@@ -242,7 +241,6 @@ export class MarketMakingSingleTickHelper {
     const exchangeApiKeyServiceMock = {
       readDecryptedAPIKeys: async () => [],
       readSupportedExchanges: async () => [],
-      seedApiKeysFromEnv: async () => 0,
     };
 
     this.moduleRef = await Test.createTestingModule({

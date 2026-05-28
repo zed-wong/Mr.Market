@@ -89,14 +89,8 @@ function createPureMmParams(orderId: string) {
 const wait = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-const soakDurationMs = Math.max(
-  1_000,
-  Number(process.env.ADAPTIVE_PMM_SOAK_MS || 1_800_000),
-);
-const tickIntervalMs = Math.max(
-  10,
-  Number(process.env.ADAPTIVE_PMM_SOAK_TICK_MS || 1_000),
-);
+const soakDurationMs = 1_800_000;
+const tickIntervalMs = 1_000;
 
 jest.setTimeout(soakDurationMs + 60_000);
 

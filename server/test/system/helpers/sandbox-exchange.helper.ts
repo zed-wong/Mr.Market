@@ -4,12 +4,10 @@ import * as ccxt from 'ccxt';
 
 import {
   pollUntil,
-  readSystemSandboxConfig,
-  SandboxExchangeTestConfig,
+  type SandboxExchangeTestConfig,
 } from './sandbox-system.helper';
 
-// Re-export for backward compatibility
-export { pollUntil, readSystemSandboxConfig };
+export { pollUntil };
 export type { SandboxExchangeTestConfig };
 
 type CcxtExchangeClass = new (
@@ -105,7 +103,7 @@ export class SandboxExchangeHelper {
   private readonly config: SandboxExchangeTestConfig;
   private exchange: CcxtExchangeInstance | null = null;
 
-  constructor(config: SandboxExchangeTestConfig = readSystemSandboxConfig()) {
+  constructor(config: SandboxExchangeTestConfig) {
     this.config = config;
   }
 

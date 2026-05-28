@@ -1,10 +1,7 @@
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
 import { MarketMakingSingleTickHelper } from '../../helpers/market-making-single-tick.helper';
-import {
-  getSystemSandboxSkipReason,
-  readSystemSandboxConfig,
-} from '../../helpers/sandbox-system.helper';
+import type { SandboxExchangeTestConfig } from '../../helpers/sandbox-system.helper';
 import {
   createSystemTestLogger,
   logSystemSkip,
@@ -14,9 +11,8 @@ type WatchOrdersCapableExchange = {
   watchOrders?: (...args: unknown[]) => Promise<unknown>;
 };
 
-const envSkipReason = getSystemSandboxSkipReason();
-const config = envSkipReason ? null : readSystemSandboxConfig();
-const skipReason = envSkipReason;
+const config: SandboxExchangeTestConfig | null = null;
+const skipReason = 'sandbox exchange env configuration has been removed';
 const log = createSystemTestLogger('private-fill-reconnect');
 
 if (skipReason) {

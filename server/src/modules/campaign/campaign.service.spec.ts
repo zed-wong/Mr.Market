@@ -1,4 +1,4 @@
-/* eslint-disable no-console, unused-imports/no-unused-vars */
+/* eslint-disable unused-imports/no-unused-vars */
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 
@@ -6,11 +6,7 @@ import { ExchangeInitService } from '../infrastructure/exchange-init/exchange-in
 import { Web3Service } from '../web3/web3.service';
 import { CampaignService } from './campaign.service';
 
-const debugLog = (...args: unknown[]) => {
-  if (process.env.JEST_VERBOSE_LOGS === '1') {
-    console.log(...args);
-  }
-};
+const debugLog = (..._args: unknown[]) => undefined;
 
 /**
  * CampaignService Test Suite

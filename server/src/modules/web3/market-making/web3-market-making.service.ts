@@ -1550,12 +1550,7 @@ export class Web3MarketMakingService {
   }
 
   private assertValidationFixtureEnabled(): void {
-    if (
-      process.env.NODE_ENV === 'test' ||
-      String(process.env.MR_MARKET_ENABLE_VALIDATION_FIXTURES || '')
-        .toLowerCase()
-        .trim() === 'true'
-    ) {
+    if (process.env.NODE_ENV === 'test') {
       return;
     }
 

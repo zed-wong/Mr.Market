@@ -50,7 +50,6 @@ import { WithdrawalService } from 'src/modules/mixin/withdrawal/withdrawal.servi
 import type { Repository } from 'typeorm';
 
 import {
-  readSystemSandboxConfig,
   type SandboxExchangeTestConfig,
   waitForInitializedExchange,
 } from './sandbox-system.helper';
@@ -96,7 +95,7 @@ export class MarketMakingRuntimeHelper {
   private strategyInstanceRepository!: Repository<StrategyInstance>;
   private strategyOrderIntentRepository!: Repository<StrategyOrderIntentEntity>;
 
-  constructor(config: SandboxExchangeTestConfig = readSystemSandboxConfig()) {
+  constructor(config: SandboxExchangeTestConfig) {
     this.config = config;
   }
 
@@ -154,7 +153,6 @@ export class MarketMakingRuntimeHelper {
     const exchangeApiKeyServiceMock = {
       readDecryptedAPIKeys: async () => [],
       readSupportedExchanges: async () => [],
-      seedApiKeysFromEnv: async () => 0,
     };
 
     this.moduleRef = await Test.createTestingModule({

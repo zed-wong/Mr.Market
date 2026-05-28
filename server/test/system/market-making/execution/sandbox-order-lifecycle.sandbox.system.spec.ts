@@ -11,9 +11,8 @@ import {
   buildSandboxClientOrderId,
 } from '../../helpers/sandbox-exchange.helper';
 import {
-  getSystemSandboxSkipReason,
   pollUntil,
-  readSystemSandboxConfig,
+  type SandboxExchangeTestConfig,
   waitForInitializedExchange,
 } from '../../helpers/sandbox-system.helper';
 import {
@@ -21,7 +20,7 @@ import {
   logSystemSkip,
 } from '../../helpers/system-test-log.helper';
 
-const skipReason = getSystemSandboxSkipReason();
+const skipReason = 'sandbox exchange env configuration has been removed';
 const log = createSystemTestLogger('sandbox-order-lifecycle');
 
 if (skipReason) {
@@ -36,7 +35,6 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
   const exchangeApiKeyServiceMock = {
     readDecryptedAPIKeys: jest.fn().mockResolvedValue([]),
     readSupportedExchanges: jest.fn().mockResolvedValue([]),
-    seedApiKeysFromEnv: jest.fn().mockResolvedValue(0),
   };
 
   const cacheManagerMock = {
@@ -44,7 +42,7 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
     set: jest.fn(),
   };
 
-  let config: ReturnType<typeof readSystemSandboxConfig>;
+  let config: SandboxExchangeTestConfig;
   let moduleRef: TestingModule;
   let exchangeInitService: ExchangeInitService;
   let service: ExchangeConnectorAdapterService;
@@ -94,7 +92,6 @@ describeSandbox('Sandbox order REST lifecycle (system)', () => {
   }
 
   beforeAll(async () => {
-    config = readSystemSandboxConfig();
     log.suite('initializing exchange through ExchangeInitService');
 
     moduleRef = await Test.createTestingModule({
