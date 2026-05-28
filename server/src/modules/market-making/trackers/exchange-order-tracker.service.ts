@@ -1127,31 +1127,34 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     const rows = await this.trackedOrderRepository.find();
 
     for (const row of rows) {
+      const order: TrackedOrder = {
+        orderId: row.orderId,
+        strategyKey: row.strategyKey,
+        exchange: row.exchange,
+        accountLabel: row.accountLabel || undefined,
+        pair: row.pair,
+        exchangeOrderId: row.exchangeOrderId,
+        clientOrderId: row.clientOrderId,
+        slotKey: row.slotKey || undefined,
+        role: (row.role as TrackedOrder['role']) || undefined,
+        side: row.side as 'buy' | 'sell',
+        price: row.price,
+        qty: row.qty,
+        cumulativeFilledQty: row.cumulativeFilledQty,
+        status: row.status as TrackedOrderState,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      };
+
       this.setTrackedOrder(
         this.toKey(
           row.exchange,
           row.accountLabel || undefined,
           row.exchangeOrderId,
         ),
-        {
-          orderId: row.orderId,
-          strategyKey: row.strategyKey,
-          exchange: row.exchange,
-          accountLabel: row.accountLabel || undefined,
-          pair: row.pair,
-          exchangeOrderId: row.exchangeOrderId,
-          clientOrderId: row.clientOrderId,
-          slotKey: row.slotKey || undefined,
-          role: (row.role as TrackedOrder['role']) || undefined,
-          side: row.side as 'buy' | 'sell',
-          price: row.price,
-          qty: row.qty,
-          cumulativeFilledQty: row.cumulativeFilledQty,
-          status: row.status as TrackedOrderState,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-        },
+        order,
       );
+      this.releaseReservationForTerminalOrder(undefined, order);
     }
   }
 

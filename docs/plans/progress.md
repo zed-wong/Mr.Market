@@ -3,6 +3,7 @@
 ## 2026-05-28
 
 - Remove admin password complexity and minimum-length enforcement from the `admin-interface` password update screen and backend password setup/update services, leaving only password confirmation in the UI and backend persistence/session invalidation on submit.
+- Harden admin-direct pure market-making restart recovery: hydrate terminal tracked orders through idempotent reservation release, recover interrupted `SENT`/`ACKED` create intents with no exchange order id by cancelling the stale intent and releasing its order-scoped reservation when no owned open exchange order exists, and make exchange-ready activation awaitable instead of fire-and-forget.
 
 ## 2026-05-25
 

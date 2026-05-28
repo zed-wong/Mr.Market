@@ -56,12 +56,14 @@ const createRepository = (rows: StrategyOrderIntentEntity[] = []) => ({
             where?: {
               intentId?: { _value?: string[] } | string;
               strategyKey?: string;
+              type?: string;
               status?: { _value?: string[] } | string;
             };
           }
         | undefined,
     ) => {
       const strategyKey = options?.where?.strategyKey;
+      const type = options?.where?.type;
       const intentIdFilter = options?.where?.intentId;
       const expectedIntentIds = Array.isArray((intentIdFilter as any)?._value)
         ? (intentIdFilter as any)._value
@@ -78,6 +80,10 @@ const createRepository = (rows: StrategyOrderIntentEntity[] = []) => ({
       return rows
         .filter((row) => {
           if (strategyKey && row.strategyKey !== strategyKey) {
+            return false;
+          }
+
+          if (type && row.type !== type) {
             return false;
           }
 
@@ -356,6 +362,48 @@ describe('StrategyIntentStoreService', () => {
     await expect(service.listStrategyKeysWithNewIntents(0)).resolves.toEqual(
       [],
     );
+  });
+
+  it('lists interrupted create intents for startup recovery', async () => {
+    const rows = [
+      createIntent({
+        intentId: 'acked-create',
+        strategyKey: 'strategy-1',
+        status: 'ACKED',
+        createdAt: '2026-03-11T00:00:01.000Z',
+      }),
+      createIntent({
+        intentId: 'sent-create',
+        strategyKey: 'strategy-1',
+        status: 'SENT',
+        createdAt: '2026-03-11T00:00:02.000Z',
+      }),
+      createIntent({
+        intentId: 'new-create',
+        strategyKey: 'strategy-1',
+        status: 'NEW',
+      }),
+      createIntent({
+        intentId: 'sent-cancel',
+        strategyKey: 'strategy-1',
+        type: 'CANCEL_ORDER',
+        status: 'SENT',
+      }),
+      createIntent({
+        intentId: 'other-strategy',
+        strategyKey: 'strategy-2',
+        status: 'SENT',
+      }),
+    ];
+    const repository = createRepository(rows);
+    const service = new StrategyIntentStoreService(repository as any);
+
+    await expect(
+      service.listInterruptedCreateIntents('strategy-1'),
+    ).resolves.toEqual([
+      expect.objectContaining({ intentId: 'acked-create' }),
+      expect.objectContaining({ intentId: 'sent-create' }),
+    ]);
   });
 
   it('returns the oldest non-DONE head intent for a strategy', async () => {

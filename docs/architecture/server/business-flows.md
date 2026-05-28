@@ -81,6 +81,7 @@ Why this flow exists:
 - It now records coordinator/component/executor/session/network timings through a shared runtime timing recorder, so refactor work can measure tick pressure instead of inferring it from overlap warnings alone.
 - It ticks active exchange:pair executors concurrently and batches intent persistence per action set, reducing the hot-path time spent waiting on independent sessions and repeated intent-store writes.
 - It shares exchange:pair market data across sessions, while account-aware execution/tracking keeps REST order management and user-stream fill routing pinned to the correct exchange account during restart recovery and shutdown cleanup.
+- Startup recovery is awaitable from the exchange-ready event path; recovered PMM state must finish tracked-order reconciliation and stale reservation cleanup before the strategy is considered activated.
 - Strategy tick decisions now read cached order/balance state only; when required balance snapshots are stale, the tick skips the decision instead of fetching REST state inline.
 - Order, balance, and stream-health cache changes publish typed internal market-making events, and exchange-scoped listeners can now subscribe without introducing exchange-prefixed event names.
 - REST order reconciliation and REST balance refresh now run outside the shared tick loop through `ExchangeOrderReconciliationRunner` and `BalanceRefreshScheduler`.

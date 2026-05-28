@@ -300,6 +300,10 @@ Create-limit-order execution:
 8. On failed create before external acknowledgement, releases reservation.
 9. On cancel/reject/expire terminal states, releases remaining unfilled
    reservation.
+10. On startup, persisted terminal tracked orders re-run the same idempotent
+    release path, and interrupted create intents stuck in `SENT` / `ACKED`
+    without an exchange order id release their reservation only after startup
+    exchange-open-order reconciliation finds no owned live order.
 
 Reservation is expressed through ledger entries:
 

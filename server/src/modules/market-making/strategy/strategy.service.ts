@@ -91,6 +91,7 @@ import {
   RuntimeObservationService,
   StrategyRuntimePressureSnapshot,
 } from './observation/runtime-observation.service';
+import { StrategyStartupRecoveryService } from './recovery/strategy-startup-recovery.service';
 import { FillSettlementService } from './settlement/fill-settlement.service';
 
 type DualAccountCapacityDiagnostics = {
@@ -236,13 +237,15 @@ export class StrategyService
     private readonly pmmMarkoutEvaluatorService?: PmmMarkoutEvaluatorService,
     @Optional()
     private readonly runtimeObservationService?: RuntimeObservationService,
+    @Optional()
+    private readonly strategyStartupRecoveryService?: StrategyStartupRecoveryService,
   ) {}
 
   async onModuleInit(): Promise<void> {
     this.clockTickCoordinatorService?.register('strategy-service', this, 20);
     this.detachExchangeReadyListener = this.exchangeInitService.onExchangeReady(
       (exchangeName, accountLabel) =>
-        void this.activatePendingStrategiesForExchange(
+        this.activatePendingStrategiesForExchange(
           exchangeName,
           accountLabel,
         ),
@@ -7685,6 +7688,19 @@ export class StrategyService
           `Startup fetchOrder reconciliation skipped for ${trackedOrder.exchangeOrderId}: ${message}`,
         );
       }
+    }
+
+    try {
+      await this.strategyStartupRecoveryService?.recoverInterruptedCreateIntentReservations(
+        strategy,
+        openOrders,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Startup interrupted intent recovery skipped for ${
+          strategy.strategyKey
+        }: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

@@ -41,6 +41,7 @@ import { ExecutorOrchestratorService } from './intent/executor-orchestrator.serv
 import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
 import { PmmMarkoutEvaluatorService } from './observation/pmm-markout-evaluator.service';
 import { RuntimeObservationService } from './observation/runtime-observation.service';
+import { StrategyStartupRecoveryService } from './recovery/strategy-startup-recovery.service';
 import { FillSettlementService } from './settlement/fill-settlement.service';
 import { StrategyService } from './strategy.service';
 
@@ -84,6 +85,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyRuntimeDispatcherService,
     StrategyMarketDataProviderService,
     FillSettlementService,
+    StrategyStartupRecoveryService,
     ArbitrageStrategyController,
     PureMarketMakingStrategyController,
     DualAccountBestCapacityVolumeStrategyController,

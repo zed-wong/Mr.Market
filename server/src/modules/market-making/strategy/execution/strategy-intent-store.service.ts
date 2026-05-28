@@ -158,6 +158,22 @@ export class StrategyIntentStoreService {
     });
   }
 
+  async listInterruptedCreateIntents(
+    strategyKey: string,
+  ): Promise<StrategyOrderIntentEntity[]> {
+    return await this.strategyOrderIntentRepository.find({
+      where: {
+        strategyKey,
+        type: 'CREATE_LIMIT_ORDER',
+        status: In(['SENT', 'ACKED'] as StrategyIntentStatus[]),
+      },
+      order: {
+        createdAt: 'ASC',
+        intentId: 'ASC',
+      },
+    });
+  }
+
   async getQueueState(strategyKey: string): Promise<StrategyIntentQueueState> {
     const [headIntent, oldestNewIntent] = await Promise.all([
       this.getHeadIntent(strategyKey),
