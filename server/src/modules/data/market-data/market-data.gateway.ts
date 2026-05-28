@@ -10,6 +10,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server as SocketIOServer, Socket } from 'socket.io';
+import { socketCorsOrigin } from 'src/common/helpers/cors';
 import {
   createCompositeKey,
   decodeCompositeKey,
@@ -19,31 +20,9 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { MarketdataService, marketDataType } from './market-data.service';
 
-const webSocketPort = process.env.WS_PORT || '0';
-const wsCorsOrigin = (process.env.WS_CORS_ORIGIN || process.env.CORS_ORIGIN)
-  ?.split(',')
-  .map((origin) => origin.trim())
-  .filter((origin) => origin.length > 0);
-const wsHasWildcard = Boolean(wsCorsOrigin?.includes('*'));
-const wsWildcardAllowed =
-  String(process.env.WS_CORS_ALLOW_WILDCARD || '').toLowerCase() === 'true';
-const wsSanitizedOrigins =
-  wsHasWildcard && !wsWildcardAllowed
-    ? wsCorsOrigin?.filter((origin) => origin !== '*')
-    : wsCorsOrigin;
-const wsAllowedOrigins =
-  wsSanitizedOrigins && wsSanitizedOrigins.length > 0
-    ? wsSanitizedOrigins
-    : [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:5173',
-      ];
-
-@WebSocketGateway(parseInt(webSocketPort, 10), {
+@WebSocketGateway({
   namespace: '/market',
-  cors: { origin: wsAllowedOrigins, credentials: true },
+  cors: { origin: socketCorsOrigin, credentials: true },
 })
 export class MarketDataGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect

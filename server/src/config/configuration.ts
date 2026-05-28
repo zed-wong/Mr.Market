@@ -6,8 +6,7 @@ export default () => ({
     path: process.env.DATABASE_PATH || 'data/mr_market.db',
   },
   redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT, 10) || 6379,
+    url: process.env.REDIS_URL || 'redis://localhost:6379/0',
   },
   apiKeys: {
     binance: [
@@ -39,6 +38,12 @@ export default () => ({
   },
   cors: {
     origin: process.env.CORS_ORIGIN,
+    allow_wildcard:
+      String(process.env.CORS_ALLOW_WILDCARD || '').toLowerCase() === 'true',
+  },
+  logger: {
+    discord_webhook_url: process.env.DISCORD_LOG_WEBHOOK_URL || '',
+    mixin_group_webhook_url: process.env.MIXIN_GROUP_WEBHOOK_URL || '',
   },
   mixin: {
     app_id: process.env.MIXIN_APP_ID,

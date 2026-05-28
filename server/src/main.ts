@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as crypto from 'crypto';
@@ -8,6 +9,7 @@ import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import { SafeJsonExceptionFilter } from './common/filters/safe-json-exception.filter';
+import { configureCorsOrigins } from './common/helpers/cors';
 import * as encryption from './common/helpers/crypto';
 import { CustomLogger } from './modules/infrastructure/logger/logger.service';
 
@@ -70,30 +72,20 @@ async function bootstrap() {
   }
   const logger = new CustomLogger(AppModule.name);
   const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
+
+  CustomLogger.configureWebhooks({
+    discordWebhookUrl: configService.get<string>('logger.discord_webhook_url'),
+    mixinGroupWebhookUrl: configService.get<string>(
+      'logger.mixin_group_webhook_url',
+    ),
+  });
   app.useGlobalFilters(new SafeJsonExceptionFilter());
 
-  const corsOrigins = (process.env.CORS_ORIGIN || '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
-  const hasWildcard = corsOrigins.includes('*');
-  const wildcardAllowed =
-    String(process.env.CORS_ALLOW_WILDCARD || '').toLowerCase() === 'true';
-  const sanitizedCorsOrigins =
-    hasWildcard && !wildcardAllowed
-      ? corsOrigins.filter((origin) => origin !== '*')
-      : corsOrigins;
-  const allowedOrigins =
-    sanitizedCorsOrigins.length > 0
-      ? sanitizedCorsOrigins
-      : [
-          'http://localhost:3000',
-          'http://localhost:5173',
-          'http://localhost:5174',
-          'http://127.0.0.1:3000',
-          'http://127.0.0.1:5173',
-          'http://127.0.0.1:5174',
-        ];
+  const allowedOrigins = configureCorsOrigins(
+    configService.get<string>('cors.origin'),
+    configService.get<boolean>('cors.allow_wildcard', false),
+  );
 
   app.enableCors({
     origin: allowedOrigins,

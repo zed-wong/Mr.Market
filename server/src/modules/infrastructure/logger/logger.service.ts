@@ -6,10 +6,20 @@ import * as winston from 'winston';
 
 @Injectable({ scope: Scope.DEFAULT })
 export class CustomLogger extends Logger {
+  private static discordWebhookUrl = '';
+  private static mixinGroupWebhookUrl = '';
+
   private logger: winston.Logger;
-  private discordWebhookUrl: string;
-  private mixinGroupWebhookUrl: string;
   private readonly silentForTests: boolean;
+
+  static configureWebhooks(config: {
+    discordWebhookUrl?: string;
+    mixinGroupWebhookUrl?: string;
+  }) {
+    CustomLogger.discordWebhookUrl = config.discordWebhookUrl || '';
+    CustomLogger.mixinGroupWebhookUrl = config.mixinGroupWebhookUrl || '';
+  }
+
   constructor(context?: string) {
     super(context);
     const isTestRuntime =
@@ -46,17 +56,15 @@ export class CustomLogger extends Logger {
       ),
       transports,
     });
-    this.discordWebhookUrl = process.env.DISCORD_LOG_WEBHOOK_URL ?? '';
-    this.mixinGroupWebhookUrl = process.env.MIXIN_GROUP_WEBHOOK_URL ?? '';
   }
 
   async logToDiscord(message: string, level: string = 'INFO') {
-    if (this.discordWebhookUrl.length === 0) {
+    if (CustomLogger.discordWebhookUrl.length === 0) {
       return;
     }
 
     try {
-      await axios.post(this.discordWebhookUrl, {
+      await axios.post(CustomLogger.discordWebhookUrl, {
         content: `${level} [${this.context}]: ${message}`,
       });
     } catch (error) {
@@ -65,12 +73,12 @@ export class CustomLogger extends Logger {
   }
 
   async logToMixinGroup(message: string) {
-    if (this.mixinGroupWebhookUrl.length === 0) {
+    if (CustomLogger.mixinGroupWebhookUrl.length === 0) {
       return;
     }
 
     try {
-      await axios.post(this.mixinGroupWebhookUrl, {
+      await axios.post(CustomLogger.mixinGroupWebhookUrl, {
         category: 'PLAIN_TEXT',
         data: message,
       });

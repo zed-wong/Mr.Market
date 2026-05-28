@@ -2,6 +2,7 @@
 
 ## 2026-05-28
 
+- Consolidate backend runtime configuration by routing Redis through `REDIS_URL`, sharing HTTP/WebSocket CORS policy from ConfigModule-backed CORS config, and moving logger webhooks behind ConfigModule initialization.
 - Remove legacy production exchange API-key env loading and sandbox-env bootstrap: exchange initialization now uses DB-backed API keys only, and validation fixtures are test-only without an env escape hatch.
 - Remove admin password complexity and minimum-length enforcement from the `admin-interface` password update screen and backend password setup/update services, leaving only password confirmation in the UI and backend persistence/session invalidation on submit.
 - Harden admin-direct pure market-making restart recovery: hydrate terminal tracked orders through idempotent reservation release, recover interrupted `SENT`/`ACKED` create intents with no exchange order id by cancelling the stale intent and releasing its order-scoped reservation when no owned open exchange order exists, and make exchange-ready activation awaitable instead of fire-and-forget.

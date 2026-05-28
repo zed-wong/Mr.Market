@@ -102,26 +102,19 @@ if (!dotenvDisabled) {
 }
 
 function buildRedisConfig(configService: ConfigService) {
-  const redisUrl = process.env.REDIS_URL;
-
-  if (redisUrl) {
-    const parsed = new URL(redisUrl);
-
-    return {
-      host: parsed.hostname,
-      port: Number(parsed.port || 6379),
-      password: parsed.password || undefined,
-      db:
-        parsed.pathname && parsed.pathname !== '/'
-          ? Number(parsed.pathname.slice(1)) || 0
-          : 0,
-      tls: parsed.protocol === 'rediss:' ? {} : undefined,
-    };
-  }
+  const parsed = new URL(
+    configService.get<string>('redis.url', 'redis://localhost:6379/0'),
+  );
 
   return {
-    host: configService.get('redis.host'),
-    port: configService.get('redis.port'),
+    host: parsed.hostname,
+    port: Number(parsed.port || 6379),
+    password: parsed.password || undefined,
+    db:
+      parsed.pathname && parsed.pathname !== '/'
+        ? Number(parsed.pathname.slice(1)) || 0
+        : 0,
+    tls: parsed.protocol === 'rediss:' ? {} : undefined,
   };
 }
 
