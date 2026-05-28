@@ -75,12 +75,6 @@ export class SetupService {
   async setPassword(password?: string) {
     const normalized = String(password || '').trim();
 
-    if (normalized.length < 8) {
-      throw new BadRequestException(
-        'Admin password must be at least 8 characters',
-      );
-    }
-
     const state = await this.getState();
 
     if (state.completedAt) {

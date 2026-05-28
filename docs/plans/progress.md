@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-05-28
+
+- Remove admin password complexity and minimum-length enforcement from the `admin-interface` password update screen and backend password setup/update services, leaving only password confirmation in the UI and backend persistence/session invalidation on submit.
+
 ## 2026-05-25
 
 - Start implementing `docs/plans/one-time-setup-wizard.md`: add server setup state persistence/endpoints/middleware and replace the admin `/setup` readiness dashboard with a pre-auth setup wizard that configures password, exchange/API key steps, optional env/config writes, seed status, completion, sidebar hiding, and dashboard continuation prompt.
