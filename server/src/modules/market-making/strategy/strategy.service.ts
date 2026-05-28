@@ -6437,14 +6437,31 @@ export class StrategyService
       return;
     }
 
-    const trackedOrder =
-      session.strategyType === 'dualAccountVolume' ||
-      session.strategyType === 'dualAccountBestCapacityVolume'
-        ? this.resolveTrackedOrderForFill(session, fill)
-        : undefined;
+    const trackedOrder = this.resolveTrackedOrderForFill(session, fill);
+    const settlementFill = this.buildIncrementalSettlementFill(
+      trackedOrder,
+      fill,
+    );
 
-    await this.settleFillToBalanceLedger(session, fill);
-    this.recordSessionPnL(session, fill, {
+    if (!settlementFill) {
+      return;
+    }
+
+    let settled = false;
+
+    try {
+      settled = await this.settleFillToBalanceLedger(session, settlementFill);
+    } catch (error) {
+      this.pauseFillSettlementReservations(session, settlementFill);
+      throw error;
+    }
+
+    if (!settled) {
+      return;
+    }
+
+    this.markTrackedFillSettled(trackedOrder, settlementFill);
+    this.recordSessionPnL(session, settlementFill, {
       includeTradedQuoteVolume:
         session.strategyType === 'pureMarketMaking' ||
         trackedOrder?.role === 'taker',
@@ -6695,6 +6712,134 @@ export class StrategyService
           (clientOrderId && order.clientOrderId === clientOrderId))
       );
     });
+  }
+
+  private buildIncrementalSettlementFill(
+    trackedOrder: TrackedOrder | undefined,
+    fill: {
+      exchangeOrderId?: string | null;
+      clientOrderId?: string | null;
+      accountLabel?: string | null;
+      fillId?: string | null;
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      cumulativeQty?: string;
+      feeAmount?: string;
+      feeAsset?: string;
+      receivedAt?: string;
+    },
+  ):
+    | {
+        exchangeOrderId?: string | null;
+        clientOrderId?: string | null;
+        accountLabel?: string | null;
+        fillId?: string | null;
+        side?: 'buy' | 'sell';
+        price?: string;
+        qty?: string;
+        cumulativeQty?: string;
+        feeAmount?: string;
+        feeAsset?: string;
+        receivedAt?: string;
+      }
+    | null {
+    if (!trackedOrder) {
+      return fill;
+    }
+
+    const settledCumulative = new BigNumber(
+      trackedOrder.settledFilledQty || 0,
+    );
+    const fillCumulative = new BigNumber(this.readString(fill.cumulativeQty));
+    const trackedCumulative = new BigNumber(
+      trackedOrder.cumulativeFilledQty || 0,
+    );
+    const fillQty = new BigNumber(this.readString(fill.qty));
+    let effectiveCumulative: BigNumber | null = null;
+
+    if (fillCumulative.isFinite() && fillCumulative.isGreaterThan(0)) {
+      effectiveCumulative = fillCumulative;
+    }
+
+    if (trackedCumulative.isFinite() && trackedCumulative.isGreaterThan(0)) {
+      effectiveCumulative = effectiveCumulative
+        ? BigNumber.minimum(effectiveCumulative, trackedCumulative)
+        : trackedCumulative;
+    }
+
+    if (!effectiveCumulative && fillQty.isFinite() && fillQty.isGreaterThan(0)) {
+      effectiveCumulative = settledCumulative.plus(fillQty);
+    }
+
+    if (
+      !settledCumulative.isFinite() ||
+      !effectiveCumulative ||
+      !effectiveCumulative.isFinite() ||
+      !effectiveCumulative.isGreaterThan(settledCumulative)
+    ) {
+      return null;
+    }
+
+    const deltaQty = effectiveCumulative.minus(settledCumulative);
+
+    if (!deltaQty.isFinite() || deltaQty.isLessThanOrEqualTo(0)) {
+      return null;
+    }
+
+    return {
+      ...fill,
+      qty: deltaQty.toFixed(),
+      cumulativeQty: effectiveCumulative.toFixed(),
+    };
+  }
+
+  private markTrackedFillSettled(
+    trackedOrder: TrackedOrder | undefined,
+    fill: {
+      cumulativeQty?: string;
+      receivedAt?: string;
+    },
+  ): void {
+    if (!trackedOrder || !fill.cumulativeQty) {
+      return;
+    }
+
+    this.exchangeOrderTrackerService?.markFillSettled({
+      exchange: trackedOrder.exchange,
+      exchangeOrderId: trackedOrder.exchangeOrderId,
+      accountLabel: trackedOrder.accountLabel,
+      cumulativeQty: fill.cumulativeQty,
+      updatedAt: fill.receivedAt,
+    });
+  }
+
+  private pauseFillSettlementReservations(
+    session: StrategyRuntimeSession,
+    fill: {
+      side?: 'buy' | 'sell';
+    },
+  ): void {
+    if (!this.balanceLedgerService || !fill.side) {
+      return;
+    }
+
+    const pair = this.readString(
+      session.params?.pair,
+      this.readString(session.params?.symbol, ''),
+    );
+    const assets = pair ? this.parseBaseQuote(pair) : null;
+
+    if (!assets) {
+      return;
+    }
+
+    const assetId = fill.side === 'buy' ? assets.quote : assets.base;
+
+    this.balanceLedgerService.pauseReservations(
+      session.marketMakingOrderId || session.clientId,
+      assetId,
+    );
   }
 
   private async applyDualAccountFillProgress(
@@ -6982,14 +7127,14 @@ export class StrategyService
       feeAsset?: string;
       receivedAt?: string;
     },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const pair = this.readString(
       session.params?.pair,
       this.readString(session.params?.symbol, ''),
     );
 
     if (this.fillSettlementService && pair) {
-      await this.fillSettlementService.settleFill({
+      return await this.fillSettlementService.settleFill({
         strategyKey: session.strategyKey,
         orderId: session.marketMakingOrderId || session.clientId,
         userId: session.userId,
@@ -6997,10 +7142,11 @@ export class StrategyService
         fill,
       });
 
-      return;
     }
 
     await this.applyFillToBalanceLedger(session, fill);
+
+    return true;
   }
 
   private async applyFillFeeToBalanceLedger(

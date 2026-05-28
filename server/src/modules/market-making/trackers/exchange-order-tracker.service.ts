@@ -43,6 +43,7 @@ export type TrackedOrder = {
   price: string;
   qty: string;
   cumulativeFilledQty?: string;
+  settledFilledQty?: string;
   status: TrackedOrderState;
   createdAt: string;
   updatedAt: string;
@@ -192,6 +193,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       createdAt: order.createdAt || order.updatedAt,
       cumulativeFilledQty: this.normalizeCumulativeFilledQty(
         order.cumulativeFilledQty,
+      ),
+      settledFilledQty: this.normalizeCumulativeFilledQty(
+        order.settledFilledQty,
       ),
     };
 
@@ -396,6 +400,47 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     accountLabel?: string,
   ): TrackedOrder | undefined {
     return this.orders.get(this.toKey(exchange, accountLabel, exchangeOrderId));
+  }
+
+  markFillSettled(params: {
+    exchange: string;
+    exchangeOrderId: string;
+    accountLabel?: string;
+    cumulativeQty: string;
+    updatedAt?: string;
+  }): void {
+    const key = this.toKey(
+      params.exchange,
+      params.accountLabel,
+      params.exchangeOrderId,
+    );
+    const existingOrder = this.orders.get(key);
+
+    if (!existingOrder) {
+      return;
+    }
+
+    const previousSettledQty = new BigNumber(
+      existingOrder.settledFilledQty || 0,
+    );
+    const nextSettledQty = new BigNumber(params.cumulativeQty);
+
+    if (
+      !previousSettledQty.isFinite() ||
+      !nextSettledQty.isFinite() ||
+      nextSettledQty.isLessThanOrEqualTo(previousSettledQty)
+    ) {
+      return;
+    }
+
+    const nextOrder = {
+      ...existingOrder,
+      settledFilledQty: nextSettledQty.toFixed(),
+      updatedAt: params.updatedAt || getRFC3339Timestamp(),
+    };
+
+    this.setTrackedOrder(key, nextOrder);
+    void this.persistOrder(nextOrder, key).catch(() => {});
   }
 
   getFillCount(strategyKey: string, windowMs: number): number {
@@ -1055,6 +1100,10 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       previousOrder.cumulativeFilledQty || 0,
     );
     const nextFilledQty = new BigNumber(nextOrder.cumulativeFilledQty || 0);
+    const previousSettledQty = new BigNumber(
+      previousOrder.settledFilledQty || 0,
+    );
+    const nextSettledQty = new BigNumber(nextOrder.settledFilledQty || 0);
 
     return {
       ...previousOrder,
@@ -1070,6 +1119,9 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
         : previousOrder.qty,
       cumulativeFilledQty: this.normalizeCumulativeFilledQty(
         BigNumber.max(previousFilledQty, nextFilledQty).toFixed(),
+      ),
+      settledFilledQty: this.normalizeCumulativeFilledQty(
+        BigNumber.max(previousSettledQty, nextSettledQty).toFixed(),
       ),
     };
   }
@@ -1141,6 +1193,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
         price: row.price,
         qty: row.qty,
         cumulativeFilledQty: row.cumulativeFilledQty,
+        settledFilledQty: row.settledFilledQty,
         status: row.status as TrackedOrderState,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -1166,6 +1219,15 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       return;
     }
 
+    const latestOrder = this.orders.get(trackingKey);
+    const cumulativeFilledQty = this.maxNormalizedQuantity(
+      order.cumulativeFilledQty,
+      latestOrder?.cumulativeFilledQty,
+    );
+    const settledFilledQty = this.maxNormalizedQuantity(
+      order.settledFilledQty,
+      latestOrder?.settledFilledQty,
+    );
     const entity = {
       trackingKey,
       orderId: order.orderId,
@@ -1180,7 +1242,8 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       side: order.side,
       price: order.price,
       qty: order.qty,
-      cumulativeFilledQty: order.cumulativeFilledQty,
+      cumulativeFilledQty,
+      settledFilledQty,
       status: order.status,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
@@ -1200,5 +1263,29 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
         }`,
       );
     }
+  }
+
+  private maxNormalizedQuantity(
+    left: string | undefined,
+    right: string | undefined,
+  ): string | undefined {
+    const leftValue = new BigNumber(left || 0);
+    const rightValue = new BigNumber(right || 0);
+
+    if (!leftValue.isFinite() && !rightValue.isFinite()) {
+      return undefined;
+    }
+
+    if (!leftValue.isFinite()) {
+      return this.normalizeCumulativeFilledQty(right);
+    }
+
+    if (!rightValue.isFinite()) {
+      return this.normalizeCumulativeFilledQty(left);
+    }
+
+    return this.normalizeCumulativeFilledQty(
+      BigNumber.max(leftValue, rightValue).toFixed(),
+    );
   }
 }

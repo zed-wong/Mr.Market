@@ -364,6 +364,16 @@ Fill settlement:
 - Applies actual fee debit when fee data is available.
 - Uses stable fill identity for idempotency.
 - Does not rely on local receipt time as the only idempotency input.
+- Tracks per-exchange-order `settledFilledQty` on `tracked_order`. Runtime
+  fill handling compares incoming cumulative fill progress with this settled
+  progress and submits only the positive delta to ledger settlement.
+- Terminal order handling releases only the unfilled reservation remainder
+  (`order qty - cumulative filled qty`), so partial fills consume locked funds
+  and cancelled/filled endings return only what remains.
+- Replayed, stale, or lower cumulative fill events do not mutate balances. A
+  ledger settlement failure pauses reservation for the affected `orderId +
+  asset` until reconciliation clears it, and must not be treated as a generic
+  balance adjustment path.
 
 ## clientOrderId Formats
 

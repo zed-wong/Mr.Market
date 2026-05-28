@@ -1,13 +1,9 @@
 import { apiFetch } from './client';
 
 export const HEALTH_STATUSES = ['healthy', 'warning', 'critical', 'unknown'] as const;
-export const LOG_LEVELS = ['error', 'warn', 'info', 'debug'] as const;
-export const LOG_SOURCES = ['combined', 'error', 'all'] as const;
 export const AUDIT_STATUSES = ['success', 'denied', 'error'] as const;
 
 export type AdminHealthStatus = (typeof HEALTH_STATUSES)[number];
-export type AdminLogLevel = (typeof LOG_LEVELS)[number];
-export type AdminLogSource = (typeof LOG_SOURCES)[number];
 export type AdminAuditStatus = (typeof AUDIT_STATUSES)[number];
 
 export interface AdminSystemHealthQuery {
@@ -54,64 +50,6 @@ export interface AdminSystemHealthResponse {
     maxConnectorAccounts: number;
     maxRuntimeRows: number;
     maxTrackedOrderSample: number;
-  };
-}
-
-export interface AdminSystemLogsQuery {
-  source?: AdminLogSource;
-  level?: AdminLogLevel | 'all';
-  query?: string;
-  limit?: number;
-  exportLogs?: boolean;
-}
-
-export interface AdminSystemLogEntry {
-  source: 'combined' | 'error';
-  timestamp: string;
-  level: string;
-  context: string | null;
-  message: string;
-}
-
-export interface AdminSystemLogsResponse {
-  generatedAt: string;
-  entries: AdminSystemLogEntry[];
-  filters: {
-    source: AdminLogSource;
-    level: AdminLogLevel | null;
-    query: string | null;
-  };
-  sources: {
-    available: Array<'combined' | 'error'>;
-    selected: Array<'combined' | 'error'>;
-  };
-  counts: {
-    returned: number;
-    matched: number;
-    scannedLines: number;
-  };
-  byteLength: number;
-  truncated: {
-    messages: number;
-    responseBytes: boolean;
-    entries: boolean;
-    readBytes: boolean;
-  };
-  warnings: string[];
-  limits: {
-    defaultLimit: number;
-    maxLimit: number;
-    maxQueryLength: number;
-    maxMessageLength: number;
-    maxReadBytes: number;
-    maxResponseBytes: number;
-    maxExportBytes: number;
-  };
-  export?: {
-    format: 'text/plain';
-    byteLength: number;
-    content: string;
-    truncated: boolean;
   };
 }
 
@@ -243,17 +181,6 @@ export const fetchAdminSystemHealth = (query: AdminSystemHealthQuery = {}) =>
     query: cleanQuery({
       group: query.group && query.group !== 'all' ? query.group : undefined,
       service: query.service && query.service !== 'all' ? query.service : undefined,
-    }),
-  });
-
-export const fetchAdminSystemLogs = (query: AdminSystemLogsQuery = {}) =>
-  apiFetch<AdminSystemLogsResponse>('/admin/system/logs', {
-    query: cleanQuery({
-      source: query.source && query.source !== 'combined' ? query.source : undefined,
-      level: query.level && query.level !== 'all' ? query.level : undefined,
-      query: query.query?.trim(),
-      limit: query.limit,
-      export: query.exportLogs,
     }),
   });
 

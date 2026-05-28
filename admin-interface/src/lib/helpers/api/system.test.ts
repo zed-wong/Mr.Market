@@ -45,45 +45,6 @@ describe('system API helpers', () => {
     expect(headers.get('Authorization')).toBe('Bearer admin-token');
   });
 
-  it('requests bounded log filters and export without sending all-valued filters', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          generatedAt: '2026-05-23T00:00:00.000Z',
-          entries: [],
-          filters: { source: 'combined', level: null, query: 'worker' },
-          sources: { available: ['combined', 'error'], selected: ['combined'] },
-          counts: { returned: 0, matched: 0, scannedLines: 0 },
-          byteLength: 0,
-          truncated: { messages: 0, responseBytes: false, entries: false, readBytes: false },
-          warnings: [],
-          limits: { defaultLimit: 100, maxLimit: 200, maxQueryLength: 120, maxMessageLength: 1000, maxReadBytes: 262144, maxResponseBytes: 131072, maxExportBytes: 131072 },
-          export: { format: 'text/plain', byteLength: 0, content: '', truncated: false },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const { fetchAdminSystemLogs } = await import('./system');
-
-    await fetchAdminSystemLogs({
-      source: 'combined',
-      level: 'all',
-      query: ' worker ',
-      limit: 25,
-      exportLogs: true,
-    });
-
-    const url = new URL(fetchMock.mock.calls[0][0] as string);
-    expect(url.pathname).toBe('/admin/system/logs');
-    expect(url.searchParams.has('source')).toBe(false);
-    expect(url.searchParams.has('level')).toBe(false);
-    expect(url.searchParams.get('query')).toBe('worker');
-    expect(url.searchParams.get('limit')).toBe('25');
-    expect(url.searchParams.get('export')).toBe('true');
-  });
-
   it('requests audit filters plus read-only export and integrity controls', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

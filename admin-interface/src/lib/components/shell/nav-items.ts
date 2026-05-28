@@ -59,7 +59,6 @@ export const NAV_ITEMS: NavGroup[] = [
     key: 'diagnostics',
     label: 'admin.nav.diagnostics',
     children: [
-      { key: 'system.logs', label: 'admin.nav.logs', href: '/system/logs' },
       { key: 'system.audit', label: 'admin.nav.audit_log', href: '/system/audit' },
     ],
   },

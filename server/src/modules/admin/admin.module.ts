@@ -58,8 +58,6 @@ import { AdminSystemHealthController } from './system/admin-system-health.contro
 import { AdminSystemHealthService } from './system/admin-system-health.service';
 import { AdminSystemConfigController } from './system/admin-system-config.controller';
 import { AdminSystemConfigService } from './system/admin-system-config.service';
-import { AdminSystemLogsController } from './system/admin-system-logs.controller';
-import { AdminSystemLogsService } from './system/admin-system-logs.service';
 import { AdminAuditModule } from './system/admin-audit.module';
 import { AdminSystemAuditController } from './system/admin-system-audit.controller';
 
@@ -111,7 +109,6 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminPositionsController,
     AdminSystemHealthController,
     AdminSystemConfigController,
-    AdminSystemLogsController,
     AdminSystemAuditController,
     AdminFeeController,
     AdminDirectMarketMakingController,
@@ -124,7 +121,6 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminPositionsService,
     AdminSystemHealthService,
     AdminSystemConfigService,
-    AdminSystemLogsService,
     AdminDirectMarketMakingService,
     PerformanceService,
     AdminGrowService,
@@ -139,7 +135,6 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminPositionsService,
     AdminSystemHealthService,
     AdminSystemConfigService,
-    AdminSystemLogsService,
     AdminDirectMarketMakingService,
     AdminGrowService,
     AdminSpotService,

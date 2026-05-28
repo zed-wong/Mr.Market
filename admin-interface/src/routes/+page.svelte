@@ -27,6 +27,8 @@
     stopped: 'bg-base-content/30',
     error: 'bg-error',
     failed: 'bg-error',
+    deleted: 'bg-error',
+    removed: 'bg-error',
     degraded: 'bg-warning',
     unknown: 'bg-base-content/30',
     ok: 'bg-success',

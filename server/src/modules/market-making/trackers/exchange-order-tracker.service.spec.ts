@@ -768,6 +768,42 @@ describe('ExchangeOrderTrackerService', () => {
     expect(tracked?.cumulativeFilledQty).toBe('0.4');
   });
 
+  it('tracks settled fill progress monotonically per exchange order', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    service.upsertOrder({
+      orderId: 'u1-c1',
+      strategyKey: 'strategy-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-1',
+      side: 'sell',
+      price: '100',
+      qty: '1',
+      cumulativeFilledQty: '0.4',
+      status: 'partially_filled',
+      createdAt: '2026-02-11T00:00:00.000Z',
+      updatedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    service.markFillSettled({
+      exchange: 'binance',
+      exchangeOrderId: 'ex-1',
+      cumulativeQty: '0.4',
+      updatedAt: '2026-02-11T00:00:01.000Z',
+    });
+    service.markFillSettled({
+      exchange: 'binance',
+      exchangeOrderId: 'ex-1',
+      cumulativeQty: '0.2',
+      updatedAt: '2026-02-11T00:00:02.000Z',
+    });
+
+    const tracked = service.getByExchangeOrderId('binance', 'ex-1');
+
+    expect(tracked?.settledFilledQty).toBe('0.4');
+  });
+
   it('keeps same exchange order id from different exchanges isolated', () => {
     const service = new ExchangeOrderTrackerService();
 

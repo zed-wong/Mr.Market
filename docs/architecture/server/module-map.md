@@ -88,7 +88,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
     - `data/` - StrategyMarketDataProviderService.
     - `intent/` - ExecutorOrchestratorService, QuoteExecutorManagerService.
     - `execution/` - StrategyIntentExecutionService, StrategyIntentStoreService, StrategyIntentWorkerService, StrategyRuntimeDispatcherService, ExecutorRegistry, ExchangePairExecutor.
-    - `settlement/` - FillSettlementService for order-scoped fill and actual-fee ledger settlement.
+    - `settlement/` - FillSettlementService for order-scoped fill and actual-fee ledger settlement; runtime callers pass only unsettled cumulative fill deltas.
     - `dex/` - AlpacaStratService, DexModule, StrategyConfigResolverService.
 - `modules/market-making/strategy/dex/dex.module.ts`
   - Depends on: `Web3Module`, `DefiModule`.
@@ -101,7 +101,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Main role: tick loop coordinator.
 - `modules/market-making/trackers/trackers.module.ts`
   - Depends on: `TickModule`, `ExecutionModule`, `LedgerModule`, `MarketMakingEventsModule`, `ExchangeInitModule`, `MarketdataModule`, TypeORM tracked-order/runtime entities.
-  - Main role: order book/private stream/order trackers.
+  - Main role: order book/private stream/order trackers. `tracked_order` stores both exchange cumulative fill progress and settled cumulative fill progress so duplicate or out-of-order fill events cannot be replayed into ledger mutations.
 - `modules/market-making/events/market-making-events.module.ts`
   - Depends on: none.
   - Main role: typed internal market-making event bus for order/balance/stream-health/fill-review signals.

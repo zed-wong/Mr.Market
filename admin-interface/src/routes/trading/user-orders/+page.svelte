@@ -14,6 +14,7 @@
 
   const stateTone: Record<string, string> = {
     active: 'bg-success/10 text-success',
+    running: 'bg-success/10 text-success',
     started: 'bg-success/10 text-success',
     created: 'bg-info/10 text-info',
     pending: 'bg-warning/10 text-warning',
@@ -21,6 +22,7 @@
     stopped: 'bg-base-content/5 text-base-content/60',
     finished: 'bg-success/10 text-success',
     failed: 'bg-error/10 text-error',
+    deleted: 'bg-error/10 text-error',
     cancelled: 'bg-base-content/5 text-base-content/60',
   };
 
@@ -40,7 +42,7 @@
     total: response?.pagination.total ?? 0,
     marketMaking: rows.filter((order) => order.type === 'market_making').length,
     simplyGrow: rows.filter((order) => order.type === 'simply_grow').length,
-    active: rows.filter((order) => ['active', 'started', 'created'].includes(order.state)).length,
+    active: rows.filter((order) => ['active', 'running', 'started', 'created'].includes(order.state)).length,
   }));
 
   const labelize = (value?: string | null) => (value || 'unavailable').replaceAll('_', ' ');

@@ -7,7 +7,7 @@ import {
 
 import { SafeJsonExceptionFilter } from './safe-json-exception.filter';
 
-function createHost(url = '/admin/system/logs') {
+function createHost(url = '/admin/system/audit') {
   const response = {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
@@ -56,7 +56,6 @@ describe('SafeJsonExceptionFilter', () => {
     ['/admin/orders/missing'],
     ['/admin/positions/missing'],
     ['/admin/system/health/missing'],
-    ['/admin/system/logs/missing'],
     ['/admin/system/audit/missing'],
     ['/admin/system/config/missing'],
   ])(
@@ -112,7 +111,7 @@ describe('SafeJsonExceptionFilter', () => {
 
   it('masks 5xx HttpException messages behind a generic JSON error', () => {
     const filter = new SafeJsonExceptionFilter();
-    const { host, response } = createHost('/admin/system/logs?query=token=secret');
+    const { host, response } = createHost('/admin/system/audit?query=token=secret');
 
     filter.catch(
       new HttpException(
@@ -133,7 +132,7 @@ describe('SafeJsonExceptionFilter', () => {
         statusCode: HttpStatus.SERVICE_UNAVAILABLE,
         message: 'Internal server error',
         error: 'Internal Server Error',
-        path: '/admin/system/logs',
+        path: '/admin/system/audit',
       }),
     );
     const body = JSON.stringify(response.json.mock.calls[0][0]);

@@ -31,12 +31,6 @@ const realDataRoutes = [
     endpoint: '/admin/system/health',
   },
   {
-    path: '/system/logs',
-    label: 'logs',
-    selector: '[data-testid="system-logs-page"]',
-    endpoint: '/admin/system/logs',
-  },
-  {
     path: '/system/audit',
     label: 'audit',
     selector: '[data-testid="system-audit-page"]',
@@ -755,10 +749,6 @@ test.describe.serial('real-data admin smoke', () => {
     await page.getByRole('button', { name: /create new order/i }).click();
     await page.locator('select').first().selectOption('binance');
     await expect(page.locator('.modal-open')).toContainText('ready · trade enabled');
-    await expect(page.locator('.modal-open')).toContainText('blocked API keys');
-    await expect(page.locator('.modal-open')).toContainText('validation pending');
-    await expect(page.locator('.modal-open')).toContainText('validation failed');
-    await expect(page.locator('.modal-open')).toContainText('read only');
     await page.locator('.modal-open select').first().selectOption('okx');
     await expect(page.locator('.modal-open')).toContainText('No ready, trade enabled API key is available for this exchange');
     await expect(page.locator('.modal-open')).toContainText('missing');

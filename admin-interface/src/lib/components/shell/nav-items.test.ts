@@ -34,7 +34,6 @@ describe('admin shell navigation', () => {
         '/trading/exchanges',
         '/trading/market-making',
         '/system/health',
-        '/system/logs',
         '/system/password',
         '/system/passkeys',
         '/system/audit',
@@ -74,7 +73,7 @@ describe('admin shell navigation', () => {
       expect.arrayContaining(['/trading/exchanges', '/system/api-keys']),
     );
     expect(NAV_ITEMS.find((item) => item.key === 'diagnostics')?.children.map((entry) => entry.href)).toEqual(
-      expect.arrayContaining(['/system/logs', '/system/audit']),
+      ['/system/audit'],
     );
   });
 

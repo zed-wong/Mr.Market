@@ -93,9 +93,10 @@ export function getRecoveryHint(error: unknown): string {
 }
 
 export function getBadgeClass(state: string): string {
-  if (state === "joined") return "badge badge-success text-base-100";
-  if (state === "created") return "badge badge-warning";
-  return "badge";
+  if (state === "active" || state === "running" || state === "joined") return "badge bg-success/10 text-success border-success/20";
+  if (state === "created" || state === "stale") return "badge bg-warning/10 text-warning border-warning/20";
+  if (state === "failed" || state === "gone" || state === "deleted" || state === "removed") return "badge bg-error/10 text-error border-error/20";
+  return "badge bg-base-content/5 text-base-content/60 border-base-300";
 }
 
 export function getStateLabel(state: string): string {
@@ -109,6 +110,8 @@ export function getStateLabel(state: string): string {
     joined: "admin_direct_mm_state_joined",
     gone: "admin_direct_mm_state_gone",
     stale: "admin_direct_mm_state_stale",
+    deleted: "admin_direct_mm_state_deleted",
+    removed: "admin_direct_mm_state_deleted",
   };
 
   return $_(map[state] || "admin_direct_mm_state_unknown");

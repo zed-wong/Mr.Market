@@ -102,15 +102,17 @@ export function getStatusLabel(status: string): string {
 export function getStatusClasses(status: string): string {
   switch (status) {
     case "running":
-      return "bg-base-300 text-base-content";
+      return "bg-success/10 text-success";
     case "stopped":
       return "bg-base-300 text-base-content";
     case "failed":
-      return "bg-base-300 text-base-content";
+    case "deleted":
+    case "removed":
+      return "bg-error/10 text-error";
     case "created":
-      return "bg-base-300 text-base-content";
+      return "bg-info/10 text-info";
     case "stale":
-      return "bg-base-300 text-base-content";
+      return "bg-warning/10 text-warning";
     default:
       return "bg-base-300 text-base-content";
   }

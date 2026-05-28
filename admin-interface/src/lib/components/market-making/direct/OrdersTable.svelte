@@ -69,7 +69,7 @@
       return "bg-base-300/50 text-base-content/55";
     }
 
-    if (runtimeState === "failed" || runtimeState === "gone") {
+    if (runtimeState === "failed" || runtimeState === "gone" || runtimeState === "deleted" || runtimeState === "removed") {
       return "bg-error/10 text-error";
     }
 

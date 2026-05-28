@@ -46,6 +46,9 @@ export class TrackedOrderEntity {
   @Column({ nullable: true })
   cumulativeFilledQty?: string;
 
+  @Column({ nullable: true })
+  settledFilledQty?: string;
+
   @Column()
   status: string;
 

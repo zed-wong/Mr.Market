@@ -2,6 +2,7 @@
 
 ## 2026-05-28
 
+- Harden market-making fill settlement around partial fills: tracked exchange orders now persist `settledFilledQty`, runtime fill handling converts user-stream/REST cumulative fills into unsettled deltas before ledger mutation, repeated or lower cumulative events are ignored, settlement conflicts pause the affected order-asset reservation path, and terminal reservation release continues to release only the unfilled remainder.
 - Remove bootstrap dotenv override envs (`MR_MARKET_DISABLE_DOTENV`, `DOTENV_CONFIG_PATH`) so backend startup uses the default `.env` load path consistently.
 - Centralize remaining backend env access by isolating bootstrap-only dotenv controls, moving CoinGecko/Web3/setup runtime reads through ConfigService, reading the listen port from ConfigModule, and correcting `RUN_STRATEGY_FOR_MIXIN_ORDERS`.
 - Consolidate backend runtime configuration by routing Redis through `REDIS_URL`, sharing HTTP/WebSocket CORS policy from ConfigModule-backed CORS config, and moving logger webhooks behind ConfigModule initialization.
