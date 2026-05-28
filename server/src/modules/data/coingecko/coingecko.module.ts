@@ -1,11 +1,13 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 
 import { CoingeckoController } from './coingecko.controller';
 import { CoingeckoProxyService } from './coingecko.service';
 
 @Module({
   imports: [
+    ConfigModule,
     // Caching for 30 seconds
     CacheModule.register({
       ttl: 30,

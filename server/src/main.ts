@@ -13,14 +13,7 @@ import { configureCorsOrigins } from './common/helpers/cors';
 import * as encryption from './common/helpers/crypto';
 import { CustomLogger } from './modules/infrastructure/logger/logger.service';
 
-const dotenvDisabled =
-  String(process.env.MR_MARKET_DISABLE_DOTENV || '').toLowerCase() === 'true';
-
-if (!dotenvDisabled) {
-  dotenv.config({
-    path: process.env.DOTENV_CONFIG_PATH || undefined,
-  });
-}
+dotenv.config();
 
 async function bootstrap() {
   if (!process.env.JWT_SECRET) {
@@ -29,21 +22,17 @@ async function bootstrap() {
 
     process.env.JWT_SECRET = secret;
 
-    if (dotenvDisabled) {
-      console.log('JWT_SECRET generated for this process only.');
-    } else {
-      const envFile = '.env';
+    const envFile = '.env';
 
-      try {
-        if (fs.existsSync(envFile)) {
-          fs.appendFileSync(envFile, `\nJWT_SECRET=${secret}\n`);
-        } else {
-          fs.writeFileSync(envFile, `JWT_SECRET=${secret}\n`);
-        }
-        console.log(`JWT_SECRET saved to ${envFile}`);
-      } catch (err) {
-        console.error('Failed to write JWT_SECRET to .env file', err);
+    try {
+      if (fs.existsSync(envFile)) {
+        fs.appendFileSync(envFile, `\nJWT_SECRET=${secret}\n`);
+      } else {
+        fs.writeFileSync(envFile, `JWT_SECRET=${secret}\n`);
       }
+      console.log(`JWT_SECRET saved to ${envFile}`);
+    } catch (err) {
+      console.error('Failed to write JWT_SECRET to .env file', err);
     }
   }
 
@@ -53,21 +42,17 @@ async function bootstrap() {
 
     process.env.ENCRYPTION_PRIVATE_KEY = privateKey;
 
-    if (dotenvDisabled) {
-      console.log('ENCRYPTION_PRIVATE_KEY generated for this process only.');
-    } else {
-      const envFile = '.env';
+    const envFile = '.env';
 
-      try {
-        if (fs.existsSync(envFile)) {
-          fs.appendFileSync(envFile, `\nENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
-        } else {
-          fs.writeFileSync(envFile, `ENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
-        }
-        console.log(`ENCRYPTION_KEYS saved to ${envFile}`);
-      } catch (err) {
-        console.error('Failed to write ENCRYPTION_KEYS to .env file', err);
+    try {
+      if (fs.existsSync(envFile)) {
+        fs.appendFileSync(envFile, `\nENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
+      } else {
+        fs.writeFileSync(envFile, `ENCRYPTION_PRIVATE_KEY=${privateKey}\n`);
       }
+      console.log(`ENCRYPTION_KEYS saved to ${envFile}`);
+    } catch (err) {
+      console.error('Failed to write ENCRYPTION_KEYS to .env file', err);
     }
   }
   const logger = new CustomLogger(AppModule.name);
@@ -99,7 +84,7 @@ async function bootstrap() {
     next();
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (configService.get<boolean>('dev')) {
     const config = new DocumentBuilder()
       .setTitle('Mixin Doc backend API')
       .setDescription('Mixin Doc backend to execute trades and strategies')
@@ -115,7 +100,7 @@ async function bootstrap() {
     SwaggerModule.setup('docs', app, document);
   }
 
-  const port = process.env.PORT || 3000;
+  const port = configService.get<string>('port', '3000');
 
   await app.listen(port);
 }

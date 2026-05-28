@@ -72,7 +72,6 @@ export class SetupConfigService implements OnModuleInit {
     const hash = this.hash(password);
 
     await this.saveEntry(ADMIN_PASSWORD_HASH_KEY, hash, true, false);
-    process.env.ADMIN_PASSWORD = password;
     this.configService.set('admin.pass', password);
 
     return hash;
@@ -85,7 +84,7 @@ export class SetupConfigService implements OnModuleInit {
       return stored;
     }
 
-    const envPassword = process.env.ADMIN_PASSWORD;
+    const envPassword = this.configService.get<string>('admin.pass');
 
     return envPassword ? this.hash(envPassword) : null;
   }
@@ -98,7 +97,11 @@ export class SetupConfigService implements OnModuleInit {
     const entry = await this.setupConfigRepository.findOne({ where: { key } });
 
     if (!entry) {
-      return process.env[key] || null;
+      const configPath = CONFIG_PATH_BY_ENV_KEY[key];
+
+      return configPath
+        ? String(this.configService.get(configPath) || '') || null
+        : null;
     }
 
     if (!entry.encrypted) {
@@ -150,8 +153,6 @@ export class SetupConfigService implements OnModuleInit {
   }
 
   private applyRuntimeValue(key: string, value: string): void {
-    process.env[key] = value;
-
     const configPath = CONFIG_PATH_BY_ENV_KEY[key];
 
     if (!configPath) {
@@ -176,7 +177,6 @@ export class SetupConfigService implements OnModuleInit {
   private getEncryptionPrivateKey(): string {
     return (
       this.configService.get<string>('admin.encryption_private_key') ||
-      process.env.ENCRYPTION_PRIVATE_KEY ||
       ''
     );
   }

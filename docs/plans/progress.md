@@ -2,6 +2,8 @@
 
 ## 2026-05-28
 
+- Remove bootstrap dotenv override envs (`MR_MARKET_DISABLE_DOTENV`, `DOTENV_CONFIG_PATH`) so backend startup uses the default `.env` load path consistently.
+- Centralize remaining backend env access by isolating bootstrap-only dotenv controls, moving CoinGecko/Web3/setup runtime reads through ConfigService, reading the listen port from ConfigModule, and correcting `RUN_STRATEGY_FOR_MIXIN_ORDERS`.
 - Consolidate backend runtime configuration by routing Redis through `REDIS_URL`, sharing HTTP/WebSocket CORS policy from ConfigModule-backed CORS config, and moving logger webhooks behind ConfigModule initialization.
 - Remove legacy production exchange API-key env loading and sandbox-env bootstrap: exchange initialization now uses DB-backed API keys only, and validation fixtures are test-only without an env escape hatch.
 - Remove admin password complexity and minimum-length enforcement from the `admin-interface` password update screen and backend password setup/update services, leaving only password confirmation in the UI and backend persistence/session invalidation on submit.

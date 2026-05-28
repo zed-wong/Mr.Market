@@ -37,7 +37,7 @@ export default () => ({
     api_key: process.env.COINGECKO_API_KEY,
   },
   strategy: {
-    run: process.env.RUN_STARTEGY_FOR_MIXIN_ORDERS || 'false',
+    run: process.env.RUN_STRATEGY_FOR_MIXIN_ORDERS || 'false',
     mixin_snapshots_run: process.env.RUN_MIXIN_SNAPSHOTS || 'false',
     tick_size_ms: parseInt(process.env.MARKET_MAKING_TICK_SIZE_MS, 10) || 1000,
     execute_intents: process.env.MARKET_MAKING_EXECUTE_INTENTS === 'true',

@@ -91,15 +91,7 @@ import { SetupGuardMiddleware } from './modules/setup/setup-guard.middleware';
 import { SetupConfigModule } from './modules/setup-config/setup-config.module';
 import { Web3Module } from './modules/web3/web3.module';
 
-const dotenvDisabled =
-  String(process.env.MR_MARKET_DISABLE_DOTENV || '').toLowerCase() === 'true';
-const configuredDotenvPath = process.env.DOTENV_CONFIG_PATH || undefined;
-
-if (!dotenvDisabled) {
-  dotenv.config({
-    path: configuredDotenvPath,
-  });
-}
+dotenv.config();
 
 function buildRedisConfig(configService: ConfigService) {
   const parsed = new URL(
@@ -130,8 +122,6 @@ function buildRedisConfig(configService: ConfigService) {
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
-      ignoreEnvFile: dotenvDisabled,
-      envFilePath: configuredDotenvPath,
     }),
     EventEmitterModule.forRoot({
       wildcard: true,

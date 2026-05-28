@@ -299,21 +299,8 @@ describe('AdminDirectMarketMakingService', () => {
     },
   };
 
-  const originalWeb3PrivateKey = process.env.WEB3_PRIVATE_KEY;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    delete process.env.WEB3_PRIVATE_KEY;
-  });
-
-  afterAll(() => {
-    if (originalWeb3PrivateKey === undefined) {
-      delete process.env.WEB3_PRIVATE_KEY;
-
-      return;
-    }
-
-    process.env.WEB3_PRIVATE_KEY = originalWeb3PrivateKey;
   });
 
   it('starts a direct order and updates it to running', async () => {

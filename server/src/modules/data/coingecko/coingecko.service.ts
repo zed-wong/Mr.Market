@@ -1,5 +1,6 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
 import {
   CoinFullInfo,
@@ -14,13 +15,16 @@ export class CoingeckoProxyService {
   private cachingTTL: 30; // 30s
 
   // Using caching to avoid coingecko rate limit (30 calls/min)
-  constructor(@Inject(CACHE_MANAGER) private cacheService: Cache) {
+  constructor(
+    @Inject(CACHE_MANAGER) private cacheService: Cache,
+    private readonly configService: ConfigService,
+  ) {
     this.coingecko = new CoinGeckoClient(
       {
         timeout: 5000,
         autoRetry: false,
       },
-      process.env.COINGECKO_API_KEY,
+      this.configService.get<string>('coingecko.api_key'),
     );
   }
 

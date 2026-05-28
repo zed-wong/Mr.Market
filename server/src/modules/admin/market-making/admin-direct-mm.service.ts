@@ -887,9 +887,7 @@ export class AdminDirectMarketMakingService {
 
     try {
       const privateKey =
-        this.configService.get<string>('WEB3_PRIVATE_KEY') ||
-        this.configService.get<string>('web3.private_key') ||
-        process.env.WEB3_PRIVATE_KEY;
+        this.configService.get<string>('web3.private_key');
 
       const accessToken = await this.campaignService.getAccessToken(
         walletStatus.address,
@@ -952,9 +950,7 @@ export class AdminDirectMarketMakingService {
     }
 
     const privateKey =
-      this.configService.get<string>('WEB3_PRIVATE_KEY') ||
-      this.configService.get<string>('web3.private_key') ||
-      process.env.WEB3_PRIVATE_KEY;
+      this.configService.get<string>('web3.private_key');
 
     if (!privateKey) {
       throw new BadRequestException('WEB3 private key is not configured');
@@ -1054,9 +1050,7 @@ export class AdminDirectMarketMakingService {
     address: string | null;
   }> {
     const privateKey =
-      this.configService.get<string>('WEB3_PRIVATE_KEY') ||
-      this.configService.get<string>('web3.private_key') ||
-      process.env.WEB3_PRIVATE_KEY;
+      this.configService.get<string>('web3.private_key');
 
     if (!privateKey) {
       return {
