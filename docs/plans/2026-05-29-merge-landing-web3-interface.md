@@ -9,7 +9,7 @@ landing to `/app` (Uniswap-style: marketing first, app one click away).
 
 Decisions:
 - URL structure: **full `/app/*` prefix** for every app page (clean separation).
-- Host: **merge into `web3-interface`**, keep `landing-interface/` untouched for now.
+- Host: **merge into `web3-interface`**, then remove the obsolete standalone `landing-interface/`.
 - Versions: bump the merged `package.json` to **exact latest** for all deps.
 
 ## Current state
@@ -156,4 +156,4 @@ rather than downgrading, unless downgrade approval is explicitly given.
     (`/app/wallet`, `/app/market-making/order/new`) work.
   - Marketing routes (`/offerings`, `/leaderboard`, `/architecture`) work.
 
-Leaves `landing-interface/` in place (untouched) per choice.
+Follow-up cleanup removes the obsolete standalone `landing-interface/` after `web3-interface` becomes the default unified app.

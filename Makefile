@@ -38,18 +38,13 @@ start-admin-interface:
 	@cd admin-interface && bun run dev -- --port 5174
 .PHONY: start-admin-interface
 
-start-landing-interface:
-	@echo "Starting landing interface..."
-	@cd landing-interface && bun run dev -- --port 5175
-.PHONY: start-landing-interface
-
 start-web3-interface:
 	@echo "Starting web3 interface..."
 	@cd web3-interface && bun run dev -- --port 5176
 .PHONY: start-web3-interface
 
 start-interfaces:
-	$(MAKE) -j 4 start-interface start-admin-interface start-landing-interface start-web3-interface
+	$(MAKE) -j 3 start-interface start-admin-interface start-web3-interface
 .PHONY: start-interfaces
 
 start-server:

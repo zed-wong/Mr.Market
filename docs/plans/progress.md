@@ -64,6 +64,7 @@
 
 - Reprioritize `admin-interface/` navigation: Funding and Scheduling routes remain documented as deferred families, while the first admin build focuses on non-Funding/non-Scheduling sections — Overview (`/`, `/overview/status`, `/overview/capital`, `/overview/actions`, `/overview/risks`), Trading (`/trading/routes`, `/trading/strategies`, `/trading/runs`, `/trading/market-making`, `/trading/positions`), and System (`/system/logs`, `/system/users`, `/system/roles`, `/system/api-keys`, `/system/config`, `/system/audit`). Update `admin-interface/DESIGN.md`, sidebar nav metadata, and en/zh nav i18n accordingly.
 - Start a separate `landing-interface/` app for the public landing + leaderboard surface, matching `docs/plans/2026-05-10-multichain-interface-restructure.md`'s plan to keep `web/` separate from the existing Mixin `interface/`. The first static version uses a light "Minimal Liquidity Ledger" direction inspired by Titan / Acctual / Shares, with orderbook depth, bid/ask spread, maker leaderboard, campaign rewards, and mechanism copy grounded in the yellowpaper's ledger-first, reservation-before-external-order architecture.
+- Merge the public landing surface into `web3-interface/` as the default unified frontend: marketing routes now serve from `/`, `/offerings`, `/architecture`, and `/leaderboard`, while the wallet/app routes live under `/app/*`; the obsolete standalone `landing-interface/` app is removed.
 
 ## 2026-05-12
 

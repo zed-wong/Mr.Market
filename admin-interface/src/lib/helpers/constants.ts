@@ -2,7 +2,7 @@ import { env } from "$env/dynamic/public";
 import type { SupportedTimeFrame } from "$lib/types/hufi/exchanges"
 
 export const AppName = "Mr.market"
-export const AppURL = env.PUBLIC_APP_URL || "https://mr-market-app.onrender.com"
+export const AppURL = env.PUBLIC_APP_URL || "https://web3.mrmarket.one"
 
 export const SHOW_BAR = env.PUBLIC_SHOW_BAR === "true" ? true : false;
 export const OAUTH_SCOPE = env.PUBLIC_OAUTH_SCOPE || 'PROFILE:READ ASSETS:READ SNAPSHOTS:READ'

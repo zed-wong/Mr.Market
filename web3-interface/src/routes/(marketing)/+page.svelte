@@ -269,7 +269,7 @@
   </section>
 
   <footer class="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-8 text-xs opacity-54 sm:px-8 md:flex-row md:items-center md:justify-between lg:px-10">
-    <span>Mr.Market · landing-interface</span>
+    <span>Mr.Market</span>
     <span>Open · measurable · permissionless</span>
   </footer>
 </main>
