@@ -2440,7 +2440,7 @@ describe('StrategyService', () => {
           makerAccountLabel: 'maker',
           takerAccountLabel: 'taker',
         },
-      }),
+      } as any),
     ).toBe(false);
 
     expect(
@@ -2453,7 +2453,7 @@ describe('StrategyService', () => {
           makerAccountLabel: 'maker',
           takerAccountLabel: 'taker',
         },
-      }),
+      } as any),
     ).toBe(true);
   });
 
@@ -2841,8 +2841,8 @@ describe('StrategyService', () => {
 
   it('marks repair mode when a dual-account cycle settles with mismatched fills', async () => {
     const nextParams = await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
-      { strategyKey: 'dual-key' },
-      {
+      { strategyKey: 'dual-key' } as any,
+      ({
         completedCycles: 0,
         activeCycle: {
           cycleId: 'cycle-mismatch',
@@ -2858,7 +2858,7 @@ describe('StrategyService', () => {
           matchedFilledQty: '0.2',
           matchedQuoteVolume: '20',
         },
-      },
+      } as any),
     );
 
     expect(nextParams.completedCycles).toBe(0);
@@ -2868,8 +2868,8 @@ describe('StrategyService', () => {
 
   it('accumulates matched quote volume when a dual-account cycle settles with symmetric fills', async () => {
     const nextParams = await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
-      { strategyKey: 'dual-key' },
-      {
+      { strategyKey: 'dual-key' } as any,
+      ({
         completedCycles: 0,
         totalMatchedBaseVolume: 0,
         totalMatchedQuoteVolume: 0,
@@ -2887,7 +2887,7 @@ describe('StrategyService', () => {
           matchedFilledQty: '0.4',
           matchedQuoteVolume: '40',
         },
-      },
+      } as any),
     );
 
     expect(nextParams.completedCycles).toBe(1);
@@ -3472,7 +3472,7 @@ describe('StrategyService', () => {
       adaptivePmmStateService.shouldReadAdaptivePmmSignals({
         staleSoftMs: 2000,
         staleHardMs: 10000,
-      }),
+      } as any),
     ).toBe(false);
   });
 

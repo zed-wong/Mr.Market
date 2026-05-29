@@ -11,6 +11,12 @@
   let error = $state<string | null>(null);
   let showPassword = $state(false);
   let showConfirm = $state(false);
+  const passwordTipKeys = [
+    'admin.password_tip_long',
+    'admin.password_tip_unique',
+    'admin.password_tip_manager',
+    'admin.password_tip_session',
+  ];
 
   const passwordsMatch = $derived(password.length > 0 && password === confirmPassword);
   const canSave = $derived(passwordsMatch && !saving);
@@ -146,10 +152,10 @@
           <span class="text-sm font-medium capitalize">{$_('admin.password_tips_title')}</span>
         </div>
         <ul class="flex flex-col gap-3 text-xs text-base-content/70">
-          {#each ['password_tip_long', 'password_tip_unique', 'password_tip_manager', 'password_tip_session'] as tip (tip)}
+          {#each passwordTipKeys as tipKey (tipKey)}
             <li class="flex items-start gap-2">
               <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-base-content/40"></span>
-              <span>{$_('admin.' + tip)}</span>
+              <span>{$_(tipKey)}</span>
             </li>
           {/each}
         </ul>

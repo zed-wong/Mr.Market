@@ -13,7 +13,7 @@ const realDataRoutes = [
     endpoint: '/admin/dashboard/summary',
   },
   {
-    path: '/trading/orders',
+    path: '/trading/exchange-orders',
     label: 'orders',
     selector: '[data-testid="orders-page"]',
     endpoint: '/admin/orders',
@@ -48,7 +48,7 @@ const preservedRoutes = [
   {
     path: '/setup',
     label: 'setup guide',
-    text: /first-time admin setup guide|backend reachability|API key validation/i,
+    text: /one-time setup wizard|setup areas complete|exchange config/i,
   },
   {
     path: '/trading/direct-market-making',
@@ -336,17 +336,19 @@ test.describe.serial('real-data admin smoke', () => {
     await page.waitForLoadState('networkidle');
 
     const sidebar = page.getByTestId('old-admin-sidebar');
-    const parentGroup = sidebar.getByRole('button', { name: /system health/i });
+    const parentGroup = sidebar.getByRole('button', {
+      name: /^connectivity$/i,
+    });
     const activeChild = sidebar.getByRole('button', { name: /^api keys$/i });
 
     await expect(parentGroup).toHaveAttribute('aria-current', 'location');
-    await expect(parentGroup).toHaveClass(/(?:^|\s)bg-base-200(?:\s|$)/);
+    await expect(parentGroup).toHaveClass(/(?:^|\s)bg-primary\/8(?:\s|$)/);
     await expect(parentGroup).not.toHaveClass(/(?:^|\s)bg-primary(?:\s|$)/);
     await expect(parentGroup).not.toHaveClass(/(?:^|\s)text-primary-content(?:\s|$)/);
 
     await expect(activeChild).toHaveAttribute('aria-current', 'page');
-    await expect(activeChild).toHaveClass(/(?:^|\s)bg-primary(?:\s|$)/);
-    await expect(activeChild).toHaveClass(/(?:^|\s)text-primary-content(?:\s|$)/);
+    await expect(activeChild).toHaveClass(/(?:^|\s)bg-primary\/8(?:\s|$)/);
+    await expect(activeChild).toHaveClass(/(?:^|\s)text-primary(?:\s|$)/);
   });
 
   test('API key management shows readiness labels, permission labels, form validation, and removal refresh', async ({ page }) => {
@@ -757,12 +759,9 @@ test.describe.serial('real-data admin smoke', () => {
     await page.locator('.modal-open').getByLabel(/close/i).click();
 
     await page.getByText('BTC/USDT').click();
-    await expect(page.locator('.modal-open')).toContainText('exchange and API key readiness');
-    await expect(page.locator('.modal-open')).toContainText('exchange ready');
-    await expect(page.locator('.modal-open')).toContainText('API key validation failed');
-    await expect(page.locator('.modal-open')).toContainText('Invalid signature');
-    await expect(page.locator('.modal-open').getByRole('link', { name: /manage exchanges/i })).toHaveAttribute('href', '/trading/exchanges');
-    await expect(page.locator('.modal-open').getByRole('link', { name: /manage API keys/i })).toHaveAttribute('href', '/system/api-keys');
+    await expect(page.locator('.modal-open')).toContainText('Account Routing');
+    await expect(page.locator('.modal-open')).toContainText('API Key');
+    await expect(page.locator('.modal-open')).toContainText('failed-key');
     await page.locator('.modal-open').getByLabel(/close/i).click();
 
     const remediationLink = page.getByRole('link', { name: /manage exchange api keys/i });
@@ -781,15 +780,6 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('body')).toContainText(/api keys/i);
     await expect(page.locator('body')).toContainText(/Exchange API credentials/i);
 
-    await page.goto('/trading/direct-market-making');
-    await page.waitForLoadState('networkidle');
-    await page.getByText('BTC/USDT').click();
-    const diagnosisRemediationLink = page.locator('.modal-open').getByRole('link', { name: /manage API keys/i });
-    await Promise.all([
-      page.waitForURL('**/system/api-keys'),
-      diagnosisRemediationLink.click(),
-    ]);
-    expect(page.url()).toContain(`${PREVIEW_ORIGIN}/system/api-keys`);
   });
 
   test('direct market-making list and detail diagnosis states are explicit and keyboard reachable', async ({ page }) => {
@@ -991,11 +981,8 @@ test.describe.serial('real-data admin smoke', () => {
 
     await page.goto('/setup');
     await page.waitForLoadState('networkidle');
-    await expect(page.locator('body')).toContainText(/first-time admin setup guide/i);
-    await Promise.all([
-      page.waitForURL('**/trading/direct-market-making'),
-      page.getByRole('link', { name: /direct diagnostics/i }).click(),
-    ]);
+    await expect(page.locator('body')).toContainText(/one-time setup wizard/i);
+    await page.goto('/trading/direct-market-making');
     await page.waitForLoadState('networkidle');
 
     const stopAllButton = page.getByRole('button', { name: /^stop all$/i });
@@ -1011,8 +998,9 @@ test.describe.serial('real-data admin smoke', () => {
     await page.keyboard.press('Enter');
 
     await expect(page.locator('[data-testid="direct-mm-detail-loading"]')).toBeVisible();
-    await expect(page.locator('.modal-open')).toContainText('maker linkage');
-    await expect(page.locator('.modal-open')).toContainText('taker linkage');
+    await expect(page.locator('.modal-open')).toContainText('Account Routing');
+    await expect(page.locator('.modal-open')).toContainText('Maker Account');
+    await expect(page.locator('.modal-open')).toContainText('Taker Account');
     await expect(page.locator('.modal-open')).toContainText(/running/i);
     await expect(page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="direct-mm-diagnostic-evidence"]')).toHaveCount(0);
@@ -1211,7 +1199,9 @@ test.describe.serial('real-data admin smoke', () => {
     const summary = page.locator('[data-testid="direct-mm-ops-diagnosis-summary"]');
     const evidence = page.locator('[data-testid="direct-mm-diagnostic-evidence"]');
     await expect(modal).toContainText(/general status/i);
-    await expect(modal).toContainText(/exchange and API key readiness/i);
+    await expect(modal).toContainText(/account routing/i);
+    await expect(modal).toContainText(/account label/i);
+    await expect(modal).toContainText(/api key/i);
     await expect(summary).toHaveCount(0);
     await expect(evidence).toHaveCount(0);
     await expect(modal).not.toContainText('Operational risk detected');
@@ -1489,9 +1479,9 @@ test.describe.serial('real-data admin smoke', () => {
   test('direct market-making sidebar navigation shows contextual loading while orders are delayed', async ({ page }) => {
     await login(page);
 
-    await page.goto('/setup');
+    await page.goto('/system/api-keys');
     await page.waitForLoadState('networkidle');
-    await expect(page.locator('body')).toContainText(/first-time admin setup guide/i);
+    await expect(page.locator('body')).toContainText(/api keys/i);
 
     await page.route(`${BACKEND_ORIGIN}/grow/info`, async (route) => {
       await route.fulfill({
@@ -1586,12 +1576,13 @@ test.describe.serial('real-data admin smoke', () => {
       });
     });
 
-    await page.getByTestId('old-admin-sidebar').getByRole('button', { name: /direct market making/i }).click();
+    const sidebar = page.getByTestId('old-admin-sidebar');
+    await sidebar.getByRole('button', { name: /^trading$/i }).click();
+    await sidebar.getByRole('button', { name: /direct market making/i }).click();
 
     await expect(page).toHaveURL(/\/trading\/direct-market-making$/);
     await expect(page.getByTestId('direct-mm-loading')).toBeVisible();
-    await expect(page.getByTestId('direct-mm-loading')).toContainText(/direct market-making/i);
-    await expect(page.locator('body')).not.toContainText(/first-time admin setup guide/i);
+    await expect(page.locator('body')).not.toContainText(/one-time setup wizard/i);
     await expect(page.locator('body')).not.toContainText('No active orders yet');
 
     releaseDirectOrders();

@@ -1,7 +1,7 @@
-import { StrategyService } from './strategy.service';
+import { FillSettlementService } from './settlement/fill-settlement.service';
 
 describe('StrategyService fill progress normalization', () => {
-  const service = Object.create(StrategyService.prototype) as StrategyService;
+  const service = new FillSettlementService();
 
   it('converts cumulative fill events into unsettled deltas', () => {
     const result = (service as any).buildIncrementalSettlementFill(

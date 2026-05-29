@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
+import BigNumber from 'bignumber.js';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
 
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { FillRoutingService } from '../execution/fill-routing.service';
+import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-balance-query.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
 import { UserStreamTrackerService } from '../trackers/user-stream-tracker.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
@@ -15,6 +17,11 @@ import { StrategyIntentExecutionService } from './execution/strategy-intent-exec
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { StrategyIntentWorkerService } from './execution/strategy-intent-worker.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
+import { QuoteExecutorManagerService } from './intent/quote-executor-manager.service';
+import { AdaptivePmmStateService } from './pmm/adaptive-pmm-state.service';
+import { QuotePlannerService } from './quote/quote-planner.service';
+import { StrategyInstanceLifecycleService } from './runtime/strategy-instance-lifecycle.service';
+import { StrategySessionRegistryService } from './runtime/strategy-session-registry.service';
 import { StrategyService } from './strategy.service';
 
 const createConfigService = () =>
@@ -300,6 +307,15 @@ const createFixture = () => {
       ),
     cancelOrder: jest.fn(),
     fetchOrder: jest.fn(),
+    loadTradingRules: jest.fn().mockResolvedValue({}),
+    quantizeOrder: jest.fn(
+      (
+        _exchange: string,
+        _pair: string,
+        qty: string,
+        price: string,
+      ) => ({ qty, price }),
+    ),
   };
   const strategyIntentStoreService = new StrategyIntentStoreService(
     createIntentRepository(intentRows) as any,
@@ -329,34 +345,76 @@ const createFixture = () => {
     strategyIntentExecutionService,
   );
   const executorRegistry = new ExecutorRegistry();
-  const strategyService = new StrategyService(
-    {
-      getExchange: jest.fn((exchangeName: string) => ({
-        id: exchangeName,
-        fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
-      })),
-      getSupportedExchanges: jest.fn(() => ['binance']),
-    } as any,
+  const exchangeInitService = {
+    getExchange: jest.fn((exchangeName: string) => ({
+      id: exchangeName,
+      fetchTicker: jest.fn().mockResolvedValue({ last: 100 }),
+    })),
+    getSupportedExchanges: jest.fn(() => ['binance']),
+    isReady: jest.fn().mockReturnValue(true),
+  };
+  const strategyMarketDataProviderService = {
+    getReferencePrice: jest.fn().mockResolvedValue(100),
+    hasTrackedOrderBook: jest.fn().mockReturnValue(true),
+    getTrackedOrderBookFreshness: jest.fn().mockReturnValue({ fresh: true }),
+  };
+  const orderScopedBalanceQueryService = {
+    resolveInventoryRatio: jest.fn().mockResolvedValue(0.5),
+    getAvailableBalancesForPair: jest.fn().mockResolvedValue({
+      base: new BigNumber(10),
+      quote: new BigNumber(100000),
+      assets: { base: 'BTC', quote: 'USDT' },
+    }),
+  } as unknown as OrderScopedBalanceQueryService;
+  const quotePlannerService = new QuotePlannerService(
+    exchangeConnectorAdapterService as any,
+  );
+  const adaptivePmmStateService = new AdaptivePmmStateService(
+    quotePlannerService,
+  );
+  const pureMarketMakingStrategyController =
+    new PureMarketMakingStrategyController(
+      new QuoteExecutorManagerService(),
+      exchangeOrderTrackerService,
+      strategyMarketDataProviderService as any,
+      strategyIntentStoreService,
+      undefined,
+      undefined,
+      adaptivePmmStateService,
+      orderScopedBalanceQueryService,
+      quotePlannerService,
+    );
+  const strategySessionRegistryService = new StrategySessionRegistryService(
+    exchangeInitService as any,
+    executorRegistry,
+  );
+  (pureMarketMakingStrategyController as any).strategySessionRegistryService =
+    strategySessionRegistryService;
+  const strategyInstanceLifecycleService = new StrategyInstanceLifecycleService(
+    exchangeInitService as any,
     createStrategyInstanceRepository(strategyInstanceRows) as any,
     undefined,
+    strategyMarketDataProviderService as any,
+    strategyIntentStoreService,
     undefined,
+    strategySessionRegistryService,
+    quotePlannerService,
+  );
+  const strategyService = new StrategyService(
+    exchangeInitService as any,
+    createStrategyInstanceRepository(strategyInstanceRows) as any,
     undefined,
-    undefined,
-    exchangeOrderTrackerService,
-    new StrategyControllerRegistry([new PureMarketMakingStrategyController()]),
+    new StrategyControllerRegistry([pureMarketMakingStrategyController]),
     executorOrchestratorService,
-    {
-      getReferencePrice: jest.fn().mockResolvedValue(100),
-      hasTrackedOrderBook: jest.fn().mockReturnValue(true),
-      getTrackedOrderBookFreshness: jest.fn().mockReturnValue({ fresh: true }),
-    } as any,
     executorRegistry,
+    strategyIntentStoreService,
     undefined,
     undefined,
     undefined,
     undefined,
-    undefined,
-    undefined,
+    pureMarketMakingStrategyController,
+    strategySessionRegistryService,
+    strategyInstanceLifecycleService,
   );
   const userStreamTrackerService = new UserStreamTrackerService(
     undefined,
@@ -403,6 +461,12 @@ describe('Strategy runtime architecture', () => {
       createPureParams('order-1'),
     );
     await fixture.strategyService.onTick('2026-03-11T00:00:00.000Z');
+
+    expect(
+      fixture.executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getRecentErrors('order-1'),
+    ).toEqual([]);
     await fixture.strategyIntentExecutionService.consumeIntents(
       fixture.intentRows.map((row) => ({
         ...row,
@@ -516,6 +580,12 @@ describe('Strategy runtime architecture', () => {
     ).toEqual(['order-1', 'order-2']);
 
     await fixture.strategyService.onTick('2026-03-11T00:00:00.000Z');
+
+    expect(
+      fixture.executorRegistry
+        .getExecutor('binance', 'BTC/USDT')
+        ?.getRecentErrors('order-1'),
+    ).toEqual([]);
 
     expect(fixture.intentRows).toHaveLength(4);
     expect(

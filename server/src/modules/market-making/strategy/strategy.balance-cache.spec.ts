@@ -3,7 +3,9 @@ import 'reflect-metadata';
 import BigNumber from 'bignumber.js';
 
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
-import { StrategyService } from './strategy.service';
+import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-balance-query.service';
+import { TimeIndicatorStrategyController } from './controllers/time-indicator-strategy.controller';
+import { DualAccountPlannerService } from './dual-account/dual-account-planner.service';
 
 jest.mock(
   'src/common/entities/market-making/strategy-instances.entity',
@@ -17,14 +19,6 @@ jest.mock('src/common/entities/orders/user-orders.entity', () => ({
 }));
 
 describe('StrategyService balance cache helpers', () => {
-  const strategyRepo = {
-    find: jest.fn(),
-    findOne: jest.fn(),
-    save: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-  };
-
   const createService = ({
     exchangeInitService = {
       getExchange: jest.fn(),
@@ -52,28 +46,44 @@ describe('StrategyService balance cache helpers', () => {
     balanceStateCacheService?: BalanceStateCacheService;
     exchangeConnectorAdapterService?: Record<string, any>;
     strategyMarketDataProviderService?: Record<string, any>;
-  } = {}) =>
-    new StrategyService(
-      exchangeInitService as any,
-      strategyRepo as any,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      strategyControllerRegistry as any,
-      undefined,
-      strategyMarketDataProviderService as any,
-      undefined,
-      undefined,
-      undefined,
+  } = {}) => {
+    const orderScopedBalanceQueryService = new OrderScopedBalanceQueryService(
       undefined,
       balanceStateCacheService,
-      undefined,
-      undefined,
-      exchangeConnectorAdapterService as any,
-      undefined,
     );
+    const dualAccountPlannerService = new DualAccountPlannerService(
+      exchangeConnectorAdapterService as any,
+      orderScopedBalanceQueryService,
+      strategyMarketDataProviderService as any,
+    );
+    const timeIndicatorStrategyController = new TimeIndicatorStrategyController(
+      exchangeInitService as any,
+      orderScopedBalanceQueryService,
+    );
+
+    return {
+      buildTimeIndicatorActions:
+        timeIndicatorStrategyController.buildTimeIndicatorActions.bind(
+          timeIndicatorStrategyController,
+        ),
+      getAvailableBalancesForPair:
+        orderScopedBalanceQueryService.getAvailableBalancesForPair.bind(
+          orderScopedBalanceQueryService,
+        ),
+      resolveDualAccountPreferredSide:
+        dualAccountPlannerService.resolvePreferredSide.bind(
+          dualAccountPlannerService,
+        ),
+      advanceDualAccountCycleRolesAfterSuccess:
+        dualAccountPlannerService.advanceCycleRolesAfterSuccess.bind(
+          dualAccountPlannerService,
+        ),
+      runSession: async (session: any, ts: string) => {
+        await strategyControllerRegistry?.getController(session.strategyType)
+          ?.decideActions({ session, ts });
+      },
+    };
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -325,21 +335,15 @@ describe('StrategyService balance cache helpers', () => {
       balanceStateCacheService,
     });
 
-    jest.spyOn(service as any, 'fetchCandles').mockResolvedValue([
+    (exchange as any).fetchOHLCV = jest.fn().mockResolvedValue([
+      [0, 0, 0, 0, 100],
+      [0, 0, 0, 0, 100],
+      [0, 0, 0, 0, 100],
       [0, 0, 0, 0, 90],
       [0, 0, 0, 0, 95],
-      [0, 0, 0, 0, 100],
-      [0, 0, 0, 0, 100],
-      [0, 0, 0, 0, 100],
-      [0, 0, 0, 0, 100],
-      [0, 0, 0, 0, 100],
+      [0, 0, 0, 0, 110],
+      [0, 0, 0, 0, 120],
     ]);
-    jest
-      .spyOn(service as any, 'calcEma')
-      .mockReturnValueOnce([90, 95, 99, 101, 103, 104, 105])
-      .mockReturnValueOnce([100, 100, 100, 100, 100, 100, 100]);
-    jest.spyOn(service as any, 'calcRsi').mockReturnValue([50, 50, 50, 50]);
-    jest.spyOn(service as any, 'calcCross').mockReturnValue('CROSS_UP');
 
     await expect(
       service.buildTimeIndicatorActions(
