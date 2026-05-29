@@ -34,16 +34,6 @@
   const sections = $derived(response?.sections ?? []);
   const activeItems = $derived(sections.find((section) => section.key === activeSection)?.items ?? []);
 
-  const formatNumber = (value: number | string | undefined) => {
-    const number = Number(value ?? 0);
-
-    if (!Number.isFinite(number)) {
-      return String(value ?? '0');
-    }
-
-    return new Intl.NumberFormat('en-US').format(number);
-  };
-
   const formatTimestamp = (value?: string | null) => {
     if (!value) {
       return 'unavailable';
@@ -109,16 +99,6 @@
     }
 
     return String(item.value);
-  };
-
-  const validationText = (item: AdminSystemConfigItem) => {
-    const entries = Object.entries(item.validation);
-
-    if (entries.length === 0) {
-      return 'no extra constraints';
-    }
-
-    return entries.map(([key, value]) => `${key}: ${value}`).join(' · ');
   };
 
   const startEdit = (item: AdminSystemConfigItem) => {
@@ -198,21 +178,9 @@
   <PageHeader
     eyebrow="system"
     title="system config"
-    subtitle="Allowlisted safe runtime configuration metadata from the authenticated admin API. Disk and environment controls are disabled."
+    subtitle="Review and edit backend-allowlisted runtime config."
   >
     {#snippet actions()}
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled
-        title="Environment exports are intentionally disabled and are not backed by any API."
-      >env export disabled</button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled
-        title="Reloading configuration from disk is intentionally unavailable."
-      >disk reload disabled</button>
       <button
         type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
@@ -221,42 +189,6 @@
       >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>
-
-  <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">whitelisted keys</span>
-        <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.summary.total)}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">mutable</span>
-        <span class="font-mono text-2xl font-semibold text-info">{formatNumber(response?.summary.mutable)}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">overrides</span>
-        <span class="font-mono text-2xl font-semibold text-warning">{formatNumber(response?.summary.overrides)}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">schema</span>
-        <span class="font-mono text-xl font-semibold text-base-content">{response?.schemaVersion ?? 'pending'}</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="card border border-base-300 bg-base-100 shadow-none">
-    <div class="card-body gap-3 p-5">
-      <span class="text-sm font-semibold text-base-content capitalize">unsafe actions unavailable</span>
-      <span class="text-sm text-base-content/60">
-        This page never reads .env files, never exports raw environment values, and only mutates explicit backend-allowlisted custom config keys.
-      </span>
-    </div>
-  </div>
 
   {#if loading}
     <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="config-loading">
@@ -314,9 +246,9 @@
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex flex-col">
                 <span class="text-lg font-semibold tracking-tight text-base-content capitalize">{sections.find((section) => section.key === activeSection)?.label ?? 'config'}</span>
-                <span class="text-xs text-base-content/50">generated {formatTimestamp(response.generatedAt)}</span>
+                <span class="text-xs text-base-content/50">Last synced {formatTimestamp(response.generatedAt)}</span>
               </div>
-              <span class="font-mono text-xs text-base-content/50">{activeItems.length} allowlisted keys</span>
+              <span class="font-mono text-xs text-base-content/50">{activeItems.length} keys in this section</span>
             </div>
 
             <ul class="divide-y divide-base-300">
@@ -325,21 +257,17 @@
                   <div class="flex min-w-0 flex-col gap-1">
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="font-mono text-sm text-base-content">{item.key}</span>
-                      <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider {sourceTone[item.sourceState] || 'bg-base-content/5 text-base-content/60'}">
-                        {item.sourceState}
-                      </span>
-                      <span class="rounded-full bg-base-content/5 px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider text-base-content/60">
-                        {item.sourceClass}
-                      </span>
+                      {#if item.sourceState === 'override'}
+                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider {sourceTone[item.sourceState]}">
+                          override
+                        </span>
+                      {/if}
                       {#if item.sensitive}
                         <span class="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider text-warning">masked</span>
                       {/if}
                     </div>
                     <span class="text-sm text-base-content/70">{item.label}</span>
                     <span class="text-xs text-base-content/50">{item.description}</span>
-                    <span class="font-mono text-[10px] text-base-content/40">
-                      updated {formatTimestamp(item.updatedAt)} by {item.updatedBy || 'backend unavailable'} · {validationText(item)}
-                    </span>
                   </div>
 
                   <div class="flex min-w-[220px] items-center gap-2 xl:justify-end">
@@ -361,7 +289,6 @@
                         {displayValue(item)}
                       </span>
                     {/if}
-                    <span class="font-mono text-[10px] text-base-content/40 capitalize">{item.type}</span>
                   </div>
 
                   <div class="flex items-center gap-1 xl:justify-end">

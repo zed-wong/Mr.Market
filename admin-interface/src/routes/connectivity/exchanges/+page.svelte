@@ -55,6 +55,7 @@
   let metadataError = $state<AdminErrorState | null>(null);
   let expandedExchangeIds = $state<string[]>([]);
   let accountDialogEl = $state<HTMLDialogElement | null>(null);
+  let accountExchangeDropdownEl = $state<HTMLDivElement | null>(null);
   let accountDeleteCandidate = $state<AdminSingleKey | null>(null);
   let accountExchangeDropdownOpen = $state(false);
   let pendingRefreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -100,10 +101,22 @@
   );
   let metadataReadyCount = $derived(exchanges.filter((exchange) => exchange.enable).length);
   let encryptionReady = $derived(Boolean(publicKey) && !metadataLoading && !metadataError);
+  let accountExchangeQuery = $derived(accountForm.exchange.trim().toLowerCase());
+  let supportedExchangeIds = $derived(new Set(supportedExchanges.map((exchange) => exchange.toLowerCase())));
   let matchingCcxtExchanges = $derived(
     allCcxtExchanges
-      .filter((exchange) => exchange.toLowerCase().includes(accountForm.exchange.toLowerCase()))
-      .slice(0, 50),
+      .filter((exchange) => !accountExchangeQuery || exchange.toLowerCase().includes(accountExchangeQuery))
+      .sort((left, right) => {
+        const leftName = left.toLowerCase();
+        const rightName = right.toLowerCase();
+        const leftSupported = supportedExchangeIds.has(leftName) ? 0 : 1;
+        const rightSupported = supportedExchangeIds.has(rightName) ? 0 : 1;
+        const leftStarts = accountExchangeQuery && leftName.startsWith(accountExchangeQuery) ? 0 : 1;
+        const rightStarts = accountExchangeQuery && rightName.startsWith(accountExchangeQuery) ? 0 : 1;
+
+        return leftSupported - rightSupported || leftStarts - rightStarts || leftName.localeCompare(rightName);
+      })
+      .slice(0, accountExchangeQuery ? 30 : 12),
   );
   let existingExchangeApiKeys = $derived(
     new Set(apiKeys.map((key) => `${key.exchange.toLowerCase()}:${key.api_key}`)),
@@ -153,6 +166,20 @@
 
   const closeAddAccountDialog = () => {
     accountDialogEl?.close();
+  };
+
+  const closeExchangeDropdownAfterFocus = () => {
+    setTimeout(() => {
+      if (!accountExchangeDropdownEl?.contains(document.activeElement)) {
+        accountExchangeDropdownOpen = false;
+      }
+    }, 0);
+  };
+
+  const handleExchangeInputKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      accountExchangeDropdownOpen = false;
+    }
   };
 
   const hasPendingKeys = () => apiKeys.some((key) => getApiKeyReadiness(key).status === "validation_pending");
@@ -677,17 +704,22 @@
   {/if}
 </section>
 
-<dialog bind:this={accountDialogEl} class="modal modal-bottom sm:modal-middle" onclose={() => resetAccountForm()}>
-  <div class="modal-box max-w-xl border border-base-300 bg-base-100">
-    <div class="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
+<dialog bind:this={accountDialogEl} class="modal modal-bottom sm:modal-middle backdrop-blur-sm" onclose={() => resetAccountForm()}>
+  <div class="modal-box max-w-xl overflow-visible rounded-t-3xl border border-base-300 bg-base-100 p-0 shadow-2xl sm:rounded-3xl">
+    <div class="flex items-start justify-between gap-4 px-6 pb-5 pt-6">
       <span class="flex flex-col gap-1">
-        <span class="text-lg font-semibold capitalize">add exchange account</span>
-        <span class="text-sm text-base-content/60">Secrets are encrypted in the browser before submission.</span>
+        <span class="text-xl font-semibold tracking-tight text-base-content capitalize">add exchange account</span>
+        <span class="text-sm text-base-content/60">Encrypted credential setup for the selected venue.</span>
       </span>
-      <button class="btn btn-ghost btn-sm btn-circle" onclick={closeAddAccountDialog} aria-label="close">x</button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm btn-circle text-base-content/60"
+        onclick={closeAddAccountDialog}
+        aria-label="close"
+      >✕</button>
     </div>
 
-    <div class="mt-5 grid gap-4">
+    <div class="grid gap-4 px-6 pb-2">
       {#if !encryptionReady}
         <div class="alert alert-warning py-2 text-sm" data-testid="exchange-account-encryption-not-ready">
           {#if metadataLoading}
@@ -700,54 +732,78 @@
         </div>
       {/if}
 
-      <label class="flex flex-col gap-1">
+      <label class="flex flex-col gap-1.5">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">exchange</span>
-        <div class="dropdown w-full" class:dropdown-open={accountExchangeDropdownOpen}>
+        <div
+          class="dropdown w-full"
+          class:dropdown-open={accountExchangeDropdownOpen}
+          bind:this={accountExchangeDropdownEl}
+          onfocusout={closeExchangeDropdownAfterFocus}
+        >
           <input
-            class="input input-bordered w-full border-base-300 bg-base-100"
-            placeholder="e.g. binance"
+            class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100"
+            placeholder="okx"
             bind:value={accountForm.exchange}
             onfocus={() => (accountExchangeDropdownOpen = true)}
             oninput={() => (accountExchangeDropdownOpen = true)}
+            onkeydown={handleExchangeInputKeydown}
           />
           {#if accountExchangeDropdownOpen && matchingCcxtExchanges.length > 0}
-            <ul class="dropdown-content menu z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2 shadow">
+            <ul class="dropdown-content z-50 mt-2 max-h-64 w-full overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-1.5 shadow-2xl">
+              {#if !accountExchangeQuery}
+                <li class="px-3 pb-1 pt-2">
+                  <span class="text-xs text-base-content/50 capitalize">suggested exchanges</span>
+                </li>
+              {/if}
               {#each matchingCcxtExchanges as exchange (exchange)}
                 <li>
                   <button
                     type="button"
+                    class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors hover:bg-base-300"
+                    class:bg-base-300={accountForm.exchange.toLowerCase() === exchange.toLowerCase()}
                     onclick={() => {
                       accountForm.exchange = exchange;
                       accountExchangeDropdownOpen = false;
                     }}
-                  >{exchange}</button>
+                  >
+                    <span class="font-medium text-base-content">{exchange}</span>
+                    {#if supportedExchangeIds.has(exchange.toLowerCase())}
+                      <span class="rounded-full bg-base-content/5 px-2 py-0.5 text-[10px] font-medium text-base-content/50 capitalize">supported</span>
+                    {/if}
+                  </button>
                 </li>
               {/each}
             </ul>
+          {:else if accountExchangeDropdownOpen && accountExchangeQuery}
+            <div class="dropdown-content z-50 mt-2 w-full rounded-2xl border border-base-300 bg-base-100 px-4 py-3 shadow-2xl">
+              <span class="text-sm text-base-content/60">No exchange matches “{accountForm.exchange}”.</span>
+            </div>
           {/if}
         </div>
         {#if accountFormErrors.exchange}<span class="text-xs text-error">{accountFormErrors.exchange}</span>{/if}
       </label>
 
-      <label class="flex flex-col gap-1">
+      <label class="flex flex-col gap-1.5">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">account label</span>
-        <input class="input input-bordered border-base-300 bg-base-100" placeholder="e.g. default" bind:value={accountForm.name} />
+        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100" placeholder="default" bind:value={accountForm.name} />
         {#if accountFormErrors.name}<span class="text-xs text-error">{accountFormErrors.name}</span>{/if}
       </label>
 
-      <label class="flex flex-col gap-1">
+      <div class="my-1 h-px bg-base-300"></div>
+
+      <label class="flex flex-col gap-1.5">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">API key</span>
-        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" placeholder="paste API key" bind:value={accountForm.apiKey} />
+        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" placeholder="paste API key" bind:value={accountForm.apiKey} />
         {#if accountFormErrors.apiKey}<span class="text-xs text-error">{accountFormErrors.apiKey}</span>{/if}
       </label>
 
-      <label class="flex flex-col gap-1">
+      <label class="flex flex-col gap-1.5">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">API secret</span>
-        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder="paste API secret" bind:value={accountForm.apiSecret} />
+        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder="paste API secret" bind:value={accountForm.apiSecret} />
         {#if accountFormErrors.apiSecret}<span class="text-xs text-error">{accountFormErrors.apiSecret}</span>{/if}
       </label>
 
-      <div class="flex flex-wrap gap-4">
+      <div class="flex flex-wrap gap-4 pt-1">
         <label class="flex cursor-pointer items-center gap-2 text-sm capitalize">
           <input type="radio" class="radio radio-sm radio-primary" value="read" bind:group={accountForm.permissions} />
           read only
@@ -769,9 +825,9 @@
       {/if}
     </div>
 
-    <div class="modal-action">
-      <button class="btn btn-ghost capitalize" onclick={closeAddAccountDialog}>cancel</button>
-      <button class="btn btn-primary capitalize" onclick={submitAccount} disabled={savingAccount || !encryptionReady}>
+    <div class="modal-action mt-4 border-t border-base-300 px-6 py-5">
+      <button type="button" class="btn btn-ghost rounded-full capitalize" onclick={closeAddAccountDialog}>cancel</button>
+      <button type="button" class="btn btn-primary rounded-full capitalize" onclick={submitAccount} disabled={savingAccount || !encryptionReady}>
         {#if savingAccount}<span class="loading loading-spinner loading-xs"></span>{/if}
         add account
       </button>
