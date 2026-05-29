@@ -1,11 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
+import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
+import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../../ledger/balance-ledger.service';
+import {
+  ExchangeOrderTrackerService,
+  TrackedOrder,
+} from '../../trackers/exchange-order-tracker.service';
 import { StrategyIntentStoreService } from '../execution/strategy-intent-store.service';
+
+export type StartupRecoveryResult = {
+  success: boolean;
+  blockedReasons: string[];
+};
 
 @Injectable()
 export class StrategyStartupRecoveryService {
@@ -17,19 +29,27 @@ export class StrategyStartupRecoveryService {
     private readonly strategyIntentStoreService: StrategyIntentStoreService,
     private readonly balanceLedgerService: BalanceLedgerService,
     private readonly exchangeOrderMappingService: ExchangeOrderMappingService,
+    @Optional()
+    private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
+    @Optional()
+    private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
   ) {}
 
   async recoverInterruptedCreateIntentReservations(
     strategy: StrategyInstance,
     openOrders: any[],
-  ): Promise<void> {
+  ): Promise<StartupRecoveryResult> {
+    const result: StartupRecoveryResult = {
+      success: true,
+      blockedReasons: [],
+    };
     const strategyOrderId = this.readString(
       strategy.marketMakingOrderId,
       strategy.clientId,
     );
 
     if (!strategyOrderId) {
-      return;
+      return result;
     }
 
     const interruptedIntents =
@@ -38,32 +58,42 @@ export class StrategyStartupRecoveryService {
       );
 
     if (interruptedIntents.length === 0) {
-      return;
+      return result;
     }
 
-    for (const openOrder of openOrders) {
-      const exchangeOrderId = this.readString(openOrder?.id);
-      const clientOrderId = this.readString(
-        openOrder?.clientOrderId || openOrder?.clientOid,
-      );
-
-      if (
-        await this.isOrderOwnedByStrategy(
-          strategyOrderId,
-          clientOrderId,
-          exchangeOrderId,
-        )
-      ) {
-        this.logger.warn(
-          `Skipped interrupted intent recovery for ${strategy.strategyKey}: open exchange order still belongs to strategy`,
-        );
-
-        return;
-      }
-    }
+    const claimedOpenOrderIds = new Set<string>();
 
     for (const intent of interruptedIntents) {
-      if (this.readString(intent.mixinOrderId)) {
+      const matchedOpenOrder = await this.findOpenOrderForCreateIntent(
+        strategyOrderId,
+        intent,
+        openOrders,
+        claimedOpenOrderIds,
+      );
+
+      if (matchedOpenOrder) {
+        const exchangeOrderId = this.readString(matchedOpenOrder?.id);
+        const clientOrderId = this.readString(
+          matchedOpenOrder?.clientOrderId || matchedOpenOrder?.clientOid,
+        );
+
+        if (!exchangeOrderId) {
+          result.success = false;
+          result.blockedReasons.push(
+            `open order matched ${intent.intentId} without exchange order id`,
+          );
+          continue;
+        }
+
+        claimedOpenOrderIds.add(exchangeOrderId);
+        await this.restoreCreateIntentOpenOrder(
+          strategyOrderId,
+          strategy,
+          intent,
+          matchedOpenOrder,
+          exchangeOrderId,
+          clientOrderId,
+        );
         continue;
       }
 
@@ -102,8 +132,423 @@ export class StrategyStartupRecoveryService {
             error instanceof Error ? error.message : String(error)
           }`,
         );
+        result.success = false;
+        result.blockedReasons.push(
+          `failed to release interrupted create reservation ${intent.intentId}`,
+        );
       }
     }
+
+    return result;
+  }
+
+  private async findOpenOrderForCreateIntent(
+    strategyOrderId: string,
+    intent: StrategyOrderIntentEntity,
+    openOrders: any[],
+    claimedOpenOrderIds: Set<string>,
+  ): Promise<any | null> {
+    for (const openOrder of openOrders) {
+      const exchangeOrderId = this.readString(openOrder?.id);
+
+      if (!exchangeOrderId || claimedOpenOrderIds.has(exchangeOrderId)) {
+        continue;
+      }
+
+      const clientOrderId = this.readString(
+        openOrder?.clientOrderId || openOrder?.clientOid,
+      );
+
+      if (intent.mixinOrderId && exchangeOrderId === intent.mixinOrderId) {
+        return openOrder;
+      }
+
+      if (
+        !(await this.isOrderOwnedByStrategy(
+          strategyOrderId,
+          clientOrderId,
+          exchangeOrderId,
+        ))
+      ) {
+        continue;
+      }
+
+      if (this.openOrderMatchesIntent(openOrder, intent)) {
+        return openOrder;
+      }
+    }
+
+    return null;
+  }
+
+  private async restoreCreateIntentOpenOrder(
+    strategyOrderId: string,
+    strategy: StrategyInstance,
+    intent: StrategyOrderIntentEntity,
+    openOrder: any,
+    exchangeOrderId: string,
+    clientOrderId: string,
+  ): Promise<void> {
+    if (clientOrderId) {
+      await this.exchangeOrderMappingService.createMapping({
+        orderId: strategyOrderId,
+        exchangeOrderId,
+        clientOrderId,
+      });
+    }
+
+    if (!intent.mixinOrderId) {
+      await this.strategyIntentStoreService.attachMixinOrderId(
+        intent.intentId,
+        exchangeOrderId,
+      );
+    }
+
+    this.exchangeOrderTrackerService?.upsertOrder({
+      orderId: strategyOrderId,
+      strategyKey: strategy.strategyKey,
+      exchange: intent.exchange,
+      accountLabel: intent.accountLabel,
+      pair: intent.pair,
+      exchangeOrderId,
+      clientOrderId: clientOrderId || undefined,
+      slotKey: intent.slotKey,
+      side: intent.side === 'sell' ? 'sell' : 'buy',
+      price: this.readString(openOrder?.price, intent.price) || intent.price,
+      qty:
+        this.readString(openOrder?.amount || openOrder?.qty, intent.qty) ||
+        intent.qty,
+      cumulativeFilledQty: this.readString(openOrder?.filled, '0') || '0',
+      status: this.normalizeExchangeOrderStatus(openOrder?.status),
+      createdAt: intent.createdAt || getRFC3339Timestamp(),
+      updatedAt: getRFC3339Timestamp(),
+    });
+
+    await this.strategyIntentStoreService.updateIntentStatus(
+      intent.intentId,
+      'DONE',
+      'interrupted create intent restored on startup',
+    );
+    this.logger.warn(
+      `Restored interrupted create intent ${intent.intentId} for ${strategy.strategyKey} as open order ${exchangeOrderId}`,
+    );
+  }
+
+  private openOrderMatchesIntent(
+    openOrder: any,
+    intent: StrategyOrderIntentEntity,
+  ): boolean {
+    const side = String(openOrder?.side || '').toLowerCase();
+
+    if (side && side !== String(intent.side || '').toLowerCase()) {
+      return false;
+    }
+
+    return (
+      this.quantityMatches(openOrder?.price, intent.price) &&
+      this.quantityMatches(openOrder?.amount || openOrder?.qty, intent.qty)
+    );
+  }
+
+  async restoreMappedOpenOrder(
+    strategy: StrategyInstance,
+    exchange: string,
+    pair: string,
+    exchangeOrderId: string,
+    clientOrderId: string,
+    openOrder: Record<string, any>,
+    accountLabel?: string,
+  ): Promise<
+    | { status: 'restored' }
+    | { status: 'not_owned' }
+    | { status: 'blocked'; reason: string }
+  > {
+    if (!clientOrderId) {
+      return { status: 'not_owned' };
+    }
+
+    const mapping = await this.exchangeOrderMappingService.findByClientOrderId(
+      clientOrderId,
+    );
+    const strategyOrderId = this.readString(
+      strategy.marketMakingOrderId,
+      strategy.clientId,
+    );
+
+    if (!mapping || mapping.orderId !== strategyOrderId) {
+      return { status: 'not_owned' };
+    }
+
+    const sourceIntent = await this.findCreateIntentForOpenOrder(
+      strategy.strategyKey,
+      openOrder,
+    );
+
+    if (!sourceIntent?.slotKey) {
+      return {
+        status: 'blocked',
+        reason: `mapped open order ${exchangeOrderId} is missing recoverable slot metadata`,
+      };
+    }
+
+    await this.exchangeOrderMappingService.createMapping({
+      orderId: strategyOrderId,
+      exchangeOrderId,
+      clientOrderId,
+    });
+
+    this.exchangeOrderTrackerService?.upsertOrder({
+      orderId: strategyOrderId,
+      strategyKey: strategy.strategyKey,
+      exchange,
+      accountLabel,
+      pair,
+      exchangeOrderId,
+      clientOrderId,
+      slotKey: sourceIntent.slotKey,
+      side: openOrder?.side === 'sell' ? 'sell' : 'buy',
+      price: this.readString(openOrder?.price, sourceIntent.price),
+      qty: this.readString(
+        openOrder?.amount || openOrder?.qty,
+        sourceIntent.qty,
+      ),
+      cumulativeFilledQty: this.readString(openOrder?.filled, '0'),
+      status: this.normalizeExchangeOrderStatus(openOrder?.status) || 'open',
+      createdAt: getRFC3339Timestamp(),
+      updatedAt: getRFC3339Timestamp(),
+    });
+
+    return { status: 'restored' };
+  }
+
+  async recoverInterruptedCancelIntentsForStrategy(
+    strategy: StrategyInstance,
+    openOrders: any[],
+  ): Promise<StartupRecoveryResult> {
+    const result: StartupRecoveryResult = {
+      success: true,
+      blockedReasons: [],
+    };
+    const intents =
+      await this.strategyIntentStoreService.listInterruptedCancelIntents(
+        strategy.strategyKey,
+      );
+
+    for (const intent of intents) {
+      const exchangeOrderId = this.readString(intent.mixinOrderId);
+
+      if (!exchangeOrderId) {
+        await this.strategyIntentStoreService.updateIntentStatus(
+          intent.intentId,
+          'CANCELLED',
+          'interrupted cancel intent missing exchange order id',
+        );
+        continue;
+      }
+
+      const openOrder = openOrders.find(
+        (order) => this.readString(order?.id) === exchangeOrderId,
+      );
+
+      if (openOrder) {
+        try {
+          await this.retryOpenCancelIntent(strategy, intent, openOrder);
+        } catch (error) {
+          result.success = false;
+          result.blockedReasons.push(
+            `failed to recover cancel intent ${intent.intentId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+        continue;
+      }
+
+      await this.reconcileMissingCancelIntent(strategy, intent, result);
+    }
+
+    return result;
+  }
+
+  private async findCreateIntentForOpenOrder(
+    strategyKey: string,
+    openOrder: Record<string, any>,
+  ): Promise<StrategyOrderIntentEntity | undefined> {
+    const intents = await this.strategyIntentStoreService.listAll();
+    const side = String(openOrder?.side || '').toLowerCase();
+
+    return intents.find((intent) => {
+      if (
+        intent.strategyKey !== strategyKey ||
+        intent.type !== 'CREATE_LIMIT_ORDER'
+      ) {
+        return false;
+      }
+      if (side && side !== String(intent.side || '').toLowerCase()) {
+        return false;
+      }
+
+      return (
+        this.quantityMatches(openOrder?.price, intent.price) &&
+        this.quantityMatches(openOrder?.amount || openOrder?.qty, intent.qty)
+      );
+    });
+  }
+
+  private async retryOpenCancelIntent(
+    strategy: StrategyInstance,
+    intent: StrategyOrderIntentEntity,
+    openOrder: any,
+  ): Promise<void> {
+    const exchangeOrderId = this.readString(intent.mixinOrderId);
+    const cancelResult = await this.exchangeConnectorAdapterService?.cancelOrder(
+      intent.exchange,
+      intent.pair,
+      exchangeOrderId,
+      intent.accountLabel,
+    );
+    const cancelSucceeded = this.isCancelResultFinal(
+      cancelResult as Record<string, unknown> | undefined,
+    );
+
+    this.upsertCancelRecoveryTrackedOrder(
+      strategy,
+      intent,
+      exchangeOrderId,
+      openOrder,
+      cancelSucceeded ? 'cancelled' : 'pending_cancel',
+    );
+
+    if (cancelSucceeded) {
+      await this.strategyIntentStoreService.updateIntentStatus(
+        intent.intentId,
+        'DONE',
+        'interrupted cancel intent completed on startup',
+      );
+    }
+  }
+
+  private async reconcileMissingCancelIntent(
+    strategy: StrategyInstance,
+    intent: StrategyOrderIntentEntity,
+    result: StartupRecoveryResult,
+  ): Promise<void> {
+    const exchangeOrderId = this.readString(intent.mixinOrderId);
+
+    try {
+      const latest = await this.exchangeConnectorAdapterService?.fetchOrder(
+        intent.exchange,
+        intent.pair,
+        exchangeOrderId,
+        intent.accountLabel,
+      );
+      const latestStatus = this.normalizeExchangeOrderStatus(latest?.status);
+
+      if (latestStatus === 'cancelled' || latestStatus === 'filled') {
+        this.upsertCancelRecoveryTrackedOrder(
+          strategy,
+          intent,
+          exchangeOrderId,
+          latest,
+          latestStatus,
+        );
+        await this.strategyIntentStoreService.updateIntentStatus(
+          intent.intentId,
+          'DONE',
+          'interrupted cancel intent reconciled on startup',
+        );
+        return;
+      }
+
+      result.success = false;
+      result.blockedReasons.push(
+        `cancel intent ${intent.intentId} has unresolved exchange status`,
+      );
+    } catch (error) {
+      result.success = false;
+      result.blockedReasons.push(
+        `failed to fetch cancel intent ${intent.intentId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private upsertCancelRecoveryTrackedOrder(
+    strategy: StrategyInstance,
+    intent: StrategyOrderIntentEntity,
+    exchangeOrderId: string,
+    order: any,
+    status: TrackedOrder['status'],
+  ): void {
+    this.exchangeOrderTrackerService?.upsertOrder({
+      orderId: this.readString(strategy.marketMakingOrderId, strategy.clientId),
+      strategyKey: strategy.strategyKey,
+      exchange: intent.exchange,
+      accountLabel: intent.accountLabel,
+      pair: intent.pair,
+      exchangeOrderId,
+      clientOrderId: this.readString(order?.clientOrderId || order?.clientOid),
+      slotKey: intent.slotKey,
+      side: intent.side === 'sell' ? 'sell' : 'buy',
+      price: this.readString(order?.price, intent.price),
+      qty: this.readString(order?.amount || order?.qty, intent.qty),
+      cumulativeFilledQty: this.readString(order?.filled, '0'),
+      status,
+      createdAt: getRFC3339Timestamp(),
+      updatedAt: getRFC3339Timestamp(),
+    });
+  }
+
+  private isCancelResultFinal(result: Record<string, unknown> | undefined) {
+    const status = String(result?.status || '').toLowerCase();
+
+    return (
+      !status || !['new', 'open', 'pending', 'pending_cancel'].includes(status)
+    );
+  }
+
+  private quantityMatches(left: unknown, right: unknown): boolean {
+    const leftValue = new BigNumber(String(left ?? ''));
+    const rightValue = new BigNumber(String(right ?? ''));
+
+    if (!leftValue.isFinite() || !rightValue.isFinite()) {
+      return false;
+    }
+
+    return leftValue.minus(rightValue).abs().isLessThanOrEqualTo('0.00000001');
+  }
+
+  private normalizeExchangeOrderStatus(
+    status: unknown,
+  ): TrackedOrder['status'] | null {
+    const normalized = String(status || '')
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) {
+      return null;
+    }
+    if (normalized === 'open' || normalized === 'new') {
+      return 'open';
+    }
+    if (
+      normalized === 'partially_filled' ||
+      normalized === 'partially-filled'
+    ) {
+      return 'partially_filled';
+    }
+    if (normalized === 'pending_cancel') {
+      return 'pending_cancel';
+    }
+    if (normalized === 'closed' || normalized === 'filled') {
+      return 'filled';
+    }
+    if (normalized === 'canceled' || normalized === 'cancelled') {
+      return 'cancelled';
+    }
+
+    return 'failed';
   }
 
   private async isOrderOwnedByStrategy(

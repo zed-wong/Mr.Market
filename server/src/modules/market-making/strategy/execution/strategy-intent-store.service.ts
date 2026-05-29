@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import BigNumber from 'bignumber.js';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { In, Repository } from 'typeorm';
 
+import { ExecutorAction } from '../config/executor-action.types';
+import { StrategyExecutionCategory } from '../config/strategy-execution-category';
 import {
   StrategyIntentStatus,
   StrategyOrderIntent,
@@ -32,10 +35,86 @@ const CANCELLABLE_INTENT_STATUSES: StrategyIntentStatus[] = [
 
 @Injectable()
 export class StrategyIntentStoreService {
+  private readonly latestIntentsByStrategy = new Map<
+    string,
+    StrategyOrderIntent[]
+  >();
+
   constructor(
     @InjectRepository(StrategyOrderIntentEntity)
     private readonly strategyOrderIntentRepository: Repository<StrategyOrderIntentEntity>,
   ) {}
+
+  createLimitOrderIntent(
+    runtimeInstanceKey: string,
+    strategyKey: string,
+    userId: string,
+    clientId: string,
+    exchange: string,
+    pair: string,
+    side: 'buy' | 'sell',
+    price: BigNumber,
+    qty: BigNumber,
+    ts: string,
+    suffix: string,
+    executionCategory?: StrategyExecutionCategory,
+    metadata?: Record<string, unknown>,
+    postOnly?: boolean,
+    accountLabel?: string,
+    timeInForce?: 'GTC' | 'IOC',
+  ): StrategyOrderIntent {
+    return {
+      type: 'CREATE_LIMIT_ORDER',
+      intentId: `${strategyKey}:${ts}:${suffix}`,
+      runtimeInstanceKey,
+      strategyKey,
+      userId,
+      clientId,
+      exchange,
+      accountLabel,
+      pair,
+      side,
+      price: price.toFixed(),
+      qty: qty.toFixed(),
+      executionCategory,
+      postOnly,
+      timeInForce,
+      metadata,
+      createdAt: ts,
+      status: 'NEW',
+    };
+  }
+
+  async publishIntents(
+    strategyKey: string,
+    intents: ExecutorAction[],
+    dispatchActions: (
+      strategyKey: string,
+      intents: ExecutorAction[],
+    ) => Promise<StrategyOrderIntent[] | undefined>,
+  ): Promise<StrategyOrderIntent[]> {
+    if (intents.length === 0) {
+      return [];
+    }
+
+    const publishedIntents = await dispatchActions(strategyKey, intents);
+
+    if (publishedIntents && publishedIntents.length > 0) {
+      this.latestIntentsByStrategy.set(strategyKey, publishedIntents);
+
+      return publishedIntents;
+    }
+
+    throw new Error('executor orchestrator did not publish intents');
+  }
+
+  getLatestIntentsForStrategy(strategyKey: string): StrategyOrderIntent[] {
+    return this.latestIntentsByStrategy.get(strategyKey) || [];
+  }
+
+  clearLatestIntentsForStrategy(strategyKey: string): void {
+    this.latestIntentsByStrategy.delete(strategyKey);
+  }
 
   async upsertIntent(intent: StrategyOrderIntent): Promise<void> {
     await this.batchUpsertIntents([intent]);
@@ -165,6 +244,22 @@ export class StrategyIntentStoreService {
       where: {
         strategyKey,
         type: 'CREATE_LIMIT_ORDER',
+        status: In(['SENT', 'ACKED'] as StrategyIntentStatus[]),
+      },
+      order: {
+        createdAt: 'ASC',
+        intentId: 'ASC',
+      },
+    });
+  }
+
+  async listInterruptedCancelIntents(
+    strategyKey: string,
+  ): Promise<StrategyOrderIntentEntity[]> {
+    return await this.strategyOrderIntentRepository.find({
+      where: {
+        strategyKey,
+        type: 'CANCEL_ORDER',
         status: In(['SENT', 'ACKED'] as StrategyIntentStatus[]),
       },
       order: {

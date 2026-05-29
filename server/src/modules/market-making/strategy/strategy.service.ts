@@ -24,11 +24,11 @@ import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/ex
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
-import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
-import { BalanceStateRefreshService } from '../balance-state/balance-state-refresh.service';
+import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-balance-query.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
+import { KillSwitchService } from '../risk/kill-switch.service';
 import { ClockTickCoordinatorService } from '../tick/clock-tick-coordinator.service';
 import { MarketMakingRuntimeTimingService } from '../tick/runtime-timing.service';
 import { TickComponent } from '../tick/tick-component.interface';
@@ -42,8 +42,6 @@ import { ExecutorAction } from './config/executor-action.types';
 import {
   ArbitrageStrategyDto,
   DexAdapterId,
-  DualAccountBehaviorProfileDto,
-  DualAccountBehaviorProfilesDto,
   ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ExecuteDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
@@ -59,7 +57,6 @@ import {
 } from './config/strategy-execution-category';
 import { StrategyOrderIntent } from './config/strategy-intent.types';
 import type {
-  AmmDexVolumeStrategyParams,
   CexVolumeStrategyParams,
   ConnectorHealthStatus,
   DualAccountActiveCycleState,
@@ -76,11 +73,25 @@ import type {
   VolumeStrategyParams,
 } from './config/strategy-params.types';
 import { TimeIndicatorStrategyDto } from './config/timeIndicator.dto';
+import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
+import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
+import { VolumeStrategyController } from './controllers/volume-strategy.controller';
+import {
+  calcCross,
+  calcEma,
+  calcRsi,
+  safePct,
+} from './controllers/indicators/technical-indicators';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
 import {
   AdaptivePmmSignalSnapshot,
   StrategyMarketDataProviderService,
 } from './data/strategy-market-data-provider.service';
+import * as dualAccountConfig from './dual-account/dual-account-config';
+import {
+  DualAccountCapacityDiagnostics,
+  DualAccountPlannerService,
+} from './dual-account/dual-account-planner.service';
 import { ExchangePairExecutorSession } from './execution/exchange-pair-executor';
 import { ExecutorRegistry } from './execution/executor-registry';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
@@ -91,25 +102,11 @@ import {
   RuntimeObservationService,
   StrategyRuntimePressureSnapshot,
 } from './observation/runtime-observation.service';
+import { AdaptivePmmStateService } from './pmm/adaptive-pmm-state.service';
+import { QuotePlannerService } from './quote/quote-planner.service';
 import { StrategyStartupRecoveryService } from './recovery/strategy-startup-recovery.service';
+import { StrategyWatcherManagerService } from './runtime/strategy-watcher-manager.service';
 import { FillSettlementService } from './settlement/fill-settlement.service';
-
-type DualAccountCapacityDiagnostics = {
-  buyCapacity: BigNumber;
-  sellCapacity: BigNumber;
-  preferredSideCapacity: BigNumber;
-  selectedSideCapacity: BigNumber;
-  capacityUtilization: BigNumber;
-  capacityLimited: boolean;
-  capacityLimiter:
-    | 'maker_base'
-    | 'maker_quote'
-    | 'taker_base'
-    | 'taker_quote'
-    | 'balanced'
-    | 'unknown';
-  rebalanceNeeded: boolean;
-};
 
 @Injectable()
 export class StrategyService
@@ -125,19 +122,6 @@ export class StrategyService
     string,
     StrategyInstance
   >();
-  private readonly latestIntentsByStrategy = new Map<
-    string,
-    StrategyOrderIntent[]
-  >();
-  private readonly cancelBudgetUsageByStrategySecond = new Map<
-    string,
-    number
-  >();
-  private readonly adaptivePmmWarmupStartedAtByStrategy = new Map<
-    string,
-    number
-  >();
-  private readonly adaptivePmmWarmupTicksByStrategy = new Map<string, number>();
   private readonly stoppingStrategyKeys = new Set<string>();
   private readonly loggedDualAccountBestCapacityIgnoredConfigWarnings =
     new Set<string>();
@@ -145,48 +129,10 @@ export class StrategyService
     string,
     ConnectorHealthStatus
   >();
-  private readonly slotCancelCooldownByStrategy = new Map<
-    string,
-    Map<string, number>
-  >();
   private detachExchangeReadyListener?: () => void;
 
   private generateRunId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  }
-
-  private recordSlotCancelTimestamp(
-    strategyKey: string,
-    slotKey: string,
-  ): void {
-    let slotMap = this.slotCancelCooldownByStrategy.get(strategyKey);
-
-    if (!slotMap) {
-      slotMap = new Map();
-      this.slotCancelCooldownByStrategy.set(strategyKey, slotMap);
-    }
-
-    slotMap.set(slotKey, Date.now());
-  }
-
-  private isSlotWithinCancelCooldown(
-    strategyKey: string,
-    slotKey: string,
-    cooldownMs = 2000,
-  ): boolean {
-    const slotMap = this.slotCancelCooldownByStrategy.get(strategyKey);
-
-    if (!slotMap) {
-      return false;
-    }
-
-    const lastCancel = slotMap.get(slotKey);
-
-    if (!lastCancel) {
-      return false;
-    }
-
-    return Date.now() - lastCancel < cooldownMs;
   }
 
   constructor(
@@ -220,10 +166,6 @@ export class StrategyService
     @Optional()
     private readonly userStreamIngestionService?: UserStreamIngestionService,
     @Optional()
-    private readonly balanceStateCacheService?: BalanceStateCacheService,
-    @Optional()
-    private readonly balanceStateRefreshService?: BalanceStateRefreshService,
-    @Optional()
     private readonly balanceLedgerService?: BalanceLedgerService,
     @Optional()
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
@@ -239,7 +181,88 @@ export class StrategyService
     private readonly runtimeObservationService?: RuntimeObservationService,
     @Optional()
     private readonly strategyStartupRecoveryService?: StrategyStartupRecoveryService,
+    @Optional()
+    private readonly killSwitchService?: KillSwitchService,
+    @Optional()
+    private readonly strategyWatcherManagerService?: StrategyWatcherManagerService,
+    @Optional()
+    private readonly orderScopedBalanceQueryService?: OrderScopedBalanceQueryService,
+    @Optional()
+    private readonly quotePlannerService?: QuotePlannerService,
+    @Optional()
+    private readonly arbitrageStrategyController?: ArbitrageStrategyController,
+    @Optional()
+    private readonly volumeStrategyController?: VolumeStrategyController,
+    @Optional()
+    private readonly dualAccountPlannerService?: DualAccountPlannerService,
+    @Optional()
+    private readonly adaptivePmmStateService?: AdaptivePmmStateService,
+    @Optional()
+    private readonly pureMarketMakingStrategyController?: PureMarketMakingStrategyController,
   ) {}
+
+  private getQuotePlanner(): QuotePlannerService {
+    if (!this.quotePlannerService) {
+      throw new Error('QuotePlannerService is not available');
+    }
+
+    return this.quotePlannerService;
+  }
+
+  private getAdaptivePmmState(): AdaptivePmmStateService {
+    if (!this.adaptivePmmStateService) {
+      throw new Error('AdaptivePmmStateService is not available');
+    }
+
+    return this.adaptivePmmStateService;
+  }
+
+  private get adaptivePmmWarmupStartedAtByStrategy(): Map<string, number> {
+    return this.getAdaptivePmmState().adaptivePmmWarmupStartedAtByStrategy;
+  }
+
+  private get adaptivePmmWarmupTicksByStrategy(): Map<string, number> {
+    return this.getAdaptivePmmState().adaptivePmmWarmupTicksByStrategy;
+  }
+
+  private getPureMarketMakingStrategyController(): PureMarketMakingStrategyController {
+    return (
+      this.pureMarketMakingStrategyController ||
+      new PureMarketMakingStrategyController(
+        this.quoteExecutorManagerService,
+        this.exchangeOrderTrackerService,
+        this.strategyMarketDataProviderService,
+        this.strategyIntentStoreService,
+        this.pmmMarkoutEvaluatorService,
+        this.runtimeObservationService,
+        this.adaptivePmmStateService,
+        this.orderScopedBalanceQueryService,
+        this.quotePlannerService,
+        this.fillSettlementService,
+        this.killSwitchService,
+      )
+    );
+  }
+
+  private getVolumeStrategyController(): VolumeStrategyController {
+    if (!this.volumeStrategyController) {
+      throw new Error('volume strategy controller is not available');
+    }
+
+    return this.volumeStrategyController;
+  }
+
+  private getDualAccountPlanner(): DualAccountPlannerService {
+    return (
+      this.dualAccountPlannerService ||
+      new DualAccountPlannerService(
+        this.exchangeConnectorAdapterService,
+        this.orderScopedBalanceQueryService,
+        this.strategyMarketDataProviderService,
+        this.volumeStrategyController,
+      )
+    );
+  }
 
   async onModuleInit(): Promise<void> {
     this.clockTickCoordinatorService?.register('strategy-service', this, 20);
@@ -612,7 +635,7 @@ export class StrategyService
 
     const params: VolumeStrategyParams =
       executionCategory === 'amm_dex'
-        ? this.buildAmmDexVolumeParams({
+        ? this.getVolumeStrategyController().buildAmmDexVolumeParams({
             exchangeName,
             symbol,
             baseIncrementPercentage,
@@ -631,7 +654,7 @@ export class StrategyService
             slippageBps,
             recipient,
           })
-        : this.buildClobVolumeParams({
+        : this.getVolumeStrategyController().buildClobVolumeParams({
             executionCategory,
             exchangeName,
             symbol,
@@ -801,7 +824,9 @@ export class StrategyService
       };
 
       await this.publishIntents(strategyKey, [stopIntent]);
-      this.latestIntentsByStrategy.delete(strategyKey);
+      this.strategyIntentStoreService?.clearLatestIntentsForStrategy(
+        strategyKey,
+      );
     } finally {
       this.stoppingStrategyKeys.delete(strategyKey);
     }
@@ -858,115 +883,15 @@ export class StrategyService
     strategyParamsDto: ArbitrageStrategyDto,
     ts: string,
   ): Promise<ExecutorAction[]> {
-    const { userId, clientId, pair, amountToTrade, minProfitability } =
-      strategyParamsDto;
-
-    if (!this.strategyMarketDataProviderService) {
-      throw new Error('strategy market data provider is not available');
+    if (!this.arbitrageStrategyController) {
+      throw new Error('arbitrage strategy controller is not available');
     }
 
-    const orderBookA =
-      await this.strategyMarketDataProviderService.getOrderBook(
-        strategyParamsDto.exchangeAName,
-        pair,
-      );
-    const orderBookB =
-      await this.strategyMarketDataProviderService.getOrderBook(
-        strategyParamsDto.exchangeBName,
-        pair,
-      );
-
-    const vwapA = this.calculateVWAPForAmount(orderBookA, amountToTrade, 'buy');
-    const vwapB = this.calculateVWAPForAmount(
-      orderBookB,
-      amountToTrade,
-      'sell',
+    return await this.arbitrageStrategyController.buildArbitrageActions(
+      strategyKey,
+      strategyParamsDto,
+      ts,
     );
-
-    if (vwapA.isLessThanOrEqualTo(0) || vwapB.isLessThanOrEqualTo(0)) {
-      return [];
-    }
-
-    const threshold = new BigNumber(minProfitability);
-    const actions: ExecutorAction[] = [];
-    const executionCategory =
-      String(
-        (strategyParamsDto as any).executionCategory || '',
-      ).toLowerCase() === 'clob_dex'
-        ? 'clob_dex'
-        : 'clob_cex';
-
-    if (vwapB.minus(vwapA).dividedBy(vwapA).isGreaterThanOrEqualTo(threshold)) {
-      actions.push(
-        this.createIntent(
-          strategyKey,
-          strategyKey,
-          userId,
-          clientId,
-          strategyParamsDto.exchangeAName,
-          pair,
-          'buy',
-          vwapA,
-          new BigNumber(amountToTrade),
-          ts,
-          'arb-a-buy',
-          executionCategory,
-        ),
-      );
-      actions.push(
-        this.createIntent(
-          strategyKey,
-          strategyKey,
-          userId,
-          clientId,
-          strategyParamsDto.exchangeBName,
-          pair,
-          'sell',
-          vwapB,
-          new BigNumber(amountToTrade),
-          ts,
-          'arb-b-sell',
-          executionCategory,
-        ),
-      );
-    }
-
-    if (vwapA.minus(vwapB).dividedBy(vwapB).isGreaterThanOrEqualTo(threshold)) {
-      actions.push(
-        this.createIntent(
-          strategyKey,
-          strategyKey,
-          userId,
-          clientId,
-          strategyParamsDto.exchangeBName,
-          pair,
-          'buy',
-          vwapB,
-          new BigNumber(amountToTrade),
-          ts,
-          'arb-b-buy',
-          executionCategory,
-        ),
-      );
-      actions.push(
-        this.createIntent(
-          strategyKey,
-          strategyKey,
-          userId,
-          clientId,
-          strategyParamsDto.exchangeAName,
-          pair,
-          'sell',
-          vwapA,
-          new BigNumber(amountToTrade),
-          ts,
-          'arb-a-sell',
-          executionCategory,
-        ),
-      );
-    }
-
-    return actions;
   }
 
   async evaluateArbitrageOpportunityVWAP(
@@ -994,11 +919,15 @@ export class StrategyService
   }
 
   getLatestIntentsForStrategy(strategyKey: string): StrategyOrderIntent[] {
-    return this.latestIntentsByStrategy.get(strategyKey) || [];
+    return (
+      this.strategyIntentStoreService?.getLatestIntentsForStrategy(
+        strategyKey,
+      ) || []
+    );
   }
 
   clearIntentsForStrategy(strategyKey: string): void {
-    this.latestIntentsByStrategy.delete(strategyKey);
+    this.strategyIntentStoreService?.clearLatestIntentsForStrategy(strategyKey);
   }
 
   private async upsertSession(
@@ -1081,13 +1010,17 @@ export class StrategyService
         },
       );
 
-      this.startPrivateWatchers(
+      this.strategyWatcherManagerService?.startPrivateWatchers(
         strategyType,
         pooledTarget.exchange,
         pooledTarget.pair,
         params,
       );
-      this.startBalanceWatchers(strategyType, pooledTarget.exchange, params);
+      this.strategyWatcherManagerService?.startBalanceWatchers(
+        strategyType,
+        pooledTarget.exchange,
+        params,
+      );
       this.logger.log(
         `Order book ingestion available=${Boolean(
           this.orderBookIngestionService,
@@ -1211,7 +1144,27 @@ export class StrategyService
     nextRunAtMs: number,
   ): Promise<void> {
     try {
-      await this.restoreRuntimeStateForStrategy(strategy);
+      const recoveryResult = await this.restoreRuntimeStateForStrategy(
+        strategy,
+      );
+
+      if (!recoveryResult.success) {
+        await this.strategyInstanceRepository.update(
+          { strategyKey: strategy.strategyKey },
+          {
+            status: 'failed',
+            updatedAt: getRFC3339Timestamp(),
+          },
+        );
+        this.logger.warn(
+          `Blocked startup for ${strategy.strategyKey}: ${recoveryResult.blockedReasons.join(
+            '; ',
+          )}`,
+        );
+
+        return;
+      }
+
       await this.upsertSession(
         strategy.strategyKey,
         strategy.strategyType as StrategyType,
@@ -1292,7 +1245,9 @@ export class StrategyService
       strategyKey,
       'strategy start failed before session activation',
     );
-    this.latestIntentsByStrategy.delete(strategyKey);
+    this.strategyIntentStoreService?.clearLatestIntentsForStrategy(
+      strategyKey,
+    );
 
     const instance = await this.strategyInstanceRepository.findOne({
       where: { strategyKey },
@@ -1438,110 +1393,38 @@ export class StrategyService
     session: StrategyRuntimeSession,
     ts: string,
   ): Promise<ExecutorAction[]> {
-    const params = session.params as VolumeStrategyParams;
-    const executedTrades = Number(params.executedTrades || 0);
-
-    if (executedTrades >= Number(params.numTrades || 0)) {
-      const activeBeforeStop = this.sessions.get(session.strategyKey);
-
-      if (!this.isSameActiveSession(activeBeforeStop, session)) {
-        this.logger.warn(
-          `Skipping stale volume stop for ${session.strategyKey}: active session changed`,
-        );
-
-        return [];
-      }
-
-      await this.stopStrategyForUser(
-        session.userId,
-        session.clientId,
-        session.strategyType,
-      );
-
-      return [];
-    }
-
-    if (params.executionCategory === 'amm_dex') {
-      const side = this.resolveVolumeSide(params.postOnlySide, executedTrades);
-      const amountIn = this.computeAmmAmountIn(params, executedTrades);
-
-      return [
-        {
-          type: 'EXECUTE_AMM_SWAP',
-          intentId: `${session.strategyKey}:${ts}:amm-${executedTrades}`,
-          runtimeInstanceKey: session.strategyKey,
-          strategyKey: session.strategyKey,
-          userId: session.userId,
-          clientId: session.clientId,
-          exchange: params.exchangeName,
-          pair: params.symbol,
-          side,
-          price: '0',
-          qty: amountIn,
-          executionCategory: 'amm_dex',
-          metadata: {
-            dexId: params.dexId,
-            chainId: params.chainId,
-            tokenIn: params.tokenIn,
-            tokenOut: params.tokenOut,
-            feeTier: params.feeTier,
-            baseTradeAmount: params.baseTradeAmount,
-            baseIncrementPercentage: params.baseIncrementPercentage,
-            pricePushRate: params.pricePushRate,
-            executedTrades,
-            slippageBps: params.slippageBps,
-            recipient: params.recipient,
-          },
-          createdAt: ts,
-          status: 'NEW',
-        },
-      ];
-    }
-
-    return await this.buildVolumeActions(session.strategyKey, params, ts);
+    return await this.getVolumeStrategyController().buildVolumeSessionActions(
+      session,
+      ts,
+      this,
+    );
   }
 
   async onVolumeActionsPublished(
     session: StrategyRuntimeSession,
     actions: ExecutorAction[],
   ): Promise<void> {
-    if (actions.length === 0) {
-      return;
-    }
-
-    const activeBeforePersist = this.sessions.get(session.strategyKey);
-
-    if (!this.isSameActiveSession(activeBeforePersist, session)) {
-      this.logger.warn(
-        `Skipping stale volume tick before persist for ${session.strategyKey}: active session changed`,
-      );
-
-      return;
-    }
-
-    const params = activeBeforePersist.params as VolumeStrategyParams;
-    const nextParams: VolumeStrategyParams = {
-      ...params,
-      executedTrades: Number(params.executedTrades || 0) + 1,
-    };
-
-    await this.persistStrategyParams(session.strategyKey, nextParams);
-
-    const currentSession = this.sessions.get(session.strategyKey);
-
-    if (this.isSameActiveSession(currentSession, session)) {
-      currentSession.params = nextParams;
-      this.sessions.set(session.strategyKey, currentSession);
-
-      return;
-    }
-
-    this.logger.warn(
-      `Skipping stale volume tick write-back for ${session.strategyKey}: active session changed`,
+    await this.getVolumeStrategyController().onVolumeActionsPublished(
+      session,
+      actions,
+      this,
     );
   }
 
-  private isSameActiveSession(
+  getActiveStrategySession(
+    strategyKey: string,
+  ): StrategyRuntimeSession | undefined {
+    return this.sessions.get(strategyKey);
+  }
+
+  setActiveStrategySession(
+    strategyKey: string,
+    session: StrategyRuntimeSession,
+  ): void {
+    this.sessions.set(strategyKey, session);
+  }
+
+  isSameActiveSession(
     active: StrategyRuntimeSession | undefined,
     expected: StrategyRuntimeSession,
   ): active is StrategyRuntimeSession {
@@ -1559,86 +1442,11 @@ export class StrategyService
     params: CexVolumeStrategyParams,
     ts: string,
   ): Promise<ExecutorAction[]> {
-    if (!this.strategyMarketDataProviderService) {
-      throw new Error('strategy market data provider is not available');
-    }
-
-    const trackedBestBidAsk =
-      this.strategyMarketDataProviderService.getTrackedBestBidAsk(
-        params.exchangeName,
-        params.symbol,
-      );
-
-    if (!trackedBestBidAsk) {
-      this.logger.warn(
-        `Skipping dual-account volume cycle for ${strategyKey}: tracked order book unavailable`,
-      );
-
-      return [];
-    }
-
-    const { bestBid, bestAsk } = trackedBestBidAsk;
-
-    const mid = new BigNumber(bestBid).plus(bestAsk).dividedBy(2);
-    const pushMultiplier = new BigNumber(1).plus(
-      new BigNumber(params.pricePushRate || 0)
-        .dividedBy(100)
-        .multipliedBy(Number(params.executedTrades || 0)),
+    return await this.getVolumeStrategyController().buildVolumeActions(
+      strategyKey,
+      params,
+      ts,
     );
-    const basePrice = mid.multipliedBy(pushMultiplier);
-    const offsetMultiplier = new BigNumber(
-      params.baseIncrementPercentage || 0,
-    ).dividedBy(100);
-
-    const side = this.resolveVolumeSide(
-      params.postOnlySide,
-      Number(params.executedTrades || 0),
-    );
-    const price =
-      side === 'buy'
-        ? basePrice.multipliedBy(new BigNumber(1).minus(offsetMultiplier))
-        : basePrice.multipliedBy(new BigNumber(1).plus(offsetMultiplier));
-    const qty = new BigNumber(params.baseTradeAmount);
-
-    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
-      this.logger.error(
-        `Skipping volume cycle for ${strategyKey}: invalid non-positive price ${price.toFixed()} (executedTrades=${
-          params.executedTrades || 0
-        }, params=${JSON.stringify({
-          exchangeName: params.exchangeName,
-          symbol: params.symbol,
-          baseIncrementPercentage: params.baseIncrementPercentage,
-          pricePushRate: params.pricePushRate,
-        })})`,
-      );
-
-      return [];
-    }
-
-    if (!qty.isFinite() || qty.isLessThanOrEqualTo(0)) {
-      this.logger.warn(
-        `Skipping volume cycle for ${strategyKey}: invalid qty ${params.baseTradeAmount}`,
-      );
-
-      return [];
-    }
-
-    return [
-      this.createIntent(
-        strategyKey,
-        strategyKey,
-        params.userId,
-        params.clientId,
-        params.exchangeName,
-        params.symbol,
-        side,
-        price,
-        qty,
-        ts,
-        `volume-${params.executedTrades || 0}`,
-        params.executionCategory,
-      ),
-    ];
   }
 
   async buildDualAccountVolumeSessionActions(
@@ -1860,13 +1668,7 @@ export class StrategyService
   }
 
   private isDualAccountRebalanceAction(action: ExecutorAction): boolean {
-    if (!action.metadata || typeof action.metadata !== 'object') {
-      return false;
-    }
-
-    const metadata = action.metadata as Record<string, unknown>;
-
-    return metadata.role === 'rebalance' || metadata.rebalance === true;
+    return this.getDualAccountPlanner().isRebalanceAction(action);
   }
 
   async buildDualAccountVolumeActions(
@@ -2390,49 +2192,14 @@ export class StrategyService
     takerBalances: DualAccountPairBalances,
     feeBufferRate: BigNumber,
   ): DualAccountResolvedAccounts {
-    const configured: DualAccountResolvedAccounts = {
-      makerAccountLabel: params.makerAccountLabel,
-      takerAccountLabel: params.takerAccountLabel,
-    };
-    const capacity1 = this.computeDualAccountCapacity(
-      makerBalances,
-      takerBalances,
+    return this.getDualAccountPlanner().resolveCycleAccountsFromBalances(
+      params,
       side,
       price,
-      feeBufferRate,
-    );
-    const capacity2 = this.computeDualAccountCapacity(
-      takerBalances,
-      makerBalances,
-      side,
-      price,
-      feeBufferRate,
-    );
-
-    if (params.dynamicRoleSwitching && capacity2.isGreaterThan(capacity1)) {
-      this.logger.log(
-        `Dynamic role switching: swapping maker=${params.makerAccountLabel}→${
-          params.takerAccountLabel
-        } taker=${params.takerAccountLabel}→${
-          params.makerAccountLabel
-        } for side=${side} (capacity configured=${capacity1.toFixed()} swapped=${capacity2.toFixed()})`,
-      );
-
-      return {
-        makerAccountLabel: params.takerAccountLabel,
-        takerAccountLabel: params.makerAccountLabel,
-        makerBalances: takerBalances,
-        takerBalances: makerBalances,
-        capacity: capacity2,
-      };
-    }
-
-    return {
-      ...configured,
       makerBalances,
       takerBalances,
-      capacity: capacity1,
-    };
+      feeBufferRate,
+    );
   }
 
   private computeDualAccountCapacity(
@@ -2448,28 +2215,13 @@ export class StrategyService
     price: BigNumber,
     feeBufferRate: BigNumber,
   ): BigNumber {
-    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
-      return new BigNumber(0);
-    }
-
-    const retainFactor = feeBufferRate.isFinite()
-      ? BigNumber.max(
-          new BigNumber(1).minus(
-            feeBufferRate.isGreaterThanOrEqualTo(0) ? feeBufferRate : 0,
-          ),
-          new BigNumber(0),
-        )
-      : new BigNumber(1);
-
-    return side === 'buy'
-      ? BigNumber.min(
-          makerBalances.quote.dividedBy(price).multipliedBy(retainFactor),
-          takerBalances.base,
-        )
-      : BigNumber.min(
-          makerBalances.base,
-          takerBalances.quote.dividedBy(price).multipliedBy(retainFactor),
-        );
+    return this.getDualAccountPlanner().computeCapacity(
+      makerBalances,
+      takerBalances,
+      side,
+      price,
+      feeBufferRate,
+    );
   }
 
   private buildDualAccountCapacityDiagnostics(
@@ -2481,58 +2233,15 @@ export class StrategyService
     selectedSide: 'buy' | 'sell',
     effectiveQty: BigNumber,
   ): DualAccountCapacityDiagnostics {
-    const buyResolved = this.resolveDualAccountCycleAccountsFromBalances(
+    return this.getDualAccountPlanner().buildCapacityDiagnostics(
       params,
-      'buy',
       price,
-      snapshot.makerBalances,
-      snapshot.takerBalances,
       feeBufferRate,
+      snapshot,
+      preferredSide,
+      selectedSide,
+      effectiveQty,
     );
-    const sellResolved = this.resolveDualAccountCycleAccountsFromBalances(
-      params,
-      'sell',
-      price,
-      snapshot.makerBalances,
-      snapshot.takerBalances,
-      feeBufferRate,
-    );
-    const buyCapacity = buyResolved.capacity || new BigNumber(0);
-    const sellCapacity = sellResolved.capacity || new BigNumber(0);
-    const preferredSideCapacity =
-      preferredSide === 'buy' ? buyCapacity : sellCapacity;
-    const selectedSideCapacity =
-      selectedSide === 'buy' ? buyCapacity : sellCapacity;
-    const capacityUtilization = selectedSideCapacity.isGreaterThan(0)
-      ? effectiveQty.dividedBy(selectedSideCapacity)
-      : new BigNumber(0);
-    const smallerCapacity = BigNumber.min(buyCapacity, sellCapacity);
-    const largerCapacity = BigNumber.max(buyCapacity, sellCapacity);
-    const imbalanceRatio = smallerCapacity.isGreaterThan(0)
-      ? largerCapacity.dividedBy(smallerCapacity)
-      : new BigNumber(Infinity);
-
-    return {
-      buyCapacity,
-      sellCapacity,
-      preferredSideCapacity,
-      selectedSideCapacity,
-      capacityUtilization,
-      capacityLimited: selectedSideCapacity.isGreaterThan(0)
-        ? effectiveQty.isGreaterThanOrEqualTo(selectedSideCapacity)
-        : false,
-      capacityLimiter: this.resolveDualAccountCapacityLimiter(
-        selectedSide === 'buy' ? buyResolved : sellResolved,
-        selectedSide,
-        price,
-        feeBufferRate,
-      ),
-      rebalanceNeeded:
-        buyCapacity.isLessThanOrEqualTo(0) ||
-        sellCapacity.isLessThanOrEqualTo(0) ||
-        preferredSideCapacity.isLessThanOrEqualTo(0) ||
-        imbalanceRatio.isGreaterThanOrEqualTo(2),
-    };
   }
 
   private resolveDualAccountCapacityLimiter(
@@ -2547,53 +2256,12 @@ export class StrategyService
     | 'taker_quote'
     | 'balanced'
     | 'unknown' {
-    if (
-      !resolvedAccounts.makerBalances ||
-      !resolvedAccounts.takerBalances ||
-      !price.isFinite() ||
-      price.isLessThanOrEqualTo(0)
-    ) {
-      return 'unknown';
-    }
-
-    const retainFactor = feeBufferRate.isFinite()
-      ? BigNumber.max(
-          new BigNumber(1).minus(
-            feeBufferRate.isGreaterThanOrEqualTo(0) ? feeBufferRate : 0,
-          ),
-          new BigNumber(0),
-        )
-      : new BigNumber(1);
-
-    if (side === 'buy') {
-      const makerQuoteCapacity = resolvedAccounts.makerBalances.quote
-        .dividedBy(price)
-        .multipliedBy(retainFactor);
-      const takerBaseCapacity = resolvedAccounts.takerBalances.base;
-
-      if (makerQuoteCapacity.isLessThan(takerBaseCapacity)) {
-        return 'maker_quote';
-      }
-      if (takerBaseCapacity.isLessThan(makerQuoteCapacity)) {
-        return 'taker_base';
-      }
-
-      return 'balanced';
-    }
-
-    const makerBaseCapacity = resolvedAccounts.makerBalances.base;
-    const takerQuoteCapacity = resolvedAccounts.takerBalances.quote
-      .dividedBy(price)
-      .multipliedBy(retainFactor);
-
-    if (makerBaseCapacity.isLessThan(takerQuoteCapacity)) {
-      return 'maker_base';
-    }
-    if (takerQuoteCapacity.isLessThan(makerBaseCapacity)) {
-      return 'taker_quote';
-    }
-
-    return 'balanced';
+    return this.getDualAccountPlanner().resolveCapacityLimiter(
+      resolvedAccounts,
+      side,
+      price,
+      feeBufferRate,
+    );
   }
 
   private async resolveDualAccountExecutionPlan(
@@ -2667,211 +2335,22 @@ export class StrategyService
     feeBufferRate: BigNumber,
     snapshot: DualAccountBalanceSnapshot,
   ): DualAccountBestCapacityCandidate[] {
-    const retainFactor = feeBufferRate.isFinite()
-      ? BigNumber.max(
-          new BigNumber(1).minus(
-            feeBufferRate.isGreaterThanOrEqualTo(0) ? feeBufferRate : 0,
-          ),
-          new BigNumber(0),
-        )
-      : new BigNumber(1);
-    const candidates: Omit<
-      DualAccountBestCapacityCandidate,
-      'candidateRank'
-    >[] = (
-      [
-        {
-          side: 'buy' as const,
-          makerAccountLabel: params.makerAccountLabel,
-          takerAccountLabel: params.takerAccountLabel,
-          makerBalances: snapshot.makerBalances,
-          takerBalances: snapshot.takerBalances,
-          capacity: BigNumber.min(
-            snapshot.makerBalances.quote
-              .dividedBy(price)
-              .multipliedBy(retainFactor),
-            snapshot.takerBalances.base,
-          ),
-          futureOppositeCapacity: BigNumber.min(
-            snapshot.makerBalances.base,
-            snapshot.takerBalances.quote
-              .dividedBy(price)
-              .multipliedBy(retainFactor),
-          ),
-          imbalanceRatio: this.computeDualAccountImbalanceRatio(
-            BigNumber.min(
-              snapshot.makerBalances.quote
-                .dividedBy(price)
-                .multipliedBy(retainFactor),
-              snapshot.takerBalances.base,
-            ),
-            BigNumber.min(
-              snapshot.makerBalances.base,
-              snapshot.takerBalances.quote
-                .dividedBy(price)
-                .multipliedBy(retainFactor),
-            ),
-          ),
-          roleAssignment: 'configured' as const,
-        },
-        {
-          side: 'buy' as const,
-          makerAccountLabel: params.takerAccountLabel,
-          takerAccountLabel: params.makerAccountLabel,
-          makerBalances: snapshot.takerBalances,
-          takerBalances: snapshot.makerBalances,
-          capacity: BigNumber.min(
-            snapshot.takerBalances.quote
-              .dividedBy(price)
-              .multipliedBy(retainFactor),
-            snapshot.makerBalances.base,
-          ),
-          futureOppositeCapacity: BigNumber.min(
-            snapshot.takerBalances.base,
-            snapshot.makerBalances.quote
-              .dividedBy(price)
-              .multipliedBy(retainFactor),
-          ),
-          imbalanceRatio: this.computeDualAccountImbalanceRatio(
-            BigNumber.min(
-              snapshot.takerBalances.quote
-                .dividedBy(price)
-                .multipliedBy(retainFactor),
-              snapshot.makerBalances.base,
-            ),
-            BigNumber.min(
-              snapshot.takerBalances.base,
-              snapshot.makerBalances.quote
-                .dividedBy(price)
-                .multipliedBy(retainFactor),
-            ),
-          ),
-          roleAssignment: 'swapped' as const,
-        },
-        {
-          side: 'sell' as const,
-          makerAccountLabel: params.makerAccountLabel,
-          takerAccountLabel: params.takerAccountLabel,
-          makerBalances: snapshot.makerBalances,
-          takerBalances: snapshot.takerBalances,
-          capacity: BigNumber.min(
-            snapshot.makerBalances.base,
-            snapshot.takerBalances.quote
-              .dividedBy(price)
-              .multipliedBy(retainFactor),
-          ),
-          futureOppositeCapacity: BigNumber.min(
-            snapshot.makerBalances.quote
-              .dividedBy(price)
-              .multipliedBy(retainFactor),
-            snapshot.takerBalances.base,
-          ),
-          imbalanceRatio: this.computeDualAccountImbalanceRatio(
-            BigNumber.min(
-              snapshot.makerBalances.base,
-              snapshot.takerBalances.quote
-                .dividedBy(price)
-                .multipliedBy(retainFactor),
-            ),
-            BigNumber.min(
-              snapshot.makerBalances.quote
-                .dividedBy(price)
-                .multipliedBy(retainFactor),
-              snapshot.takerBalances.base,
-            ),
-          ),
-          roleAssignment: 'configured' as const,
-        },
-        {
-          side: 'sell' as const,
-          makerAccountLabel: params.takerAccountLabel,
-          takerAccountLabel: params.makerAccountLabel,
-          makerBalances: snapshot.takerBalances,
-          takerBalances: snapshot.makerBalances,
-          capacity: BigNumber.min(
-            snapshot.takerBalances.base,
-            snapshot.makerBalances.quote
-              .dividedBy(price)
-              .multipliedBy(retainFactor),
-          ),
-          futureOppositeCapacity: BigNumber.min(
-            snapshot.takerBalances.quote
-              .dividedBy(price)
-              .multipliedBy(retainFactor),
-            snapshot.makerBalances.base,
-          ),
-          imbalanceRatio: this.computeDualAccountImbalanceRatio(
-            BigNumber.min(
-              snapshot.takerBalances.base,
-              snapshot.makerBalances.quote
-                .dividedBy(price)
-                .multipliedBy(retainFactor),
-            ),
-            BigNumber.min(
-              snapshot.takerBalances.quote
-                .dividedBy(price)
-                .multipliedBy(retainFactor),
-              snapshot.makerBalances.base,
-            ),
-          ),
-          roleAssignment: 'swapped' as const,
-        },
-      ] as const
-    ).filter(
-      (candidate) =>
-        candidate.capacity.isFinite() && candidate.capacity.isGreaterThan(0),
+    return this.getDualAccountPlanner().buildBestCapacityCandidates(
+      params,
+      price,
+      feeBufferRate,
+      snapshot,
     );
-
-    candidates.sort((left, right) => {
-      const scoreComparison = this.scoreDualAccountBestCapacityCandidate(
-        params,
-        right,
-        price,
-      ).comparedTo(
-        this.scoreDualAccountBestCapacityCandidate(params, left, price),
-      );
-
-      if (scoreComparison !== 0) {
-        return scoreComparison;
-      }
-
-      const capacityComparison = right.capacity.comparedTo(left.capacity);
-
-      if (capacityComparison !== 0) {
-        return capacityComparison;
-      }
-
-      if (left.roleAssignment !== right.roleAssignment) {
-        return left.roleAssignment === 'configured' ? -1 : 1;
-      }
-
-      if (left.side !== right.side) {
-        return left.side === 'buy' ? -1 : 1;
-      }
-
-      return 0;
-    });
-
-    return candidates.map((candidate, index) => ({
-      ...candidate,
-      candidateRank: index + 1,
-    }));
   }
 
   private computeDualAccountImbalanceRatio(
     primaryCapacity: BigNumber,
     oppositeCapacity: BigNumber,
   ): BigNumber {
-    const smallerCapacity = BigNumber.min(primaryCapacity, oppositeCapacity);
-    const largerCapacity = BigNumber.max(primaryCapacity, oppositeCapacity);
-
-    if (smallerCapacity.isLessThanOrEqualTo(0)) {
-      return largerCapacity.isGreaterThan(0)
-        ? new BigNumber(Number.MAX_SAFE_INTEGER)
-        : new BigNumber(1);
-    }
-
-    return largerCapacity.dividedBy(smallerCapacity);
+    return this.getDualAccountPlanner().computeImbalanceRatio(
+      primaryCapacity,
+      oppositeCapacity,
+    );
   }
 
   private scoreDualAccountBestCapacityCandidate(
@@ -2885,24 +2364,11 @@ export class StrategyService
     >,
     price: BigNumber,
   ): BigNumber {
-    const candidateQuoteCapacity = candidate.capacity.multipliedBy(price);
-    const targetQuoteVolume = new BigNumber(params.targetQuoteVolume || 0);
-    const matchedQuoteVolume = new BigNumber(
-      params.totalMatchedQuoteVolume || 0,
+    return this.getDualAccountPlanner().scoreBestCapacityCandidate(
+      params,
+      candidate,
+      price,
     );
-    const remainingTargetQuote = targetQuoteVolume.isGreaterThan(0)
-      ? BigNumber.maximum(targetQuoteVolume.minus(matchedQuoteVolume), 0)
-      : candidateQuoteCapacity;
-    const targetProgressScore = BigNumber.min(
-      candidateQuoteCapacity,
-      remainingTargetQuote,
-    );
-
-    return candidate.capacity
-      .multipliedBy(1000)
-      .plus(candidate.futureOppositeCapacity.multipliedBy(100))
-      .plus(targetProgressScore.multipliedBy(10))
-      .minus(candidate.imbalanceRatio.multipliedBy(10));
   }
 
   private async resolveBestExecutableDualAccountCandidate(
@@ -3214,7 +2680,7 @@ export class StrategyService
       return null;
     }
 
-    const adjustedQuote = await this.quantizeAndValidateQuote(
+    const adjustedQuote = await this.getQuotePlanner().quantizeAndValidateQuote(
       `${strategyKey}:rebalance`,
       params.exchangeName,
       params.symbol,
@@ -3383,14 +2849,9 @@ export class StrategyService
   private cloneDualAccountPairBalances(
     balances: DualAccountPairBalances,
   ): DualAccountPairBalances {
-    return {
-      base: new BigNumber(balances.base),
-      quote: new BigNumber(balances.quote),
-      assets: {
-        ...balances.assets,
-      },
-    };
+    return this.getDualAccountPlanner().clonePairBalances(balances);
   }
+
   private async evaluateDualAccountExecutionForSide(
     strategyKey: string,
     params: DualAccountVolumeStrategyParams,
@@ -3727,34 +3188,10 @@ export class StrategyService
     exchangeName: string,
     pair: string,
   ): Promise<BigNumber> {
-    if (!this.exchangeConnectorAdapterService) {
-      return new BigNumber(0);
-    }
-
-    try {
-      const rules = await this.exchangeConnectorAdapterService.loadTradingRules(
-        exchangeName,
-        pair,
-      );
-      const makerFee = new BigNumber(rules.makerFee || 0);
-      const takerFee = new BigNumber(rules.takerFee || 0);
-
-      const totalFeeRate = makerFee.plus(takerFee);
-
-      if (!totalFeeRate.isFinite() || totalFeeRate.isLessThanOrEqualTo(0)) {
-        return new BigNumber(0);
-      }
-
-      return totalFeeRate;
-    } catch (error) {
-      this.logger.warn(
-        `Failed to load dual-account fee buffer for ${exchangeName} ${pair}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-
-      return new BigNumber(0);
-    }
+    return await this.getDualAccountPlanner().resolveFeeBufferRate(
+      exchangeName,
+      pair,
+    );
   }
 
   private findDualAccountCandidateCapacity(
@@ -3762,49 +3199,18 @@ export class StrategyService
     side: 'buy' | 'sell',
     roleAssignment: 'configured' | 'swapped',
   ): BigNumber | undefined {
-    return candidates.find(
-      (candidate) =>
-        candidate.side === side && candidate.roleAssignment === roleAssignment,
-    )?.capacity;
+    return this.getDualAccountPlanner().findCandidateCapacity(
+      candidates,
+      side,
+      roleAssignment,
+    );
   }
 
   private async loadDualAccountBalanceSnapshot(
     params: DualAccountVolumeStrategyParams,
     context: 'execution' | 'rebalance',
   ): Promise<DualAccountBalanceSnapshot | null> {
-    try {
-      const [makerBalances, takerBalances] = await Promise.all([
-        this.getAvailableBalancesForPair(
-          params.exchangeName,
-          params.symbol,
-          params.makerAccountLabel,
-        ),
-        this.getAvailableBalancesForPair(
-          params.exchangeName,
-          params.symbol,
-          params.takerAccountLabel,
-        ),
-      ]);
-
-      if (!makerBalances || !takerBalances) {
-        return null;
-      }
-
-      return {
-        makerBalances,
-        takerBalances,
-      };
-    } catch (error) {
-      this.logger.warn(
-        `Failed to load dual-account ${context} balances for ${
-          params.exchangeName
-        } ${params.symbol}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-
-      return null;
-    }
+    return await this.getDualAccountPlanner().loadBalanceSnapshot(params, context);
   }
 
   private async resolveDualAccountPreferredSide(
@@ -3812,81 +3218,21 @@ export class StrategyService
     publishedCycles: number,
     makerBalances?: DualAccountPairBalances,
   ): Promise<'buy' | 'sell'> {
-    if (params.postOnlySide !== 'inventory_balance') {
-      return this.resolveVolumeSide(
-        params.postOnlySide,
-        publishedCycles,
-        params.buyBias,
-      );
-    }
-
-    const resolvedMakerBalances =
-      makerBalances ||
-      (await this.getAvailableBalancesForPair(
-        params.exchangeName,
-        params.symbol,
-        params.makerAccountLabel,
-      ));
-
-    if (!resolvedMakerBalances) {
-      return this.resolveVolumeSide(undefined, publishedCycles, params.buyBias);
-    }
-
-    const quoteValue = resolvedMakerBalances.quote;
-    const baseValue = resolvedMakerBalances.base.multipliedBy(
-      await this.resolveInventoryReferencePrice(
-        params.exchangeName,
-        params.symbol,
-      ),
+    return await this.getDualAccountPlanner().resolvePreferredSide(
+      params,
+      publishedCycles,
+      makerBalances,
     );
-    const totalValue = quoteValue.plus(baseValue);
-
-    if (!totalValue.isFinite() || totalValue.isLessThanOrEqualTo(0)) {
-      return this.resolveVolumeSide(undefined, publishedCycles, params.buyBias);
-    }
-
-    const imbalance = quoteValue.minus(baseValue).dividedBy(totalValue);
-
-    if (imbalance.isGreaterThan(0.05)) {
-      return 'buy';
-    }
-
-    if (imbalance.isLessThan(-0.05)) {
-      return 'sell';
-    }
-
-    return this.resolveVolumeSide(undefined, publishedCycles, params.buyBias);
   }
 
   private async resolveInventoryReferencePrice(
     exchangeName: string,
     pair: string,
   ): Promise<BigNumber> {
-    const trackedBestBidAsk =
-      this.strategyMarketDataProviderService?.getTrackedBestBidAsk(
-        exchangeName,
-        pair,
-      );
-
-    if (trackedBestBidAsk?.bestBid && trackedBestBidAsk?.bestAsk) {
-      return new BigNumber(trackedBestBidAsk.bestBid)
-        .plus(trackedBestBidAsk.bestAsk)
-        .dividedBy(2);
-    }
-
-    const bestBidAsk =
-      await this.strategyMarketDataProviderService?.getBestBidAsk(
-        exchangeName,
-        pair,
-      );
-
-    if (bestBidAsk?.bestBid && bestBidAsk?.bestAsk) {
-      return new BigNumber(bestBidAsk.bestBid)
-        .plus(bestBidAsk.bestAsk)
-        .dividedBy(2);
-    }
-
-    return new BigNumber(1);
+    return await this.getDualAccountPlanner().resolveInventoryReferencePrice(
+      exchangeName,
+      pair,
+    );
   }
 
   private normalizeDualAccountMakerPrice(
@@ -3899,59 +3245,16 @@ export class StrategyService
     bestBid: BigNumber,
     bestAsk: BigNumber,
   ): BigNumber | null {
-    if (
-      this.isDualAccountMakerPriceValid(side, candidatePrice, bestBid, bestAsk)
-    ) {
-      return candidatePrice;
-    }
-
-    const boundaryPrice = side === 'buy' ? bestBid : bestAsk;
-    let adjustedPrice = boundaryPrice;
-
-    if (this.exchangeConnectorAdapterService) {
-      const quantized = this.exchangeConnectorAdapterService.quantizeOrder(
-        params.exchangeName,
-        params.symbol,
-        qty.toFixed(),
-        boundaryPrice.toFixed(),
-        accountLabel,
-      );
-
-      adjustedPrice = new BigNumber(quantized.price);
-    }
-
-    if (
-      this.isDualAccountMakerPriceValid(side, adjustedPrice, bestBid, bestAsk)
-    ) {
-      this.logger.log(
-        [
-          'Adjusted dual-account maker price',
-          `strategy=${strategyKey}`,
-          `side=${side}`,
-          `original=${candidatePrice.toFixed()}`,
-          `adjusted=${adjustedPrice.toFixed()}`,
-          `bestBid=${bestBid.toFixed()}`,
-          `bestAsk=${bestAsk.toFixed()}`,
-          'reason=quantized_outside_top_of_book',
-        ].join(' | '),
-      );
-
-      return adjustedPrice;
-    }
-
-    this.logger.warn(
-      [
-        'Skipping dual-account volume cycle after invalid maker price quantization',
-        `strategy=${strategyKey}`,
-        `side=${side}`,
-        `candidate=${candidatePrice.toFixed()}`,
-        `adjusted=${adjustedPrice.toFixed()}`,
-        `bestBid=${bestBid.toFixed()}`,
-        `bestAsk=${bestAsk.toFixed()}`,
-      ].join(' | '),
+    return this.getDualAccountPlanner().normalizeMakerPrice(
+      strategyKey,
+      params,
+      side,
+      qty,
+      candidatePrice,
+      accountLabel,
+      bestBid,
+      bestAsk,
     );
-
-    return null;
   }
 
   private isDualAccountMakerPriceValid(
@@ -3960,13 +3263,12 @@ export class StrategyService
     bestBid: BigNumber,
     bestAsk: BigNumber,
   ): boolean {
-    if (!price.isFinite() || price.isLessThanOrEqualTo(0)) {
-      return false;
-    }
-
-    return side === 'buy'
-      ? price.isGreaterThanOrEqualTo(bestBid) && price.isLessThan(bestAsk)
-      : price.isGreaterThan(bestBid) && price.isLessThanOrEqualTo(bestAsk);
+    return this.getDualAccountPlanner().isMakerPriceValid(
+      side,
+      price,
+      bestBid,
+      bestAsk,
+    );
   }
 
   async buildPureMarketMakingActions(
@@ -3974,751 +3276,34 @@ export class StrategyService
     params: PureMarketMakingStrategyDto,
     ts: string,
   ): Promise<ExecutorAction[]> {
-    const actions: ExecutorAction[] = [];
-    const cancelledExchangeOrderIds = new Set<string>();
-    const priceExchange = params.oracleExchangeName
-      ? params.oracleExchangeName
-      : params.exchangeName;
-
-    if (await this.shouldTriggerKillSwitch(strategyKey, params)) {
-      return [];
-    }
-
-    if (this.getConnectorHealthStatus(params.exchangeName) !== 'CONNECTED') {
-      return [];
-    }
-
-    if (this.runtimeObservationService) {
-      const pressure = this.runtimeObservationService.getPressure(
-        strategyKey,
-        Number(params.runtimeObservationWindowMs || 60000),
-      );
-      const maxConsecutiveRejects = Number(params.maxConsecutiveRejects || 100);
-
-      if (
-        Number.isFinite(maxConsecutiveRejects) &&
-        maxConsecutiveRejects > 0 &&
-        pressure.rejectCount >= maxConsecutiveRejects
-      ) {
-        this.logger.warn(
-          `Kill switch triggered for ${strategyKey}: ${pressure.rejectCount} recent intent failures within observation window (threshold ${maxConsecutiveRejects})`,
-        );
-        const session = this.sessions.get(strategyKey);
-        if (session) {
-          await this.stopStrategyForUser(
-            session.userId,
-            session.clientId,
-            session.strategyType,
-          );
-        }
-
-        return [];
-      }
-    }
-    let priceSource: BigNumber;
-
-    try {
-      priceSource = new BigNumber(
-        await this.getPriceSource(
-          priceExchange,
-          params.pair,
-          params.priceSourceType,
-        ),
-      );
-      this.setConnectorHealthStatus(params.exchangeName, 'CONNECTED');
-    } catch (error) {
-      this.setConnectorHealthStatus(params.exchangeName, 'DISCONNECTED');
-      this.logger.warn(
-        `Skipping cycle for ${strategyKey}: cannot resolve price source for ${params.exchangeName} ${params.pair} (${error.message})`,
-      );
-
-      return actions;
-    }
-
-    if (!priceSource.isFinite() || priceSource.isLessThanOrEqualTo(0)) {
-      this.logger.warn(
-        `Skipping cycle for ${strategyKey}: invalid price source ${priceSource.toFixed()} for ${
-          params.exchangeName
-        } ${params.pair}`,
-      );
-
-      return actions;
-    }
-
-    const activeOrders =
-      this.exchangeOrderTrackerService?.getActiveSlotOrders?.(strategyKey) ||
-      this.exchangeOrderTrackerService?.getOpenOrders?.(strategyKey) ||
-      [];
-    const liveOrders =
-      this.exchangeOrderTrackerService?.getLiveOrders?.(strategyKey) ||
-      activeOrders.filter(
-        (order) =>
-          order.status === 'open' || order.status === 'partially_filled',
-      );
-
-    if (this.strategyMarketDataProviderService) {
-      const maxAgeMs = 30000;
-      const freshness =
-        this.strategyMarketDataProviderService.getTrackedOrderBookFreshness(
-          params.exchangeName,
-          params.pair,
-          maxAgeMs,
-        );
-
-      if (!freshness.fresh) {
-        this.appendAdaptivePmmSafetyCancels(
-          actions,
-          cancelledExchangeOrderIds,
-          strategyKey,
-          params,
-          ts,
-          liveOrders,
-        );
-        this.logger.warn(
-          `Skipping creates for ${strategyKey}: stale market data for ${params.exchangeName} ${params.pair}; emitted ${actions.length} cancel action(s)`,
-        );
-
-        return actions;
-      }
-    }
-    const session = this.sessions.get(strategyKey);
-    const filledOrderDelay = Number(params.filledOrderDelay || 0);
-
-    if (
-      session &&
-      Number.isFinite(filledOrderDelay) &&
-      filledOrderDelay > 0 &&
-      typeof session.lastFillTimestamp === 'number' &&
-      Date.now() - session.lastFillTimestamp < filledOrderDelay
-    ) {
-      return [];
-    }
-
-    let realizedVolatility: number | null = null;
-    let orderBookImbalance: number | null = null;
-    let signalSnapshot: AdaptivePmmSignalSnapshot | null = null;
-
-    this.pmmMarkoutEvaluatorService?.evaluateDue();
-    const toxicityState =
-      this.pmmMarkoutEvaluatorService?.getToxicity(strategyKey) || null;
-    const runtimePressure = this.resolveAdaptivePmmRuntimePressure(
-      strategyKey,
-      params,
-    );
-    const currentBaseRatio = await this.resolveOrderScopedInventoryRatio(
-      params,
-      priceSource,
-    );
-
-    const shouldReadAdaptiveSignals = this.shouldReadAdaptivePmmSignals(params);
-    const minSamples = Math.max(
-      2,
-      Math.floor(Number(params.volatilitySampleMinCount || 3)),
-    );
-
-    if (
-      shouldReadAdaptiveSignals &&
-      this.strategyMarketDataProviderService?.getAdaptivePmmSignalSnapshot
-    ) {
-      const sigmaWindowMs = Number(params.sigmaWindowMs || 60_000);
-      const imbalanceDepthLevels = Math.max(
-        1,
-        Math.floor(Number(params.imbalanceDepthLevels || 1)),
-      );
-      const nextSignalSnapshot =
-        this.strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot(
-          priceExchange,
-          params.pair,
-          {
-            priceSourceType: params.priceSourceType,
-            sigmaWindowMs,
-            staleSoftMs: Number(params.staleSoftMs || 2000),
-            staleHardMs: Number(params.staleHardMs || 10_000),
-            imbalanceDepthLevels,
-            imbalanceMinDepthNotional: Number(
-              params.imbalanceMinDepthNotional || 0,
-            ),
-            imbalanceSmoothingMs: Number(params.imbalanceSmoothingMs || 0),
-            marketCrashWindowMs: Number(
-              params.marketCrashWindowMs || sigmaWindowMs,
-            ),
-            marketCrashBps:
-              params.marketCrashBps === undefined
-                ? undefined
-                : Number(params.marketCrashBps),
-          },
-        );
-
-      signalSnapshot = nextSignalSnapshot;
-
-      if (
-        nextSignalSnapshot.midPriceHistory.length >= minSamples &&
-        typeof nextSignalSnapshot.realizedVolatility === 'number' &&
-        Number.isFinite(nextSignalSnapshot.realizedVolatility)
-      ) {
-        realizedVolatility = nextSignalSnapshot.realizedVolatility;
-      }
-
-      if (
-        typeof nextSignalSnapshot.imbalance === 'number' &&
-        Number.isFinite(nextSignalSnapshot.imbalance)
-      ) {
-        orderBookImbalance = nextSignalSnapshot.imbalance;
-      }
-    }
-
-    if (
-      signalSnapshot &&
-      this.shouldBlockAdaptivePmmForMarketSafety(signalSnapshot)
-    ) {
-      this.appendAdaptivePmmSafetyCancels(
-        actions,
-        cancelledExchangeOrderIds,
-        strategyKey,
-        params,
-        ts,
-        liveOrders,
-      );
-      this.logAdaptivePmmDecisionSnapshot(strategyKey, {
-        params,
-        reason: 'market_safety_block',
-        signalSnapshot,
-        toxicityState,
-        actions: actions.length,
-        layers: 0,
-      });
-
-      return actions;
-    }
-
-    if (this.isAdaptivePmmReservationPaused(params)) {
-      this.appendAdaptivePmmSafetyCancels(
-        actions,
-        cancelledExchangeOrderIds,
-        strategyKey,
-        params,
-        ts,
-        liveOrders,
-      );
-      this.logAdaptivePmmDecisionSnapshot(strategyKey, {
-        params,
-        reason: 'reservation_paused',
-        signalSnapshot,
-        toxicityState,
-        actions: actions.length,
-        layers: 0,
-      });
-
-      return actions;
-    }
-
-    this.updateAdaptivePmmCadence(strategyKey, params, realizedVolatility);
-    this.applyAdaptivePmmRuntimePressureCadence(
-      strategyKey,
-      params,
-      runtimePressure,
-    );
-    const warmupState = this.resolveAdaptivePmmWarmupState(
-      strategyKey,
-      params,
-      signalSnapshot,
-      minSamples,
-    );
-    const runtimePressureWiden = this.resolveAdaptivePmmRuntimePressureWiden(
-      params,
-      runtimePressure,
-    );
-    const sideRecoveryState = this.resolveAdaptivePmmSideRecoveryState(
-      params,
-      toxicityState,
-    );
-
-    const liveOrdersBySide = {
-      buy: liveOrders.filter((order) => order.side === 'buy').length,
-      sell: liveOrders.filter((order) => order.side === 'sell').length,
-    };
-    const availableBalances = await this.getAvailableBalancesForPair(
-      params.exchangeName,
-      params.pair,
-      params.accountLabel,
-      params.marketMakingOrderId,
-    );
-    const marketDataSoftStale =
-      signalSnapshot?.freshness.status === 'soft_stale';
-    const softStaleSpreadWiden = marketDataSoftStale
-      ? Math.max(Number(params.bidSpread || 0), Number(params.askSpread || 0))
-      : 0;
-    const effectiveNumberOfLayers =
-      warmupState.active || marketDataSoftStale
-        ? 1
-        : await this.resolveAdaptivePmmLayerCountFromBudget(
-            params,
-            priceSource,
-            availableBalances,
-          );
-    const staleCancellationActions = this.buildStaleOrderActions(
+    return await this.getPureMarketMakingStrategyController().buildPureMarketMakingActions(
       strategyKey,
       params,
       ts,
-      priceSource,
-      liveOrders,
+      {
+        getSession: (key) => this.sessions.get(key),
+        setSession: (key, session) => this.sessions.set(key, session),
+        getConnectorHealthStatus: (exchange) =>
+          this.getConnectorHealthStatus(exchange),
+        setConnectorHealthStatus: (exchange, status) =>
+          this.setConnectorHealthStatus(exchange, status),
+        stopStrategyForUser: (userId, clientId, strategyType) =>
+          this.stopStrategyForUser(userId, clientId, strategyType),
+        logger: this.logger,
+      },
     );
-
-    const cancelBudgetPerSec = Number(params.cancelBudgetPerSec || 0);
-
-    for (const action of staleCancellationActions) {
-      this.appendCancelAction(
-        actions,
-        cancelledExchangeOrderIds,
-        action,
-        strategyKey,
-        ts,
-        cancelBudgetPerSec,
-      );
-    }
-
-    const quotes = this.quoteExecutorManagerService
-      ? this.quoteExecutorManagerService.buildQuotes({
-          midPrice: priceSource.toFixed(),
-          numberOfLayers: effectiveNumberOfLayers,
-          bidSpread:
-            warmupState.bidSpread + runtimePressureWiden + softStaleSpreadWiden,
-          askSpread:
-            warmupState.askSpread + runtimePressureWiden + softStaleSpreadWiden,
-          orderAmount: warmupState.orderAmount,
-          amountChangePerLayer: params.amountChangePerLayer,
-          amountChangeType: params.amountChangeType,
-          inventorySkewFactor: Number(params.inventorySkewFactor || 0),
-          inventoryTargetBaseRatio: Number(
-            params.inventoryTargetBaseRatio || 0.5,
-          ),
-          currentBaseRatio,
-          makerHeavyMode: Boolean(params.makerHeavyMode),
-          makerHeavyBiasBps: Number(params.makerHeavyBiasBps || 0),
-          volBasedSpread: warmupState.active
-            ? false
-            : Boolean(params.volBasedSpread),
-          realizedVolatility: warmupState.active ? null : realizedVolatility,
-          spreadSigmaMultiplier: Number(params.spreadSigmaMultiplier || 0),
-          maxAdaptiveSpread: Number(params.maxAdaptiveSpread || 0),
-          orderBookImbalance: warmupState.active ? null : orderBookImbalance,
-          imbalanceSkewFactor: warmupState.active
-            ? 0
-            : Number(params.imbalanceSkewFactor || 0),
-          inventorySeverePivot: Number(params.inventorySeverePivot || 0),
-          inventoryPauseSidePivot: Number(params.inventoryPauseSidePivot || 0),
-          adaptiveSizeEnabled: Boolean(params.adaptiveSizeEnabled),
-          sizeVolScalingFactor: Number(params.sizeVolScalingFactor || 0),
-          sizeFloor: Number(params.sizeFloor || 0),
-          maxLayersInVol: Number(params.maxLayersInVol || 0),
-          buyToxicityScore: toxicityState?.buyScore || 0,
-          sellToxicityScore: toxicityState?.sellScore || 0,
-          toxicityWidenBps: Number(params.adverseMarkoutGuardBps || 0),
-          buyPaused: Boolean(toxicityState?.buyPausedUntilMs),
-          sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
-          buyRecoveryWidenBps: sideRecoveryState.buyWidenBps,
-          sellRecoveryWidenBps: sideRecoveryState.sellWidenBps,
-          buyRecoverySizeRatio: sideRecoveryState.buySizeRatio,
-          sellRecoverySizeRatio: sideRecoveryState.sellSizeRatio,
-        })
-      : this.buildLegacyQuotes(params, priceSource);
-
-    this.logger.log(
-      `[${strategyKey}] midPrice=${priceSource.toFixed()} bidSpread=${
-        warmupState.bidSpread
-      } pressureWiden=${runtimePressureWiden} askSpread=${
-        warmupState.askSpread
-      } layers=${effectiveNumberOfLayers} liveBuys=${
-        liveOrdersBySide.buy
-      } liveSells=${liveOrdersBySide.sell}`,
-    );
-    this.logAdaptivePmmDecisionSnapshot(strategyKey, {
-      params,
-      reason: 'quote_build',
-      signalSnapshot,
-      toxicityState,
-      actions: quotes.length,
-      layers: effectiveNumberOfLayers,
-      realizedVolatility,
-      orderBookImbalance,
-      buyPaused: Boolean(toxicityState?.buyPausedUntilMs),
-      sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
-      warmupActive: warmupState.active,
-      warmupReason: warmupState.reason,
-      softStale: marketDataSoftStale,
-      buyRecoveryActive: sideRecoveryState.buyActive,
-      sellRecoveryActive: sideRecoveryState.sellActive,
-      runtimePressure,
-      runtimePressureWiden,
-    });
-
-    if (quotes.length === 0) {
-      this.logger.warn(
-        `[${strategyKey}] reason=no_quotes_after_filters layers=${effectiveNumberOfLayers} buyPaused=${Boolean(
-          toxicityState?.buyPausedUntilMs,
-        )} sellPaused=${Boolean(toxicityState?.sellPausedUntilMs)}`,
-      );
-      this.logAdaptivePmmDecisionSnapshot(strategyKey, {
-        params,
-        reason: 'no_quotes_after_filters',
-        signalSnapshot,
-        toxicityState,
-        actions: 0,
-        layers: effectiveNumberOfLayers,
-        realizedVolatility,
-        orderBookImbalance,
-        buyPaused: Boolean(toxicityState?.buyPausedUntilMs),
-        sellPaused: Boolean(toxicityState?.sellPausedUntilMs),
-        warmupActive: warmupState.active,
-        warmupReason: warmupState.reason,
-        softStale: marketDataSoftStale,
-        buyRecoveryActive: sideRecoveryState.buyActive,
-        sellRecoveryActive: sideRecoveryState.sellActive,
-        runtimePressure,
-        runtimePressureWiden,
-      });
-    }
-
-    const minimumSpread = Number(params.minimumSpread || 0);
-    const targetActionBySlot = new Map<string, ExecutorAction>();
-
-    for (const quote of quotes) {
-      const slotKey = quote.slotKey || `layer-${quote.layer}-${quote.side}`;
-      const quotePrice = new BigNumber(quote.price);
-
-      if (
-        quote.side === 'buy' &&
-        params.ceilingPrice !== undefined &&
-        params.ceilingPrice > 0 &&
-        priceSource.isGreaterThan(params.ceilingPrice)
-      ) {
-        this.logger.log(
-          `[${strategyKey}] Skipped ${slotKey} buy: price ${priceSource.toFixed()} > ceilingPrice ${
-            params.ceilingPrice
-          }`,
-        );
-        continue;
-      }
-      if (
-        quote.side === 'sell' &&
-        params.floorPrice !== undefined &&
-        params.floorPrice > 0 &&
-        priceSource.isLessThan(params.floorPrice)
-      ) {
-        this.logger.log(
-          `[${strategyKey}] Skipped ${slotKey} sell: price ${priceSource.toFixed()} < floorPrice ${
-            params.floorPrice
-          }`,
-        );
-        continue;
-      }
-
-      const effectiveSpread = quotePrice
-        .minus(priceSource)
-        .abs()
-        .dividedBy(priceSource);
-      const effectiveMinimumSpread = Math.max(
-        minimumSpread,
-        this.estimateMakerFeeSpread(params.exchangeName, params.pair),
-      );
-
-      if (
-        Number.isFinite(effectiveMinimumSpread) &&
-        effectiveMinimumSpread > 0 &&
-        effectiveSpread.isLessThan(effectiveMinimumSpread)
-      ) {
-        this.logger.log(
-          `[${strategyKey}] Skipped ${slotKey} ${quote.qty}@${
-            quote.price
-          }: effective spread ${effectiveSpread.toFixed()} < effectiveMinimumSpread ${effectiveMinimumSpread}`,
-        );
-        continue;
-      }
-
-      const quantized = await this.quantizeAndValidateQuote(
-        strategyKey,
-        params.exchangeName,
-        params.pair,
-        params.accountLabel,
-        quote.side,
-        quote.layer,
-        slotKey,
-        new BigNumber(quote.qty),
-        quotePrice,
-        availableBalances,
-      );
-
-      if (!quantized) {
-        continue;
-      }
-
-      targetActionBySlot.set(slotKey, {
-        ...this.createIntent(
-          strategyKey,
-          strategyKey,
-          params.userId,
-          params.clientId,
-          params.exchangeName,
-          params.pair,
-          quote.side,
-          quantized.price,
-          quantized.qty,
-          ts,
-          `mm-${slotKey}`,
-          'clob_cex',
-          undefined,
-          true,
-          params.accountLabel,
-        ),
-        slotKey,
-      });
-    }
-
-    const unassignedActiveOrders = activeOrders.filter(
-      (order) => !order.slotKey,
-    );
-
-    for (const order of unassignedActiveOrders) {
-      this.appendCancelAction(
-        actions,
-        cancelledExchangeOrderIds,
-        this.buildCancelOrderAction(
-          strategyKey,
-          params,
-          order,
-          ts,
-          'unassigned',
-        ),
-        strategyKey,
-        ts,
-        cancelBudgetPerSec,
-      );
-    }
-
-    if (unassignedActiveOrders.length > 0) {
-      return actions;
-    }
-
-    const activeOrderBySlot = new Map<string, TrackedOrder>();
-
-    for (const order of activeOrders) {
-      if (!order.slotKey) {
-        continue;
-      }
-      if (activeOrderBySlot.has(order.slotKey)) {
-        this.logger.log(
-          `[${strategyKey}] reason=slot_occupied slotKey=${order.slotKey} exchangeOrderId=${order.exchangeOrderId}`,
-        );
-        continue;
-      }
-      activeOrderBySlot.set(order.slotKey, order);
-    }
-
-    const tolerance = new BigNumber(params.orderRefreshTolerancePct || 0);
-    const slotKeys = new Set<string>([
-      ...targetActionBySlot.keys(),
-      ...activeOrderBySlot.keys(),
-    ]);
-
-    for (const slotKey of slotKeys) {
-      const targetAction = targetActionBySlot.get(slotKey);
-      const currentOrder = activeOrderBySlot.get(slotKey);
-
-      if (!currentOrder && targetAction) {
-        if (this.isSlotWithinCancelCooldown(strategyKey, slotKey)) {
-          this.logger.log(
-            `[${strategyKey}] reason=cancel_cooldown slotKey=${slotKey}`,
-          );
-          continue;
-        }
-
-        actions.push(targetAction);
-        continue;
-      }
-
-      if (currentOrder && !targetAction) {
-        this.appendCancelAction(
-          actions,
-          cancelledExchangeOrderIds,
-          this.buildCancelOrderAction(
-            strategyKey,
-            params,
-            currentOrder,
-            ts,
-            slotKey,
-          ),
-          strategyKey,
-          ts,
-          cancelBudgetPerSec,
-        );
-        continue;
-      }
-
-      if (!currentOrder || !targetAction) {
-        continue;
-      }
-
-      if (
-        currentOrder.status === 'pending_create' ||
-        currentOrder.status === 'pending_cancel'
-      ) {
-        this.logger.log(
-          `[${strategyKey}] reason=waiting_cancel slotKey=${slotKey} status=${currentOrder.status}`,
-        );
-        continue;
-      }
-
-      if (this.isQuoteWithinTolerance(currentOrder, targetAction, tolerance)) {
-        this.logger.log(
-          `[${strategyKey}] reason=within_tolerance slotKey=${slotKey} exchangeOrderId=${currentOrder.exchangeOrderId}`,
-        );
-        continue;
-      }
-
-      this.appendCancelAction(
-        actions,
-        cancelledExchangeOrderIds,
-        this.buildCancelOrderAction(
-          strategyKey,
-          params,
-          currentOrder,
-          ts,
-          slotKey,
-        ),
-        strategyKey,
-        ts,
-        cancelBudgetPerSec,
-      );
-    }
-
-    return actions;
-  }
-
-  private buildLegacyQuotes(
-    params: PureMarketMakingStrategyDto,
-    priceSource: BigNumber,
-  ): Array<{
-    layer: number;
-    slotKey: string;
-    side: 'buy' | 'sell';
-    price: string;
-    qty: string;
-  }> {
-    const quotes: Array<{
-      layer: number;
-      slotKey: string;
-      side: 'buy' | 'sell';
-      price: string;
-      qty: string;
-    }> = [];
-
-    let currentOrderAmount = new BigNumber(params.orderAmount);
-
-    for (let layer = 1; layer <= params.numberOfLayers; layer++) {
-      if (layer > 1) {
-        if (params.amountChangeType === 'fixed') {
-          currentOrderAmount = currentOrderAmount.plus(
-            params.amountChangePerLayer,
-          );
-        } else {
-          currentOrderAmount = currentOrderAmount.plus(
-            currentOrderAmount.multipliedBy(
-              new BigNumber(params.amountChangePerLayer).dividedBy(100),
-            ),
-          );
-        }
-      }
-
-      const layerBidSpread = new BigNumber(params.bidSpread).multipliedBy(
-        layer,
-      );
-      const layerAskSpread = new BigNumber(params.askSpread).multipliedBy(
-        layer,
-      );
-      const buyPrice = priceSource.multipliedBy(
-        new BigNumber(1).minus(layerBidSpread),
-      );
-      const sellPrice = priceSource.multipliedBy(
-        new BigNumber(1).plus(layerAskSpread),
-      );
-
-      quotes.push({
-        layer,
-        slotKey: `layer-${layer}-buy`,
-        side: 'buy',
-        price: buyPrice.toFixed(),
-        qty: currentOrderAmount.toFixed(),
-      });
-      quotes.push({
-        layer,
-        slotKey: `layer-${layer}-sell`,
-        side: 'sell',
-        price: sellPrice.toFixed(),
-        qty: currentOrderAmount.toFixed(),
-      });
-    }
-
-    return quotes;
   }
 
   private async resolveOrderScopedInventoryRatio(
     params: PureMarketMakingStrategyDto,
     referencePrice: BigNumber,
   ): Promise<number> {
-    const configuredRatio = Number(params.currentBaseRatio || 0.5);
-
-    if (!params.marketMakingOrderId || !this.balanceLedgerService) {
-      return configuredRatio;
-    }
-
-    const [baseAssetId, quoteAssetId] = params.pair.split('/');
-
-    if (!baseAssetId || !quoteAssetId) {
-      return configuredRatio;
-    }
-
-    try {
-      const [baseBalance, quoteBalance] = await Promise.all([
-        this.balanceLedgerService.getExistingBalance(
-          params.marketMakingOrderId,
-          baseAssetId,
-        ),
-        this.balanceLedgerService.getExistingBalance(
-          params.marketMakingOrderId,
-          quoteAssetId,
-        ),
-      ]);
-      const baseTotal = new BigNumber(baseBalance?.total || 0);
-      const quoteTotal = new BigNumber(quoteBalance?.total || 0);
-
-      if (
-        !baseTotal.isFinite() ||
-        baseTotal.isLessThan(0) ||
-        !quoteTotal.isFinite() ||
-        quoteTotal.isLessThan(0) ||
-        !referencePrice.isFinite() ||
-        referencePrice.isLessThanOrEqualTo(0)
-      ) {
-        return configuredRatio;
-      }
-
-      const baseQuoteValue = baseTotal.multipliedBy(referencePrice);
-      const totalQuoteValue = baseQuoteValue.plus(quoteTotal);
-
-      if (totalQuoteValue.isLessThanOrEqualTo(0)) {
-        return configuredRatio;
-      }
-
-      return baseQuoteValue.dividedBy(totalQuoteValue).toNumber();
-    } catch (error) {
-      this.logger.warn(
-        `Falling back to configured PMM inventory ratio for ${
-          params.marketMakingOrderId
-        }: ${error instanceof Error ? error.message : String(error)}`,
-      );
-
-      return configuredRatio;
-    }
+    return (
+      (await this.orderScopedBalanceQueryService?.resolveInventoryRatio(
+        params,
+        referencePrice,
+      )) ?? Number(params.currentBaseRatio || 0.5)
+    );
   }
 
   private async resolveAdaptivePmmLayerCountFromBudget(
@@ -4730,78 +3315,17 @@ export class StrategyService
       assets: { base: string; quote: string };
     } | null,
   ): Promise<number> {
-    const configuredLayers = Math.max(
-      1,
-      Math.floor(Number(params.numberOfLayers || 1)),
-    );
-
-    if (!params.adaptiveSizeEnabled || configuredLayers <= 1) {
-      return configuredLayers;
-    }
-
-    const multiple = new BigNumber(params.layeringMinBudgetMultiple || 10);
-
-    if (
-      !multiple.isFinite() ||
-      multiple.isLessThanOrEqualTo(0) ||
-      !availableBalances ||
-      !referencePrice.isFinite() ||
-      referencePrice.isLessThanOrEqualTo(0)
-    ) {
-      return configuredLayers;
-    }
-
-    const minOrderNotional = await this.resolveMinOrderNotional(
-      params.exchangeName,
-      params.pair,
-      params.accountLabel,
+    return this.getAdaptivePmmState().resolveAdaptivePmmLayerCountFromBudget(
+      params,
       referencePrice,
+      availableBalances,
     );
-
-    if (minOrderNotional.isLessThanOrEqualTo(0)) {
-      return configuredLayers;
-    }
-
-    const perLayerBudget = minOrderNotional.multipliedBy(multiple);
-    const buyBudget = availableBalances.quote;
-    const sellBudget = availableBalances.base.multipliedBy(referencePrice);
-    const sideBudget = BigNumber.min(buyBudget, sellBudget);
-    const affordableLayers = BigNumber.max(
-      1,
-      BigNumber.min(
-        configuredLayers,
-        sideBudget
-          .dividedBy(perLayerBudget)
-          .integerValue(BigNumber.ROUND_FLOOR),
-      ),
-    );
-
-    if (
-      !affordableLayers.isFinite() ||
-      affordableLayers.isLessThanOrEqualTo(1)
-    ) {
-      return 1;
-    }
-
-    return affordableLayers.toNumber();
   }
 
   private shouldReadAdaptivePmmSignals(
     params: PureMarketMakingStrategyDto,
   ): boolean {
-    return (
-      Boolean(params.volBasedSpread) ||
-      Number(params.imbalanceSkewFactor || 0) > 0 ||
-      Boolean(params.adaptiveRefreshEnabled) ||
-      Boolean(params.adaptiveSizeEnabled) ||
-      Number(params.marketCrashBps || 0) > 0 ||
-      Number(params.marketCrashWindowMs || 0) > 0 ||
-      Number(params.warmupTicks || 0) > 0 ||
-      Number(params.warmupMs || 0) > 0 ||
-      Number(params.warmupSpread || 0) > 0 ||
-      Number(params.adverseMarkoutGuardBps || 0) > 0 ||
-      params.priceSourceType === PriceSourceType.MICROPRICE
-    );
+    return this.getAdaptivePmmState().shouldReadAdaptivePmmSignals(params);
   }
 
   private resolveAdaptivePmmWarmupState(
@@ -4816,108 +3340,33 @@ export class StrategyService
     askSpread: number;
     orderAmount: string;
   } {
-    const nowMs = Date.now();
-    const startedAt =
-      this.adaptivePmmWarmupStartedAtByStrategy.get(strategyKey) || nowMs;
-    const ticks =
-      (this.adaptivePmmWarmupTicksByStrategy.get(strategyKey) || 0) + 1;
-
-    this.adaptivePmmWarmupStartedAtByStrategy.set(strategyKey, startedAt);
-    this.adaptivePmmWarmupTicksByStrategy.set(strategyKey, ticks);
-
-    const warmupMs = Math.max(0, Number(params.warmupMs || 0));
-    const warmupTicks = Math.max(
-      0,
-      Math.floor(Number(params.warmupTicks || 0)),
+    return this.getAdaptivePmmState().resolveAdaptivePmmWarmupState(
+      strategyKey,
+      params,
+      signalSnapshot,
+      minSamples,
     );
-    const sampleCount = signalSnapshot?.midPriceHistory.length || 0;
-    let reason: string | null = null;
-
-    if (signalSnapshot && sampleCount > 0 && sampleCount < minSamples) {
-      reason = 'insufficient_signal_samples';
-    }
-    if (!reason && warmupMs > 0 && nowMs - startedAt < warmupMs) {
-      reason = 'warmup_ms';
-    }
-    if (!reason && warmupTicks > 0 && ticks <= warmupTicks) {
-      reason = 'warmup_ticks';
-    }
-
-    const active = reason !== null;
-
-    if (!active) {
-      return {
-        active: false,
-        reason: null,
-        bidSpread: params.bidSpread,
-        askSpread: params.askSpread,
-        orderAmount: new BigNumber(params.orderAmount).toFixed(),
-      };
-    }
-
-    const warmupSpread = new BigNumber(params.warmupSpread || 0);
-    const sizeRatio = this.resolveAdaptivePmmWarmupSizeRatio(
-      params.warmupSizeRatio,
-    );
-    const orderAmount = new BigNumber(params.orderAmount);
-
-    return {
-      active,
-      reason,
-      bidSpread:
-        warmupSpread.isFinite() && warmupSpread.isGreaterThan(0)
-          ? BigNumber.max(params.bidSpread, warmupSpread).toNumber()
-          : params.bidSpread,
-      askSpread:
-        warmupSpread.isFinite() && warmupSpread.isGreaterThan(0)
-          ? BigNumber.max(params.askSpread, warmupSpread).toNumber()
-          : params.askSpread,
-      orderAmount:
-        orderAmount.isFinite() && orderAmount.isGreaterThan(0)
-          ? orderAmount.multipliedBy(sizeRatio).toFixed()
-          : new BigNumber(params.orderAmount).toFixed(),
-    };
   }
 
   private resolveAdaptivePmmRuntimePressure(
     strategyKey: string,
     params: PureMarketMakingStrategyDto,
   ): StrategyRuntimePressureSnapshot | null {
-    if (!this.runtimeObservationService) {
-      return null;
-    }
-
-    const windowMs = Math.max(
-      1_000,
-      Number(params.runtimeObservationWindowMs || 60_000),
+    return this.getAdaptivePmmState().resolveAdaptivePmmRuntimePressure(
+      strategyKey,
+      params,
+      this.runtimeObservationService,
     );
-
-    return this.runtimeObservationService.getPressure(strategyKey, windowMs);
   }
 
   private resolveAdaptivePmmRuntimePressureWiden(
     params: PureMarketMakingStrategyDto,
     pressure: StrategyRuntimePressureSnapshot | null,
   ): number {
-    if (!pressure) {
-      return 0;
-    }
-
-    const threshold = Math.max(
-      0,
-      Math.floor(Number(params.postOnlyRejectThreshold || 0)),
+    return this.getAdaptivePmmState().resolveAdaptivePmmRuntimePressureWiden(
+      params,
+      pressure,
     );
-    const widenBps = Math.max(0, Number(params.postOnlyRejectWidenBps || 0));
-
-    if (
-      threshold <= 0 ||
-      widenBps <= 0 ||
-      pressure.postOnlyRejectCount < threshold
-    ) {
-      return 0;
-    }
-
-    return widenBps / 10_000;
   }
 
   private applyAdaptivePmmRuntimePressureCadence(
@@ -4925,64 +3374,38 @@ export class StrategyService
     params: PureMarketMakingStrategyDto,
     pressure: StrategyRuntimePressureSnapshot | null,
   ): void {
-    const threshold = Math.max(
-      0,
-      Math.floor(Number(params.rateLimitPressureThreshold || 0)),
-    );
     const session = this.sessions.get(strategyKey);
 
-    if (!session) {
-      return;
+    if (
+      this.getAdaptivePmmState().applyAdaptivePmmRuntimePressureCadence(
+        params,
+        pressure,
+        session,
+      ) &&
+      session
+    ) {
+      this.sessions.set(strategyKey, session);
     }
-
-    if (!pressure || threshold <= 0 || pressure.rateLimitCount < threshold) {
-      this.restoreAdaptivePmmRuntimePressureCadence(params, session);
-      return;
-    }
-
-    session.cadenceMs = Math.max(
-      session.cadenceMs,
-      Number(
-        params.refreshMaxMs || params.orderRefreshTime || session.cadenceMs,
-      ),
-    );
-    this.sessions.set(strategyKey, session);
   }
 
   private restoreAdaptivePmmRuntimePressureCadence(
     params: PureMarketMakingStrategyDto,
     session: StrategyRuntimeSession,
   ): void {
-    if (params.adaptiveRefreshEnabled) {
-      return;
-    }
-
-    const baseCadenceMs = Math.max(
-      1_000,
-      Number(params.orderRefreshTime || session.cadenceMs),
-    );
-
     if (
-      !Number.isFinite(baseCadenceMs) ||
-      session.cadenceMs === baseCadenceMs
+      this.getAdaptivePmmState().restoreAdaptivePmmRuntimePressureCadence(
+        params,
+        session,
+      )
     ) {
-      return;
+      this.sessions.set(session.strategyKey, session);
     }
-
-    session.cadenceMs = baseCadenceMs;
-    this.sessions.set(session.strategyKey, session);
   }
 
   private resolveAdaptivePmmWarmupSizeRatio(
     value: number | undefined,
   ): BigNumber {
-    const ratio = new BigNumber(value === undefined ? 0.2 : value);
-
-    if (!ratio.isFinite() || ratio.isLessThanOrEqualTo(0)) {
-      return new BigNumber(0.2);
-    }
-
-    return BigNumber.min(1, ratio);
+    return this.getAdaptivePmmState().resolveAdaptivePmmWarmupSizeRatio(value);
   }
 
   private resolveAdaptivePmmSideRecoveryState(
@@ -4999,55 +3422,10 @@ export class StrategyService
     buySizeRatio: number;
     sellSizeRatio: number;
   } {
-    const windowMs = Math.max(
-      0,
-      Number(
-        params.adverseMarkoutRecoveryMs || params.adverseMarkoutCooldownMs || 0,
-      ),
+    return this.getAdaptivePmmState().resolveAdaptivePmmSideRecoveryState(
+      params,
+      toxicityState,
     );
-    const baseWidenBps = Math.max(
-      0,
-      Number(params.adverseMarkoutGuardBps || 0),
-    );
-    const floorRatio = this.resolveAdaptivePmmWarmupSizeRatio(
-      params.adverseMarkoutRecoverySizeRatio,
-    ).toNumber();
-
-    if (!toxicityState || windowMs <= 0 || baseWidenBps <= 0) {
-      return {
-        buyActive: false,
-        sellActive: false,
-        buyWidenBps: 0,
-        sellWidenBps: 0,
-        buySizeRatio: 1,
-        sellSizeRatio: 1,
-      };
-    }
-
-    const nowMs = Date.now();
-    const buy = this.resolveAdaptivePmmSideRecovery(
-      toxicityState.buyLastPausedUntilMs,
-      nowMs,
-      windowMs,
-      baseWidenBps,
-      floorRatio,
-    );
-    const sell = this.resolveAdaptivePmmSideRecovery(
-      toxicityState.sellLastPausedUntilMs,
-      nowMs,
-      windowMs,
-      baseWidenBps,
-      floorRatio,
-    );
-
-    return {
-      buyActive: buy.active,
-      sellActive: sell.active,
-      buyWidenBps: buy.widenBps,
-      sellWidenBps: sell.widenBps,
-      buySizeRatio: buy.sizeRatio,
-      sellSizeRatio: sell.sizeRatio,
-    };
   }
 
   private resolveAdaptivePmmSideRecovery(
@@ -5057,56 +3435,27 @@ export class StrategyService
     baseWidenBps: number,
     floorRatio: number,
   ): { active: boolean; widenBps: number; sizeRatio: number } {
-    if (!lastPausedUntilMs || nowMs <= lastPausedUntilMs) {
-      return { active: false, widenBps: 0, sizeRatio: 1 };
-    }
-
-    const elapsedMs = nowMs - lastPausedUntilMs;
-
-    if (elapsedMs >= windowMs) {
-      return { active: false, widenBps: 0, sizeRatio: 1 };
-    }
-
-    const remaining = 1 - elapsedMs / windowMs;
-
-    return {
-      active: true,
-      widenBps: baseWidenBps * remaining,
-      sizeRatio: floorRatio + (1 - floorRatio) * (1 - remaining),
-    };
+    return this.getAdaptivePmmState().resolveAdaptivePmmSideRecovery(
+      lastPausedUntilMs,
+      nowMs,
+      windowMs,
+      baseWidenBps,
+      floorRatio,
+    );
   }
 
   private shouldBlockAdaptivePmmForMarketSafety(
     signalSnapshot: AdaptivePmmSignalSnapshot,
   ): boolean {
-    return (
-      signalSnapshot.crash.crashed ||
-      signalSnapshot.freshness.status === 'missing' ||
-      signalSnapshot.freshness.status === 'hard_stale'
+    return this.getAdaptivePmmState().shouldBlockAdaptivePmmForMarketSafety(
+      signalSnapshot,
     );
   }
 
   private isAdaptivePmmReservationPaused(
     params: PureMarketMakingStrategyDto,
   ): boolean {
-    if (
-      !params.marketMakingOrderId ||
-      !this.balanceLedgerService ||
-      typeof this.balanceLedgerService.isReservationPaused !== 'function'
-    ) {
-      return false;
-    }
-
-    const [baseAssetId, quoteAssetId] = params.pair.split('/');
-
-    return [baseAssetId, quoteAssetId]
-      .filter(Boolean)
-      .some((assetId) =>
-        this.balanceLedgerService?.isReservationPaused(
-          params.marketMakingOrderId as string,
-          assetId,
-        ),
-      );
+    return this.getAdaptivePmmState().isAdaptivePmmReservationPaused(params);
   }
 
   private appendAdaptivePmmSafetyCancels(
@@ -5117,24 +3466,14 @@ export class StrategyService
     ts: string,
     liveOrders: TrackedOrder[],
   ): void {
-    const cancelBudgetPerSec = Number(params.cancelBudgetPerSec || 0);
-
-    for (const order of liveOrders) {
-      this.appendCancelAction(
-        actions,
-        cancelledExchangeOrderIds,
-        this.buildCancelOrderAction(
-          strategyKey,
-          params,
-          order,
-          ts,
-          'adaptive-market-safety',
-        ),
-        strategyKey,
-        ts,
-        cancelBudgetPerSec,
-      );
-    }
+    this.getAdaptivePmmState().appendAdaptivePmmSafetyCancels(
+      actions,
+      cancelledExchangeOrderIds,
+      strategyKey,
+      params,
+      ts,
+      liveOrders,
+    );
   }
 
   private logAdaptivePmmDecisionSnapshot(
@@ -5166,13 +3505,10 @@ export class StrategyService
       runtimePressureWiden?: number;
     },
   ): void {
-    const metadata = this.buildAdaptivePmmDecisionMetadata(
+    this.getAdaptivePmmState().logAdaptivePmmDecisionSnapshot(
       strategyKey,
       snapshot,
     );
-
-    this.logger.log(JSON.stringify(metadata));
-    void this.persistAdaptivePmmDecisionSnapshot(snapshot.params, metadata);
   }
 
   private buildAdaptivePmmDecisionMetadata(
@@ -5203,73 +3539,20 @@ export class StrategyService
       runtimePressureWiden?: number;
     },
   ): Record<string, unknown> {
-    return {
-      event: 'adaptive_pmm.decision',
+    return this.getAdaptivePmmState().buildAdaptivePmmDecisionMetadata(
       strategyKey,
-      reason: snapshot.reason,
-      actions: snapshot.actions,
-      layers: snapshot.layers,
-      freshness: snapshot.signalSnapshot?.freshness.status || null,
-      freshnessAgeMs: snapshot.signalSnapshot?.freshness.ageMs || null,
-      crash: snapshot.signalSnapshot?.crash.crashed || false,
-      crashChangeBps: snapshot.signalSnapshot?.crash.changeBps ?? null,
-      realizedVolatility:
-        snapshot.realizedVolatility ??
-        snapshot.signalSnapshot?.realizedVolatility ??
-        null,
-      imbalance:
-        snapshot.orderBookImbalance ??
-        snapshot.signalSnapshot?.imbalance ??
-        null,
-      imbalanceDepthNotional:
-        snapshot.signalSnapshot?.imbalanceDepthNotional ?? null,
-      buyToxicityScore: snapshot.toxicityState?.buyScore || 0,
-      sellToxicityScore: snapshot.toxicityState?.sellScore || 0,
-      buyPaused: Boolean(snapshot.buyPaused),
-      sellPaused: Boolean(snapshot.sellPaused),
-      warmupActive: Boolean(snapshot.warmupActive),
-      warmupReason: snapshot.warmupReason || null,
-      softStale: Boolean(snapshot.softStale),
-      buyRecoveryActive: Boolean(snapshot.buyRecoveryActive),
-      sellRecoveryActive: Boolean(snapshot.sellRecoveryActive),
-      runtimeRejectCount: snapshot.runtimePressure?.rejectCount || 0,
-      runtimePostOnlyRejectCount:
-        snapshot.runtimePressure?.postOnlyRejectCount || 0,
-      runtimeRateLimitCount: snapshot.runtimePressure?.rateLimitCount || 0,
-      runtimePressureWiden: snapshot.runtimePressureWiden || 0,
-      unavailableReasons: snapshot.signalSnapshot?.unavailableReasons || [],
-    };
+      snapshot,
+    );
   }
 
   private async persistAdaptivePmmDecisionSnapshot(
     params: PureMarketMakingStrategyDto,
     metadata: Record<string, unknown>,
   ): Promise<void> {
-    if (!this.strategyExecutionHistoryRepository) {
-      return;
-    }
-
-    try {
-      await this.strategyExecutionHistoryRepository.save(
-        this.strategyExecutionHistoryRepository.create({
-          userId: params.userId,
-          clientId: params.clientId,
-          exchange: params.exchangeName,
-          pair: params.pair,
-          strategyType: 'pureMarketMaking',
-          runtimeInstanceKey: String(metadata.strategyKey || ''),
-          orderId: params.marketMakingOrderId,
-          status: String(metadata.reason || 'decision'),
-          metadata,
-        }),
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to persist adaptive PMM decision snapshot for ${
-          params.clientId
-        }: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    return this.getAdaptivePmmState().persistAdaptivePmmDecisionSnapshot(
+      params,
+      metadata,
+    );
   }
 
   private updateAdaptivePmmCadence(
@@ -5277,203 +3560,18 @@ export class StrategyService
     params: PureMarketMakingStrategyDto,
     realizedVolatility: number | null,
   ): void {
-    if (!params.adaptiveRefreshEnabled) {
-      return;
-    }
-
-    const refreshMinMs = Math.max(1000, Number(params.refreshMinMs || 1000));
-    const refreshMaxMs = Math.max(
-      refreshMinMs,
-      Number(params.refreshMaxMs || params.orderRefreshTime || refreshMinMs),
-    );
-    const pivot = Number(params.refreshVolPivot || 0);
-    const sigma = Number(realizedVolatility || 0);
-    const intensity =
-      Number.isFinite(sigma) && sigma > 0 && Number.isFinite(pivot) && pivot > 0
-        ? Math.min(1, sigma / pivot)
-        : 0;
-    const nextCadenceMs = Math.round(
-      refreshMaxMs - (refreshMaxMs - refreshMinMs) * intensity,
-    );
     const session = this.sessions.get(strategyKey);
 
-    if (!session) {
-      return;
-    }
-
-    session.cadenceMs = nextCadenceMs;
-    this.sessions.set(strategyKey, session);
-  }
-
-  private async resolveMinOrderNotional(
-    exchangeName: string,
-    pair: string,
-    accountLabel: string | undefined,
-    referencePrice: BigNumber,
-  ): Promise<BigNumber> {
-    if (!this.exchangeConnectorAdapterService) {
-      return new BigNumber(0);
-    }
-
-    try {
-      const rules = await this.exchangeConnectorAdapterService.loadTradingRules(
-        exchangeName,
-        pair,
-        accountLabel,
-      );
-      const minByCost = new BigNumber(rules.costMin || 0);
-      const minByAmount = new BigNumber(rules.amountMin || 0).multipliedBy(
-        referencePrice,
-      );
-
-      return BigNumber.max(
-        minByCost.isFinite() ? minByCost : 0,
-        minByAmount.isFinite() ? minByAmount : 0,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Cannot resolve min order notional for ${exchangeName} ${pair}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-
-      return new BigNumber(0);
-    }
-  }
-
-  private isQuoteWithinTolerance(
-    order: TrackedOrder,
-    action: ExecutorAction,
-    tolerance: BigNumber,
-  ): boolean {
-    if (order.side !== action.side) {
-      return false;
-    }
-
-    if (tolerance.isLessThanOrEqualTo(0)) {
-      return order.price === action.price && order.qty === action.qty;
-    }
-
-    const actionPrice = new BigNumber(action.price);
-    const actionQty = new BigNumber(action.qty);
-
     if (
-      !actionPrice.isFinite() ||
-      actionPrice.isLessThanOrEqualTo(0) ||
-      !actionQty.isFinite() ||
-      actionQty.isLessThanOrEqualTo(0)
+      this.getAdaptivePmmState().updateAdaptivePmmCadence(
+        params,
+        realizedVolatility,
+        session,
+      ) &&
+      session
     ) {
-      return false;
+      this.sessions.set(strategyKey, session);
     }
-
-    const priceWithinTolerance = new BigNumber(order.price)
-      .minus(action.price)
-      .abs()
-      .dividedBy(actionPrice)
-      .isLessThan(tolerance);
-    const qtyWithinTolerance = new BigNumber(order.qty)
-      .minus(action.qty)
-      .abs()
-      .dividedBy(actionQty)
-      .isLessThan(tolerance);
-
-    return priceWithinTolerance && qtyWithinTolerance;
-  }
-
-  private buildCancelOrderAction(
-    strategyKey: string,
-    params: PureMarketMakingStrategyDto,
-    order: Pick<
-      TrackedOrder,
-      'exchangeOrderId' | 'side' | 'price' | 'qty' | 'slotKey' | 'status'
-    >,
-    ts: string,
-    reason: string,
-  ): ExecutorAction | null {
-    if (
-      !order.exchangeOrderId ||
-      order.status === 'pending_cancel' ||
-      order.status === 'cancelled' ||
-      order.status === 'filled'
-    ) {
-      return null;
-    }
-
-    return {
-      type: 'CANCEL_ORDER',
-      intentId: `${strategyKey}:${ts}:cancel-${reason}-${order.exchangeOrderId}`,
-      runtimeInstanceKey: strategyKey,
-      strategyKey,
-      userId: params.userId,
-      clientId: params.clientId,
-      exchange: params.exchangeName,
-      accountLabel: params.accountLabel,
-      pair: params.pair,
-      side: order.side,
-      price: order.price,
-      qty: order.qty,
-      mixinOrderId: order.exchangeOrderId,
-      slotKey: order.slotKey,
-      createdAt: ts,
-    };
-  }
-
-  private appendCancelAction(
-    actions: ExecutorAction[],
-    cancelledExchangeOrderIds: Set<string>,
-    action: ExecutorAction | null,
-    strategyKey?: string,
-    ts?: string,
-    cancelBudgetPerSec?: number,
-  ): void {
-    if (
-      !action?.mixinOrderId ||
-      cancelledExchangeOrderIds.has(action.mixinOrderId)
-    ) {
-      return;
-    }
-
-    if (
-      strategyKey &&
-      ts &&
-      Number.isFinite(cancelBudgetPerSec) &&
-      Number(cancelBudgetPerSec) > 0 &&
-      !this.consumeCancelBudget(strategyKey, ts, Number(cancelBudgetPerSec))
-    ) {
-      this.logger.log(
-        `[${strategyKey}] reason=cancel_budget_exhausted mixinOrderId=${action.mixinOrderId}`,
-      );
-
-      return;
-    }
-
-    cancelledExchangeOrderIds.add(action.mixinOrderId);
-    actions.push(action);
-
-    if (strategyKey && action.slotKey) {
-      this.recordSlotCancelTimestamp(strategyKey, action.slotKey);
-    }
-  }
-
-  private consumeCancelBudget(
-    strategyKey: string,
-    ts: string,
-    cancelBudgetPerSec: number,
-  ): boolean {
-    const parsedTs = Date.parse(ts);
-    const second = Math.floor(
-      (Number.isFinite(parsedTs) ? parsedTs : Date.now()) / 1000,
-    );
-    const key = `${strategyKey}:${second}`;
-    const used = this.cancelBudgetUsageByStrategySecond.get(key) || 0;
-
-    if (used >= cancelBudgetPerSec) {
-      return false;
-    }
-
-    this.cancelBudgetUsageByStrategySecond.set(key, used + 1);
-
-    return true;
   }
 
   private createIntent(
@@ -5494,26 +3592,28 @@ export class StrategyService
     accountLabel?: string,
     timeInForce?: 'GTC' | 'IOC',
   ): StrategyOrderIntent {
-    return {
-      type: 'CREATE_LIMIT_ORDER',
-      intentId: `${strategyKey}:${ts}:${suffix}`,
+    if (!this.strategyIntentStoreService) {
+      throw new Error('strategy intent store is not available');
+    }
+
+    return this.strategyIntentStoreService.createLimitOrderIntent(
       runtimeInstanceKey,
       strategyKey,
       userId,
       clientId,
       exchange,
-      accountLabel,
       pair,
       side,
-      price: price.toFixed(),
-      qty: qty.toFixed(),
+      price,
+      qty,
+      ts,
+      suffix,
       executionCategory,
-      postOnly,
-      timeInForce,
       metadata,
-      createdAt: ts,
-      status: 'NEW',
-    };
+      postOnly,
+      accountLabel,
+      timeInForce,
+    );
   }
 
   private async publishIntents(
@@ -5531,19 +3631,19 @@ export class StrategyService
       return;
     }
 
-    const publishedIntents =
-      await this.executorOrchestratorService?.dispatchActions(
-        strategyKey,
-        intents as ExecutorAction[],
-      );
-
-    if (publishedIntents && publishedIntents.length > 0) {
-      this.latestIntentsByStrategy.set(strategyKey, publishedIntents);
-
-      return;
+    if (!this.strategyIntentStoreService || !this.executorOrchestratorService) {
+      throw new Error('strategy intent publisher is not available');
     }
 
-    throw new Error('executor orchestrator did not publish intents');
+    await this.strategyIntentStoreService.publishIntents(
+      strategyKey,
+      intents,
+      (dispatchStrategyKey, dispatchIntents) =>
+        this.executorOrchestratorService!.dispatchActions(
+          dispatchStrategyKey,
+          dispatchIntents,
+        ),
+    );
   }
 
   private async getPriceSource(
@@ -5562,204 +3662,19 @@ export class StrategyService
     );
   }
 
-  private calculateVWAPForAmount(
-    orderBook: {
-      bids?: Array<[number, number]>;
-      asks?: Array<[number, number]>;
-    },
-    amountToTrade: number,
-    direction: 'buy' | 'sell',
-  ): BigNumber {
-    let volumeAccumulated = new BigNumber(0);
-    let volumePriceProductSum = new BigNumber(0);
-    const amountToTradeBn = new BigNumber(amountToTrade);
-    const orders =
-      direction === 'buy'
-        ? Array.isArray(orderBook?.asks)
-          ? orderBook.asks
-          : []
-        : Array.isArray(orderBook?.bids)
-        ? orderBook.bids
-        : [];
-
-    for (const [price, volume] of orders) {
-      const volumeToUse = BigNumber.min(
-        new BigNumber(volume),
-        amountToTradeBn.minus(volumeAccumulated),
-      );
-
-      volumePriceProductSum = volumePriceProductSum.plus(
-        new BigNumber(price).multipliedBy(volumeToUse),
-      );
-      volumeAccumulated = volumeAccumulated.plus(volumeToUse);
-
-      if (volumeAccumulated.isGreaterThanOrEqualTo(amountToTradeBn)) {
-        break;
-      }
-    }
-
-    if (volumeAccumulated.isLessThanOrEqualTo(0)) {
-      return new BigNumber(0);
-    }
-
-    return volumePriceProductSum.dividedBy(volumeAccumulated);
-  }
-
   private resolveVolumeSide(
     postOnlySide: 'buy' | 'sell' | 'inventory_balance' | undefined,
     executedTrades: number,
     buyBias?: number,
   ): 'buy' | 'sell' {
-    if (postOnlySide === 'buy' || postOnlySide === 'sell') {
-      return postOnlySide;
-    }
-
-    const normalizedBuyBias =
-      this.readUnitIntervalNumber(buyBias) ??
-      (executedTrades > 0 ? 0.5 : undefined);
-
-    if (normalizedBuyBias === undefined) {
-      return executedTrades % 2 === 0 ? 'buy' : 'sell';
-    }
-
-    return Math.random() < normalizedBuyBias ? 'buy' : 'sell';
-  }
-
-  private computeAmmAmountIn(
-    params: AmmDexVolumeStrategyParams,
-    executedTrades: number,
-  ): string {
-    const baseAmount = new BigNumber(params.baseTradeAmount || 0);
-
-    if (!baseAmount.isFinite() || baseAmount.isLessThanOrEqualTo(0)) {
-      return '0';
-    }
-
-    const pushMultiplier = new BigNumber(1).plus(
-      new BigNumber(params.pricePushRate || 0)
-        .dividedBy(100)
-        .multipliedBy(executedTrades),
+    return this.getVolumeStrategyController().resolveVolumeSide(
+      postOnlySide,
+      executedTrades,
+      buyBias,
     );
-    const incrementMultiplier = new BigNumber(1).plus(
-      new BigNumber(params.baseIncrementPercentage || 0).dividedBy(100),
-    );
-
-    return baseAmount
-      .multipliedBy(pushMultiplier)
-      .multipliedBy(incrementMultiplier)
-      .toFixed();
   }
 
-  private buildClobVolumeParams(input: {
-    executionCategory: 'clob_cex' | 'clob_dex';
-    exchangeName: string | undefined;
-    symbol: string | undefined;
-    baseIncrementPercentage: number;
-    baseIntervalTime: number;
-    baseTradeAmount: number;
-    numTrades: number;
-    userId: string;
-    clientId: string;
-    pricePushRate: number;
-    postOnlySide?: 'buy' | 'sell';
-  }): CexVolumeStrategyParams {
-    const exchangeName = String(input.exchangeName || '').trim();
-    const symbol = String(input.symbol || '').trim();
-
-    if (!exchangeName) {
-      throw new Error('exchangeName is required for cex volume strategy');
-    }
-    if (!symbol) {
-      throw new Error('symbol is required for cex volume strategy');
-    }
-
-    return {
-      executionCategory: input.executionCategory,
-      executionVenue: 'cex',
-      exchangeName,
-      symbol,
-      baseIncrementPercentage: input.baseIncrementPercentage,
-      baseIntervalTime: input.baseIntervalTime,
-      baseTradeAmount: input.baseTradeAmount,
-      numTrades: input.numTrades,
-      userId: input.userId,
-      clientId: input.clientId,
-      pricePushRate: input.pricePushRate,
-      postOnlySide: input.postOnlySide,
-      executedTrades: 0,
-    };
-  }
-
-  private buildAmmDexVolumeParams(input: {
-    exchangeName: string | undefined;
-    symbol: string | undefined;
-    baseIncrementPercentage: number;
-    baseIntervalTime: number;
-    baseTradeAmount: number;
-    numTrades: number;
-    userId: string;
-    clientId: string;
-    pricePushRate: number;
-    postOnlySide?: 'buy' | 'sell';
-    dexId?: DexAdapterId;
-    chainId?: number;
-    tokenIn?: string;
-    tokenOut?: string;
-    feeTier?: number;
-    slippageBps?: number;
-    recipient?: string;
-  }): AmmDexVolumeStrategyParams {
-    if (!input.dexId) {
-      throw new Error('dexId is required for dex volume strategy');
-    }
-    if (!Number.isFinite(input.chainId) || Number(input.chainId) <= 0) {
-      throw new Error(
-        'chainId must be a positive number for dex volume strategy',
-      );
-    }
-
-    const tokenIn = String(input.tokenIn || '').trim();
-    const tokenOut = String(input.tokenOut || '').trim();
-
-    if (!tokenIn || !tokenOut) {
-      throw new Error(
-        'tokenIn and tokenOut are required for dex volume strategy',
-      );
-    }
-    if (!Number.isFinite(input.feeTier) || Number(input.feeTier) <= 0) {
-      throw new Error(
-        'feeTier must be a positive number for dex volume strategy',
-      );
-    }
-
-    const syntheticSymbol =
-      String(input.symbol || '').trim() || `${tokenIn}/${tokenOut}`;
-
-    return {
-      executionCategory: 'amm_dex',
-      executionVenue: 'dex',
-      exchangeName: String(input.exchangeName || input.dexId),
-      symbol: syntheticSymbol,
-      baseIncrementPercentage: input.baseIncrementPercentage,
-      baseIntervalTime: input.baseIntervalTime,
-      baseTradeAmount: input.baseTradeAmount,
-      numTrades: input.numTrades,
-      userId: input.userId,
-      clientId: input.clientId,
-      pricePushRate: input.pricePushRate,
-      postOnlySide: input.postOnlySide,
-      executedTrades: 0,
-      dexId: input.dexId,
-      chainId: Number(input.chainId),
-      tokenIn,
-      tokenOut,
-      feeTier: Number(input.feeTier),
-      slippageBps: input.slippageBps,
-      recipient: input.recipient,
-    };
-  }
-
-  private async persistStrategyParams(
+  async persistStrategyParams(
     strategyKey: string,
     params: VolumeStrategyParams | DualAccountVolumeStrategyParams,
   ): Promise<void> {
@@ -5893,9 +3808,9 @@ export class StrategyService
 
     // Calculate indicators
     const closes = ohlcv.map((c) => c[4]);
-    const emaF = this.calcEma(closes, params.emaFast);
-    const emaS = this.calcEma(closes, params.emaSlow);
-    const rsiV = this.calcRsi(closes, params.rsiPeriod);
+    const emaF = calcEma(closes, params.emaFast);
+    const emaS = calcEma(closes, params.emaSlow);
+    const rsiV = calcRsi(closes, params.rsiPeriod);
 
     const last = closes[closes.length - 1];
     const lastEmaF = emaF[emaF.length - 1];
@@ -5917,7 +3832,7 @@ export class StrategyService
     }
 
     // Determine signal
-    const signal = this.calcCross(prevEmaF!, prevEmaS!, lastEmaF!, lastEmaS!);
+    const signal = calcCross(prevEmaF!, prevEmaS!, lastEmaF!, lastEmaS!);
     const rsiBuyOk =
       params.rsiBuyBelow === undefined || lastRsi! <= params.rsiBuyBelow!;
     const rsiSellOk =
@@ -6046,8 +3961,8 @@ export class StrategyService
           emaSlow: lastEmaS,
           rsi: lastRsi,
           signal,
-          stopLossPct: this.safePct(params.stopLossPct),
-          takeProfitPct: this.safePct(params.takeProfitPct),
+          stopLossPct: safePct(params.stopLossPct),
+          takeProfitPct: safePct(params.takeProfitPct),
         },
         createdAt: ts,
         status: 'NEW',
@@ -6064,9 +3979,8 @@ export class StrategyService
     }
 
     this.sessions.delete(strategyKey);
-    this.slotCancelCooldownByStrategy.delete(strategyKey);
-    this.adaptivePmmWarmupStartedAtByStrategy.delete(strategyKey);
-    this.adaptivePmmWarmupTicksByStrategy.delete(strategyKey);
+    this.getQuotePlanner().clearStrategyState(strategyKey);
+    this.getAdaptivePmmState().clearStrategyState(strategyKey);
   }
 
   private async cancelTrackedOrdersForStrategy(
@@ -6146,13 +4060,13 @@ export class StrategyService
       pooledTarget.pair,
     );
 
-    this.stopPrivateWatchers(
+    this.strategyWatcherManagerService?.stopPrivateWatchers(
       session.strategyType,
       pooledTarget.exchange,
       pooledTarget.pair,
       session.params,
     );
-    this.stopBalanceWatchers(
+    this.strategyWatcherManagerService?.stopBalanceWatchers(
       session.strategyType,
       pooledTarget.exchange,
       session.params,
@@ -6226,163 +4140,22 @@ export class StrategyService
     strategyType: StrategyType,
     params: StrategyRuntimeSession['params'],
   ): string | undefined {
-    if (
-      strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume'
-    ) {
-      return undefined;
-    }
-
-    if (strategyType !== 'pureMarketMaking') {
-      return undefined;
-    }
-
-    const accountLabel = String(
-      (params as unknown as PureMarketMakingStrategyDto).accountLabel ||
-        'default',
-    ).trim();
-
-    return accountLabel || 'default';
+    return this.strategyWatcherManagerService?.resolveAccountLabel(
+      strategyType,
+      params,
+    );
   }
 
   private resolveRequiredAccountLabels(
     strategyType: StrategyType,
     params: StrategyRuntimeSession['params'],
   ): string[] {
-    if (
-      strategyType === 'dualAccountVolume' ||
-      strategyType === 'dualAccountBestCapacityVolume'
-    ) {
-      const dualParams = params as unknown as DualAccountVolumeStrategyParams;
-
-      return [dualParams.makerAccountLabel, dualParams.takerAccountLabel]
-        .map((label) => String(label || '').trim() || 'default')
-        .filter((label, index, labels) => labels.indexOf(label) === index);
-    }
-
-    const accountLabel = this.resolveAccountLabel(strategyType, params);
-
-    return accountLabel ? [accountLabel] : ['default'];
-  }
-
-  private startPrivateWatchers(
-    strategyType: StrategyType,
-    exchange: string,
-    pair: string,
-    params: StrategyRuntimeSession['params'],
-  ): void {
-    if (
-      strategyType !== 'pureMarketMaking' &&
-      strategyType !== 'dualAccountVolume' &&
-      strategyType !== 'dualAccountBestCapacityVolume'
-    ) {
-      return;
-    }
-
-    for (const accountLabel of this.resolveRequiredAccountLabels(
-      strategyType,
-      params,
-    )) {
-      this.userStreamIngestionService?.startOrderWatcher({
-        exchange,
-        accountLabel: accountLabel || 'default',
-        symbol: pair,
-      });
-      this.userStreamIngestionService?.startTradeWatcher({
-        exchange,
-        accountLabel: accountLabel || 'default',
-        symbol: pair,
-      });
-    }
-  }
-
-  private startBalanceWatchers(
-    strategyType: StrategyType,
-    exchange: string,
-    params: StrategyRuntimeSession['params'],
-  ): void {
-    if (
-      strategyType !== 'pureMarketMaking' &&
-      strategyType !== 'timeIndicator' &&
-      strategyType !== 'dualAccountVolume' &&
-      strategyType !== 'dualAccountBestCapacityVolume'
-    ) {
-      return;
-    }
-
-    for (const accountLabel of this.resolveRequiredAccountLabels(
-      strategyType,
-      params,
-    )) {
-      this.userStreamIngestionService?.startBalanceWatcher({
-        exchange,
-        accountLabel: accountLabel || 'default',
-      });
-      this.balanceStateRefreshService?.registerAccount(
-        exchange,
-        accountLabel || 'default',
-      );
-    }
-  }
-
-  private stopBalanceWatchers(
-    strategyType: StrategyType,
-    exchange: string,
-    params: StrategyRuntimeSession['params'],
-  ): void {
-    if (
-      strategyType !== 'pureMarketMaking' &&
-      strategyType !== 'timeIndicator' &&
-      strategyType !== 'dualAccountVolume' &&
-      strategyType !== 'dualAccountBestCapacityVolume'
-    ) {
-      return;
-    }
-
-    for (const accountLabel of this.resolveRequiredAccountLabels(
-      strategyType,
-      params,
-    )) {
-      this.userStreamIngestionService?.stopBalanceWatcher({
-        exchange,
-        accountLabel: accountLabel || 'default',
-      });
-      this.balanceStateRefreshService?.releaseAccount(
-        exchange,
-        accountLabel || 'default',
-      );
-    }
-  }
-
-  private stopPrivateWatchers(
-    strategyType: StrategyType,
-    exchange: string,
-    pair: string,
-    params: StrategyRuntimeSession['params'],
-  ): void {
-    if (
-      strategyType !== 'pureMarketMaking' &&
-      strategyType !== 'dualAccountVolume' &&
-      strategyType !== 'dualAccountBestCapacityVolume'
-    ) {
-      return;
-    }
-
-    for (const accountLabel of this.resolveRequiredAccountLabels(
-      strategyType,
-      params,
-    )) {
-      this.userStreamIngestionService?.stopOrderWatcher({
-        exchange,
-        accountLabel: accountLabel || 'default',
-        symbol: pair,
-      });
-      this.userStreamIngestionService?.stopTradeWatcher({
-        exchange,
-        accountLabel: accountLabel || 'default',
-        symbol: pair,
-      });
-    }
+    return (
+      this.strategyWatcherManagerService?.resolveRequiredAccountLabels(
+        strategyType,
+        params,
+      ) || ['default']
+    );
   }
 
   private logSessionTickError(
@@ -6437,11 +4210,13 @@ export class StrategyService
       return;
     }
 
-    const trackedOrder = this.resolveTrackedOrderForFill(session, fill);
-    const settlementFill = this.buildIncrementalSettlementFill(
-      trackedOrder,
-      fill,
-    );
+    const trackedOrder =
+      this.fillSettlementService?.resolveTrackedOrderForFill(session, fill);
+    const settlementFill =
+      this.fillSettlementService?.buildIncrementalSettlementFill(
+        trackedOrder,
+        fill,
+      ) || null;
 
     if (!settlementFill) {
       return;
@@ -6450,9 +4225,16 @@ export class StrategyService
     let settled = false;
 
     try {
-      settled = await this.settleFillToBalanceLedger(session, settlementFill);
+      settled =
+        (await this.fillSettlementService?.settleFillForSession(
+          session,
+          settlementFill,
+        )) || false;
     } catch (error) {
-      this.pauseFillSettlementReservations(session, settlementFill);
+      this.fillSettlementService?.pauseFillSettlementReservations(
+        session,
+        settlementFill,
+      );
       throw error;
     }
 
@@ -6460,8 +4242,11 @@ export class StrategyService
       return;
     }
 
-    this.markTrackedFillSettled(trackedOrder, settlementFill);
-    this.recordSessionPnL(session, settlementFill, {
+    this.fillSettlementService?.markTrackedFillSettled(
+      trackedOrder,
+      settlementFill,
+    );
+    this.runtimeObservationService?.recordSessionPnL(session, settlementFill, {
       includeTradedQuoteVolume:
         session.strategyType === 'pureMarketMaking' ||
         trackedOrder?.role === 'taker',
@@ -6499,7 +4284,7 @@ export class StrategyService
     }
 
     session.lastFillTimestamp = Date.now();
-    this.recordPureMarketMakingMarkout(
+    this.runtimeObservationService?.recordPureMarketMakingMarkout(
       session,
       fill,
       session.lastFillTimestamp,
@@ -6515,331 +4300,26 @@ export class StrategyService
         : Math.min(session.nextRunAtMs, Date.now());
   }
 
-  private recordPureMarketMakingMarkout(
-    session: StrategyRuntimeSession,
-    fill: {
-      side?: 'buy' | 'sell';
-      price?: string;
-      qty?: string;
-      receivedAt?: string;
-    },
-    fallbackObservedAtMs: number,
-  ): void {
-    if (
-      session.strategyType !== 'pureMarketMaking' ||
-      !this.pmmMarkoutEvaluatorService ||
-      !fill.side ||
-      !fill.price
-    ) {
-      return;
-    }
-
-    const params = session.params as unknown as PureMarketMakingStrategyDto;
-    const guardBps = Number(params.adverseMarkoutGuardBps || 0);
-    const markoutWindowMs = Number(params.adverseMarkoutWindowMs || 0);
-
-    if (
-      !Number.isFinite(guardBps) ||
-      guardBps <= 0 ||
-      !Number.isFinite(markoutWindowMs) ||
-      markoutWindowMs <= 0
-    ) {
-      return;
-    }
-
-    const observedAtMs = fill.receivedAt
-      ? Date.parse(fill.receivedAt)
-      : fallbackObservedAtMs;
-
-    this.pmmMarkoutEvaluatorService.recordFill({
-      strategyKey: session.strategyKey,
-      exchangeName: params.oracleExchangeName || params.exchangeName,
-      pair: params.pair,
-      side: fill.side,
-      price: fill.price,
-      qty: fill.qty,
-      observedAtMs: Number.isFinite(observedAtMs)
-        ? observedAtMs
-        : fallbackObservedAtMs,
-      markoutWindowMs,
-      guardBps,
-      cooldownMs: Number(params.adverseMarkoutCooldownMs || 0),
-    });
-  }
-
   private resolveDualAccountCycleRoles(
     params: DualAccountVolumeStrategyParams,
   ): { makerAccountLabel: string; takerAccountLabel: string } {
-    if (params.cycleMode === 'static') {
-      return {
-        makerAccountLabel: params.makerAccountLabel,
-        takerAccountLabel: params.takerAccountLabel,
-      };
-    }
-
-    return {
-      makerAccountLabel:
-        this.readString(
-          params.nextMakerAccountLabel,
-          params.makerAccountLabel,
-        ) || params.makerAccountLabel,
-      takerAccountLabel:
-        this.readString(
-          params.nextTakerAccountLabel,
-          params.takerAccountLabel,
-        ) || params.takerAccountLabel,
-    };
+    return this.getDualAccountPlanner().resolveCycleRoles(params);
   }
 
   private advanceDualAccountCycleRolesAfterSuccess(
     params: DualAccountVolumeStrategyParams,
     activeCycle: DualAccountActiveCycleState,
   ): DualAccountVolumeStrategyParams {
-    if (params.cycleMode === 'static') {
-      return {
-        ...params,
-        nextMakerAccountLabel: params.makerAccountLabel,
-        nextTakerAccountLabel: params.takerAccountLabel,
-      };
-    }
-
-    return {
-      ...params,
-      nextMakerAccountLabel: activeCycle.takerAccountLabel,
-      nextTakerAccountLabel: activeCycle.makerAccountLabel,
-    };
+    return this.getDualAccountPlanner().advanceCycleRolesAfterSuccess(
+      params,
+      activeCycle,
+    );
   }
 
   private buildActiveDualAccountCycleState(
     action?: ExecutorAction,
   ): DualAccountActiveCycleState | undefined {
-    if (!action || this.isDualAccountRebalanceAction(action)) {
-      return undefined;
-    }
-
-    const metadata =
-      action.metadata && typeof action.metadata === 'object'
-        ? (action.metadata as Record<string, unknown>)
-        : undefined;
-
-    if (metadata?.role !== 'maker') {
-      return undefined;
-    }
-
-    const makerAccountLabel = this.readString(
-      metadata.makerAccountLabel,
-      this.readString(action.accountLabel),
-    );
-    const takerAccountLabel = this.readString(metadata.takerAccountLabel);
-    const cycleId = this.readString(metadata.cycleId, action.intentId);
-    const tickId = this.readString(metadata.tickId, action.createdAt);
-    const orderId = this.readString(metadata.orderId, action.clientId);
-    const price = this.readString(action.price);
-    const requestedQty = this.readString(action.qty);
-
-    if (
-      !makerAccountLabel ||
-      !takerAccountLabel ||
-      !cycleId ||
-      !tickId ||
-      !orderId ||
-      !price ||
-      !requestedQty
-    ) {
-      return undefined;
-    }
-
-    return {
-      cycleId,
-      tickId,
-      orderId,
-      makerSide: action.side,
-      makerAccountLabel,
-      takerAccountLabel,
-      price,
-      requestedQty,
-      makerFilledQty: '0',
-      takerFilledQty: '0',
-      matchedFilledQty: '0',
-      matchedQuoteVolume: '0',
-    };
-  }
-
-  private resolveTrackedOrderForFill(
-    session: StrategyRuntimeSession,
-    fill: {
-      orderId?: string;
-      exchangeOrderId?: string | null;
-      clientOrderId?: string | null;
-      accountLabel?: string | null;
-    },
-  ): TrackedOrder | undefined {
-    const exchangeOrderId = this.readString(fill.exchangeOrderId);
-    const clientOrderId = this.readString(fill.clientOrderId);
-    const accountLabel = this.readString(fill.accountLabel);
-    const exchange = this.readString(
-      (session.params as Record<string, unknown>)?.exchangeName,
-    );
-
-    if (exchangeOrderId) {
-      const trackedOrder =
-        this.exchangeOrderTrackerService?.getByExchangeOrderId(
-          exchange,
-          exchangeOrderId,
-          accountLabel || undefined,
-        );
-
-      if (trackedOrder?.strategyKey === session.strategyKey) {
-        return trackedOrder;
-      }
-    }
-
-    const trackedOrders =
-      this.exchangeOrderTrackerService?.getTrackedOrders(session.strategyKey) ||
-      [];
-
-    return trackedOrders.find((order) => {
-      if (fill.orderId && order.orderId !== fill.orderId) {
-        return false;
-      }
-
-      const accountMatches =
-        !accountLabel || order.accountLabel === accountLabel;
-
-      return (
-        accountMatches &&
-        ((exchangeOrderId && order.exchangeOrderId === exchangeOrderId) ||
-          (clientOrderId && order.clientOrderId === clientOrderId))
-      );
-    });
-  }
-
-  private buildIncrementalSettlementFill(
-    trackedOrder: TrackedOrder | undefined,
-    fill: {
-      exchangeOrderId?: string | null;
-      clientOrderId?: string | null;
-      accountLabel?: string | null;
-      fillId?: string | null;
-      side?: 'buy' | 'sell';
-      price?: string;
-      qty?: string;
-      cumulativeQty?: string;
-      feeAmount?: string;
-      feeAsset?: string;
-      receivedAt?: string;
-    },
-  ):
-    | {
-        exchangeOrderId?: string | null;
-        clientOrderId?: string | null;
-        accountLabel?: string | null;
-        fillId?: string | null;
-        side?: 'buy' | 'sell';
-        price?: string;
-        qty?: string;
-        cumulativeQty?: string;
-        feeAmount?: string;
-        feeAsset?: string;
-        receivedAt?: string;
-      }
-    | null {
-    if (!trackedOrder) {
-      return fill;
-    }
-
-    const settledCumulative = new BigNumber(
-      trackedOrder.settledFilledQty || 0,
-    );
-    const fillCumulative = new BigNumber(this.readString(fill.cumulativeQty));
-    const trackedCumulative = new BigNumber(
-      trackedOrder.cumulativeFilledQty || 0,
-    );
-    const fillQty = new BigNumber(this.readString(fill.qty));
-    let effectiveCumulative: BigNumber | null = null;
-
-    if (fillCumulative.isFinite() && fillCumulative.isGreaterThan(0)) {
-      effectiveCumulative = fillCumulative;
-    }
-
-    if (trackedCumulative.isFinite() && trackedCumulative.isGreaterThan(0)) {
-      effectiveCumulative = effectiveCumulative
-        ? BigNumber.minimum(effectiveCumulative, trackedCumulative)
-        : trackedCumulative;
-    }
-
-    if (!effectiveCumulative && fillQty.isFinite() && fillQty.isGreaterThan(0)) {
-      effectiveCumulative = settledCumulative.plus(fillQty);
-    }
-
-    if (
-      !settledCumulative.isFinite() ||
-      !effectiveCumulative ||
-      !effectiveCumulative.isFinite() ||
-      !effectiveCumulative.isGreaterThan(settledCumulative)
-    ) {
-      return null;
-    }
-
-    const deltaQty = effectiveCumulative.minus(settledCumulative);
-
-    if (!deltaQty.isFinite() || deltaQty.isLessThanOrEqualTo(0)) {
-      return null;
-    }
-
-    return {
-      ...fill,
-      qty: deltaQty.toFixed(),
-      cumulativeQty: effectiveCumulative.toFixed(),
-    };
-  }
-
-  private markTrackedFillSettled(
-    trackedOrder: TrackedOrder | undefined,
-    fill: {
-      cumulativeQty?: string;
-      receivedAt?: string;
-    },
-  ): void {
-    if (!trackedOrder || !fill.cumulativeQty) {
-      return;
-    }
-
-    this.exchangeOrderTrackerService?.markFillSettled({
-      exchange: trackedOrder.exchange,
-      exchangeOrderId: trackedOrder.exchangeOrderId,
-      accountLabel: trackedOrder.accountLabel,
-      cumulativeQty: fill.cumulativeQty,
-      updatedAt: fill.receivedAt,
-    });
-  }
-
-  private pauseFillSettlementReservations(
-    session: StrategyRuntimeSession,
-    fill: {
-      side?: 'buy' | 'sell';
-    },
-  ): void {
-    if (!this.balanceLedgerService || !fill.side) {
-      return;
-    }
-
-    const pair = this.readString(
-      session.params?.pair,
-      this.readString(session.params?.symbol, ''),
-    );
-    const assets = pair ? this.parseBaseQuote(pair) : null;
-
-    if (!assets) {
-      return;
-    }
-
-    const assetId = fill.side === 'buy' ? assets.quote : assets.base;
-
-    this.balanceLedgerService.pauseReservations(
-      session.marketMakingOrderId || session.clientId,
-      assetId,
-    );
+    return this.getDualAccountPlanner().buildActiveCycleState(action);
   }
 
   private async applyDualAccountFillProgress(
@@ -7012,251 +4492,6 @@ export class StrategyService
     return nextParams;
   }
 
-  private async applyFillToBalanceLedger(
-    session: StrategyRuntimeSession,
-    fill: {
-      exchangeOrderId?: string | null;
-      clientOrderId?: string | null;
-      fillId?: string | null;
-      side?: 'buy' | 'sell';
-      price?: string;
-      qty?: string;
-      cumulativeQty?: string;
-      feeAmount?: string;
-      feeAsset?: string;
-      receivedAt?: string;
-    },
-  ): Promise<void> {
-    if (!this.balanceLedgerService || !fill.side || !fill.price || !fill.qty) {
-      return;
-    }
-
-    const pair = this.readString(
-      session.params?.pair,
-      this.readString(session.params?.symbol, ''),
-    );
-    const assets = pair ? this.parseBaseQuote(pair) : null;
-
-    if (!assets) {
-      this.logger.warn(
-        `Skipping fill ledger update for strategyKey=${session.strategyKey}: pair is missing or unparseable`,
-      );
-
-      return;
-    }
-
-    const price = new BigNumber(fill.price);
-    const qty = new BigNumber(fill.qty);
-
-    if (
-      !price.isFinite() ||
-      !qty.isFinite() ||
-      price.isLessThanOrEqualTo(0) ||
-      qty.isLessThanOrEqualTo(0)
-    ) {
-      this.logger.warn(
-        `Skipping fill ledger update for strategyKey=${
-          session.strategyKey
-        }: invalid fill price/qty price=${fill.price || ''} qty=${
-          fill.qty || ''
-        }`,
-      );
-
-      return;
-    }
-
-    const quoteAmount = price.multipliedBy(qty);
-    const eventKey = this.buildFillLedgerEventKey(session, fill);
-
-    if (!eventKey) {
-      this.logger.warn(
-        `Skipping fill ledger update for strategyKey=${
-          session.strategyKey
-        }: missing canonical fill identity (need exchangeOrderId/clientOrderId AND cumulativeQty). exchangeOrderId=${
-          fill.exchangeOrderId || ''
-        } clientOrderId=${fill.clientOrderId || ''} cumulativeQty=${
-          fill.cumulativeQty || ''
-        } fillId=${fill.fillId || ''}`,
-      );
-
-      return;
-    }
-
-    const baseAmount = qty.toFixed();
-    const quoteDelta =
-      fill.side === 'buy'
-        ? quoteAmount.negated().toFixed()
-        : quoteAmount.toFixed();
-    const baseDelta =
-      fill.side === 'buy' ? baseAmount : qty.negated().toFixed();
-
-    await this.balanceLedgerService.adjust({
-      orderId: session.marketMakingOrderId || session.clientId,
-      userId: session.userId,
-      assetId: assets.base,
-      amount: baseDelta,
-      idempotencyKey: `${eventKey}:base`,
-      refType: 'market_making_fill',
-      refId: fill.exchangeOrderId || fill.clientOrderId || session.strategyKey,
-    });
-
-    await this.balanceLedgerService.adjust({
-      orderId: session.marketMakingOrderId || session.clientId,
-      userId: session.userId,
-      assetId: assets.quote,
-      amount: quoteDelta,
-      idempotencyKey: `${eventKey}:quote`,
-      refType: 'market_making_fill',
-      refId: fill.exchangeOrderId || fill.clientOrderId || session.strategyKey,
-    });
-
-    await this.applyFillFeeToBalanceLedger(session, fill, eventKey);
-  }
-
-  private async settleFillToBalanceLedger(
-    session: StrategyRuntimeSession,
-    fill: {
-      exchangeOrderId?: string | null;
-      clientOrderId?: string | null;
-      fillId?: string | null;
-      side?: 'buy' | 'sell';
-      price?: string;
-      qty?: string;
-      cumulativeQty?: string;
-      feeAmount?: string;
-      feeAsset?: string;
-      receivedAt?: string;
-    },
-  ): Promise<boolean> {
-    const pair = this.readString(
-      session.params?.pair,
-      this.readString(session.params?.symbol, ''),
-    );
-
-    if (this.fillSettlementService && pair) {
-      return await this.fillSettlementService.settleFill({
-        strategyKey: session.strategyKey,
-        orderId: session.marketMakingOrderId || session.clientId,
-        userId: session.userId,
-        pair,
-        fill,
-      });
-
-    }
-
-    await this.applyFillToBalanceLedger(session, fill);
-
-    return true;
-  }
-
-  private async applyFillFeeToBalanceLedger(
-    session: StrategyRuntimeSession,
-    fill: {
-      exchangeOrderId?: string | null;
-      clientOrderId?: string | null;
-      feeAmount?: string;
-      feeAsset?: string;
-    },
-    eventKey: string,
-  ): Promise<void> {
-    if (!this.balanceLedgerService || !fill.feeAmount || !fill.feeAsset) {
-      return;
-    }
-
-    const feeAmount = new BigNumber(fill.feeAmount);
-    const feeAsset = this.readString(fill.feeAsset);
-
-    if (
-      !feeAsset ||
-      !feeAmount.isFinite() ||
-      feeAmount.isLessThanOrEqualTo(0)
-    ) {
-      this.logger.warn(
-        `Skipping fill fee ledger update for strategyKey=${
-          session.strategyKey
-        }: invalid fee asset=${fill.feeAsset || ''} amount=${
-          fill.feeAmount || ''
-        }`,
-      );
-
-      return;
-    }
-
-    try {
-      await this.balanceLedgerService.debitFee({
-        orderId: session.marketMakingOrderId || session.clientId,
-        userId: session.userId,
-        assetId: feeAsset,
-        amount: feeAmount.toFixed(),
-        idempotencyKey: `${eventKey}:fee:${feeAsset}`,
-        refType: 'market_making_fee',
-        refId:
-          fill.exchangeOrderId || fill.clientOrderId || session.strategyKey,
-      });
-    } catch (error) {
-      this.logger.warn(
-        `Fill fee debit requires manual review for strategyKey=${
-          session.strategyKey
-        } asset=${feeAsset} amount=${feeAmount.toFixed()}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  private buildFillLedgerEventKey(
-    session: StrategyRuntimeSession,
-    fill: {
-      exchangeOrderId?: string | null;
-      clientOrderId?: string | null;
-      fillId?: string | null;
-      side?: 'buy' | 'sell';
-      price?: string;
-      qty?: string;
-      cumulativeQty?: string;
-      feeAmount?: string;
-      feeAsset?: string;
-      receivedAt?: string;
-    },
-  ): string | null {
-    const orderIdentity = fill.exchangeOrderId || fill.clientOrderId;
-    const cumulativeQtyStr = fill.cumulativeQty
-      ? new BigNumber(fill.cumulativeQty)
-      : null;
-
-    if (
-      !orderIdentity ||
-      !fill.side ||
-      !cumulativeQtyStr ||
-      !cumulativeQtyStr.isFinite() ||
-      cumulativeQtyStr.isLessThanOrEqualTo(0)
-    ) {
-      return null;
-    }
-
-    return [
-      'mm-fill',
-      session.strategyKey,
-      orderIdentity,
-      fill.side,
-      cumulativeQtyStr.toFixed(),
-    ].join(':');
-  }
-
-  private estimateMakerFeeSpread(exchangeName: string, pair: string): number {
-    try {
-      const exchange = this.exchangeInitService.getExchange(exchangeName);
-      const market = exchange?.markets?.[pair];
-      const makerFee = Number(
-        market?.maker ?? exchange?.fees?.trading?.maker ?? 0,
-      );
-
-      return Number.isFinite(makerFee) && makerFee > 0 ? makerFee * 2 : 0;
-    } catch {
-      return 0;
-    }
-  }
-
   private setConnectorHealthStatus(
     exchange: string,
     status: ConnectorHealthStatus,
@@ -7292,327 +4527,14 @@ export class StrategyService
     quote: BigNumber;
     assets: { base: string; quote: string };
   } | null> {
-    const assets = this.parseBaseQuote(pair);
-
-    if (!assets) {
-      return null;
-    }
-
-    const orderId = String(marketMakingOrderId || '').trim();
-
-    if (orderId && this.balanceLedgerService) {
-      try {
-        const [baseBalance, quoteBalance] = await Promise.all([
-          this.balanceLedgerService.getExistingBalance(orderId, assets.base),
-          this.balanceLedgerService.getExistingBalance(orderId, assets.quote),
-        ]);
-
-        return {
-          base: new BigNumber(baseBalance?.available || 0),
-          quote: new BigNumber(quoteBalance?.available || 0),
-          assets,
-        };
-      } catch (error) {
-        this.logger.warn(
-          `Failed to read order-scoped balances for ${orderId} ${pair}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-
-        return null;
-      }
-    }
-
-    const normalizedAccountLabel = accountLabel || 'default';
-    const nowMs = Date.now();
-    const snapshotFresh =
-      this.balanceStateCacheService?.hasFreshAccountSnapshot(
-        exchangeName,
-        normalizedAccountLabel,
-        nowMs,
-      ) ?? false;
-    const snapshotDiagnostic =
-      this.balanceStateCacheService?.getSnapshotDiagnostic(
-        exchangeName,
-        normalizedAccountLabel,
-        nowMs,
-      );
-
-    if (!snapshotFresh) {
-      this.logger.warn(
-        [
-          `Balance cache diagnostic for ${exchangeName} ${pair} account=${normalizedAccountLabel}`,
-          `snapshotPresent=${snapshotDiagnostic?.present ?? false}`,
-          `snapshotFresh=${snapshotDiagnostic?.fresh ?? false}`,
-          `snapshotAgeMs=${snapshotDiagnostic?.ageMs ?? 'missing'}`,
-          `snapshotSource=${snapshotDiagnostic?.source ?? 'missing'}`,
-          `snapshotFreshnessTs=${
-            snapshotDiagnostic?.freshnessTimestamp ?? 'missing'
-          }`,
-          `baseAsset=${assets.base}`,
-          `quoteAsset=${assets.quote}`,
-        ].join(' | '),
-      );
-      this.logger.warn(
-        `Skipping balance-dependent strategy read for ${exchangeName} ${pair} account=${normalizedAccountLabel}: balance cache missing or stale`,
-      );
-
-      return null;
-    }
-
-    const cachedBase = this.balanceStateCacheService?.getBalance(
-      exchangeName,
-      normalizedAccountLabel,
-      assets.base,
-    );
-    const cachedQuote = this.balanceStateCacheService?.getBalance(
-      exchangeName,
-      normalizedAccountLabel,
-      assets.quote,
-    );
-
-    return {
-      base: new BigNumber(cachedBase?.free || 0),
-      quote: new BigNumber(cachedQuote?.free || 0),
-      assets,
-    };
-  }
-
-  private async quantizeAndValidateQuote(
-    strategyKey: string,
-    exchangeName: string,
-    pair: string,
-    accountLabel: string | undefined,
-    side: 'buy' | 'sell',
-    layer: number,
-    slotKey: string,
-    rawQty: BigNumber,
-    rawPrice: BigNumber,
-    availableBalances: {
-      base: BigNumber;
-      quote: BigNumber;
-      assets: { base: string; quote: string };
-    } | null,
-  ): Promise<{ price: BigNumber; qty: BigNumber } | null> {
-    if (!this.exchangeConnectorAdapterService) {
-      return { price: rawPrice, qty: rawQty };
-    }
-
-    if (!availableBalances) {
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: available balances unavailable for ${exchangeName} ${pair}`,
-      );
-
-      return null;
-    }
-
-    const { base, quote } = availableBalances;
-    const rules = await this.exchangeConnectorAdapterService.loadTradingRules(
-      exchangeName,
-      pair,
-      accountLabel,
-    );
-    const rawNotional = rawQty.multipliedBy(rawPrice);
-
-    if (
-      rawQty.isLessThanOrEqualTo(0) ||
-      rawPrice.isLessThanOrEqualTo(0) ||
-      (rules.amountMin && rawQty.isLessThan(rules.amountMin)) ||
-      (rules.costMin && rawNotional.isLessThan(rules.costMin))
-    ) {
-      const rejectionReasons: string[] = [];
-
-      if (rawQty.isLessThanOrEqualTo(0)) {
-        rejectionReasons.push(`raw qty ${rawQty.toFixed()} <= 0`);
-      }
-      if (rawPrice.isLessThanOrEqualTo(0)) {
-        rejectionReasons.push(`raw price ${rawPrice.toFixed()} <= 0`);
-      }
-      if (rules.amountMin && rawQty.isLessThan(rules.amountMin)) {
-        rejectionReasons.push(
-          `raw qty ${rawQty.toFixed()} ${
-            availableBalances.assets.base
-          } < amountMin ${new BigNumber(rules.amountMin).toFixed()} ${
-            availableBalances.assets.base
-          }`,
-        );
-      }
-      if (rules.costMin && rawNotional.isLessThan(rules.costMin)) {
-        rejectionReasons.push(
-          `raw notional ${rawNotional.toFixed()} ${
-            availableBalances.assets.quote
-          } (${rawQty.toFixed()} ${
-            availableBalances.assets.base
-          } * ${rawPrice.toFixed()} ${availableBalances.assets.quote}/${
-            availableBalances.assets.base
-          }) < costMin ${new BigNumber(rules.costMin).toFixed()} ${
-            availableBalances.assets.quote
-          }`,
-        );
-      }
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${rejectionReasons.join(
-          '; ',
-        )}`,
-      );
-
-      return null;
-    }
-
-    let quantized: { price: string; qty: string };
-
-    try {
-      quantized = this.exchangeConnectorAdapterService.quantizeOrder(
+    return (
+      (await this.orderScopedBalanceQueryService?.getAvailableBalancesForPair(
         exchangeName,
         pair,
-        rawQty.toFixed(),
-        rawPrice.toFixed(),
         accountLabel,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `[${strategyKey}] reason=quantization_rejected slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-
-      return null;
-    }
-
-    const price = new BigNumber(quantized.price);
-    const qty = new BigNumber(quantized.qty);
-
-    if (
-      qty.isLessThanOrEqualTo(0) ||
-      price.isLessThanOrEqualTo(0) ||
-      (rules.amountMin && qty.isLessThan(rules.amountMin)) ||
-      (rules.costMin && qty.multipliedBy(price).isLessThan(rules.costMin))
-    ) {
-      const rejectionReasons: string[] = [];
-
-      if (qty.isLessThanOrEqualTo(0)) {
-        rejectionReasons.push(
-          `quantized qty ${qty.toFixed()} <= 0 (rawQty=${rawQty.toFixed()})`,
-        );
-      }
-      if (price.isLessThanOrEqualTo(0)) {
-        rejectionReasons.push(
-          `quantized price ${price.toFixed()} <= 0 (rawPrice=${rawPrice.toFixed()})`,
-        );
-      }
-      if (rules.amountMin && qty.isLessThan(rules.amountMin)) {
-        rejectionReasons.push(
-          `qty ${qty.toFixed()} ${
-            availableBalances.assets.base
-          } < amountMin ${new BigNumber(rules.amountMin).toFixed()} ${
-            availableBalances.assets.base
-          }`,
-        );
-      }
-      if (rules.costMin && qty.multipliedBy(price).isLessThan(rules.costMin)) {
-        rejectionReasons.push(
-          `notional ${qty.multipliedBy(price).toFixed()} ${
-            availableBalances.assets.quote
-          } (${qty.toFixed()} ${
-            availableBalances.assets.base
-          } * ${price.toFixed()} ${availableBalances.assets.quote}/${
-            availableBalances.assets.base
-          }) < costMin ${new BigNumber(rules.costMin).toFixed()} ${
-            availableBalances.assets.quote
-          }`,
-        );
-      }
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${rawQty.toFixed()}@${rawPrice.toFixed()}: ${rejectionReasons.join(
-          '; ',
-        )}`,
-      );
-
-      return null;
-    }
-
-    const notional = qty.multipliedBy(price);
-
-    if (side === 'buy' && quote.isLessThan(notional)) {
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient quote balance ${quote.toFixed()} ${
-          availableBalances.assets.quote
-        } < required ${notional.toFixed()}`,
-      );
-
-      return null;
-    }
-    if (side === 'sell' && base.isLessThan(qty)) {
-      this.logger.warn(
-        `[${strategyKey}] reason=insufficient_balance slotKey=${slotKey} ${side} ${qty.toFixed()}@${price.toFixed()}: insufficient base balance ${base.toFixed()} ${
-          availableBalances.assets.base
-        } < required ${qty.toFixed()}`,
-      );
-
-      return null;
-    }
-
-    if (side === 'buy') {
-      availableBalances.quote = quote.minus(notional);
-    } else {
-      availableBalances.base = base.minus(qty);
-    }
-
-    return { price, qty };
-  }
-
-  private buildStaleOrderActions(
-    strategyKey: string,
-    params: PureMarketMakingStrategyDto,
-    ts: string,
-    midPrice: BigNumber,
-    openOrders: Array<{
-      exchangeOrderId: string;
-      slotKey?: string;
-      side: 'buy' | 'sell';
-      price: string;
-      qty: string;
-      createdAt: string;
-      status: string;
-    }>,
-  ): ExecutorAction[] {
-    const maxOrderAge = Number(params.maxOrderAge || 0);
-    const hangingOrdersCancelPct = Number(params.hangingOrdersCancelPct || 0);
-
-    return openOrders
-      .filter((order) => {
-        const ageMs = Date.now() - Date.parse(order.createdAt || ts);
-        const driftPct = new BigNumber(order.price)
-          .minus(midPrice)
-          .abs()
-          .dividedBy(midPrice);
-
-        return (
-          (Number.isFinite(maxOrderAge) &&
-            maxOrderAge > 0 &&
-            ageMs > maxOrderAge) ||
-          (Number.isFinite(hangingOrdersCancelPct) &&
-            hangingOrdersCancelPct > 0 &&
-            driftPct.isGreaterThan(hangingOrdersCancelPct))
-        );
-      })
-      .map((order, index) => ({
-        type: 'CANCEL_ORDER' as const,
-        intentId: `${strategyKey}:${ts}:stale-cancel-${index}`,
-        runtimeInstanceKey: strategyKey,
-        strategyKey,
-        userId: params.userId,
-        clientId: params.clientId,
-        exchange: params.exchangeName,
-        accountLabel: params.accountLabel,
-        pair: params.pair,
-        side: order.side,
-        price: order.price,
-        qty: order.qty,
-        mixinOrderId: order.exchangeOrderId,
-        slotKey: order.slotKey,
-        createdAt: ts,
-      }));
+        marketMakingOrderId,
+      )) || null
+    );
   }
 
   private async restoreDualAccountVolumeRuntimeState(
@@ -7662,21 +4584,26 @@ export class StrategyService
 
   private async restoreRuntimeStateForStrategy(
     strategy: StrategyInstance,
-  ): Promise<void> {
+  ): Promise<{ success: boolean; blockedReasons: string[] }> {
+    const result = {
+      success: true,
+      blockedReasons: [] as string[],
+    };
+
     if (
       strategy.strategyType === 'dualAccountVolume' ||
       strategy.strategyType === 'dualAccountBestCapacityVolume'
     ) {
       await this.restoreDualAccountVolumeRuntimeState(strategy);
 
-      return;
+      return result;
     }
 
     if (
       strategy.strategyType !== 'pureMarketMaking' ||
       !this.exchangeConnectorAdapterService
     ) {
-      return;
+      return result;
     }
 
     const params = strategy.parameters as PureMarketMakingStrategyDto;
@@ -7684,7 +4611,7 @@ export class StrategyService
     const pair = this.readString(params.pair);
 
     if (!exchange || !pair) {
-      return;
+      return result;
     }
 
     let openOrders: any[] = [];
@@ -7702,7 +4629,10 @@ export class StrategyService
         `Startup reconciliation skipped for ${strategy.strategyKey}: fetchOpenOrders failed (${message})`,
       );
 
-      return;
+      return {
+        success: false,
+        blockedReasons: [`fetchOpenOrders failed: ${message}`],
+      };
     }
 
     const trackedOrders = (((
@@ -7756,6 +4686,26 @@ export class StrategyService
           exchangeOrderId,
         ))
       ) {
+        continue;
+      }
+
+      const mappedRecovery = await this.strategyStartupRecoveryService?.restoreMappedOpenOrder(
+        strategy,
+        exchange,
+        pair,
+        exchangeOrderId,
+        clientOrderId,
+        openOrder,
+        params.accountLabel,
+      );
+
+      if (mappedRecovery?.status === 'restored') {
+        continue;
+      }
+
+      if (mappedRecovery?.status === 'blocked') {
+        result.success = false;
+        result.blockedReasons.push(mappedRecovery.reason);
         continue;
       }
 
@@ -7837,17 +4787,50 @@ export class StrategyService
     }
 
     try {
-      await this.strategyStartupRecoveryService?.recoverInterruptedCreateIntentReservations(
-        strategy,
-        openOrders,
-      );
+      const createRecovery =
+        await this.strategyStartupRecoveryService?.recoverInterruptedCreateIntentReservations(
+          strategy,
+          openOrders,
+        );
+
+      if (createRecovery && !createRecovery.success) {
+        result.success = false;
+        result.blockedReasons.push(...createRecovery.blockedReasons);
+      }
     } catch (error) {
+      const reason = `interrupted create intent recovery failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      result.success = false;
+      result.blockedReasons.push(reason);
       this.logger.warn(
-        `Startup interrupted intent recovery skipped for ${
-          strategy.strategyKey
-        }: ${error instanceof Error ? error.message : String(error)}`,
+        `Startup interrupted intent recovery skipped for ${strategy.strategyKey}: ${reason}`,
       );
     }
+
+    try {
+      const cancelRecovery =
+        await this.strategyStartupRecoveryService?.recoverInterruptedCancelIntentsForStrategy(
+          strategy,
+          openOrders,
+        );
+
+      if (cancelRecovery && !cancelRecovery.success) {
+        result.success = false;
+        result.blockedReasons.push(...cancelRecovery.blockedReasons);
+      }
+    } catch (error) {
+      const reason = `interrupted cancel intent recovery failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      result.success = false;
+      result.blockedReasons.push(reason);
+      this.logger.warn(
+        `Startup interrupted cancel recovery skipped for ${strategy.strategyKey}: ${reason}`,
+      );
+    }
+
+    return result;
   }
 
   private async cancelAllRunningStrategies(reason: string): Promise<void> {
@@ -8001,64 +4984,17 @@ export class StrategyService
     params: PureMarketMakingStrategyDto,
   ): Promise<boolean> {
     const session = this.sessions.get(strategyKey);
+    const decision = this.killSwitchService?.evaluatePureMarketMaking(
+      session,
+      params,
+    );
 
-    if (!session) {
-      return false;
-    }
-
-    const consecutiveRejects = session.consecutiveExchangeRejects || 0;
-    const maxConsecutiveRejects = Number(params.maxConsecutiveRejects || 100);
-
-    if (
-      Number.isFinite(maxConsecutiveRejects) &&
-      maxConsecutiveRejects > 0 &&
-      consecutiveRejects >= maxConsecutiveRejects
-    ) {
-      this.logger.warn(
-        `Kill switch triggered for ${strategyKey}: ${consecutiveRejects} consecutive exchange rejects (threshold ${maxConsecutiveRejects})`,
-      );
-      await this.stopStrategyForUser(
-        session.userId,
-        session.clientId,
-        session.strategyType,
-      );
-
-      return true;
-    }
-
-    const threshold = params.killSwitchThreshold;
-
-    if (threshold === undefined || threshold === null) {
-      return false;
-    }
-
-    const realizedPnl = Number(session.realizedPnlQuote || 0);
-
-    if (!Number.isFinite(realizedPnl)) {
-      return false;
-    }
-
-    const parsedAbsolute = this.parseKillSwitchAbsoluteThreshold(threshold);
-    const parsedPercent = this.parseKillSwitchPercentThreshold(threshold);
-
-    const hitAbsolute =
-      parsedAbsolute !== null &&
-      realizedPnl <= parsedAbsolute.negated().toNumber();
-    const hitPercent =
-      parsedPercent !== null &&
-      Number(session.tradedQuoteVolume || 0) > 0 &&
-      Math.abs(realizedPnl) / Number(session.tradedQuoteVolume || 0) >=
-        parsedPercent &&
-      realizedPnl < 0;
-
-    if (!hitAbsolute && !hitPercent) {
+    if (!session || !decision?.triggered) {
       return false;
     }
 
     this.logger.warn(
-      `Kill switch triggered for ${strategyKey}: realizedPnl=${realizedPnl} threshold=${String(
-        threshold,
-      )}`,
+      `Kill switch triggered for ${strategyKey}: ${decision.reason}`,
     );
     await this.stopStrategyForUser(
       session.userId,
@@ -8067,87 +5003,6 @@ export class StrategyService
     );
 
     return true;
-  }
-
-  private recordSessionPnL(
-    session: StrategyRuntimeSession,
-    fill: {
-      side?: 'buy' | 'sell';
-      price?: string;
-      qty?: string;
-    },
-    options?: {
-      includeTradedQuoteVolume?: boolean;
-    },
-  ): void {
-    if (!fill.side || !fill.price || !fill.qty) {
-      return;
-    }
-
-    const price = new BigNumber(fill.price);
-    const qty = new BigNumber(fill.qty);
-
-    if (
-      !price.isFinite() ||
-      !qty.isFinite() ||
-      price.isLessThanOrEqualTo(0) ||
-      qty.isLessThanOrEqualTo(0)
-    ) {
-      return;
-    }
-
-    const currentInventoryQty = new BigNumber(session.inventoryBaseQty || 0);
-    const currentInventoryCost = new BigNumber(session.inventoryCostQuote || 0);
-    const currentRealizedPnl = new BigNumber(session.realizedPnlQuote || 0);
-    const includeTradedQuoteVolume = options?.includeTradedQuoteVolume ?? true;
-    const currentTradedVolume = new BigNumber(session.tradedQuoteVolume || 0);
-    const fillNotional = price.multipliedBy(qty);
-
-    let nextInventoryQty = currentInventoryQty;
-    let nextInventoryCost = currentInventoryCost;
-    let nextRealizedPnl = currentRealizedPnl;
-
-    if (fill.side === 'buy') {
-      nextInventoryQty = currentInventoryQty.plus(qty);
-      nextInventoryCost = currentInventoryCost.plus(fillNotional);
-    } else {
-      const matchedQty = BigNumber.min(qty, currentInventoryQty);
-
-      if (matchedQty.isGreaterThan(0) && currentInventoryQty.isGreaterThan(0)) {
-        const averageCost = currentInventoryCost.dividedBy(currentInventoryQty);
-        const matchedCost = averageCost.multipliedBy(matchedQty);
-        const matchedProceeds = price.multipliedBy(matchedQty);
-
-        nextRealizedPnl = nextRealizedPnl.plus(
-          matchedProceeds.minus(matchedCost),
-        );
-        nextInventoryQty = currentInventoryQty.minus(matchedQty);
-        nextInventoryCost = BigNumber.max(
-          currentInventoryCost.minus(matchedCost),
-          0,
-        );
-      }
-    }
-
-    session.inventoryBaseQty = nextInventoryQty.toNumber();
-    session.inventoryCostQuote = nextInventoryCost.toNumber();
-    session.realizedPnlQuote = nextRealizedPnl.toNumber();
-    if (includeTradedQuoteVolume) {
-      session.tradedQuoteVolume = currentTradedVolume
-        .plus(fillNotional)
-        .toNumber();
-    }
-    session.params = {
-      ...session.params,
-      inventoryBaseQty: session.inventoryBaseQty,
-      inventoryCostQuote: session.inventoryCostQuote,
-      realizedPnlQuote: session.realizedPnlQuote,
-      ...(includeTradedQuoteVolume
-        ? {
-            tradedQuoteVolume: session.tradedQuoteVolume,
-          }
-        : {}),
-    };
   }
 
   private mergeDualAccountFillRuntimeIntoPersisted(
@@ -8319,44 +5174,6 @@ export class StrategyService
     return 'failed';
   }
 
-  private parseKillSwitchAbsoluteThreshold(
-    threshold: number | string,
-  ): BigNumber | null {
-    if (typeof threshold === 'string' && threshold.trim().endsWith('%')) {
-      return null;
-    }
-
-    const parsed = new BigNumber(threshold);
-
-    if (!parsed.isFinite() || parsed.isLessThanOrEqualTo(0)) {
-      return null;
-    }
-
-    return parsed;
-  }
-
-  private parseKillSwitchPercentThreshold(
-    threshold: number | string,
-  ): number | null {
-    if (typeof threshold !== 'string') {
-      return null;
-    }
-
-    const trimmed = threshold.trim();
-
-    if (!trimmed.endsWith('%')) {
-      return null;
-    }
-
-    const parsed = Number(trimmed.slice(0, -1));
-
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return null;
-    }
-
-    return parsed / 100;
-  }
-
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -8448,279 +5265,56 @@ export class StrategyService
     runtime: DualAccountVolumeStrategyParams,
     persisted?: Partial<DualAccountVolumeStrategyParams>,
   ): DualAccountVolumeStrategyParams {
-    if (!persisted) {
-      return runtime;
-    }
-
-    const merged: DualAccountVolumeStrategyParams = {
-      ...runtime,
-    };
-
-    if (typeof persisted.exchangeName === 'string') {
-      merged.exchangeName = this.readString(
-        persisted.exchangeName,
-        runtime.exchangeName,
-      );
-    }
-
-    if (typeof persisted.symbol === 'string') {
-      merged.symbol = this.readString(persisted.symbol, runtime.symbol);
-    }
-
-    if (typeof persisted.pair === 'string') {
-      merged.pair = this.readString(
-        persisted.pair,
-        runtime.pair || merged.symbol,
-      );
-      if (!this.readString(merged.symbol)) {
-        merged.symbol = merged.pair;
-      }
-    }
-
-    if (Number.isFinite(Number(persisted.baseIncrementPercentage))) {
-      merged.baseIncrementPercentage = Number(
-        persisted.baseIncrementPercentage,
-      );
-    }
-
-    if (Number.isFinite(Number(persisted.baseIntervalTime))) {
-      merged.baseIntervalTime = Number(persisted.baseIntervalTime);
-    }
-
-    if (Number.isFinite(Number(persisted.baseTradeAmount))) {
-      merged.baseTradeAmount = Number(persisted.baseTradeAmount);
-    }
-
-    if (Number.isFinite(Number(persisted.numTrades))) {
-      merged.numTrades = Number(persisted.numTrades);
-    }
-
-    if (Number.isFinite(Number(persisted.pricePushRate))) {
-      merged.pricePushRate = Number(persisted.pricePushRate);
-    }
-
-    if (Number.isFinite(Number(persisted.tradeAmountVariance))) {
-      merged.tradeAmountVariance = this.readNonNegativeNumber(
-        persisted.tradeAmountVariance,
-      );
-    }
-
-    if (Number.isFinite(Number(persisted.priceOffsetVariance))) {
-      merged.priceOffsetVariance = this.readNonNegativeNumber(
-        persisted.priceOffsetVariance,
-      );
-    }
-
-    if (Number.isFinite(Number(persisted.cadenceVariance))) {
-      merged.cadenceVariance = this.readNonNegativeNumber(
-        persisted.cadenceVariance,
-      );
-    }
-
-    if (Number.isFinite(Number(persisted.buyBias))) {
-      merged.buyBias = this.readUnitIntervalNumber(persisted.buyBias);
-    }
-
-    if (
-      persisted.accountProfiles &&
-      typeof persisted.accountProfiles === 'object' &&
-      !Array.isArray(persisted.accountProfiles)
-    ) {
-      merged.accountProfiles =
-        persisted.accountProfiles as DualAccountBehaviorProfilesDto;
-    }
-
-    if (
-      persisted.postOnlySide === 'buy' ||
-      persisted.postOnlySide === 'sell' ||
-      persisted.postOnlySide === undefined
-    ) {
-      merged.postOnlySide = persisted.postOnlySide;
-    }
-
-    if (typeof persisted.dynamicRoleSwitching === 'boolean') {
-      merged.dynamicRoleSwitching = persisted.dynamicRoleSwitching;
-    }
-
-    if (persisted.targetQuoteVolume === undefined) {
-      merged.targetQuoteVolume = undefined;
-    } else if (Number.isFinite(Number(persisted.targetQuoteVolume))) {
-      merged.targetQuoteVolume = Number(persisted.targetQuoteVolume);
-    }
-
-    return merged;
+    return dualAccountConfig.mergeDualAccountConfigIntoRuntime(
+      runtime,
+      persisted,
+    );
   }
 
   private resolveNextDualAccountCadenceMs(
     params: DualAccountVolumeStrategyParams,
   ): number {
-    const baseCadenceSeconds = params.interval ?? params.baseIntervalTime ?? 10;
-    const cadenceSeconds = this.isBestCapacityConfig(params)
-      ? baseCadenceSeconds
-      : this.applyVariance(baseCadenceSeconds, params.cadenceVariance);
-
-    return Math.max(1000, cadenceSeconds * 1000);
+    return dualAccountConfig.resolveNextDualAccountCadenceMs(params);
   }
 
   private resolveDualAccountBehaviorProfile(
     params: DualAccountVolumeStrategyParams,
     accountLabel: string,
   ): DualAccountBehaviorProfile {
-    const profiles = params.accountProfiles;
-
-    if (!profiles) {
-      return {};
-    }
-
-    const candidate =
-      accountLabel === params.makerAccountLabel
-        ? profiles.maker
-        : accountLabel === params.takerAccountLabel
-        ? profiles.taker
-        : undefined;
-
-    return candidate ? this.normalizeBehaviorProfile(candidate) : {};
+    return dualAccountConfig.resolveDualAccountBehaviorProfile(
+      params,
+      accountLabel,
+    );
   }
 
   private normalizeDualAccountStrategyParams(
     params: ExecuteDualAccountVolumeStrategyDto,
   ): DualAccountVolumeStrategyParams {
-    const makerAccountLabel = String(params.makerAccountLabel || '').trim();
-    const takerAccountLabel = String(params.takerAccountLabel || '').trim();
-
-    if (!makerAccountLabel || !takerAccountLabel) {
-      throw new Error(
-        'Dual account volume strategy requires makerAccountLabel and takerAccountLabel',
-      );
-    }
-
-    if (makerAccountLabel === takerAccountLabel) {
-      throw new Error(
-        'Dual account volume strategy requires different maker and taker account labels',
-      );
-    }
-
-    const pair = this.resolveStrategyInputPair(params.symbol, params.pair);
-
-    return {
-      exchangeName: String(params.exchangeName || '').trim(),
-      symbol: pair,
-      pair,
-      baseIncrementPercentage: Number(params.baseIncrementPercentage || 0),
-      baseIntervalTime: Number(params.baseIntervalTime || 10),
-      baseTradeAmount: Number(params.baseTradeAmount || 0),
-      numTrades: Number(params.numTrades || 0),
-      userId: params.userId,
-      clientId: params.clientId,
-      pricePushRate: Number(params.pricePushRate || 0),
-      executionCategory: 'clob_cex',
-      executionVenue: 'cex',
-      postOnlySide: params.postOnlySide,
-      makerAccountLabel,
-      takerAccountLabel,
-      tradeAmountVariance: this.readNonNegativeNumber(
-        params.tradeAmountVariance,
-      ),
-      priceOffsetVariance: this.readNonNegativeNumber(
-        params.priceOffsetVariance,
-      ),
-      cadenceVariance: this.readNonNegativeNumber(params.cadenceVariance),
-      buyBias: this.readUnitIntervalNumber(params.buyBias),
-      accountProfiles: params.accountProfiles,
-      dynamicRoleSwitching: Boolean(params.dynamicRoleSwitching),
-      targetQuoteVolume:
-        params.targetQuoteVolume !== undefined
-          ? Number(params.targetQuoteVolume)
-          : undefined,
-      publishedCycles: 0,
-      completedCycles: 0,
-      cycleMode: params.cycleMode || 'alternating',
-      makerProtectionMode: params.makerProtectionMode || 'alive_only',
-      nextMakerAccountLabel: params.makerAccountLabel,
-      nextTakerAccountLabel: params.takerAccountLabel,
-      orderBookReady: false,
-      consecutiveFallbackCycles: 0,
-      tradedQuoteVolume: 0,
-      realizedPnlQuote: 0,
-      inventoryBaseQty: 0,
-      inventoryCostQuote: 0,
-    };
+    return dualAccountConfig.normalizeDualAccountStrategyParams(params);
   }
 
   private normalizeDualAccountBestCapacityStrategyParams(
     params: ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ): DualAccountVolumeStrategyParams {
-    const makerAccountLabel = String(params.makerAccountLabel || '').trim();
-    const takerAccountLabel = String(params.takerAccountLabel || '').trim();
-
-    if (!makerAccountLabel || !takerAccountLabel) {
-      throw new Error(
-        'Dual account best-capacity strategy requires makerAccountLabel and takerAccountLabel',
-      );
-    }
-
-    if (makerAccountLabel === takerAccountLabel) {
-      throw new Error(
-        'Dual account best-capacity strategy requires different maker and taker account labels',
-      );
-    }
-
-    const maxOrderAmount = Number(params.maxOrderAmount || 0);
-    const interval = Number(params.interval || 10);
-    const dailyVolumeTarget =
-      params.dailyVolumeTarget !== undefined
-        ? Number(params.dailyVolumeTarget)
-        : undefined;
-    const pair = this.resolveStrategyInputPair(params.symbol, params.pair);
-
-    return {
-      exchangeName: String(params.exchangeName || '').trim(),
-      symbol: pair,
-      pair,
-      baseIncrementPercentage: 0,
-      baseIntervalTime: interval,
-      baseTradeAmount: maxOrderAmount,
-      maxOrderAmount,
-      interval,
-      numTrades: 0,
-      userId: params.userId,
-      clientId: params.clientId,
-      pricePushRate: 0,
-      executionCategory: 'clob_cex',
-      executionVenue: 'cex',
-      makerAccountLabel,
-      takerAccountLabel,
-      dailyVolumeTarget,
-      targetQuoteVolume: dailyVolumeTarget,
-      publishedCycles: 0,
-      completedCycles: 0,
-      cycleMode: params.cycleMode || 'alternating',
-      makerProtectionMode: params.makerProtectionMode || 'alive_only',
-      nextMakerAccountLabel: params.makerAccountLabel,
-      nextTakerAccountLabel: params.takerAccountLabel,
-      orderBookReady: false,
-      consecutiveFallbackCycles: 0,
-      tradedQuoteVolume: 0,
-      realizedPnlQuote: 0,
-      inventoryBaseQty: 0,
-      inventoryCostQuote: 0,
-    };
+    return dualAccountConfig.normalizeDualAccountBestCapacityStrategyParams(
+      params,
+    );
   }
 
   private isBestCapacityConfig(
     params: DualAccountVolumeStrategyParams,
   ): boolean {
-    return Number.isFinite(Number(params.maxOrderAmount));
+    return dualAccountConfig.isBestCapacityConfig(params);
   }
 
   private resolveStrategyInputPair(symbol: unknown, pair: unknown): string {
-    return this.readString(symbol, this.readString(pair));
+    return dualAccountConfig.resolveStrategyInputPair(symbol, pair);
   }
 
   private resolveRuntimePair(
     params: Pick<VolumeStrategyParams, 'symbol' | 'pair'>,
   ): string {
-    return this.readString(params.symbol, this.readString(params.pair));
+    return dualAccountConfig.resolveRuntimePair(params);
   }
 
   private maybeWarnDualAccountBestCapacityIgnoredFields(
@@ -8757,78 +5351,24 @@ export class StrategyService
     );
   }
 
-  private normalizeBehaviorProfile(
-    profile: Partial<DualAccountBehaviorProfileDto>,
-  ): DualAccountBehaviorProfile {
-    return {
-      tradeAmountMultiplier: profile.tradeAmountMultiplier,
-      tradeAmountVariance: profile.tradeAmountVariance,
-      priceOffsetMultiplier: profile.priceOffsetMultiplier,
-      priceOffsetVariance: profile.priceOffsetVariance,
-      cadenceMultiplier: profile.cadenceMultiplier,
-      cadenceVariance: profile.cadenceVariance,
-      buyBias: profile.buyBias,
-      activeHours: profile.activeHours,
-    };
-  }
-
   private applyVariance(
     baseValue: number,
     variance?: number,
     multiplier?: number,
     varianceSample?: number,
   ): number {
-    const normalizedBase = new BigNumber(baseValue);
-
-    if (!normalizedBase.isFinite()) {
-      return normalizedBase.toNumber();
-    }
-
-    const normalizedMultiplier =
-      multiplier !== undefined ? this.readPositiveNumber(multiplier) ?? 1 : 1;
-    const effectiveBase = normalizedBase.multipliedBy(normalizedMultiplier);
-    const normalizedVariance = this.readNonNegativeNumber(variance);
-
-    if (!normalizedVariance || normalizedVariance <= 0) {
-      return effectiveBase.toNumber();
-    }
-
-    const sample = this.readUnitIntervalNumber(varianceSample) ?? Math.random();
-    const swing = new BigNumber(sample * 2 - 1).multipliedBy(
-      normalizedVariance,
+    return dualAccountConfig.applyVariance(
+      baseValue,
+      variance,
+      multiplier,
+      varianceSample,
     );
-
-    return effectiveBase.multipliedBy(new BigNumber(1).plus(swing)).toNumber();
-  }
-
-  private readPositiveNumber(value: unknown): number | undefined {
-    const parsed = Number(value);
-
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-  }
-
-  private readNonNegativeNumber(value: unknown): number | undefined {
-    const parsed = Number(value);
-
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-  }
-
-  private readUnitIntervalNumber(value: unknown): number | undefined {
-    const parsed = Number(value);
-
-    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
-      ? parsed
-      : undefined;
   }
 
   private isWithinDualAccountProfileWindow(
     profile: DualAccountBehaviorProfile,
   ): boolean {
-    if (!profile.activeHours?.length) {
-      return true;
-    }
-
-    return profile.activeHours.includes(new Date().getHours());
+    return dualAccountConfig.isWithinDualAccountProfileWindow(profile);
   }
 
   private toErrorDetails(error: unknown): { message: string; stack?: string } {
@@ -8839,90 +5379,4 @@ export class StrategyService
     return { message: String(error) };
   }
 
-  private calcEma(series: number[], period: number): number[] {
-    if (period <= 0) return series.map(() => NaN);
-    const k = 2 / (period + 1);
-    const out: number[] = [];
-    let prev: number | undefined;
-
-    for (let i = 0; i < series.length; i++) {
-      const v = series[i];
-
-      if (i === 0 || prev === undefined) {
-        prev = v;
-        out.push(v);
-      } else {
-        const e = (v - prev) * k + prev;
-
-        out.push(e);
-        prev = e;
-      }
-    }
-
-    return out;
-  }
-
-  private calcRsi(series: number[], period: number): number[] {
-    if (period <= 0 || series.length < period + 1)
-      return new Array(series.length).fill(NaN);
-
-    const gains: number[] = [];
-    const losses: number[] = [];
-
-    for (let i = 1; i < series.length; i++) {
-      const ch = series[i] - series[i - 1];
-
-      gains.push(ch > 0 ? ch : 0);
-      losses.push(ch < 0 ? -ch : 0);
-    }
-
-    let avgGain = this.avg(gains.slice(0, period));
-    let avgLoss = this.avg(losses.slice(0, period));
-    const rsiArr = new Array(series.length).fill(NaN);
-
-    for (let i = period - 1; i < gains.length; i++) {
-      if (i >= period) {
-        avgGain = (avgGain * (period - 1) + gains[i]) / period;
-        avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
-      }
-      const rs = avgLoss === 0 ? Number.POSITIVE_INFINITY : avgGain / avgLoss;
-      const val = 100 - 100 / (1 + rs);
-
-      rsiArr[i + 1] = val;
-    }
-
-    return rsiArr;
-  }
-
-  private avg(arr: number[]): number {
-    if (!arr.length) return 0;
-
-    return arr.reduce((a, b) => a + b, 0) / arr.length;
-  }
-
-  private calcCross(
-    prevFast: number,
-    prevSlow: number,
-    fast: number,
-    slow: number,
-  ): 'CROSS_UP' | 'CROSS_DOWN' | 'NONE' {
-    const wasBelow = prevFast <= prevSlow;
-    const nowAbove = fast > slow;
-    const wasAbove = prevFast >= prevSlow;
-    const nowBelow = fast < slow;
-
-    if (wasBelow && nowAbove) return 'CROSS_UP';
-    if (wasAbove && nowBelow) return 'CROSS_DOWN';
-
-    return 'NONE';
-  }
-
-  private safePct(v?: number): number | undefined {
-    if (v === undefined || v === null) return undefined;
-    const n = Number(v);
-
-    if (!Number.isFinite(n) || n <= 0) return undefined;
-
-    return n;
-  }
 }

@@ -46,6 +46,7 @@ describe('StrategyStartupRecoveryService', () => {
     const strategyIntentStoreService = {
       listInterruptedCreateIntents: jest.fn().mockResolvedValue(intents),
       updateIntentStatus: jest.fn().mockResolvedValue(undefined),
+      attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
     };
     const balanceLedgerService = {
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
@@ -55,11 +56,16 @@ describe('StrategyStartupRecoveryService', () => {
       findByExchangeOrderId: jest
         .fn()
         .mockResolvedValue(mappingByExchangeOrderId),
+      createMapping: jest.fn().mockResolvedValue(undefined),
+    };
+    const exchangeOrderTrackerService = {
+      upsertOrder: jest.fn(),
     };
     const service = new StrategyStartupRecoveryService(
       strategyIntentStoreService as any,
       balanceLedgerService as any,
       exchangeOrderMappingService as any,
+      exchangeOrderTrackerService as any,
     );
 
     return {
@@ -67,6 +73,7 @@ describe('StrategyStartupRecoveryService', () => {
       strategyIntentStoreService,
       balanceLedgerService,
       exchangeOrderMappingService,
+      exchangeOrderTrackerService,
     };
   };
 
@@ -99,9 +106,14 @@ describe('StrategyStartupRecoveryService', () => {
     );
   });
 
-  it('does not release when an open exchange order is owned by the strategy', async () => {
-    const { service, balanceLedgerService, strategyIntentStoreService } =
-      createService({
+  it('restores an interrupted create intent when an owned open exchange order remains', async () => {
+    const {
+      service,
+      balanceLedgerService,
+      strategyIntentStoreService,
+      exchangeOrderMappingService,
+      exchangeOrderTrackerService,
+    } = createService({
         mappingByExchangeOrderId: {
           orderId: 'order-1',
           exchangeOrderId: 'exchange-order-1',
@@ -109,14 +121,86 @@ describe('StrategyStartupRecoveryService', () => {
       });
 
     await service.recoverInterruptedCreateIntentReservations(createStrategy(), [
-      { id: 'exchange-order-1' },
+      {
+        id: 'exchange-order-1',
+        clientOrderId: 'client-1',
+        side: 'buy',
+        price: '56.22',
+        amount: '0.04',
+        status: 'open',
+      },
     ]);
 
     expect(balanceLedgerService.unlockFunds).not.toHaveBeenCalled();
-    expect(strategyIntentStoreService.updateIntentStatus).not.toHaveBeenCalled();
+    expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      exchangeOrderId: 'exchange-order-1',
+      clientOrderId: 'client-1',
+    });
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        strategyKey: 'order-1-pureMarketMaking',
+        exchangeOrderId: 'exchange-order-1',
+        clientOrderId: 'client-1',
+        side: 'buy',
+        price: '56.22',
+        qty: '0.04',
+        status: 'open',
+      }),
+    );
+    expect(strategyIntentStoreService.attachMixinOrderId).toHaveBeenCalledWith(
+      'intent-1',
+      'exchange-order-1',
+    );
+    expect(strategyIntentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-1',
+      'DONE',
+      'interrupted create intent restored on startup',
+    );
   });
 
-  it('skips intents that already have an exchange order id attached', async () => {
+  it('recovers interrupted creates independently instead of returning after the first open order', async () => {
+    const { service, balanceLedgerService, exchangeOrderTrackerService } =
+      createService({
+        intents: [
+          createIntent({
+            intentId: 'intent-open',
+            price: '56.22',
+            qty: '0.04',
+          }),
+          createIntent({
+            intentId: 'intent-dangling',
+            price: '57',
+            qty: '0.05',
+          }),
+        ],
+        mappingByExchangeOrderId: {
+          orderId: 'order-1',
+          exchangeOrderId: 'exchange-order-1',
+        },
+      });
+
+    await service.recoverInterruptedCreateIntentReservations(createStrategy(), [
+      {
+        id: 'exchange-order-1',
+        side: 'buy',
+        price: '56.22',
+        amount: '0.04',
+        status: 'open',
+      },
+    ]);
+
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledTimes(1);
+    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey:
+          'reserve-release:intent-dangling:interrupted_intent_recovery',
+      }),
+    );
+  });
+
+  it('releases an interrupted create with an attached exchange id when no open order remains', async () => {
     const { service, balanceLedgerService, strategyIntentStoreService } =
       createService({
         intents: [createIntent({ mixinOrderId: 'exchange-order-1' })],
@@ -127,7 +211,15 @@ describe('StrategyStartupRecoveryService', () => {
       [],
     );
 
-    expect(balanceLedgerService.unlockFunds).not.toHaveBeenCalled();
-    expect(strategyIntentStoreService.updateIntentStatus).not.toHaveBeenCalled();
+    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'reserve-release:intent-1:interrupted_intent_recovery',
+      }),
+    );
+    expect(strategyIntentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'intent-1',
+      'CANCELLED',
+      'interrupted create intent recovered on startup',
+    );
   });
 });

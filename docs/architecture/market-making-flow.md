@@ -300,10 +300,15 @@ Create-limit-order execution:
 8. On failed create before external acknowledgement, releases reservation.
 9. On cancel/reject/expire terminal states, releases remaining unfilled
    reservation.
-10. On startup, persisted terminal tracked orders re-run the same idempotent
-    release path, and interrupted create intents stuck in `SENT` / `ACKED`
-    without an exchange order id release their reservation only after startup
-    exchange-open-order reconciliation finds no owned live order.
+10. On startup, exchange open-order reconciliation must complete before a
+    strategy session is activated. If the exchange state cannot be read, the
+    strategy is blocked from ticking.
+11. Interrupted create intents stuck in `SENT` / `ACKED` are recovered
+    one-by-one: owned open exchange orders are restored into `tracked_order`
+    with slot/price/quantity metadata and keep their reservation; intents with
+    no owned live order release their reservation idempotently.
+12. Interrupted cancel intents stuck in `SENT` / `ACKED` are retried or
+    reconciled against exchange order state before startup completes.
 
 Reservation is expressed through ledger entries:
 

@@ -10,18 +10,27 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 
 import { BalanceStateCacheService } from '../balance-state/balance-state-cache.service';
+import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-balance-query.service';
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { PerformanceService } from '../performance/performance.service';
+import { KillSwitchService } from '../risk/kill-switch.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
 import { UserStreamIngestionService } from '../trackers/user-stream-ingestion.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
+import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
+import { VolumeStrategyController } from './controllers/volume-strategy.controller';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
 import { ExecutorRegistry } from './execution/executor-registry';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
+import { RuntimeObservationService } from './observation/runtime-observation.service';
+import { AdaptivePmmStateService } from './pmm/adaptive-pmm-state.service';
+import { QuotePlannerService } from './quote/quote-planner.service';
+import { StrategyStartupRecoveryService } from './recovery/strategy-startup-recovery.service';
+import { StrategyWatcherManagerService } from './runtime/strategy-watcher-manager.service';
 import { FillSettlementService } from './settlement/fill-settlement.service';
 import { StrategyService } from './strategy.service';
 
@@ -73,6 +82,7 @@ class ExchangeInitServiceMock {
 
 describe('StrategyService', () => {
   let service: StrategyService;
+  let quotePlannerService: QuotePlannerService;
   let executorRegistry: ExecutorRegistry;
   let exchangeInitService: ExchangeInitServiceMock;
   let executorOrchestratorService: {
@@ -80,6 +90,15 @@ describe('StrategyService', () => {
   };
   let strategyIntentStoreService: {
     cancelPendingIntents: jest.Mock;
+    createLimitOrderIntent: jest.Mock;
+    publishIntents: jest.Mock;
+    getLatestIntentsForStrategy: jest.Mock;
+    clearLatestIntentsForStrategy: jest.Mock;
+    listAll: jest.Mock;
+    listInterruptedCreateIntents: jest.Mock;
+    listInterruptedCancelIntents: jest.Mock;
+    attachMixinOrderId: jest.Mock;
+    updateIntentStatus: jest.Mock;
   };
   let balanceLedgerService: {
     adjust: jest.Mock;
@@ -100,6 +119,7 @@ describe('StrategyService', () => {
     getTrackedOrders: jest.Mock;
     getByExchangeOrderId: jest.Mock;
     upsertOrder: jest.Mock;
+    markFillSettled: jest.Mock;
   };
   let userStreamIngestionService: {
     startOrderWatcher: jest.Mock;
@@ -129,6 +149,7 @@ describe('StrategyService', () => {
   let exchangeOrderMappingService: {
     findByClientOrderId: jest.Mock;
     findByExchangeOrderId: jest.Mock;
+    createMapping: jest.Mock;
   };
 
   const mockStrategyInstanceRepository = {
@@ -201,6 +222,23 @@ describe('StrategyService', () => {
     );
 
   beforeEach(async () => {
+    jest.resetAllMocks();
+    mockStrategyInstanceRepository.find.mockResolvedValue([]);
+    mockStrategyInstanceRepository.findOne.mockResolvedValue(null);
+    mockStrategyInstanceRepository.save.mockResolvedValue(undefined);
+    mockStrategyInstanceRepository.create.mockImplementation(
+      (entity: any) => entity,
+    );
+    mockStrategyInstanceRepository.update.mockResolvedValue(undefined);
+    mockMarketMakingOrderRepository.findOne.mockResolvedValue({
+      orderId: 'default-order',
+      state: 'running',
+    });
+    mockStrategyExecutionHistoryRepository.create.mockImplementation(
+      (entity: any) => entity,
+    );
+    mockStrategyExecutionHistoryRepository.save.mockResolvedValue(undefined);
+
     executorOrchestratorService = {
       dispatchActions: jest.fn(async (_strategyKey: string, actions: any[]) =>
         actions.map((action: any) => ({
@@ -255,6 +293,7 @@ describe('StrategyService', () => {
       getTrackedOrders: jest.fn().mockReturnValue([]),
       getByExchangeOrderId: jest.fn().mockReturnValue(undefined),
       upsertOrder: jest.fn(),
+      markFillSettled: jest.fn(),
     };
     userStreamIngestionService = {
       startOrderWatcher: jest.fn(),
@@ -264,8 +303,68 @@ describe('StrategyService', () => {
       startBalanceWatcher: jest.fn(),
       stopBalanceWatcher: jest.fn(),
     };
+    const latestIntentsByStrategy = new Map<string, any[]>();
     strategyIntentStoreService = {
       cancelPendingIntents: jest.fn().mockResolvedValue(0),
+      createLimitOrderIntent: jest.fn(
+        (
+          runtimeInstanceKey: string,
+          strategyKey: string,
+          userId: string,
+          clientId: string,
+          exchange: string,
+          pair: string,
+          side: 'buy' | 'sell',
+          price: BigNumber,
+          qty: BigNumber,
+          ts: string,
+          suffix: string,
+          executionCategory?: string,
+          metadata?: Record<string, unknown>,
+          postOnly?: boolean,
+          accountLabel?: string,
+          timeInForce?: 'GTC' | 'IOC',
+        ) => ({
+          type: 'CREATE_LIMIT_ORDER',
+          intentId: `${strategyKey}:${ts}:${suffix}`,
+          runtimeInstanceKey,
+          strategyKey,
+          userId,
+          clientId,
+          exchange,
+          accountLabel,
+          pair,
+          side,
+          price: price.toFixed(),
+          qty: qty.toFixed(),
+          executionCategory,
+          postOnly,
+          timeInForce,
+          metadata,
+          createdAt: ts,
+          status: 'NEW',
+        }),
+      ),
+      publishIntents: jest.fn(async (strategyKey: string, actions: any[]) => {
+        const published = await executorOrchestratorService.dispatchActions(
+          strategyKey,
+          actions,
+        );
+        latestIntentsByStrategy.set(strategyKey, published);
+
+        return published;
+      }),
+      getLatestIntentsForStrategy: jest.fn((strategyKey: string) =>
+        latestIntentsByStrategy.get(strategyKey) || [],
+      ),
+      clearLatestIntentsForStrategy: jest.fn((strategyKey: string) => {
+        latestIntentsByStrategy.delete(strategyKey);
+      }),
+      listAll: jest.fn().mockResolvedValue([]),
+      listInterruptedCreateIntents: jest.fn().mockResolvedValue([]),
+      listInterruptedCancelIntents: jest.fn().mockResolvedValue([]),
+      attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
+      updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     };
     strategyMarketDataProviderService = {
       getReferencePrice: jest.fn().mockResolvedValue(100.5),
@@ -322,19 +421,13 @@ describe('StrategyService', () => {
     exchangeOrderMappingService = {
       findByClientOrderId: jest.fn().mockResolvedValue(null),
       findByExchangeOrderId: jest.fn().mockResolvedValue(null),
+      createMapping: jest.fn().mockResolvedValue(undefined),
     };
-    mockMarketMakingOrderRepository.findOne.mockResolvedValue({
-      orderId: 'default-order',
-      state: 'running',
-    });
-    mockStrategyExecutionHistoryRepository.create.mockImplementation(
-      (entity: any) => entity,
-    );
-    mockStrategyExecutionHistoryRepository.save.mockResolvedValue(undefined);
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StrategyService,
+        ArbitrageStrategyController,
+        VolumeStrategyController,
         { provide: PerformanceService, useClass: PerformanceServiceMock },
         { provide: ExchangeInitService, useClass: ExchangeInitServiceMock },
         {
@@ -345,6 +438,12 @@ describe('StrategyService', () => {
           provide: BalanceLedgerService,
           useValue: balanceLedgerService,
         },
+        KillSwitchService,
+        RuntimeObservationService,
+        AdaptivePmmStateService,
+        QuotePlannerService,
+        StrategyWatcherManagerService,
+        OrderScopedBalanceQueryService,
         FillSettlementService,
         {
           provide: BalanceStateCacheService,
@@ -383,6 +482,7 @@ describe('StrategyService', () => {
           provide: ExchangeOrderMappingService,
           useValue: exchangeOrderMappingService,
         },
+        StrategyStartupRecoveryService,
         ExecutorRegistry,
         { provide: ConfigService, useValue: { get: jest.fn() } },
         {
@@ -401,6 +501,7 @@ describe('StrategyService', () => {
     }).compile();
 
     service = module.get<StrategyService>(StrategyService);
+    quotePlannerService = module.get<QuotePlannerService>(QuotePlannerService);
     executorRegistry = module.get<ExecutorRegistry>(ExecutorRegistry);
     exchangeInitService = module.get<ExchangeInitServiceMock>(
       ExchangeInitService as any,
@@ -505,7 +606,7 @@ describe('StrategyService', () => {
     );
   });
 
-  it('restores tracked PMM orders and cancels orphan exchange orders on startup', async () => {
+  it('restores tracked PMM orders and mapped exchange orders on startup', async () => {
     const strategy = {
       strategyKey: 'order-1-pureMarketMaking',
       strategyType: 'pureMarketMaking',
@@ -572,9 +673,16 @@ describe('StrategyService', () => {
       async (clientOrderId: string) =>
         clientOrderId === 'mm-orphan' ? { orderId: 'order-1' } : null,
     );
-    exchangeConnectorAdapterService.cancelOrder.mockResolvedValueOnce({
-      status: 'closed',
-    });
+    strategyIntentStoreService.listAll.mockResolvedValue([
+      {
+        strategyKey: strategy.strategyKey,
+        type: 'CREATE_LIMIT_ORDER',
+        side: 'sell',
+        price: '101',
+        qty: '1',
+        slotKey: 'layer-1-sell',
+      },
+    ]);
     jest.spyOn(service, 'getCadenceMs').mockReturnValue(1000);
     jest.spyOn(service as any, 'upsertSession').mockResolvedValue({
       strategyKey: strategy.strategyKey,
@@ -585,12 +693,7 @@ describe('StrategyService', () => {
     expect(
       exchangeConnectorAdapterService.fetchOpenOrders,
     ).toHaveBeenCalledWith('binance', 'BTC/USDT', undefined);
-    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
-      'binance',
-      'BTC/USDT',
-      'ex-orphan',
-      undefined,
-    );
+    expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         exchangeOrderId: 'ex-known',
@@ -600,8 +703,204 @@ describe('StrategyService', () => {
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         exchangeOrderId: 'ex-orphan',
+        slotKey: 'layer-1-sell',
+        status: 'open',
+      }),
+    );
+  });
+
+  it('blocks PMM startup when open order reconciliation cannot read the exchange', async () => {
+    const strategy = {
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      status: 'running',
+      parameters: {
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+    };
+
+    mockStrategyInstanceRepository.find.mockResolvedValue([strategy]);
+    exchangeConnectorAdapterService.fetchOpenOrders.mockRejectedValueOnce(
+      new Error('exchange unavailable'),
+    );
+    jest.spyOn(service as any, 'upsertSession');
+
+    await service.start();
+
+    expect((service as any).upsertSession).not.toHaveBeenCalled();
+    expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
+      { strategyKey: strategy.strategyKey },
+      expect.objectContaining({ status: 'failed' }),
+    );
+  });
+
+  it('restores mapped open orders with slot data instead of cancelling them as orphans', async () => {
+    const strategy = {
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      status: 'running',
+      parameters: {
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+    };
+
+    mockStrategyInstanceRepository.find.mockResolvedValue([strategy]);
+    exchangeConnectorAdapterService.fetchOpenOrders.mockResolvedValueOnce([
+      {
+        id: 'ex-known',
+        clientOrderId: 'client-known',
+        status: 'open',
+        side: 'buy',
+        price: '99',
+        amount: '1',
+        filled: '0',
+      },
+    ]);
+    exchangeOrderMappingService.findByClientOrderId.mockResolvedValue({
+      orderId: 'order-1',
+      clientOrderId: 'client-known',
+    });
+    strategyIntentStoreService.listAll.mockResolvedValue([
+      {
+        strategyKey: strategy.strategyKey,
+        type: 'CREATE_LIMIT_ORDER',
+        side: 'buy',
+        price: '99',
+        qty: '1',
+        slotKey: 'layer-1-buy',
+      },
+    ]);
+    jest.spyOn(service, 'getCadenceMs').mockReturnValue(1000);
+    jest.spyOn(service as any, 'upsertSession').mockResolvedValue({
+      strategyKey: strategy.strategyKey,
+    });
+
+    await service.start();
+
+    expect(exchangeConnectorAdapterService.cancelOrder).not.toHaveBeenCalled();
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-known',
+        clientOrderId: 'client-known',
+        slotKey: 'layer-1-buy',
+        price: '99',
+        qty: '1',
+        status: 'open',
+      }),
+    );
+  });
+
+  it('recovers interrupted cancel intents by retrying cancel for still-open orders', async () => {
+    const strategy = {
+      strategyKey: 'order-1-pureMarketMaking',
+      strategyType: 'pureMarketMaking',
+      userId: 'user-1',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      status: 'running',
+      parameters: {
+        userId: 'user-1',
+        clientId: 'order-1',
+        marketMakingOrderId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 1000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+    };
+
+    mockStrategyInstanceRepository.find.mockResolvedValue([strategy]);
+    exchangeConnectorAdapterService.fetchOpenOrders.mockResolvedValueOnce([
+      {
+        id: 'ex-cancel',
+        clientOrderId: 'client-cancel',
+        status: 'open',
+        side: 'buy',
+        price: '99',
+        amount: '1',
+        filled: '0',
+      },
+    ]);
+    exchangeConnectorAdapterService.cancelOrder.mockResolvedValueOnce({
+      status: 'cancelled',
+    });
+    strategyIntentStoreService.listInterruptedCancelIntents.mockResolvedValue([
+      {
+        intentId: 'cancel-intent-1',
+        strategyKey: strategy.strategyKey,
+        userId: 'user-1',
+        clientId: 'order-1',
+        type: 'CANCEL_ORDER',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '99',
+        qty: '1',
+        mixinOrderId: 'ex-cancel',
+        slotKey: 'layer-1-buy',
+        status: 'SENT',
+      },
+    ]);
+    jest.spyOn(service, 'getCadenceMs').mockReturnValue(1000);
+    jest.spyOn(service as any, 'upsertSession').mockResolvedValue({
+      strategyKey: strategy.strategyKey,
+    });
+
+    await service.start();
+
+    expect(exchangeConnectorAdapterService.cancelOrder).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'ex-cancel',
+      undefined,
+    );
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeOrderId: 'ex-cancel',
+        slotKey: 'layer-1-buy',
         status: 'cancelled',
       }),
+    );
+    expect(strategyIntentStoreService.updateIntentStatus).toHaveBeenCalledWith(
+      'cancel-intent-1',
+      'DONE',
+      'interrupted cancel intent completed on startup',
     );
   });
 
@@ -2866,7 +3165,7 @@ describe('StrategyService', () => {
   });
 
   it('treats quantity drift as outside PMM refresh tolerance', () => {
-    const withinTolerance = (service as any).isQuoteWithinTolerance(
+    const withinTolerance = quotePlannerService.isQuoteWithinTolerance(
       {
         side: 'buy',
         price: '99',

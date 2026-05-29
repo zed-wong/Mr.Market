@@ -1,5 +1,12 @@
 # Execution Flow Changelog
 
+## 2026-05-29
+
+- Make terminal tracked-order reservation cleanup idempotent on server restart by releasing only current order-asset locked funds and skipping already-unlocked terminal rows without warning.
+- 2026-05-29  strategy-service-refactor  Phase 1/3 partial — moved limit-order intent construction, latest-intent caching, PnL/markout observation, and PMM kill-switch evaluation out of `StrategyService` into existing intent/observation services plus `KillSwitchService`.
+- 2026-05-29  strategy-service-refactor  Phase 1 partial — moved mapped-open-order restoration and interrupted cancel recovery out of `StrategyService` into `StrategyStartupRecoveryService`, keeping startup blocking decisions in the coordinator.
+- Harden pure market-making startup recovery: exchange open-order fetch failure now blocks session activation, interrupted create intents are reconciled one-by-one, mapped open orders are restored with slot/price/qty metadata instead of cancelled as orphans, and interrupted cancel intents are retried or reconciled before ticks resume.
+
 ## 2026-05-28
 
 - Harden market-making fill settlement around partial fills: tracked exchange orders now persist `settledFilledQty`, runtime fill handling converts user-stream/REST cumulative fills into unsettled deltas before ledger mutation, repeated or lower cumulative events are ignored, settlement conflicts pause the affected order-asset reservation path, and terminal reservation release continues to release only the unfilled remainder.

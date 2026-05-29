@@ -87,8 +87,9 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
     - `controllers/` - Controller registry and 6 strategy controllers: arbitrage, pure market making, volume, time indicator, dual-account volume, and dual-account best-capacity volume.
     - `data/` - StrategyMarketDataProviderService.
     - `intent/` - ExecutorOrchestratorService, QuoteExecutorManagerService.
-    - `execution/` - StrategyIntentExecutionService, StrategyIntentStoreService, StrategyIntentWorkerService, StrategyRuntimeDispatcherService, ExecutorRegistry, ExchangePairExecutor.
+    - `execution/` - StrategyIntentExecutionService, StrategyIntentStoreService, StrategyIntentWorkerService, StrategyRuntimeDispatcherService, ExecutorRegistry, ExchangePairExecutor. `StrategyIntentStoreService` owns limit-order intent construction, publish-time latest-intent caching, and interrupted intent queries.
     - `settlement/` - FillSettlementService for order-scoped fill and actual-fee ledger settlement; runtime callers pass only unsettled cumulative fill deltas.
+    - `observation/` - RuntimeObservationService and PMM markout evaluation for runtime pressure, PnL counters, traded-volume accounting, and adverse markout observations.
     - `dex/` - AlpacaStratService, DexModule, StrategyConfigResolverService.
 - `modules/market-making/strategy/dex/dex.module.ts`
   - Depends on: `Web3Module`, `DefiModule`.
@@ -127,6 +128,10 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 - `modules/market-making/reconciliation/reconciliation.module.ts`
   - Depends on: TypeORM ledger/reward/intent entities, `TrackersModule`.
   - Main role: consistency checks and repair logic. Fill reconciliation compares ledger fill refs against bounded private trade evidence and pauses affected reservations when trade evidence is missing or amount evidence disagrees.
+- `modules/market-making/strategy/recovery/strategy-startup-recovery.service.ts`
+  - Main role: startup recovery gate for pure market-making. It reconciles exchange open orders before session activation, restores owned interrupted create intents into tracked orders with slot metadata, releases reservations only when no owned live order remains, and leaves failed exchange reads blocked instead of allowing ticks to create new orders.
+- `modules/market-making/risk/kill-switch.service.ts`
+  - Main role: stateless pure market-making kill-switch evaluation for consecutive exchange rejects, absolute loss thresholds, and percentage drawdown thresholds. Strategy runtime owns only the stop side effect after this service returns a triggered decision.
 - `modules/market-making/rewards/rewards.module.ts`
   - Depends on: TypeORM reward entities, `DurabilityModule`, `LedgerModule`, `Web3Module`, `TransactionModule`.
   - Main role: reward pipeline and transfer. Reward allocations are order-scoped, and payout corrections are linked delta facts instead of rewrites of credited allocation rows.
