@@ -108,14 +108,6 @@
     void loadHealth();
   };
 
-  const jsonPreview = (value: unknown) => {
-    if (!value || (typeof value === 'object' && Object.keys(value as Record<string, unknown>).length === 0)) {
-      return 'unavailable';
-    }
-
-    return JSON.stringify(value);
-  };
-
   onMount(() => {
     void loadHealth();
   });
@@ -128,18 +120,6 @@
     subtitle="Authenticated server health, connector, runtime, queue, and tracked-order status from the admin API."
   >
     {#snippet actions()}
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled
-        title="Runbooks are not backed by a safe backend workflow on this surface."
-      >runbook unavailable</button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled
-        title="Alert silencing is disabled because no audited backend workflow exists."
-      >silence unavailable</button>
       <button
         type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
@@ -160,8 +140,8 @@
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">services</span>
-        <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.summary.total)}</span>
+        <span class="text-xs text-base-content/60 capitalize">critical</span>
+        <span class="font-mono text-2xl font-semibold text-error">{formatNumber(response?.summary.critical)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
@@ -192,8 +172,7 @@
           {#each groups as group (group)}
             <button
               type="button"
-              class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={groupFilter === group}
+              class="btn btn-sm join-item capitalize {groupFilter === group ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-100 text-base-content'}"
               disabled={loading || refreshing}
               onclick={() => changeGroup(group)}
             >{labelize(group)}</button>
@@ -229,17 +208,12 @@
           </div>
         </div>
       {:else if response}
-        <div class="flex flex-wrap items-center gap-3">
-          <span class="text-xs text-base-content/50 capitalize">
-            backend filters · group {response.filters.group || 'all'} · service {response.filters.service || 'all'}
-          </span>
-          <span class="text-xs text-base-content/50">
-            bounded to {response.limits.maxServices} services · source timeout {response.limits.sourceTimeoutMs}ms
-          </span>
-          {#if refreshing}
+        {#if refreshing}
+          <div class="flex items-center gap-3">
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
-          {/if}
-        </div>
+            <span class="text-xs text-base-content/50 capitalize">refreshing health status</span>
+          </div>
+        {/if}
 
         {#if services.length === 0}
           <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 py-12 text-center" data-testid="health-empty">
@@ -255,8 +229,6 @@
                   <th class="font-medium">service</th>
                   <th class="font-medium">status</th>
                   <th class="font-medium">message</th>
-                  <th class="font-medium">observed</th>
-                  <th class="font-medium">metrics</th>
                   <th class="font-medium">issues</th>
                 </tr>
               </thead>
@@ -278,10 +250,6 @@
                       </div>
                     </td>
                     <td class="text-sm text-base-content/70">{service.message}</td>
-                    <td class="font-mono text-xs text-base-content/60">{formatTimestamp(service.observedAt)}</td>
-                    <td class="max-w-sm truncate font-mono text-xs text-base-content/60" title={jsonPreview(service.metrics)}>
-                      {jsonPreview(service.metrics)}
-                    </td>
                     <td>
                       {#if service.issues && service.issues.length > 0}
                         <div class="flex flex-col gap-1">
@@ -302,41 +270,4 @@
       {/if}
     </div>
   </div>
-
-  {#if response && !loading && !error}
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-4 p-5">
-        <div class="flex items-center justify-between">
-          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">groups and incidents</span>
-          <span class="font-mono text-xs text-base-content/50">{response.groups.length} groups</span>
-        </div>
-        {#if response.groups.length === 0}
-          <div class="rounded-lg border border-base-300 p-4">
-            <span class="text-sm text-base-content/60">No health groups were returned by the backend.</span>
-          </div>
-        {:else}
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {#each response.groups as group (group.name)}
-              <div class="rounded-lg border border-base-300 p-3">
-                <div class="flex items-center justify-between gap-3">
-                  <span class="text-sm font-semibold text-base-content capitalize">{group.name}</span>
-                  <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider {statusTone[group.status]}">{group.status}</span>
-                </div>
-                <span class="mt-1 block text-xs text-base-content/50">{group.serviceCount} services</span>
-                {#if group.issues.length > 0}
-                  <ul class="mt-2 space-y-1">
-                    {#each group.issues as issue (issue)}
-                      <li class="text-xs text-warning">{issue}</li>
-                    {/each}
-                  </ul>
-                {:else}
-                  <span class="mt-2 block text-xs text-base-content/40 capitalize">no incident history returned</span>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
 </section>

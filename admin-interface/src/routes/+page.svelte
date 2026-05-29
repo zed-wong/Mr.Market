@@ -246,8 +246,7 @@
         {#each DASHBOARD_RANGES as r (r)}
           <button
             type="button"
-            class="btn btn-sm join-item border-base-300 bg-base-200 font-mono-num text-xs"
-            class:btn-primary={timeRange === r}
+            class="btn btn-sm join-item font-mono-num text-xs {timeRange === r ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-200 text-base-content'}"
             disabled={refreshing}
             aria-pressed={timeRange === r}
             onclick={() => selectRange(r)}
@@ -609,36 +608,6 @@
             </ul>
           </div>
         {/if}
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div class="card card-surface shadow-none">
-        <div class="card-body gap-2 p-5">
-          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">range window</span>
-          <span class="font-mono-num text-xs text-base-content/60" data-testid="dashboard-range-key">{summary.range.key}</span>
-          <span class="font-mono-num text-xs text-base-content/60">{summary.range.startedAt}</span>
-          <span class="font-mono-num text-xs text-base-content/60">{summary.range.endedAt}</span>
-        </div>
-      </div>
-      <div class="card card-surface shadow-none">
-        <div class="card-body gap-2 p-5">
-          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">bounded reads</span>
-          <span class="text-sm text-base-content/60">
-            {formatNumber(summary.capital.scannedRows)} / {formatNumber(summary.capital.totalRows)} capital rows scanned
-          </span>
-          <span class="text-sm text-base-content/60">
-            {formatNumber(summary.exchanges.scannedRows)} / {formatNumber(summary.exchanges.total)} exchange accounts scanned
-          </span>
-        </div>
-      </div>
-      <div class="card card-surface shadow-none">
-        <div class="card-body gap-2 p-5">
-          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">backend limits</span>
-          <span class="text-sm text-base-content/60">recent rows: {summary.limits.recentItems}</span>
-          <span class="text-sm text-base-content/60">capital scan: {summary.limits.capitalScanRows}</span>
-          <span class="text-sm text-base-content/60">exchange scan: {summary.limits.apiKeyScanRows}</span>
-        </div>
       </div>
     </div>
   {/if}

@@ -1655,10 +1655,8 @@ test.describe.serial('real-data admin smoke', () => {
     await login(page);
     await page.getByRole('button', { name: '7d' }).click();
 
-    await expect(page.locator('[data-testid="dashboard-range-key"]')).toHaveText('7d');
     await expect(page.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => delayedInitialReturned).toBe(true);
-    await expect(page.locator('[data-testid="dashboard-range-key"]')).toHaveText('7d');
     await expect(page.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'false');
   });
 });

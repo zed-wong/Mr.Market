@@ -332,8 +332,7 @@
           {#each statuses as s (s)}
             <button
               type="button"
-              class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={statusFilter === s}
+              class="btn btn-sm join-item capitalize {statusFilter === s ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-100 text-base-content'}"
               onclick={() => (statusFilter = s)}
             >{s === 'all' ? 'all' : s.replace('_', ' ')}</button>
           {/each}

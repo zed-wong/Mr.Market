@@ -330,9 +330,6 @@
           {#if refreshing}
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
           {/if}
-          <span class="text-xs text-base-content/50 capitalize">
-            manual refresh · backend filters · exchange {response.filters.exchange || 'all'} · asset {response.filters.asset || 'all'}
-          </span>
         </div>
 
         <div class="rounded-lg border border-base-300 p-4">

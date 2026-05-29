@@ -11,6 +11,20 @@
 
   const limitOptions = [10, 25, 50, 100];
   const types: Array<'all' | AdminUserOrderType> = ['all', 'market_making', 'simply_grow'];
+  const states = [
+    '',
+    'active',
+    'running',
+    'started',
+    'created',
+    'pending',
+    'payment_pending',
+    'stopped',
+    'finished',
+    'failed',
+    'deleted',
+    'cancelled',
+  ];
 
   const stateTone: Record<string, string> = {
     active: 'bg-success/10 text-success',
@@ -105,6 +119,11 @@
     void loadOrders();
   };
 
+  const changeState = () => {
+    page = 1;
+    void loadOrders();
+  };
+
   const applySearch = () => {
     page = 1;
     void loadOrders();
@@ -150,7 +169,6 @@
     subtitle="User-initiated market-making and simply-grow orders from authenticated clients."
   >
     {#snippet actions()}
-      <a href="/trading/exchange-orders" class="btn btn-ghost btn-sm rounded-full capitalize">exchange orders</a>
       <button
         type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
@@ -194,23 +212,23 @@
           {#each types as type (type)}
             <button
               type="button"
-              class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={typeFilter === type}
+              class="btn btn-sm join-item capitalize {typeFilter === type ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-100 text-base-content'}"
               disabled={loading || refreshing}
               onclick={() => changeType(type)}
             >{labelize(type)}</button>
           {/each}
         </div>
 
-        <input
-          type="text"
-          placeholder="state"
-          class="input input-sm input-bordered w-36 border-base-300 bg-base-100 font-mono text-xs"
+        <select
+          class="select select-sm select-bordered w-44 border-base-300 bg-base-100 font-mono text-xs capitalize"
           bind:value={stateFilter}
-          onkeydown={(event) => {
-            if (event.key === 'Enter') applySearch();
-          }}
-        />
+          disabled={loading || refreshing}
+          onchange={changeState}
+        >
+          {#each states as state (state || 'all')}
+            <option value={state}>{state ? labelize(state) : 'all states'}</option>
+          {/each}
+        </select>
 
         <input
           type="text"
@@ -266,9 +284,6 @@
           {#if refreshing}
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
           {/if}
-          <span class="text-xs text-base-content/50 capitalize">
-            backend filters · type {response.filters.type || 'all'} · state {response.filters.state || 'all'}
-          </span>
         </div>
 
         {#if rows.length === 0}

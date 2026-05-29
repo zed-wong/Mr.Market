@@ -2,18 +2,13 @@
   import { onMount } from 'svelte';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
-    ORDER_SIDES,
-    ORDER_STATUSES,
     fetchAdminOrders,
     type AdminOrder,
-    type AdminOrderSide,
     type AdminOrderStatus,
     type AdminOrdersResponse,
   } from '$lib/helpers/api/trading';
 
-  const limitOptions = [10, 25, 50, 100];
-  const statuses: Array<'all' | AdminOrderStatus> = ['all', ...ORDER_STATUSES];
-  const sides: Array<'all' | AdminOrderSide> = ['all', ...ORDER_SIDES];
+  const statuses: Array<'all' | AdminOrderStatus> = ['all', 'open', 'filled', 'failed', 'cancelled'];
 
   const statusTone: Record<string, string> = {
     pending_create: 'bg-warning/10 text-warning',
@@ -29,7 +24,6 @@
 
   let response = $state<AdminOrdersResponse | null>(null);
   let statusFilter = $state<'all' | AdminOrderStatus>('all');
-  let sideFilter = $state<'all' | AdminOrderSide>('all');
   let query = $state('');
   let page = $state(1);
   let limit = $state(25);
@@ -38,16 +32,6 @@
   let error = $state<string | null>(null);
 
   const rows = $derived(response?.items ?? []);
-
-  const pageStats = $derived.by(() => {
-    const open = rows.filter((order) =>
-      ['pending_create', 'open', 'partially_filled', 'pending_cancel'].includes(order.status),
-    ).length;
-    const filled = rows.filter((order) => order.status === 'filled').length;
-    const cancelled = rows.filter((order) => order.status === 'cancelled').length;
-
-    return { open, filled, cancelled };
-  });
 
   const formatNumber = (value: string | number, options: Intl.NumberFormatOptions = {}) => {
     const number = typeof value === 'number' ? value : Number(value);
@@ -111,7 +95,6 @@
     try {
       response = await fetchAdminOrders({
         status: statusFilter,
-        side: sideFilter,
         query,
         page,
         limit,
@@ -132,12 +115,6 @@
     void loadOrders();
   };
 
-  const changeSide = (next: 'all' | AdminOrderSide) => {
-    sideFilter = next;
-    page = 1;
-    void loadOrders();
-  };
-
   const applySearch = () => {
     page = 1;
     void loadOrders();
@@ -145,7 +122,6 @@
 
   const resetFilters = () => {
     statusFilter = 'all';
-    sideFilter = 'all';
     query = '';
     page = 1;
     void loadOrders();
@@ -160,11 +136,6 @@
     void loadOrders();
   };
 
-  const changeLimit = () => {
-    page = 1;
-    void loadOrders();
-  };
-
   onMount(() => {
     void loadOrders();
   });
@@ -174,21 +145,9 @@
   <PageHeader
     eyebrow="trading"
     title="orders"
-    subtitle="Exchange-tracked orders loaded from the admin API. Unsafe cancel and export workflows are disabled until a scoped backend action exists."
+    subtitle="Exchange-tracked orders loaded from the admin API."
   >
     {#snippet actions()}
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled
-        title="Export is unavailable because no bounded backend export workflow exists for orders."
-      >export unavailable</button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled
-        title="Bulk cancel is unavailable because no safe scoped cancel workflow exists for this admin surface."
-      >cancel unavailable</button>
       <button
         type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
@@ -198,23 +157,11 @@
     {/snippet}
   </PageHeader>
 
-  <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
         <span class="text-xs text-base-content/60 capitalize">matching orders</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.total ?? 0)}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">page rows</span>
-        <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(rows.length)}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">open on page</span>
-        <span class="font-mono text-2xl font-semibold text-info">{formatNumber(pageStats.open)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
@@ -227,35 +174,22 @@
 
   <div class="card border border-base-300 bg-base-100 shadow-none">
     <div class="card-body gap-4 p-5">
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div class="join">
           {#each statuses as status (status)}
             <button
               type="button"
-              class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={statusFilter === status}
+              class="btn btn-sm join-item capitalize {statusFilter === status ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-100 text-base-content'}"
               disabled={loading || refreshing}
               onclick={() => changeStatus(status)}
             >{labelize(status)}</button>
           {/each}
         </div>
 
-        <div class="join">
-          {#each sides as side (side)}
-            <button
-              type="button"
-              class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={sideFilter === side}
-              disabled={loading || refreshing}
-              onclick={() => changeSide(side)}
-            >{side}</button>
-          {/each}
-        </div>
-
         <input
           type="text"
           placeholder="order id, pair, exchange or strategy…"
-          class="input input-sm input-bordered min-w-[220px] flex-1 border-base-300 bg-base-100 font-mono text-xs"
+          class="input input-sm input-bordered min-w-[260px] flex-1 border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxQueryLength ?? 100}
           bind:value={query}
           onkeydown={(event) => {
@@ -271,17 +205,6 @@
           disabled={loading || refreshing}
           onclick={applySearch}
         >search</button>
-
-        <select
-          class="select select-sm select-bordered border-base-300 bg-base-100 font-mono text-xs"
-          bind:value={limit}
-          disabled={loading || refreshing}
-          onchange={changeLimit}
-        >
-          {#each limitOptions as option (option)}
-            <option value={option}>{option}</option>
-          {/each}
-        </select>
       </div>
 
       {#if loading}
@@ -308,9 +231,6 @@
           {#if refreshing}
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
           {/if}
-          <span class="text-xs text-base-content/50 capitalize">
-            backend filters · status {response.filters.status || 'all'} · side {response.filters.side || 'all'}
-          </span>
         </div>
 
         {#if rows.length === 0}

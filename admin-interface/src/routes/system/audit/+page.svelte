@@ -290,8 +290,7 @@
           {#each statuses as status (status)}
             <button
               type="button"
-              class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-              class:btn-primary={statusFilter === status}
+              class="btn btn-sm join-item capitalize {statusFilter === status ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-100 text-base-content'}"
               disabled={loading || refreshing}
               onclick={() => {
                 statusFilter = status;
@@ -345,9 +344,6 @@
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-mono text-xs text-base-content/50">
             page {response.pagination.page} · {response.pagination.returned} of {response.pagination.total}
-          </span>
-          <span class="text-xs text-base-content/50 capitalize">
-            backend filters · actor {response.filters.actor || 'all'} · resource {response.filters.resource || 'all'} · status {response.filters.status || 'all'}
           </span>
           <span class="text-xs text-base-content/50">max {response.limits.maxLimit} records per page</span>
           {#if refreshing}
