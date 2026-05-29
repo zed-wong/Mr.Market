@@ -1,7 +1,15 @@
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
-import type { StrategyService } from '../strategy.service';
+import type {
+  ArbitrageStrategyDto,
+  DexAdapterId,
+  ExecuteDualAccountBestCapacityVolumeStrategyDto,
+  ExecuteDualAccountVolumeStrategyDto,
+  PureMarketMakingStrategyDto,
+  VolumeExecutionVenue,
+} from './strategy.dto';
 import type { ExecutorAction } from './executor-action.types';
+import type { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
 export type StrategyType =
   | 'arbitrage'
@@ -29,28 +37,69 @@ export type StrategyRuntimeSession = {
   params: Record<string, unknown>;
 };
 
+export type StrategyTickContext = {
+  session: StrategyRuntimeSession;
+  ts: string;
+  stopStrategyForUser: (
+    userId: string,
+    clientId: string,
+    strategyType: StrategyType,
+  ) => Promise<void>;
+};
+
+export type StrategyControllerFacade = {
+  startArbitrageStrategyForUser(
+    strategyParamsDto: ArbitrageStrategyDto,
+    checkIntervalSeconds: number,
+    maxOpenOrders: number,
+  ): Promise<void>;
+  executePureMarketMakingStrategy(
+    strategyParamsDto: PureMarketMakingStrategyDto,
+  ): Promise<void>;
+  executeVolumeStrategy(
+    exchangeName: string | undefined,
+    symbol: string | undefined,
+    baseIncrementPercentage: number,
+    baseIntervalTime: number,
+    baseTradeAmount: number,
+    numTrades: number,
+    userId: string,
+    clientId: string,
+    pricePushRate: number,
+    postOnlySide?: 'buy' | 'sell',
+    executionVenue?: VolumeExecutionVenue,
+    dexId?: DexAdapterId,
+    chainId?: number,
+    tokenIn?: string,
+    tokenOut?: string,
+    feeTier?: number,
+    slippageBps?: number,
+    recipient?: string,
+    executionCategoryInput?: string,
+  ): Promise<void>;
+  executeDualAccountVolumeStrategy(
+    strategyParamsDto: ExecuteDualAccountVolumeStrategyDto,
+  ): Promise<void>;
+  executeDualAccountBestCapacityVolumeStrategy(
+    strategyParamsDto: ExecuteDualAccountBestCapacityVolumeStrategyDto,
+  ): Promise<void>;
+  executeTimeIndicatorStrategy(params: TimeIndicatorStrategyDto): Promise<void>;
+};
+
 export interface StrategyController {
   readonly strategyType: StrategyType;
-  getCadenceMs(
-    parameters: Record<string, unknown>,
-    service: StrategyService,
-  ): number;
+  getCadenceMs(parameters: Record<string, unknown>): number;
   rerun(
     strategyInstance: StrategyInstance,
-    service: StrategyService,
+    service: StrategyControllerFacade,
   ): Promise<void>;
-  decideActions(
-    session: StrategyRuntimeSession,
-    ts: string,
-    service: StrategyService,
-  ): Promise<ExecutorAction[]>;
+  decideActions(ctx: StrategyTickContext): Promise<ExecutorAction[]>;
   onActionsPublished?(
-    session: StrategyRuntimeSession,
+    ctx: StrategyTickContext,
     actions: ExecutorAction[],
-    service: StrategyService,
   ): Promise<void>;
   start?(
     config: Record<string, unknown>,
-    service: StrategyService,
+    service: StrategyControllerFacade,
   ): Promise<void>;
 }

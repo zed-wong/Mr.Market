@@ -1,6 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import BigNumber from 'bignumber.js';
 
+import { PureMarketMakingStrategyDto } from '../config/strategy.dto';
+import { StrategyRuntimeSession } from '../config/strategy-controller.types';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
+import { PmmMarkoutEvaluatorService } from './pmm-markout-evaluator.service';
 
 export type StrategyRuntimePressureSnapshot = {
   strategyKey: string;
@@ -22,6 +26,11 @@ type IntentFailureObservation = {
 export class RuntimeObservationService {
   private readonly failures: IntentFailureObservation[] = [];
   private readonly maxRetentionMs = 10 * 60 * 1000;
+
+  constructor(
+    @Optional()
+    private readonly pmmMarkoutEvaluatorService?: PmmMarkoutEvaluatorService,
+  ) {}
 
   recordIntentFailure(
     intent: StrategyOrderIntent,
@@ -72,6 +81,139 @@ export class RuntimeObservationService {
         this.failures.splice(index, 1);
       }
     }
+  }
+
+  recordSessionPnL(
+    session: StrategyRuntimeSession,
+    fill: {
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+    },
+    options?: {
+      includeTradedQuoteVolume?: boolean;
+    },
+  ): void {
+    if (!fill.side || !fill.price || !fill.qty) {
+      return;
+    }
+
+    const price = new BigNumber(fill.price);
+    const qty = new BigNumber(fill.qty);
+
+    if (
+      !price.isFinite() ||
+      !qty.isFinite() ||
+      price.isLessThanOrEqualTo(0) ||
+      qty.isLessThanOrEqualTo(0)
+    ) {
+      return;
+    }
+
+    const currentInventoryQty = new BigNumber(session.inventoryBaseQty || 0);
+    const currentInventoryCost = new BigNumber(session.inventoryCostQuote || 0);
+    const currentRealizedPnl = new BigNumber(session.realizedPnlQuote || 0);
+    const includeTradedQuoteVolume = options?.includeTradedQuoteVolume ?? true;
+    const currentTradedVolume = new BigNumber(session.tradedQuoteVolume || 0);
+    const fillNotional = price.multipliedBy(qty);
+
+    let nextInventoryQty = currentInventoryQty;
+    let nextInventoryCost = currentInventoryCost;
+    let nextRealizedPnl = currentRealizedPnl;
+
+    if (fill.side === 'buy') {
+      nextInventoryQty = currentInventoryQty.plus(qty);
+      nextInventoryCost = currentInventoryCost.plus(fillNotional);
+    } else {
+      const matchedQty = BigNumber.min(qty, currentInventoryQty);
+
+      if (matchedQty.isGreaterThan(0) && currentInventoryQty.isGreaterThan(0)) {
+        const averageCost = currentInventoryCost.dividedBy(currentInventoryQty);
+        const matchedCost = averageCost.multipliedBy(matchedQty);
+        const matchedProceeds = price.multipliedBy(matchedQty);
+
+        nextRealizedPnl = nextRealizedPnl.plus(
+          matchedProceeds.minus(matchedCost),
+        );
+        nextInventoryQty = currentInventoryQty.minus(matchedQty);
+        nextInventoryCost = BigNumber.max(
+          currentInventoryCost.minus(matchedCost),
+          0,
+        );
+      }
+    }
+
+    session.inventoryBaseQty = nextInventoryQty.toNumber();
+    session.inventoryCostQuote = nextInventoryCost.toNumber();
+    session.realizedPnlQuote = nextRealizedPnl.toNumber();
+    if (includeTradedQuoteVolume) {
+      session.tradedQuoteVolume = currentTradedVolume
+        .plus(fillNotional)
+        .toNumber();
+    }
+    session.params = {
+      ...session.params,
+      inventoryBaseQty: session.inventoryBaseQty,
+      inventoryCostQuote: session.inventoryCostQuote,
+      realizedPnlQuote: session.realizedPnlQuote,
+      ...(includeTradedQuoteVolume
+        ? {
+            tradedQuoteVolume: session.tradedQuoteVolume,
+          }
+        : {}),
+    };
+  }
+
+  recordPureMarketMakingMarkout(
+    session: StrategyRuntimeSession,
+    fill: {
+      side?: 'buy' | 'sell';
+      price?: string;
+      qty?: string;
+      receivedAt?: string;
+    },
+    fallbackObservedAtMs: number,
+  ): void {
+    if (
+      session.strategyType !== 'pureMarketMaking' ||
+      !this.pmmMarkoutEvaluatorService ||
+      !fill.side ||
+      !fill.price
+    ) {
+      return;
+    }
+
+    const params = session.params as unknown as PureMarketMakingStrategyDto;
+    const guardBps = Number(params.adverseMarkoutGuardBps || 0);
+    const markoutWindowMs = Number(params.adverseMarkoutWindowMs || 0);
+
+    if (
+      !Number.isFinite(guardBps) ||
+      guardBps <= 0 ||
+      !Number.isFinite(markoutWindowMs) ||
+      markoutWindowMs <= 0
+    ) {
+      return;
+    }
+
+    const observedAtMs = fill.receivedAt
+      ? Date.parse(fill.receivedAt)
+      : fallbackObservedAtMs;
+
+    this.pmmMarkoutEvaluatorService.recordFill({
+      strategyKey: session.strategyKey,
+      exchangeName: params.oracleExchangeName || params.exchangeName,
+      pair: params.pair,
+      side: fill.side,
+      price: fill.price,
+      qty: fill.qty,
+      observedAtMs: Number.isFinite(observedAtMs)
+        ? observedAtMs
+        : fallbackObservedAtMs,
+      markoutWindowMs,
+      guardBps,
+      cooldownMs: Number(params.adverseMarkoutCooldownMs || 0),
+    });
   }
 
   private isPostOnlyReject(item: IntentFailureObservation): boolean {

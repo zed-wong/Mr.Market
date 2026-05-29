@@ -1,13 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
 import { ExecutorAction } from '../config/executor-action.types';
 import { ExecuteDualAccountBestCapacityVolumeStrategyDto } from '../config/strategy.dto';
 import type {
   StrategyController,
-  StrategyRuntimeSession,
+  StrategyControllerFacade,
+  StrategyTickContext,
 } from '../config/strategy-controller.types';
-import { StrategyService } from '../strategy.service';
+import { DualAccountVolumeStrategyController } from './dual-account-volume-strategy.controller';
 import { sanitizeVolumeCadenceMs } from './volume-controller.helpers';
 
 @Injectable()
@@ -16,46 +17,58 @@ export class DualAccountBestCapacityVolumeStrategyController
 {
   readonly strategyType = 'dualAccountBestCapacityVolume' as const;
 
+  constructor(
+    @Optional()
+    private readonly dualAccountVolumeStrategyController?: DualAccountVolumeStrategyController,
+  ) {}
+
   getCadenceMs(parameters: Record<string, unknown>): number {
     return sanitizeVolumeCadenceMs(parameters?.baseIntervalTime);
   }
 
   async start(
     config: Record<string, unknown>,
-    service: StrategyService,
+    service: StrategyControllerFacade,
   ): Promise<void> {
     await service.executeDualAccountBestCapacityVolumeStrategy(
       config as unknown as ExecuteDualAccountBestCapacityVolumeStrategyDto,
     );
   }
 
-  async decideActions(
-    session: StrategyRuntimeSession,
-    ts: string,
-    service: StrategyService,
-  ): Promise<ExecutorAction[]> {
-    return await service.buildDualAccountBestCapacityVolumeSessionActions(
-      session,
-      ts,
+  async decideActions(ctx: StrategyTickContext): Promise<ExecutorAction[]> {
+    return await this.getDualAccountVolumeStrategyController().buildDualAccountBestCapacityVolumeSessionActions(
+      ctx.session,
+      ctx.ts,
+      ctx.stopStrategyForUser,
     );
   }
 
   async onActionsPublished(
-    session: StrategyRuntimeSession,
+    ctx: StrategyTickContext,
     actions: ExecutorAction[],
-    service: StrategyService,
   ): Promise<void> {
-    await service.onDualAccountVolumeActionsPublished(session, actions);
+    await this.getDualAccountVolumeStrategyController().onDualAccountVolumeActionsPublished(
+      ctx.session,
+      actions,
+    );
   }
 
   async rerun(
     strategyInstance: StrategyInstance,
-    service: StrategyService,
+    service: StrategyControllerFacade,
   ): Promise<void> {
     await service.executeDualAccountBestCapacityVolumeStrategy({
       ...(strategyInstance.parameters as ExecuteDualAccountBestCapacityVolumeStrategyDto),
       userId: strategyInstance.userId,
       clientId: strategyInstance.clientId,
     });
+  }
+
+  private getDualAccountVolumeStrategyController(): DualAccountVolumeStrategyController {
+    if (!this.dualAccountVolumeStrategyController) {
+      throw new Error('DualAccountVolumeStrategyController is not available');
+    }
+
+    return this.dualAccountVolumeStrategyController;
   }
 }

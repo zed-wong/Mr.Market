@@ -2,6 +2,8 @@
 
 ## 2026-05-29
 
+- 2026-05-29  strategy-service-refactor  Phase 1-4 done — reduced `StrategyService` from ~9.2k lines to 785-line coordinator by moving action building, runtime lifecycle, recovery, settlement, quote planning, adaptive PMM state, dual-account planning, watcher management, order-scoped balance reads, tracked-order shutdown, and kill-switch decisions into owning services/controllers.
+- Continue the StrategyService dual-account refactor by moving publish-state calculation plus fill-progress, matched-cycle, settled-cycle, and fill-runtime merge logic into `DualAccountPlannerService`, leaving StrategyService with session/repository/persistence coordination wrappers.
 - Make terminal tracked-order reservation cleanup idempotent on server restart by releasing only current order-asset locked funds and skipping already-unlocked terminal rows without warning.
 - 2026-05-29  strategy-service-refactor  Phase 1/3 partial — moved limit-order intent construction, latest-intent caching, PnL/markout observation, and PMM kill-switch evaluation out of `StrategyService` into existing intent/observation services plus `KillSwitchService`.
 - 2026-05-29  strategy-service-refactor  Phase 1 partial — moved mapped-open-order restoration and interrupted cancel recovery out of `StrategyService` into `StrategyStartupRecoveryService`, keeping startup blocking decisions in the coordinator.

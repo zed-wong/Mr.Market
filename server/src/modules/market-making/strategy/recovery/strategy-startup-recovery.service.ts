@@ -12,6 +12,8 @@ import {
   ExchangeOrderTrackerService,
   TrackedOrder,
 } from '../../trackers/exchange-order-tracker.service';
+import { TrackedOrderShutdownService } from '../../trackers/tracked-order-shutdown.service';
+import { PureMarketMakingStrategyDto } from '../config/strategy.dto';
 import { StrategyIntentStoreService } from '../execution/strategy-intent-store.service';
 
 export type StartupRecoveryResult = {
@@ -33,7 +35,299 @@ export class StrategyStartupRecoveryService {
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
     @Optional()
     private readonly exchangeConnectorAdapterService?: ExchangeConnectorAdapterService,
+    @Optional()
+    private readonly trackedOrderShutdownService?: TrackedOrderShutdownService,
   ) {}
+
+  private getTrackedOrderShutdown(): TrackedOrderShutdownService {
+    return (
+      this.trackedOrderShutdownService ||
+      new TrackedOrderShutdownService(
+        this.exchangeOrderTrackerService,
+        this.exchangeConnectorAdapterService,
+        this.exchangeOrderMappingService,
+      )
+    );
+  }
+
+  async restoreDualAccountVolumeRuntimeState(
+    strategy: StrategyInstance,
+  ): Promise<void> {
+    const trackedOrders = this.getTrackedOrderShutdown().getCancelableTrackedOrders(
+      strategy.strategyKey,
+    );
+
+    const danglingMakerOrders = trackedOrders.filter(
+      (order) => order.role === 'maker',
+    );
+
+    if (danglingMakerOrders.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      danglingMakerOrders.map(async (order) => {
+        try {
+          const result =
+            await this.exchangeConnectorAdapterService?.cancelOrder(
+              order.exchange,
+              order.pair,
+              order.exchangeOrderId,
+              order.accountLabel,
+            );
+          const cancelSucceeded = this.getTrackedOrderShutdown().isCancelResultFinal(result);
+
+          this.exchangeOrderTrackerService?.upsertOrder({
+            ...order,
+            status: cancelSucceeded ? 'cancelled' : 'pending_cancel',
+            updatedAt: getRFC3339Timestamp(),
+          });
+        } catch (error) {
+          this.logger.warn(
+            `Failed dual-account startup maker cleanup for ${
+              strategy.strategyKey
+            }:${order.exchangeOrderId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }),
+    );
+
+    await this.getTrackedOrderShutdown().waitForTrackedOrdersToSettle(strategy.strategyKey, 10_000);
+  }
+
+  async restoreRuntimeStateForStrategy(
+    strategy: StrategyInstance,
+  ): Promise<StartupRecoveryResult> {
+    const result: StartupRecoveryResult = {
+      success: true,
+      blockedReasons: [],
+    };
+
+    if (
+      strategy.strategyType === 'dualAccountVolume' ||
+      strategy.strategyType === 'dualAccountBestCapacityVolume'
+    ) {
+      await this.restoreDualAccountVolumeRuntimeState(strategy);
+
+      return result;
+    }
+
+    if (
+      strategy.strategyType !== 'pureMarketMaking' ||
+      !this.exchangeConnectorAdapterService
+    ) {
+      return result;
+    }
+
+    const params = strategy.parameters as PureMarketMakingStrategyDto;
+    const exchange = this.readString(params.exchangeName);
+    const pair = this.readString(params.pair);
+
+    if (!exchange || !pair) {
+      return result;
+    }
+
+    let openOrders: any[] = [];
+
+    try {
+      openOrders = await this.exchangeConnectorAdapterService.fetchOpenOrders(
+        exchange,
+        pair,
+        params.accountLabel,
+      );
+    } catch (error) {
+      const { message } = this.toErrorDetails(error);
+
+      this.logger.warn(
+        `Startup reconciliation skipped for ${strategy.strategyKey}: fetchOpenOrders failed (${message})`,
+      );
+
+      return {
+        success: false,
+        blockedReasons: [`fetchOpenOrders failed: ${message}`],
+      };
+    }
+
+    const trackedOrders = (((
+      this.exchangeOrderTrackerService as any
+    )?.getTrackedOrders?.(strategy.strategyKey) as TrackedOrder[]) ||
+      []) as TrackedOrder[];
+    const trackedByExchangeOrderId = new Map(
+      trackedOrders.map((order) => [order.exchangeOrderId, order]),
+    );
+    const seenOpenExchangeOrderIds = new Set<string>();
+
+    for (const openOrder of openOrders) {
+      const exchangeOrderId = this.readString(openOrder?.id);
+      const clientOrderId = this.readString(
+        openOrder?.clientOrderId || openOrder?.clientOid,
+      );
+
+      if (!exchangeOrderId) {
+        continue;
+      }
+
+      seenOpenExchangeOrderIds.add(exchangeOrderId);
+
+      const trackedOrder = trackedByExchangeOrderId.get(exchangeOrderId);
+
+      if (trackedOrder) {
+        this.exchangeOrderTrackerService?.upsertOrder({
+          ...trackedOrder,
+          clientOrderId: clientOrderId || trackedOrder.clientOrderId,
+          price: this.readString(openOrder?.price, trackedOrder.price),
+          qty: this.readString(
+            openOrder?.amount || openOrder?.qty,
+            trackedOrder.qty,
+          ),
+          cumulativeFilledQty: this.readString(
+            openOrder?.filled,
+            trackedOrder.cumulativeFilledQty || '0',
+          ),
+          status:
+            this.getTrackedOrderShutdown().normalizeExchangeOrderStatus(openOrder?.status) ||
+            trackedOrder.status,
+          updatedAt: getRFC3339Timestamp(),
+        });
+        continue;
+      }
+
+      if (
+        !(await this.getTrackedOrderShutdown().isOrderOwnedByStrategy(
+          strategy,
+          clientOrderId,
+          exchangeOrderId,
+        ))
+      ) {
+        continue;
+      }
+
+      const mappedRecovery = await this.restoreMappedOpenOrder(
+        strategy,
+        exchange,
+        pair,
+        exchangeOrderId,
+        clientOrderId,
+        openOrder,
+        params.accountLabel,
+      );
+
+      if (mappedRecovery.status === 'restored') {
+        continue;
+      }
+
+      if (mappedRecovery.status === 'blocked') {
+        result.success = false;
+        result.blockedReasons.push(mappedRecovery.reason);
+        continue;
+      }
+
+      await this.getTrackedOrderShutdown().cancelRecoveredExchangeOrder(
+        strategy,
+        exchange,
+        pair,
+        exchangeOrderId,
+        clientOrderId,
+        openOrder,
+        params.accountLabel,
+      );
+    }
+
+    for (const trackedOrder of trackedOrders) {
+      if (
+        this.getTrackedOrderShutdown().isTrackedOrderTerminal(trackedOrder.status) ||
+        seenOpenExchangeOrderIds.has(trackedOrder.exchangeOrderId)
+      ) {
+        continue;
+      }
+
+      try {
+        const latest: Awaited<
+          ReturnType<ExchangeConnectorAdapterService['fetchOrder']>
+        > = await this.exchangeConnectorAdapterService.fetchOrder(
+          trackedOrder.exchange,
+          trackedOrder.pair,
+          trackedOrder.exchangeOrderId,
+          trackedOrder.accountLabel,
+        );
+
+        if (!latest) {
+          continue;
+        }
+
+        this.exchangeOrderTrackerService?.upsertOrder({
+          ...trackedOrder,
+          clientOrderId:
+            this.readString(latest?.clientOrderId || latest?.clientOid) ||
+            trackedOrder.clientOrderId,
+          price: this.readString(latest?.price, trackedOrder.price),
+          qty: this.readString(latest?.amount || latest?.qty, trackedOrder.qty),
+          cumulativeFilledQty: this.readString(
+            latest?.filled,
+            trackedOrder.cumulativeFilledQty || '0',
+          ),
+          status:
+            this.getTrackedOrderShutdown().normalizeExchangeOrderStatus(latest?.status) ||
+            trackedOrder.status,
+          updatedAt: getRFC3339Timestamp(),
+        });
+      } catch (error) {
+        const { message } = this.toErrorDetails(error);
+
+        this.logger.warn(
+          `Startup fetchOrder reconciliation skipped for ${trackedOrder.exchangeOrderId}: ${message}`,
+        );
+      }
+    }
+
+    try {
+      const createRecovery =
+        await this.recoverInterruptedCreateIntentReservations(
+          strategy,
+          openOrders,
+        );
+
+      if (!createRecovery.success) {
+        result.success = false;
+        result.blockedReasons.push(...createRecovery.blockedReasons);
+      }
+    } catch (error) {
+      const reason = `interrupted create intent recovery failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      result.success = false;
+      result.blockedReasons.push(reason);
+      this.logger.warn(
+        `Startup interrupted intent recovery skipped for ${strategy.strategyKey}: ${reason}`,
+      );
+    }
+
+    try {
+      const cancelRecovery =
+        await this.recoverInterruptedCancelIntentsForStrategy(
+          strategy,
+          openOrders,
+        );
+
+      if (!cancelRecovery.success) {
+        result.success = false;
+        result.blockedReasons.push(...cancelRecovery.blockedReasons);
+      }
+    } catch (error) {
+      const reason = `interrupted cancel intent recovery failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      result.success = false;
+      result.blockedReasons.push(reason);
+      this.logger.warn(
+        `Startup interrupted cancel recovery skipped for ${strategy.strategyKey}: ${reason}`,
+      );
+    }
+
+    return result;
+  }
 
   async recoverInterruptedCreateIntentReservations(
     strategy: StrategyInstance,
@@ -626,5 +920,13 @@ export class StrategyStartupRecoveryService {
     }
 
     return '';
+  }
+
+  private toErrorDetails(error: unknown): { message: string; stack?: string } {
+    if (error instanceof Error) {
+      return { message: error.message, stack: error.stack };
+    }
+
+    return { message: String(error) };
   }
 }

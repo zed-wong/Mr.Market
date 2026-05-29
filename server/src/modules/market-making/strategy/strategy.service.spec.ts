@@ -17,12 +17,17 @@ import { BalanceLedgerService } from '../ledger/balance-ledger.service';
 import { PerformanceService } from '../performance/performance.service';
 import { KillSwitchService } from '../risk/kill-switch.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
+import { TrackedOrderShutdownService } from '../trackers/tracked-order-shutdown.service';
 import { UserStreamIngestionService } from '../trackers/user-stream-ingestion.service';
 import { PureMarketMakingStrategyDto } from './config/strategy.dto';
 import { ArbitrageStrategyController } from './controllers/arbitrage-strategy.controller';
+import { DualAccountVolumeStrategyController } from './controllers/dual-account-volume-strategy.controller';
+import { PureMarketMakingStrategyController } from './controllers/pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './controllers/strategy-controller.registry';
+import { TimeIndicatorStrategyController } from './controllers/time-indicator-strategy.controller';
 import { VolumeStrategyController } from './controllers/volume-strategy.controller';
 import { StrategyMarketDataProviderService } from './data/strategy-market-data-provider.service';
+import { DualAccountPlannerService } from './dual-account/dual-account-planner.service';
 import { ExecutorRegistry } from './execution/executor-registry';
 import { StrategyIntentStoreService } from './execution/strategy-intent-store.service';
 import { ExecutorOrchestratorService } from './intent/executor-orchestrator.service';
@@ -30,6 +35,8 @@ import { RuntimeObservationService } from './observation/runtime-observation.ser
 import { AdaptivePmmStateService } from './pmm/adaptive-pmm-state.service';
 import { QuotePlannerService } from './quote/quote-planner.service';
 import { StrategyStartupRecoveryService } from './recovery/strategy-startup-recovery.service';
+import { StrategyInstanceLifecycleService } from './runtime/strategy-instance-lifecycle.service';
+import { StrategySessionRegistryService } from './runtime/strategy-session-registry.service';
 import { StrategyWatcherManagerService } from './runtime/strategy-watcher-manager.service';
 import { FillSettlementService } from './settlement/fill-settlement.service';
 import { StrategyService } from './strategy.service';
@@ -82,7 +89,13 @@ class ExchangeInitServiceMock {
 
 describe('StrategyService', () => {
   let service: StrategyService;
+  let volumeStrategyController: VolumeStrategyController;
+  let dualAccountVolumeStrategyController: DualAccountVolumeStrategyController;
+  let pureMarketMakingStrategyController: PureMarketMakingStrategyController;
+  let timeIndicatorStrategyController: TimeIndicatorStrategyController;
   let quotePlannerService: QuotePlannerService;
+  let adaptivePmmStateService: AdaptivePmmStateService;
+  let strategySessionRegistryService: StrategySessionRegistryService;
   let executorRegistry: ExecutorRegistry;
   let exchangeInitService: ExchangeInitServiceMock;
   let executorOrchestratorService: {
@@ -158,6 +171,7 @@ describe('StrategyService', () => {
     save: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    delete: jest.fn(),
   };
   const mockMarketMakingOrderRepository = {
     findOne: jest.fn(),
@@ -230,6 +244,7 @@ describe('StrategyService', () => {
       (entity: any) => entity,
     );
     mockStrategyInstanceRepository.update.mockResolvedValue(undefined);
+    mockStrategyInstanceRepository.delete.mockResolvedValue(undefined);
     mockMarketMakingOrderRepository.findOne.mockResolvedValue({
       orderId: 'default-order',
       state: 'running',
@@ -427,7 +442,10 @@ describe('StrategyService', () => {
       providers: [
         StrategyService,
         ArbitrageStrategyController,
+        PureMarketMakingStrategyController,
         VolumeStrategyController,
+        DualAccountVolumeStrategyController,
+        TimeIndicatorStrategyController,
         { provide: PerformanceService, useClass: PerformanceServiceMock },
         { provide: ExchangeInitService, useClass: ExchangeInitServiceMock },
         {
@@ -442,8 +460,11 @@ describe('StrategyService', () => {
         RuntimeObservationService,
         AdaptivePmmStateService,
         QuotePlannerService,
+        StrategySessionRegistryService,
+        StrategyInstanceLifecycleService,
         StrategyWatcherManagerService,
         OrderScopedBalanceQueryService,
+        DualAccountPlannerService,
         FillSettlementService,
         {
           provide: BalanceStateCacheService,
@@ -482,6 +503,7 @@ describe('StrategyService', () => {
           provide: ExchangeOrderMappingService,
           useValue: exchangeOrderMappingService,
         },
+        TrackedOrderShutdownService,
         StrategyStartupRecoveryService,
         ExecutorRegistry,
         { provide: ConfigService, useValue: { get: jest.fn() } },
@@ -501,7 +523,23 @@ describe('StrategyService', () => {
     }).compile();
 
     service = module.get<StrategyService>(StrategyService);
+    volumeStrategyController = module.get<VolumeStrategyController>(
+      VolumeStrategyController,
+    );
+    dualAccountVolumeStrategyController = module.get<DualAccountVolumeStrategyController>(
+      DualAccountVolumeStrategyController,
+    );
+    pureMarketMakingStrategyController = (service as any).getPureMarketMakingStrategyController();
+    timeIndicatorStrategyController = module.get<TimeIndicatorStrategyController>(
+      TimeIndicatorStrategyController,
+    );
     quotePlannerService = module.get<QuotePlannerService>(QuotePlannerService);
+    adaptivePmmStateService = module.get<AdaptivePmmStateService>(
+      AdaptivePmmStateService,
+    );
+    strategySessionRegistryService = module.get<StrategySessionRegistryService>(
+      StrategySessionRegistryService,
+    );
     executorRegistry = module.get<ExecutorRegistry>(ExecutorRegistry);
     exchangeInitService = module.get<ExchangeInitServiceMock>(
       ExchangeInitService as any,
@@ -510,6 +548,38 @@ describe('StrategyService', () => {
 
     jest.clearAllMocks();
   });
+
+  const stopStrategyForUser = async (
+    userId: string,
+    clientId: string,
+    strategyType: any,
+  ) => {
+    await service.stopStrategyForUser(userId, clientId, strategyType);
+  };
+
+  const pureMarketMakingCoordinator = () => ({
+    getSession: (key: string) => strategySessionRegistryService.sessions.get(key),
+    setSession: (key: string, session: any) =>
+      strategySessionRegistryService.sessions.set(key, session),
+    getConnectorHealthStatus: (exchange: string) =>
+      strategySessionRegistryService.getConnectorHealthStatus(exchange),
+    setConnectorHealthStatus: (exchange: string, status: any) =>
+      strategySessionRegistryService.setConnectorHealthStatus(exchange, status),
+    stopStrategyForUser,
+    logger: (service as any).logger,
+  });
+
+  const buildPureMarketMakingActions = (
+    strategyKey: string,
+    params: PureMarketMakingStrategyDto,
+    ts: string,
+  ) =>
+    (service as any).getPureMarketMakingStrategyController().buildPureMarketMakingActions(
+      strategyKey,
+      params,
+      ts,
+      pureMarketMakingCoordinator(),
+    );
 
   afterEach(async () => {
     await service.onModuleDestroy();
@@ -1658,7 +1728,7 @@ describe('StrategyService', () => {
       },
     };
     const buildActionsSpy = jest
-      .spyOn(service, 'buildDualAccountVolumeActions')
+      .spyOn(dualAccountVolumeStrategyController, 'buildDualAccountVolumeActions')
       .mockResolvedValue([]);
     const session = await registerPooledSession({
       strategyKey: 'user1-client1-dualAccountVolume',
@@ -1676,9 +1746,10 @@ describe('StrategyService', () => {
     });
     exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
 
-    await service.buildDualAccountVolumeSessionActions(
+    await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
       session as any,
       '2026-04-16T00:00:05.000Z',
+      stopStrategyForUser,
     );
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
@@ -1726,18 +1797,11 @@ describe('StrategyService', () => {
     const nowMs = 1_700_000_000_000;
     const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
     const strategyKey = 'client1-pureMarketMaking';
-    const buildActionsSpy = jest.spyOn(service, 'buildPureMarketMakingActions');
+    const decideActions = jest.fn().mockResolvedValue([]);
 
     (service as any).strategyControllerRegistry = {
       getController: jest.fn().mockReturnValue({
-        decideActions: jest.fn(
-          async (session: any, ts: string, svc: any) =>
-            await svc.buildPureMarketMakingActions(
-              session.strategyKey,
-              session.params,
-              ts,
-            ),
-        ),
+        decideActions,
       }),
     };
 
@@ -1768,7 +1832,13 @@ describe('StrategyService', () => {
 
     await service.onTick('2026-03-04T00:00:00.000Z');
 
-    expect(buildActionsSpy).toHaveBeenCalledTimes(1);
+    expect(decideActions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session: expect.objectContaining({ strategyKey }),
+        ts: '2026-03-04T00:00:00.000Z',
+        stopStrategyForUser: expect.any(Function),
+      }),
+    );
 
     dateNowSpy.mockRestore();
   });
@@ -2101,11 +2171,9 @@ describe('StrategyService', () => {
     const publishIntentsSpy = jest
       .spyOn(service as any, 'publishIntents')
       .mockResolvedValue(undefined);
-    const persistStrategyParamsSpy = jest
-      .spyOn(service as any, 'persistStrategyParams')
-      .mockResolvedValue(undefined);
+    const persistStrategyParamsSpy = mockStrategyInstanceRepository.update;
 
-    jest.spyOn(service as any, 'buildVolumeActions').mockResolvedValue([
+    jest.spyOn(volumeStrategyController, 'buildVolumeActions').mockResolvedValue([
       {
         type: 'CREATE_LIMIT_ORDER',
         intentId: 'intent-1',
@@ -2124,22 +2192,9 @@ describe('StrategyService', () => {
     ]);
 
     (service as any).strategyControllerRegistry = {
-      getController: jest.fn().mockImplementation((strategyType: string) => {
-        if (strategyType !== 'volume') {
-          return undefined;
-        }
-
-        return {
-          decideActions: jest.fn(
-            async (session: any, ts: string, svc: any) =>
-              await svc.buildVolumeSessionActions(session, ts),
-          ),
-          onActionsPublished: jest.fn(
-            async (session: any, actions: any[], svc: any) =>
-              await svc.onVolumeActionsPublished(session, actions),
-          ),
-        };
-      }),
+      getController: jest.fn().mockImplementation((strategyType: string) =>
+        strategyType === 'volume' ? volumeStrategyController : undefined,
+      ),
     };
 
     await registerPooledSession({
@@ -2190,11 +2245,9 @@ describe('StrategyService', () => {
     const loggerErrorSpy = jest
       .spyOn((service as any).logger, 'error')
       .mockImplementation(() => undefined);
-    const persistStrategyParamsSpy = jest
-      .spyOn(service as any, 'persistStrategyParams')
-      .mockResolvedValue(undefined);
+    const persistStrategyParamsSpy = mockStrategyInstanceRepository.update;
 
-    jest.spyOn(service as any, 'buildVolumeActions').mockResolvedValue([
+    jest.spyOn(volumeStrategyController, 'buildVolumeActions').mockResolvedValue([
       {
         type: 'CREATE_LIMIT_ORDER',
         intentId: 'intent-1',
@@ -2214,6 +2267,12 @@ describe('StrategyService', () => {
     jest
       .spyOn(service as any, 'publishIntents')
       .mockRejectedValue(new Error('publish failed'));
+
+    (service as any).strategyControllerRegistry = {
+      getController: jest.fn().mockImplementation((strategyType: string) =>
+        strategyType === 'volume' ? volumeStrategyController : undefined,
+      ),
+    };
 
     await registerPooledSession({
       strategyKey,
@@ -2372,7 +2431,7 @@ describe('StrategyService', () => {
       .mockReturnValueOnce(true);
 
     expect(
-      (service as any).canActivateStrategyImmediately({
+      strategySessionRegistryService.canActivateStrategyImmediately({
         strategyType: 'dualAccountVolume',
         clientId: 'client-1',
         parameters: {
@@ -2385,7 +2444,7 @@ describe('StrategyService', () => {
     ).toBe(false);
 
     expect(
-      (service as any).canActivateStrategyImmediately({
+      strategySessionRegistryService.canActivateStrategyImmediately({
         strategyType: 'dualAccountVolume',
         clientId: 'client-1',
         parameters: {
@@ -2438,9 +2497,10 @@ describe('StrategyService', () => {
       bestAsk: 101,
     });
 
-    const actions = await service.buildDualAccountVolumeSessionActions(
+    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
       session as any,
       '2026-03-11T00:00:00.000Z',
+      stopStrategyForUser,
     );
 
     expect(actions).toEqual([
@@ -2456,7 +2516,7 @@ describe('StrategyService', () => {
     ]);
 
     (service as any).sessions.set(session.strategyKey, session);
-    await service.onDualAccountVolumeActionsPublished(session as any, actions);
+    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(session as any, actions);
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
       { strategyKey: session.strategyKey },
@@ -2508,7 +2568,7 @@ describe('StrategyService', () => {
     });
 
     (service as any).sessions.set(session.strategyKey, session);
-    await service.onDualAccountVolumeActionsPublished(session as any, [
+    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(session as any, [
       { type: 'CREATE_LIMIT_ORDER' } as any,
     ]);
 
@@ -2567,7 +2627,7 @@ describe('StrategyService', () => {
     });
 
     (service as any).sessions.set(session.strategyKey, session);
-    await service.onDualAccountVolumeActionsPublished(session as any, [
+    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(session as any, [
       { type: 'CREATE_LIMIT_ORDER' } as any,
     ]);
 
@@ -2589,7 +2649,7 @@ describe('StrategyService', () => {
       .fn()
       .mockReturnValue(null);
 
-    const actions = await service.buildDualAccountVolumeActions(
+    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
       'dual-key',
       {
         exchangeName: 'binance',
@@ -2628,7 +2688,7 @@ describe('StrategyService', () => {
     });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
-    const actions = await service.buildDualAccountVolumeActions(
+    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
       'dual-key',
       {
         exchangeName: 'binance',
@@ -2680,7 +2740,7 @@ describe('StrategyService', () => {
     });
     jest.spyOn(Math, 'random').mockReturnValue(0);
 
-    const actions = await service.buildDualAccountVolumeActions(
+    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
       'dual-key',
       {
         exchangeName: 'binance',
@@ -2733,7 +2793,7 @@ describe('StrategyService', () => {
     });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
-    const actions = await service.buildDualAccountVolumeActions(
+    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
       'dual-key',
       {
         exchangeName: 'binance',
@@ -2780,7 +2840,7 @@ describe('StrategyService', () => {
   });
 
   it('marks repair mode when a dual-account cycle settles with mismatched fills', async () => {
-    const nextParams = await (service as any).finalizeSettledDualAccountCycle(
+    const nextParams = await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
       { strategyKey: 'dual-key' },
       {
         completedCycles: 0,
@@ -2807,7 +2867,7 @@ describe('StrategyService', () => {
   });
 
   it('accumulates matched quote volume when a dual-account cycle settles with symmetric fills', async () => {
-    const nextParams = await (service as any).finalizeSettledDualAccountCycle(
+    const nextParams = await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
       { strategyKey: 'dual-key' },
       {
         completedCycles: 0,
@@ -2863,7 +2923,7 @@ describe('StrategyService', () => {
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -2913,7 +2973,7 @@ describe('StrategyService', () => {
       },
     );
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -2981,7 +3041,7 @@ describe('StrategyService', () => {
       makerFee: 0,
     });
 
-    const actions = await service.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       'mm-order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3054,7 +3114,7 @@ describe('StrategyService', () => {
       },
     );
 
-    const actions = await service.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       'mm-order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3093,7 +3153,7 @@ describe('StrategyService', () => {
     };
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3134,7 +3194,7 @@ describe('StrategyService', () => {
     };
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3225,7 +3285,7 @@ describe('StrategyService', () => {
       },
     );
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3296,7 +3356,7 @@ describe('StrategyService', () => {
       },
     );
 
-    const actions = await service.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3377,7 +3437,7 @@ describe('StrategyService', () => {
       },
     );
 
-    const actions = await service.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3409,7 +3469,7 @@ describe('StrategyService', () => {
 
   it('does not read adaptive PMM signals only because stale timers are configured', () => {
     expect(
-      (service as any).shouldReadAdaptivePmmSignals({
+      adaptivePmmStateService.shouldReadAdaptivePmmSignals({
         staleSoftMs: 2000,
         staleHardMs: 10000,
       }),
@@ -3453,7 +3513,7 @@ describe('StrategyService', () => {
       { fresh: false, ageMs: 45000, maxAgeMs: 30000 },
     );
 
-    const actions = await service.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3507,7 +3567,7 @@ describe('StrategyService', () => {
     ]);
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
-    const actions = await service.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3564,7 +3624,7 @@ describe('StrategyService', () => {
       },
     );
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3620,7 +3680,7 @@ describe('StrategyService', () => {
     };
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3682,7 +3742,7 @@ describe('StrategyService', () => {
     };
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3744,7 +3804,7 @@ describe('StrategyService', () => {
     };
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3770,11 +3830,11 @@ describe('StrategyService', () => {
   });
 
   it('clears adaptive PMM warmup state when removing a session', async () => {
-    (service as any).adaptivePmmWarmupStartedAtByStrategy.set(
+    adaptivePmmStateService.adaptivePmmWarmupStartedAtByStrategy.set(
       'order-1-pureMarketMaking',
       1000,
     );
-    (service as any).adaptivePmmWarmupTicksByStrategy.set(
+    adaptivePmmStateService.adaptivePmmWarmupTicksByStrategy.set(
       'order-1-pureMarketMaking',
       3,
     );
@@ -3782,12 +3842,12 @@ describe('StrategyService', () => {
     await (service as any).removeSession('order-1-pureMarketMaking');
 
     expect(
-      (service as any).adaptivePmmWarmupStartedAtByStrategy.has(
+      adaptivePmmStateService.adaptivePmmWarmupStartedAtByStrategy.has(
         'order-1-pureMarketMaking',
       ),
     ).toBe(false);
     expect(
-      (service as any).adaptivePmmWarmupTicksByStrategy.has(
+      adaptivePmmStateService.adaptivePmmWarmupTicksByStrategy.has(
         'order-1-pureMarketMaking',
       ),
     ).toBe(false);
@@ -3820,7 +3880,7 @@ describe('StrategyService', () => {
       }),
     };
 
-    const actions = await service.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3889,7 +3949,7 @@ describe('StrategyService', () => {
       },
     );
 
-    await service.buildPureMarketMakingActions(
+    await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3955,7 +4015,7 @@ describe('StrategyService', () => {
     ]);
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
-    const actions = await service.buildPureMarketMakingActions(
+    const actions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -3989,7 +4049,7 @@ describe('StrategyService', () => {
       new Error('feed down'),
     );
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4013,7 +4073,7 @@ describe('StrategyService', () => {
       0,
     );
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4071,7 +4131,7 @@ describe('StrategyService', () => {
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4098,7 +4158,7 @@ describe('StrategyService', () => {
     );
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4153,7 +4213,7 @@ describe('StrategyService', () => {
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4192,7 +4252,7 @@ describe('StrategyService', () => {
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4222,7 +4282,7 @@ describe('StrategyService', () => {
     });
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4271,7 +4331,7 @@ describe('StrategyService', () => {
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4296,7 +4356,7 @@ describe('StrategyService', () => {
     (service as any).setConnectorHealthStatus('binance', 'DEGRADED');
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4330,7 +4390,7 @@ describe('StrategyService', () => {
     };
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4371,7 +4431,7 @@ describe('StrategyService', () => {
     exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4431,7 +4491,7 @@ describe('StrategyService', () => {
     strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
 
     await expect(
-      service.buildPureMarketMakingActions(
+      buildPureMarketMakingActions(
         'order-1-pureMarketMaking',
         {
           userId: 'user-1',
@@ -4492,7 +4552,7 @@ describe('StrategyService', () => {
       .mockReturnValueOnce([staleOrder])
       .mockReturnValueOnce([]);
 
-    const firstActions = await service.buildPureMarketMakingActions(
+    const firstActions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',
@@ -4511,7 +4571,7 @@ describe('StrategyService', () => {
       },
       '2026-03-11T00:00:00.000Z',
     );
-    const secondActions = await service.buildPureMarketMakingActions(
+    const secondActions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
       {
         userId: 'user-1',

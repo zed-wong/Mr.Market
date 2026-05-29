@@ -23,6 +23,7 @@ import {
 import { ExchangeOrderTrackerService } from './exchange-order-tracker.service';
 import { OrderBookIngestionService } from './order-book-ingestion.service';
 import { OrderBookTrackerService } from './order-book-tracker.service';
+import { TrackedOrderShutdownService } from './tracked-order-shutdown.service';
 import { UserStreamIngestionService } from './user-stream-ingestion.service';
 import { UserStreamTrackerService } from './user-stream-tracker.service';
 
@@ -54,6 +55,7 @@ import { UserStreamTrackerService } from './user-stream-tracker.service';
     UserStreamIngestionService,
     UserStreamTrackerService,
     ExchangeOrderTrackerService,
+    TrackedOrderShutdownService,
   ],
   exports: [
     OrderBookTrackerService,
@@ -66,6 +68,7 @@ import { UserStreamTrackerService } from './user-stream-tracker.service';
     UserStreamIngestionService,
     UserStreamTrackerService,
     ExchangeOrderTrackerService,
+    TrackedOrderShutdownService,
   ],
 })
 export class TrackersModule {}
