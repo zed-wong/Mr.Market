@@ -3,28 +3,28 @@
   import { closeMobileNav, mobileNavOpen } from '$lib/stores/ui';
 
   const navItems = [
-    { href: '/', label: 'Home' },
-    { href: '/market', label: 'Campaigns' },
-    { href: '/market-making', label: 'Market making' },
-    { href: '/wallet', label: 'Wallet' },
-    { href: '/account', label: 'Account' },
+    { href: '/app', label: 'Home' },
+    { href: '/app/market', label: 'Campaigns' },
+    { href: '/app/market-making', label: 'Market making' },
+    { href: '/app/wallet', label: 'Wallet' },
+    { href: '/app/account', label: 'Account' },
   ];
 
   const isActive = (href: string) => {
     const p = $page.url.pathname;
-    if (href === '/') return p === '/';
+    if (href === '/app') return p === '/app';
     return p === href || p.startsWith(href + '/');
   };
 
   const navTestId = (href: string) =>
-    href === '/' ? 'nav-home' : `nav-${href.slice(1).replace('/', '-')}`;
+    href === '/app' ? 'nav-home' : `nav-${href.replace('/app/', '').replace('/', '-')}`;
 </script>
 
 <aside
   class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-base-100 px-5 py-8 md:flex"
   data-testid="desktop-primary-navigation"
 >
-  <a href="/" class="mb-10 flex items-center gap-2 px-2" onclick={closeMobileNav}>
+  <a href="/app" class="mb-10 flex items-center gap-2 px-2" onclick={closeMobileNav}>
     <img src="/mr-market-logo-bg.png" alt="Mr.Market logo" class="size-8 rounded-full" />
     <span class="font-display text-lg tracking-tight text-base-content">Mr.Market</span>
   </a>
@@ -66,7 +66,7 @@
     data-testid="mobile-primary-navigation"
   >
     <div class="mb-10 flex items-start justify-between">
-      <a href="/" class="flex items-center gap-2" onclick={closeMobileNav}>
+      <a href="/app" class="flex items-center gap-2" onclick={closeMobileNav}>
         <img src="/mr-market-logo-bg.png" alt="Mr.Market logo" class="size-8 rounded-full" />
         <span class="font-display text-lg tracking-tight text-base-content">Mr.Market</span>
       </a>

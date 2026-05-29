@@ -26,8 +26,8 @@
     <span class="mt-3 block text-body-muted">{$walletNamespaceLabel} · {$walletNetwork ?? 'not connected'}</span>
 
     <div class="mt-5 flex flex-wrap gap-2">
-      <a href="/deposit" class="btn-pill-primary" data-testid="deposit-entry">Deposit</a>
-      <a href="/withdraw" class="btn-pill-outline" data-testid="withdraw-entry">Withdraw</a>
+      <a href="/app/deposit" class="btn-pill-primary" data-testid="deposit-entry">Deposit</a>
+      <a href="/app/withdraw" class="btn-pill-outline" data-testid="withdraw-entry">Withdraw</a>
     </div>
   </section>
 
@@ -72,7 +72,7 @@
       <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="wallet-empty-state">
         <span class="block font-medium text-base-content">No funded assets yet</span>
         <span class="mt-1 block text-sm">Simulate a deposit to create the first deterministic balance and funding activity row.</span>
-        <a href="/deposit" class="btn-pill-primary mt-4 inline-flex">Simulate deposit</a>
+        <a href="/app/deposit" class="btn-pill-primary mt-4 inline-flex">Simulate deposit</a>
       </div>
     {:else if displayedBalances.length > 0}
       {#each displayedBalances as balance}

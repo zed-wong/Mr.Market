@@ -10,7 +10,7 @@ const componentSource = () =>
 
 const loginSource = () =>
   readFileSync(
-    fileURLToPath(new URL('../../../routes/login/+page.svelte', import.meta.url)),
+    fileURLToPath(new URL('../../../routes/app/login/+page.svelte', import.meta.url)),
     'utf8'
   );
 

@@ -100,7 +100,7 @@ export const fetchHufiCampaignStats = async (
   launcherFetch<HufiCampaignStats>(`/stats/campaigns?chain_id=${chainId}`);
 
 export const hufiCampaignDetailPath = (campaign: Pick<HufiCampaign, 'chain_id' | 'address'>): string =>
-  `/market/campaign/${campaign.chain_id}/${campaign.address}`;
+  `/app/market/campaign/${campaign.chain_id}/${campaign.address}`;
 
 export const shortenLauncherAddress = (address: string | null | undefined): string =>
   address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Not provided';

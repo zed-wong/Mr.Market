@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const listRouteSource = () =>
   readFileSync(
-    fileURLToPath(new URL('../../routes/market-making/+page.svelte', import.meta.url)),
+    fileURLToPath(new URL('../../routes/app/market-making/+page.svelte', import.meta.url)),
     'utf8'
   );
 
@@ -16,13 +16,13 @@ const apiHelperSource = () =>
 
 const layoutSource = () =>
   readFileSync(
-    fileURLToPath(new URL('../../routes/+layout.svelte', import.meta.url)),
+    fileURLToPath(new URL('../../routes/app/+layout.svelte', import.meta.url)),
     'utf8'
   );
 
 const legacyWeb3MarketMakingNamespace = () => ['/api/v1/web3', 'market-making'].join('/');
 
-describe('/market-making order list route', () => {
+describe('/app/market-making order list route', () => {
   it('loads market-making orders from the web3 market-making API namespace', () => {
     const route = listRouteSource();
     const helper = apiHelperSource();
@@ -37,7 +37,7 @@ describe('/market-making order list route', () => {
     const source = listRouteSource();
 
     expect(source).toContain('Market-making orders');
-    expect(source).toContain('/market-making/order/new');
+    expect(source).toContain('/app/market-making/order/new');
     expect(source).toContain('validationListState');
     expect(source).toContain('validationLoadingRequested');
     expect(source).toContain('order-list-loading-state');
@@ -71,6 +71,6 @@ describe('/market-making order list route', () => {
     expect(source).not.toContain('campaign');
     expect(source).not.toContain('discovery');
     expect(source).not.toContain('join campaign');
-    expect(source).not.toContain('/market-making/campaign');
+    expect(source).not.toContain('/app/market-making/campaign');
   });
 });

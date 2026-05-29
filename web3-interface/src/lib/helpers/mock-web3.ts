@@ -523,7 +523,7 @@ export const mockFundingActivity: MockActivityEntry[] = [
     category: 'funding',
     label: 'Deposit',
     detail: 'USDC · EVM · Ethereum · confirmed · 2026-05-23 09:00',
-    href: '/deposit',
+    href: '/app/deposit',
     timestamp: '2026-05-23 09:00',
   },
   {
@@ -533,7 +533,7 @@ export const mockFundingActivity: MockActivityEntry[] = [
     category: 'funding',
     label: 'Withdraw',
     detail: 'SOL · Solana / SVM · reviewing · 2026-05-23 08:30',
-    href: '/withdraw',
+    href: '/app/withdraw',
     timestamp: '2026-05-23 08:30',
   },
 ];
@@ -546,7 +546,7 @@ export const mockAccountActivity: MockActivityEntry[] = [
     category: 'funding',
     label: 'Funding',
     detail: '2026-05-23 09:00 · Deposit USDC confirmed on Ethereum',
-    href: '/deposit',
+    href: '/app/deposit',
     timestamp: '2026-05-23 09:00',
   },
   {
@@ -556,7 +556,7 @@ export const mockAccountActivity: MockActivityEntry[] = [
     category: 'campaign',
     label: 'Campaigns',
     detail: '2026-05-23 09:03 · Joined ETH / USDC Depth Builder',
-    href: '/market-making/campaign/eth-usdc-depth',
+    href: '/app/market-making/campaign/eth-usdc-depth',
     timestamp: '2026-05-23 09:03',
   },
   {
@@ -566,7 +566,7 @@ export const mockAccountActivity: MockActivityEntry[] = [
     category: 'order',
     label: 'Market-making orders',
     detail: '2026-05-23 09:45 · MM-1001 active',
-    href: '/market-making/order/MM-1001',
+    href: '/app/market-making/order/MM-1001',
     timestamp: '2026-05-23 09:45',
   },
   {
@@ -576,7 +576,7 @@ export const mockAccountActivity: MockActivityEntry[] = [
     category: 'funding',
     label: 'Funding',
     detail: '2026-05-23 08:30 · Withdrawal SOL reviewing on Solana / SVM',
-    href: '/withdraw',
+    href: '/app/withdraw',
     timestamp: '2026-05-23 08:30',
   },
   {
@@ -586,7 +586,7 @@ export const mockAccountActivity: MockActivityEntry[] = [
     category: 'campaign',
     label: 'Campaigns',
     detail: '2026-05-23 08:31 · Joined SOL / USDC Growth Campaign',
-    href: '/market-making/campaign/sol-usdc-growth',
+    href: '/app/market-making/campaign/sol-usdc-growth',
     timestamp: '2026-05-23 08:31',
   },
   {
@@ -596,7 +596,7 @@ export const mockAccountActivity: MockActivityEntry[] = [
     category: 'order',
     label: 'Market-making orders',
     detail: '2026-05-23 08:32 · MM-2001 pending',
-    href: '/market-making/order/MM-2001',
+    href: '/app/market-making/order/MM-2001',
     timestamp: '2026-05-23 08:32',
   },
 ];

@@ -377,7 +377,7 @@ export const createMockCampaign = (input: CampaignCreationInput, accountId = 'mo
       category: 'campaign',
       label: 'Campaign created',
       detail: `2026-05-23 09:18 · ${campaign.name} · ${namespaceLabel(namespace)} · ${campaign.status}`,
-      href: `/market-making/campaign/${campaign.id}`,
+      href: `/app/market-making/campaign/${campaign.id}`,
       timestamp: '2026-05-23 09:18',
     },
     ...entries,
@@ -395,7 +395,6 @@ export const validateOrderDraft = (
   balances: MockBalance[]
 ): OrderValidationResult => {
   const errors: OrderValidationResult = {};
-  const parsed = new BigNumber(amount);
   const minimum = minimumContributionUsd(campaign);
   const availableUsd = balances.reduce((sum, balance) => sum.plus(balance.usdValue), new BigNumber(0));
 
@@ -410,7 +409,17 @@ export const validateOrderDraft = (
 
   if (!amount.trim()) {
     errors.amount = 'Contribution amount is required.';
-  } else if (!parsed.isFinite() || Number.isNaN(parsed.toNumber())) {
+    return errors;
+  }
+
+  let parsed: BigNumber;
+  try {
+    parsed = new BigNumber(amount);
+  } catch {
+    errors.amount = 'Enter a numeric contribution amount.';
+    return errors;
+  }
+  if (!parsed.isFinite() || Number.isNaN(parsed.toNumber())) {
     errors.amount = 'Enter a numeric contribution amount.';
   } else if (parsed.lte(0)) {
     errors.amount = 'Contribution amount must be greater than zero.';
@@ -526,7 +535,7 @@ export const transitionOrderLifecycle = (
       category: 'order',
       label: detail.label,
       detail: `${timestamp} · ${updatedOrder.id} · ${campaign?.name ?? 'Unknown campaign'} · ${namespaceLabel(updatedOrder.namespace)} · ${statusLabel(updatedOrder.status)}`,
-      href: `/market-making/order/${updatedOrder.id}`,
+      href: `/app/market-making/order/${updatedOrder.id}`,
       timestamp,
     },
     ...entries,
@@ -581,7 +590,7 @@ export const createMockOrder = (
       category: 'order',
       label: 'Market-making order',
       detail: `2026-05-23 09:22 · ${order.id} · ${campaign.name} · ${namespaceLabel(namespace)} · ${order.status} · ${order.contributionAmount}`,
-      href: `/market-making/order/${order.id}`,
+      href: `/app/market-making/order/${order.id}`,
       timestamp: '2026-05-23 09:22',
     },
     {
@@ -591,7 +600,7 @@ export const createMockOrder = (
       category: 'campaign',
       label: 'Campaign joined',
       detail: `2026-05-23 09:21 · ${campaign.name} joined through ${order.id}`,
-      href: `/market-making/campaign/${campaign.id}`,
+      href: `/app/market-making/campaign/${campaign.id}`,
       timestamp: '2026-05-23 09:21',
     },
     ...entries,

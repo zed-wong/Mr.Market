@@ -31,9 +31,9 @@
   let displayedTotalBalanceUsd = $derived(homePageState === 'loaded' ? $totalBalanceUsd : '0.00');
 
   const quickActions = [
-    { href: '/wallet', label: 'Wallet', hint: 'Deposit, withdraw, balances' },
-    { href: '/market-making', label: 'Pools', hint: 'Discover and join campaigns' },
-    { href: '/market', label: 'Markets', hint: 'Live pair overview' },
+    { href: '/app/wallet', label: 'Wallet', hint: 'Deposit, withdraw, balances' },
+    { href: '/app/market-making', label: 'Pools', hint: 'Discover and join campaigns' },
+    { href: '/app/market', label: 'Markets', hint: 'Live pair overview' },
   ];
 </script>
 
@@ -90,7 +90,7 @@
 
   <Section title="Balances" eyebrow="Account scoped" caption="Per-account holdings from local fixtures.">
     {#snippet actions()}
-      <a href="/wallet" class="btn-pill-ghost">View all →</a>
+      <a href="/app/wallet" class="btn-pill-ghost">View all →</a>
     {/snippet}
 
     <div data-testid="home-balances">
@@ -110,8 +110,8 @@
           <span class="block font-medium text-base-content">No portfolio activity yet</span>
           <span class="mt-1 block text-sm">Start with a deposit or create a market-making order to populate this deterministic account.</span>
           <div class="mt-4 flex flex-wrap justify-center gap-2">
-            <a href="/deposit" class="btn-pill-primary">Simulate deposit</a>
-            <a href="/market-making" class="btn-pill-outline">Explore campaigns</a>
+            <a href="/app/deposit" class="btn-pill-primary">Simulate deposit</a>
+            <a href="/app/market-making" class="btn-pill-outline">Explore campaigns</a>
           </div>
         </div>
       {:else if displayedBalances.length > 0}

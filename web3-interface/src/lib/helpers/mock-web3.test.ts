@@ -91,7 +91,7 @@ describe('mock campaign discovery helpers', () => {
           category: 'funding',
           label: 'Deposit',
           detail: 'USDC · EVM · credited · 2026-05-23 09:15',
-          href: '/deposit',
+          href: '/app/deposit',
           timestamp: '2026-05-23 09:15',
         },
       ]

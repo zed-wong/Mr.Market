@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
 
   onMount(() => {
-    void goto('/market-making/order/new', { replaceState: true });
+    void goto('/app/market-making/order/new', { replaceState: true });
   });
 </script>
 
@@ -13,5 +13,5 @@
   <span class="mt-4 block text-base-content/60">
     Market-making setup now starts with an order, strategy, pair/spec, and order-attributed deposit.
   </span>
-  <a class="btn-pill-primary mt-6 inline-flex" href="/market-making/order/new">Create order →</a>
+  <a class="btn-pill-primary mt-6 inline-flex" href="/app/market-making/order/new">Create order →</a>
 </section>

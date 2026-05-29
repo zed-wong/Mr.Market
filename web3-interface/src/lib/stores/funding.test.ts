@@ -77,7 +77,7 @@ describe('deterministic funding flows', () => {
     expect(activity[0]).toMatchObject({
       label: 'Deposit',
       detail: 'USDC · EVM · USD Coin · credited · 2026-05-23 09:15 · amount 250.5',
-      href: '/deposit',
+      href: '/app/deposit',
     });
   });
 
@@ -127,7 +127,7 @@ describe('deterministic funding flows', () => {
     expect(activity[0]).toMatchObject({
       label: 'Withdraw',
       detail: 'ETH · EVM · 0x742d...f44e · reviewing · 2026-05-23 09:15 · amount 0.5',
-      href: '/withdraw',
+      href: '/app/withdraw',
     });
   });
 

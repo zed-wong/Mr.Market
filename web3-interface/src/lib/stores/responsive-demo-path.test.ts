@@ -99,14 +99,14 @@ describe('responsive browser demo path contract', () => {
 
   it('exposes browser-stable test IDs across the complete responsive demo path', () => {
     const routeSources = [
-      source('../../routes/+page.svelte'),
-      source('../../routes/wallet/+page.svelte'),
-      source('../../routes/market-making/+page.svelte'),
-      source('../../routes/market-making/campaign/[id]/+page.svelte'),
-      source('../../routes/market-making/order/new/+page.svelte'),
-      source('../../routes/market-making/order/[id]/+page.svelte'),
-      source('../../routes/deposit/+page.svelte'),
-      source('../../routes/withdraw/+page.svelte'),
+      source('../../routes/app/+page.svelte'),
+      source('../../routes/app/wallet/+page.svelte'),
+      source('../../routes/app/market-making/+page.svelte'),
+      source('../../routes/app/market-making/campaign/[id]/+page.svelte'),
+      source('../../routes/app/market-making/order/new/+page.svelte'),
+      source('../../routes/app/market-making/order/[id]/+page.svelte'),
+      source('../../routes/app/deposit/+page.svelte'),
+      source('../../routes/app/withdraw/+page.svelte'),
     ].join('\n');
 
     for (const testId of [
@@ -174,7 +174,7 @@ describe('responsive browser demo path contract', () => {
     );
     expect(activity[0]).toMatchObject({
       label: 'Placement resumed',
-      href: `/market-making/order/${order.id}`,
+      href: `/app/market-making/order/${order.id}`,
     });
   });
 
@@ -218,7 +218,7 @@ describe('responsive browser demo path contract', () => {
     });
     expect(fundingActivityForAccount(account.id, 'evm', get(sessionFundingActivity))[0]).toMatchObject({
       label: 'Deposit',
-      href: '/deposit',
+      href: '/app/deposit',
     });
   });
 });

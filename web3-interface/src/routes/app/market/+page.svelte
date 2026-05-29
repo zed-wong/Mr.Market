@@ -82,7 +82,7 @@
         Source: {hufiCampaignLauncherBaseUrl()} · {polygonContext}
       </span>
     </div>
-    <a href="/market-making" class="btn-pill-outline" data-testid="market-safe-campaigns-link">
+    <a href="/app/market-making" class="btn-pill-outline" data-testid="market-safe-campaigns-link">
       Mock order demo →
     </a>
   </section>

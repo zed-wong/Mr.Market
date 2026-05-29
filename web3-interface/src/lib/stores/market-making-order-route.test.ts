@@ -4,19 +4,19 @@ import { describe, expect, it } from 'vitest';
 
 const orderCreateSource = () =>
   readFileSync(
-    fileURLToPath(new URL('../../routes/market-making/order/new/+page.svelte', import.meta.url)),
+    fileURLToPath(new URL('../../routes/app/market-making/order/new/+page.svelte', import.meta.url)),
     'utf8'
   );
 
 const campaignDetailSource = () =>
   readFileSync(
-    fileURLToPath(new URL('../../routes/market-making/campaign/[id]/+page.svelte', import.meta.url)),
+    fileURLToPath(new URL('../../routes/app/market-making/campaign/[id]/+page.svelte', import.meta.url)),
     'utf8'
   );
 
 const orderDetailSource = () =>
   readFileSync(
-    fileURLToPath(new URL('../../routes/market-making/order/[id]/+page.svelte', import.meta.url)),
+    fileURLToPath(new URL('../../routes/app/market-making/order/[id]/+page.svelte', import.meta.url)),
     'utf8'
   );
 
@@ -30,11 +30,11 @@ describe('market-making campaign detail to order route', () => {
     expect(source).toContain('listMarketMakingStrategies');
     expect(source).toContain('listMarketMakingOptions');
     expect(source).toContain('createMarketMakingOrder');
-    expect(source).toContain('/market-making/order/${encodeURIComponent(response.orderId)}');
+    expect(source).toContain('/app/market-making/order/${encodeURIComponent(response.orderId)}');
     expect(source).not.toContain('order-create-campaign-not-found');
     expect(source).not.toContain('requestedCampaignId');
     expect(source).not.toContain('Choose a valid market-making campaign before creating an order.');
-    expect(source).not.toContain('/market-making/campaign/');
+    expect(source).not.toContain('/app/market-making/campaign/');
   });
 
   it('surfaces wallet interaction recovery states and duplicate submit protection', () => {
@@ -79,7 +79,7 @@ describe('market-making campaign detail to order route', () => {
   it('replaces legacy market-making URLs with order-list navigation', () => {
     const source = campaignDetailSource();
 
-    expect(source).toContain("goto('/market-making'");
+    expect(source).toContain("goto('/app/market-making'");
     expect(source).toContain('legacy-detail-replaced');
     expect(source).toContain('Open orders');
     expect(source.toLowerCase()).not.toContain('join');

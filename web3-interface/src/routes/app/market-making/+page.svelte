@@ -90,7 +90,7 @@
     orderId.length > 14 ? `${orderId.slice(0, 6)}…${orderId.slice(-4)}` : orderId;
 
   const orderDetailHref = (orderId: string): string =>
-    `/market-making/order/${encodeURIComponent(orderId)}`;
+    `/app/market-making/order/${encodeURIComponent(orderId)}`;
 
   const strategyLabel = (order: Web3MarketMakingOrderSummary): string =>
     order.strategy?.name || order.strategy?.key || order.strategy?.controller || 'Strategy';
@@ -301,7 +301,7 @@
       </span>
     </div>
     <a
-      href="/market-making/order/new"
+      href="/app/market-making/order/new"
       class="btn-pill-primary"
       data-testid="market-making-create-order-cta"
     >
@@ -420,7 +420,7 @@
         <span class="mt-3 block text-sm text-base-content/60">
           Create your first market-making order to choose a strategy, define pair specs, and fund an order-attributed balance.
         </span>
-        <a href="/market-making/order/new" class="btn-pill-primary mt-6 inline-flex" data-testid="order-empty-create-cta">
+        <a href="/app/market-making/order/new" class="btn-pill-primary mt-6 inline-flex" data-testid="order-empty-create-cta">
           Create order →
         </a>
       </div>

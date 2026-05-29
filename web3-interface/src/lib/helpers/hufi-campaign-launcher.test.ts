@@ -52,7 +52,7 @@ describe('HuFi Campaign Launcher helper', () => {
     expect(HUFI_POLYGON_CHAIN_ID).toBe(137);
     expect(hufiCampaignLauncherBaseUrl()).toBe('https://cl.hu.finance');
     expect(hufiCampaignDetailPath(sampleCampaign)).toBe(
-      '/market/campaign/137/0xBeA2a48CEdE2B7A78657811F0577e588a81a74Dd'
+      '/app/market/campaign/137/0xBeA2a48CEdE2B7A78657811F0577e588a81a74Dd'
     );
   });
 

@@ -379,7 +379,7 @@
       <span class="mt-4 block text-base-content/60">
         This market-making order was not found for the authenticated wallet. Return to the order list to select an accessible order.
       </span>
-      <a class="btn-pill-primary mt-6 inline-flex" href="/market-making">My orders</a>
+      <a class="btn-pill-primary mt-6 inline-flex" href="/app/market-making">My orders</a>
     </section>
   {:else}
     <section class="pt-2">

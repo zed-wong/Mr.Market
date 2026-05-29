@@ -13,12 +13,12 @@
 
   const continueWithDemoWallet = () => {
     connectDemoWallet('evm');
-    void goto('/');
+    void goto('/app');
   };
 
   const continueWithWrongNetwork = () => {
     connectDemoWallet('wrong-network');
-    void goto('/market-making');
+    void goto('/app/market-making');
   };
 </script>
 
@@ -48,7 +48,7 @@
         <span class="mt-2 block text-sm text-base-content/60">
           {$walletNamespaceLabel} · {$walletNetwork ?? 'supported network'} · <span class="font-mono-num">{$walletShortAddress}</span>
         </span>
-        <a href="/" class="btn-pill-primary mt-5 inline-flex" data-testid="login-open-dashboard">Open dashboard →</a>
+        <a href="/app" class="btn-pill-primary mt-5 inline-flex" data-testid="login-open-dashboard">Open dashboard →</a>
       {:else if $walletIsUnsupported}
         <span class="mt-3 block text-lg font-semibold text-base-content">Wrong network selected</span>
         <span class="mt-2 block text-sm text-base-content/60">

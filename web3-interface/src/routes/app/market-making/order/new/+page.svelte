@@ -254,7 +254,7 @@
       });
       fundingInstruction = response.funding?.depositEndpoint || response.initialDeposit?.message || null;
       flowStep = 'success';
-      await goto(`/market-making/order/${encodeURIComponent(response.orderId)}`);
+      await goto(`/app/market-making/order/${encodeURIComponent(response.orderId)}`);
     } catch (error) {
       submitError = errorMessage(error);
       flowStep = 'submit-error';
@@ -299,7 +299,7 @@
         Choose a server-backed strategy, select explicit pair/spec details, and prepare an order-attributed initial deposit.
       </span>
     </div>
-    <a class="btn-pill-outline" href="/market-making" data-testid="order-create-back-link">Orders →</a>
+    <a class="btn-pill-outline" href="/app/market-making" data-testid="order-create-back-link">Orders →</a>
   </section>
 
   {#if !$walletIsConnected && !$walletIsUnsupported}
@@ -428,8 +428,8 @@
           This order needs more {assetLabel(selectedDepositAsset)} before creation can proceed. Deposit to the connected wallet, then return to submit the order.
         </span>
         <div class="flex flex-wrap gap-2">
-          <a class="btn-pill-primary" href="/deposit">Deposit</a>
-          <a class="btn-pill-outline" href="/wallet">Wallet</a>
+          <a class="btn-pill-primary" href="/app/deposit">Deposit</a>
+          <a class="btn-pill-outline" href="/app/wallet">Wallet</a>
         </div>
       </div>
     {/if}

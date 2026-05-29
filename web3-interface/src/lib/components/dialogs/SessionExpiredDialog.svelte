@@ -25,7 +25,7 @@
         Demo balances, funding, and campaign activity stay in local browser state. Reconnect a supported wallet to continue without any backend session call.
       </div>
       <div class="modal-action">
-        <a href="/login" class="btn btn-ghost capitalize" onclick={dismissToLogin}>
+        <a href="/app/login" class="btn btn-ghost capitalize" onclick={dismissToLogin}>
           Return to login
         </a>
         <button class="btn btn-primary capitalize" onclick={handleConfirm} data-testid="session-expired-reconnect">

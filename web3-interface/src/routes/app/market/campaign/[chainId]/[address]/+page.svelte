@@ -80,7 +80,7 @@
         Source: {detailEndpoint}
       </span>
     </div>
-    <a href="/market" class="btn-pill-outline" data-testid="hufi-detail-back">
+    <a href="/app/market" class="btn-pill-outline" data-testid="hufi-detail-back">
       ← All live campaigns
     </a>
   </section>
@@ -192,7 +192,7 @@
           <button class="btn-pill-primary opacity-60 cursor-not-allowed" disabled data-testid="hufi-real-participation-disabled">
             Join unavailable until backend is connected
           </button>
-          <a href="/market-making" class="btn-pill-outline">
+          <a href="/app/market-making" class="btn-pill-outline">
             Open separate mock order demo
           </a>
         </div>

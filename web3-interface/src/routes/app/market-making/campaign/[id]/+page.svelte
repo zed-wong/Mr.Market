@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
 
   onMount(() => {
-    void goto('/market-making', { replaceState: true });
+    void goto('/app/market-making', { replaceState: true });
   });
 </script>
 
@@ -13,5 +13,5 @@
   <span class="mt-4 block text-base-content/60">
     This old market-making URL has been replaced by server-backed order list, create, and detail flows.
   </span>
-  <a class="btn-pill-primary mt-6 inline-flex" href="/market-making">Open orders →</a>
+  <a class="btn-pill-primary mt-6 inline-flex" href="/app/market-making">Open orders →</a>
 </section>
