@@ -12,6 +12,7 @@ const protectedRoutes = [
   '/system/password',
   '/trading/direct-market-making',
   '/trading/exchanges',
+  '/connectivity/exchanges',
   '/system/api-keys',
 ];
 

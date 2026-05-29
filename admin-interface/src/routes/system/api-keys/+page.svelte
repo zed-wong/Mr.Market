@@ -132,7 +132,7 @@
     exchangeDropdownOpen = false;
   };
 
-  const loadApiKeys = async (showToast = false) => {
+  const loadApiKeys = async (showToast = false, options: { throwOnError?: boolean } = {}) => {
     const adminToken = token();
     if (!adminToken) {
       loadError = {
@@ -142,6 +142,9 @@
         actionLabel: 'sign in again',
       };
       loading = false;
+      if (options.throwOnError) {
+        throw new Error(loadError.message);
+      }
       return;
     }
 
@@ -151,16 +154,24 @@
     loadError = null;
     try {
       keys = await getAllAPIKeys(adminToken);
-      if (showToast) toast.success('API keys refreshed');
     } catch (error) {
       console.error(error);
       loadError = classifyAdminError(error, 'Failed to load API keys');
-      if (showToast) toast.error(loadError.title, { description: loadError.message });
+      if (options.throwOnError) {
+        throw new Error(loadError.message);
+      }
     } finally {
       loading = false;
       refreshing = false;
     }
   };
+
+  const refreshApiKeys = () =>
+    toast.promise(loadApiKeys(true, { throwOnError: true }), {
+      loading: 'refreshing API keys',
+      success: 'API keys refreshed',
+      error: 'failed to refresh API keys',
+    });
 
   const loadFormMetadata = async () => {
     const adminToken = token();
@@ -317,11 +328,10 @@
     subtitle="Exchange API credentials. Secrets are encrypted before they leave the browser."
   >
     {#snippet actions()}
-      <button class="btn btn-ghost btn-sm rounded-full capitalize" onclick={() => loadApiKeys(true)} disabled={refreshing}>
-        {#if refreshing}<span class="loading loading-spinner loading-xs"></span>{/if}
-        refresh
-      </button>
       <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={openAddDialog} disabled={!encryptionReady}>+ add key</button>
+      <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={() => refreshApiKeys()} disabled={refreshing}>
+        {refreshing ? 'refreshing' : 'refresh'}
+      </button>
     {/snippet}
   </PageHeader>
 

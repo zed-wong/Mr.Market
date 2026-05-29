@@ -61,6 +61,7 @@
       "trading": "trading",
       "trading_operations": "trading operations",
       "connectivity": "connectivity",
+      "exchange_connectivity": "exchange connectivity",
       "user_orders": "user orders",
       "exchange_orders": "exchange orders",
       "routes": "routes",

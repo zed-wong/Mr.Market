@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
     fetchAdminSystemConfig,
@@ -66,7 +67,7 @@
   const errorMessage = (cause: unknown) =>
     cause instanceof Error ? cause.message : 'Unable to load system config';
 
-  const loadConfig = async () => {
+  const loadConfig = async (options: { throwOnError?: boolean } = {}) => {
     const initialLoad = response === null;
 
     loading = initialLoad;
@@ -82,11 +83,21 @@
       }
     } catch (cause) {
       error = errorMessage(cause);
+      if (options.throwOnError) {
+        throw new Error(error);
+      }
     } finally {
       loading = false;
       refreshing = false;
     }
   };
+
+  const refreshConfig = () =>
+    toast.promise(loadConfig({ throwOnError: true }), {
+      loading: 'refreshing system config',
+      success: 'system config refreshed',
+      error: 'failed to refresh system config',
+    });
 
   const displayValue = (item: AdminSystemConfigItem) => {
     if (item.sensitive) {
@@ -206,7 +217,7 @@
         type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing || Boolean(savingKey)}
-        onclick={() => void loadConfig()}
+        onclick={() => void refreshConfig()}
       >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>

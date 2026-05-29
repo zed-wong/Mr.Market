@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
     AUDIT_STATUSES,
@@ -105,7 +106,7 @@
     expanded = { ...expanded, [id]: !expanded[id] };
   };
 
-  const loadAudit = async (options: { exportAudit?: boolean; integrity?: boolean } = {}) => {
+  const loadAudit = async (options: { exportAudit?: boolean; integrity?: boolean; throwOnError?: boolean } = {}) => {
     const initialLoad = response === null && !options.exportAudit && !options.integrity;
 
     if (options.exportAudit) {
@@ -161,6 +162,9 @@
       } else {
         error = errorMessage(cause);
       }
+      if (options.throwOnError) {
+        throw new Error(errorMessage(cause));
+      }
     } finally {
       loading = false;
       refreshing = false;
@@ -168,6 +172,13 @@
       verifying = false;
     }
   };
+
+  const refreshAudit = () =>
+    toast.promise(loadAudit({ throwOnError: true }), {
+      loading: 'refreshing audit log',
+      success: 'audit log refreshed',
+      error: 'failed to refresh audit log',
+    });
 
   const applyFilters = () => {
     page = 1;
@@ -219,15 +230,9 @@
       >{exporting ? 'exporting' : 'export bounded'}</button>
       <button
         type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled={loading || refreshing || exporting || verifying}
-        onclick={() => void loadAudit({ integrity: true })}
-      >{verifying ? 'verifying' : 'verify chain'}</button>
-      <button
-        type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing || exporting || verifying}
-        onclick={() => void loadAudit()}
+        onclick={() => void refreshAudit()}
       >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>

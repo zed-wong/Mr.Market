@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
     fetchAdminSystemHealth,
@@ -72,7 +73,7 @@
   const errorMessage = (cause: unknown) =>
     cause instanceof Error ? cause.message : 'Unable to load system health';
 
-  const loadHealth = async () => {
+  const loadHealth = async (options: { throwOnError?: boolean } = {}) => {
     const initialLoad = response === null;
 
     loading = initialLoad;
@@ -86,11 +87,21 @@
       });
     } catch (cause) {
       error = errorMessage(cause);
+      if (options.throwOnError) {
+        throw new Error(error);
+      }
     } finally {
       loading = false;
       refreshing = false;
     }
   };
+
+  const refreshHealth = () =>
+    toast.promise(loadHealth({ throwOnError: true }), {
+      loading: 'refreshing health status',
+      success: 'health status refreshed',
+      error: 'failed to refresh health status',
+    });
 
   const changeGroup = (next: string) => {
     groupFilter = next;
@@ -124,7 +135,7 @@
         type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing}
-        onclick={() => void loadHealth()}
+        onclick={() => void refreshHealth()}
       >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>

@@ -840,7 +840,7 @@
 
     async function loadOrderDetails(
         orderId: string,
-        options: { silent?: boolean } = {},
+        options: { silent?: boolean; throwOnError?: boolean } = {},
     ) {
         if (detailsRefreshing) {
             if (detailsRefreshingOrderId !== orderId) {
@@ -860,10 +860,14 @@
         try {
             const token = getToken();
             if (!token) {
+                const sessionError = new Error("Session expired. Sign in again before viewing direct market-making operations.");
                 detailsError = classifyAdminError(
-                    new Error("Session expired. Sign in again before viewing direct market-making operations."),
+                    sessionError,
                     "Direct market-making order diagnosis failed to load",
                 );
+                if (options.throwOnError) {
+                    throw sessionError;
+                }
                 return;
             }
 
@@ -880,6 +884,9 @@
                     error,
                     "Direct market-making order diagnosis failed to load",
                 );
+            }
+            if (options.throwOnError) {
+                throw error;
             }
         } finally {
             detailsRefreshing = false;
@@ -1182,7 +1189,11 @@
     onClose={closeOrderDetails}
     onRefresh={() => {
         if (detailsOrder) {
-            void loadOrderDetails(detailsOrder.orderId);
+            void toast.promise(loadOrderDetails(detailsOrder.orderId, { throwOnError: true }), {
+                loading: "refreshing order diagnosis",
+                success: "order diagnosis refreshed",
+                error: "failed to refresh order diagnosis",
+            });
         }
     }}
     onStartOrder={() => {

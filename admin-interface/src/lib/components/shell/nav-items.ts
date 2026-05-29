@@ -43,6 +43,7 @@ export const NAV_ITEMS: NavGroup[] = [
     children: [
       { key: 'connectivity.exchanges', label: 'admin.nav.exchanges', href: '/trading/exchanges' },
       { key: 'connectivity.api_keys', label: 'admin.nav.api_keys', href: '/system/api-keys' },
+      { key: 'connectivity.exchange_connectivity', label: 'admin.nav.exchange_connectivity', href: '/connectivity/exchanges' },
     ],
   },
   {

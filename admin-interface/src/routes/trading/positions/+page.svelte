@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
     fetchAdminPositions,
@@ -85,7 +86,7 @@
     reason: value === null ? reason || unavailableReason : null,
   });
 
-  const loadPositions = async () => {
+  const loadPositions = async (options: { throwOnError?: boolean } = {}) => {
     const initialLoad = response === null;
 
     loading = initialLoad;
@@ -104,11 +105,21 @@
       limit = response.pagination.limit;
     } catch (cause) {
       error = errorMessage(cause);
+      if (options.throwOnError) {
+        throw new Error(error);
+      }
     } finally {
       loading = false;
       refreshing = false;
     }
   };
+
+  const refreshPositions = () =>
+    toast.promise(loadPositions({ throwOnError: true }), {
+      loading: 'refreshing positions',
+      success: 'positions refreshed',
+      error: 'failed to refresh positions',
+    });
 
   const applyFilters = () => {
     page = 1;
@@ -159,21 +170,9 @@
     {#snippet actions()}
       <button
         type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled
-        title="Snapshot is unavailable because no safe backend snapshot workflow exists for this page."
-      >snapshot unavailable</button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        disabled
-        title="Reconcile is unavailable because this page exposes read-only positions only."
-      >reconcile unavailable</button>
-      <button
-        type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing}
-        onclick={() => void loadPositions()}
+        onclick={() => void refreshPositions()}
       >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>

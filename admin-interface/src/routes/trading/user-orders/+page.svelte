@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
+  import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
     fetchAdminUserOrders,
@@ -88,7 +89,7 @@
   const errorMessage = (cause: unknown) =>
     cause instanceof Error ? cause.message : 'Unable to load user orders';
 
-  const loadOrders = async () => {
+  const loadOrders = async (options: { throwOnError?: boolean } = {}) => {
     const initialLoad = response === null;
 
     loading = initialLoad;
@@ -107,11 +108,21 @@
       limit = response.pagination.limit;
     } catch (cause) {
       error = errorMessage(cause);
+      if (options.throwOnError) {
+        throw new Error(error);
+      }
     } finally {
       loading = false;
       refreshing = false;
     }
   };
+
+  const refreshOrders = () =>
+    toast.promise(loadOrders({ throwOnError: true }), {
+      loading: 'refreshing user orders',
+      success: 'user orders refreshed',
+      error: 'failed to refresh user orders',
+    });
 
   const changeType = (next: 'all' | AdminUserOrderType) => {
     typeFilter = next;
@@ -173,7 +184,7 @@
         type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing}
-        onclick={() => void loadOrders()}
+        onclick={() => void refreshOrders()}
       >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>

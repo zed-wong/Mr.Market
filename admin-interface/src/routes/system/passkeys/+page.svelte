@@ -27,7 +27,7 @@
   const shortId = (id: string) =>
     id.length <= 14 ? id : `${id.slice(0, 6)}…${id.slice(-6)}`;
 
-  async function refresh() {
+  async function refresh(options: { throwOnError?: boolean } = {}) {
     loading = true;
     error = null;
     try {
@@ -35,10 +35,20 @@
     } catch (err) {
       console.error('Failed to load passkeys', err);
       error = String(err instanceof Error ? err.message : err);
+      if (options.throwOnError) {
+        throw new Error(error);
+      }
     } finally {
       loading = false;
     }
   }
+
+  const refreshPasskeys = () =>
+    toast.promise(refresh({ throwOnError: true }), {
+      loading: 'refreshing passkeys',
+      success: 'passkeys refreshed',
+      error: 'failed to refresh passkeys',
+    });
 
   async function handleRegister() {
     if (registering) return;
@@ -116,14 +126,11 @@
       </button>
       <button
         type="button"
-        class="btn btn-ghost btn-sm rounded-full capitalize"
-        onclick={() => void refresh()}
+        class="btn btn-primary btn-sm rounded-full capitalize"
+        onclick={() => void refreshPasskeys()}
         disabled={loading}
       >
-        {#if loading}
-          <span class="loading loading-spinner loading-xs"></span>
-        {/if}
-        <span>{$_('refresh')}</span>
+        <span>{loading ? 'refreshing' : $_('refresh')}</span>
       </button>
     {/snippet}
   </PageHeader>

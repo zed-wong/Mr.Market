@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
     fetchAdminOrders,
@@ -85,7 +86,7 @@
     return Math.max(0, Math.min(100, (filled / quantity) * 100));
   };
 
-  const loadOrders = async () => {
+  const loadOrders = async (options: { throwOnError?: boolean } = {}) => {
     const initialLoad = response === null;
 
     loading = initialLoad;
@@ -103,11 +104,21 @@
       limit = response.pagination.limit;
     } catch (cause) {
       error = errorMessage(cause);
+      if (options.throwOnError) {
+        throw new Error(error);
+      }
     } finally {
       loading = false;
       refreshing = false;
     }
   };
+
+  const refreshOrders = () =>
+    toast.promise(loadOrders({ throwOnError: true }), {
+      loading: 'refreshing exchange orders',
+      success: 'exchange orders refreshed',
+      error: 'failed to refresh exchange orders',
+    });
 
   const changeStatus = (next: 'all' | AdminOrderStatus) => {
     statusFilter = next;
@@ -152,7 +163,7 @@
         type="button"
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing}
-        onclick={() => void loadOrders()}
+        onclick={() => void refreshOrders()}
       >{refreshing ? 'refreshing' : 'refresh'}</button>
     {/snippet}
   </PageHeader>

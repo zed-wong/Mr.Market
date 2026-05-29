@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invalidate } from "$app/navigation";
   import { _ } from "svelte-i18n";
+  import { toast } from "svelte-sonner";
 
   import type { PageData } from "./$types";
   import type {
@@ -47,6 +48,14 @@
 
   async function refreshData() {
     await invalidate("admin:settings:strategies");
+  }
+
+  function refreshStrategies() {
+    void toast.promise(refreshData(), {
+      loading: "refreshing strategies",
+      success: "strategies refreshed",
+      error: "failed to refresh strategies",
+    });
   }
 
   function handleEdit(definition: StrategyDefinition) {
@@ -124,14 +133,14 @@
       onEdit={handleEdit}
       onRemove={handleRemove}
       onDetails={handleDetails}
-      onRefresh={refreshData}
+      onRefresh={refreshStrategies}
       onNewClick={openCreateModal}
     />
 
     <InstancesTable
       {instances}
       onStop={handleStopInstance}
-      onRefresh={refreshData}
+      onRefresh={refreshStrategies}
     />
   {/if}
 </section>

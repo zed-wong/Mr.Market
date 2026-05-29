@@ -92,7 +92,7 @@
 <button
   type="button"
   data-testid="add-exchange-trigger"
-  class="btn btn-primary gap-2 shadow-lg hover:shadow-primary/20 transition-all"
+  class="btn btn-primary btn-sm rounded-full capitalize"
   on:click={openDialog}
 >
     <svg
@@ -101,7 +101,7 @@
       viewBox="0 0 24 24"
       stroke-width="2"
       stroke="currentColor"
-      class="w-4 h-4"
+      class="h-4 w-4"
     >
       <path
         stroke-linecap="round"

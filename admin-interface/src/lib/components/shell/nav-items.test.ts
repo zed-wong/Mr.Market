@@ -32,6 +32,7 @@ describe('admin shell navigation', () => {
         '/trading/exchange-orders',
         '/trading/user-orders',
         '/trading/exchanges',
+        '/connectivity/exchanges',
         '/trading/market-making',
         '/system/health',
         '/system/password',
@@ -70,7 +71,7 @@ describe('admin shell navigation', () => {
       '/system/passkeys',
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'connectivity')?.children.map((entry) => entry.href)).toEqual(
-      expect.arrayContaining(['/trading/exchanges', '/system/api-keys']),
+      expect.arrayContaining(['/trading/exchanges', '/system/api-keys', '/connectivity/exchanges']),
     );
     expect(NAV_ITEMS.find((item) => item.key === 'diagnostics')?.children.map((entry) => entry.href)).toEqual(
       ['/system/audit'],
@@ -78,10 +79,10 @@ describe('admin shell navigation', () => {
   });
 
   it('exposes active group and child location for collapsed or narrow shell labels', () => {
-    const location = getActiveNavLocation('/system/api-keys');
+    const location = getActiveNavLocation('/connectivity/exchanges');
 
     expect(location?.group.key).toBe('connectivity');
-    expect(location?.child?.href).toBe('/system/api-keys');
-    expect(isGroupActive(location!.group, '/system/api-keys')).toBe(true);
+    expect(location?.child?.href).toBe('/connectivity/exchanges');
+    expect(isGroupActive(location!.group, '/connectivity/exchanges')).toBe(true);
   });
 });

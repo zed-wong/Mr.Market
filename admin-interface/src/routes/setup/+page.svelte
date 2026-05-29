@@ -151,7 +151,7 @@
     publicKey = keyPair.publicKey || '';
   };
 
-  const bootstrap = async () => {
+  const bootstrap = async (options: { throwOnError?: boolean } = {}) => {
     loading = true;
     error = '';
     try {
@@ -170,10 +170,20 @@
       activeStep = nextStep(status.completedSteps, status.seedRequired);
     } catch (cause) {
       error = messageFrom(cause);
+      if (options.throwOnError) {
+        throw new Error(error);
+      }
     } finally {
       loading = false;
     }
   };
+
+  const refreshSetupStatus = () =>
+    toast.promise(bootstrap({ throwOnError: true }), {
+      loading: 'refreshing setup status',
+      success: 'setup status refreshed',
+      error: 'failed to refresh setup status',
+    });
 
   const nextStep = (completed: Record<string, boolean>, seedRequired: boolean): StepKey => {
     for (const step of steps) {
@@ -404,7 +414,11 @@
                   {/if}
                 </span>
               </div>
-              <button type="button" class="btn btn-outline btn-sm rounded-full capitalize" onclick={() => void bootstrap()}>
+              <button
+                type="button"
+                class="btn bg-base-300 hover:bg-base-300 text-base-content border-none min-h-[42px] h-[42px] px-4 rounded-lg text-sm font-semibold shadow-sm capitalize"
+                onclick={() => void refreshSetupStatus()}
+              >
                 refresh
               </button>
             </div>

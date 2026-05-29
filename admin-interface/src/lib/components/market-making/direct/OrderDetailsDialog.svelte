@@ -254,7 +254,7 @@
                         {/if}
                         <button
                             type="button"
-                            class="btn btn-ghost btn-xs rounded-full capitalize"
+                            class="btn bg-base-300 hover:bg-base-300 text-base-content border-none min-h-[42px] h-[42px] px-4 rounded-lg text-sm font-semibold shadow-sm"
                             on:click={onRefresh}
                             disabled={loading || refreshing}
                             aria-label={$_("admin_direct_mm_refresh_order_diagnosis")}

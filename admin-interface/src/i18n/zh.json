@@ -61,6 +61,7 @@
       "trading": "交易",
       "trading_operations": "交易运营",
       "connectivity": "连接",
+      "exchange_connectivity": "交易所连接",
       "user_orders": "用户订单",
       "exchange_orders": "交易所订单",
       "routes": "路由",
