@@ -4,6 +4,7 @@ describe('OrderReservationService', () => {
   const balanceLedgerService = {
     lockFunds: jest.fn(),
     unlockFunds: jest.fn(),
+    getExistingBalance: jest.fn(),
   };
   const ledgerEntryRepository = {
     find: jest.fn(),
@@ -13,6 +14,7 @@ describe('OrderReservationService', () => {
     jest.clearAllMocks();
     balanceLedgerService.lockFunds.mockResolvedValue({ applied: true });
     balanceLedgerService.unlockFunds.mockResolvedValue({ applied: true });
+    balanceLedgerService.getExistingBalance.mockResolvedValue(null);
     ledgerEntryRepository.find.mockResolvedValue([]);
   });
 
@@ -118,6 +120,97 @@ describe('OrderReservationService', () => {
       refType: 'exchange_order_cancelled',
       refId: 'exchange-order-1',
     });
+  });
+
+  it('releases only currently locked funds for terminal tracker cleanup', async () => {
+    const service = new OrderReservationService(balanceLedgerService as any);
+    balanceLedgerService.getExistingBalance.mockResolvedValue({
+      locked: '25',
+    });
+
+    const result = await service.releaseRemainingLimitOrderReservation({
+      orderId: 'order-1',
+      userId: 'user-1',
+      intentId: 'intent-cancel',
+      releaseId: 'exchange-order-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '1.5',
+      filledQty: '0.4',
+      reason: 'exchange_order_cancelled',
+    });
+
+    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'USDT',
+      amount: '25',
+      idempotencyKey:
+        'reserve-release:exchange-order-1:exchange_order_cancelled',
+      refType: 'exchange_order_cancelled',
+      refId: 'exchange-order-1',
+    });
+    expect(result).toMatchObject({
+      orderId: 'order-1',
+      assetId: 'USDT',
+      amount: '25',
+      applied: true,
+    });
+  });
+
+  it('skips terminal tracker cleanup when no locked funds remain', async () => {
+    const service = new OrderReservationService(balanceLedgerService as any);
+    balanceLedgerService.getExistingBalance.mockResolvedValue({
+      locked: '0',
+    });
+
+    const result = await service.releaseRemainingLimitOrderReservation({
+      orderId: 'order-1',
+      userId: 'user-1',
+      intentId: 'intent-cancel',
+      releaseId: 'exchange-order-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '0',
+      reason: 'exchange_order_cancelled',
+    });
+
+    expect(balanceLedgerService.unlockFunds).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      orderId: 'order-1',
+      assetId: 'USDT',
+      amount: '0',
+      applied: false,
+    });
+  });
+
+  it('uses the order asset locked balance when terminal tracker quantity is unusable', async () => {
+    const service = new OrderReservationService(balanceLedgerService as any);
+    balanceLedgerService.getExistingBalance.mockResolvedValue({
+      locked: '0.02',
+    });
+
+    await service.releaseRemainingLimitOrderReservation({
+      orderId: 'order-1',
+      userId: 'user-1',
+      intentId: 'intent-cancel',
+      releaseId: 'exchange-order-1',
+      pair: 'BTC/USDT',
+      side: 'sell',
+      price: '100',
+      qty: '0',
+      reason: 'exchange_order_cancelled',
+    });
+
+    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        assetId: 'BTC',
+        amount: '0.02',
+      }),
+    );
   });
 
   it('recovers dangling active reservations when no live intent or open order remains', async () => {

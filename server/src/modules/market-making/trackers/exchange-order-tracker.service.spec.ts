@@ -64,7 +64,7 @@ describe('ExchangeOrderTrackerService', () => {
       findOne: jest.fn().mockResolvedValue({ userId: 'admin-direct' }),
     };
     const orderReservationService = {
-      releaseLimitOrderReservation: jest.fn().mockResolvedValue({
+      releaseRemainingLimitOrderReservation: jest.fn().mockResolvedValue({
         applied: true,
       }),
     };
@@ -112,7 +112,7 @@ describe('ExchangeOrderTrackerService', () => {
     await flushPromises();
 
     expect(
-      orderReservationService.releaseLimitOrderReservation,
+      orderReservationService.releaseRemainingLimitOrderReservation,
     ).toHaveBeenCalledWith({
       orderId: 'order-1',
       userId: 'admin-direct',
@@ -132,7 +132,7 @@ describe('ExchangeOrderTrackerService', () => {
       findOne: jest.fn().mockResolvedValue({ userId: 'admin-direct' }),
     };
     const orderReservationService = {
-      releaseLimitOrderReservation: jest.fn().mockResolvedValue({
+      releaseRemainingLimitOrderReservation: jest.fn().mockResolvedValue({
         applied: true,
       }),
     };
@@ -180,7 +180,7 @@ describe('ExchangeOrderTrackerService', () => {
     await flushPromises();
 
     expect(
-      orderReservationService.releaseLimitOrderReservation,
+      orderReservationService.releaseRemainingLimitOrderReservation,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         side: 'sell',
@@ -193,7 +193,7 @@ describe('ExchangeOrderTrackerService', () => {
 
   it('skips terminal reservation release when disabled by caller', async () => {
     const orderReservationService = {
-      releaseLimitOrderReservation: jest.fn().mockResolvedValue({
+      releaseRemainingLimitOrderReservation: jest.fn().mockResolvedValue({
         applied: true,
       }),
     };
@@ -244,7 +244,7 @@ describe('ExchangeOrderTrackerService', () => {
     await flushPromises();
 
     expect(
-      orderReservationService.releaseLimitOrderReservation,
+      orderReservationService.releaseRemainingLimitOrderReservation,
     ).not.toHaveBeenCalled();
   });
 

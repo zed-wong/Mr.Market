@@ -979,7 +979,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
       return;
     }
 
-    await this.orderReservationService?.releaseLimitOrderReservation({
+    await this.orderReservationService?.releaseRemainingLimitOrderReservation({
       orderId: order.orderId,
       userId,
       intentId: order.clientOrderId || order.exchangeOrderId,

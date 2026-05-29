@@ -85,6 +85,61 @@ export class OrderReservationService {
     return { ...reservation, applied: result.applied };
   }
 
+  async releaseRemainingLimitOrderReservation(
+    command: LimitOrderReservationCommand & {
+      reason: string;
+      releaseId?: string;
+      filledQty?: string | null;
+    },
+  ): Promise<OrderReservationResult> {
+    const fallbackReservation = this.resolveReservationAsset(command);
+    let reservation: Omit<OrderReservationResult, 'applied'>;
+
+    try {
+      reservation = this.calculateReservation(command);
+    } catch {
+      reservation = fallbackReservation;
+    }
+
+    const existingBalance = await this.balanceLedgerService.getExistingBalance(
+      command.orderId,
+      reservation.assetId,
+    );
+    const lockedAmount = new BigNumber(existingBalance?.locked || 0);
+
+    if (!lockedAmount.isFinite() || lockedAmount.isLessThanOrEqualTo(0)) {
+      return { ...reservation, amount: '0', applied: false };
+    }
+
+    const calculatedAmount = new BigNumber(reservation.amount);
+    const releaseAmount =
+      calculatedAmount.isFinite() && calculatedAmount.isGreaterThan(0)
+        ? BigNumber.minimum(calculatedAmount, lockedAmount)
+        : lockedAmount;
+
+    if (releaseAmount.isLessThanOrEqualTo(0)) {
+      return { ...reservation, amount: '0', applied: false };
+    }
+
+    const result = await this.balanceLedgerService.unlockFunds({
+      orderId: command.orderId,
+      userId: command.userId,
+      assetId: reservation.assetId,
+      amount: releaseAmount.toFixed(),
+      idempotencyKey: `reserve-release:${
+        command.releaseId || command.intentId
+      }:${command.reason}`,
+      refType: command.reason,
+      refId: command.releaseId || command.intentId,
+    });
+
+    return {
+      ...reservation,
+      amount: releaseAmount.toFixed(),
+      applied: result.applied,
+    };
+  }
+
   async recoverDanglingReservations(params: {
     liveIntentIds: string[];
     openOrderIds: string[];
@@ -125,14 +180,26 @@ export class OrderReservationService {
     return dangling;
   }
 
-  private calculateReservation(
-    command: LimitOrderReservationCommand & { filledQty?: string | null },
+  private resolveReservationAsset(
+    command: LimitOrderReservationCommand,
   ): Omit<OrderReservationResult, 'applied'> {
     const [baseAssetId, quoteAssetId] = command.pair.split('/');
 
     if (!baseAssetId || !quoteAssetId) {
       throw new Error(`Cannot reserve funds for invalid pair ${command.pair}`);
     }
+
+    return {
+      orderId: command.orderId,
+      assetId: command.side === 'sell' ? baseAssetId : quoteAssetId,
+      amount: '0',
+    };
+  }
+
+  private calculateReservation(
+    command: LimitOrderReservationCommand & { filledQty?: string | null },
+  ): Omit<OrderReservationResult, 'applied'> {
+    const reservationAsset = this.resolveReservationAsset(command);
 
     const qty = new BigNumber(command.qty);
     const filledQty = new BigNumber(command.filledQty || 0);
@@ -155,14 +222,14 @@ export class OrderReservationService {
     if (command.side === 'sell') {
       return {
         orderId: command.orderId,
-        assetId: baseAssetId,
+        assetId: reservationAsset.assetId,
         amount: remainingQty.toFixed(),
       };
     }
 
     return {
       orderId: command.orderId,
-      assetId: quoteAssetId,
+      assetId: reservationAsset.assetId,
       amount: remainingQty.multipliedBy(price).toFixed(),
     };
   }
