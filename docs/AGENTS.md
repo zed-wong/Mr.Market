@@ -23,7 +23,7 @@ Source of truth: `docs/` yellowpaper.
 - **No generic balance adjustment paths.** Only typed, order-attributed mutations.
 
 # Tech Stack
-- **Frontend**: Always use Svelte 4 syntax + SvelteKit + daisyui/tailwind + svelte-i18n (`$_()`)
+- **Frontend**: For interface (use Svelte 4), for other interface (use Svelte 5) + SvelteKit + daisyui/tailwind + svelte-i18n (`$_()`)
 - **Backend**: Always use bignumber.js for calculation, and getRFC3339Timestamp() for timestamp
 
 # Styling Rules

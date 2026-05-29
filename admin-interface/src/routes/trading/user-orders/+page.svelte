@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
@@ -11,6 +11,7 @@
   } from '$lib/helpers/api/trading';
 
   const limitOptions = [10, 25, 50, 100];
+  const autoRefreshIntervalMs = 10_000;
   const types: Array<'all' | AdminUserOrderType> = ['all', 'market_making', 'simply_grow'];
   const states = [
     '',
@@ -49,7 +50,10 @@
   let limit = $state(25);
   let loading = $state(true);
   let refreshing = $state(false);
+  let backgroundRefreshing = $state(false);
+  let searchInputFocused = $state(false);
   let error = $state<string | null>(null);
+  let autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   const rows = $derived(response?.items ?? []);
 
@@ -89,12 +93,19 @@
   const errorMessage = (cause: unknown) =>
     cause instanceof Error ? cause.message : 'Unable to load user orders';
 
-  const loadOrders = async (options: { throwOnError?: boolean } = {}) => {
+  const loadOrders = async (options: { throwOnError?: boolean; silentError?: boolean; background?: boolean } = {}) => {
     const initialLoad = response === null;
 
-    loading = initialLoad;
-    refreshing = !initialLoad;
-    error = null;
+    if (options.background) {
+      backgroundRefreshing = true;
+    } else {
+      loading = initialLoad;
+      refreshing = !initialLoad;
+    }
+
+    if (!options.silentError) {
+      error = null;
+    }
 
     try {
       response = await fetchAdminUserOrders({
@@ -106,15 +117,37 @@
       });
       page = response.pagination.page;
       limit = response.pagination.limit;
+      error = null;
     } catch (cause) {
-      error = errorMessage(cause);
+      const message = errorMessage(cause);
+      if (!options.silentError) {
+        error = message;
+      }
       if (options.throwOnError) {
-        throw new Error(error);
+        throw new Error(message);
       }
     } finally {
-      loading = false;
-      refreshing = false;
+      if (options.background) {
+        backgroundRefreshing = false;
+      } else {
+        loading = false;
+        refreshing = false;
+      }
     }
+  };
+
+  const autoRefreshOrders = () => {
+    if (
+      loading ||
+      refreshing ||
+      backgroundRefreshing ||
+      searchInputFocused ||
+      document.visibilityState !== 'visible'
+    ) {
+      return;
+    }
+
+    void loadOrders({ silentError: true, background: true });
   };
 
   const refreshOrders = () =>
@@ -170,6 +203,17 @@
 
   onMount(() => {
     void loadOrders();
+
+    autoRefreshTimer = setInterval(autoRefreshOrders, autoRefreshIntervalMs);
+    document.addEventListener('visibilitychange', autoRefreshOrders);
+  });
+
+  onDestroy(() => {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+    }
+
+    document.removeEventListener('visibilitychange', autoRefreshOrders);
   });
 </script>
 
@@ -247,6 +291,8 @@
           class="input input-sm input-bordered min-w-[240px] flex-1 border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxQueryLength ?? 100}
           bind:value={query}
+          onfocus={() => (searchInputFocused = true)}
+          onblur={() => (searchInputFocused = false)}
           onkeydown={(event) => {
             if (event.key === 'Enter') applySearch();
           }}

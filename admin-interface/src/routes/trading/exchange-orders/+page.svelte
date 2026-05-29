@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
@@ -10,6 +10,7 @@
   } from '$lib/helpers/api/trading';
 
   const statuses: Array<'all' | AdminOrderStatus> = ['all', 'open', 'filled', 'failed', 'cancelled'];
+  const autoRefreshIntervalMs = 10_000;
 
   const statusTone: Record<string, string> = {
     pending_create: 'bg-warning/10 text-warning',
@@ -30,7 +31,10 @@
   let limit = $state(25);
   let loading = $state(true);
   let refreshing = $state(false);
+  let backgroundRefreshing = $state(false);
+  let searchInputFocused = $state(false);
   let error = $state<string | null>(null);
+  let autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   const rows = $derived(response?.items ?? []);
 
@@ -86,12 +90,19 @@
     return Math.max(0, Math.min(100, (filled / quantity) * 100));
   };
 
-  const loadOrders = async (options: { throwOnError?: boolean } = {}) => {
+  const loadOrders = async (options: { throwOnError?: boolean; silentError?: boolean; background?: boolean } = {}) => {
     const initialLoad = response === null;
 
-    loading = initialLoad;
-    refreshing = !initialLoad;
-    error = null;
+    if (options.background) {
+      backgroundRefreshing = true;
+    } else {
+      loading = initialLoad;
+      refreshing = !initialLoad;
+    }
+
+    if (!options.silentError) {
+      error = null;
+    }
 
     try {
       response = await fetchAdminOrders({
@@ -102,15 +113,37 @@
       });
       page = response.pagination.page;
       limit = response.pagination.limit;
+      error = null;
     } catch (cause) {
-      error = errorMessage(cause);
+      const message = errorMessage(cause);
+      if (!options.silentError) {
+        error = message;
+      }
       if (options.throwOnError) {
-        throw new Error(error);
+        throw new Error(message);
       }
     } finally {
-      loading = false;
-      refreshing = false;
+      if (options.background) {
+        backgroundRefreshing = false;
+      } else {
+        loading = false;
+        refreshing = false;
+      }
     }
+  };
+
+  const autoRefreshOrders = () => {
+    if (
+      loading ||
+      refreshing ||
+      backgroundRefreshing ||
+      searchInputFocused ||
+      document.visibilityState !== 'visible'
+    ) {
+      return;
+    }
+
+    void loadOrders({ silentError: true, background: true });
   };
 
   const refreshOrders = () =>
@@ -149,6 +182,17 @@
 
   onMount(() => {
     void loadOrders();
+
+    autoRefreshTimer = setInterval(autoRefreshOrders, autoRefreshIntervalMs);
+    document.addEventListener('visibilitychange', autoRefreshOrders);
+  });
+
+  onDestroy(() => {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+    }
+
+    document.removeEventListener('visibilitychange', autoRefreshOrders);
   });
 </script>
 
@@ -203,6 +247,8 @@
           class="input input-sm input-bordered min-w-[260px] flex-1 border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxQueryLength ?? 100}
           bind:value={query}
+          onfocus={() => (searchInputFocused = true)}
+          onblur={() => (searchInputFocused = false)}
           onkeydown={(event) => {
             if (event.key === 'Enter') {
               applySearch();

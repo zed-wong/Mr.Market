@@ -785,7 +785,7 @@
 
       <label class="flex flex-col gap-1.5">
         <span class="label-text text-xs font-medium capitalize text-base-content/60">account label</span>
-        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100" placeholder="default" bind:value={accountForm.name} />
+        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100" placeholder="account@gmail.com" bind:value={accountForm.name} />
         {#if accountFormErrors.name}<span class="text-xs text-error">{accountFormErrors.name}</span>{/if}
       </label>
 

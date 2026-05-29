@@ -40,7 +40,7 @@ start-admin-interface:
 
 start-web3-interface:
 	@echo "Starting web3 interface..."
-	@cd web3-interface && bun run dev -- --port 5176
+	@cd web3-interface && bun run dev -- --port 5175
 .PHONY: start-web3-interface
 
 start-interfaces:

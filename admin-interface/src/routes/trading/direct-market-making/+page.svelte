@@ -199,10 +199,35 @@
     }
 
     let pageRefreshTimer: ReturnType<typeof setInterval> | null = null;
+    let pageRefreshing = false;
+
+    function hasBlockingPageDialogOpen() {
+        return Boolean(
+            showStartForm ||
+                showStartAllModal ||
+                showStopAllConfirm ||
+                stopOrderCandidate ||
+                resumeOrderCandidate ||
+                removeOrderCandidate ||
+                showAllCampaigns ||
+                showJoinModal,
+        );
+    }
 
     async function silentRefresh() {
+        if (
+            pageLoading ||
+            pageRefreshing ||
+            hasBlockingPageDialogOpen() ||
+            document.visibilityState !== "visible"
+        ) {
+            return;
+        }
+
         const token = getToken();
         if (!token) return;
+
+        pageRefreshing = true;
 
         try {
             const [newOrders, newCampaigns] = await Promise.all([
@@ -213,6 +238,14 @@
             if (newCampaigns) initialCampaigns = newCampaigns;
         } catch {
             // silent — don't disrupt UI
+        } finally {
+            pageRefreshing = false;
+        }
+    }
+
+    function refreshPageWhenVisible() {
+        if (document.visibilityState === "visible") {
+            void silentRefresh();
         }
     }
 
@@ -222,6 +255,7 @@
             silentRefresh,
             PAGE_AUTO_REFRESH_INTERVAL_MS,
         );
+        document.addEventListener("visibilitychange", refreshPageWhenVisible);
     });
 
     let orders = initialOrders;
@@ -373,7 +407,7 @@
     }
 
     async function refreshPage() {
-        await loadPageData();
+        await loadPageData({ showLoading: false });
     }
 
     function isOrderStoppable(order: DirectOrderSummary): boolean {
@@ -922,6 +956,7 @@
             clearInterval(pageRefreshTimer);
             pageRefreshTimer = null;
         }
+        document.removeEventListener("visibilitychange", refreshPageWhenVisible);
     });
 
     async function submitCampaignJoin() {
