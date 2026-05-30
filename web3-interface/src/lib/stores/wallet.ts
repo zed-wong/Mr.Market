@@ -1,5 +1,4 @@
 import { derived, writable } from 'svelte/store';
-import { getAppKit, initAppKit } from '$lib/helpers/wallet/appkit';
 import {
   deterministicAccountForWallet,
   isSupportedDemoWallet,
@@ -9,6 +8,8 @@ import {
 
 export type WalletStatus = 'disconnected' | 'connecting' | 'connected' | 'unsupported';
 export type DemoWalletPreset = 'evm' | 'solana' | 'wrong-network';
+type AppKitModule = typeof import('$lib/helpers/wallet/appkit');
+type AppKitInstance = NonNullable<ReturnType<AppKitModule['initAppKit']>>;
 
 const DEMO_WALLET_STORAGE_KEY = 'mrmarket-web3-demo-wallet';
 
@@ -74,6 +75,8 @@ export const walletNamespaceLabel = derived(walletNamespace, ($namespace) => nam
 let initialized = false;
 let appKitSubscriptionsInitialized = false;
 let demoWalletActive = false;
+let appKitModulePromise: Promise<AppKitModule> | null = null;
+let appKitInstance: AppKitInstance | null = null;
 
 const namespaceAccounts: Record<WalletNamespace, NamespaceAccount> = {
   evm: { address: null, connected: false, status: 'disconnected' },
@@ -139,8 +142,7 @@ const recomputeFromAccounts = (activeNamespace: WalletNamespace | null) => {
   }
   walletAddress.set(acc.address);
   walletNamespace.set(ns);
-  const appKit = getAppKit();
-  const chainId = appKit?.getChainId();
+  const chainId = appKitInstance?.getChainId();
   walletStatus.set(isSupportedDemoWallet(ns, chainId) ? 'connected' : 'unsupported');
 };
 
@@ -150,7 +152,7 @@ export const initWalletStore = () => {
   initialized = true;
 };
 
-const subscribeAppKitWallet = (appKit: NonNullable<ReturnType<typeof initAppKit>>) => {
+const subscribeAppKitWallet = (appKit: AppKitInstance) => {
   if (appKitSubscriptionsInitialized) return;
   appKitSubscriptionsInitialized = true;
 
@@ -193,26 +195,36 @@ const subscribeAppKitWallet = (appKit: NonNullable<ReturnType<typeof initAppKit>
   });
 };
 
-const getWalletAppKit = () => {
+const loadAppKitModule = () => {
+  appKitModulePromise ??= import('$lib/helpers/wallet/appkit');
+  return appKitModulePromise;
+};
+
+const getWalletAppKit = async () => {
   if (typeof window === 'undefined') return null;
   restoreDemoWalletState();
+  const { getAppKit, initAppKit } = await loadAppKitModule();
   const appKit = getAppKit() ?? initAppKit();
+  appKitInstance = appKit;
   if (appKit) subscribeAppKitWallet(appKit);
   return appKit;
 };
 
-export const openWalletModal = () => {
-  const appKit = getWalletAppKit();
+export const setWalletThemeMode = (mode: 'dark' | 'light') => {
+  appKitInstance?.setThemeMode(mode);
+};
+
+export const openWalletModal = async () => {
+  const appKit = await getWalletAppKit();
   appKit?.open();
 };
 
-export const closeWalletModal = () => {
-  const appKit = getAppKit();
-  appKit?.close();
+export const closeWalletModal = async () => {
+  appKitInstance?.close();
 };
 
-export const openNetworkModal = () => {
-  const appKit = getWalletAppKit();
+export const openNetworkModal = async () => {
+  const appKit = await getWalletAppKit();
   appKit?.open({ view: 'Networks' });
 };
 
@@ -239,8 +251,7 @@ export const connectDemoWallet = (preset: DemoWalletPreset = 'evm', persist = tr
 };
 
 export const disconnectWallet = async () => {
-  const appKit = getAppKit();
-  await appKit?.disconnect();
+  await appKitInstance?.disconnect();
   clearWalletState();
 };
 

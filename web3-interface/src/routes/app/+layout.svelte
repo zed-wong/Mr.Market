@@ -7,12 +7,12 @@
   import {
     initWalletStore,
     openWalletModal,
+    setWalletThemeMode,
     walletAddress,
     walletChainId,
     walletIsConnected,
     walletIsUnsupported,
   } from '$lib/stores/wallet';
-  import { getAppKit } from '$lib/helpers/wallet/appkit';
   import { getNonce, login } from '$lib/helpers/api/auth';
   import { buildSiweMessage } from '$lib/helpers/siwe/siwe';
   import { clearAuth, isAuthed, showSessionExpired } from '$lib/stores/auth';
@@ -31,8 +31,7 @@
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('data-theme', web3Theme);
     }
-    const appKit = getAppKit();
-    appKit?.setThemeMode($darkTheme ? 'dark' : 'light');
+    setWalletThemeMode($darkTheme ? 'dark' : 'light');
   });
 
   onMount(() => {
