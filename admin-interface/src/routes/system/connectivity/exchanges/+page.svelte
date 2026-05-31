@@ -684,7 +684,6 @@
                               <td>
                                 <span class="flex flex-col">
                                   <span class="text-sm font-medium">{key.name}</span>
-                                  <span class="font-mono text-xs text-base-content/50">{key.key_id}</span>
                                 </span>
                               </td>
                               <td class="font-mono text-xs text-base-content/70">{fingerprint(key.api_key)}</td>
