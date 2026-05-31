@@ -56,6 +56,23 @@ export class Web3MarketMakingController {
     );
   }
 
+  @Get('orders/:orderId/performance')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get authenticated user market-making order performance',
+  })
+  async getOrderPerformance(
+    @Param('orderId') orderId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return await this.web3MarketMakingService.getOrderPerformance(
+      this.getAuthenticatedUserId(request),
+      orderId,
+    );
+  }
+
   @Get('strategies')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

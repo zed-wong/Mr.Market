@@ -14,7 +14,7 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 ### admin
 
 - `modules/admin/admin.module.ts`
-  - Depends on: `AdminExchangesModule`, `StrategyModule`, `GrowdataModule`, `SpotdataModule`, `MixinClientModule`, `CampaignModule`, `UserOrdersModule`, `TrackersModule`, `ExecutionModule`, `LedgerModule`, `ExchangeApiKeyModule`, `ExchangeInitModule`, `Web3Module`, TypeORM admin/runtime entities.
+  - Depends on: `AdminExchangesModule`, `StrategyModule`, `GrowdataModule`, `SpotdataModule`, `MixinClientModule`, `CampaignModule`, `UserOrdersModule`, `TrackersModule`, `ExecutionModule`, `LedgerModule`, `ExchangeApiKeyModule`, `ExchangeInitModule`, `PerformanceModule`, `Web3Module`, TypeORM admin/runtime entities.
   - Main role: admin control plane.
 - `modules/admin/exchanges/exchanges.module.ts`
   - Depends on: `ExchangeModule`.
@@ -146,8 +146,8 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
   - Depends on: `MixinClientModule`.
   - Main role: network/chain mapping.
 - `modules/market-making/performance/performance.module.ts`
-  - Depends on: TypeORM performance entity.
-  - Main role: performance metrics endpoints.
+  - Depends on: TypeORM performance/order entities, `LedgerModule`.
+  - Main role: performance metrics endpoints and generic order-level performance reporting. Order PnL is derived from order-scoped ledger fill/fee entries, so direct admin orders and ordinary user market-making orders share the same calculation path.
 - `modules/market-making/metrics/metrics.module.ts`
   - Depends on: TypeORM strategy execution history.
   - Main role: strategy execution metrics.
@@ -191,8 +191,8 @@ The map is based on the root wiring in `server/src/app.module.ts` and each `*.mo
 ### web3
 
 - `modules/web3/web3.module.ts`
-  - Depends on: none.
-  - Main role: shared chain/web3 service.
+  - Depends on: `UserOrdersModule`, `LedgerModule`, `PerformanceModule`, TypeORM market-making order/balance/ledger/runtime entities.
+  - Main role: shared chain/web3 service and authenticated web3 market-making order APIs, including owned-order performance reads.
 
 ---
 

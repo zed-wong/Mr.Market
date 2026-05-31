@@ -331,6 +331,12 @@ describe('Web3MarketMakingService', () => {
     };
     const lifecycleEvents = params?.lifecycleEvents || [];
     const lifecycleEventRepository = createRepository(lifecycleEvents);
+    const performanceService = {
+      getOrderPerformance: jest.fn(async (orderId: string) => ({
+        orderId,
+        series: [],
+      })),
+    };
     const service = new Web3MarketMakingService(
       createRepository(orders) as never,
       createRepository(balances) as never,
@@ -373,12 +379,14 @@ describe('Web3MarketMakingService', () => {
       userOrdersService as never,
       runtime as never,
       ledger as never,
+      performanceService as never,
     );
 
     return {
       service,
       userOrdersService,
       ledger,
+      performanceService,
       orders,
       runtime,
       lifecycleEvents,
@@ -435,6 +443,29 @@ describe('Web3MarketMakingService', () => {
         feePaidByAsset: { 'asset-usdt': '1' },
       }),
     });
+  });
+
+  it('gets performance only after owned public order lookup succeeds', async () => {
+    const { service, performanceService } = buildService({
+      orders: [createOrder({ orderId: 'order-1', userId: 'user-1' })],
+    });
+
+    await service.getOrderPerformance('user-1', 'order-1');
+
+    expect(performanceService.getOrderPerformance).toHaveBeenCalledWith(
+      'order-1',
+    );
+  });
+
+  it('rejects performance lookup for another user order', async () => {
+    const { service, performanceService } = buildService({
+      orders: [createOrder({ orderId: 'order-1', userId: 'user-2' })],
+    });
+
+    await expect(
+      service.getOrderPerformance('user-1', 'order-1'),
+    ).rejects.toThrow(NotFoundException);
+    expect(performanceService.getOrderPerformance).not.toHaveBeenCalled();
   });
 
   it('returns 404 for other-user or admin-direct detail requests', async () => {

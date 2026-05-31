@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { startDirectOrder } from "./direct-market-making";
+import {
+  getMarketMakingOrderPerformance,
+  startDirectOrder,
+} from "./direct-market-making";
 
 vi.mock("$env/dynamic/public", () => {
   return {
@@ -57,6 +60,36 @@ describe("admin direct market making helper", () => {
           },
         }),
       }),
+    );
+  });
+
+  it("gets generic order performance through the admin market-making order endpoint", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          series: [],
+          summary: {
+            realizedPnlQuote: "0",
+            feesQuote: "0",
+            netPnlQuote: "0",
+            tradedQuoteVolume: "0",
+            effectiveSpreadBps: null,
+            fillCount: 0,
+            otherFees: [],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await getMarketMakingOrderPerformance("order-1", "token");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:3000/admin/market-making/orders/order-1/performance",
+      expect.objectContaining({ method: "GET" }),
     );
   });
 });

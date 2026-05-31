@@ -7,6 +7,7 @@ describe('Web3MarketMakingController', () => {
   const service = {
     listOrders: jest.fn(),
     getOrderDetail: jest.fn(),
+    getOrderPerformance: jest.fn(),
     listStrategies: jest.fn(),
     listPairOptions: jest.fn(),
     createOrder: jest.fn(),
@@ -57,6 +58,19 @@ describe('Web3MarketMakingController', () => {
       amount: '1',
       idempotencyKey: 'k',
     });
+  });
+
+  it('binds order performance lookup to the authenticated user', async () => {
+    service.getOrderPerformance.mockResolvedValueOnce({ series: [] });
+
+    await controller.getOrderPerformance('order-1', {
+      user: { userId: 'user-1' },
+    });
+
+    expect(service.getOrderPerformance).toHaveBeenCalledWith(
+      'user-1',
+      'order-1',
+    );
   });
 
   it('rejects protected routes when the authenticated user is absent', async () => {

@@ -9,6 +9,7 @@ import { StrategyDefinition } from 'src/common/entities/market-making/strategy-d
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { LedgerModule } from 'src/modules/market-making/ledger/ledger.module';
+import { PerformanceModule } from 'src/modules/market-making/performance/performance.module';
 import { UserOrdersModule } from 'src/modules/market-making/user-orders/user-orders.module';
 
 import { Web3MarketMakingController } from './market-making/web3-market-making.controller';
@@ -29,6 +30,7 @@ import { Web3Service } from './web3.service';
     ]),
     forwardRef(() => UserOrdersModule),
     LedgerModule,
+    PerformanceModule,
   ],
   controllers: [Web3MarketMakingController],
   providers: [Web3Service, Web3MarketMakingService],

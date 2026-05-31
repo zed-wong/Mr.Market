@@ -27,6 +27,7 @@ import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import type { MarketMakingStates } from 'src/common/types/orders/states';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
+import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { DataSource, Repository } from 'typeorm';
 
@@ -117,6 +118,7 @@ export class Web3MarketMakingService {
     private readonly userOrdersService: UserOrdersService,
     private readonly marketMakingRuntimeService: MarketMakingRuntimeService,
     private readonly balanceLedgerService: BalanceLedgerService,
+    private readonly performanceService: PerformanceService,
     @Optional()
     private readonly dataSource?: DataSource,
   ) {}
@@ -188,6 +190,12 @@ export class Web3MarketMakingService {
         lifecycleEvents,
       ),
     };
+  }
+
+  async getOrderPerformance(userId: string, orderId: string) {
+    await this.loadOwnedPublicOrder(userId, orderId);
+
+    return await this.performanceService.getOrderPerformance(orderId);
   }
 
   async listStrategies() {

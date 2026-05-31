@@ -30,7 +30,7 @@ import { ExchangeApiKeyModule } from '../market-making/exchange-api-key/exchange
 import { ExecutionModule } from '../market-making/execution/execution.module';
 import { LedgerModule } from '../market-making/ledger/ledger.module';
 import { MetricsModule } from '../market-making/metrics/metrics.module';
-import { PerformanceService } from '../market-making/performance/performance.service';
+import { PerformanceModule } from '../market-making/performance/performance.module';
 import { ReconciliationModule } from '../market-making/reconciliation/reconciliation.module';
 import { StrategyModule } from '../market-making/strategy/strategy.module';
 import { TrackersModule } from '../market-making/trackers/trackers.module';
@@ -78,6 +78,7 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     ExchangeInitModule,
     CustomConfigModule,
     MetricsModule,
+    PerformanceModule,
     HealthModule,
     ReconciliationModule,
     TypeOrmModule.forFeature([
@@ -122,7 +123,6 @@ import { AdminSystemAuditController } from './system/admin-system-audit.controll
     AdminSystemHealthService,
     AdminSystemConfigService,
     AdminDirectMarketMakingService,
-    PerformanceService,
     AdminGrowService,
     AdminSpotService,
     AdminFeeService,

@@ -3,11 +3,13 @@
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
     import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
+    import PnlChart from "$lib/components/market-making/direct/PnlChart.svelte";
     import type { AdminErrorState } from "$lib/helpers/admin/common-states";
     import type {
         DirectOrderSummary,
         DirectOrderStatus,
     } from "$lib/types/hufi/admin-direct-market-making";
+    import type { OrderPerformance } from "$lib/types/hufi/order-performance";
     import {
         formatTimestamp,
         resolveInventorySkewAllocation,
@@ -23,6 +25,7 @@
     export let show = false;
     export let order: DirectOrderSummary | null = null;
     export let data: DirectOrderStatus | null = null;
+    export let performance: OrderPerformance | null = null;
     export let loading = false;
     export let refreshing = false;
     export let error: AdminErrorState | null = null;
@@ -80,6 +83,22 @@
         if (val === null || val === undefined || val === "")
             return $_("admin_direct_mm_na");
         return new BigNumber(val).multipliedBy(100).toString() + "%";
+    }
+
+    function formatDecimal(value: string | null | undefined, decimals = 4): string {
+        if (value === null || value === undefined || value === "")
+            return $_("admin_direct_mm_na");
+        const parsed = new BigNumber(value);
+        if (!parsed.isFinite()) return $_("admin_direct_mm_na");
+        return parsed.decimalPlaces(decimals).toFormat();
+    }
+
+    function formatBps(value: string | null | undefined): string {
+        if (value === null || value === undefined || value === "")
+            return $_("admin_direct_mm_na");
+        const parsed = new BigNumber(value);
+        if (!parsed.isFinite()) return $_("admin_direct_mm_na");
+        return `${parsed.decimalPlaces(2).toFormat()} bps`;
     }
 
     $: currentRuntimeState = data?.runtimeState ?? order?.runtimeState ?? "";
@@ -348,6 +367,79 @@
                                 >{fills1h}</span
                             >
                         </div>
+                    </div>
+
+                    <div>
+                        <div class="flex items-center justify-between mb-3 h-5">
+                            <div class="flex items-center gap-1.5">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                    class="w-3.5 h-3.5 text-primary"
+                                >
+                                    <path
+                                        d="M3 3.75A.75.75 0 0 1 3.75 3h12.5a.75.75 0 0 1 0 1.5H4.5v11.75a.75.75 0 0 1-1.5 0V3.75Z"
+                                    />
+                                    <path
+                                        d="M6.22 13.78a.75.75 0 0 1 0-1.06l2.75-2.75a.75.75 0 0 1 1.06 0l1.47 1.47 3.97-3.97a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0L9.5 11.56l-2.22 2.22a.75.75 0 0 1-1.06 0Z"
+                                    />
+                                </svg>
+                                <span class="text-xs font-bold text-base-content">
+                                    {$_("admin_direct_mm_performance")}
+                                </span>
+                            </div>
+                            {#if performance?.reconciliation && !performance.reconciliation.realizedPnlMatchesStored}
+                                <span class="text-[10px] text-warning font-semibold">
+                                    {$_("admin_direct_mm_pnl_reconciliation_mismatch")}
+                                </span>
+                            {/if}
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
+                            <div class="border border-base-300 rounded-xl p-3">
+                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
+                                    {$_("admin_direct_mm_realized")}
+                                </span>
+                                <span class="text-sm font-bold text-base-content block">
+                                    {formatDecimal(performance?.summary.realizedPnlQuote)}
+                                </span>
+                            </div>
+                            <div class="border border-base-300 rounded-xl p-3">
+                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
+                                    {$_("admin_direct_mm_fees")}
+                                </span>
+                                <span class="text-sm font-bold text-base-content block">
+                                    {formatDecimal(performance?.summary.feesQuote)}
+                                </span>
+                            </div>
+                            <div class="border border-base-300 rounded-xl p-3">
+                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
+                                    {$_("admin_direct_mm_net")}
+                                </span>
+                                <span class="text-sm font-bold text-base-content block">
+                                    {formatDecimal(performance?.summary.netPnlQuote)}
+                                </span>
+                            </div>
+                            <div class="border border-base-300 rounded-xl p-3">
+                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
+                                    {$_("admin_direct_mm_volume")}
+                                </span>
+                                <span class="text-sm font-bold text-base-content block">
+                                    {formatDecimal(performance?.summary.tradedQuoteVolume, 2)}
+                                </span>
+                            </div>
+                            <div class="border border-base-300 rounded-xl p-3">
+                                <span class="text-[10px] text-base-content/40 font-semibold block mb-1">
+                                    {$_("admin_direct_mm_effective_spread")}
+                                </span>
+                                <span class="text-sm font-bold text-base-content block">
+                                    {formatBps(performance?.summary.effectiveSpreadBps)}
+                                </span>
+                            </div>
+                        </div>
+
+                        <PnlChart series={performance?.series || []} />
                     </div>
 
                     <!-- Status Cards Row -->

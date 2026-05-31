@@ -13,6 +13,7 @@
     import {
         getDirectWalletStatus,
         getDirectOrderStatus,
+        getMarketMakingOrderPerformance,
         joinAdminCampaign,
         listAdminCampaigns,
         listDirectOrders,
@@ -33,6 +34,7 @@
         DirectWalletStatus,
     } from "$lib/types/hufi/admin-direct-market-making";
     import type { GrowInfo } from "$lib/types/hufi/grow";
+    import type { OrderPerformance } from "$lib/types/hufi/order-performance";
 
     import {
         buildGenericSchemaConfigOverrides,
@@ -301,6 +303,7 @@
     let showOrderDetails = false;
     let detailsOrder: DirectOrderSummary | null = null;
     let detailsData: DirectOrderStatus | null = null;
+    let detailsPerformance: OrderPerformance | null = null;
     let detailsError: AdminErrorState | null = null;
     let detailsLoading = false;
     let detailsRefreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -842,6 +845,7 @@
     async function openOrderDetails(order: DirectOrderSummary) {
         detailsOrder = order;
         detailsData = null;
+        detailsPerformance = null;
         detailsError = null;
         showOrderDetails = true;
         await loadOrderDetails(order.orderId);
@@ -905,10 +909,14 @@
                 return;
             }
 
-            const nextDetails = await getDirectOrderStatus(orderId, token);
+            const [nextDetails, nextPerformance] = await Promise.all([
+                getDirectOrderStatus(orderId, token),
+                getMarketMakingOrderPerformance(orderId, token),
+            ]);
 
             if (detailsOrder?.orderId === orderId) {
                 detailsData = nextDetails;
+                detailsPerformance = nextPerformance;
                 detailsError = null;
                 applyStatusToOrderSummary(nextDetails);
             }
@@ -945,6 +953,7 @@
         showOrderDetails = false;
         detailsOrder = null;
         detailsData = null;
+        detailsPerformance = null;
         detailsError = null;
         detailsLoading = false;
     }
@@ -1218,6 +1227,7 @@
     show={showOrderDetails}
     order={detailsOrder}
     data={detailsData}
+    performance={detailsPerformance}
     loading={detailsLoading}
     refreshing={detailsRefreshing && !detailsLoading}
     error={detailsError}

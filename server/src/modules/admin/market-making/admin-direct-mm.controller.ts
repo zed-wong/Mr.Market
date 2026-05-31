@@ -10,6 +10,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 
 import { AdminAuditInterceptor } from '../system/admin-audit.interceptor';
@@ -30,6 +31,7 @@ import { AdminDirectMarketMakingService } from './admin-direct-mm.service';
 export class AdminDirectMarketMakingController {
   constructor(
     private readonly adminDirectMarketMakingService: AdminDirectMarketMakingService,
+    private readonly performanceService: PerformanceService,
   ) {}
 
   @Post('direct-start')
@@ -81,6 +83,12 @@ export class AdminDirectMarketMakingController {
   @ApiOperation({ summary: 'Get runtime status for a direct admin order' })
   async getDirectOrderStatus(@Param('id') id: string) {
     return this.adminDirectMarketMakingService.getDirectOrderStatus(id);
+  }
+
+  @Get('orders/:id/performance')
+  @ApiOperation({ summary: 'Get market-making order performance' })
+  async getOrderPerformance(@Param('id') id: string) {
+    return this.performanceService.getOrderPerformance(id);
   }
 
   @Get('campaigns')

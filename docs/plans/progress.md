@@ -2,8 +2,10 @@
 
 ## 2026-05-31
 
+- Add generic order-level performance/PnL reporting: `PerformanceService` now replays order-scoped ledger fill and fee entries into realized, fee, net, volume, effective-spread, and chart series data; web3 user and admin endpoints expose the same calculation with caller-side ownership boundaries; admin direct order details render the ledger-derived PnL chart without a charting dependency.
 - Simplify the admin `/setup` wizard around required initialization only: remove API-key, custom config, Mixin, and Web3 capture from setup; gate frontend and backend completion on password/exchange/seed readiness; show seed check counts; and add a post-setup API-key reminder.
 - Fix a tracked-order reconciliation race where an exchange open-order snapshot could create an `internal_missing` placeholder before the local create ACK upsert arrived; `internal_missing` can now be adopted by the real order state instead of permanently hiding the order under an orphan placeholder.
+- Make pure market-making tick pricing tracked-only: PMM quote decisions now use tracked reference-price snapshots, check both oracle/reference and execution book freshness, and enter cancel-only risk-off instead of calling connector order-book or ticker fallback from the tick path.
 
 ## 2026-05-29
 

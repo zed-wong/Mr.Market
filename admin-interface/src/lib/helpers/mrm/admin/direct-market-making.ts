@@ -8,6 +8,7 @@ import type {
   DirectStartPayload,
   DirectWalletStatus,
 } from "$lib/types/hufi/admin-direct-market-making";
+import type { OrderPerformance } from "$lib/types/hufi/order-performance";
 import type { StrategyDefinition } from "$lib/types/hufi/strategy-definition";
 
 export const listDirectOrders = async (
@@ -107,6 +108,21 @@ export const getDirectOrderStatus = async (
 ): Promise<DirectOrderStatus> => {
   const response = await fetch(
     `${MRM_BACKEND_URL}/admin/market-making/direct-orders/${orderId}/status`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const getMarketMakingOrderPerformance = async (
+  orderId: string,
+  token: string,
+): Promise<OrderPerformance> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/orders/${orderId}/performance`,
     {
       method: "GET",
       headers: getHeaders(token),

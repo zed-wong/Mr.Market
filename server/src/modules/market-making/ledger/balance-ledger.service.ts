@@ -126,6 +126,13 @@ export class BalanceLedgerService {
     return Boolean(existing);
   }
 
+  async findByOrderId(orderId: string): Promise<LedgerEntry[]> {
+    return await this.ledgerEntryRepository.find({
+      where: { orderId },
+      order: { createdAt: 'ASC', entryId: 'ASC' },
+    });
+  }
+
   async getLockedBalanceForUserAsset(
     userId: string,
     assetId: string,
