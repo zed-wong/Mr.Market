@@ -49,3 +49,4 @@
 ## To be determined
 
 - Consider seeding non-sensitive environment settings with code defaults into DB-backed admin config, while keeping sensitive values in `.env` until encrypted secret storage exists.
+- Consider splitting EVM private keys by purpose before adding admin-interface EVM configuration: operator/vault funding key, campaign signer key, DEX execution key, deployer-only key, and provider-only reads should have separate boundaries instead of sharing `WEB3_PRIVATE_KEY`.
