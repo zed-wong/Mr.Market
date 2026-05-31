@@ -268,8 +268,8 @@
   </div>
 
   <!-- Right form panel -->
-  <div class="flex w-full flex-col items-center justify-center bg-base-100 px-6 py-12 lg:w-1/2">
-    <div class="mb-12 flex items-center gap-3 lg:hidden">
+  <div class="relative flex w-full flex-col items-center justify-center bg-base-100 px-6 py-12 lg:w-1/2">
+    <div class="absolute bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap lg:hidden">
       <img src="/mr-market-logo-transparent.svg" alt="Mr.Market" class="h-10 w-10" />
       <div class="flex flex-col">
         <span class="text-lg font-semibold tracking-tight text-base-content">Mr.Market</span>

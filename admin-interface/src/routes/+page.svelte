@@ -336,114 +336,6 @@
       {/each}
     </div>
 
-    <div class="grid grid-cols-1 gap-4 xl:grid-cols-5">
-      <div class="card card-surface shadow-none xl:col-span-3">
-        <div class="card-body gap-4 p-5">
-          <div class="flex items-center justify-between">
-            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-              strategy health
-            </span>
-            <a href="/trading/strategies" class="btn-pill-ghost text-xs capitalize">
-              view strategies →
-            </a>
-          </div>
-
-          {#if displayedStrategies.length === 0}
-            <div class="card-surface-inset p-4">
-              <span class="text-sm text-base-content/60">No strategy rows were returned by the backend summary.</span>
-            </div>
-          {:else}
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead>
-                  <tr class="border-b border-base-300 text-xs font-medium capitalize tracking-wide text-base-content/50">
-                    <th class="font-medium">strategy</th>
-                    <th class="font-medium">status</th>
-                    <th class="font-medium">definition</th>
-                    <th class="font-medium text-right">updated</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each displayedStrategies as strategy (strategy.strategyKey)}
-                    <tr class="border-b border-base-300 hover:bg-neutral">
-                      <td>
-                        <div class="flex flex-col">
-                          <span class="text-sm font-medium text-base-content">{strategy.strategyKey}</span>
-                          <span class="text-xs text-base-content/50 capitalize">{strategy.strategyType || 'type unavailable'}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div class="flex items-center gap-2">
-                          <span class="h-1.5 w-1.5 rounded-full {safeDot(strategy.status)}"></span>
-                          <span class="text-xs text-base-content/70 capitalize">{statusLabel(strategy.status)}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <span class="text-sm text-base-content/70">{strategy.definitionName || strategy.strategyDefinitionId || 'unavailable'}</span>
-                      </td>
-                      <td class="text-right">
-                        <span class="font-mono-num text-xs text-base-content/60">{formatTimestamp(strategy.updatedAt)}</span>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <div class="card card-surface shadow-none xl:col-span-2">
-        <div class="card-body gap-3 p-5">
-          <div class="flex items-center justify-between">
-            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-              recent intents
-            </span>
-            <span class="text-xs text-base-content/50 capitalize">
-              backend · last {summary.limits.recentItems}
-            </span>
-          </div>
-
-          {#if displayedIntents.length === 0}
-            <div class="card-surface-inset p-4">
-              <span class="text-sm text-base-content/60">No recent intents were returned for {summary.range.key}.</span>
-            </div>
-          {:else}
-            <ul class="divide-y divide-base-300">
-              {#each displayedIntents as intent (intent.intentId)}
-                <li class="flex items-center gap-3 py-2.5">
-                  <span class="font-mono-num text-xs text-base-content/50 w-28 shrink-0">{formatTimestamp(intent.createdAt)}</span>
-                  <span
-                    class="rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wider {intentTone[intent.type] || 'bg-base-content/5 text-base-content/60'}"
-                  >
-                    {intent.type}
-                  </span>
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5">
-                      {#if intent.side}
-                        <span
-                          class="text-xs font-medium"
-                          class:text-success={intent.side.toLowerCase() === 'buy'}
-                          class:text-error={intent.side.toLowerCase() === 'sell'}
-                        >
-                          {intent.side}
-                        </span>
-                      {/if}
-                      <span class="font-mono-num text-sm text-base-content">{intent.pair}</span>
-                    </div>
-                    <span class="text-xs text-base-content/50 capitalize">
-                      {intent.exchange}{intent.accountLabel ? ` · ${intent.accountLabel}` : ''}
-                    </span>
-                  </div>
-                  <span class="h-1.5 w-1.5 rounded-full {safeDot(intent.status)}"></span>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
-      </div>
-    </div>
-
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div class="card card-surface shadow-none">
         <div class="card-body gap-4 p-5">
@@ -567,6 +459,114 @@
                 </tbody>
               </table>
             </div>
+          {/if}
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-5">
+      <div class="card card-surface shadow-none xl:col-span-3">
+        <div class="card-body gap-4 p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
+              strategy health
+            </span>
+            <a href="/trading/strategies" class="btn-pill-ghost text-xs capitalize">
+              view strategies →
+            </a>
+          </div>
+
+          {#if displayedStrategies.length === 0}
+            <div class="card-surface-inset p-4">
+              <span class="text-sm text-base-content/60">No strategy rows were returned by the backend summary.</span>
+            </div>
+          {:else}
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead>
+                  <tr class="border-b border-base-300 text-xs font-medium capitalize tracking-wide text-base-content/50">
+                    <th class="font-medium">strategy</th>
+                    <th class="font-medium">status</th>
+                    <th class="font-medium">definition</th>
+                    <th class="font-medium text-right">updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each displayedStrategies as strategy (strategy.strategyKey)}
+                    <tr class="border-b border-base-300 hover:bg-neutral">
+                      <td>
+                        <div class="flex flex-col">
+                          <span class="text-sm font-medium text-base-content">{strategy.strategyKey}</span>
+                          <span class="text-xs text-base-content/50 capitalize">{strategy.strategyType || 'type unavailable'}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="flex items-center gap-2">
+                          <span class="h-1.5 w-1.5 rounded-full {safeDot(strategy.status)}"></span>
+                          <span class="text-xs text-base-content/70 capitalize">{statusLabel(strategy.status)}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="text-sm text-base-content/70">{strategy.definitionName || strategy.strategyDefinitionId || 'unavailable'}</span>
+                      </td>
+                      <td class="text-right">
+                        <span class="font-mono-num text-xs text-base-content/60">{formatTimestamp(strategy.updatedAt)}</span>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      <div class="card card-surface shadow-none xl:col-span-2">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
+              recent intents
+            </span>
+            <span class="text-xs text-base-content/50 capitalize">
+              backend · last {summary.limits.recentItems}
+            </span>
+          </div>
+
+          {#if displayedIntents.length === 0}
+            <div class="card-surface-inset p-4">
+              <span class="text-sm text-base-content/60">No recent intents were returned for {summary.range.key}.</span>
+            </div>
+          {:else}
+            <ul class="divide-y divide-base-300">
+              {#each displayedIntents as intent (intent.intentId)}
+                <li class="flex items-center gap-3 py-2.5">
+                  <span class="font-mono-num text-xs text-base-content/50 w-28 shrink-0">{formatTimestamp(intent.createdAt)}</span>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wider {intentTone[intent.type] || 'bg-base-content/5 text-base-content/60'}"
+                  >
+                    {intent.type}
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                      {#if intent.side}
+                        <span
+                          class="text-xs font-medium"
+                          class:text-success={intent.side.toLowerCase() === 'buy'}
+                          class:text-error={intent.side.toLowerCase() === 'sell'}
+                        >
+                          {intent.side}
+                        </span>
+                      {/if}
+                      <span class="font-mono-num text-sm text-base-content">{intent.pair}</span>
+                    </div>
+                    <span class="text-xs text-base-content/50 capitalize">
+                      {intent.exchange}{intent.accountLabel ? ` · ${intent.accountLabel}` : ''}
+                    </span>
+                  </div>
+                  <span class="h-1.5 w-1.5 rounded-full {safeDot(intent.status)}"></span>
+                </li>
+              {/each}
+            </ul>
           {/if}
         </div>
       </div>

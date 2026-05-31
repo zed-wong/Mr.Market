@@ -22,6 +22,13 @@
     unknown: 'bg-base-content/5 text-base-content/60',
   };
 
+  const statusTextTone: Record<AdminHealthStatus, string> = {
+    healthy: 'text-success',
+    warning: 'text-warning',
+    critical: 'text-error',
+    unknown: 'text-base-content/60',
+  };
+
   let response = $state<AdminSystemHealthResponse | null>(null);
   let groupFilter = $state('all');
   let serviceFilter = $state('all');
@@ -144,7 +151,7 @@
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
         <span class="text-xs text-base-content/60 capitalize">overall status</span>
-        <span class="font-mono text-xl font-semibold capitalize {response ? statusTone[response.overallStatus] : 'text-base-content'}">
+        <span class="font-mono text-xl font-semibold capitalize {response ? statusTextTone[response.overallStatus] : 'text-base-content'}">
           {response?.overallStatus ?? 'pending'}
         </span>
       </div>
