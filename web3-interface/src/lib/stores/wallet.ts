@@ -1,4 +1,5 @@
-import { derived, writable } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
+import { signMessage as wagmiSignMessage } from '@wagmi/core';
 import {
   deterministicAccountForWallet,
   isSupportedDemoWallet,
@@ -148,7 +149,6 @@ const recomputeFromAccounts = (activeNamespace: WalletNamespace | null) => {
 
 export const initWalletStore = () => {
   if (initialized || typeof window === 'undefined') return;
-  restoreDemoWalletState();
   initialized = true;
 };
 
@@ -202,7 +202,6 @@ const loadAppKitModule = () => {
 
 const getWalletAppKit = async () => {
   if (typeof window === 'undefined') return null;
-  restoreDemoWalletState();
   const { getAppKit, initAppKit } = await loadAppKitModule();
   const appKit = getAppKit() ?? initAppKit();
   appKitInstance = appKit;
@@ -226,6 +225,30 @@ export const closeWalletModal = async () => {
 export const openNetworkModal = async () => {
   const appKit = await getWalletAppKit();
   appKit?.open({ view: 'Networks' });
+};
+
+export const signWalletMessage = async (message: string): Promise<string> => {
+  const appKit = await getWalletAppKit();
+  if (!appKit) {
+    throw new Error('Wallet connection is unavailable');
+  }
+
+  const address = get(walletAddress);
+  const namespace = get(walletNamespace);
+  if (namespace !== 'evm' || !address?.startsWith('0x')) {
+    throw new Error('Connect a supported EVM wallet before signing in');
+  }
+
+  const { getWagmiAdapter } = await loadAppKitModule();
+  const adapter = getWagmiAdapter();
+  if (!adapter?.wagmiConfig) {
+    throw new Error('Reown AppKit wallet signer is unavailable');
+  }
+
+  return wagmiSignMessage(adapter.wagmiConfig, {
+    account: address as `0x${string}`,
+    message,
+  });
 };
 
 export const connectDemoWallet = (preset: DemoWalletPreset = 'evm', persist = true) => {

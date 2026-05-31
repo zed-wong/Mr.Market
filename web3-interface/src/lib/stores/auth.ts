@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { Web3AuthState } from '$lib/types/auth';
+import type { SessionResponse, Web3AuthState } from '$lib/types/auth';
 
 const STORAGE_KEY = 'web3-access-token';
 const CHAIN_KEY = 'web3-chain-id';
@@ -57,7 +57,7 @@ export const expireAuthSession = ({ showDialog = true }: { showDialog?: boolean 
   showSessionExpired.set(showDialog);
 };
 
-export const persistAuth = (token: string, address: string, chainId: string, expiresIn?: number) => {
+export const persistAuth = (token: string, address: string, chainId: string, expiresIn?: number, userId?: string) => {
   localStorage.setItem(STORAGE_KEY, token);
   localStorage.setItem('web3-access-token', token);
   localStorage.setItem(ADDRESS_KEY, address);
@@ -74,6 +74,25 @@ export const persistAuth = (token: string, address: string, chainId: string, exp
     token,
     address,
     chainId,
-    userId: null,
+    userId: userId ?? null,
   });
+};
+
+export const applyValidatedSession = (session: SessionResponse): boolean => {
+  const token = getAccessToken();
+  if (!token || !session.authenticated) {
+    clearAuth();
+    return false;
+  }
+
+  authExpiresAt.set(getAuthExpiresAt());
+  isAuthed.set(true);
+  authState.set({
+    token,
+    address: session.address ?? null,
+    chainId: session.chainId ?? null,
+    userId: session.userId ?? null,
+  });
+
+  return true;
 };

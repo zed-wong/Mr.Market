@@ -2,7 +2,8 @@
   import Section from '$lib/components/common/Section.svelte';
   import StatRow from '$lib/components/common/StatRow.svelte';
   import { aggregateMockActivityEntries, mockAccountActivityForAccount } from '$lib/helpers/mock-web3';
-  import { showSessionExpired } from '$lib/stores/auth';
+  import { logout as logoutWeb3 } from '$lib/helpers/api/auth';
+  import { isAuthed, showSessionExpired } from '$lib/stores/auth';
   import { balances } from '$lib/stores/balances';
   import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
   import { marketMakingActivityForAccount, sessionMarketMakingActivity } from '$lib/stores/market-making';
@@ -28,6 +29,11 @@
         )
       : []
   );
+
+  const logoutAndDisconnect = async () => {
+    await logoutWeb3();
+    await disconnectWallet();
+  };
 </script>
 
 <div data-testid="web3-account">
@@ -44,8 +50,8 @@
       <button class="btn-pill-primary" onclick={openWalletModal} data-testid="account-open-wallet">Open wallet</button>
       <button
         class="btn-pill border border-error/50 text-error hover:bg-error hover:text-error-content disabled:opacity-40 disabled:cursor-not-allowed"
-        onclick={() => void disconnectWallet()}
-        disabled={!$walletIsConnected && !$walletIsUnsupported}
+        onclick={() => void logoutAndDisconnect()}
+        disabled={!$isAuthed && !$walletIsConnected && !$walletIsUnsupported}
         data-testid="account-disconnect"
       >
         Disconnect

@@ -26,12 +26,15 @@ describe('browser-visible deterministic wallet demo controls', () => {
     expect(source).toContain('Demo controls');
   });
 
-  it('makes the intended continue path use deterministic demo wallet state', () => {
+  it('keeps the login path on real Reown SIWE instead of deterministic demo auth', () => {
     const source = loginSource();
 
-    expect(source).toContain('connectDemoWallet');
-    expect(source).toContain('login-continue-without-wallet');
-    expect(source).toContain('Continue with demo wallet');
-    expect(source).toContain('login-demo-wrong-network');
+    expect(source).toContain('getNonce');
+    expect(source).toContain('signWalletMessage');
+    expect(source).toContain('login(message, signature)');
+    expect(source).toContain('login-sign-message');
+    expect(source).not.toContain('connectDemoWallet');
+    expect(source).not.toContain('login-continue-without-wallet');
+    expect(source).not.toContain('login-demo-wrong-network');
   });
 });

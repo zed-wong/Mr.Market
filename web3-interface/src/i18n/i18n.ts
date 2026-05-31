@@ -1,9 +1,11 @@
 import { addMessages, init, getLocaleFromNavigator, locale } from 'svelte-i18n';
 import en from './en.json';
+import zh from './zh.json';
 
 const LOCALE_STORAGE_KEY = 'web3-locale';
 
 addMessages('en-US', en);
+addMessages('zh-CN', zh);
 
 init({
   fallbackLocale: 'en-US',
@@ -16,6 +18,9 @@ export const initi18n = async () => {
       typeof localStorage !== 'undefined' ? localStorage.getItem(LOCALE_STORAGE_KEY) : null;
     if (stored) return stored;
     const navLocale = getLocaleFromNavigator();
+    if (navLocale?.startsWith('zh')) {
+      return 'zh-CN';
+    }
     if (!navLocale || navLocale.startsWith('en-')) {
       return 'en-US';
     }
@@ -27,6 +32,7 @@ export const initi18n = async () => {
 
 export const langs = [
   { name: 'English', key: 'en-US' },
+  { name: '中文', key: 'zh-CN' },
 ];
 
 export const getNameByKey = (k: string) => {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearAuth, hasUsableAuthSession, persistAuth } from './auth';
+import { get } from 'svelte/store';
+import { applyValidatedSession, authState, clearAuth, hasUsableAuthSession, isAuthed, persistAuth } from './auth';
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -39,5 +40,34 @@ describe('web3 auth session expiry', () => {
 
   it('blocks create-session checks when token storage is missing', () => {
     expect(hasUsableAuthSession()).toBe(false);
+  });
+
+  it('hydrates central auth state from a backend-validated session', () => {
+    persistAuth('jwt-token', '0xabc', '1', 60);
+
+    expect(
+      applyValidatedSession({
+        authenticated: true,
+        address: '0xabc',
+        chainId: '1',
+        userId: 'web3-user',
+      })
+    ).toBe(true);
+
+    expect(get(isAuthed)).toBe(true);
+    expect(get(authState)).toEqual({
+      token: 'jwt-token',
+      address: '0xabc',
+      chainId: '1',
+      userId: 'web3-user',
+    });
+  });
+
+  it('clears auth when session validation is not authenticated', () => {
+    persistAuth('jwt-token', '0xabc', '1', 60);
+
+    expect(applyValidatedSession({ authenticated: false })).toBe(false);
+    expect(get(isAuthed)).toBe(false);
+    expect(get(authState).token).toBeNull();
   });
 });

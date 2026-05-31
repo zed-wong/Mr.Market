@@ -1,9 +1,15 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { _ } from 'svelte-i18n';
+  import { getNonce, login } from '$lib/helpers/api/auth';
+  import { buildSiweMessage } from '$lib/helpers/siwe/siwe';
+  import { isAuthed, loginLoading } from '$lib/stores/auth';
   import {
-    connectDemoWallet,
     openNetworkModal,
     openWalletModal,
+    signWalletMessage,
+    walletAddress,
+    walletChainId,
     walletIsConnected,
     walletIsUnsupported,
     walletNamespaceLabel,
@@ -11,54 +17,100 @@
     walletShortAddress,
   } from '$lib/stores/wallet';
 
-  const continueWithDemoWallet = () => {
-    connectDemoWallet('evm');
-    void goto('/app');
-  };
+  let authError = $state<string | null>(null);
 
-  const continueWithWrongNetwork = () => {
-    connectDemoWallet('wrong-network');
-    void goto('/app/market-making');
+  const signIn = async () => {
+    authError = null;
+
+    if (!$walletIsUnsupported && !$walletIsConnected) {
+      await openWalletModal();
+      return;
+    }
+    if ($walletIsUnsupported) {
+      await openNetworkModal();
+      return;
+    }
+    if (!$walletAddress) {
+      authError = $_('login_error_no_wallet');
+      return;
+    }
+
+    loginLoading.set(true);
+    try {
+      const chainId = String($walletChainId ?? '0');
+      const nonce = await getNonce($walletAddress, chainId);
+      const message = buildSiweMessage(
+        nonce.nonce,
+        $walletAddress,
+        Number(chainId) || 0,
+        nonce.domain,
+        nonce.uri,
+        nonce.statement
+      );
+      const signature = await signWalletMessage(message);
+      await login(message, signature);
+      await goto('/app');
+    } catch (error) {
+      authError = error instanceof Error && error.message ? error.message : $_('login_error_generic');
+    } finally {
+      loginLoading.set(false);
+    }
   };
 </script>
 
 <section class="flex min-h-[70vh] flex-col justify-center" data-testid="web3-login">
   <div class="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
     <div class="max-w-xl">
-      <span class="font-display text-5xl md:text-6xl tracking-tight text-base-content">Connect to Mr.Market</span>
+      <span class="font-display text-5xl md:text-6xl tracking-tight text-base-content">{$_('login_title')}</span>
       <span class="mt-4 block text-base-content/60">
-        Use Reown AppKit for wallet identity. Portfolio, balances, campaign eligibility, and activity are deterministic demo state scoped to your connected namespace.
+        {$_('login_subtitle')}
       </span>
 
       <div class="mt-10 flex flex-wrap items-center gap-3">
-        <button class="btn-pill-primary" onclick={openWalletModal} data-testid="login-connect-wallet">Connect wallet</button>
-        <button class="btn-pill-ghost" onclick={continueWithDemoWallet} data-testid="login-continue-without-wallet">
-          Continue with demo wallet →
-        </button>
-        <button class="btn-pill-ghost" onclick={continueWithWrongNetwork} data-testid="login-demo-wrong-network">
-          Preview wrong network →
+        <button class="btn-pill-primary" onclick={openWalletModal} data-testid="login-connect-wallet">{$_('connect_wallet')}</button>
+        <button
+          class="btn-pill-ghost"
+          onclick={signIn}
+          disabled={$loginLoading}
+          data-testid="login-sign-message"
+        >
+          {$loginLoading ? $_('signing') : $_('sign_in_button')}
         </button>
       </div>
+
+      {#if authError}
+        <div class="mt-5 rounded-2xl border border-error/40 px-4 py-3 text-sm text-error" data-testid="login-auth-error">
+          {authError}
+        </div>
+      {/if}
     </div>
 
     <div class="card-surface p-6" data-testid="login-session-card">
-      <span class="eyebrow">Session state</span>
-      {#if $walletIsConnected}
-        <span class="mt-3 block text-lg font-semibold text-base-content">Wallet connected</span>
+      <span class="eyebrow">{$_('login_session_state')}</span>
+      {#if $isAuthed}
+        <span class="mt-3 block text-lg font-semibold text-base-content">{$_('login_authenticated')}</span>
+        <span class="mt-2 block text-sm text-base-content/60">
+          {$_('login_authenticated_hint')}
+        </span>
+        <a href="/app" class="btn-pill-primary mt-5 inline-flex" data-testid="login-open-dashboard">{$_('login_open_dashboard')} →</a>
+      {:else if $walletIsConnected}
+        <span class="mt-3 block text-lg font-semibold text-base-content">{$_('login_wallet_connected')}</span>
         <span class="mt-2 block text-sm text-base-content/60">
           {$walletNamespaceLabel} · {$walletNetwork ?? 'supported network'} · <span class="font-mono-num">{$walletShortAddress}</span>
         </span>
-        <a href="/app" class="btn-pill-primary mt-5 inline-flex" data-testid="login-open-dashboard">Open dashboard →</a>
+        <button class="btn-pill-primary mt-5" onclick={signIn} disabled={$loginLoading} data-testid="login-sign-message-card">
+          {$loginLoading ? $_('signing') : $_('sign_in_button')}
+        </button>
       {:else if $walletIsUnsupported}
-        <span class="mt-3 block text-lg font-semibold text-base-content">Wrong network selected</span>
+        <span class="mt-3 block text-lg font-semibold text-base-content">{$_('login_wrong_network_title')}</span>
         <span class="mt-2 block text-sm text-base-content/60">
-          Switch to Ethereum, Sepolia, or Solana to unlock funding and market-making actions.
+          {$_('login_wrong_network_message')}
         </span>
-        <button class="btn-pill-primary mt-5" onclick={openNetworkModal} data-testid="login-switch-network">Switch network</button>
+        <button class="btn-pill-primary mt-5" onclick={openNetworkModal} data-testid="login-switch-network">{$_('switch_network')}</button>
       {:else}
-        <span class="mt-3 block text-lg font-semibold text-base-content">Ready to connect</span>
+        <span class="mt-3 block text-lg font-semibold text-base-content">{$_('login_ready_title')}</span>
         <span class="mt-2 block text-sm text-base-content/60">
-          Browser demos can continue with a deterministic wallet that uses fixture balances and activity without requiring a real extension.
+          {$_('login_ready_message')}
         </span>
       {/if}
     </div>

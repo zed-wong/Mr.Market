@@ -61,8 +61,10 @@ describe('/app/market-making order list route', () => {
     expect(source).toContain('orders = [];');
     expect(source).toContain('order-list-authenticating-state');
     expect(layout).toContain('authenticatedWalletKey !== walletKey');
-    expect(layout).toContain('clearAuth();');
-    expect(layout).toContain('ensureWeb3Auth(address, chainId, sequence)');
+    expect(layout).toContain('checkSession()');
+    expect(layout).toContain('/app/login');
+    expect(layout).not.toContain('demo-signature');
+    expect(layout).not.toContain('ensureWeb3Auth');
   });
 
   it('removes campaign discovery controls and terminology from the list page', () => {

@@ -22,19 +22,19 @@
       <span class="text-lg font-bold capitalize">{$_('session_expired_title')}</span>
       <p class="py-4 text-base-content/70">{$_('session_expired_message')}</p>
       <div class="rounded-2xl border border-base-300 px-4 py-3 text-sm text-base-content/60">
-        Demo balances, funding, and campaign activity stay in local browser state. Reconnect a supported wallet to continue without any backend session call.
+        {$_('session_expired_detail')}
       </div>
       <div class="modal-action">
         <a href="/app/login" class="btn btn-ghost capitalize" onclick={dismissToLogin}>
-          Return to login
+          {$_('login_again')}
         </a>
         <button class="btn btn-primary capitalize" onclick={handleConfirm} data-testid="session-expired-reconnect">
-          Reconnect wallet
+          {$_('connect_wallet')}
         </button>
       </div>
     </div>
     <form method="dialog" class="modal-backdrop">
-      <button onclick={dismissToLogin}>close</button>
+      <button onclick={dismissToLogin}>{$_('close')}</button>
     </form>
   </dialog>
 {/if}

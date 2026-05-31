@@ -1,5 +1,5 @@
 import { ApiError, apiFetch, clearAccessToken, setAccessToken } from './client';
-import { clearAuth, persistAuth } from '$lib/stores/auth';
+import { applyValidatedSession, clearAuth, persistAuth } from '$lib/stores/auth';
 import type { NonceResponse, LoginRequest, LoginResponse, SessionResponse } from '$lib/types/auth';
 
 export const getNonce = async (address: string, chainId: string): Promise<NonceResponse> => {
@@ -15,7 +15,7 @@ export const login = async (message: string, signature: string): Promise<LoginRe
     json: { message, signature } satisfies LoginRequest,
   });
   setAccessToken(result.jwt);
-  persistAuth(result.jwt, result.address, result.chainId, result.expiresIn);
+  persistAuth(result.jwt, result.address, result.chainId, result.expiresIn, result.userId);
   return result;
 };
 
@@ -26,6 +26,9 @@ export const checkSession = async (): Promise<SessionResponse | null> => {
     const res = await apiFetch<SessionResponse>('/auth/web3/session', {
       suppressSessionExpired: true,
     });
+    if (res?.authenticated) {
+      applyValidatedSession(res);
+    }
     return res ?? null;
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {

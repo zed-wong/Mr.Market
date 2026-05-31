@@ -2,6 +2,7 @@
 
 ## 2026-05-31
 
+- Wire real `web3-interface` SIWE auth: protected `/app/*` routes now validate stored JWTs through `/auth/web3/session`, login requests `/auth/web3/nonce` and signs the SIWE message through the Reown/Wagmi wallet signer before persisting `/auth/web3/login` JWTs, logout clears backend/local auth state, and invalid sessions show a re-sign path.
 - Add generic order-level performance/PnL reporting: `PerformanceService` now replays order-scoped ledger fill and fee entries into realized, fee, net, volume, effective-spread, and chart series data; web3 user and admin endpoints expose the same calculation with caller-side ownership boundaries; admin direct order details render the ledger-derived PnL chart without a charting dependency.
 - Simplify the admin `/setup` wizard around required initialization only: remove API-key, custom config, Mixin, and Web3 capture from setup; gate frontend and backend completion on password/exchange/seed readiness; show seed check counts; and add a post-setup API-key reminder.
 - Fix a tracked-order reconciliation race where an exchange open-order snapshot could create an `internal_missing` placeholder before the local create ACK upsert arrived; `internal_missing` can now be adopted by the real order state instead of permanently hiding the order under an orphan placeholder.

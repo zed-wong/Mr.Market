@@ -1,6 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { initi18n } from '../../i18n/i18n';
   import { darkTheme } from '$lib/stores/theme';
   import { toWeb3Theme } from '$lib/theme/themes';
@@ -11,11 +13,9 @@
     walletAddress,
     walletChainId,
     walletIsConnected,
-    walletIsUnsupported,
   } from '$lib/stores/wallet';
-  import { getNonce, login } from '$lib/helpers/api/auth';
-  import { buildSiweMessage } from '$lib/helpers/siwe/siwe';
-  import { clearAuth, isAuthed, showSessionExpired } from '$lib/stores/auth';
+  import { checkSession } from '$lib/helpers/api/auth';
+  import { authState, checked, clearAuth, getAccessToken, isAuthed, showSessionExpired } from '$lib/stores/auth';
   import SessionExpiredDialog from '$lib/components/dialogs/SessionExpiredDialog.svelte';
   import TopBar from '$lib/components/topBar/TopBar.svelte';
   import SideNav from '$lib/components/sideNav/SideNav.svelte';
@@ -24,8 +24,10 @@
 
   let i18nReady = $state(false);
   let web3Theme = $derived(toWeb3Theme($darkTheme));
-  let authSequence = 0;
   let authenticatedWalletKey = '';
+  let redirectingToLogin = $state(false);
+  let isLoginRoute = $derived(page.url.pathname === '/app/login');
+  let canRenderProtectedRoute = $derived(isLoginRoute || ($checked && $isAuthed));
 
   $effect(() => {
     if (typeof document !== 'undefined') {
@@ -37,24 +39,28 @@
   onMount(() => {
     void (async () => {
       await initi18n();
-      i18nReady = true;
       initWalletStore();
+      const hadToken = Boolean(getAccessToken());
+      checked.set(false);
+      try {
+        const session = await checkSession();
+        if (!session?.authenticated) {
+          clearAuth();
+          if (hadToken) {
+            showSessionExpired.set(true);
+          }
+        }
+      } catch {
+        clearAuth();
+        if (hadToken) {
+          showSessionExpired.set(true);
+        }
+      } finally {
+        checked.set(true);
+        i18nReady = true;
+      }
     })();
   });
-
-  const ensureWeb3Auth = async (address: string, chainId: string, sequence: number) => {
-    try {
-      const nonce = await getNonce(address, chainId);
-      if (sequence !== authSequence) return;
-      const message = buildSiweMessage(nonce.nonce, address, Number(chainId) || 0, nonce.domain, nonce.uri);
-      await login(message, `demo-signature:${address}:${chainId}:${nonce.nonce}`);
-    } catch {
-      if (sequence === authSequence) {
-        clearAuth();
-        showSessionExpired.set(true);
-      }
-    }
-  };
 
   $effect(() => {
     if (!i18nReady) return;
@@ -62,22 +68,37 @@
     const address = $walletAddress;
     const chainId = String($walletChainId ?? '0');
 
-    if (!$walletIsConnected || $walletIsUnsupported || !address) {
-      authSequence += 1;
+    if (!$walletIsConnected || !address) {
       authenticatedWalletKey = '';
-      clearAuth();
       return;
     }
 
     const walletKey = `${address}:${chainId}`;
+    const authedWalletKey =
+      $authState.address && $authState.chainId ? `${$authState.address}:${$authState.chainId}` : '';
 
-    if (authenticatedWalletKey !== walletKey) {
+    if ($isAuthed && authedWalletKey && authedWalletKey.toLowerCase() !== walletKey.toLowerCase()) {
       authenticatedWalletKey = walletKey;
       clearAuth();
+      showSessionExpired.set(true);
+      return;
     }
-    if ($isAuthed) return;
-    const sequence = ++authSequence;
-    void ensureWeb3Auth(address, chainId, sequence);
+
+    if (authenticatedWalletKey && authenticatedWalletKey !== walletKey) {
+      authenticatedWalletKey = walletKey;
+      if ($isAuthed) {
+        clearAuth();
+        showSessionExpired.set(true);
+      }
+    } else {
+      authenticatedWalletKey = walletKey;
+    }
+  });
+
+  $effect(() => {
+    if (!i18nReady || !$checked || isLoginRoute || $isAuthed || redirectingToLogin) return;
+    redirectingToLogin = true;
+    void goto('/app/login');
   });
 
   const reconnectSession = () => {
@@ -100,7 +121,18 @@
     <main class="min-w-0 flex-1">
       <div class="mx-auto w-full max-w-5xl px-5 pt-6 pb-20 md:px-10 md:pt-10">
         <TopBar />
-        {@render children?.()}
+        {#if canRenderProtectedRoute}
+          {@render children?.()}
+        {:else}
+          <section class="card-surface mx-auto mt-12 max-w-2xl px-8 py-12 text-center" data-testid="protected-auth-gate">
+            <span class="loading loading-spinner loading-sm"></span>
+            <span class="mt-4 block font-display text-2xl text-base-content">{$_('protected_auth_gate_title')}</span>
+            <span class="mt-2 block text-sm text-base-content/60">
+              {$_('protected_auth_gate_message')}
+            </span>
+            <a href="/app/login" class="btn-pill-primary mt-6 inline-flex">{$_('connect_wallet')}</a>
+          </section>
+        {/if}
       </div>
     </main>
     <SessionExpiredDialog onConfirm={reconnectSession} />
