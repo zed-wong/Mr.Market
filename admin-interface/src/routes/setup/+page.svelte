@@ -216,123 +216,149 @@
   });
 </script>
 
-<section class="min-h-screen bg-base-100 p-5 text-base-content md:p-8" data-testid="setup-wizard-page">
-  <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-    <PageHeader
-      eyebrow="setup"
-      title="one-time setup wizard"
-      subtitle="Configure the admin password, exchange access, optional credentials, seed data, and then lock setup writes."
-    />
+<section class="min-h-screen bg-base-100 px-5 py-8 text-base-content md:px-10 md:py-12" data-testid="setup-wizard-page">
+  <div class="mx-auto flex w-full max-w-7xl flex-col gap-8">
+    <div class="relative overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-sm">
+      <div class="absolute inset-y-0 left-0 w-1 bg-base-content"></div>
+      <div class="grid gap-6 p-6 md:grid-cols-[1fr_18rem] md:p-8">
+        <PageHeader
+          eyebrow="setup ledger"
+          title="initialize admin operations"
+          subtitle="Create the admin access path, register one exchange, seed required reference data, then lock setup-only writes. Trading credentials and runtime tuning stay in their own settings pages."
+        />
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-1">
+          <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+            <span class="block text-xs text-base-content/50 capitalize">required progress</span>
+            <span class="mt-1 block text-3xl font-semibold text-base-content">{progressPercent}%</span>
+          </div>
+          <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+            <span class="block text-xs text-base-content/50 capitalize">setup scope</span>
+            <span class="mt-1 block text-sm font-semibold text-base-content capitalize">minimum viable admin</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     {#if loading}
-      <div class="card border border-base-300 bg-base-100 shadow-none">
-        <div class="card-body flex-row items-center gap-3 p-5">
+      <div class="rounded-[1.5rem] border border-base-300 bg-base-100 p-6 shadow-sm">
+        <div class="flex items-center gap-3">
           <span class="loading loading-spinner loading-sm"></span>
           <span class="text-sm text-base-content/60 capitalize">loading setup state</span>
         </div>
       </div>
     {:else}
-      <div class="grid grid-cols-1 gap-5 lg:grid-cols-[18rem_1fr]">
-        <div class="card h-fit border border-base-300 bg-base-100 shadow-none">
-          <div class="card-body gap-4 p-5">
-            <div class="flex flex-col gap-2">
-              <span class="text-lg font-semibold text-base-content capitalize">progress</span>
-              <progress class="progress progress-primary w-full" value={progressPercent} max="100"></progress>
-              <span class="text-xs text-base-content/60">{progressCount} of {requiredProgressSteps.length} required setup areas complete</span>
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-[20rem_1fr]">
+        <aside class="h-fit rounded-[1.5rem] border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-end justify-between gap-4 border-b border-base-300 pb-5">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-semibold text-base-content capitalize">initialization checklist</span>
+              <span class="text-xs text-base-content/50">{progressCount} of {requiredProgressSteps.length} required complete</span>
             </div>
-
-            <ul class="flex flex-col gap-1">
-              {#each steps as step, index (step.key)}
-                {@const completed = step.key === 'review' ? Boolean($setupStatus?.completedAt) : Boolean($setupStatus?.completedSteps?.[step.key])}
-                {@const isCurrent = activeStep === step.key}
-                {@const locked = !$setupStatus?.initialized && step.key !== 'password'}
-                <li>
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left transition-colors capitalize disabled:cursor-not-allowed disabled:opacity-50"
-                    class:border-primary={isCurrent}
-                    class:bg-primary={isCurrent}
-                    class:text-primary-content={isCurrent}
-                    class:border-base-300={!isCurrent}
-                    class:hover:bg-base-300={!isCurrent}
-                    disabled={locked}
-                    aria-current={isCurrent ? 'step' : undefined}
-                    onclick={() => (activeStep = step.key)}
-                  >
-                    <span
-                      class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                      class:bg-success={completed}
-                      class:text-success-content={completed}
-                      class:bg-base-300={!completed && !isCurrent}
-                      class:bg-primary-content={!completed && isCurrent}
-                      class:text-primary={!completed && isCurrent}
-                    >
-                      {#if completed}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                      {:else}
-                        {index + 1}
-                      {/if}
-                    </span>
-                    <span class="flex-1 text-sm font-medium">{step.label}</span>
-                    {#if !step.required}
-                      <span class="text-[10px] opacity-60">optional</span>
-                    {/if}
-                  </button>
-                </li>
-              {/each}
-            </ul>
+            <span class="font-mono text-sm text-base-content/60">{progressPercent}%</span>
           </div>
-        </div>
+          <div class="mt-4 h-1.5 overflow-hidden rounded-full bg-base-300">
+            <div class="h-full rounded-full bg-base-content transition-all" style={`width: ${progressPercent}%`}></div>
+          </div>
 
-        <div class="card border border-base-300 bg-base-100 shadow-none">
-          <div class="card-body gap-5 p-5 md:p-7">
-            {#if error}
-              <div class="alert alert-error">
-                <span>{error}</span>
-              </div>
-            {/if}
+          <ul class="mt-5 flex flex-col">
+            {#each steps as step, index (step.key)}
+              {@const completed = step.key === 'review' ? Boolean($setupStatus?.completedAt) : Boolean($setupStatus?.completedSteps?.[step.key])}
+              {@const isCurrent = activeStep === step.key}
+              {@const locked = !$setupStatus?.initialized && step.key !== 'password'}
+              <li class="border-b border-base-300 last:border-b-0">
+                <button
+                  type="button"
+                  class="group flex w-full items-center gap-3 py-4 text-left transition-colors capitalize disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={locked}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  onclick={() => (activeStep = step.key)}
+                >
+                  <span
+                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-colors"
+                    class:border-success={completed}
+                    class:bg-success={completed}
+                    class:text-success-content={completed}
+                    class:border-base-content={isCurrent && !completed}
+                    class:bg-base-content={isCurrent && !completed}
+                    class:text-base-100={isCurrent && !completed}
+                    class:border-base-300={!isCurrent && !completed}
+                    class:text-base-content={!isCurrent && !completed}
+                  >
+                    {#if completed}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    {:else}
+                      {index + 1}
+                    {/if}
+                  </span>
+                  <span class="flex flex-1 flex-col gap-0.5">
+                    <span class="text-sm font-semibold text-base-content">{step.label}</span>
+                    <span class="text-xs text-base-content/50">
+                      {completed ? 'Complete' : isCurrent ? 'In review' : locked ? 'Locked until password' : 'Required'}
+                    </span>
+                  </span>
+                  {#if isCurrent}
+                    <span class="h-2 w-2 rounded-full bg-base-content"></span>
+                  {/if}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </aside>
 
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex flex-col gap-1">
-                <span class="text-2xl font-semibold text-base-content capitalize">{steps[stepIndex]?.label}</span>
-                <span class="text-sm text-base-content/60">
+        <main class="overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-100 shadow-sm">
+          <div class="border-b border-base-300 p-5 md:p-7">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div class="flex max-w-2xl flex-col gap-2">
+                <span class="text-xs font-semibold text-base-content/50 capitalize">step {Math.max(stepIndex + 1, 1)} of {steps.length}</span>
+                <span class="text-2xl font-semibold tracking-tight text-base-content capitalize md:text-3xl">{steps[stepIndex]?.label}</span>
+                <span class="text-sm leading-6 text-base-content/60">
                   {#if activeStep === 'password'}
-                    Set the admin password before any other route becomes available.
+                    Set the admin password before any protected admin route becomes available.
                   {:else if activeStep === 'exchange'}
-                    Add the first exchange entry using the existing exchange management API.
+                    Register the first exchange venue. API credentials are intentionally configured later.
                   {:else if activeStep === 'seed'}
-                    Seed reference data if the database is missing exchanges, tokens, pairs, config, or strategies.
+                    Verify required reference data and insert missing exchanges, tokens, pairs, config, or strategy definitions.
                   {:else}
-                    Review the required setup items. API keys and runtime settings can be configured afterwards.
+                    Review required setup only. API keys and runtime settings can be configured afterwards.
                   {/if}
                 </span>
               </div>
               <button
                 type="button"
-                class="btn bg-base-300 hover:bg-base-300 text-base-content border-none min-h-[42px] h-[42px] px-4 rounded-lg text-sm font-semibold shadow-sm capitalize"
+                class="btn min-h-10 h-10 rounded-full border border-base-300 bg-base-100 px-4 text-sm font-semibold text-base-content shadow-none hover:bg-base-300 capitalize"
                 onclick={() => void refreshSetupStatus()}
               >
                 refresh
               </button>
             </div>
+          </div>
+
+          <div class="p-5 md:p-7">
+            {#if error}
+              <div class="mb-5 rounded-2xl border border-error/30 bg-error/10 p-4 text-sm text-error">
+                <span>{error}</span>
+              </div>
+            {/if}
 
             {#if activeStep === 'password'}
               <form onsubmit={(event) => { event.preventDefault(); void submitPassword(); }}>
                 <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
-                  <label class="form-control gap-2">
-                    <span class="label-text capitalize">admin password</span>
-                    <input class="input input-bordered" type="password" minlength="8" autocomplete="new-password" placeholder="at least 8 characters" bind:value={passwordForm.password} required />
+                  <label class="form-control gap-2 rounded-2xl border border-base-300 bg-base-100 p-4">
+                    <span class="label-text font-semibold capitalize">admin password</span>
+                    <input class="input input-bordered bg-base-100" type="password" minlength="8" autocomplete="new-password" placeholder="at least 8 characters" bind:value={passwordForm.password} required />
                     <span class="text-xs text-base-content/60">Used to sign in to the admin console afterwards.</span>
                   </label>
-                  <label class="form-control gap-2">
-                    <span class="label-text capitalize">confirm password</span>
-                    <input class="input input-bordered" type="password" minlength="8" autocomplete="new-password" placeholder="re-enter the password" bind:value={passwordForm.confirm} required />
+                  <label class="form-control gap-2 rounded-2xl border border-base-300 bg-base-100 p-4">
+                    <span class="label-text font-semibold capitalize">confirm password</span>
+                    <input class="input input-bordered bg-base-100" type="password" minlength="8" autocomplete="new-password" placeholder="re-enter the password" bind:value={passwordForm.confirm} required />
                     {#if !passwordsMatch}
                       <span class="text-xs text-error">Passwords do not match.</span>
+                    {:else}
+                      <span class="text-xs text-base-content/50">Confirmation keeps accidental lockout away.</span>
                     {/if}
                   </label>
-                  <div class="md:col-span-2">
-                    <button class="btn btn-primary rounded-full capitalize" disabled={saving || !passwordsMatch} type="submit">
+                  <div class="flex flex-wrap gap-2 md:col-span-2">
+                    <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving || !passwordsMatch} type="submit">
                       {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
                       save password and sign in
                     </button>
@@ -342,14 +368,15 @@
             {:else if activeStep === 'exchange'}
               <form onsubmit={(event) => { event.preventDefault(); void submitExchange(); }}>
                 <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
-                  <label class="form-control gap-2">
-                    <span class="label-text capitalize">exchange id</span>
-                    <input class="input input-bordered" list="ccxt-exchanges" placeholder="e.g. binance, okx, bybit" bind:value={exchangeForm.exchange_id} required />
+                  <label class="form-control gap-2 rounded-2xl border border-base-300 bg-base-100 p-4">
+                    <span class="label-text font-semibold capitalize">exchange id</span>
+                    <input class="input input-bordered bg-base-100" list="ccxt-exchanges" placeholder="e.g. binance, okx, bybit" bind:value={exchangeForm.exchange_id} required />
                     <span class="text-xs text-base-content/60">Lowercase CCXT identifier. Start typing to see suggestions.</span>
                   </label>
-                  <label class="form-control gap-2">
-                    <span class="label-text capitalize">display name</span>
-                    <input class="input input-bordered" placeholder="Shown in admin UI" bind:value={exchangeForm.name} required />
+                  <label class="form-control gap-2 rounded-2xl border border-base-300 bg-base-100 p-4">
+                    <span class="label-text font-semibold capitalize">display name</span>
+                    <input class="input input-bordered bg-base-100" placeholder="Shown in admin UI" bind:value={exchangeForm.name} required />
+                    <span class="text-xs text-base-content/60">Keep it recognizable for operators.</span>
                   </label>
                   <datalist id="ccxt-exchanges">
                     {#each ccxtExchanges.slice(0, 300) as exchange (exchange)}
@@ -357,32 +384,37 @@
                     {/each}
                   </datalist>
                   <div class="flex flex-wrap gap-2 md:col-span-2">
-                    <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="submit">save exchange</button>
+                    <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving} type="submit">save exchange</button>
                     <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={goPrev}>previous</button>
                   </div>
                 </fieldset>
               </form>
             {:else if activeStep === 'seed'}
               {@const seedMissing = seedStatus?.seedRequired ?? $setupStatus?.seedRequired}
-              <div class="space-y-4">
-                <div class="rounded-xl border p-4 {seedMissing ? 'border-warning/40 bg-warning/10' : 'border-success/40 bg-success/10'}">
-                  <span class="block font-semibold capitalize">seed status</span>
-                  <span class="text-sm text-base-content/70">
-                    {seedMissing ? 'Reference data (exchanges, tokens, pairs, strategies) is missing and will be inserted.' : 'Required seed data is already present.'}
-                  </span>
+              <div class="space-y-5">
+                <div class="rounded-2xl border border-base-300 bg-base-100 p-5">
+                  <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div class="flex flex-col gap-1">
+                      <span class="text-base font-semibold text-base-content capitalize">seed status</span>
+                      <span class="text-sm leading-6 text-base-content/60">
+                        {seedMissing ? 'Reference data is missing and will be inserted before setup is locked.' : 'Required seed data is already present.'}
+                      </span>
+                    </div>
+                    <span class="badge {seedMissing ? 'badge-warning' : 'badge-success'} badge-lg capitalize">{seedMissing ? 'missing data' : 'ready'}</span>
+                  </div>
                 </div>
                 {#if seedCheckEntries.length > 0}
-                  <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
                     {#each seedCheckEntries as [name, count] (name)}
-                      <div class="flex items-center justify-between rounded-xl border border-base-300 bg-base-100 px-4 py-3">
+                      <div class="flex items-center justify-between border-b border-base-300 px-5 py-3 last:border-b-0">
                         <span class="text-sm font-medium text-base-content capitalize">{name.replaceAll('_', ' ')}</span>
-                        <span class="badge {count > 0 ? 'badge-success' : 'badge-warning'} badge-sm">{count}</span>
+                        <span class="font-mono text-sm {count > 0 ? 'text-success' : 'text-warning'}">{count}</span>
                       </div>
                     {/each}
                   </div>
                 {/if}
                 <div class="flex flex-wrap gap-2">
-                  <button class="btn btn-primary rounded-full capitalize" disabled={saving} type="button" onclick={() => void submitSeed()}>
+                  <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving} type="button" onclick={() => void submitSeed()}>
                     {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
                     {seedMissing ? 'run database seed' : 'mark seed complete'}
                   </button>
@@ -390,54 +422,55 @@
                 </div>
               </div>
             {:else}
-              <div class="space-y-4">
+              <div class="space-y-5">
                 {#if incompleteRequiredSteps.length > 0}
-                  <div class="alert alert-warning text-sm">
-                    <span>
-                      Complete required setup first: {incompleteRequiredSteps.map((step) => step.label).join(', ')}.
-                    </span>
+                  <div class="rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
+                    <span>Complete required setup first: {incompleteRequiredSteps.map((step) => step.label).join(', ')}.</span>
                   </div>
                 {:else}
-                  <div class="alert alert-success text-sm">
+                  <div class="rounded-2xl border border-success/30 bg-success/10 p-4 text-sm text-success">
                     <span>Required setup is complete. You can lock setup-only writes now.</span>
                   </div>
                 {/if}
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {#each steps.filter((step) => step.key !== 'review') as step (step.key)}
+
+                <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
+                  {#each steps.filter((step) => step.key !== 'review') as step, index (step.key)}
                     {@const done = Boolean($setupStatus?.completedSteps?.[step.key]) || (step.key === 'seed' && !$setupStatus?.seedRequired)}
                     <button
                       type="button"
-                      class="rounded-xl border border-base-300 p-4 text-left transition-colors hover:border-primary hover:bg-base-200"
+                      class="flex w-full items-center justify-between gap-4 border-b border-base-300 px-5 py-4 text-left transition-colors last:border-b-0 hover:bg-base-300"
                       onclick={() => jumpToStep(step.key)}
                     >
-                      <span class="flex items-center justify-between gap-2">
-                        <span class="font-semibold capitalize">{step.label}</span>
-                        {#if done}
-                          <span class="badge badge-success badge-sm capitalize">complete</span>
-                        {:else if step.required}
-                          <span class="badge badge-error badge-sm capitalize">required</span>
-                        {:else}
-                          <span class="badge badge-ghost badge-sm capitalize">optional</span>
-                        {/if}
+                      <span class="flex items-center gap-3">
+                        <span class="font-mono text-xs text-base-content/40">0{index + 1}</span>
+                        <span class="flex flex-col gap-1">
+                          <span class="font-semibold text-base-content capitalize">{step.label}</span>
+                          <span class="text-xs text-base-content/50 capitalize">{done ? 'no action needed' : 'click to open this step'}</span>
+                        </span>
                       </span>
-                      <span class="mt-1 block text-xs text-base-content/60 capitalize">
-                        {done ? 'no action needed' : 'click to open this step'}
-                      </span>
+                      <span class="badge {done ? 'badge-success' : 'badge-error'} badge-sm capitalize">{done ? 'complete' : 'required'}</span>
                     </button>
                   {/each}
                 </div>
-                <div class="rounded-xl border border-base-300 bg-base-100 p-4">
-                  <span class="block font-semibold text-base-content capitalize">trading credentials come next</span>
-                  <span class="mt-1 block text-sm text-base-content/60">
-                    API keys are not required to finish initial setup. Add and validate exchange credentials later before enabling market-making or order execution.
-                  </span>
-                  <a class="btn btn-ghost btn-sm mt-3 rounded-full capitalize" href="/system/connectivity/api-keys">open API key settings</a>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div class="rounded-2xl border border-base-300 bg-base-100 p-5">
+                    <span class="block text-sm font-semibold text-base-content capitalize">trading credentials come next</span>
+                    <span class="mt-2 block text-sm leading-6 text-base-content/60">
+                      API keys are not required to finish initial setup. Add and validate exchange credentials before market-making or order execution.
+                    </span>
+                    <a class="btn btn-ghost btn-sm mt-4 rounded-full capitalize" href="/system/connectivity/api-keys">open API key settings</a>
+                  </div>
+                  <div class="rounded-2xl border border-base-300 bg-base-300 p-5">
+                    <span class="block text-sm font-semibold text-base-content capitalize">setup lock behavior</span>
+                    <span class="mt-2 block text-sm leading-6 text-base-content/60">
+                      Completion disables setup-only writes and redirects this route back to the dashboard.
+                    </span>
+                  </div>
                 </div>
-                <div class="alert alert-info text-sm">
-                  <span>After completion, setup config writes are disabled and this route redirects to the dashboard.</span>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  <button class="btn btn-primary rounded-full capitalize" disabled={saving || !requiredSetupComplete} type="button" onclick={() => void finishSetup()}>
+
+                <div class="flex flex-wrap gap-2 border-t border-base-300 pt-5">
+                  <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving || !requiredSetupComplete} type="button" onclick={() => void finishSetup()}>
                     {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
                     complete setup
                   </button>
@@ -446,7 +479,7 @@
               </div>
             {/if}
           </div>
-        </div>
+        </main>
       </div>
     {/if}
   </div>
