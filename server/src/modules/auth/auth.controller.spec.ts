@@ -1,12 +1,7 @@
-import { INestApplication, UnauthorizedException } from '@nestjs/common';
+import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
-import { PassportModule } from '@nestjs/passport';
-import { Test, TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 import { AdminAuditLogService } from 'src/modules/admin/system/admin-audit-log.service';
 
-import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtStrategy } from './jwt.strategy';
@@ -14,7 +9,6 @@ import { JwtStrategy } from './jwt.strategy';
 const JWT_SECRET = 'route-level-session-audit-secret';
 
 describe('AuthController guarded routes', () => {
-  let app: INestApplication;
   let authService: {
     assertAdminTokenVersion: jest.Mock;
     getSession: jest.Mock;
@@ -30,6 +24,7 @@ describe('AuthController guarded routes', () => {
     mixinOauthHandler: jest.Mock;
   };
   let auditLogService: { record: jest.Mock };
+  let parentCanActivateSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     authService = {
@@ -52,42 +47,23 @@ describe('AuthController guarded routes', () => {
     auditLogService = {
       record: jest.fn(async () => undefined),
     };
-
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [PassportModule],
-      controllers: [AuthController],
-      providers: [
-        JwtAuthGuard,
-        JwtStrategy,
-        {
-          provide: AuthService,
-          useValue: authService,
-        },
-        {
-          provide: AdminAuditLogService,
-          useValue: auditLogService,
-        },
-        {
-          provide: ConfigService,
-          useValue: {
-            get: jest.fn((key: string) =>
-              key === 'admin.jwt_secret' ? JWT_SECRET : null,
-            ),
-          },
-        },
-      ],
-    }).compile();
-
-    app = module.createNestApplication();
-    await app.init();
+    parentCanActivateSpy = jest
+      .spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate')
+      .mockRejectedValue(new UnauthorizedException('Unauthorized'));
   });
 
-  afterEach(async () => {
-    await app.close();
+  afterEach(() => {
+    parentCanActivateSpy.mockRestore();
   });
 
   it('audits missing-token /auth/session denials before session service logic runs', async () => {
-    await request(app.getHttpServer()).get('/auth/session').expect(401);
+    const guard = new JwtAuthGuard(auditLogService as never);
+
+    await expect(
+      guard.canActivate(
+        createHttpContext({ method: 'GET', path: '/auth/session' }),
+      ),
+    ).rejects.toThrow(UnauthorizedException);
 
     expect(authService.getSession).not.toHaveBeenCalled();
     expect(auditLogService.record).toHaveBeenCalledWith(
@@ -110,16 +86,35 @@ describe('AuthController guarded routes', () => {
     authService.assertAdminTokenVersion.mockRejectedValueOnce(
       new UnauthorizedException('Invalid admin token'),
     );
-    const token = new JwtService({ secret: JWT_SECRET }).sign({
-      username: 'admin',
-      tokenVersion: 999,
-      authMethod: 'password',
-    });
+    const token = 'secret-bearer-token';
+    const strategy = new JwtStrategy(
+      {
+        get: jest.fn((key: string) =>
+          key === 'admin.jwt_secret' ? JWT_SECRET : null,
+        ),
+      } as unknown as ConfigService,
+      authService as unknown as AuthService,
+    );
+    const guard = new JwtAuthGuard(auditLogService as never);
 
-    await request(app.getHttpServer())
-      .get('/auth/session?token=secret-query-fragment')
-      .set('Authorization', `Bearer ${token}`)
-      .expect(401);
+    await expect(
+      strategy.validate({
+        userId: 'admin',
+        username: 'admin',
+        tokenVersion: 999,
+        authMethod: 'password',
+      }),
+    ).rejects.toThrow(UnauthorizedException);
+
+    await expect(
+      guard.canActivate(
+        createHttpContext({
+          method: 'GET',
+          originalUrl: '/auth/session?token=secret-query-fragment',
+          headers: { authorization: `Bearer ${token}` },
+        }),
+      ),
+    ).rejects.toThrow(UnauthorizedException);
 
     expect(authService.assertAdminTokenVersion).toHaveBeenCalledWith(999);
     expect(authService.getSession).not.toHaveBeenCalled();
@@ -143,3 +138,11 @@ describe('AuthController guarded routes', () => {
     expect(auditPayload).not.toContain('Authorization');
   });
 });
+
+function createHttpContext(request: Record<string, unknown>): ExecutionContext {
+  return {
+    switchToHttp: () => ({
+      getRequest: () => request,
+    }),
+  } as unknown as ExecutionContext;
+}

@@ -12,6 +12,7 @@
 
 ## 2. PNL / Inventory / Risk Views
 
+- Current first task: choose a JS chart library for rendering PNL charts.
 - Add chart views for total / realized / unrealized PNL.
 - Add pair-level PNL, inventory exposure, fee cost, spread capture, and drawdown views.
 - Add quote / fill / cancel timeline views backed by strategy decision snapshots and tracked-order state.

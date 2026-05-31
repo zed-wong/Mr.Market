@@ -352,6 +352,12 @@ const createFixture = () => {
   };
   const strategyMarketDataProviderService = {
     getReferencePrice: jest.fn().mockResolvedValue(100),
+    getTrackedReferencePriceSnapshot: jest.fn().mockReturnValue({
+      price: 100,
+      stale: false,
+      ageMs: 0,
+      source: 'tracked_order_book',
+    }),
     hasTrackedOrderBook: jest.fn().mockReturnValue(true),
     getTrackedOrderBookFreshness: jest.fn().mockReturnValue({ fresh: true }),
   };
