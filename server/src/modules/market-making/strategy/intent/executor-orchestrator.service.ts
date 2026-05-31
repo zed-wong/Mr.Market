@@ -1,10 +1,8 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ExecutorAction } from '../config/executor-action.types';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
-import { StrategyIntentExecutionService } from '../execution/strategy-intent-execution.service';
 import { StrategyIntentStoreService } from '../execution/strategy-intent-store.service';
 
 @Injectable()
@@ -12,11 +10,8 @@ export class ExecutorOrchestratorService {
   private readonly logger = new CustomLogger(ExecutorOrchestratorService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     @Optional()
     private readonly strategyIntentStoreService?: StrategyIntentStoreService,
-    @Optional()
-    private readonly strategyIntentExecutionService?: StrategyIntentExecutionService,
   ) {}
 
   async dispatchActions(
@@ -30,15 +25,6 @@ export class ExecutorOrchestratorService {
     const intents = actions.map((action) => this.toIntent(action));
 
     await this.strategyIntentStoreService?.batchUpsertIntents(intents);
-
-    const intentExecutionDriver = String(
-      this.configService.get('strategy.intent_execution_driver', 'worker') ||
-        'worker',
-    ).toLowerCase();
-
-    if (intentExecutionDriver === 'sync') {
-      await this.strategyIntentExecutionService?.consumeIntents(intents);
-    }
 
     for (const intent of intents) {
       const cycleId = this.readMetadataString(intent, 'cycleId') || 'n/a';
@@ -59,7 +45,7 @@ export class ExecutorOrchestratorService {
           `exchange=${intent.exchange}`,
           `pair=${intent.pair}`,
           `account=${intent.accountLabel || 'default'}`,
-          `driver=${intentExecutionDriver}`,
+          'driver=worker',
         ].join(' | '),
       );
     }
@@ -69,7 +55,7 @@ export class ExecutorOrchestratorService {
         'Intent batch published',
         `strategy=${strategyKey}`,
         `count=${intents.length}`,
-        `driver=${intentExecutionDriver}`,
+        'driver=worker',
       ].join(' | '),
     );
 

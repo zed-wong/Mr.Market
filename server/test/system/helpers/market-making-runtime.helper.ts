@@ -143,9 +143,6 @@ export class MarketMakingRuntimeHelper {
         if (key === 'strategy.execute_intents') {
           return false;
         }
-        if (key === 'strategy.intent_execution_driver') {
-          return 'worker';
-        }
 
         return defaultValue;
       },

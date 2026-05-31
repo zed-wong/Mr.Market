@@ -2,6 +2,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
+import BigNumber from 'bignumber.js';
 import { Contribution } from 'src/common/entities/campaign/contribution.entity';
 import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { MarketMakingOrderIntent } from 'src/common/entities/market-making/market-making-order-intent.entity';
@@ -19,14 +20,21 @@ import { createPureMarketMakingStrategyKey } from 'src/common/helpers/strategyKe
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
+import { OrderScopedBalanceQueryService } from 'src/modules/market-making/balance-state/order-scoped-balance-query.service';
 import { ExchangeConnectorAdapterService } from 'src/modules/market-making/execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
+import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
 import { StrategyMarketDataProviderService } from 'src/modules/market-making/strategy/data/strategy-market-data-provider.service';
+import { AdaptivePmmStateService } from 'src/modules/market-making/strategy/pmm/adaptive-pmm-state.service';
+import { QuotePlannerService } from 'src/modules/market-making/strategy/quote/quote-planner.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import { StrategyIntentExecutionService } from 'src/modules/market-making/strategy/execution/strategy-intent-execution.service';
 import { StrategyIntentStoreService } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
 import { StrategyIntentWorkerService } from 'src/modules/market-making/strategy/execution/strategy-intent-worker.service';
 import { ExecutorOrchestratorService } from 'src/modules/market-making/strategy/intent/executor-orchestrator.service';
+import { StrategyInstanceLifecycleService } from 'src/modules/market-making/strategy/runtime/strategy-instance-lifecycle.service';
+import { StrategySessionRegistryService } from 'src/modules/market-making/strategy/runtime/strategy-session-registry.service';
+import { StrategyWatcherManagerService } from 'src/modules/market-making/strategy/runtime/strategy-watcher-manager.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import type { Repository } from 'typeorm';
@@ -94,9 +102,6 @@ export class MarketMakingIntentLifecycleHelper {
       get: (key: string, defaultValue?: unknown) => {
         if (key === 'strategy.execute_intents') {
           return true;
-        }
-        if (key === 'strategy.intent_execution_driver') {
-          return 'worker';
         }
         if (key === 'strategy.intent_worker_poll_interval_ms') {
           return 10;
@@ -181,6 +186,14 @@ export class MarketMakingIntentLifecycleHelper {
         }),
       ),
     };
+    const orderScopedBalanceQueryServiceMock = {
+      resolveInventoryRatio: jest.fn().mockResolvedValue(null),
+      getAvailableBalancesForPair: jest.fn().mockResolvedValue({
+        base: new BigNumber('10'),
+        quote: new BigNumber('100000'),
+        assets: { base: 'BTC', quote: 'USDT' },
+      }),
+    };
     const strategyMarketDataProviderServiceMock = {
       getReferencePrice: jest.fn(async () => 100),
       getBestBidAsk: jest.fn(async () => ({ bestBid: 99.5, bestAsk: 100.5 })),
@@ -211,10 +224,16 @@ export class MarketMakingIntentLifecycleHelper {
         ExchangeOrderTrackerService,
         ExecutorOrchestratorService,
         ExecutorRegistry,
+        AdaptivePmmStateService,
+        PureMarketMakingStrategyController,
+        QuotePlannerService,
+        StrategyInstanceLifecycleService,
         StrategyIntentExecutionService,
         StrategyIntentStoreService,
         StrategyIntentWorkerService,
+        StrategySessionRegistryService,
         StrategyService,
+        StrategyWatcherManagerService,
         {
           provide: CACHE_MANAGER,
           useValue: cacheManagerMock,
@@ -234,6 +253,10 @@ export class MarketMakingIntentLifecycleHelper {
         {
           provide: BalanceStateCacheService,
           useValue: balanceStateCacheServiceMock,
+        },
+        {
+          provide: OrderScopedBalanceQueryService,
+          useValue: orderScopedBalanceQueryServiceMock,
         },
         {
           provide: StrategyMarketDataProviderService,
@@ -385,10 +408,16 @@ export class MarketMakingIntentLifecycleHelper {
   }
 
   async listExecutionHistory(): Promise<StrategyExecutionHistory[]> {
-    return await this.strategyExecutionHistoryRepository.find({
+    const rows = await this.strategyExecutionHistoryRepository.find({
       order: {
         executedAt: 'ASC',
       },
+    });
+
+    return rows.filter((row) => {
+      const metadata = row.metadata as Record<string, unknown> | null;
+
+      return metadata?.event !== 'adaptive_pmm.decision';
     });
   }
 

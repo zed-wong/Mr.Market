@@ -40,8 +40,6 @@ export default () => ({
     mixin_snapshots_run: process.env.RUN_MIXIN_SNAPSHOTS || 'false',
     tick_size_ms: parseInt(process.env.MARKET_MAKING_TICK_SIZE_MS, 10) || 1000,
     execute_intents: process.env.MARKET_MAKING_EXECUTE_INTENTS === 'true',
-    intent_execution_driver:
-      process.env.MARKET_MAKING_INTENT_EXECUTION_DRIVER || 'worker',
     intent_max_retries:
       parseInt(process.env.MARKET_MAKING_INTENT_MAX_RETRIES, 10) || 2,
     intent_retry_base_delay_ms:

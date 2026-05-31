@@ -28,7 +28,6 @@ const createConfigService = () =>
   ({
     get: jest.fn((key: string, defaultValue?: string | number | boolean) => {
       const values: Record<string, string | number | boolean> = {
-        'strategy.intent_execution_driver': 'worker',
         'strategy.intent_worker_poll_interval_ms': 5,
         'strategy.intent_worker_max_in_flight': 4,
         'strategy.intent_worker_max_in_flight_per_exchange': 4,
@@ -340,9 +339,7 @@ const createFixture = () => {
     exchangeOrderMappingService,
   );
   const executorOrchestratorService = new ExecutorOrchestratorService(
-    configService,
     strategyIntentStoreService,
-    strategyIntentExecutionService,
   );
   const executorRegistry = new ExecutorRegistry();
   const exchangeInitService = {

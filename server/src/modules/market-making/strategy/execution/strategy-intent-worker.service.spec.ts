@@ -25,7 +25,6 @@ const createConfigService = (overrides?: Record<string, number | string>) =>
   ({
     get: jest.fn((key: string, defaultValue?: number | string) => {
       const values: Record<string, number | string> = {
-        'strategy.intent_execution_driver': 'worker',
         'strategy.intent_worker_poll_interval_ms': 5,
         'strategy.intent_worker_max_in_flight': 2,
         'strategy.intent_worker_max_in_flight_per_exchange': 2,

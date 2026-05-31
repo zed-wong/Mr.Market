@@ -2,6 +2,7 @@
 
 ## 2026-05-29
 
+- Remove the market-making intent sync execution driver: strategy ticks now only persist intents, worker execution is the sole mutation path, and the `MARKET_MAKING_INTENT_EXECUTION_DRIVER` env/config path is gone.
 - 2026-05-29  strategy-service-refactor  Phase 1-4 done — reduced `StrategyService` from ~9.2k lines to 785-line coordinator by moving action building, runtime lifecycle, recovery, settlement, quote planning, adaptive PMM state, dual-account planning, watcher management, order-scoped balance reads, tracked-order shutdown, and kill-switch decisions into owning services/controllers.
 - Continue the StrategyService dual-account refactor by moving publish-state calculation plus fill-progress, matched-cycle, settled-cycle, and fill-runtime merge logic into `DualAccountPlannerService`, leaving StrategyService with session/repository/persistence coordination wrappers.
 - Make terminal tracked-order reservation cleanup idempotent on server restart by releasing only current order-asset locked funds and skipping already-unlocked terminal rows without warning.

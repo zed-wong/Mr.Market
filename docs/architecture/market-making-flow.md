@@ -283,8 +283,8 @@ Important rules:
   state.
 - REST balance refresh and REST order reconciliation run outside the shared tick
   loop.
-- Intent execution may run through worker mode or sync mode, but worker mode is
-  the preferred production boundary.
+- Intent execution runs through the intent worker. The tick path persists
+  intents only and must not synchronously execute exchange mutations.
 
 ## Order Reservation
 
@@ -480,9 +480,7 @@ start flow.
 
 - `strategy.execute_intents=false` persists/skips intents without exchange
   mutation.
-- `strategy.intent_execution_driver=worker` decouples tick from exchange I/O.
-- `strategy.intent_execution_driver=sync` exists but is not the preferred
-  production boundary.
+- The intent worker decouples tick from exchange I/O.
 - Orders require `strategySnapshot` before runtime start.
 - `dualAccountVolume` uses maker/taker account labels under the same pooled
   `exchange:pair` executor.

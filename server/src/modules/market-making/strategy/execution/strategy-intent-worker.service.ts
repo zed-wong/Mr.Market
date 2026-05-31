@@ -20,7 +20,6 @@ export class StrategyIntentWorkerService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new CustomLogger(StrategyIntentWorkerService.name);
-  private readonly intentExecutionDriver: string;
   private readonly pollIntervalMs: number;
   private readonly maxInFlight: number;
   private readonly maxInFlightPerExchange: number;
@@ -41,9 +40,6 @@ export class StrategyIntentWorkerService
     @Optional()
     private readonly strategyIntentExecutionService?: StrategyIntentExecutionService,
   ) {
-    this.intentExecutionDriver = String(
-      this.configService.get('strategy.intent_execution_driver', 'worker'),
-    ).toLowerCase();
     this.pollIntervalMs = Math.max(
       10,
       Number(
@@ -83,7 +79,6 @@ export class StrategyIntentWorkerService
 
   private shouldRunWorker(): boolean {
     return (
-      this.intentExecutionDriver === 'worker' &&
       Boolean(this.strategyIntentStoreService) &&
       Boolean(this.strategyIntentExecutionService)
     );

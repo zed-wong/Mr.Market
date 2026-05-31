@@ -74,9 +74,6 @@ const createConfigService = () =>
       if (key === 'strategy.execute_intents') {
         return true;
       }
-      if (key === 'strategy.intent_execution_driver') {
-        return 'worker';
-      }
       if (key === 'strategy.intent_worker_poll_interval_ms') {
         return 10;
       }

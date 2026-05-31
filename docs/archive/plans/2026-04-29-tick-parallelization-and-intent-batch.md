@@ -382,11 +382,9 @@ const strategyIntentStoreService = {
 And update the single-action test to verify `batchUpsertIntents` is called even for a single action (it's still a batch of 1):
 
 ```typescript
-it('persists actions as NEW intents and skips sync consume in worker mode', async () => {
+it('persists actions as NEW intents for worker execution', async () => {
   const service = new ExecutorOrchestratorService(
-    createConfigService('worker'),
     strategyIntentStoreService as unknown as StrategyIntentStoreService,
-    strategyIntentExecutionService as unknown as StrategyIntentExecutionService,
   );
 
   const intents = await service.dispatchActions('u1-c1-pureMarketMaking', [baseAction]);
@@ -401,7 +399,6 @@ it('persists actions as NEW intents and skips sync consume in worker mode', asyn
       }),
     ]),
   );
-  expect(strategyIntentExecutionService.consumeIntents).not.toHaveBeenCalled();
   expect(intents).toHaveLength(1);
   expect(intents[0].status).toBe('NEW');
 });
@@ -430,15 +427,6 @@ async dispatchActions(
 
   await this.strategyIntentStoreService?.batchUpsertIntents(intents);
 
-  const intentExecutionDriver = String(
-    this.configService.get('strategy.intent_execution_driver', 'worker') ||
-      'worker',
-  ).toLowerCase();
-
-  if (intentExecutionDriver === 'sync') {
-    await this.strategyIntentExecutionService?.consumeIntents(intents);
-  }
-
   for (const intent of intents) {
     const cycleId = this.readMetadataString(intent, 'cycleId') || 'n/a';
     const role = this.readMetadataString(intent, 'role') || 'unknown';
@@ -458,7 +446,7 @@ async dispatchActions(
         `exchange=${intent.exchange}`,
         `pair=${intent.pair}`,
         `account=${intent.accountLabel || 'default'}`,
-        `driver=${intentExecutionDriver}`,
+        `driver=worker`,
       ].join(' | '),
     );
   }
@@ -468,7 +456,7 @@ async dispatchActions(
       'Intent batch published',
       `strategy=${strategyKey}`,
       `count=${intents.length}`,
-      `driver=${intentExecutionDriver}`,
+      `driver=worker`,
     ].join(' | '),
   );
 

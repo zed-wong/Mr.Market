@@ -111,7 +111,6 @@ type PureMarketMakingRuntimeOverrides = {
 };
 
 type SingleTickHelperOptions = {
-  intentExecutionDriver?: 'sync' | 'worker';
   intentWorkerMaxInFlight?: number;
   intentWorkerMaxInFlightPerExchange?: number;
   intentWorkerPollIntervalMs?: number;
@@ -221,9 +220,6 @@ export class MarketMakingSingleTickHelper {
         }
         if (key === 'strategy.execute_intents') {
           return true;
-        }
-        if (key === 'strategy.intent_execution_driver') {
-          return this.options.intentExecutionDriver || 'sync';
         }
         if (key === 'strategy.intent_worker_poll_interval_ms') {
           return this.options.intentWorkerPollIntervalMs ?? 10;
