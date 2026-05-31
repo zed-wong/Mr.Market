@@ -94,9 +94,10 @@ export class OrderReservationService {
   ): Promise<OrderReservationResult> {
     const fallbackReservation = this.resolveReservationAsset(command);
     let reservation: Omit<OrderReservationResult, 'applied'>;
+    const normalizedCommand = this.normalizeTerminalReleaseCommand(command);
 
     try {
-      reservation = this.calculateReservation(command);
+      reservation = this.calculateReservation(normalizedCommand);
     } catch {
       reservation = fallbackReservation;
     }
@@ -112,6 +113,14 @@ export class OrderReservationService {
     }
 
     const calculatedAmount = new BigNumber(reservation.amount);
+    if (
+      normalizedCommand.reason === 'exchange_order_filled' &&
+      calculatedAmount.isFinite() &&
+      calculatedAmount.isLessThanOrEqualTo(0)
+    ) {
+      return { ...reservation, amount: '0', applied: false };
+    }
+
     const releaseAmount =
       calculatedAmount.isFinite() && calculatedAmount.isGreaterThan(0)
         ? BigNumber.minimum(calculatedAmount, lockedAmount)
@@ -193,6 +202,28 @@ export class OrderReservationService {
       orderId: command.orderId,
       assetId: command.side === 'sell' ? baseAssetId : quoteAssetId,
       amount: '0',
+    };
+  }
+
+  private normalizeTerminalReleaseCommand<
+    T extends LimitOrderReservationCommand & {
+      reason?: string;
+      filledQty?: string | null;
+    },
+  >(command: T): T {
+    if (command.reason !== 'exchange_order_filled') {
+      return command;
+    }
+
+    const filledQty = new BigNumber(command.filledQty || 0);
+
+    if (filledQty.isFinite() && filledQty.isGreaterThan(0)) {
+      return command;
+    }
+
+    return {
+      ...command,
+      filledQty: command.qty,
     };
   }
 
