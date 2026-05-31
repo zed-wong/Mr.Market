@@ -201,7 +201,7 @@ export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessA
         status: 'failed',
         summary: errorText(input.apiKeysError),
         evidence: ['API key readiness could not be loaded.'],
-        href: '/system/api-keys',
+        href: '/system/connectivity/api-keys',
         actionLabel: 'manage API keys',
       }
     : hasValue(input.apiKeys)
@@ -242,7 +242,7 @@ export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessA
             `${keySummary.disabled} disabled key${keySummary.disabled === 1 ? '' : 's'} returned.`,
             `${keySummary.unknown} unknown key${keySummary.unknown === 1 ? '' : 's'} returned.`,
           ],
-          href: '/system/api-keys',
+          href: '/system/connectivity/api-keys',
           actionLabel: 'manage API keys',
         }
       : {
@@ -251,7 +251,7 @@ export const buildSetupReadiness = (input: SetupReadinessInput): SetupReadinessA
           status: 'loading',
           summary: 'Loading API key validation state.',
           evidence: ['Waiting for encrypted key metadata.'],
-          href: '/system/api-keys',
+          href: '/system/connectivity/api-keys',
           actionLabel: 'manage API keys',
         };
 

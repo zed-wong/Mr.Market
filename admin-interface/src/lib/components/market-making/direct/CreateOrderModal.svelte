@@ -369,7 +369,7 @@
                                 </div>
                                 {#if !selectedExchangeHasAnyApiKey}
                                     <a
-                                        href="/system/api-keys"
+                                        href="/system/connectivity/api-keys"
                                         class="btn btn-ghost btn-xs mt-3 rounded-full capitalize"
                                     >
                                         {$_("admin_direct_mm_manage_api_keys")}

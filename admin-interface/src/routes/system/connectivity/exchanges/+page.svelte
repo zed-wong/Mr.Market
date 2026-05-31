@@ -85,17 +85,31 @@
       (exchange) => !exchangeIds.has(exchange),
     ),
   );
-  let venueRows = $derived([
-    ...exchanges,
-    ...orphanKeyExchangeIds.map((exchange) => ({
-      exchange_id: exchange,
-      name: exchange,
-      enable: false,
-      icon_url: "",
-    })),
-  ]);
+  let venueRows = $derived(
+    [
+      ...exchanges,
+      ...orphanKeyExchangeIds.map((exchange) => ({
+        exchange_id: exchange,
+        name: exchange,
+        enable: false,
+        icon_url: "",
+      })),
+    ].sort((left, right) => {
+      const leftId = left.exchange_id.toLowerCase();
+      const rightId = right.exchange_id.toLowerCase();
+      const accountDelta = (keysByExchange[rightId]?.length ?? 0) - (keysByExchange[leftId]?.length ?? 0);
+      return accountDelta || left.name.localeCompare(right.name);
+    }),
+  );
   let exchangeTotals = $derived(summarizeExchangeReadiness(exchanges));
   let accountTotals = $derived(summarizeApiKeyReadiness(apiKeys));
+  let readOnlyApiKeyCount = $derived(
+    apiKeys.filter((key) => {
+      const permissions = getApiKeyPermissionViews(key);
+      return permissions.some((view) => view.capability === "read") &&
+        !permissions.some((view) => view.capability === "trade");
+    }).length,
+  );
   let executionReadyCount = $derived(
     apiKeys.filter((key) => getApiKeyUseReadiness(key, "trade").usable).length,
   );
@@ -413,6 +427,21 @@
         onclick={() => openAddAccountDialog()}
         disabled={!encryptionReady}
       >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="2"
+          stroke="currentColor"
+          class="h-4 w-4"
+          aria-hidden="true"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 4.5v15m7.5-7.5h-15"
+          />
+        </svg>
         add account
       </button>
       <button
@@ -434,8 +463,8 @@
       message="Loading exchange venues, public metadata readiness, and attached execution accounts."
       testId="exchange-connectivity-loading"
     />
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-5" aria-hidden="true">
-      {#each Array(5) as _}
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3" aria-hidden="true">
+      {#each Array(3) as _}
         <div class="skeleton h-24 rounded-lg"></div>
       {/each}
     </div>
@@ -476,35 +505,33 @@
       />
     {/if}
 
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
       <div class="card border border-base-300 bg-base-100 shadow-none">
-        <div class="card-body gap-1 p-4">
+        <div class="card-body gap-2 p-4">
           <span class="text-xs text-base-content/60 capitalize">venues</span>
           <span class="font-mono text-2xl font-semibold">{exchangeTotals.total}</span>
+          <span class="text-xs text-base-content/50">{metadataReadyCount} metadata ready</span>
         </div>
       </div>
       <div class="card border border-base-300 bg-base-100 shadow-none">
-        <div class="card-body gap-1 p-4">
-          <span class="text-xs text-base-content/60 capitalize">metadata ready</span>
-          <span class="font-mono text-2xl font-semibold text-success">{metadataReadyCount}</span>
-        </div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 shadow-none">
-        <div class="card-body gap-1 p-4">
+        <div class="card-body gap-2 p-4">
           <span class="text-xs text-base-content/60 capitalize">accounts</span>
           <span class="font-mono text-2xl font-semibold">{accountTotals.total}</span>
+          <span class="text-xs text-base-content/50">execution credentials attached</span>
         </div>
       </div>
       <div class="card border border-base-300 bg-base-100 shadow-none">
-        <div class="card-body gap-1 p-4">
-          <span class="text-xs text-base-content/60 capitalize">execution ready</span>
+        <div class="card-body gap-2 p-4">
+          <span class="text-xs text-base-content/60 capitalize">read only</span>
+          <span class="font-mono text-2xl font-semibold">{readOnlyApiKeyCount}</span>
+          <span class="text-xs text-base-content/50">api keys without trade permission</span>
+        </div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 shadow-none">
+        <div class="card-body gap-2 p-4">
+          <span class="text-xs text-base-content/60 capitalize">execution</span>
           <span class="font-mono text-2xl font-semibold text-success">{executionReadyCount}</span>
-        </div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 shadow-none">
-        <div class="card-body gap-1 p-4">
-          <span class="text-xs text-base-content/60 capitalize">blocked</span>
-          <span class="font-mono text-2xl font-semibold text-warning">{accountTotals.total - executionReadyCount}</span>
+          <span class="text-xs text-base-content/50">api keys with read+trade permission</span>
         </div>
       </div>
     </div>
@@ -656,7 +683,7 @@
                             <tr class="border-b border-base-300 last:border-b-0">
                               <td>
                                 <span class="flex flex-col">
-                                  <span class="text-sm font-medium capitalize">{key.name}</span>
+                                  <span class="text-sm font-medium">{key.name}</span>
                                   <span class="font-mono text-xs text-base-content/50">{key.key_id}</span>
                                 </span>
                               </td>

@@ -135,7 +135,7 @@
     </div>
 
     <a
-        href="/system/api-keys"
+        href="/system/connectivity/api-keys"
         class="w-full mt-4 py-3 rounded-xl bg-primary/10 text-primary font-semibold text-sm flex items-center justify-center gap-2 hover:bg-primary/20 transition-colors border-none"
     >
         <svg

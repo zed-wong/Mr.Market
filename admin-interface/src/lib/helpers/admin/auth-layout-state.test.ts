@@ -12,8 +12,8 @@ const protectedRoutes = [
   '/system/password',
   '/trading/direct-market-making',
   '/trading/exchanges',
-  '/connectivity/exchanges',
-  '/system/api-keys',
+  '/system/connectivity/exchanges',
+  '/system/connectivity/api-keys',
 ];
 
 describe('auth layout state', () => {

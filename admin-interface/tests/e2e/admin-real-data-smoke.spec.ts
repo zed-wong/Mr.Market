@@ -61,7 +61,7 @@ const preservedRoutes = [
     text: /exchanges/i,
   },
   {
-    path: '/system/api-keys',
+    path: '/system/connectivity/api-keys',
     label: 'api keys',
     text: /api keys/i,
   },
@@ -332,7 +332,7 @@ test.describe.serial('real-data admin smoke', () => {
       });
     });
 
-    await page.goto('/system/api-keys');
+    await page.goto('/system/connectivity/api-keys');
     await page.waitForLoadState('networkidle');
 
     const sidebar = page.getByTestId('old-admin-sidebar');
@@ -441,7 +441,7 @@ test.describe.serial('real-data admin smoke', () => {
       await route.continue();
     });
 
-    await page.goto('/system/api-keys');
+    await page.goto('/system/connectivity/api-keys');
     await expect(page.getByTestId('api-key-loading')).toBeVisible();
     await page.waitForLoadState('networkidle');
 
@@ -477,7 +477,7 @@ test.describe.serial('real-data admin smoke', () => {
       });
     });
 
-    await page.goto('/system/api-keys');
+    await page.goto('/system/connectivity/api-keys');
     await expect(page.getByTestId('api-key-error')).toBeVisible();
     await expect(page.locator('body')).toContainText('forced API key load failure');
     await expect(page.getByTestId('api-key-empty')).not.toBeVisible();
@@ -499,7 +499,7 @@ test.describe.serial('real-data admin smoke', () => {
       });
     });
 
-    await page.goto('/system/api-keys');
+    await page.goto('/system/connectivity/api-keys');
     await expect(page.getByTestId('api-key-metadata-error')).toBeVisible();
     await expect(page.locator('body')).toContainText('forced encryption metadata failure');
     await expect(page.getByRole('button', { name: /^\+ add key$/i })).toBeDisabled();
@@ -755,7 +755,7 @@ test.describe.serial('real-data admin smoke', () => {
     await expect(page.locator('.modal-open')).toContainText('No ready, trade enabled API key is available for this exchange');
     await expect(page.locator('.modal-open')).toContainText('missing');
     await expect(page.locator('.modal-open')).toContainText('No API key record was returned for this exchange.');
-    await expect(page.locator('.modal-open').getByRole('link', { name: /manage API keys/i })).toHaveAttribute('href', '/system/api-keys');
+    await expect(page.locator('.modal-open').getByRole('link', { name: /manage API keys/i })).toHaveAttribute('href', '/system/connectivity/api-keys');
     await page.locator('.modal-open').getByLabel(/close/i).click();
 
     await page.getByText('BTC/USDT').click();
@@ -766,16 +766,16 @@ test.describe.serial('real-data admin smoke', () => {
 
     const remediationLink = page.getByRole('link', { name: /manage exchange api keys/i });
     await expect(remediationLink).toBeVisible();
-    await expect(remediationLink).toHaveAttribute('href', '/system/api-keys');
+    await expect(remediationLink).toHaveAttribute('href', '/system/connectivity/api-keys');
 
     const pageCountBefore = context.pages().length;
     await Promise.all([
-      page.waitForURL('**/system/api-keys'),
+      page.waitForURL('**/system/connectivity/api-keys'),
       remediationLink.click(),
     ]);
 
     expect(context.pages()).toHaveLength(pageCountBefore);
-    expect(page.url()).toContain(`${PREVIEW_ORIGIN}/system/api-keys`);
+    expect(page.url()).toContain(`${PREVIEW_ORIGIN}/system/connectivity/api-keys`);
     expect(page.url()).not.toContain('/manage/settings/api-keys');
     await expect(page.locator('body')).toContainText(/api keys/i);
     await expect(page.locator('body')).toContainText(/Exchange API credentials/i);
@@ -1479,7 +1479,7 @@ test.describe.serial('real-data admin smoke', () => {
   test('direct market-making sidebar navigation shows contextual loading while orders are delayed', async ({ page }) => {
     await login(page);
 
-    await page.goto('/system/api-keys');
+    await page.goto('/system/connectivity/api-keys');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('body')).toContainText(/api keys/i);
 
