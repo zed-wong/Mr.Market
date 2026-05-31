@@ -75,7 +75,6 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     'cancelled',
     'failed',
     'external_missing',
-    'internal_missing',
   ]);
   private static readonly validTransitions: Record<
     TrackedOrderState,
@@ -106,7 +105,14 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
     cancelled: [],
     failed: [],
     external_missing: [],
-    internal_missing: [],
+    internal_missing: [
+      'pending_create',
+      'open',
+      'partially_filled',
+      'filled',
+      'cancelled',
+      'failed',
+    ],
   };
   private static readonly STREAM_HEALTHY_THRESHOLD_MS = 30_000;
   private static readonly SLOW_POLL_INTERVAL_MS = 120_000;

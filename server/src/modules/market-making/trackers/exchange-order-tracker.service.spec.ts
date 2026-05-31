@@ -562,6 +562,57 @@ describe('ExchangeOrderTrackerService', () => {
     );
   });
 
+  it('adopts a locally acknowledged order after an internal-missing placeholder was created first', () => {
+    const service = new ExchangeOrderTrackerService();
+
+    service.reconcileOpenOrderSnapshot({
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      openOrders: [
+        {
+          id: 'ex-race',
+          clientOrderId: 'client-race',
+          side: 'buy',
+          price: '100',
+          amount: '1',
+          filled: '0',
+        },
+      ],
+      observedAt: '2026-02-11T00:00:00.000Z',
+    });
+
+    service.upsertOrder({
+      orderId: 'order-1',
+      strategyKey: 'order-1-pureMarketMaking',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'ex-race',
+      clientOrderId: 'client-race',
+      side: 'buy',
+      price: '100',
+      qty: '1',
+      cumulativeFilledQty: '0',
+      status: 'pending_create',
+      createdAt: '2026-02-11T00:00:01.000Z',
+      updatedAt: '2026-02-11T00:00:01.000Z',
+    });
+
+    const adoptedOrder = service.getByExchangeOrderId('binance', 'ex-race');
+
+    expect(adoptedOrder).toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        strategyKey: 'order-1-pureMarketMaking',
+        exchangeOrderId: 'ex-race',
+        clientOrderId: 'client-race',
+        status: 'pending_create',
+      }),
+    );
+    expect(
+      service.getTrackedOrders('internal_missing:binance:default:BTC/USDT'),
+    ).toHaveLength(0);
+  });
+
   it('reconciles order status through the off-tick poller', async () => {
     const adapter = {
       fetchOrder: jest.fn().mockResolvedValue({ id: 'ex-1', status: 'closed' }),

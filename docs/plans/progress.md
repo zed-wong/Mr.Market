@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-05-31
+
+- Fix a tracked-order reconciliation race where an exchange open-order snapshot could create an `internal_missing` placeholder before the local create ACK upsert arrived; `internal_missing` can now be adopted by the real order state instead of permanently hiding the order under an orphan placeholder.
+
 ## 2026-05-29
 
 - Remove the market-making intent sync execution driver: strategy ticks now only persist intents, worker execution is the sole mutation path, and the `MARKET_MAKING_INTENT_EXECUTION_DRIVER` env/config path is gone.
