@@ -12,7 +12,9 @@ This directory is organized by document responsibility, not by author or date.
 
 ## Start Here
 
-- `product/hufi-whitepaper-source-of-truth.md` - source-of-truth design frame for the HuFi whitepaper, HuFi 100 vision, stablecoin research agenda, and roadmap boundaries
+- `product/whitepaper.md` - English whitepaper for the HuFi thesis, HuFi 100 vision, stablecoin research agenda, and roadmap boundaries
+- `product/yellowpaper.md` - English technical specification and implementation source of truth
+- `product/whitepaper.zh.md` / `product/yellowpaper.zh.md` - Chinese source versions
 - `product/liquidity-layer-technical-implementation.md` - system constraints for the liquidity-layer thesis
 - `architecture/market-making-flow.md` - primary market-making runtime flow
 - `architecture/server/module-map.md` - backend module map
