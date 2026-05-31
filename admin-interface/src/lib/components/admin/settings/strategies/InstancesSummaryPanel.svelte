@@ -15,7 +15,7 @@
 </script>
 
 <div
-  class="bg-base-100 rounded-2xl p-6 shadow-sm border border-base-200/50 flex flex-col h-full"
+  class="bg-base-100 rounded-2xl p-4 sm:p-5 shadow-sm border border-base-200/50 flex flex-col h-full"
 >
   <div class="flex items-center justify-between mb-2">
     <span class="text-[1.1rem] text-base-content">
@@ -26,18 +26,18 @@
     </span>
   </div>
 
-  <div class="flex flex-col gap-4 flex-grow mt-2">
+  <div class="flex flex-col gap-3 flex-grow mt-2">
     <div class="flex gap-6">
       <div class="flex flex-col">
-        <span class="text-3xl font-bold text-base-content">{total}</span>
+        <span class="text-2xl font-bold text-base-content">{total}</span>
         <span class="text-xs text-base-content/50 mt-0.5">Total</span>
       </div>
       <div class="flex flex-col">
-        <span class="text-3xl font-bold text-success">{running}</span>
+        <span class="text-2xl font-bold text-success">{running}</span>
         <span class="text-xs text-base-content/50 mt-0.5">Running</span>
       </div>
       <div class="flex flex-col">
-        <span class="text-3xl font-bold text-base-content">{stopped}</span>
+        <span class="text-2xl font-bold text-base-content">{stopped}</span>
         <span class="text-xs text-base-content/50 mt-0.5">Stopped</span>
       </div>
     </div>
@@ -57,7 +57,7 @@
   </div>
 
   <button
-    class="w-full mt-4 py-3 rounded-xl bg-base-300 text-base-content font-semibold text-sm flex items-center justify-center gap-2 hover:bg-base-300 transition-colors border-none"
+    class="w-full mt-3 py-2.5 rounded-lg bg-base-200 text-base-content font-semibold text-sm flex items-center justify-center gap-2 hover:bg-base-300 transition-colors border-none"
     on:click={() => {
       const el = document.getElementById("instances-table");
       el?.scrollIntoView({ behavior: "smooth" });

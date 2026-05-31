@@ -22,6 +22,8 @@
 
     let schemaError = false;
     let schemaText = "";
+    let showSchemaEditor = false;
+    let previousShow = false;
 
     const CONTROLLER_TYPES = [
         { value: "pureMarketMaking", label: "Market Making" },
@@ -62,6 +64,7 @@
         visibility = "admin";
         createdBy = "";
         schemaError = false;
+        showSchemaEditor = false;
     }
 
     function handleClose() {
@@ -123,8 +126,11 @@
         return localStorage.getItem("admin-access-token") || "";
     }
 
-    $: if (show) {
-        applyTemplate(controllerType);
+    $: {
+        if (show && !previousShow) {
+            applyTemplate(controllerType);
+        }
+        previousShow = show;
     }
 </script>
 
@@ -135,10 +141,10 @@
 {#if show}
     <div class="modal modal-open bg-black/20 backdrop-blur-[2px]">
         <div
-            class="modal-box bg-base-100 p-0 rounded-2xl max-w-[640px] shadow-2xl border border-base-300 max-h-[90vh] overflow-y-auto no-scrollbar"
+            class="modal-box bg-base-100 p-0 rounded-2xl w-[calc(100vw-2rem)] max-w-[720px] shadow-2xl border border-base-300 max-h-[90vh] overflow-hidden"
         >
             <!-- Header -->
-            <div class="px-7 pt-6 pb-4">
+            <div class="px-5 sm:px-7 pt-5 sm:pt-6 pb-4 border-b border-base-200/70">
                 <div class="flex items-start justify-between">
                     <div
                         class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center"
@@ -159,6 +165,7 @@
                     <button
                         class="btn btn-sm btn-circle btn-ghost text-base-content/50 hover:bg-base-200"
                         on:click={handleClose}
+                        aria-label={$_("admin_strategy_cancel")}
                     >
                         <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -185,9 +192,9 @@
             </div>
 
             <!-- Form -->
-            <div class="px-7 pb-7 flex flex-col gap-4">
+            <div class="px-5 sm:px-7 py-5 flex max-h-[calc(90vh-156px)] flex-col gap-4 overflow-y-auto no-scrollbar">
                 <!-- Key + Name row -->
-                <div class="flex gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div class="flex-1 bg-base-200/40 rounded-xl p-4">
                         <span
                             class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
@@ -233,7 +240,7 @@
                         class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
                         >{$_("admin_strategy_controller_type")}</span
                     >
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {#each CONTROLLER_TYPES as type}
                             <button
                                 class="flex items-center justify-center px-3 py-2.5 rounded-lg text-sm transition-colors border
@@ -251,28 +258,44 @@
 
                 <!-- Config Schema -->
                 <div class="bg-base-200/40 rounded-xl p-4">
-                    <div class="flex items-center justify-between mb-2">
-                        <span
-                            class="text-xs font-semibold text-base-content/50 tracking-wider"
-                            >{$_("admin_strategy_config_schema")}</span
-                        >
-                        <button
-                            class="text-xs text-primary font-semibold hover:underline bg-transparent border-none p-0 cursor-pointer"
-                            on:click={() => applyTemplate(controllerType)}
-                        >
-                            {$_("admin_strategy_reset_to_template")}
-                        </button>
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <span
+                                class="text-xs font-semibold text-base-content/50 tracking-wider"
+                                >{$_("admin_strategy_config_schema")}</span
+                            >
+                            <p class="mt-1 text-xs text-base-content/45">
+                                {$_("admin_strategy_schema_editor_hint")}
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button
+                                class="text-xs text-primary font-semibold hover:underline bg-transparent border-none p-0 cursor-pointer"
+                                on:click={() => applyTemplate(controllerType)}
+                            >
+                                {$_("admin_strategy_reset_to_template")}
+                            </button>
+                            <button
+                                class="rounded-lg bg-base-100 px-3 py-1.5 text-xs font-semibold text-base-content shadow-sm border border-base-300"
+                                on:click={() => (showSchemaEditor = !showSchemaEditor)}
+                            >
+                                {showSchemaEditor ? $_("admin_strategy_hide_schema") : $_("admin_strategy_edit_schema")}
+                            </button>
+                        </div>
                     </div>
-                    <textarea
-                        class="textarea textarea-bordered w-full bg-base-100 text-base-content text-sm font-mono focus:outline-none focus:border-primary border-base-300 resize-none h-36
-              {schemaError ? 'border-error' : ''}"
-                        bind:value={schemaText}
-                        on:input={handleSchemaTextChange}
-                    ></textarea>
-                    {#if schemaError}
-                        <span class="text-xs text-error mt-1 block"
-                            >{$_("admin_strategy_invalid_json")}</span
-                        >
+
+                    {#if showSchemaEditor}
+                        <textarea
+                            class="textarea textarea-bordered mt-3 w-full bg-base-100 text-base-content text-sm font-mono focus:outline-none focus:border-primary border-base-300 resize-none h-36
+                  {schemaError ? 'border-error' : ''}"
+                            bind:value={schemaText}
+                            on:input={handleSchemaTextChange}
+                        ></textarea>
+                        {#if schemaError}
+                            <span class="text-xs text-error mt-1 block"
+                                >{$_("admin_strategy_invalid_json")}</span
+                            >
+                        {/if}
                     {/if}
                 </div>
 
@@ -289,7 +312,7 @@
                 </div>
 
                 <!-- Visibility + CreatedBy row -->
-                <div class="flex gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div class="flex-1 bg-base-200/40 rounded-xl p-4">
                         <span
                             class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
@@ -316,42 +339,42 @@
                         />
                     </div>
                 </div>
+            </div>
 
-                <!-- Actions -->
-                <div class="flex gap-3 justify-end mt-2">
-                    <button
-                        class="btn btn-ghost text-base-content font-semibold px-6"
-                        on:click={handleClose}
-                    >
-                        {$_("admin_strategy_cancel")}
-                    </button>
-                    <button
-                        class="btn btn-primary text-primary-content font-semibold px-6 gap-2"
-                        on:click={handleSubmit}
-                        disabled={isSubmitting}
-                    >
-                        {#if isSubmitting}
-                            <span class="loading loading-spinner loading-sm"
-                            ></span>
-                        {:else}
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke-width="2"
-                                stroke="currentColor"
-                                class="w-4 h-4"
-                            >
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
-                                />
-                            </svg>
-                        {/if}
-                        {$_("admin_strategy_create")}
-                    </button>
-                </div>
+            <!-- Actions -->
+            <div class="sticky bottom-0 flex gap-3 justify-end border-t border-base-200/70 bg-base-100 px-5 sm:px-7 py-4">
+                <button
+                    class="btn btn-ghost text-base-content font-semibold px-5"
+                    on:click={handleClose}
+                >
+                    {$_("admin_strategy_cancel")}
+                </button>
+                <button
+                    class="btn btn-primary text-primary-content font-semibold px-5 gap-2"
+                    on:click={handleSubmit}
+                    disabled={isSubmitting}
+                >
+                    {#if isSubmitting}
+                        <span class="loading loading-spinner loading-sm"
+                        ></span>
+                    {:else}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke-width="2"
+                            stroke="currentColor"
+                            class="w-4 h-4"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+                            />
+                        </svg>
+                    {/if}
+                    {$_("admin_strategy_create")}
+                </button>
             </div>
         </div>
     </div>
