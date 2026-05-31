@@ -2,6 +2,7 @@
 
 ## 2026-05-31
 
+- Simplify the admin `/setup` wizard around required initialization only: remove API-key, custom config, Mixin, and Web3 capture from setup; gate frontend and backend completion on password/exchange/seed readiness; show seed check counts; and add a post-setup API-key reminder.
 - Fix a tracked-order reconciliation race where an exchange open-order snapshot could create an `internal_missing` placeholder before the local create ACK upsert arrived; `internal_missing` can now be adopted by the real order state instead of permanently hiding the order under an orphan placeholder.
 
 ## 2026-05-29

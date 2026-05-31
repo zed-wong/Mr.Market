@@ -158,7 +158,7 @@ export class SetupService {
     this.assertInitialized(state);
     this.assertIncomplete(state);
 
-    const required = ['password', 'exchange', 'apiKeys'];
+    const required = ['password', 'exchange'];
     const missing = required.filter((step) => !state.completedSteps?.[step]);
 
     if (await this.isSeedRequired()) {
