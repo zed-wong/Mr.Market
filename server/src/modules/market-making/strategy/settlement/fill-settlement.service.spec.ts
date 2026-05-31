@@ -35,21 +35,54 @@ describe('FillSettlementService', () => {
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(1, {
       orderId: 'order-1',
       userId: 'user-1',
-      assetId: 'BTC',
-      amount: '0.5',
-      idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:base',
-      refType: 'market_making_fill',
-      refId: 'ex-1',
-    });
-    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(2, {
-      orderId: 'order-1',
-      userId: 'user-1',
       assetId: 'USDT',
       amount: '-50',
       idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
+    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(2, {
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'BTC',
+      amount: '0.5',
+      idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:base',
+      refType: 'market_making_fill',
+      refId: 'ex-1',
+    });
+  });
+
+  it('does not credit bought base when quote settlement fails first', async () => {
+    const service = new FillSettlementService(balanceLedgerService as any);
+    balanceLedgerService.adjust.mockRejectedValueOnce(
+      new Error('insufficient locked balance for fill settlement'),
+    );
+
+    await expect(
+      service.settleFill({
+        strategyKey: 'strategy-1',
+        orderId: 'order-1',
+        userId: 'user-1',
+        pair: 'BTC/USDT',
+        fill: {
+          exchangeOrderId: 'ex-1',
+          clientOrderId: 'order-1:0',
+          side: 'buy',
+          price: '100',
+          qty: '0.5',
+          cumulativeQty: '0.5',
+        },
+      }),
+    ).rejects.toThrow('insufficient locked balance for fill settlement');
+
+    expect(balanceLedgerService.adjust).toHaveBeenCalledTimes(1);
+    expect(balanceLedgerService.adjust).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetId: 'USDT',
+        amount: '-50',
+        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
+      }),
+    );
   });
 
   it('settles actual fill fees through fee_debit when present', async () => {
@@ -118,13 +151,13 @@ describe('FillSettlementService', () => {
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:base',
+        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
       }),
     );
     expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
-        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:base',
+        idempotencyKey: 'mm-fill:strategy-1:ex-1:buy:0.5:quote',
       }),
     );
   });

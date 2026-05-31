@@ -390,26 +390,28 @@ export class FillSettlementService {
       command.fill.side === 'buy'
         ? quoteAmount.negated().toFixed()
         : quoteAmount.toFixed();
+    const movements =
+      command.fill.side === 'buy'
+        ? [
+            { assetId: assets.quote, amount: quoteDelta, suffix: 'quote' },
+            { assetId: assets.base, amount: baseDelta, suffix: 'base' },
+          ]
+        : [
+            { assetId: assets.base, amount: baseDelta, suffix: 'base' },
+            { assetId: assets.quote, amount: quoteDelta, suffix: 'quote' },
+          ];
 
-    await this.balanceLedgerService.adjust({
-      orderId: command.orderId,
-      userId: command.userId,
-      assetId: assets.base,
-      amount: baseDelta,
-      idempotencyKey: `${eventKey}:base`,
-      refType: 'market_making_fill',
-      refId: this.resolveRefId(command),
-    });
-
-    await this.balanceLedgerService.adjust({
-      orderId: command.orderId,
-      userId: command.userId,
-      assetId: assets.quote,
-      amount: quoteDelta,
-      idempotencyKey: `${eventKey}:quote`,
-      refType: 'market_making_fill',
-      refId: this.resolveRefId(command),
-    });
+    for (const movement of movements) {
+      await this.balanceLedgerService.adjust({
+        orderId: command.orderId,
+        userId: command.userId,
+        assetId: movement.assetId,
+        amount: movement.amount,
+        idempotencyKey: `${eventKey}:${movement.suffix}`,
+        refType: 'market_making_fill',
+        refId: this.resolveRefId(command),
+      });
+    }
 
     await this.applyFillFee(command, eventKey);
 
