@@ -5,6 +5,7 @@
   import {
     fetchAdminSystemHealth,
     type AdminHealthStatus,
+    type AdminSystemHealthService,
     type AdminSystemHealthResponse,
   } from '$lib/helpers/api/system';
 
@@ -16,10 +17,10 @@
   };
 
   const statusTone: Record<AdminHealthStatus, string> = {
-    healthy: 'bg-success/10 text-success',
-    warning: 'bg-warning/10 text-warning',
-    critical: 'bg-error/10 text-error',
-    unknown: 'bg-base-content/5 text-base-content/60',
+    healthy: 'text-success',
+    warning: 'text-warning',
+    critical: 'text-error',
+    unknown: 'text-base-content/60',
   };
 
   const statusTextTone: Record<AdminHealthStatus, string> = {
@@ -76,6 +77,40 @@
   };
 
   const labelize = (value?: string | null) => (value || 'unavailable').replaceAll('_', ' ');
+
+  const readNumber = (value: unknown) => {
+    const number = Number(value ?? 0);
+
+    return Number.isFinite(number) ? number : 0;
+  };
+
+  const serviceMeta = (service: AdminSystemHealthService) => {
+    const parts: string[] = [];
+
+    if (service.metrics) {
+      const waiting = readNumber(service.metrics.waiting);
+      const active = readNumber(service.metrics.active);
+      const failed = readNumber(service.metrics.failed);
+      const delayed = readNumber(service.metrics.delayed);
+
+      if (waiting || active || failed || delayed || service.id === 'queue.snapshots') {
+        parts.push(`waiting ${formatNumber(waiting)}`);
+        parts.push(`active ${formatNumber(active)}`);
+        parts.push(`failed ${formatNumber(failed)}`);
+        parts.push(`delayed ${formatNumber(delayed)}`);
+      }
+    }
+
+    if (service.details && typeof service.details.isPollingActive === 'boolean') {
+      parts.push(service.details.isPollingActive ? 'polling active' : 'polling inactive');
+    }
+
+    if (service.details && typeof service.details.recentFailureCount === 'number') {
+      parts.push(`${formatNumber(service.details.recentFailureCount)} recent failures`);
+    }
+
+    return parts.join(' · ');
+  };
 
   const errorMessage = (cause: unknown) =>
     cause instanceof Error ? cause.message : 'Unable to load system health';
@@ -158,19 +193,19 @@
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">critical</span>
+        <span class="text-xs text-base-content/60 capitalize">critical services</span>
         <span class="font-mono text-2xl font-semibold text-error">{formatNumber(response?.summary.critical)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">healthy</span>
+        <span class="text-xs text-base-content/60 capitalize">healthy services</span>
         <span class="font-mono text-2xl font-semibold text-success">{formatNumber(response?.summary.healthy)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">warnings</span>
+        <span class="text-xs text-base-content/60 capitalize">warning services</span>
         <span class="font-mono text-2xl font-semibold text-warning">{formatNumber(response?.summary.warning)}</span>
       </div>
     </div>
@@ -252,6 +287,7 @@
               </thead>
               <tbody>
                 {#each services as service (service.id)}
+                  {@const meta = serviceMeta(service)}
                   <tr class="border-b border-base-300 hover:bg-neutral">
                     <td>
                       <div class="flex flex-col">
@@ -262,21 +298,34 @@
                     <td>
                       <div class="flex items-center gap-2">
                         <span class="h-1.5 w-1.5 rounded-full {statusDot[service.status]}"></span>
-                        <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider {statusTone[service.status]}">
+                        <span class="text-xs font-semibold capitalize {statusTone[service.status]}">
                           {service.status}
                         </span>
                       </div>
                     </td>
-                    <td class="text-sm text-base-content/70">{service.message}</td>
+                    <td>
+                      <div class="flex flex-col gap-1">
+                        <span class="text-sm text-base-content/70">{service.message}</span>
+                        {#if meta}
+                          <span class="font-mono text-xs text-base-content/45">{meta}</span>
+                        {/if}
+                      </div>
+                    </td>
                     <td>
                       {#if service.issues && service.issues.length > 0}
                         <div class="flex flex-col gap-1">
                           {#each service.issues.slice(0, 3) as issue (issue)}
-                            <span class="text-xs text-warning">{issue}</span>
+                            <span
+                              class="text-xs"
+                              class:text-error={service.status === 'critical'}
+                              class:text-warning={service.status !== 'critical'}
+                            >
+                              {issue}
+                            </span>
                           {/each}
                         </div>
                       {:else}
-                        <span class="text-xs text-base-content/40 capitalize">none reported</span>
+                        <span class="text-xs text-base-content/30">—</span>
                       {/if}
                     </td>
                   </tr>

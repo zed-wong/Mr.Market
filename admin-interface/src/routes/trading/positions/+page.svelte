@@ -14,6 +14,7 @@
   let exchangeFilter = $state('all');
   let assetFilter = $state('');
   let query = $state('');
+  let lockedOnly = $state(false);
   let page = $state(1);
   let limit = $state(25);
   let loading = $state(true);
@@ -22,6 +23,11 @@
 
   const rows = $derived(response?.items ?? []);
   const assetRows = $derived(response?.summary.byAsset ?? []);
+  const displayedRows = $derived(
+    lockedOnly ? rows.filter((position) => Number(position.locked) > 0) : rows,
+  );
+  const lockedRows = $derived(rows.filter((position) => Number(position.locked) > 0));
+  const mappedRows = $derived(rows.filter((position) => position.exchange && position.accountLabel));
 
   const exchangeOptions = $derived.by(() => {
     const exchanges = new Set(
@@ -36,11 +42,6 @@
 
     return ['all', ...[...exchanges].sort()];
   });
-
-  const unavailableReason = $derived(
-    rows.find((position) => position.pnl.unavailableReason)?.pnl.unavailableReason ||
-      'PnL metrics are unavailable because the backend did not return cost basis or mark-price valuation data.',
-  );
 
   const formatNumber = (value: string | number | null | undefined, options: Intl.NumberFormatOptions = {}) => {
     if (value === null || value === undefined || value === '') {
@@ -81,10 +82,30 @@
   const errorMessage = (cause: unknown) =>
     cause instanceof Error ? cause.message : 'Unable to load backend positions';
 
-  const safeMetric = (value: string | null, reason?: string) => ({
-    value: value === null ? 'unavailable' : formatNumber(value, { maximumFractionDigits: 8 }),
-    reason: value === null ? reason || unavailableReason : null,
-  });
+  const shortId = (value?: string | null) => {
+    if (!value) {
+      return 'unavailable';
+    }
+
+    return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+  };
+
+  const shortStrategy = (value?: string | null) =>
+    shortId(value?.replace(/-pureMarketMaking$/i, '').replace(/-marketMaking$/i, ''));
+
+  const statusTone = (value?: string | null) => {
+    const status = (value || '').toLowerCase();
+
+    if (status === 'running' || status === 'open') {
+      return 'text-success';
+    }
+
+    if (status === 'stopped' || status === 'cancelled' || status === 'canceled') {
+      return 'text-base-content/50';
+    }
+
+    return 'text-warning';
+  };
 
   const loadPositions = async (options: { throwOnError?: boolean } = {}) => {
     const initialLoad = response === null;
@@ -130,6 +151,7 @@
     exchangeFilter = 'all';
     assetFilter = '';
     query = '';
+    lockedOnly = false;
     page = 1;
     void loadPositions();
   };
@@ -165,7 +187,7 @@
   <PageHeader
     eyebrow="trading"
     title="positions"
-    subtitle="Order-scoped balances loaded from the admin API. PnL and mark metrics are shown only when the backend can support them; refresh is manual."
+    subtitle="Track available and locked balances by asset, exchange, and strategy."
   >
     {#snippet actions()}
       <button
@@ -180,23 +202,24 @@
   <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">matching positions</span>
+        <span class="text-xs text-base-content/60 capitalize">positions</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.total ?? 0)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">ledger rows scanned</span>
-        <span class="font-mono text-2xl font-semibold text-base-content">
-          {formatNumber(response?.summary.scannedRows ?? 0)} / {formatNumber(response?.summary.totalRows ?? 0)}
+        <span class="text-xs text-base-content/60 capitalize">locked positions</span>
+        <span class="font-mono text-2xl font-semibold" class:text-warning={lockedRows.length > 0} class:text-base-content={lockedRows.length === 0}>
+          {formatNumber(lockedRows.length)}
         </span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">pnl metrics</span>
-        <span class="font-mono text-lg font-semibold text-base-content">unavailable</span>
-        <span class="text-xs text-base-content/40">no fabricated mark data</span>
+        <span class="text-xs text-base-content/60 capitalize">mapped accounts</span>
+        <span class="font-mono text-2xl font-semibold text-base-content">
+          {formatNumber(mappedRows.length)} / {formatNumber(rows.length)}
+        </span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
@@ -226,17 +249,28 @@
       {:else}
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {#each assetRows as asset (asset.asset)}
+            {@const total = Number(asset.total)}
+            {@const locked = Number(asset.locked)}
+            {@const lockedPct = total > 0 && Number.isFinite(locked) ? (locked / total) * 100 : 0}
             <div class="rounded-lg border border-base-300 p-3">
               <div class="flex items-center justify-between gap-3">
                 <span class="font-mono text-sm font-semibold text-base-content">{asset.asset}</span>
                 <span class="font-mono text-sm text-base-content">{formatNumber(asset.total, { maximumFractionDigits: 8 })}</span>
               </div>
+              <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-base-300">
+                <div
+                  class="h-full"
+                  class:bg-warning={lockedPct > 0}
+                  class:bg-base-content={lockedPct === 0}
+                  style="width: {Math.max(0, Math.min(100, lockedPct))}%"
+                ></div>
+              </div>
               <div class="mt-2 flex flex-col gap-1">
                 <span class="text-xs text-base-content/50">
                   available {formatNumber(asset.available, { maximumFractionDigits: 8 })}
                 </span>
-                <span class="text-xs text-base-content/50">
-                  locked {formatNumber(asset.locked, { maximumFractionDigits: 8 })}
+                <span class="text-xs {lockedPct > 0 ? 'text-warning' : 'text-base-content/50'}">
+                  locked {formatNumber(asset.locked, { maximumFractionDigits: 8 })} · {lockedPct.toFixed(1)}%
                 </span>
               </div>
             </div>
@@ -254,7 +288,7 @@
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-lg font-semibold tracking-tight capitalize">positions</span>
         <select
-          class="select select-sm select-bordered ml-auto border-base-300 bg-base-100 capitalize"
+          class="select select-sm select-bordered ml-auto min-w-44 border-base-300 bg-base-100 capitalize"
           bind:value={exchangeFilter}
           disabled={loading || refreshing}
           onchange={changeExchange}
@@ -278,7 +312,7 @@
         <input
           type="text"
           placeholder="order or asset search…"
-          class="input input-sm input-bordered min-w-[200px] border-base-300 bg-base-100 font-mono text-xs"
+          class="input input-sm input-bordered min-w-[220px] border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxQueryLength ?? 100}
           bind:value={query}
           onkeydown={(event) => {
@@ -287,22 +321,16 @@
             }
           }}
         />
+        <label class="flex cursor-pointer items-center gap-2 rounded-full border border-base-300 px-3 py-1.5 text-xs text-base-content/70">
+          <input type="checkbox" class="checkbox checkbox-xs" bind:checked={lockedOnly} />
+          <span class="capitalize">locked only</span>
+        </label>
         <button
           type="button"
-          class="btn btn-sm btn-ghost rounded-full capitalize"
+          class="btn btn-sm btn-primary rounded-full capitalize"
           disabled={loading || refreshing}
           onclick={applyFilters}
         >filter</button>
-        <select
-          class="select select-sm select-bordered border-base-300 bg-base-100 font-mono text-xs"
-          bind:value={limit}
-          disabled={loading || refreshing}
-          onchange={changeLimit}
-        >
-          {#each limitOptions as option (option)}
-            <option value={option}>{option}</option>
-          {/each}
-        </select>
       </div>
 
       {#if loading}
@@ -324,19 +352,14 @@
       {:else if response}
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-mono text-xs text-base-content/50">
-            page {response.pagination.page} / {response.pagination.totalPages} · {rows.length} of {response.pagination.total}
+            page {response.pagination.page} / {response.pagination.totalPages} · {displayedRows.length} shown · {response.pagination.total} total
           </span>
           {#if refreshing}
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
           {/if}
         </div>
 
-        <div class="rounded-lg border border-base-300 p-4">
-          <span class="text-sm font-semibold text-base-content capitalize">unavailable valuation metrics</span>
-          <span class="mt-1 block text-sm text-base-content/60">{unavailableReason}</span>
-        </div>
-
-        {#if rows.length === 0}
+        {#if displayedRows.length === 0}
           <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 py-12 text-center" data-testid="positions-empty">
             <span class="text-sm font-semibold text-base-content capitalize">no backend positions returned</span>
             <span class="text-sm text-base-content/60">
@@ -351,25 +374,20 @@
                 <tr class="border-b border-base-300 text-xs capitalize tracking-wide text-base-content/50">
                   <th class="font-medium">asset</th>
                   <th class="font-medium">exchange</th>
-                  <th class="font-medium">order</th>
                   <th class="font-medium">strategy</th>
-                  <th class="font-medium text-right">quantity</th>
+                  <th class="font-medium">order</th>
+                  <th class="font-medium">status</th>
+                  <th class="font-medium text-right">total</th>
                   <th class="font-medium text-right">available</th>
                   <th class="font-medium text-right">locked</th>
-                  <th class="font-medium text-right">exposure</th>
-                  <th class="font-medium text-right">avg cost</th>
-                  <th class="font-medium text-right">realized pnl</th>
-                  <th class="font-medium text-right">unrealized pnl</th>
                   <th class="font-medium">source</th>
                   <th class="font-medium">updated</th>
                 </tr>
               </thead>
               <tbody>
-                {#each rows as position (position.id)}
-                  {@const exposure = safeMetric(position.exposure.notional, position.exposure.unavailableReason)}
-                  {@const avgCost = safeMetric(position.avgCost, position.pnl.unavailableReason)}
-                  {@const realized = safeMetric(position.realizedPnl, position.pnl.unavailableReason)}
-                  {@const unrealized = safeMetric(position.unrealizedPnl, position.pnl.unavailableReason)}
+                {#each displayedRows as position (position.id)}
+                  {@const status = position.strategyStatus || position.orderStatus}
+                  {@const isMapped = Boolean(position.exchange && position.accountLabel)}
                   <tr class="border-b border-base-300 hover:bg-neutral">
                     <td>
                       <div class="flex flex-col">
@@ -379,36 +397,35 @@
                     </td>
                     <td>
                       <div class="flex flex-col">
-                        <span class="text-sm text-base-content/70 capitalize">{position.exchange || 'unavailable'}</span>
+                        <span class="text-sm capitalize {isMapped ? 'text-base-content' : 'text-base-content/50'}">
+                          {position.exchange || 'unmapped'}
+                        </span>
                         <span class="text-xs text-base-content/50">{position.accountLabel || 'account unavailable'}</span>
                       </div>
                     </td>
                     <td>
                       <div class="flex flex-col">
-                        <span class="font-mono text-xs text-base-content">{position.orderId}</span>
-                        <span class="text-xs text-base-content/50">{position.pair || 'pair unavailable'}</span>
+                        <span class="font-mono text-xs text-base-content/70" title={position.strategyKey || ''}>
+                          {shortStrategy(position.strategyKey)}
+                        </span>
+                        <span class="text-xs text-base-content/50 capitalize">{labelize(position.strategyType)}</span>
                       </div>
                     </td>
                     <td>
                       <div class="flex flex-col">
-                        <span class="font-mono text-xs text-base-content/70">{position.strategyKey || 'unattributed'}</span>
-                        <span class="text-xs text-base-content/50 capitalize">{labelize(position.strategyStatus || position.orderStatus)}</span>
+                        <span class="font-mono text-xs text-base-content" title={position.orderId}>{shortId(position.orderId)}</span>
+                        <span class="text-xs text-base-content/50">{position.pair || 'pair unavailable'}</span>
                       </div>
                     </td>
-                    <td class="text-right font-mono text-sm">{formatNumber(position.quantity, { maximumFractionDigits: 8 })}</td>
+                    <td>
+                      <span class="text-xs font-semibold capitalize {statusTone(status)}">
+                        {labelize(status)}
+                      </span>
+                    </td>
+                    <td class="text-right font-mono text-sm">{formatNumber(position.total, { maximumFractionDigits: 8 })}</td>
                     <td class="text-right font-mono text-sm">{formatNumber(position.available, { maximumFractionDigits: 8 })}</td>
-                    <td class="text-right font-mono text-sm">{formatNumber(position.locked, { maximumFractionDigits: 8 })}</td>
-                    <td class="text-right">
-                      <span class="font-mono text-sm text-base-content/70" title={exposure.reason || ''}>{exposure.value}</span>
-                    </td>
-                    <td class="text-right">
-                      <span class="font-mono text-sm text-base-content/70" title={avgCost.reason || ''}>{avgCost.value}</span>
-                    </td>
-                    <td class="text-right">
-                      <span class="font-mono text-sm text-base-content/70" title={realized.reason || ''}>{realized.value}</span>
-                    </td>
-                    <td class="text-right">
-                      <span class="font-mono text-sm text-base-content/70" title={unrealized.reason || ''}>{unrealized.value}</span>
+                    <td class="text-right font-mono text-sm" class:text-warning={Number(position.locked) > 0}>
+                      {formatNumber(position.locked, { maximumFractionDigits: 8 })}
                     </td>
                     <td class="text-xs text-base-content/60 capitalize">{dataSources(position)}</td>
                     <td class="font-mono text-xs text-base-content/60">{formatTimestamp(position.updatedAt)}</td>
@@ -422,19 +439,32 @@
             <span class="text-xs text-base-content/50">
               API limit max {response.limits.maxLimit}; metadata scan limit {response.limits.metadataScanLimit}
             </span>
-            <div class="join">
-              <button
-                type="button"
-                class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-                disabled={!response.pagination.hasPrevious || refreshing}
-                onclick={() => goToPage(page - 1)}
-              >previous</button>
-              <button
-                type="button"
-                class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
-                disabled={!response.pagination.hasNext || refreshing}
-                onclick={() => goToPage(page + 1)}
-              >next</button>
+            <div class="flex flex-wrap items-center gap-2">
+              <select
+                class="select select-sm select-bordered border-base-300 bg-base-100 font-mono text-xs"
+                bind:value={limit}
+                disabled={loading || refreshing}
+                onchange={changeLimit}
+                aria-label="rows per page"
+              >
+                {#each limitOptions as option (option)}
+                  <option value={option}>{option} rows</option>
+                {/each}
+              </select>
+              <div class="join">
+                <button
+                  type="button"
+                  class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
+                  disabled={!response.pagination.hasPrevious || refreshing}
+                  onclick={() => goToPage(page - 1)}
+                >previous</button>
+                <button
+                  type="button"
+                  class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
+                  disabled={!response.pagination.hasNext || refreshing}
+                  onclick={() => goToPage(page + 1)}
+                >next</button>
+              </div>
             </div>
           </div>
         {/if}

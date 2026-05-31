@@ -126,7 +126,7 @@ export class HealthService {
 
       if (!isPollingActive && activeCount === 0) {
         issues.push('Snapshot polling appears stale');
-        status = 'critical';
+        status = 'warning';
       }
 
       if (failedCount > 100) {

@@ -7,9 +7,10 @@
     unit?: string;
     deltaPct?: number;
     series?: number[];
+    tone?: 'neutral' | 'success' | 'warning' | 'error';
   }
 
-  let { label, value, unit, deltaPct = 0, series = [] }: Props = $props();
+  let { label, value, unit, deltaPct = 0, series = [], tone = 'neutral' }: Props = $props();
 
   let positive = $derived(deltaPct >= 0);
   let deltaText = $derived(
@@ -29,13 +30,17 @@
         >
           {deltaText}
         </span>
-      {:else}
-        <span class="font-mono-num text-xs text-base-content/40">—</span>
       {/if}
     </div>
 
     <div class="flex items-baseline gap-1.5">
-      <span class="font-mono-num text-2xl font-semibold tracking-tight text-base-content md:text-3xl">
+      <span
+        class="font-mono-num text-2xl font-semibold tracking-tight md:text-3xl"
+        class:text-base-content={tone === 'neutral'}
+        class:text-success={tone === 'success'}
+        class:text-warning={tone === 'warning'}
+        class:text-error={tone === 'error'}
+      >
         {value}
       </span>
       {#if unit}
@@ -47,8 +52,6 @@
       <div class="h-9">
         <Sparkline values={series} {positive} width={240} height={36} />
       </div>
-    {:else}
-      <span class="text-xs text-base-content/40 capitalize">trend unavailable</span>
     {/if}
   </div>
 </div>

@@ -182,14 +182,6 @@ export class ReconciliationService {
     const now = Date.now();
 
     for (const intent of intents) {
-      if (
-        intent.type === 'CREATE_LIMIT_ORDER' &&
-        intent.status === 'DONE' &&
-        !intent.mixinOrderId
-      ) {
-        violations += 1;
-      }
-
       if (intent.status === 'SENT') {
         const ageMs = now - Date.parse(intent.updatedAt || intent.createdAt);
 

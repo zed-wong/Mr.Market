@@ -49,6 +49,16 @@
     SKIP: 'bg-base-content/5 text-base-content/60',
   };
 
+  type KpiTone = 'neutral' | 'success' | 'warning' | 'error';
+
+  interface DashboardKpi {
+    key: string;
+    label: string;
+    value: string;
+    unit: string;
+    tone: KpiTone;
+  }
+
   const formatNumber = (value: string | number, options: Intl.NumberFormatOptions = {}) => {
     const number = typeof value === 'number' ? value : Number(value);
 
@@ -86,6 +96,47 @@
     statusDot[(status || 'unknown').toLowerCase()] || statusDot.unknown;
 
   const statusLabel = (status?: string | null) => status || 'unknown';
+
+  const statusTone = (status?: string | null): KpiTone => {
+    const normalized = (status || 'unknown').toLowerCase();
+
+    if (['healthy', 'running', 'ok', 'open', 'done'].includes(normalized)) {
+      return 'success';
+    }
+
+    if (['delayed', 'pending', 'warn', 'queued', 'degraded'].includes(normalized)) {
+      return 'warning';
+    }
+
+    if (['critical', 'error', 'failed', 'deleted', 'removed'].includes(normalized)) {
+      return 'error';
+    }
+
+    return 'neutral';
+  };
+
+  const shortId = (value?: string | null) => {
+    if (!value) {
+      return 'unavailable';
+    }
+
+    return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+  };
+
+  const shortStrategyName = (value?: string | null) => {
+    if (!value) {
+      return 'unavailable';
+    }
+
+    return shortId(value.replace(/-pureMarketMaking$/i, '').replace(/-marketMaking$/i, ''));
+  };
+
+  const readableIntentType = (value: string) =>
+    value
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
 
   const loadDashboard = async (
     range: DashboardRange = timeRange,
@@ -162,36 +213,58 @@
 
     return [
       {
-        key: 'capital',
-        label: 'total capital',
-        value: formatNumber(summary.kpis.totalCapital, { maximumFractionDigits: 8 }),
-        unit: 'units',
+        key: 'health',
+        label: 'system health',
+        value: statusLabel(summary.health.status),
+        unit: summary.health.issues.length > 0 ? `${formatNumber(summary.health.issues.length)} issues` : 'no issues',
+        tone: statusTone(summary.health.status),
       },
       {
         key: 'strategies',
         label: 'active strategies',
-        value: `${formatNumber(summary.kpis.activeStrategies)} / ${formatNumber(summary.kpis.totalStrategies)}`,
+        value: formatNumber(summary.kpis.activeStrategies),
+        unit: `${formatNumber(summary.kpis.totalStrategies)} total`,
+        tone: summary.kpis.activeStrategies > 0 ? 'success' : 'warning',
       },
       {
         key: 'orders',
         label: 'open orders',
         value: formatNumber(summary.kpis.openOrders),
         unit: `${formatNumber(summary.kpis.trackedOrders)} tracked`,
+        tone: summary.kpis.openOrders > 0 ? 'success' : 'neutral',
       },
       {
-        key: 'intents',
-        label: 'pending intents',
-        value: formatNumber(summary.kpis.pendingIntents),
-        unit: `${summary.kpis.runtimeHealth} health`,
+        key: 'violations',
+        label: 'unresolved issues',
+        value: formatNumber(summary.reconciliation.totalViolations + summary.kpis.pendingIntents),
+        unit: `${formatNumber(summary.reconciliation.totalViolations)} reconciliation`,
+        tone: summary.reconciliation.totalViolations > 0 || summary.kpis.pendingIntents > 0 ? 'error' : 'success',
       },
-    ];
+      {
+        key: 'capital',
+        label: 'capital total',
+        value: formatNumber(summary.kpis.totalCapital, { maximumFractionDigits: 2 }),
+        unit: 'asset units',
+        tone: 'neutral',
+      },
+    ] satisfies DashboardKpi[];
   });
 
-  const displayedStrategies = $derived(summary?.strategies.recent ?? []);
+  const displayedStrategies = $derived.by(() => {
+    const rows = summary?.strategies.recent ?? [];
+    const activeRows = rows.filter((strategy) => !['stopped', 'deleted', 'removed'].includes(strategy.status.toLowerCase()));
+
+    return activeRows.length > 0 ? activeRows : rows.slice(0, 4);
+  });
 
   const displayedIntents = $derived(summary?.intents.recent ?? []);
 
-  const displayedOrders = $derived(summary?.orderFlow.recent ?? []);
+  const displayedOrders = $derived.by(() => {
+    const rows = summary?.orderFlow.recent ?? [];
+    const activeRows = rows.filter((order) => !['cancelled', 'canceled', 'done', 'filled'].includes(order.status.toLowerCase()));
+
+    return activeRows.length > 0 ? activeRows : rows.slice(0, 3);
+  });
 
   const capitalRows = $derived(summary?.capital.byAsset ?? []);
 
@@ -234,6 +307,56 @@
     ];
   });
 
+  let setupStepCount = $derived(Object.values($setupStatus?.completedSteps || {}).filter(Boolean).length);
+
+  const attentionRows = $derived.by(() => {
+    if (!summary) {
+      return [];
+    }
+
+    const rows: Array<{ key: string; label: string; meta: string; tone: 'warning' | 'error' | 'success' }> = [];
+
+    if ($setupStatus?.initialized && !$setupStatus.completedAt && !setupCardDismissed) {
+      rows.push({
+        key: 'setup',
+        label: 'Setup needs completion',
+        meta: `${setupStepCount} setup steps complete`,
+        tone: 'warning',
+      });
+    }
+
+    if (statusTone(summary.health.status) !== 'success') {
+      rows.push({
+        key: 'health',
+        label: `${statusLabel(summary.health.status)} runtime health`,
+        meta: `snapshot ${formatTimestamp(summary.health.timestamp)}`,
+        tone: statusTone(summary.health.status) === 'error' ? 'error' : 'warning',
+      });
+    }
+
+    if (summary.reconciliation.totalViolations > 0) {
+      rows.push({
+        key: 'reconciliation',
+        label: 'Reconciliation violations',
+        meta: `${formatNumber(summary.reconciliation.totalViolations)} unresolved`,
+        tone: 'error',
+      });
+    }
+
+    if (summary.kpis.pendingIntents > 0) {
+      rows.push({
+        key: 'intents',
+        label: 'Pending intents',
+        meta: `${formatNumber(summary.kpis.pendingIntents)} waiting for processing`,
+        tone: 'warning',
+      });
+    }
+
+    return rows.length > 0
+      ? rows
+      : [{ key: 'clear', label: 'No immediate action needed', meta: 'health, reconciliation and intent queues are clear', tone: 'success' }];
+  });
+
   const isEmpty = $derived(
     summary !== null &&
       summary.kpis.totalStrategies === 0 &&
@@ -242,7 +365,6 @@
       summary.capital.totalRows === 0 &&
       summary.exchanges.total === 0,
   );
-  let setupStepCount = $derived(Object.values($setupStatus?.completedSteps || {}).filter(Boolean).length);
 </script>
 
 <section class="space-y-6 anim-page-enter" data-testid="admin-dashboard-shell">
@@ -281,25 +403,6 @@
     {/snippet}
   </PageHeader>
 
-  {#if $setupStatus?.initialized && !$setupStatus.completedAt && !setupCardDismissed}
-    <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="setup-floating-card">
-      <div class="card-body flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
-        <div class="flex flex-col gap-1">
-          <span class="text-lg font-semibold text-base-content capitalize">setup is not complete</span>
-          <span class="text-sm text-base-content/60">
-            {setupStepCount} setup steps are marked complete. Continue the wizard to lock setup-only config writes.
-          </span>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <a class="btn btn-primary btn-sm rounded-full capitalize" href="/setup">continue setup</a>
-          <button type="button" class="btn btn-ghost btn-sm rounded-full capitalize" onclick={dismissSetupCard}>
-            dismiss
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
   {#if loading}
     <div class="card card-surface shadow-none" data-testid="dashboard-loading">
       <div class="card-body flex-row items-center gap-3 p-5">
@@ -330,10 +433,54 @@
       </div>
     {/if}
 
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
       {#each kpis as kpi (kpi.key)}
-        <KpiCard label={kpi.label} value={kpi.value} unit={kpi.unit} deltaPct={0} series={[]} />
+        <KpiCard label={kpi.label} value={kpi.value} unit={kpi.unit} tone={kpi.tone} deltaPct={0} series={[]} />
       {/each}
+    </div>
+
+    <div class="card card-surface shadow-none">
+      <div class="card-body gap-4 p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="flex flex-col gap-1">
+            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">needs attention</span>
+            <span class="text-sm text-base-content/60">Current items that can affect trading operations.</span>
+          </div>
+          {#if $setupStatus?.initialized && !$setupStatus.completedAt && !setupCardDismissed}
+            <div class="flex flex-wrap gap-2">
+              <a class="btn btn-primary btn-sm rounded-full capitalize" href="/setup">continue setup</a>
+              <button type="button" class="btn btn-ghost btn-sm rounded-full capitalize" onclick={dismissSetupCard}>
+                dismiss
+              </button>
+            </div>
+          {/if}
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {#each attentionRows as row (row.key)}
+            <div
+              class="rounded-lg border p-4 {row.tone === 'error'
+                ? 'border-error bg-error/5'
+                : row.tone === 'warning'
+                  ? 'border-warning bg-warning/5'
+                  : 'border-success bg-success/5'}"
+            >
+              <div class="flex items-start gap-3">
+                <span
+                  class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                  class:bg-error={row.tone === 'error'}
+                  class:bg-warning={row.tone === 'warning'}
+                  class:bg-success={row.tone === 'success'}
+                ></span>
+                <div class="min-w-0 flex flex-col gap-1">
+                  <span class="text-sm font-semibold text-base-content">{row.label}</span>
+                  <span class="text-xs text-base-content/60">{row.meta}</span>
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -383,10 +530,10 @@
           <div class="flex items-center justify-between">
             <div class="flex flex-col">
               <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-                order flow
+                order activity
               </span>
               <span class="text-xs text-base-content/50 capitalize">
-                backend tracked orders · {summary.range.key}
+                active orders first · {summary.range.key}
               </span>
             </div>
             <a href="/trading/exchange-orders" class="btn-pill-ghost text-xs capitalize">
@@ -434,7 +581,7 @@
                 <tbody>
                   {#each displayedOrders.slice(0, 5) as order, index (`${order.orderId}-${index}`)}
                     <tr class="border-b border-base-300 hover:bg-neutral">
-                      <td><span class="font-mono-num text-xs text-base-content/70">{order.orderId}</span></td>
+                      <td><span class="font-mono-num text-xs text-base-content/70">{shortId(order.orderId)}</span></td>
                       <td><span class="font-mono-num text-sm text-base-content">{order.pair}</span></td>
                       <td>
                         <span
@@ -469,7 +616,7 @@
         <div class="card-body gap-4 p-5">
           <div class="flex items-center justify-between">
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-              strategy health
+              active strategy health
             </span>
             <a href="/trading/strategies" class="btn-pill-ghost text-xs capitalize">
               view strategies →
@@ -496,7 +643,7 @@
                     <tr class="border-b border-base-300 hover:bg-neutral">
                       <td>
                         <div class="flex flex-col">
-                          <span class="text-sm font-medium text-base-content">{strategy.strategyKey}</span>
+                          <span class="text-sm font-medium text-base-content">{shortStrategyName(strategy.strategyKey)}</span>
                           <span class="text-xs text-base-content/50 capitalize">{strategy.strategyType || 'type unavailable'}</span>
                         </div>
                       </td>
@@ -542,9 +689,9 @@
                 <li class="flex items-center gap-3 py-2.5">
                   <span class="font-mono-num text-xs text-base-content/50 w-28 shrink-0">{formatTimestamp(intent.createdAt)}</span>
                   <span
-                    class="rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wider {intentTone[intent.type] || 'bg-base-content/5 text-base-content/60'}"
+                    class="rounded-full px-2 py-0.5 text-[10px] font-medium {intentTone[intent.type] || 'bg-base-content/5 text-base-content/60'}"
                   >
-                    {intent.type}
+                    {readableIntentType(intent.type)}
                   </span>
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-1.5">
@@ -560,7 +707,7 @@
                       <span class="font-mono-num text-sm text-base-content">{intent.pair}</span>
                     </div>
                     <span class="text-xs text-base-content/50 capitalize">
-                      {intent.exchange}{intent.accountLabel ? ` · ${intent.accountLabel}` : ''}
+                      {intent.exchange}
                     </span>
                   </div>
                   <span class="h-1.5 w-1.5 rounded-full {safeDot(intent.status)}"></span>

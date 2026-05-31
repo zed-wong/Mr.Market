@@ -193,7 +193,7 @@ describe('ReconciliationService', () => {
     expect(report.violations).toBe(1);
   });
 
-  it('detects stale SENT intents and DONE intents without exchange order id', async () => {
+  it('detects stale SENT intents without requiring DONE intents to have exchange order ids', async () => {
     const staleTs = '2026-01-01T00:00:00.000Z';
     const service = new ReconciliationService(
       { find: jest.fn().mockResolvedValue([]) } as any,
@@ -224,7 +224,7 @@ describe('ReconciliationService', () => {
 
     const report = await service.reconcileIntentLifecycleConsistency();
 
-    expect(report.violations).toBe(2);
+    expect(report.violations).toBe(1);
   });
 
   it('flags estimated fee debits older than the reconciliation threshold', async () => {

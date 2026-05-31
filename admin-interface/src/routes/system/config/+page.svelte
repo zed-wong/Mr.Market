@@ -462,85 +462,6 @@
     {/snippet}
   </PageHeader>
 
-  <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="planned-env-config-preview">
-    <div class="card-body gap-4 p-5">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="flex max-w-3xl flex-col gap-1">
-          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">planned env config preview</span>
-          <span class="text-sm text-base-content/60">
-            Preview of non-secret and secret-like environment settings that are candidates for a DB-backed config schema. These rows are not editable yet and do not come from the backend.
-          </span>
-        </div>
-        <label class="label cursor-pointer gap-3 rounded-full border border-base-300 px-3 py-2">
-          <span class="text-xs font-medium text-base-content/70 capitalize">developer mode</span>
-          <input type="checkbox" class="toggle toggle-sm" bind:checked={showDeveloperEnv} />
-        </label>
-      </div>
-
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
-        <div class="rounded-box border border-base-300 p-3">
-          <span class="block text-xs text-base-content/50 capitalize">visible preview keys</span>
-          <span class="font-mono text-xl font-semibold text-base-content">{previewItems.length}</span>
-        </div>
-        <div class="rounded-box border border-base-300 p-3">
-          <span class="block text-xs text-base-content/50 capitalize">admin default</span>
-          <span class="font-mono text-xl font-semibold text-base-content">{plannedEnvConfigs.filter((item) => item.visibility === 'admin').length}</span>
-        </div>
-        <div class="rounded-box border border-base-300 p-3">
-          <span class="block text-xs text-base-content/50 capitalize">developer only</span>
-          <span class="font-mono text-xl font-semibold text-base-content">{plannedEnvConfigs.filter((item) => item.visibility === 'developer').length}</span>
-        </div>
-        <div class="rounded-box border border-base-300 p-3">
-          <span class="block text-xs text-base-content/50 capitalize">secret-like</span>
-          <span class="font-mono text-xl font-semibold text-base-content">{plannedEnvConfigs.filter((item) => item.sensitivity === 'secret-like').length}</span>
-        </div>
-      </div>
-
-      <div class="overflow-x-auto rounded-box border border-base-300">
-        <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>env key</th>
-              <th>category</th>
-              <th>default</th>
-              <th>type</th>
-              <th>visibility</th>
-              <th>storage note</th>
-              <th>effective</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each previewItems as item (item.key)}
-              <tr>
-                <td class="min-w-[260px] align-top">
-                  <div class="flex flex-col gap-1">
-                    <span class="font-mono text-xs font-semibold text-base-content">{item.key}</span>
-                    <span class="text-xs text-base-content/60">{item.label}</span>
-                    <span class="text-xs text-base-content/50">{item.description}</span>
-                  </div>
-                </td>
-                <td class="align-top"><span class="badge badge-ghost badge-sm capitalize">{item.category}</span></td>
-                <td class="align-top"><span class="font-mono text-xs text-base-content/70">{item.defaultValue || 'empty'}</span></td>
-                <td class="align-top"><span class="font-mono text-xs text-base-content/70">{item.type}</span></td>
-                <td class="align-top">
-                  <span class="badge badge-sm capitalize" class:badge-primary={item.visibility === 'admin'} class:badge-neutral={item.visibility === 'developer'}>
-                    {item.visibility}
-                  </span>
-                </td>
-                <td class="align-top">
-                  <span class="badge badge-sm capitalize" class:badge-warning={item.sensitivity === 'secret-like'} class:badge-ghost={item.sensitivity === 'plain'}>
-                    {item.sensitivity === 'secret-like' ? 'mask or encrypt' : 'plain DB value'}
-                  </span>
-                </td>
-                <td class="align-top"><span class="badge badge-outline badge-sm capitalize">{item.effectiveMode}</span></td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
   {#if loading}
     <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="config-loading">
       <div class="card-body flex-row items-center gap-3 p-5">
@@ -677,4 +598,83 @@
       </div>
     {/if}
   {/if}
+
+  <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="planned-env-config-preview">
+    <div class="card-body gap-4 p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="flex max-w-3xl flex-col gap-1">
+          <span class="text-lg font-semibold tracking-tight text-base-content capitalize">planned env config preview</span>
+          <span class="text-sm text-base-content/60">
+            Preview of non-secret and secret-like environment settings that are candidates for a DB-backed config schema. These rows are not editable yet and do not come from the backend.
+          </span>
+        </div>
+        <label class="label cursor-pointer gap-3 rounded-full border border-base-300 px-3 py-2">
+          <span class="text-xs font-medium text-base-content/70 capitalize">developer mode</span>
+          <input type="checkbox" class="toggle toggle-sm" bind:checked={showDeveloperEnv} />
+        </label>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div class="rounded-box border border-base-300 p-3">
+          <span class="block text-xs text-base-content/50 capitalize">visible preview keys</span>
+          <span class="font-mono text-xl font-semibold text-base-content">{previewItems.length}</span>
+        </div>
+        <div class="rounded-box border border-base-300 p-3">
+          <span class="block text-xs text-base-content/50 capitalize">admin default</span>
+          <span class="font-mono text-xl font-semibold text-base-content">{plannedEnvConfigs.filter((item) => item.visibility === 'admin').length}</span>
+        </div>
+        <div class="rounded-box border border-base-300 p-3">
+          <span class="block text-xs text-base-content/50 capitalize">developer only</span>
+          <span class="font-mono text-xl font-semibold text-base-content">{plannedEnvConfigs.filter((item) => item.visibility === 'developer').length}</span>
+        </div>
+        <div class="rounded-box border border-base-300 p-3">
+          <span class="block text-xs text-base-content/50 capitalize">secret-like</span>
+          <span class="font-mono text-xl font-semibold text-base-content">{plannedEnvConfigs.filter((item) => item.sensitivity === 'secret-like').length}</span>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-box border border-base-300">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>env key</th>
+              <th>category</th>
+              <th>default</th>
+              <th>type</th>
+              <th>visibility</th>
+              <th>storage note</th>
+              <th>effective</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each previewItems as item (item.key)}
+              <tr>
+                <td class="min-w-[260px] align-top">
+                  <div class="flex flex-col gap-1">
+                    <span class="font-mono text-xs font-semibold text-base-content">{item.key}</span>
+                    <span class="text-xs text-base-content/60">{item.label}</span>
+                    <span class="text-xs text-base-content/50">{item.description}</span>
+                  </div>
+                </td>
+                <td class="align-top"><span class="badge badge-ghost badge-sm capitalize">{item.category}</span></td>
+                <td class="align-top"><span class="font-mono text-xs text-base-content/70">{item.defaultValue || 'empty'}</span></td>
+                <td class="align-top"><span class="font-mono text-xs text-base-content/70">{item.type}</span></td>
+                <td class="align-top">
+                  <span class="badge badge-sm capitalize" class:badge-primary={item.visibility === 'admin'} class:badge-neutral={item.visibility === 'developer'}>
+                    {item.visibility}
+                  </span>
+                </td>
+                <td class="align-top">
+                  <span class="badge badge-sm capitalize" class:badge-warning={item.sensitivity === 'secret-like'} class:badge-ghost={item.sensitivity === 'plain'}>
+                    {item.sensitivity === 'secret-like' ? 'mask or encrypt' : 'plain DB value'}
+                  </span>
+                </td>
+                <td class="align-top"><span class="badge badge-outline badge-sm capitalize">{item.effectiveMode}</span></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </section>
