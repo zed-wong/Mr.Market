@@ -40,7 +40,10 @@ export type PureMarketMakingCoordinator = {
   getSession(strategyKey: string): StrategyRuntimeSession | undefined;
   setSession(strategyKey: string, session: StrategyRuntimeSession): void;
   getConnectorHealthStatus(exchange: string): ConnectorHealthStatus;
-  setConnectorHealthStatus(exchange: string, status: ConnectorHealthStatus): void;
+  setConnectorHealthStatus(
+    exchange: string,
+    status: ConnectorHealthStatus,
+  ): void;
   stopStrategyForUser(
     userId: string,
     clientId: string,
@@ -52,7 +55,9 @@ export type PureMarketMakingCoordinator = {
 @Injectable()
 export class PureMarketMakingStrategyController implements StrategyController {
   readonly strategyType = 'pureMarketMaking' as const;
-  private readonly logger = new CustomLogger(PureMarketMakingStrategyController.name);
+  private readonly logger = new CustomLogger(
+    PureMarketMakingStrategyController.name,
+  );
 
   constructor(
     @Optional()
@@ -129,7 +134,9 @@ export class PureMarketMakingStrategyController implements StrategyController {
       return [];
     }
 
-    if (coordinator.getConnectorHealthStatus(params.exchangeName) !== 'CONNECTED') {
+    if (
+      coordinator.getConnectorHealthStatus(params.exchangeName) !== 'CONNECTED'
+    ) {
       return [];
     }
 
@@ -160,36 +167,6 @@ export class PureMarketMakingStrategyController implements StrategyController {
         return [];
       }
     }
-    let priceSource: BigNumber;
-
-    try {
-      priceSource = new BigNumber(
-        await this.getPriceSource(
-          priceExchange,
-          params.pair,
-          params.priceSourceType,
-        ),
-      );
-      coordinator.setConnectorHealthStatus(params.exchangeName, 'CONNECTED');
-    } catch (error) {
-      coordinator.setConnectorHealthStatus(params.exchangeName, 'DISCONNECTED');
-      coordinator.logger.warn(
-        `Skipping cycle for ${strategyKey}: cannot resolve price source for ${params.exchangeName} ${params.pair} (${error.message})`,
-      );
-
-      return actions;
-    }
-
-    if (!priceSource.isFinite() || priceSource.isLessThanOrEqualTo(0)) {
-      coordinator.logger.warn(
-        `Skipping cycle for ${strategyKey}: invalid price source ${priceSource.toFixed()} for ${
-          params.exchangeName
-        } ${params.pair}`,
-      );
-
-      return actions;
-    }
-
     const activeOrders =
       this.exchangeOrderTrackerService?.getActiveSlotOrders?.(strategyKey) ||
       this.exchangeOrderTrackerService?.getOpenOrders?.(strategyKey) ||
@@ -201,30 +178,51 @@ export class PureMarketMakingStrategyController implements StrategyController {
           order.status === 'open' || order.status === 'partially_filled',
       );
 
-    if (this.strategyMarketDataProviderService) {
-      const maxAgeMs = 30000;
-      const freshness =
-        this.strategyMarketDataProviderService.getTrackedOrderBookFreshness(
-          params.exchangeName,
-          params.pair,
-          maxAgeMs,
-        );
+    const priceSource = this.resolveTrackedPmmPriceSource(
+      priceExchange,
+      params,
+    );
 
-      if (!freshness.fresh) {
-        this.appendAdaptivePmmSafetyCancels(
-          actions,
-          cancelledExchangeOrderIds,
-          strategyKey,
-          params,
-          ts,
-          liveOrders,
-        );
-        coordinator.logger.warn(
-          `Skipping creates for ${strategyKey}: stale market data for ${params.exchangeName} ${params.pair}; emitted ${actions.length} cancel action(s)`,
-        );
+    if (
+      !priceSource ||
+      !priceSource.isFinite() ||
+      priceSource.isLessThanOrEqualTo(0)
+    ) {
+      this.appendAdaptivePmmSafetyCancels(
+        actions,
+        cancelledExchangeOrderIds,
+        strategyKey,
+        params,
+        ts,
+        liveOrders,
+      );
+      coordinator.logger.warn(
+        `Skipping creates for ${strategyKey}: tracked price source unavailable for ${priceExchange} ${params.pair}; emitted ${actions.length} cancel action(s)`,
+      );
 
-        return actions;
-      }
+      return actions;
+    }
+
+    if (
+      this.hasUnsafeTrackedPmmBookFreshness(
+        priceExchange,
+        params.exchangeName,
+        params,
+      )
+    ) {
+      this.appendAdaptivePmmSafetyCancels(
+        actions,
+        cancelledExchangeOrderIds,
+        strategyKey,
+        params,
+        ts,
+        liveOrders,
+      );
+      coordinator.logger.warn(
+        `Skipping creates for ${strategyKey}: stale tracked market data for reference=${priceExchange} execution=${params.exchangeName} ${params.pair}; emitted ${actions.length} cancel action(s)`,
+      );
+
+      return actions;
     }
     const session = coordinator.getSession(strategyKey);
     const filledOrderDelay = Number(params.filledOrderDelay || 0);
@@ -357,7 +355,12 @@ export class PureMarketMakingStrategyController implements StrategyController {
       return actions;
     }
 
-    this.updateAdaptivePmmCadence(strategyKey, params, realizedVolatility, coordinator);
+    this.updateAdaptivePmmCadence(
+      strategyKey,
+      params,
+      realizedVolatility,
+      coordinator,
+    );
     this.applyAdaptivePmmRuntimePressureCadence(
       strategyKey,
       params,
@@ -402,13 +405,14 @@ export class PureMarketMakingStrategyController implements StrategyController {
             priceSource,
             availableBalances,
           );
-    const staleCancellationActions = this.getQuotePlanner().buildStaleOrderActions(
-      strategyKey,
-      params,
-      ts,
-      priceSource,
-      liveOrders,
-    );
+    const staleCancellationActions =
+      this.getQuotePlanner().buildStaleOrderActions(
+        strategyKey,
+        params,
+        ts,
+        priceSource,
+        liveOrders,
+      );
 
     const cancelBudgetPerSec = Number(params.cancelBudgetPerSec || 0);
 
@@ -674,7 +678,12 @@ export class PureMarketMakingStrategyController implements StrategyController {
       const currentOrder = activeOrderBySlot.get(slotKey);
 
       if (!currentOrder && targetAction) {
-        if (this.getQuotePlanner().isSlotWithinCancelCooldown(strategyKey, slotKey)) {
+        if (
+          this.getQuotePlanner().isSlotWithinCancelCooldown(
+            strategyKey,
+            slotKey,
+          )
+        ) {
           coordinator.logger.log(
             `[${strategyKey}] reason=cancel_cooldown slotKey=${slotKey}`,
           );
@@ -717,7 +726,13 @@ export class PureMarketMakingStrategyController implements StrategyController {
         continue;
       }
 
-      if (this.getQuotePlanner().isQuoteWithinTolerance(currentOrder, targetAction, tolerance)) {
+      if (
+        this.getQuotePlanner().isQuoteWithinTolerance(
+          currentOrder,
+          targetAction,
+          tolerance,
+        )
+      ) {
         coordinator.logger.log(
           `[${strategyKey}] reason=within_tolerance slotKey=${slotKey} exchangeOrderId=${currentOrder.exchangeOrderId}`,
         );
@@ -742,8 +757,6 @@ export class PureMarketMakingStrategyController implements StrategyController {
 
     return actions;
   }
-
-
 
   private getQuotePlanner(): QuotePlannerService {
     if (!this.quotePlannerService) {
@@ -924,7 +937,9 @@ export class PureMarketMakingStrategyController implements StrategyController {
 
   private logAdaptivePmmDecisionSnapshot(
     strategyKey: string,
-    snapshot: Parameters<AdaptivePmmStateService['logAdaptivePmmDecisionSnapshot']>[1],
+    snapshot: Parameters<
+      AdaptivePmmStateService['logAdaptivePmmDecisionSnapshot']
+    >[1],
   ): void {
     this.getAdaptivePmmState().logAdaptivePmmDecisionSnapshot(
       strategyKey,
@@ -994,20 +1009,70 @@ export class PureMarketMakingStrategyController implements StrategyController {
     );
   }
 
-  private async getPriceSource(
+  private resolveTrackedPmmPriceSource(
     exchangeName: string,
-    pair: string,
-    priceSourceType: PureMarketMakingStrategyDto['priceSourceType'],
-  ): Promise<number> {
+    params: PureMarketMakingStrategyDto,
+  ): BigNumber | null {
     if (!this.strategyMarketDataProviderService) {
-      throw new Error('strategy market data provider is not available');
+      return null;
     }
 
-    return await this.strategyMarketDataProviderService.getReferencePrice(
-      exchangeName,
-      pair,
-      priceSourceType,
+    const maxAgeMs = this.resolvePmmTrackedBookMaxAgeMs(params);
+    const snapshot =
+      this.strategyMarketDataProviderService.getTrackedReferencePriceSnapshot(
+        exchangeName,
+        params.pair,
+        params.priceSourceType,
+        maxAgeMs,
+      );
+
+    if (!snapshot) {
+      return null;
+    }
+
+    return new BigNumber(snapshot.price);
+  }
+
+  private hasUnsafeTrackedPmmBookFreshness(
+    referenceExchangeName: string,
+    executionExchangeName: string,
+    params: PureMarketMakingStrategyDto,
+  ): boolean {
+    if (!this.strategyMarketDataProviderService) {
+      return true;
+    }
+
+    const maxAgeMs = this.resolvePmmTrackedBookMaxAgeMs(params);
+    const exchanges = new Set(
+      [referenceExchangeName, executionExchangeName].filter(Boolean),
     );
+
+    for (const exchangeName of exchanges) {
+      const freshness =
+        this.strategyMarketDataProviderService.getTrackedOrderBookFreshness(
+          exchangeName,
+          params.pair,
+          maxAgeMs,
+        );
+
+      if (!freshness.fresh) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private resolvePmmTrackedBookMaxAgeMs(
+    params: PureMarketMakingStrategyDto,
+  ): number {
+    const configured = Number(params.staleHardMs || 0);
+
+    if (Number.isFinite(configured) && configured > 0) {
+      return configured;
+    }
+
+    return 30000;
   }
 
   private async getAvailableBalancesForPair(

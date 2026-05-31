@@ -58,6 +58,10 @@ Each PMM tick follows this priority order:
 - Adaptive fields are optional. Without them, PMM keeps the old fixed-parameter
   behavior.
 - Signal reads are cache-only during tick decisions.
+- PMM tick reference-price reads are tracked-only. `getReferencePrice` may keep
+  connector / ticker fallback for startup or diagnostic paths, but tick quote
+  decisions use tracked order-book snapshots and enter cancel-only risk-off when
+  the reference or execution book is unavailable or stale.
 - `MICROPRICE` is selected through `priceSourceType`; there is no separate
   `useMicroprice` switch.
 - Volatility uses log-return volatility, not raw price standard deviation.

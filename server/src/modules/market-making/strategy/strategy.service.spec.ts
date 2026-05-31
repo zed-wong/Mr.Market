@@ -144,6 +144,7 @@ describe('StrategyService', () => {
   };
   let strategyMarketDataProviderService: {
     getReferencePrice: jest.Mock;
+    getTrackedReferencePriceSnapshot: jest.Mock;
     getTrackedBestBidAsk: jest.Mock;
     getBestBidAsk: jest.Mock;
     getOrderBook: jest.Mock;
@@ -194,6 +195,19 @@ describe('StrategyService', () => {
           ]),
         ),
       ]),
+    );
+  };
+
+  const setTrackedReferencePrice = (price: number) => {
+    strategyMarketDataProviderService.getTrackedReferencePriceSnapshot.mockReturnValue(
+      {
+        price,
+        sourceType: PriceSourceType.MID_PRICE,
+        ageMs: 0,
+      },
+    );
+    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(
+      price,
     );
   };
 
@@ -369,8 +383,8 @@ describe('StrategyService', () => {
 
         return published;
       }),
-      getLatestIntentsForStrategy: jest.fn((strategyKey: string) =>
-        latestIntentsByStrategy.get(strategyKey) || [],
+      getLatestIntentsForStrategy: jest.fn(
+        (strategyKey: string) => latestIntentsByStrategy.get(strategyKey) || [],
       ),
       clearLatestIntentsForStrategy: jest.fn((strategyKey: string) => {
         latestIntentsByStrategy.delete(strategyKey);
@@ -381,8 +395,15 @@ describe('StrategyService', () => {
       attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
       updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     };
+    const getReferencePrice = jest.fn().mockResolvedValue(100.5);
+    const getTrackedReferencePriceSnapshot = jest.fn().mockReturnValue({
+      price: 100.5,
+      sourceType: PriceSourceType.MID_PRICE,
+      ageMs: 0,
+    });
     strategyMarketDataProviderService = {
-      getReferencePrice: jest.fn().mockResolvedValue(100.5),
+      getReferencePrice,
+      getTrackedReferencePriceSnapshot,
       getTrackedBestBidAsk: jest
         .fn()
         .mockReturnValue({ bestBid: 100, bestAsk: 101 }),
@@ -526,13 +547,17 @@ describe('StrategyService', () => {
     volumeStrategyController = module.get<VolumeStrategyController>(
       VolumeStrategyController,
     );
-    dualAccountVolumeStrategyController = module.get<DualAccountVolumeStrategyController>(
-      DualAccountVolumeStrategyController,
-    );
-    pureMarketMakingStrategyController = (service as any).getPureMarketMakingStrategyController();
-    timeIndicatorStrategyController = module.get<TimeIndicatorStrategyController>(
-      TimeIndicatorStrategyController,
-    );
+    dualAccountVolumeStrategyController =
+      module.get<DualAccountVolumeStrategyController>(
+        DualAccountVolumeStrategyController,
+      );
+    pureMarketMakingStrategyController = (
+      service as any
+    ).getPureMarketMakingStrategyController();
+    timeIndicatorStrategyController =
+      module.get<TimeIndicatorStrategyController>(
+        TimeIndicatorStrategyController,
+      );
     quotePlannerService = module.get<QuotePlannerService>(QuotePlannerService);
     adaptivePmmStateService = module.get<AdaptivePmmStateService>(
       AdaptivePmmStateService,
@@ -558,7 +583,8 @@ describe('StrategyService', () => {
   };
 
   const pureMarketMakingCoordinator = () => ({
-    getSession: (key: string) => strategySessionRegistryService.sessions.get(key),
+    getSession: (key: string) =>
+      strategySessionRegistryService.sessions.get(key),
     setSession: (key: string, session: any) =>
       strategySessionRegistryService.sessions.set(key, session),
     getConnectorHealthStatus: (exchange: string) =>
@@ -574,12 +600,14 @@ describe('StrategyService', () => {
     params: PureMarketMakingStrategyDto,
     ts: string,
   ) =>
-    (service as any).getPureMarketMakingStrategyController().buildPureMarketMakingActions(
-      strategyKey,
-      params,
-      ts,
-      pureMarketMakingCoordinator(),
-    );
+    (service as any)
+      .getPureMarketMakingStrategyController()
+      .buildPureMarketMakingActions(
+        strategyKey,
+        params,
+        ts,
+        pureMarketMakingCoordinator(),
+      );
 
   afterEach(async () => {
     await service.onModuleDestroy();
@@ -1082,7 +1110,7 @@ describe('StrategyService', () => {
     ).resolves.toBe(true);
 
     expect(balanceLedgerService.adjust).toHaveBeenCalledTimes(2);
-    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(1, {
+    expect(balanceLedgerService.adjust).toHaveBeenCalledWith({
       orderId: 'client1',
       userId: '1',
       assetId: 'BTC',
@@ -1091,7 +1119,7 @@ describe('StrategyService', () => {
       refType: 'market_making_fill',
       refId: 'ex-1',
     });
-    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(2, {
+    expect(balanceLedgerService.adjust).toHaveBeenCalledWith({
       orderId: 'client1',
       userId: '1',
       assetId: 'USDT',
@@ -1294,14 +1322,17 @@ describe('StrategyService', () => {
       receivedAt: '2026-03-18T00:01:00.000Z',
     });
 
-    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
-      1,
+    const baseAdjusts = balanceLedgerService.adjust.mock.calls.filter(
+      ([entry]) => entry.assetId === 'BTC',
+    );
+
+    expect(baseAdjusts).toHaveLength(2);
+    expect(baseAdjusts[0][0]).toEqual(
       expect.objectContaining({
         idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
     );
-    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
-      3,
+    expect(baseAdjusts[1][0]).toEqual(
       expect.objectContaining({
         idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
@@ -1352,14 +1383,17 @@ describe('StrategyService', () => {
       receivedAt: '2026-03-18T00:01:00.000Z',
     });
 
-    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
-      1,
+    const baseAdjusts = balanceLedgerService.adjust.mock.calls.filter(
+      ([entry]) => entry.assetId === 'BTC',
+    );
+
+    expect(baseAdjusts).toHaveLength(2);
+    expect(baseAdjusts[0][0]).toEqual(
       expect.objectContaining({
         idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:1.5:base',
       }),
     );
-    expect(balanceLedgerService.adjust).toHaveBeenNthCalledWith(
-      3,
+    expect(baseAdjusts[1][0]).toEqual(
       expect.objectContaining({
         idempotencyKey: 'mm-fill:client1-pureMarketMaking:ex-1:buy:99:base',
       }),
@@ -1728,7 +1762,10 @@ describe('StrategyService', () => {
       },
     };
     const buildActionsSpy = jest
-      .spyOn(dualAccountVolumeStrategyController, 'buildDualAccountVolumeActions')
+      .spyOn(
+        dualAccountVolumeStrategyController,
+        'buildDualAccountVolumeActions',
+      )
       .mockResolvedValue([]);
     const session = await registerPooledSession({
       strategyKey: 'user1-client1-dualAccountVolume',
@@ -2173,28 +2210,32 @@ describe('StrategyService', () => {
       .mockResolvedValue(undefined);
     const persistStrategyParamsSpy = mockStrategyInstanceRepository.update;
 
-    jest.spyOn(volumeStrategyController, 'buildVolumeActions').mockResolvedValue([
-      {
-        type: 'CREATE_LIMIT_ORDER',
-        intentId: 'intent-1',
-        runtimeInstanceKey: strategyKey,
-        strategyKey,
-        userId: 'user1',
-        clientId: 'client1',
-        exchange: 'binance',
-        pair: 'BTC/USDT',
-        side: 'buy',
-        price: '100',
-        qty: '1',
-        createdAt: '2026-03-01T00:00:00.000Z',
-        status: 'NEW',
-      },
-    ]);
+    jest
+      .spyOn(volumeStrategyController, 'buildVolumeActions')
+      .mockResolvedValue([
+        {
+          type: 'CREATE_LIMIT_ORDER',
+          intentId: 'intent-1',
+          runtimeInstanceKey: strategyKey,
+          strategyKey,
+          userId: 'user1',
+          clientId: 'client1',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          side: 'buy',
+          price: '100',
+          qty: '1',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          status: 'NEW',
+        },
+      ]);
 
     (service as any).strategyControllerRegistry = {
-      getController: jest.fn().mockImplementation((strategyType: string) =>
-        strategyType === 'volume' ? volumeStrategyController : undefined,
-      ),
+      getController: jest
+        .fn()
+        .mockImplementation((strategyType: string) =>
+          strategyType === 'volume' ? volumeStrategyController : undefined,
+        ),
     };
 
     await registerPooledSession({
@@ -2247,31 +2288,35 @@ describe('StrategyService', () => {
       .mockImplementation(() => undefined);
     const persistStrategyParamsSpy = mockStrategyInstanceRepository.update;
 
-    jest.spyOn(volumeStrategyController, 'buildVolumeActions').mockResolvedValue([
-      {
-        type: 'CREATE_LIMIT_ORDER',
-        intentId: 'intent-1',
-        runtimeInstanceKey: strategyKey,
-        strategyKey,
-        userId: 'user1',
-        clientId: 'client1',
-        exchange: 'binance',
-        pair: 'BTC/USDT',
-        side: 'buy',
-        price: '100',
-        qty: '1',
-        createdAt: '2026-03-01T00:00:00.000Z',
-        status: 'NEW',
-      },
-    ]);
+    jest
+      .spyOn(volumeStrategyController, 'buildVolumeActions')
+      .mockResolvedValue([
+        {
+          type: 'CREATE_LIMIT_ORDER',
+          intentId: 'intent-1',
+          runtimeInstanceKey: strategyKey,
+          strategyKey,
+          userId: 'user1',
+          clientId: 'client1',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          side: 'buy',
+          price: '100',
+          qty: '1',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          status: 'NEW',
+        },
+      ]);
     jest
       .spyOn(service as any, 'publishIntents')
       .mockRejectedValue(new Error('publish failed'));
 
     (service as any).strategyControllerRegistry = {
-      getController: jest.fn().mockImplementation((strategyType: string) =>
-        strategyType === 'volume' ? volumeStrategyController : undefined,
-      ),
+      getController: jest
+        .fn()
+        .mockImplementation((strategyType: string) =>
+          strategyType === 'volume' ? volumeStrategyController : undefined,
+        ),
     };
 
     await registerPooledSession({
@@ -2497,11 +2542,12 @@ describe('StrategyService', () => {
       bestAsk: 101,
     });
 
-    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
-      session as any,
-      '2026-03-11T00:00:00.000Z',
-      stopStrategyForUser,
-    );
+    const actions =
+      await dualAccountVolumeStrategyController.buildDualAccountVolumeSessionActions(
+        session as any,
+        '2026-03-11T00:00:00.000Z',
+        stopStrategyForUser,
+      );
 
     expect(actions).toEqual([
       expect.objectContaining({
@@ -2516,7 +2562,10 @@ describe('StrategyService', () => {
     ]);
 
     (service as any).sessions.set(session.strategyKey, session);
-    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(session as any, actions);
+    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(
+      session as any,
+      actions,
+    );
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
       { strategyKey: session.strategyKey },
@@ -2568,9 +2617,10 @@ describe('StrategyService', () => {
     });
 
     (service as any).sessions.set(session.strategyKey, session);
-    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(session as any, [
-      { type: 'CREATE_LIMIT_ORDER' } as any,
-    ]);
+    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(
+      session as any,
+      [{ type: 'CREATE_LIMIT_ORDER' } as any],
+    );
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
       { strategyKey: session.strategyKey },
@@ -2627,9 +2677,10 @@ describe('StrategyService', () => {
     });
 
     (service as any).sessions.set(session.strategyKey, session);
-    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(session as any, [
-      { type: 'CREATE_LIMIT_ORDER' } as any,
-    ]);
+    await dualAccountVolumeStrategyController.onDualAccountVolumeActionsPublished(
+      session as any,
+      [{ type: 'CREATE_LIMIT_ORDER' } as any],
+    );
 
     expect(mockStrategyInstanceRepository.update).toHaveBeenCalledWith(
       { strategyKey: session.strategyKey },
@@ -2649,28 +2700,29 @@ describe('StrategyService', () => {
       .fn()
       .mockReturnValue(null);
 
-    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
-      'dual-key',
-      {
-        exchangeName: 'binance',
-        symbol: 'BTC/USDT',
-        baseIncrementPercentage: 0.1,
-        baseIntervalTime: 10,
-        baseTradeAmount: 1,
-        numTrades: 2,
-        userId: 'user1',
-        clientId: 'client1',
-        pricePushRate: 0,
-        executionCategory: 'clob_cex',
-        executionVenue: 'cex',
-        makerAccountLabel: 'maker',
-        takerAccountLabel: 'taker',
-        dynamicRoleSwitching: false,
-        publishedCycles: 0,
-        completedCycles: 0,
-      } as any,
-      '2026-03-11T00:00:00.000Z',
-    );
+    const actions =
+      await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
+        'dual-key',
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          baseIncrementPercentage: 0.1,
+          baseIntervalTime: 10,
+          baseTradeAmount: 1,
+          numTrades: 2,
+          userId: 'user1',
+          clientId: 'client1',
+          pricePushRate: 0,
+          executionCategory: 'clob_cex',
+          executionVenue: 'cex',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          dynamicRoleSwitching: false,
+          publishedCycles: 0,
+          completedCycles: 0,
+        } as any,
+        '2026-03-11T00:00:00.000Z',
+      );
 
     expect(actions).toEqual([]);
   });
@@ -2688,29 +2740,30 @@ describe('StrategyService', () => {
     });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
-    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
-      'dual-key',
-      {
-        exchangeName: 'binance',
-        symbol: 'BTC/USDT',
-        baseIncrementPercentage: 0.1,
-        baseIntervalTime: 10,
-        baseTradeAmount: 0.4,
-        numTrades: 2,
-        userId: 'user1',
-        clientId: 'client1',
-        pricePushRate: 0,
-        executionCategory: 'clob_cex',
-        executionVenue: 'cex',
-        postOnlySide: 'buy',
-        makerAccountLabel: 'maker',
-        takerAccountLabel: 'taker',
-        dynamicRoleSwitching: false,
-        publishedCycles: 0,
-        completedCycles: 0,
-      } as any,
-      '2026-03-11T00:00:00.000Z',
-    );
+    const actions =
+      await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
+        'dual-key',
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          baseIncrementPercentage: 0.1,
+          baseIntervalTime: 10,
+          baseTradeAmount: 0.4,
+          numTrades: 2,
+          userId: 'user1',
+          clientId: 'client1',
+          pricePushRate: 0,
+          executionCategory: 'clob_cex',
+          executionVenue: 'cex',
+          postOnlySide: 'buy',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          dynamicRoleSwitching: false,
+          publishedCycles: 0,
+          completedCycles: 0,
+        } as any,
+        '2026-03-11T00:00:00.000Z',
+      );
 
     expect(actions).toEqual([
       expect.objectContaining({
@@ -2740,29 +2793,30 @@ describe('StrategyService', () => {
     });
     jest.spyOn(Math, 'random').mockReturnValue(0);
 
-    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
-      'dual-key',
-      {
-        exchangeName: 'binance',
-        symbol: 'BTC/USDT',
-        baseIncrementPercentage: 0.1,
-        baseIntervalTime: 10,
-        baseTradeAmount: 2,
-        numTrades: 2,
-        userId: 'user1',
-        clientId: 'client1',
-        pricePushRate: 0,
-        executionCategory: 'clob_cex',
-        executionVenue: 'cex',
-        postOnlySide: 'buy',
-        makerAccountLabel: 'maker',
-        takerAccountLabel: 'taker',
-        dynamicRoleSwitching: false,
-        publishedCycles: 0,
-        completedCycles: 0,
-      } as any,
-      '2026-03-11T00:00:00.000Z',
-    );
+    const actions =
+      await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
+        'dual-key',
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          baseIncrementPercentage: 0.1,
+          baseIntervalTime: 10,
+          baseTradeAmount: 2,
+          numTrades: 2,
+          userId: 'user1',
+          clientId: 'client1',
+          pricePushRate: 0,
+          executionCategory: 'clob_cex',
+          executionVenue: 'cex',
+          postOnlySide: 'buy',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          dynamicRoleSwitching: false,
+          publishedCycles: 0,
+          completedCycles: 0,
+        } as any,
+        '2026-03-11T00:00:00.000Z',
+      );
 
     expect(actions).toHaveLength(1);
     expect(actions[0]).toEqual(
@@ -2793,29 +2847,30 @@ describe('StrategyService', () => {
     });
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
-    const actions = await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
-      'dual-key',
-      {
-        exchangeName: 'binance',
-        symbol: 'BTC/USDT',
-        baseIncrementPercentage: 0.1,
-        baseIntervalTime: 10,
-        baseTradeAmount: 0.4,
-        numTrades: 2,
-        userId: 'user1',
-        clientId: 'client1',
-        pricePushRate: 0,
-        executionCategory: 'clob_cex',
-        executionVenue: 'cex',
-        postOnlySide: 'buy',
-        makerAccountLabel: 'maker',
-        takerAccountLabel: 'taker',
-        dynamicRoleSwitching: false,
-        publishedCycles: 0,
-        completedCycles: 0,
-      } as any,
-      '2026-03-11T00:00:00.000Z',
-    );
+    const actions =
+      await dualAccountVolumeStrategyController.buildDualAccountVolumeActions(
+        'dual-key',
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          baseIncrementPercentage: 0.1,
+          baseIntervalTime: 10,
+          baseTradeAmount: 0.4,
+          numTrades: 2,
+          userId: 'user1',
+          clientId: 'client1',
+          pricePushRate: 0,
+          executionCategory: 'clob_cex',
+          executionVenue: 'cex',
+          postOnlySide: 'buy',
+          makerAccountLabel: 'maker',
+          takerAccountLabel: 'taker',
+          dynamicRoleSwitching: false,
+          publishedCycles: 0,
+          completedCycles: 0,
+        } as any,
+        '2026-03-11T00:00:00.000Z',
+      );
 
     expect(actions).toEqual([
       expect.objectContaining({
@@ -2840,26 +2895,27 @@ describe('StrategyService', () => {
   });
 
   it('marks repair mode when a dual-account cycle settles with mismatched fills', async () => {
-    const nextParams = await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
-      { strategyKey: 'dual-key' } as any,
-      ({
-        completedCycles: 0,
-        activeCycle: {
-          cycleId: 'cycle-mismatch',
-          tickId: 'tick-1',
-          orderId: 'order-1',
-          makerSide: 'buy',
-          makerAccountLabel: 'maker',
-          takerAccountLabel: 'taker',
-          price: '100',
-          requestedQty: '1',
-          makerFilledQty: '0.4',
-          takerFilledQty: '0.2',
-          matchedFilledQty: '0.2',
-          matchedQuoteVolume: '20',
-        },
-      } as any),
-    );
+    const nextParams =
+      await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
+        { strategyKey: 'dual-key' } as any,
+        {
+          completedCycles: 0,
+          activeCycle: {
+            cycleId: 'cycle-mismatch',
+            tickId: 'tick-1',
+            orderId: 'order-1',
+            makerSide: 'buy',
+            makerAccountLabel: 'maker',
+            takerAccountLabel: 'taker',
+            price: '100',
+            requestedQty: '1',
+            makerFilledQty: '0.4',
+            takerFilledQty: '0.2',
+            matchedFilledQty: '0.2',
+            matchedQuoteVolume: '20',
+          },
+        } as any,
+      );
 
     expect(nextParams.completedCycles).toBe(0);
     expect(nextParams.repairRequired).toBe(true);
@@ -2867,28 +2923,29 @@ describe('StrategyService', () => {
   });
 
   it('accumulates matched quote volume when a dual-account cycle settles with symmetric fills', async () => {
-    const nextParams = await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
-      { strategyKey: 'dual-key' } as any,
-      ({
-        completedCycles: 0,
-        totalMatchedBaseVolume: 0,
-        totalMatchedQuoteVolume: 0,
-        activeCycle: {
-          cycleId: 'cycle-1',
-          tickId: 'tick-1',
-          orderId: 'order-1',
-          makerSide: 'buy',
-          makerAccountLabel: 'maker',
-          takerAccountLabel: 'taker',
-          price: '100',
-          requestedQty: '1',
-          makerFilledQty: '0.4',
-          takerFilledQty: '0.4',
-          matchedFilledQty: '0.4',
-          matchedQuoteVolume: '40',
-        },
-      } as any),
-    );
+    const nextParams =
+      await dualAccountVolumeStrategyController.finalizeSettledDualAccountCycle(
+        { strategyKey: 'dual-key' } as any,
+        {
+          completedCycles: 0,
+          totalMatchedBaseVolume: 0,
+          totalMatchedQuoteVolume: 0,
+          activeCycle: {
+            cycleId: 'cycle-1',
+            tickId: 'tick-1',
+            orderId: 'order-1',
+            makerSide: 'buy',
+            makerAccountLabel: 'maker',
+            takerAccountLabel: 'taker',
+            price: '100',
+            requestedQty: '1',
+            makerFilledQty: '0.4',
+            takerFilledQty: '0.4',
+            matchedFilledQty: '0.4',
+            matchedQuoteVolume: '40',
+          },
+        } as any,
+      );
 
     expect(nextParams.completedCycles).toBe(1);
     expect(nextParams.totalMatchedBaseVolume).toBe(0.4);
@@ -2920,7 +2977,7 @@ describe('StrategyService', () => {
         },
       ]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await expect(
       buildPureMarketMakingActions(
@@ -2958,7 +3015,7 @@ describe('StrategyService', () => {
     (service as any).quoteExecutorManagerService = {
       buildQuotes: jest.fn().mockReturnValue([]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     balanceLedgerService.getExistingBalance.mockImplementation(
       async (_orderId: string, assetId: string) => {
         if (assetId === 'BTC') {
@@ -3015,9 +3072,7 @@ describe('StrategyService', () => {
     setCachedBalances({
       '2': { XIN: 0.02 },
     });
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(
-      59.635,
-    );
+    setTrackedReferencePrice(59.635);
     strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
       bestBid: 59.51,
       bestAsk: 59.76,
@@ -3095,7 +3150,7 @@ describe('StrategyService', () => {
           },
         },
       });
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     strategyMarketDataProviderService.getTrackedBestBidAsk.mockReturnValue({
       bestBid: 99,
       bestAsk: 101,
@@ -3151,7 +3206,7 @@ describe('StrategyService', () => {
     (service as any).quoteExecutorManagerService = {
       buildQuotes: jest.fn().mockReturnValue([]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
@@ -3192,7 +3247,7 @@ describe('StrategyService', () => {
     (service as any).quoteExecutorManagerService = {
       buildQuotes: jest.fn().mockReturnValue([]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
@@ -3259,7 +3314,7 @@ describe('StrategyService', () => {
     (service as any).quoteExecutorManagerService = {
       buildQuotes: jest.fn().mockReturnValue([]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
       {
         freshness: {
@@ -3334,7 +3389,7 @@ describe('StrategyService', () => {
         status: 'open',
       },
     ]);
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
       {
         freshness: {
@@ -3415,7 +3470,7 @@ describe('StrategyService', () => {
         status: 'open',
       },
     ]);
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
       {
         freshness: {
@@ -3508,7 +3563,7 @@ describe('StrategyService', () => {
         status: 'open',
       },
     ]);
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     strategyMarketDataProviderService.getTrackedOrderBookFreshness.mockReturnValue(
       { fresh: false, ageMs: 45000, maxAgeMs: 30000 },
     );
@@ -3541,6 +3596,91 @@ describe('StrategyService', () => {
     expect(buildQuotes).not.toHaveBeenCalled();
   });
 
+  it('uses tracked-only PMM price snapshots without reference price fallback', async () => {
+    setTrackedReferencePrice(100);
+
+    const actions = await buildPureMarketMakingActions(
+      'order-1-pureMarketMaking',
+      {
+        userId: 'user-1',
+        clientId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 10000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(
+      strategyMarketDataProviderService.getTrackedReferencePriceSnapshot,
+    ).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      PriceSourceType.MID_PRICE,
+      30000,
+    );
+    expect(
+      strategyMarketDataProviderService.getReferencePrice,
+    ).not.toHaveBeenCalled();
+    expect(actions.some((action) => action.type === 'CREATE_LIMIT_ORDER')).toBe(
+      true,
+    );
+  });
+
+  it('checks oracle and execution tracked freshness before PMM creates', async () => {
+    setTrackedReferencePrice(100);
+    strategyMarketDataProviderService.getTrackedOrderBookFreshness.mockImplementation(
+      (exchangeName: string) => ({
+        fresh: exchangeName === 'binance-oracle',
+        ageMs: exchangeName === 'binance-oracle' ? 100 : 45000,
+        freshnessTimestamp: '2026-03-11T00:00:00.000Z',
+      }),
+    );
+
+    const actions = await buildPureMarketMakingActions(
+      'order-1-pureMarketMaking',
+      {
+        userId: 'user-1',
+        clientId: 'order-1',
+        pair: 'BTC/USDT',
+        exchangeName: 'binance',
+        oracleExchangeName: 'binance-oracle',
+        bidSpread: 0.01,
+        askSpread: 0.01,
+        orderAmount: 1,
+        orderRefreshTime: 10000,
+        numberOfLayers: 1,
+        priceSourceType: PriceSourceType.MID_PRICE,
+        amountChangePerLayer: 0,
+        amountChangeType: 'fixed',
+      },
+      '2026-03-11T00:00:00.000Z',
+    );
+
+    expect(
+      strategyMarketDataProviderService.getTrackedReferencePriceSnapshot,
+    ).toHaveBeenCalledWith(
+      'binance-oracle',
+      'BTC/USDT',
+      PriceSourceType.MID_PRICE,
+      30000,
+    );
+    expect(
+      strategyMarketDataProviderService.getTrackedOrderBookFreshness,
+    ).toHaveBeenCalledWith('binance-oracle', 'BTC/USDT', 30000);
+    expect(
+      strategyMarketDataProviderService.getTrackedOrderBookFreshness,
+    ).toHaveBeenCalledWith('binance', 'BTC/USDT', 30000);
+    expect(actions).toEqual([]);
+  });
+
   it('cancels live PMM orders and skips creates when order reservation is paused', async () => {
     balanceLedgerService.isReservationPaused.mockImplementation(
       (_orderId: string, assetId: string) => assetId === 'USDT',
@@ -3565,7 +3705,7 @@ describe('StrategyService', () => {
         status: 'open',
       },
     ]);
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     const actions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
@@ -3602,7 +3742,7 @@ describe('StrategyService', () => {
     const buildQuotes = jest.fn().mockReturnValue([]);
 
     (service as any).quoteExecutorManagerService = { buildQuotes };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
       {
         freshness: {
@@ -3678,7 +3818,7 @@ describe('StrategyService', () => {
         sellLastPausedUntilMs: null,
       }),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
@@ -3740,7 +3880,7 @@ describe('StrategyService', () => {
         rateLimitCount: 1,
       }),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
@@ -3802,7 +3942,7 @@ describe('StrategyService', () => {
         rateLimitCount: 0,
       }),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
@@ -3922,7 +4062,7 @@ describe('StrategyService', () => {
     (service as any).quoteExecutorManagerService = {
       buildQuotes: jest.fn().mockReturnValue([]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     strategyMarketDataProviderService.getAdaptivePmmSignalSnapshot.mockReturnValue(
       {
         freshness: {
@@ -4013,7 +4153,7 @@ describe('StrategyService', () => {
         exchangeOrderId: 'sell-1',
       },
     ]);
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     const actions = await buildPureMarketMakingActions(
       'order-1-pureMarketMaking',
@@ -4045,8 +4185,8 @@ describe('StrategyService', () => {
       .spyOn((service as any).logger, 'warn')
       .mockImplementation(() => undefined);
 
-    strategyMarketDataProviderService.getReferencePrice.mockRejectedValueOnce(
-      new Error('feed down'),
+    strategyMarketDataProviderService.getTrackedReferencePriceSnapshot.mockReturnValueOnce(
+      null,
     );
     await expect(
       buildPureMarketMakingActions(
@@ -4069,8 +4209,12 @@ describe('StrategyService', () => {
       ),
     ).resolves.toEqual([]);
 
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValueOnce(
-      0,
+    strategyMarketDataProviderService.getTrackedReferencePriceSnapshot.mockReturnValueOnce(
+      {
+        price: 0,
+        sourceType: PriceSourceType.MID_PRICE,
+        ageMs: 0,
+      },
     );
     await expect(
       buildPureMarketMakingActions(
@@ -4128,7 +4272,7 @@ describe('StrategyService', () => {
         },
       ]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await expect(
       buildPureMarketMakingActions(
@@ -4210,7 +4354,7 @@ describe('StrategyService', () => {
         },
       ]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await expect(
       buildPureMarketMakingActions(
@@ -4249,7 +4393,7 @@ describe('StrategyService', () => {
         },
       ]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await expect(
       buildPureMarketMakingActions(
@@ -4328,7 +4472,7 @@ describe('StrategyService', () => {
     setCachedBalances({
       default: { BTC: 0, USDT: 1000 },
     });
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await expect(
       buildPureMarketMakingActions(
@@ -4488,7 +4632,7 @@ describe('StrategyService', () => {
     (service as any).quoteExecutorManagerService = {
       buildQuotes: jest.fn().mockReturnValue([]),
     };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
 
     await expect(
       buildPureMarketMakingActions(
@@ -4544,7 +4688,7 @@ describe('StrategyService', () => {
     ]);
 
     (service as any).quoteExecutorManagerService = { buildQuotes };
-    strategyMarketDataProviderService.getReferencePrice.mockResolvedValue(100);
+    setTrackedReferencePrice(100);
     exchangeOrderTrackerService.getActiveSlotOrders
       .mockReturnValueOnce([staleOrder])
       .mockReturnValueOnce([]);
