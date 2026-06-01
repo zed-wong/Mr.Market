@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 
@@ -194,6 +194,103 @@ export class CampaignService {
         ? String(campaign.exchange_name).toLowerCase()
         : null,
     }));
+  }
+
+  async getCampaignProgress(
+    chainId: number,
+    campaignAddress: string,
+  ): Promise<Record<string, unknown>> {
+    const accessToken = await this.getOperatorAccessToken(chainId);
+
+    return this.getRecordingOracleCampaignData(
+      `/campaigns/${chainId}-${campaignAddress}/my-progress`,
+      accessToken,
+      'progress',
+    );
+  }
+
+  async getCampaignLeaderboard(
+    chainId: number,
+    campaignAddress: string,
+  ): Promise<Record<string, unknown>> {
+    const accessToken = await this.getOperatorAccessToken(chainId);
+
+    return this.getRecordingOracleCampaignData(
+      `/campaigns/${chainId}-${campaignAddress}/leaderboard`,
+      accessToken,
+      'leaderboard',
+    );
+  }
+
+  private async getRecordingOracleCampaignData(
+    path: string,
+    accessToken: string,
+    label: string,
+  ): Promise<Record<string, unknown>> {
+    try {
+      const { data } = await this.hufiRecordingOracleAPI.get<
+        Record<string, unknown>
+      >(path, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      return data;
+    } catch (error) {
+      const status = axios.isAxiosError(error)
+        ? error.response?.status
+        : undefined;
+      const errorMessage = this.getAxiosErrorMessage(error);
+
+      this.logger.warn(
+        `HuFi campaign ${label} request failed (${path}): ${errorMessage}`,
+      );
+
+      throw new HttpException(
+        `HuFi campaign ${label} request failed: ${errorMessage}`,
+        status && status >= 400 && status < 500
+          ? status
+          : HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
+  private getAxiosErrorMessage(error: unknown): string {
+    if (!axios.isAxiosError(error)) {
+      return error instanceof Error ? error.message : String(error);
+    }
+
+    const responseData = error.response?.data;
+
+    if (responseData && typeof responseData === 'object') {
+      const message = (responseData as Record<string, unknown>).message;
+
+      if (Array.isArray(message)) {
+        return message.join(', ');
+      }
+      if (message) {
+        return String(message);
+      }
+      return JSON.stringify(responseData);
+    }
+
+    if (typeof responseData === 'string') {
+      return responseData;
+    }
+
+    return error.message || 'Unknown error occurred';
+  }
+
+  private async getOperatorAccessToken(chainId: number): Promise<string> {
+    const privateKey = this.configService.get<string>('web3.private_key');
+
+    if (!privateKey) {
+      throw new Error('WEB3 private key is not configured');
+    }
+
+    return this.getAccessToken(
+      this.web3Service.getOperatorAddress(chainId),
+      privateKey,
+    );
   }
 
   private async fetchAllJoinedCampaigns(

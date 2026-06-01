@@ -158,6 +158,28 @@ export interface AdminCampaign {
   [key: string]: unknown;
 }
 
+export interface CampaignProgress {
+  score: number;
+  result: number;
+  estimated_reward: number;
+  [key: string]: unknown;
+}
+
+export interface LeaderboardEntry {
+  address: string;
+  score: number;
+  result: number;
+  estimated_reward: number;
+  [key: string]: unknown;
+}
+
+export interface CampaignLeaderboard {
+  data: LeaderboardEntry[];
+  total: number;
+  updated_at: string;
+  [key: string]: unknown;
+}
+
 export type DirectStartPayload =
   | {
       exchangeName: string;

@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
+import { CampaignService } from 'src/modules/campaign/campaign.service';
 
 import { AdminAuditInterceptor } from '../system/admin-audit.interceptor';
 import {
@@ -32,6 +33,7 @@ export class AdminDirectMarketMakingController {
   constructor(
     private readonly adminDirectMarketMakingService: AdminDirectMarketMakingService,
     private readonly performanceService: PerformanceService,
+    private readonly campaignService: CampaignService,
   ) {}
 
   @Post('direct-start')
@@ -95,6 +97,24 @@ export class AdminDirectMarketMakingController {
   @ApiOperation({ summary: 'List available HuFi campaigns' })
   async listCampaigns() {
     return this.adminDirectMarketMakingService.listCampaigns();
+  }
+
+  @Get('campaigns/:chainId/:address/progress')
+  @ApiOperation({ summary: 'Get HuFi campaign progress' })
+  async getCampaignProgress(
+    @Param('chainId') chainId: string,
+    @Param('address') address: string,
+  ) {
+    return this.campaignService.getCampaignProgress(Number(chainId), address);
+  }
+
+  @Get('campaigns/:chainId/:address/leaderboard')
+  @ApiOperation({ summary: 'Get HuFi campaign leaderboard' })
+  async getCampaignLeaderboard(
+    @Param('chainId') chainId: string,
+    @Param('address') address: string,
+  ) {
+    return this.campaignService.getCampaignLeaderboard(Number(chainId), address);
   }
 
   @Post('campaign-join')

@@ -1,5 +1,6 @@
 <script lang="ts">
     import BigNumber from "bignumber.js";
+    import { browser } from "$app/environment";
     import { onDestroy, onMount } from "svelte";
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
@@ -65,6 +66,7 @@
     import ResumeOrderModal from "$lib/components/market-making/direct/ResumeOrderModal.svelte";
     import RemoveOrderModal from "$lib/components/market-making/direct/RemoveOrderModal.svelte";
     import AllCampaignsModal from "$lib/components/market-making/direct/AllCampaignsModal.svelte";
+    import CampaignDetailsModal from "$lib/components/market-making/direct/CampaignDetailsModal.svelte";
     import JoinCampaignModal from "$lib/components/market-making/direct/JoinCampaignModal.svelte";
     import OrderDetailsDialog from "$lib/components/market-making/direct/OrderDetailsDialog.svelte";
 
@@ -212,7 +214,8 @@
                 resumeOrderCandidate ||
                 removeOrderCandidate ||
                 showAllCampaigns ||
-                showJoinModal,
+                showJoinModal ||
+                selectedCampaignForDetails,
         );
     }
 
@@ -324,6 +327,7 @@
     let joinCampaignApiKeyId = "";
     let joinCampaignEvmAddress = "";
     let selectedCampaign: AdminCampaign | null = null;
+    let selectedCampaignForDetails: AdminCampaign | null = null;
 
     $: orders = initialOrders;
     $: campaigns = initialCampaigns;
@@ -406,6 +410,7 @@
     }
 
     function getToken(): string {
+        if (!browser) return "";
         return localStorage.getItem("admin-access-token") || "";
     }
 
@@ -1124,6 +1129,7 @@
                 <CampaignsPanel
                     {campaigns}
                     onJoin={openJoinModal}
+                    onViewDetails={(campaign) => (selectedCampaignForDetails = campaign)}
                     onViewAll={() => (showAllCampaigns = true)}
                 />
             </div>
@@ -1221,6 +1227,14 @@
     bind:joinCampaignEvmAddress
     onConfirm={submitCampaignJoin}
     onCancel={() => (showJoinModal = false)}
+/>
+
+<CampaignDetailsModal
+    show={Boolean(selectedCampaignForDetails)}
+    campaign={selectedCampaignForDetails}
+    token={getToken()}
+    serverAddress={walletStatusAddress}
+    onClose={() => (selectedCampaignForDetails = null)}
 />
 
 <OrderDetailsDialog

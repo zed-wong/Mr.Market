@@ -5,6 +5,7 @@
 
     export let campaigns: AdminCampaign[] = [];
     export let onJoin: (campaign: AdminCampaign) => void;
+    export let onViewDetails: (campaign: AdminCampaign) => void = () => {};
     export let onViewAll: () => void = () => {};
 
     let copiedAddress = "";
@@ -241,6 +242,13 @@
                             </div>
                         </div>
                     </div>
+
+                    <button
+                        class="btn btn-primary text-primary-content text-sm font-semibold py-2.5 rounded-lg shadow-sm"
+                        on:click={() => onViewDetails(campaign)}
+                    >
+                        {$_("admin_direct_mm_view_details")}
+                    </button>
                 </div>
             {/each}
         </div>

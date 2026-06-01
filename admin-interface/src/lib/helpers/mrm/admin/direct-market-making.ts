@@ -2,6 +2,8 @@ import { MRM_BACKEND_URL } from "$lib/helpers/constants";
 import { getHeaders, handleApiResponse } from "$lib/helpers/mrm/common";
 import type {
   AdminCampaign,
+  CampaignLeaderboard,
+  CampaignProgress,
   CampaignJoinPayload,
   DirectOrderStatus,
   DirectOrderSummary,
@@ -137,6 +139,38 @@ export const listAdminCampaigns = async (
 ): Promise<AdminCampaign[]> => {
   const response = await fetch(
     `${MRM_BACKEND_URL}/admin/market-making/campaigns`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const getCampaignProgress = async (
+  chainId: number,
+  address: string,
+  token: string,
+): Promise<CampaignProgress> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/campaigns/${chainId}/${address}/progress`,
+    {
+      method: "GET",
+      headers: getHeaders(token),
+    },
+  );
+
+  return handleApiResponse(response);
+};
+
+export const getCampaignLeaderboard = async (
+  chainId: number,
+  address: string,
+  token: string,
+): Promise<CampaignLeaderboard> => {
+  const response = await fetch(
+    `${MRM_BACKEND_URL}/admin/market-making/campaigns/${chainId}/${address}/leaderboard`,
     {
       method: "GET",
       headers: getHeaders(token),
