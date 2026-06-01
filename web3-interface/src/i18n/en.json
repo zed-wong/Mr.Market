@@ -20,6 +20,7 @@
   "login_wrong_network_message": "Switch to Ethereum or Sepolia before signing in with Ethereum.",
   "login_ready_title": "Ready to connect",
   "login_ready_message": "Use Reown AppKit to connect a wallet, then sign the backend-provided SIWE challenge.",
+  "login_validation_wallet": "Use validation wallet",
   "login_error_no_wallet": "Connect a supported EVM wallet before signing in.",
   "login_error_generic": "Unable to complete wallet sign-in.",
   "protected_auth_gate_title": "Preparing secure session",

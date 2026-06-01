@@ -33,6 +33,8 @@ describe('browser-visible deterministic wallet demo controls', () => {
     expect(source).toContain('signWalletMessage');
     expect(source).toContain('login(message, signature)');
     expect(source).toContain('login-sign-message');
+    expect(source).toContain('login-validation-wallet');
+    expect(source).toContain('connectValidationWallet');
     expect(source).not.toContain('connectDemoWallet');
     expect(source).not.toContain('login-continue-without-wallet');
     expect(source).not.toContain('login-demo-wrong-network');

@@ -20,6 +20,7 @@
   "login_wrong_network_message": "请切换到 Ethereum 或 Sepolia 后再使用以太坊登录。",
   "login_ready_title": "准备连接",
   "login_ready_message": "使用 Reown AppKit 连接钱包，然后签署后端提供的 SIWE 挑战。",
+  "login_validation_wallet": "使用验证钱包",
   "login_error_no_wallet": "登录前请连接受支持的 EVM 钱包。",
   "login_error_generic": "无法完成钱包登录。",
   "protected_auth_gate_title": "正在准备安全会话",

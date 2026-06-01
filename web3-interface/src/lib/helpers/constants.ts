@@ -19,6 +19,8 @@ const requireEnv = (key: string): string => {
 
 export const getMrmBackendUrl = (): string => requireEnv('PUBLIC_MRM_BACKEND_URL').replace(/\/$/, '');
 export const getReownProjectId = (): string => requireEnv('PUBLIC_REOWN_PROJECT_ID');
+export const isValidationWalletEnabled = (): boolean =>
+  env.PUBLIC_ENABLE_VALIDATION_WALLET === '1' || env.PUBLIC_ENABLE_VALIDATION_WALLET === 'true';
 export const getEthereumVaultAddress = (): string | undefined =>
   env.PUBLIC_ETHEREUM_VAULT_ADDRESS || undefined;
 

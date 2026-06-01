@@ -1,10 +1,13 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { tick } from 'svelte';
   import { _ } from 'svelte-i18n';
   import { getNonce, login } from '$lib/helpers/api/auth';
   import { buildSiweMessage } from '$lib/helpers/siwe/siwe';
   import { isAuthed, loginLoading } from '$lib/stores/auth';
   import {
+    canUseValidationWallet,
+    connectValidationWallet,
     openNetworkModal,
     openWalletModal,
     signWalletMessage,
@@ -56,6 +59,17 @@
       loginLoading.set(false);
     }
   };
+
+  const signInWithValidationWallet = async () => {
+    authError = null;
+    try {
+      await connectValidationWallet();
+      await tick();
+      await signIn();
+    } catch (error) {
+      authError = error instanceof Error && error.message ? error.message : $_('login_error_generic');
+    }
+  };
 </script>
 
 <section class="flex min-h-[70vh] flex-col justify-center" data-testid="web3-login">
@@ -76,6 +90,16 @@
         >
           {$loginLoading ? $_('signing') : $_('sign_in_button')}
         </button>
+        {#if canUseValidationWallet()}
+          <button
+            class="btn-pill-ghost"
+            onclick={signInWithValidationWallet}
+            disabled={$loginLoading}
+            data-testid="login-validation-wallet"
+          >
+            {$_('login_validation_wallet')}
+          </button>
+        {/if}
       </div>
 
       {#if authError}

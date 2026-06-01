@@ -1,11 +1,13 @@
 import { derived, get, writable } from 'svelte/store';
-import { signMessage as wagmiSignMessage } from '@wagmi/core';
+import { connect as wagmiConnect, signMessage as wagmiSignMessage } from '@wagmi/core';
 import {
   deterministicAccountForWallet,
   isSupportedDemoWallet,
   namespaceLabel,
   type WalletNamespace,
 } from '$lib/helpers/mock-web3';
+import { isValidationWalletEnabled } from '$lib/helpers/constants';
+import { VALIDATION_WALLET_CONNECTOR_ID } from '$lib/helpers/wallet/validation-wallet';
 
 export type WalletStatus = 'disconnected' | 'connecting' | 'connected' | 'unsupported';
 export type DemoWalletPreset = 'evm' | 'solana' | 'wrong-network';
@@ -220,6 +222,47 @@ export const openWalletModal = async () => {
 
 export const closeWalletModal = async () => {
   appKitInstance?.close();
+};
+
+export const canUseValidationWallet = () => isValidationWalletEnabled();
+
+export const connectValidationWallet = async () => {
+  if (!canUseValidationWallet()) {
+    throw new Error('Validation wallet is not enabled');
+  }
+
+  const appKit = await getWalletAppKit();
+  if (!appKit) {
+    throw new Error('Wallet connection is unavailable');
+  }
+
+  const { getWagmiAdapter } = await loadAppKitModule();
+  const adapter = getWagmiAdapter();
+  const connector = adapter?.wagmiConfig.connectors.find(
+    (candidate) => candidate.id === VALIDATION_WALLET_CONNECTOR_ID
+  );
+  if (!adapter?.wagmiConfig || !connector) {
+    throw new Error('Validation wallet connector is unavailable');
+  }
+
+  const result = await wagmiConnect(adapter.wagmiConfig, { connector });
+  const address = result.accounts[0] ?? null;
+  if (!address) {
+    throw new Error('Validation wallet did not return an EVM account');
+  }
+
+  demoWalletActive = false;
+  clearPersistedDemoWallet();
+  namespaceAccounts.evm = { address, connected: true, status: 'connected' };
+  namespaceAccounts.solana = { address: null, connected: false, status: 'disconnected' };
+  const chain = adapter.wagmiConfig.chains.find((candidate) => candidate.id === result.chainId);
+  walletStatus.set('connected');
+  walletAddress.set(address);
+  walletNamespace.set('evm');
+  walletChainId.set(result.chainId);
+  walletNetwork.set(chain?.name ?? 'Ethereum');
+
+  return address;
 };
 
 export const openNetworkModal = async () => {

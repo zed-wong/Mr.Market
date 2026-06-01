@@ -12,7 +12,8 @@ import {
   type AppKitNetwork,
 } from '@reown/appkit/networks';
 import { get } from 'svelte/store';
-import { getReownProjectId } from '../constants';
+import { getReownProjectId, isValidationWalletEnabled } from '../constants';
+import { createValidationWalletConnector } from './validation-wallet';
 import { darkTheme } from '$lib/stores/theme';
 
 let appKitInstance: ReturnType<typeof createAppKit> | null = null;
@@ -33,22 +34,35 @@ export const APPKIT_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
   solana,
 ];
 
+const EVM_APPKIT_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
+  mainnet,
+  sepolia,
+  arbitrum,
+  base,
+  polygon,
+  optimism,
+];
+
 export const initAppKit = () => {
   if (appKitInstance) return appKitInstance;
   if (typeof window === 'undefined') return null;
 
   const projectId = getReownProjectId();
+  const validationWalletEnabled = isValidationWalletEnabled();
+  const connectors = validationWalletEnabled ? [createValidationWalletConnector()] : undefined;
+  const networks = validationWalletEnabled ? EVM_APPKIT_NETWORKS : APPKIT_NETWORKS;
 
   wagmiAdapter = new WagmiAdapter({
-    networks: APPKIT_NETWORKS,
+    networks,
     projectId,
+    ...(connectors ? { connectors } : {}),
   });
 
-  solanaAdapter = new SolanaAdapter({});
+  solanaAdapter = validationWalletEnabled ? null : new SolanaAdapter({});
 
   appKitInstance = createAppKit({
-    adapters: [wagmiAdapter, solanaAdapter],
-    networks: APPKIT_NETWORKS,
+    adapters: solanaAdapter ? [wagmiAdapter, solanaAdapter] : [wagmiAdapter],
+    networks,
     projectId,
     metadata: {
       name: 'Mr.Market',

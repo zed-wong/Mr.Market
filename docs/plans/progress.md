@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-06-01
+
+- Add a validation-gated Reown/Wagmi EVM connector for browser SIWE checks: the web3 validation runtime now exposes an automatable local signing wallet only when `PUBLIC_ENABLE_VALIDATION_WALLET=1`, while login still requests `/auth/web3/nonce`, signs through the Wagmi signer, and submits `/auth/web3/login`.
+
 ## 2026-05-31
 
 - Wire real `web3-interface` SIWE auth: protected `/app/*` routes now validate stored JWTs through `/auth/web3/session`, login requests `/auth/web3/nonce` and signs the SIWE message through the Reown/Wagmi wallet signer before persisting `/auth/web3/login` JWTs, logout clears backend/local auth state, and invalid sessions show a re-sign path.
