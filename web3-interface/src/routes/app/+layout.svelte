@@ -2,7 +2,6 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { _ } from 'svelte-i18n';
   import { initi18n } from '../../i18n/i18n';
   import { darkTheme } from '$lib/stores/theme';
   import { toWeb3Theme } from '$lib/theme/themes';
@@ -25,9 +24,6 @@
   let i18nReady = $state(false);
   let web3Theme = $derived(toWeb3Theme($darkTheme));
   let authenticatedWalletKey = '';
-  let isLoginRoute = $derived(page.url.pathname === '/app/login');
-  let isPublicReadOnlyRoute = $derived(page.url.pathname === '/app/market-making');
-  let canRenderCurrentRoute = $derived(isLoginRoute || isPublicReadOnlyRoute || ($checked && $isAuthed));
   const loginHref = () => `/app/login?next=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`;
 
   $effect(() => {
@@ -96,11 +92,6 @@
     }
   });
 
-  $effect(() => {
-    if (!i18nReady || !$checked || isLoginRoute || isPublicReadOnlyRoute || $isAuthed) return;
-    void goto(loginHref());
-  });
-
   const reconnectSession = () => {
     void goto(loginHref());
     openWalletModal();
@@ -121,18 +112,7 @@
     <main class="min-w-0 flex-1">
       <div class="mx-auto w-full max-w-5xl px-5 pt-6 pb-20 md:px-10 md:pt-10">
         <TopBar />
-        {#if canRenderCurrentRoute}
-          {@render children?.()}
-        {:else}
-          <section class="card-surface mx-auto mt-12 max-w-2xl px-8 py-12 text-center" data-testid="protected-auth-gate">
-            <span class="loading loading-spinner loading-sm"></span>
-            <span class="mt-4 block font-display text-2xl text-base-content">{$_('protected_auth_gate_title')}</span>
-            <span class="mt-2 block text-sm text-base-content/60">
-              {$_('protected_auth_gate_message')}
-            </span>
-            <a href={loginHref()} class="btn-pill-primary mt-6 inline-flex">{$_('connect_wallet')}</a>
-          </section>
-        {/if}
+        {@render children?.()}
       </div>
     </main>
     <SessionExpiredDialog onConfirm={reconnectSession} />

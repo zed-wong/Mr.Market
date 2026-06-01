@@ -9,7 +9,7 @@
 
 <section class="pt-2 max-w-xl" data-testid="legacy-create-replaced">
   <span class="eyebrow">Replaced route</span>
-  <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Opening the new order form</span>
+  <span class="mt-3 block font-display text-3xl tracking-tight text-base-content">Opening the new order form</span>
   <span class="mt-4 block text-base-content/60">
     Market-making setup now starts with an exchange pair, funding asset, amount, and order-attributed deposit.
   </span>

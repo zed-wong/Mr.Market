@@ -55,6 +55,10 @@ export interface HufiCampaignStats {
   paid_rewards_usd?: number;
 }
 
+export interface HufiTotalVolumeStats {
+  total_volume?: number;
+}
+
 export class HufiLauncherError extends Error {
   status?: number;
 
@@ -68,11 +72,25 @@ export class HufiLauncherError extends Error {
 export const hufiCampaignLauncherBaseUrl = (): string =>
   (env.PUBLIC_HUFI_CAMPAGIN_LAUNCHER_URL || 'https://cl.hu.finance').replace(/\/$/, '');
 
+export const hufiReportingBaseUrl = (): string =>
+  (env.PUBLIC_HUFI_REPORTING_URL || 'https://ro.hu.finance').replace(/\/$/, '');
+
 const launcherFetch = async <T>(path: string): Promise<T> => {
   const response = await fetch(`${hufiCampaignLauncherBaseUrl()}${path}`);
   if (!response.ok) {
     throw new HufiLauncherError(
       `HuFi Campaign Launcher request failed (${response.status} ${response.statusText})`,
+      response.status
+    );
+  }
+  return (await response.json()) as T;
+};
+
+const reportingFetch = async <T>(path: string): Promise<T> => {
+  const response = await fetch(`${hufiReportingBaseUrl()}${path}`);
+  if (!response.ok) {
+    throw new HufiLauncherError(
+      `HuFi reporting request failed (${response.status} ${response.statusText})`,
       response.status
     );
   }
@@ -98,6 +116,9 @@ export const fetchHufiCampaignStats = async (
   chainId = HUFI_POLYGON_CHAIN_ID
 ): Promise<HufiCampaignStats> =>
   launcherFetch<HufiCampaignStats>(`/stats/campaigns?chain_id=${chainId}`);
+
+export const fetchHufiTotalVolumeStats = async (): Promise<HufiTotalVolumeStats> =>
+  reportingFetch<HufiTotalVolumeStats>('/stats/total-volume');
 
 export const hufiCampaignDetailPath = (campaign: Pick<HufiCampaign, 'chain_id' | 'address'>): string =>
   `/app/market/campaign/${campaign.chain_id}/${campaign.address}`;

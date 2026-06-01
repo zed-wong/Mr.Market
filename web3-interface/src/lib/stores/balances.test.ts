@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
-import { balances, totalBalanceUsd } from './balances';
-import { completeMockDeposit, resetFundingSession } from './funding';
+import { balances, fundingActivity, inMarketMakingBalances, totalBalanceUsd, web3Balances } from './balances';
 import {
-  connectDemoWallet,
   walletAddress,
   walletChainId,
   walletNamespace,
@@ -21,29 +19,99 @@ const resetWallet = () => {
 
 describe('deterministic account balance bridge', () => {
   afterEach(() => {
-    resetFundingSession();
+    web3Balances.set(null);
     resetWallet();
   });
 
-  it('populates fixture balances for a connected supported EVM wallet', () => {
-    connectDemoWallet('evm');
-
-    expect(get(balances).map((balance) => balance.symbol)).toEqual(['ETH', 'USDC']);
-    expect(get(totalBalanceUsd)).toBe('28140.00');
-  });
-
-  it('hides balances for wrong-network wallets and applies funding deltas locally', () => {
+  const connectWallet = () => {
     walletStatus.set('connected');
     walletAddress.set('0x1234567890123456789012345678901234567890');
     walletNamespace.set('evm');
     walletChainId.set(11155111);
     walletNetwork.set('Sepolia');
+  };
 
-    const usdc = get(balances).find((balance) => balance.symbol === 'USDC');
-    expect(usdc?.amount).toBe('4200.00');
-    if (!usdc) return;
-    completeMockDeposit('evm-secondary', usdc, '100');
-    expect(get(balances).find((balance) => balance.symbol === 'USDC')?.amount).toBe('4300.00');
+  it('maps backend wallet balances into account balance entries', () => {
+    connectWallet();
+    web3Balances.set({
+      namespace: '/web3/balances',
+      walletOrderId: 'web3:wallet:user-1',
+      available: [
+        {
+          orderId: 'web3:wallet:user-1',
+          assetId: 'evm:11155111:usdc',
+          available: '42',
+          locked: '0',
+          total: '42',
+          initialDeposit: '42',
+          realizedDelta: '0',
+          feePaid: '0',
+          updatedAt: '2026-06-01T00:00:00Z',
+        },
+      ],
+      inMarketMaking: [],
+      lockedInOrders: [],
+      activity: [],
+      summary: {
+        availableAssetCount: 1,
+        inMarketMakingAssetCount: 0,
+        activityCount: 0,
+      },
+    });
+
+    expect(get(balances)).toMatchObject([
+      {
+        asset: 'evm:11155111:usdc',
+        symbol: 'USDC',
+        amount: '42',
+        usdValue: '42.00',
+      },
+    ]);
+    expect(get(totalBalanceUsd)).toBe('42.00');
+  });
+
+  it('exposes server activity and market-making groups, and hides balances on unsupported wallets', () => {
+    connectWallet();
+    web3Balances.set({
+      namespace: '/web3/balances',
+      walletOrderId: 'web3:wallet:user-1',
+      available: [],
+      inMarketMaking: [
+        {
+          assetId: 'asset-usdc',
+          available: '1',
+          locked: '2',
+          total: '3',
+          orderCount: 1,
+          orders: [],
+        },
+      ],
+      lockedInOrders: [],
+      activity: [
+        {
+          activityId: 'entry-1',
+          direction: 'deposit',
+          ledgerType: 'deposit_credit',
+          scope: 'wallet',
+          orderId: 'web3:wallet:user-1',
+          assetId: 'asset-usdc',
+          amount: '10',
+          signedAmount: '10',
+          refType: 'web3_wallet_deposit',
+          refId: '0xabc',
+          idempotencyKey: 'deposit-1',
+          createdAt: '2026-06-01T00:00:00Z',
+        },
+      ],
+      summary: {
+        availableAssetCount: 0,
+        inMarketMakingAssetCount: 1,
+        activityCount: 1,
+      },
+    });
+
+    expect(get(inMarketMakingBalances)[0]?.locked).toBe('2');
+    expect(get(fundingActivity)[0]?.direction).toBe('deposit');
 
     walletStatus.set('unsupported');
     walletChainId.set(137);

@@ -6,6 +6,7 @@
     HUFI_POLYGON_CHAIN_ID,
     fetchActiveHufiCampaigns,
     fetchHufiCampaignStats,
+    fetchHufiTotalVolumeStats,
     formatLauncherAmount,
     formatLauncherDate,
     formatLauncherExchange,
@@ -19,6 +20,7 @@
     shortenLauncherAddress,
     type HufiCampaign,
     type HufiCampaignStats,
+    type HufiTotalVolumeStats,
   } from '$lib/helpers/hufi-campaign-launcher';
 
   const chainOptions = [
@@ -30,6 +32,7 @@
 
   let campaigns = $state<HufiCampaign[]>([]);
   let stats = $state<HufiCampaignStats | null>(null);
+  let totalVolumeStats = $state<HufiTotalVolumeStats | null>(null);
   let isLoading = $state(true);
   let errorMessage = $state('');
   let lastLoadedAt = $state('');
@@ -50,22 +53,31 @@
     return 'bg-base-content/30';
   };
 
+  const statusBadgeClass = (status: string): string => {
+    if (status === 'active') return 'bg-success/10 text-success border-success/20';
+    if (status === 'completed') return 'bg-info/10 text-info border-info/20';
+    return 'bg-base-100 text-base-content/60 border-base-300/60';
+  };
+
   const loadCampaigns = async () => {
     const sequence = ++loadSequence;
     isLoading = true;
     errorMessage = '';
     campaigns = [];
     stats = null;
+    totalVolumeStats = null;
     lastLoadedAt = '';
     try {
       const chainId = selectedChain.id;
-      const [campaignList, campaignStats] = await Promise.all([
+      const [campaignList, campaignStats, totalVolume] = await Promise.all([
         fetchActiveHufiCampaigns({ limit: HUFI_CAMPAIGN_LIST_LIMIT, chainId }),
         fetchHufiCampaignStats(chainId).catch(() => null),
+        fetchHufiTotalVolumeStats().catch(() => null),
       ]);
       if (sequence !== loadSequence) return;
       campaigns = campaignList.results ?? [];
       stats = campaignStats;
+      totalVolumeStats = totalVolume;
       lastLoadedAt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     } catch (error) {
       if (sequence !== loadSequence) return;
@@ -102,27 +114,27 @@
   <section class="mt-8 grid gap-3 md:grid-cols-4" data-testid="market-launcher-stats">
     <div class="card-surface p-5">
       <span class="eyebrow">Active</span>
-      <span class="mt-2 block font-mono-num text-2xl text-base-content">
+      <span class="mt-2 block metric-number text-2xl font-semibold text-base-content">
         {stats?.n_active_campaigns ?? campaigns.length}
       </span>
       <span class="text-xs text-base-content/50">{selectedChain.name} launcher campaigns</span>
     </div>
     <div class="card-surface p-5">
       <span class="eyebrow">Rewards pool</span>
-      <span class="mt-2 block font-mono-num text-2xl text-base-content">{formatUsd(stats?.rewards_pool_usd)}</span>
+      <span class="mt-2 block metric-number text-2xl font-semibold text-base-content">{formatUsd(stats?.rewards_pool_usd)}</span>
       <span class="text-xs text-base-content/50">Reported by launcher stats</span>
     </div>
     <div class="card-surface p-5">
       <span class="eyebrow">Finished</span>
-      <span class="mt-2 block font-mono-num text-2xl text-base-content">
+      <span class="mt-2 block metric-number text-2xl font-semibold text-base-content">
         {stats?.n_finished_campaigns ?? '—'}
       </span>
       <span class="text-xs text-base-content/50">Historical campaigns</span>
     </div>
     <div class="card-surface p-5">
-      <span class="eyebrow">Paid rewards</span>
-      <span class="mt-2 block font-mono-num text-2xl text-base-content">{formatUsd(stats?.paid_rewards_usd)}</span>
-      <span class="text-xs text-base-content/50">{lastLoadedAt ? `Updated ${lastLoadedAt}` : 'Waiting for launcher'}</span>
+      <span class="eyebrow">Total volume</span>
+      <span class="mt-2 block metric-number text-2xl font-semibold text-base-content">{formatUsd(totalVolumeStats?.total_volume)}</span>
+      <span class="text-xs text-base-content/50">{lastLoadedAt ? `Updated ${lastLoadedAt}` : 'Waiting for reporting'}</span>
     </div>
   </section>
 
@@ -181,7 +193,10 @@
                 <div class="flex items-center gap-2.5">
                   <span class="inline-block size-2 rounded-full {statusDot(campaign.status)}"></span>
                   <span class="text-base font-semibold text-base-content">{campaign.symbol}</span>
-                  <span class="rounded-full bg-base-100 px-2.5 py-0.5 text-[11px] font-medium capitalize tracking-tight text-base-content/60">{formatLauncherStatus(campaign.status)}</span>
+                  <span class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize tracking-tight {statusBadgeClass(campaign.status)}">
+                    <span class="size-1.5 rounded-full {statusDot(campaign.status)}"></span>
+                    {formatLauncherStatus(campaign.status)}
+                  </span>
                   <span class="rounded-full bg-base-100 px-2.5 py-0.5 text-[11px] font-medium text-base-content/60">{formatLauncherType(campaign.type)}</span>
                 </div>
                 <span class="inline-block text-base-content/40 transition-transform duration-220 ease-out group-hover:translate-x-1 group-hover:text-primary">→</span>
@@ -194,19 +209,19 @@
               <div class="grid gap-3 pt-1 md:grid-cols-4">
                 <div class="flex flex-col rounded-2xl bg-base-100 px-4 py-3">
                   <span class="text-xs text-base-content/50">Funded</span>
-                  <span class="font-mono-num font-semibold text-base-content">{formatLauncherAmount(campaign.fund_amount, campaign.fund_token_decimals, campaign.fund_token_symbol)}</span>
+                  <span class="text-num font-semibold text-base-content">{formatLauncherAmount(campaign.fund_amount, campaign.fund_token_decimals, campaign.fund_token_symbol)}</span>
                 </div>
                 <div class="flex flex-col rounded-2xl bg-base-100 px-4 py-3">
                   <span class="text-xs text-base-content/50">Dates</span>
-                  <span class="font-mono-num font-semibold text-base-content">{formatLauncherDate(campaign.start_date)} → {formatLauncherDate(campaign.end_date)}</span>
+                  <span class="text-num font-semibold text-base-content">{formatLauncherDate(campaign.start_date)} → {formatLauncherDate(campaign.end_date)}</span>
                 </div>
                 <div class="flex flex-col rounded-2xl bg-base-100 px-4 py-3">
                   <span class="text-xs text-base-content/50">Target</span>
-                  <span class="font-mono-num font-semibold text-primary">{formatLauncherTarget(campaign)}</span>
+                  <span class="text-num font-semibold text-primary">{formatLauncherTarget(campaign)}</span>
                 </div>
                 <div class="flex flex-col rounded-2xl bg-base-100 px-4 py-3">
                   <span class="text-xs text-base-content/50">Paid</span>
-                  <span class="font-mono-num font-semibold text-base-content">{launcherAmountPaid(campaign)} paid</span>
+                  <span class="text-num font-semibold text-base-content">{launcherAmountPaid(campaign)} paid</span>
                   <progress class="progress progress-primary mt-2 h-1.5" value={launcherFundUsagePercent(campaign)} max="100"></progress>
                 </div>
               </div>

@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   depositMarketMakingOrder,
+  getBalances,
+  getDepositInstructions,
   getMarketMakingOrderDetail,
+  getWithdrawStatus,
   listMarketMakingOptions,
   listMarketMakingOrders,
   listMarketMakingStrategies,
   pauseMarketMakingOrder,
   resumeMarketMakingOrder,
   startMarketMakingOrder,
+  submitWithdraw,
+  verifyDeposit,
   withdrawMarketMakingOrder,
 } from './web3';
 
@@ -79,5 +84,51 @@ describe('web3 market-making API helper URLs', () => {
       '/web3/market-making/options',
     ]);
     expect(paths.join('\n')).not.toContain(legacyWeb3MarketMakingNamespace());
+  });
+
+  it('uses real web3 funding endpoint contracts', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        namespace: '/web3/funding-test',
+        available: [],
+        supportedTokens: [],
+        withdrawalId: 'withdrawal-1',
+        status: 'blocked',
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getBalances();
+    await getDepositInstructions('11155111');
+    await verifyDeposit({
+      chainId: 11155111,
+      tokenAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+      amount: '1',
+      txHash: `0x${'a'.repeat(64)}`,
+    });
+    await submitWithdraw({
+      chainId: 11155111,
+      tokenAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+      amount: '1',
+      idempotencyKey: 'withdraw-1',
+    });
+    await getWithdrawStatus('withdrawal-1');
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      path: new URL(String(url)).pathname,
+      search: new URL(String(url)).search,
+      method: String((init as RequestInit | undefined)?.method ?? 'GET'),
+      body: (init as RequestInit | undefined)?.body,
+    }));
+
+    expect(calls.map((call) => `${call.method} ${call.path}${call.search}`)).toEqual([
+      'GET /web3/balances',
+      'GET /web3/deposit/instructions?chainId=11155111',
+      'POST /web3/deposit/verify',
+      'POST /web3/withdraw',
+      'GET /web3/withdraw/withdrawal-1',
+    ]);
+    expect(String(calls[2].body)).toContain('txHash');
+    expect(String(calls[3].body)).toContain('idempotencyKey');
   });
 });

@@ -1,20 +1,24 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import Section from '$lib/components/common/Section.svelte';
   import StatRow from '$lib/components/common/StatRow.svelte';
-  import { balances, totalBalanceUsd } from '$lib/stores/balances';
-  import { fundingActivityForAccount, sessionFundingActivity } from '$lib/stores/funding';
+  import { balances, balancesError, balancesLoading, fundingActivity, inMarketMakingBalances, refreshBalances, totalBalanceUsd } from '$lib/stores/balances';
   import { openMockWallet, openNetworkModal, walletAccount, walletIsConnected, walletIsUnsupported, walletNamespaceLabel, walletNetwork } from '$lib/stores/wallet';
 
-  type WalletPageState = 'loaded' | 'loading' | 'empty' | 'error';
+  let displayedBalances = $derived($balances);
+  let displayedTotalBalanceUsd = $derived($totalBalanceUsd);
 
-  let walletPageState = $state<WalletPageState>('loaded');
-  let fundingActivity = $derived(
-    walletPageState === 'loaded' && $walletIsConnected && !$walletIsUnsupported
-      ? fundingActivityForAccount($walletAccount?.id, $walletAccount?.namespace ?? null, $sessionFundingActivity)
-      : []
-  );
-  let displayedBalances = $derived(walletPageState === 'loaded' ? $balances : []);
-  let displayedTotalBalanceUsd = $derived(walletPageState === 'loaded' ? $totalBalanceUsd : '0.00');
+  onMount(() => {
+    if ($walletIsConnected && !$walletIsUnsupported) {
+      void refreshBalances();
+    }
+  });
+
+  $effect(() => {
+    if ($walletIsConnected && !$walletIsUnsupported) {
+      void refreshBalances();
+    }
+  });
 </script>
 
 <div class="anim-page-enter" data-testid="web3-wallet-funding">
@@ -31,19 +35,6 @@
     </div>
   </section>
 
-  <section class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="wallet-state-controls">
-    <span class="text-sm text-base-content/60">State preview uses deterministic local data and keeps funding actions recoverable.</span>
-    <label class="flex items-center gap-2 text-sm">
-      <span class="eyebrow">State</span>
-      <select class="bg-transparent border-b border-base-300 px-0 py-1 focus:outline-none focus:border-base-content" bind:value={walletPageState} data-testid="wallet-state-select">
-        <option value="loaded">Loaded balances</option>
-        <option value="loading">Loading state</option>
-        <option value="empty">Empty state</option>
-        <option value="error">Error state</option>
-      </select>
-    </label>
-  </section>
-
   {#if !$walletIsConnected && !$walletIsUnsupported}
     <section class="mt-6 card-surface flex flex-wrap items-center justify-between gap-3 px-5 py-4" data-testid="wallet-disconnected-gate">
       <span class="text-body-muted">Connect a wallet to show account-specific balances and funding.</span>
@@ -57,22 +48,22 @@
   {/if}
 
   <Section title="Assets" eyebrow="Account scoped">
-    {#if walletPageState === 'loading'}
+    {#if $balancesLoading}
       <div class="card-surface flex items-center justify-center gap-3 px-5 py-10 text-center text-body-muted" data-testid="wallet-loading-state">
         <span class="loading loading-spinner loading-sm"></span>
-        <span>Reconciling deterministic asset balances for this account…</span>
+        <span>Loading ledger-derived wallet balances…</span>
       </div>
-    {:else if walletPageState === 'error'}
+    {:else if $balancesError}
       <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="wallet-error-state">
-        <span class="block font-medium text-base-content">Balance preview unavailable</span>
-        <span class="mt-1 block text-sm">No backend request failed. Return to loaded balances to retry the local funding view.</span>
-        <button class="btn-pill-primary mt-4" onclick={() => { walletPageState = 'loaded'; }}>Retry balances</button>
+        <span class="block font-medium text-base-content">Balances unavailable</span>
+        <span class="mt-1 block text-sm">{$balancesError}</span>
+        <button class="btn-pill-primary mt-4" onclick={() => void refreshBalances()}>Retry balances</button>
       </div>
-    {:else if walletPageState === 'empty'}
+    {:else if displayedBalances.length === 0 && $walletIsConnected && !$walletIsUnsupported}
       <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="wallet-empty-state">
         <span class="block font-medium text-base-content">No funded assets yet</span>
-        <span class="mt-1 block text-sm">Simulate a deposit to create the first deterministic balance and funding activity row.</span>
-        <a href="/app/deposit" class="btn-pill-primary mt-4 inline-flex">Simulate deposit</a>
+        <span class="mt-1 block text-sm">Verify an on-chain deposit to create the first ledger balance.</span>
+        <a href="/app/deposit" class="btn-pill-primary mt-4 inline-flex">Verify deposit</a>
       </div>
     {:else if displayedBalances.length > 0}
       {#each displayedBalances as balance}
@@ -86,29 +77,47 @@
       {/each}
     {:else}
       <div class="card-surface px-5 py-10 text-center text-body-muted">
-        No available balances for the current mocked session.
+        Connect a wallet to view ledger-derived balances.
+      </div>
+    {/if}
+  </Section>
+
+  <Section title="In market-making" eyebrow="Order scoped">
+    {#if $inMarketMakingBalances.length > 0}
+      {#each $inMarketMakingBalances as balance}
+        <StatRow
+          label={balance.assetId}
+          sublabel={`${balance.orderCount} order${balance.orderCount === 1 ? '' : 's'} · locked ${balance.locked}`}
+          value={balance.available}
+          subvalue={`total ${balance.total}`}
+          badge="order scoped"
+        />
+      {/each}
+    {:else}
+      <div class="card-surface px-5 py-10 text-center text-body-muted">
+        No order-scoped market-making balances are locked for this account.
       </div>
     {/if}
   </Section>
 
   <Section title="Funding activity" eyebrow="Recent">
     <div data-testid="funding-activity">
-      {#if walletPageState === 'loading'}
+      {#if $balancesLoading}
         <div class="card-surface flex items-center justify-center gap-3 px-5 py-10 text-center text-body-muted" data-testid="wallet-activity-loading-state">
           <span class="loading loading-spinner loading-sm"></span>
-          <span>Preparing funding activity timeline…</span>
+          <span>Loading server funding activity…</span>
         </div>
-      {:else if walletPageState === 'error'}
+      {:else if $balancesError}
         <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="wallet-activity-error-state">
-          Activity preview could not be prepared. Retry the loaded wallet state above.
+          Activity could not be loaded. Retry balances above.
         </div>
-      {:else if walletPageState === 'empty'}
+      {:else if $fundingActivity.length === 0 && $walletIsConnected && !$walletIsUnsupported}
         <div class="card-surface px-5 py-10 text-center text-body-muted" data-testid="wallet-activity-empty-state">
-          No funding activity yet. Deposits and withdrawals will appear here with deterministic timestamps.
+          No funding activity yet. Deposits and withdrawals will appear here after ledger entries are recorded.
         </div>
-      {:else if fundingActivity.length > 0}
-        {#each fundingActivity as entry}
-          <StatRow label={entry.label} sublabel={entry.detail} value="→" />
+      {:else if $fundingActivity.length > 0}
+        {#each $fundingActivity as entry}
+          <StatRow label={entry.direction} sublabel={`${entry.assetId} · ${entry.scope} · ${entry.createdAt}`} value={entry.amount} />
         {/each}
       {:else if $walletIsUnsupported}
         <div class="card-surface px-5 py-10 text-center text-body-muted">

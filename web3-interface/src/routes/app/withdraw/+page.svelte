@@ -1,55 +1,57 @@
 <script lang="ts">
+  import { onDestroy, onMount } from 'svelte';
   import Section from '$lib/components/common/Section.svelte';
   import StatRow from '$lib/components/common/StatRow.svelte';
-  import { balances } from '$lib/stores/balances';
-  import {
-    minimumWithdrawFor,
-    sessionFundingActivity,
-    submitMockWithdrawal,
-    fundingActivityForAccount,
-    validateMockWithdrawal,
-    withdrawFeeFor,
-    type MockFundingResult,
-  } from '$lib/stores/funding';
+  import { getWithdrawStatus, submitWithdraw } from '$lib/helpers/api/web3';
+  import { balances, fundingActivity, refreshBalances } from '$lib/stores/balances';
   import {
     openNetworkModal,
     openMockWallet,
-    walletAccount,
+    walletAddress,
     walletIsConnected,
     walletIsUnsupported,
-    walletNamespace,
     walletNamespaceLabel,
     walletNetwork,
   } from '$lib/stores/wallet';
+  import type { BalanceEntry } from '$lib/types/balances';
+  import type { WithdrawResponse } from '$lib/types/withdraw';
 
   let selectedAsset = $state('');
   let amount = $state('');
-  let destination = $state('');
   let step = $state<'form' | 'confirm' | 'submitted'>('form');
-  let withdrawResult = $state<MockFundingResult | null>(null);
+  let withdrawResult = $state<WithdrawResponse | null>(null);
+  let submitting = $state(false);
+  let submitError = $state<string | null>(null);
+  let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
   let selectedBalance = $derived($balances.find((balance) => balance.asset === selectedAsset));
-  let destinationExample = $derived(
-    $walletNamespace === 'solana'
-      ? 'Example: So11111111111111111111111111111111111111112'
-      : 'Example: 0x742d35Cc6634C0532925a3b844Bc454e4438f44e'
-  );
-  let validationErrors = $derived(
-    validateMockWithdrawal({
-      namespace: $walletNamespace,
-      balance: selectedBalance,
-      destination,
-      amount,
-    })
-  );
+  let validationErrors = $derived(validateWithdrawal(selectedBalance, amount));
   let formIsValid = $derived(
-    Boolean($walletIsConnected && !$walletIsUnsupported && selectedBalance && Object.keys(validationErrors).length === 0)
+    Boolean($walletIsConnected && !$walletIsUnsupported && selectedBalance && Object.keys(validationErrors).length === 0 && !submitting)
   );
-  let fundingActivity = $derived(
-    $walletIsConnected && !$walletIsUnsupported
-      ? fundingActivityForAccount($walletAccount?.id, $walletNamespace, $sessionFundingActivity)
-      : []
-  );
+
+  function validateWithdrawal(balance: BalanceEntry | null | undefined, amountInput: string): Record<string, string> {
+    const errors: Record<string, string> = {};
+    if (!balance) {
+      errors.amount = 'Select an available asset before preparing a withdrawal.';
+      return errors;
+    }
+    if (!balance.chainId || !balance.tokenAddress) {
+      errors.asset = 'Selected asset is missing EVM token metadata.';
+    }
+    const trimmed = amountInput.trim();
+    const parsed = Number(trimmed);
+    if (!trimmed || !Number.isFinite(parsed)) {
+      errors.amount = 'Enter a numeric withdrawal amount.';
+    } else if (parsed <= 0) {
+      errors.amount = 'Withdrawal amount must be greater than zero.';
+    } else if ((trimmed.split('.')[1]?.length ?? 0) > balance.decimals) {
+      errors.amount = `${balance.symbol} supports up to ${balance.decimals} decimals.`;
+    } else if (parsed > Number(balance.amount || 0)) {
+      errors.amount = `Amount exceeds available balance of ${balance.amount} ${balance.symbol}.`;
+    }
+    return errors;
+  }
 
   $effect(() => {
     const availableAssets = $balances.map((balance) => balance.asset);
@@ -60,24 +62,68 @@
     }
   });
 
+  onMount(() => {
+    if ($walletIsConnected && !$walletIsUnsupported) {
+      void refreshBalances();
+    }
+  });
+
+  onDestroy(() => {
+    if (pollTimer) clearTimeout(pollTimer);
+  });
+
   const reviewWithdrawal = () => {
     if (!formIsValid) return;
     step = 'confirm';
   };
 
-  const submitWithdrawal = () => {
-    if (!$walletAccount || !selectedBalance || !formIsValid) return;
-    withdrawResult = submitMockWithdrawal($walletAccount.id, selectedBalance, amount, destination);
-    step = 'submitted';
+  const pollWithdrawal = (withdrawalId: string) => {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(async () => {
+      try {
+        const status = await getWithdrawStatus(withdrawalId);
+        withdrawResult = status;
+        if (status.status === 'pending' || status.status === 'submitted') {
+          pollWithdrawal(withdrawalId);
+        } else {
+          await refreshBalances();
+        }
+      } catch (error) {
+        submitError = error instanceof Error ? error.message : 'Unable to refresh withdrawal status';
+      }
+    }, 2500);
+  };
+
+  const submitWithdrawal = async () => {
+    if (!selectedBalance?.chainId || !selectedBalance.tokenAddress || !formIsValid) return;
+    submitting = true;
+    submitError = null;
+    try {
+      withdrawResult = await submitWithdraw({
+        chainId: selectedBalance.chainId,
+        tokenAddress: selectedBalance.tokenAddress,
+        amount: amount.trim(),
+        idempotencyKey: `withdraw:${selectedBalance.assetId}:${amount.trim()}:${Date.now()}`,
+      });
+      step = 'submitted';
+      await refreshBalances();
+      if (withdrawResult.status === 'pending' || withdrawResult.status === 'submitted') {
+        pollWithdrawal(withdrawResult.withdrawalId);
+      }
+    } catch (error) {
+      submitError = error instanceof Error ? error.message : 'Unable to submit withdrawal';
+    } finally {
+      submitting = false;
+    }
   };
 </script>
 
 <div class="max-w-2xl" data-testid="web3-withdraw">
   <section class="pt-2">
     <span class="eyebrow">Funding</span>
-    <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content">Withdraw</span>
+    <span class="mt-3 block font-display text-4xl md:text-5xl tracking-tight text-base-content">Withdraw</span>
     <span class="mt-4 block text-base-content/60">
-      Mocked withdrawal form with chain-specific context. Submission is disabled while disconnected or on an unsupported chain.
+      Withdraw available ledger funds back to the authenticated wallet. Server submission is blocked when chain credentials are unavailable.
     </span>
   </section>
 
@@ -112,21 +158,11 @@
         </select>
       </label>
 
-      <label class="flex flex-col gap-2">
-        <span class="eyebrow">Destination address</span>
-        <input
-          class="bg-transparent border-b border-base-300 px-0 py-2 font-mono-num text-sm focus:outline-none focus:border-base-content disabled:opacity-40"
-          bind:value={destination}
-          oninput={() => { step = 'form'; }}
-          placeholder={destinationExample}
-          disabled={!$walletIsConnected}
-          data-testid="withdraw-destination-input"
-        />
-        <span class="text-xs text-base-content/50">{destinationExample}</span>
-        {#if validationErrors.destination}
-          <span class="text-xs text-error" data-testid="withdraw-destination-error">{validationErrors.destination}</span>
-        {/if}
-      </label>
+      <div class="flex flex-col gap-2">
+        <span class="eyebrow">Recipient</span>
+        <code class="font-mono-num rounded-2xl border border-base-300 px-4 py-3 text-sm break-all">{$walletAddress ?? 'Connect wallet'}</code>
+        <span class="text-xs text-base-content/50">Withdrawals are sent to the authenticated wallet address.</span>
+      </div>
 
       <label class="flex flex-col gap-2">
         <span class="eyebrow">Amount</span>
@@ -139,8 +175,11 @@
           data-testid="withdraw-amount-input"
         />
         <span class="text-xs text-base-content/50">
-          Available: {selectedBalance?.amount ?? '0'} {selectedBalance?.symbol ?? 'asset'} · pending: {selectedBalance?.pendingAmount ?? '0'} · minimum: {minimumWithdrawFor(selectedBalance)} {selectedBalance?.symbol ?? ''}
+          Available: {selectedBalance?.amount ?? '0'} {selectedBalance?.symbol ?? 'asset'} · token: {selectedBalance?.tokenAddress ?? '—'}
         </span>
+        {#if validationErrors.asset}
+          <span class="text-xs text-error" data-testid="withdraw-asset-error">{validationErrors.asset}</span>
+        {/if}
         {#if validationErrors.amount}
           <span class="text-xs text-error" data-testid="withdraw-amount-error">{validationErrors.amount}</span>
         {/if}
@@ -160,6 +199,10 @@
       >
         Review withdrawal
       </button>
+
+      {#if submitError}
+        <span class="text-xs text-error" data-testid="withdraw-submit-error">{submitError}</span>
+      {/if}
     </div>
   </Section>
 
@@ -167,21 +210,19 @@
     <Section title="Confirm withdrawal" eyebrow="Review">
       <div class="border-t border-base-300 pt-6" data-testid="withdraw-confirmation">
         <span class="block text-sm text-base-content/60">
-          No signature, server withdrawal endpoint, RPC call, or on-chain transaction will be requested.
+          The backend will debit the wallet ledger idempotently, then submit an ERC-20 transfer if a signer is configured. Otherwise it will return blocked.
         </span>
 
         <div class="mt-6">
           <StatRow label="Asset" value={selectedBalance.symbol} />
           <StatRow label="Amount" value={amount} />
           <StatRow label="Chain" value={`${$walletNamespaceLabel} · ${$walletNetwork}`} />
-          <StatRow label="Mock fee" value={`${withdrawFeeFor(selectedBalance)} ${selectedBalance.symbol}`} sublabel="reviewing" />
+          <StatRow label="Recipient" value={$walletAddress ?? '—'} />
         </div>
-
-        <code class="mt-6 block font-mono-num rounded-2xl border border-base-300 px-4 py-3 text-sm break-all">{destination}</code>
 
         <div class="mt-6 flex flex-wrap gap-2">
           <button class="btn-pill-outline" onclick={() => { step = 'form'; }} data-testid="withdraw-edit-button">Edit</button>
-          <button class="btn-pill-primary" onclick={submitWithdrawal} data-testid="withdraw-confirm-button">Submit</button>
+          <button class="btn-pill-primary" onclick={submitWithdrawal} disabled={submitting} data-testid="withdraw-confirm-button">{submitting ? 'Submitting…' : 'Submit'}</button>
         </div>
       </div>
     </Section>
@@ -191,10 +232,20 @@
     <Section title="Submitted" eyebrow="Mocked">
       <div class="border-t border-base-300 pt-6" data-testid="withdraw-submitted">
         <span class="block text-sm text-base-content/60">
-          <span class="font-mono-num">{withdrawResult.id}</span> is {withdrawResult.status} for {withdrawResult.amount} {withdrawResult.symbol}.
+          <span class="font-mono-num">{withdrawResult.withdrawalId}</span> is {withdrawResult.status} for {withdrawResult.withdrawal.amount} {selectedBalance?.symbol ?? 'token'}.
         </span>
+        {#if withdrawResult.txHash}
+          <code class="mt-4 block font-mono-num rounded-2xl border border-base-300 px-4 py-3 text-sm break-all">{withdrawResult.txHash}</code>
+        {/if}
+        {#if withdrawResult.failureReason}
+          <span class="mt-4 block text-xs text-error">{withdrawResult.failureReason}</span>
+        {/if}
         <div class="mt-6" data-testid="withdraw-timeline">
-          {#each withdrawResult.timeline as item}
+          {#each [
+            { label: 'Requested', detail: 'Withdrawal request was accepted by the backend.', state: 'complete' },
+            { label: 'Ledger debited', detail: withdrawResult.withdrawal.ledgerEntryId ? `Ledger entry ${withdrawResult.withdrawal.ledgerEntryId}` : 'Ledger debit not recorded yet.', state: withdrawResult.withdrawal.ledgerEntryId ? 'complete' : 'pending' },
+            { label: 'Chain submission', detail: withdrawResult.txHash ?? withdrawResult.failureReason ?? 'Waiting for chain submission evidence.', state: withdrawResult.status === 'submitted' || withdrawResult.status === 'completed' ? 'complete' : withdrawResult.status === 'blocked' || withdrawResult.status === 'failed' ? 'current' : 'pending' },
+          ] as item}
             <div class="flex items-start gap-4 border-b border-base-300 py-4">
               <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full {item.state === 'pending' ? 'bg-base-300' : 'bg-primary'}"></span>
               <div class="flex flex-col">
@@ -208,15 +259,14 @@
     </Section>
   {/if}
 
-  {#if $walletIsConnected && fundingActivity.length > 0}
+  {#if $walletIsConnected && $fundingActivity.length > 0}
     <Section title="Funding activity" eyebrow="After withdrawals">
       <div class="border-t border-base-300" data-testid="withdraw-activity-preview">
-        {#each fundingActivity as entry}
+        {#each $fundingActivity as entry}
           <StatRow
-            label={entry.label}
-            sublabel={entry.detail}
-            value="→"
-            href={entry.href}
+            label={entry.direction}
+            sublabel={`${entry.assetId} · ${entry.createdAt}`}
+            value={entry.amount}
             testid="withdraw-activity-link"
           />
         {/each}

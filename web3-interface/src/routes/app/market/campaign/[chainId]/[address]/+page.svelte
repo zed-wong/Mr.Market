@@ -103,7 +103,7 @@
   {#if showLoading}
     <section class="mt-10 max-w-xl" data-testid="hufi-detail-loading">
       <span class="eyebrow">Loading</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Loading real campaign detail</span>
+      <span class="mt-3 block font-display text-3xl tracking-tight text-base-content">Loading real campaign detail</span>
       <span class="mt-4 flex items-center gap-3 text-sm text-base-content/60">
         <span class="loading loading-spinner loading-sm"></span>
         Fetching identifiers, funding, balances, oracle data, and results from the public HuFi Campaign Launcher.
@@ -112,7 +112,7 @@
   {:else if showError}
     <section class="mt-10 max-w-xl" data-testid="hufi-detail-error">
       <span class="eyebrow">Recovery</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Campaign detail unavailable</span>
+      <span class="mt-3 block font-display text-3xl tracking-tight text-base-content">Campaign detail unavailable</span>
       <span class="mt-4 block text-base-content/60">
         {previewState === 'error'
           ? 'Previewing the launcher detail error state. No mock order approval replaces this real campaign detail.'

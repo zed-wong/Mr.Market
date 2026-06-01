@@ -84,7 +84,7 @@
 <section class="flex min-h-[70vh] flex-col justify-center" data-testid="web3-login">
   <div class="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
     <div class="max-w-xl">
-      <span class="font-display text-5xl md:text-6xl tracking-tight text-base-content">{$_('login_title')}</span>
+      <span class="font-display text-4xl md:text-5xl tracking-tight text-base-content">{$_('login_title')}</span>
       <span class="mt-4 block text-base-content/60">
         {$_('login_subtitle')}
       </span>

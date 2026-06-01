@@ -129,16 +129,15 @@ describe('/app/market-making order list route', () => {
     expect(layout).not.toContain('ensureWeb3Auth');
   });
 
-  it('allows public market-making browsing while keeping private app routes protected', () => {
+  it('allows public app browsing while market-making create still routes through sign-in', () => {
     const source = listRouteSource();
     const layout = layoutSource();
     const en = JSON.parse(localeSource('en')) as Record<string, string>;
     const zh = JSON.parse(localeSource('zh')) as Record<string, string>;
 
-    expect(layout).toContain("page.url.pathname === '/app/market-making'");
-    expect(layout).toContain('isPublicReadOnlyRoute');
-    expect(layout).toContain('canRenderCurrentRoute');
-    expect(layout).toContain("goto(loginHref())");
+    expect(layout).not.toContain('protected-auth-gate');
+    expect(layout).not.toContain('canRenderCurrentRoute');
+    expect(layout).not.toContain('isPublicReadOnlyRoute');
     expect(source).toContain('createOrderHref');
     expect(source).toContain("encodeURIComponent('/app/market-making/order/new')");
     expect(source).toContain("$_('market_making_list_public_title')");

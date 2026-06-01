@@ -1,13 +1,46 @@
 export interface DepositInstructions {
-  vaultAddress: string;
-  chainId: string;
-  chainName: string;
-  tokens: DepositToken[];
+  namespace: '/web3/deposit';
+  chainId: number;
+  receiverAddress: string;
+  supportedTokens: DepositToken[];
 }
 
 export interface DepositToken {
-  address: string;
+  chainId: number;
+  assetId: string;
+  name: string;
+  tokenAddress: string;
   symbol: string;
   decimals: number;
-  isNative: boolean;
+}
+
+export interface DepositVerifyRequest {
+  chainId: number;
+  txHash: string;
+  tokenAddress: string;
+  amount: string;
+}
+
+export interface DepositVerifyResponse {
+  namespace: '/web3/deposit';
+  deposit: {
+    status: 'credited' | 'already_credited';
+    applied: boolean;
+    chainId: number;
+    txHash: string;
+    tokenAddress: string;
+    assetId: string;
+    amount: string;
+    receiverAddress: string;
+    fromAddress: string;
+    ledgerEntryId: string;
+  };
+  balance: {
+    orderId: string;
+    assetId: string;
+    available: string;
+    locked: string;
+    total: string;
+    updatedAt: string;
+  };
 }

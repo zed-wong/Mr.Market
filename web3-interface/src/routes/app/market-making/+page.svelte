@@ -325,52 +325,60 @@
   <section class="flex flex-wrap items-end justify-between gap-6 pt-8">
     <div class="flex max-w-2xl flex-col">
       <span class="eyebrow">{$_('market_making_list_eyebrow')}</span>
-      <span class="mt-3 font-display text-4xl tracking-tight text-base-content md:text-5xl lg:text-6xl">
+      <span class="mt-3 font-display text-3xl tracking-tight text-base-content md:text-4xl lg:text-5xl">
         {$_('market_making_list_title')}
       </span>
       <span class="mt-4 text-base-content/60">
         {$_('market_making_list_subtitle')}
       </span>
     </div>
-    <a
-      href={createOrderHref}
-      class="btn-pill-primary"
-      data-testid="market-making-create-order-cta"
-    >
-      {$_('market_making_list_create_order')} →
-    </a>
+    {#if gateMode === 'connected'}
+      <a
+        href={createOrderHref}
+        class="btn-pill-primary"
+        data-testid="market-making-create-order-cta"
+      >
+        {$_('market_making_list_create_order')} →
+      </a>
+    {/if}
   </section>
 
   {#if gateMode !== 'connected'}
     <!-- Public read-only overview + action-boundary gate -->
-    <section class="mt-12 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]" data-testid="market-making-public-overview">
-      <article class="card-surface px-6 py-7">
+    <section class="mt-10 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]" data-testid="market-making-public-overview">
+      <article id="market-making-model" class="rounded-[1.75rem] border border-base-300/70 bg-base-100 px-6 py-7">
         <span class="eyebrow">{$_('market_making_list_public_eyebrow')}</span>
-        <span class="mt-3 block font-display text-3xl text-base-content">
+        <span class="mt-3 block font-display text-2xl text-base-content md:text-3xl">
           {$_('market_making_list_public_title')}
         </span>
-        <span class="mt-3 block text-sm leading-6 text-base-content/65">
-          {$_('market_making_list_public_message')}
-        </span>
 
-        <div class="mt-6 grid gap-3">
-          <div class="rounded-2xl border border-base-300/70 bg-base-200/40 px-4 py-3">
-            <span class="block text-sm font-semibold text-base-content">{$_('market_making_list_public_step_status')}</span>
-            <span class="mt-1 block text-xs leading-5 text-base-content/55">
-              {$_('market_making_list_public_step_status_detail')}
-            </span>
+        <div class="mt-7 grid gap-3 md:grid-cols-3">
+          <div class="rounded-2xl border border-base-300/70 bg-base-200/30 px-4 py-4">
+            <span class="font-mono-num text-xs font-semibold text-base-content/45">DO</span>
+            <div>
+              <span class="mt-2 block text-base font-semibold text-base-content">{$_('market_making_list_public_step_status')}</span>
+              <span class="mt-1 block text-xs leading-5 text-base-content/55">
+                {$_('market_making_list_public_step_status_detail')}
+              </span>
+            </div>
           </div>
-          <div class="rounded-2xl border border-base-300/70 bg-base-200/40 px-4 py-3">
-            <span class="block text-sm font-semibold text-base-content">{$_('market_making_list_public_step_funding')}</span>
-            <span class="mt-1 block text-xs leading-5 text-base-content/55">
-              {$_('market_making_list_public_step_funding_detail')}
-            </span>
+          <div class="rounded-2xl border border-base-300/70 bg-base-200/30 px-4 py-4">
+            <span class="font-mono-num text-xs font-semibold text-base-content/45">GET</span>
+            <div>
+              <span class="mt-2 block text-base font-semibold text-base-content">{$_('market_making_list_public_step_funding')}</span>
+              <span class="mt-1 block text-xs leading-5 text-base-content/55">
+                {$_('market_making_list_public_step_funding_detail')}
+              </span>
+            </div>
           </div>
-          <div class="rounded-2xl border border-base-300/70 bg-base-200/40 px-4 py-3">
-            <span class="block text-sm font-semibold text-base-content">{$_('market_making_list_public_step_control')}</span>
-            <span class="mt-1 block text-xs leading-5 text-base-content/55">
-              {$_('market_making_list_public_step_control_detail')}
-            </span>
+          <div class="rounded-2xl border border-base-300/70 bg-base-200/30 px-4 py-4">
+            <span class="font-mono-num text-xs font-semibold text-base-content/45">COST</span>
+            <div>
+              <span class="mt-2 block text-base font-semibold text-base-content">{$_('market_making_list_public_step_control')}</span>
+              <span class="mt-1 block text-xs leading-5 text-base-content/55">
+                {$_('market_making_list_public_step_control_detail')}
+              </span>
+            </div>
           </div>
         </div>
       </article>
@@ -382,14 +390,14 @@
             ? 'order-unsupported-gate'
             : 'order-sign-in-gate'
       }>
-        <div class="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full bg-base-300/60">
+        <div class="mb-5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-base-300/60">
           {#if gateMode === 'unsupported'}
-            <span class="text-2xl">⚠</span>
+            <span class="text-xl">⚠</span>
           {:else}
-            <span class="text-2xl">⌁</span>
+            <span class="text-xl">⌁</span>
           {/if}
         </div>
-        <span class="block font-display text-2xl text-base-content">
+        <span class="block font-display text-xl text-base-content">
           {#if gateMode === 'connect'}
             {$_('market_making_list_connect_title')}
           {:else if gateMode === 'unsupported'}
@@ -407,20 +415,20 @@
             {$_('market_making_list_sign_in_message')}
           {/if}
         </span>
-        <div class="mt-6 flex flex-wrap gap-2">
+        <div class="mt-6 flex flex-col gap-2">
           {#if gateMode === 'connect'}
-            <a class="btn-pill-primary" href={createOrderHref} data-testid="order-sign-in-create-action">
-              {$_('market_making_list_sign_in_to_create')}
-            </a>
-            <button class="btn-pill-ghost" onclick={openWalletModal} data-testid="order-connect-action">
+            <button class="btn-pill-primary justify-center" onclick={openWalletModal} data-testid="order-connect-action">
               {$_('connect_wallet')}
             </button>
+            <a class="btn-pill-ghost justify-center" href="#market-making-model">
+              {$_('market_making_list_browse_model')}
+            </a>
           {:else if gateMode === 'unsupported'}
-            <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="order-switch-network">
+            <button class="btn-pill-primary justify-center" onclick={openNetworkModal} data-testid="order-switch-network">
               {$_('switch_network')}
             </button>
           {:else}
-            <a class="btn-pill-primary" href={createOrderHref} data-testid="order-sign-in-create-action">
+            <a class="btn-pill-primary justify-center" href={createOrderHref} data-testid="order-sign-in-create-action">
               {$_('market_making_list_sign_in_to_create')}
             </a>
           {/if}

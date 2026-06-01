@@ -7,7 +7,7 @@
     { href: '/app/market', label: 'Campaigns' },
     { href: '/app/market-making', label: 'Market making' },
     { href: '/app/wallet', label: 'Wallet' },
-    { href: '/app/account', label: 'Account' },
+    { href: '/app/settings', label: 'Settings' },
   ];
 
   const isActive = (href: string) => {
@@ -47,7 +47,7 @@
 
   <div class="mt-auto flex flex-col gap-1 px-3 pt-10">
     <span class="eyebrow">v1 preview</span>
-    <span class="text-xs text-base-content/40">Reown AppKit</span>
+    <span class="text-xs text-base-content/40">Open Source</span>
   </div>
 </aside>
 

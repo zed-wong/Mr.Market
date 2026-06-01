@@ -39,3 +39,11 @@ export const getNameByKey = (k: string) => {
   const lang = langs.find((lang) => lang.key === k);
   return lang ? lang.name : 'English';
 };
+
+export const setLocale = (key: string) => {
+  const nextLocale = langs.some((lang) => lang.key === key) ? key : 'en-US';
+  locale.set(nextLocale);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(LOCALE_STORAGE_KEY, nextLocale);
+  }
+};

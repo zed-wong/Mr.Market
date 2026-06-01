@@ -4,11 +4,13 @@ import {
   HufiLauncherError,
   fetchActiveHufiCampaigns,
   fetchHufiCampaignDetail,
+  fetchHufiTotalVolumeStats,
   formatLauncherAmount,
   formatLauncherDate,
   formatLauncherTarget,
   hufiCampaignDetailPath,
   hufiCampaignLauncherBaseUrl,
+  hufiReportingBaseUrl,
 } from './hufi-campaign-launcher';
 
 const sampleCampaign = {
@@ -51,6 +53,7 @@ describe('HuFi Campaign Launcher helper', () => {
   it('uses the public launcher fallback and Polygon campaign context', () => {
     expect(HUFI_POLYGON_CHAIN_ID).toBe(137);
     expect(hufiCampaignLauncherBaseUrl()).toBe('https://cl.hu.finance');
+    expect(hufiReportingBaseUrl()).toBe('https://ro.hu.finance');
     expect(hufiCampaignDetailPath(sampleCampaign)).toBe(
       '/app/market/campaign/137/0xBeA2a48CEdE2B7A78657811F0577e588a81a74Dd'
     );
@@ -84,6 +87,19 @@ describe('HuFi Campaign Launcher helper', () => {
       'https://cl.hu.finance/campaigns/137-0xBeA2a48CEdE2B7A78657811F0577e588a81a74Dd'
     );
     expect(response.symbol).toBe('ETH/USDT');
+  });
+
+  it('loads total volume from the reporting endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ total_volume: 28762337.23 }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await fetchHufiTotalVolumeStats();
+
+    expect(fetchMock).toHaveBeenCalledWith('https://ro.hu.finance/stats/total-volume');
+    expect(response.total_volume).toBe(28762337.23);
   });
 
   it('throws a typed launcher error instead of returning misleading mock content', async () => {

@@ -360,7 +360,7 @@
   {#if !$walletIsConnected && !$walletIsUnsupported}
     <section class="pt-2 max-w-xl" data-testid="order-detail-connect-gate">
       <span class="eyebrow">{$_('market_making_detail_wallet_scoped')}</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_connect_title')}</span>
+      <span class="mt-3 block font-display text-3xl tracking-tight text-base-content">{$_('market_making_detail_connect_title')}</span>
       <span class="mt-4 block text-base-content/60">
         {$_('market_making_detail_connect_message')}
       </span>
@@ -369,7 +369,7 @@
   {:else if $walletIsUnsupported}
     <section class="pt-2 max-w-xl" data-testid="order-detail-unsupported-gate">
       <span class="eyebrow">{$_('market_making_detail_network')}</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_unsupported_title')}</span>
+      <span class="mt-3 block font-display text-3xl tracking-tight text-base-content">{$_('market_making_detail_unsupported_title')}</span>
       <span class="mt-4 block text-base-content/60">
         {$_('market_making_detail_unsupported_message')}
       </span>
@@ -378,7 +378,7 @@
   {:else if isLoading}
     <section class="pt-2 max-w-xl" data-testid="order-loading-state">
       <span class="eyebrow">{$_('market_making_detail_loading_eyebrow')}</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_loading_title')}</span>
+      <span class="mt-3 block font-display text-3xl tracking-tight text-base-content">{$_('market_making_detail_loading_title')}</span>
       <span class="mt-4 flex items-center gap-3 text-sm text-base-content/60">
         <span class="loading loading-spinner loading-sm"></span>
         {$_('market_making_detail_loading_message')}
@@ -387,7 +387,7 @@
   {:else if detailError}
     <section class="pt-2 max-w-xl" data-testid="order-error-state">
       <span class="eyebrow">{$_('market_making_detail_recovery')}</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_error_title')}</span>
+      <span class="mt-3 block font-display text-3xl tracking-tight text-base-content">{$_('market_making_detail_error_title')}</span>
       <span class="mt-4 block text-base-content/60">
         {detailError}
       </span>
@@ -396,7 +396,7 @@
   {:else if isNotFound || !order}
     <section class="pt-2 max-w-xl" data-testid="order-not-found">
       <span class="eyebrow">{$_('market_making_detail_not_found_eyebrow')}</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_not_found_title')}</span>
+      <span class="mt-3 block font-display text-3xl tracking-tight text-base-content">{$_('market_making_detail_not_found_title')}</span>
       <span class="mt-4 block text-base-content/60">
         {$_('market_making_detail_not_found_message')}
       </span>
@@ -405,7 +405,7 @@
   {:else}
     <section class="pt-2">
       <span class="eyebrow capitalize">{formatState(order.state)}</span>
-      <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content font-mono-num">{$_('market_making_detail_order_prefix')} {compactOrderId(order.orderId)}</span>
+      <span class="mt-3 block font-display text-4xl md:text-5xl tracking-tight text-base-content font-mono-num">{$_('market_making_detail_order_prefix')} {compactOrderId(order.orderId)}</span>
       <span class="mt-4 block text-base-content/60">
         <span class="font-mono-num">{order.orderId}</span> · {detailNamespace} · {$walletNamespaceLabel} · <span class="font-mono-num">{$walletShortAddress}</span>
       </span>

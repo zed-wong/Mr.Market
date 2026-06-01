@@ -371,7 +371,7 @@
   <section class="pt-2 flex flex-wrap items-end justify-between gap-4">
     <div class="flex flex-col">
       <span class="eyebrow">{$_('market_making_create_eyebrow')}</span>
-      <span class="mt-3 font-display text-5xl md:text-6xl tracking-tight text-base-content">{$_('market_making_create_title')}</span>
+      <span class="mt-3 font-display text-4xl md:text-5xl tracking-tight text-base-content">{$_('market_making_create_title')}</span>
       <span class="mt-4 max-w-2xl text-base-content/60">
         {$_('market_making_create_subtitle')}
       </span>

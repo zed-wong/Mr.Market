@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
-import type { BalanceEntry } from '$lib/types/balances';
-import type { DepositInstructions } from '$lib/types/deposit';
+import type { Web3BalancesResponse } from '$lib/types/balances';
+import type { DepositInstructions, DepositVerifyRequest, DepositVerifyResponse } from '$lib/types/deposit';
 import type {
   Web3MarketMakingCreateRequest,
   Web3MarketMakingCreateResponse,
@@ -18,13 +18,20 @@ const WEB3_MARKET_MAKING_NAMESPACE = '/web3/market-making';
 const orderEndpoint = (orderId: string, suffix = ''): string =>
   `${WEB3_MARKET_MAKING_NAMESPACE}/orders/${encodeURIComponent(orderId)}${suffix}`;
 
-export const getBalances = async (): Promise<BalanceEntry[]> => {
-  return apiFetch<BalanceEntry[]>('/web3/balances');
+export const getBalances = async (): Promise<Web3BalancesResponse> => {
+  return apiFetch<Web3BalancesResponse>('/web3/balances');
 };
 
 export const getDepositInstructions = async (chainId?: string): Promise<DepositInstructions> => {
   return apiFetch<DepositInstructions>('/web3/deposit/instructions', {
     query: chainId ? { chainId } : undefined,
+  });
+};
+
+export const verifyDeposit = async (request: DepositVerifyRequest): Promise<DepositVerifyResponse> => {
+  return apiFetch<DepositVerifyResponse>('/web3/deposit/verify', {
+    method: 'POST',
+    json: request,
   });
 };
 

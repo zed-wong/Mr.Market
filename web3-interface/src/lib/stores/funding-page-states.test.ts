@@ -6,21 +6,21 @@ const source = (path: string) =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
 
 describe('funding and dashboard page state previews', () => {
-  it('exposes loaded, loading, empty, and error states on wallet and home surfaces', () => {
+  it('exposes real backend loading, empty, and error states on wallet plus preview states on home', () => {
     const walletSource = source('../../routes/app/wallet/+page.svelte');
     const homeSource = source('../../routes/app/+page.svelte');
 
-    for (const pageSource of [walletSource, homeSource]) {
-      expect(pageSource).toContain("= 'loaded'");
-      expect(pageSource).toContain("'loading'");
-      expect(pageSource).toContain("'empty'");
-      expect(pageSource).toContain("'error'");
-    }
-
-    expect(walletSource).toContain('wallet-state-select');
+    expect(walletSource).toContain('refreshBalances');
+    expect(walletSource).toContain('balancesLoading');
+    expect(walletSource).toContain('balancesError');
     expect(walletSource).toContain('wallet-loading-state');
     expect(walletSource).toContain('wallet-empty-state');
     expect(walletSource).toContain('wallet-error-state');
+
+    expect(homeSource).toContain("= 'loaded'");
+    expect(homeSource).toContain("'loading'");
+    expect(homeSource).toContain("'empty'");
+    expect(homeSource).toContain("'error'");
 
     expect(homeSource).toContain('home-state-select');
     expect(homeSource).toContain('home-loading-state');
