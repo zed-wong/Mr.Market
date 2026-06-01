@@ -5,6 +5,7 @@ import { BigNumber, ethers, Wallet } from 'ethers';
 @Injectable()
 export class Web3Service {
   private signers: { [key: number]: Wallet } = {};
+  private operatorAddress?: string;
   public readonly logger = new Logger(Web3Service.name);
 
   constructor(private readonly configService: ConfigService) {
@@ -41,8 +42,20 @@ export class Web3Service {
       },
     ];
 
+    if (privateKey) {
+      try {
+        this.operatorAddress = new Wallet(privateKey).address;
+      } catch (error) {
+        this.logger.warn(
+          `Invalid web3 private key configuration: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
     for (const network of networks) {
-      if (network.rpcUrl) {
+      if (network.rpcUrl && privateKey) {
         const provider = new ethers.providers.JsonRpcProvider(network.rpcUrl);
 
         this.signers[network.chainId] = new Wallet(privateKey, provider);
@@ -68,8 +81,20 @@ export class Web3Service {
     throw new Error('Failed to get gas price');
   }
 
-  public getOperatorAddress(): string {
-    return Object.values(this.signers)[0].address;
+  public getOperatorAddress(chainId?: number): string {
+    if (chainId && this.signers[chainId]) {
+      return this.signers[chainId].address;
+    }
+    if (this.operatorAddress) {
+      return this.operatorAddress;
+    }
+    const firstSigner = Object.values(this.signers)[0];
+
+    if (firstSigner) {
+      return firstSigner.address;
+    }
+
+    throw new Error('Web3 operator private key is not configured');
   }
 
   async verifyTransactionDetails(
@@ -78,8 +103,14 @@ export class Web3Service {
     expectedTokenAddress: string,
     expectedToAddress: string,
     expectedAmount: ethers.BigNumber,
+    expectedFromAddress?: string,
   ): Promise<boolean> {
     const signer = this.getSigner(chainId);
+
+    if (!signer?.provider) {
+      return false;
+    }
+
     const transaction = await signer.provider?.getTransaction(transactionHash);
     const receipt = await signer.provider?.getTransactionReceipt(
       transactionHash,
@@ -87,6 +118,13 @@ export class Web3Service {
 
     if (!transaction || receipt?.status !== 1) {
       return false; // Transaction failed or not found
+    }
+
+    if (
+      expectedFromAddress &&
+      transaction.from.toLowerCase() !== expectedFromAddress.toLowerCase()
+    ) {
+      return false;
     }
 
     // Verify the transaction is to the correct token contract

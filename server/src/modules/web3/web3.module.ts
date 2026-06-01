@@ -12,6 +12,8 @@ import { LedgerModule } from 'src/modules/market-making/ledger/ledger.module';
 import { PerformanceModule } from 'src/modules/market-making/performance/performance.module';
 import { UserOrdersModule } from 'src/modules/market-making/user-orders/user-orders.module';
 
+import { Web3DepositController } from './deposit/web3-deposit.controller';
+import { Web3DepositService } from './deposit/web3-deposit.service';
 import { Web3MarketMakingController } from './market-making/web3-market-making.controller';
 import { Web3MarketMakingService } from './market-making/web3-market-making.service';
 import { Web3Service } from './web3.service';
@@ -32,8 +34,8 @@ import { Web3Service } from './web3.service';
     LedgerModule,
     PerformanceModule,
   ],
-  controllers: [Web3MarketMakingController],
-  providers: [Web3Service, Web3MarketMakingService],
-  exports: [Web3Service, Web3MarketMakingService],
+  controllers: [Web3MarketMakingController, Web3DepositController],
+  providers: [Web3Service, Web3MarketMakingService, Web3DepositService],
+  exports: [Web3Service, Web3MarketMakingService, Web3DepositService],
 })
 export class Web3Module {}
