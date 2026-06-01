@@ -13,7 +13,7 @@ type DepositVerifyBody = {
   amount?: unknown;
 };
 
-type SupportedToken = {
+export type SupportedToken = {
   chainId: number;
   assetId: string;
   symbol: string;
@@ -117,6 +117,15 @@ export class Web3DepositService {
       receiverAddress,
       supportedTokens: this.getSupportedTokens(chainId),
     };
+  }
+
+  resolveSupportedTokenForChain(
+    chainIdInput?: unknown,
+    tokenAddressInput?: unknown,
+  ): SupportedToken {
+    const chainId = this.parseSupportedChainId(chainIdInput);
+
+    return this.resolveSupportedToken(chainId, tokenAddressInput);
   }
 
   async verifyDeposit(

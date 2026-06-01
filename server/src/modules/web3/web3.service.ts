@@ -97,6 +97,28 @@ export class Web3Service {
     throw new Error('Web3 operator private key is not configured');
   }
 
+  public async transferErc20(
+    chainId: number,
+    tokenAddress: string,
+    recipientAddress: string,
+    amount: ethers.BigNumber,
+  ): Promise<{ txHash: string }> {
+    const signer = this.getSigner(chainId);
+
+    if (!signer?.provider) {
+      throw new Error(`Web3 signer is not configured for chain ${chainId}`);
+    }
+
+    const contract = new ethers.Contract(
+      tokenAddress,
+      ['function transfer(address to, uint256 value) returns (bool)'],
+      signer,
+    );
+    const transaction = await contract.transfer(recipientAddress, amount);
+
+    return { txHash: transaction.hash };
+  }
+
   async verifyTransactionDetails(
     chainId: number,
     transactionHash: string,

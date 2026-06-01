@@ -60,6 +60,7 @@ import {
 } from './common/entities/orders/user-orders.entity';
 import { ConsumerReceipt } from './common/entities/system/consumer-receipt.entity';
 import { OutboxEvent } from './common/entities/system/outbox-event.entity';
+import { Web3Withdrawal } from './common/entities/web3/web3-withdrawal.entity';
 import configuration from './config/configuration';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminModule } from './modules/admin/admin.module';
@@ -173,6 +174,7 @@ function buildRedisConfig(configService: ConfigService) {
         StrategyOrderIntentEntity,
         ExchangeOrderMapping,
         TrackedOrderEntity,
+        Web3Withdrawal,
       ],
       synchronize: false,
       migrations: [join(__dirname, 'database/migrations/*{.ts,.js}')],

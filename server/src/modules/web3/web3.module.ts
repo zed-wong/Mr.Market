@@ -8,6 +8,7 @@ import { Performance } from 'src/common/entities/market-making/performance.entit
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import { Web3Withdrawal } from 'src/common/entities/web3/web3-withdrawal.entity';
 import { LedgerModule } from 'src/modules/market-making/ledger/ledger.module';
 import { PerformanceModule } from 'src/modules/market-making/performance/performance.module';
 import { UserOrdersModule } from 'src/modules/market-making/user-orders/user-orders.module';
@@ -19,6 +20,8 @@ import { Web3DepositService } from './deposit/web3-deposit.service';
 import { Web3MarketMakingController } from './market-making/web3-market-making.controller';
 import { Web3MarketMakingService } from './market-making/web3-market-making.service';
 import { Web3Service } from './web3.service';
+import { Web3WithdrawController } from './withdraw/web3-withdraw.controller';
+import { Web3WithdrawService } from './withdraw/web3-withdraw.service';
 
 @Module({
   imports: [
@@ -31,6 +34,7 @@ import { Web3Service } from './web3.service';
       StrategyExecutionHistory,
       MarketMakingOrder,
       MarketMakingLifecycleEvent,
+      Web3Withdrawal,
     ]),
     forwardRef(() => UserOrdersModule),
     LedgerModule,
@@ -40,18 +44,21 @@ import { Web3Service } from './web3.service';
     Web3MarketMakingController,
     Web3DepositController,
     Web3BalancesController,
+    Web3WithdrawController,
   ],
   providers: [
     Web3Service,
     Web3MarketMakingService,
     Web3DepositService,
     Web3BalancesService,
+    Web3WithdrawService,
   ],
   exports: [
     Web3Service,
     Web3MarketMakingService,
     Web3DepositService,
     Web3BalancesService,
+    Web3WithdrawService,
   ],
 })
 export class Web3Module {}

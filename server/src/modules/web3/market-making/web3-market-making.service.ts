@@ -23,8 +23,8 @@ import { PriceSourceType } from 'src/common/enum/pricesourcetype';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import type { MarketMakingStates } from 'src/common/types/orders/states';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
-import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
+import { MarketMakingRuntimeService } from 'src/modules/market-making/user-orders/market-making-runtime.service';
 import { UserOrdersService } from 'src/modules/market-making/user-orders/user-orders.service';
 import { DataSource, Repository } from 'typeorm';
 
