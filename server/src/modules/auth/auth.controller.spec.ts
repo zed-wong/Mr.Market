@@ -1,10 +1,15 @@
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  HttpStatus,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { GUARDS_METADATA, HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { ConfigService } from '@nestjs/config';
-import { AdminAuditLogService } from 'src/modules/admin/system/admin-audit-log.service';
 
+import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtStrategy } from './jwt.strategy';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 const JWT_SECRET = 'route-level-session-audit-secret';
 
@@ -136,6 +141,23 @@ describe('AuthController guarded routes', () => {
     expect(auditPayload).not.toContain(token);
     expect(auditPayload).not.toContain('secret-query-fragment');
     expect(auditPayload).not.toContain('Authorization');
+  });
+});
+
+describe('AuthController web3 logout', () => {
+  it('keeps JWT guard metadata and returns HTTP 200 with ok body', async () => {
+    const controller = new AuthController({} as AuthService);
+
+    expect(
+      Reflect.getMetadata(
+        HTTP_CODE_METADATA,
+        AuthController.prototype.web3Logout,
+      ),
+    ).toBe(HttpStatus.OK);
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, AuthController.prototype.web3Logout),
+    ).toContain(JwtAuthGuard);
+    await expect(controller.web3Logout()).resolves.toEqual({ ok: true });
   });
 });
 

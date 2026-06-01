@@ -3,6 +3,7 @@
 ## 2026-06-01
 
 - Add a validation-gated Reown/Wagmi EVM connector for browser SIWE checks: the web3 validation runtime now exposes an automatable local signing wallet only when `PUBLIC_ENABLE_VALIDATION_WALLET=1`, while login still requests `/auth/web3/nonce`, signs through the Wagmi signer, and submits `/auth/web3/login`.
+- Set `POST /auth/web3/logout` to return HTTP 200 while preserving its JWT guard and `{ ok: true }` response contract for web3 auth validation.
 
 ## 2026-05-31
 

@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -65,6 +66,7 @@ export class AuthController {
   }
 
   @Post('web3/logout')
+  @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   async web3Logout() {
     return { ok: true };
