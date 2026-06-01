@@ -4,6 +4,7 @@
 @import "@fontsource/inter/600.css";
 @import "@fontsource/inter/700.css";
 @import "./lib/theme/daisyui-themes.css";
+@import "layerchart/daisyui-5.css";
 
 @layer base {
   :root {

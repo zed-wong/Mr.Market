@@ -1,47 +1,34 @@
 <script lang="ts">
     import BigNumber from "bignumber.js";
     import { _ } from "svelte-i18n";
+    import { AreaChart } from "layerchart";
+    import { scalePoint } from "d3-scale";
     import type { OrderPerformancePoint } from "$lib/types/hufi/order-performance";
 
-    export let series: OrderPerformancePoint[] = [];
+    interface Props {
+        series: OrderPerformancePoint[];
+    }
 
-    const width = 640;
-    const height = 180;
-    const paddingX = 14;
-    const paddingY = 18;
+    let { series = [] }: Props = $props();
 
     function toNumber(value: string): number {
         const parsed = new BigNumber(value);
         return parsed.isFinite() ? parsed.toNumber() : 0;
     }
 
-    $: values = series.map((point) => toNumber(point.net));
-    $: minValue = values.length ? Math.min(0, ...values) : 0;
-    $: maxValue = values.length ? Math.max(0, ...values) : 0;
-    $: valueRange = maxValue - minValue || 1;
-    $: latestNet = values.length ? values[values.length - 1] : 0;
-    $: lineClass = latestNet >= 0 ? "text-success" : "text-error";
-    $: points = values.map((value, index) => {
-        const x =
-            paddingX +
-            (series.length <= 1
-                ? 0
-                : (index * (width - paddingX * 2)) / (series.length - 1));
-        const y =
-            paddingY +
-            ((maxValue - value) * (height - paddingY * 2)) / valueRange;
+    let chartData = $derived(
+        series.map((point, i) => ({
+            index: i,
+            label: point.t,
+            net: toNumber(point.net),
+        }))
+    );
 
-        return { x, y };
-    });
-    $: zeroY =
-        paddingY + ((maxValue - 0) * (height - paddingY * 2)) / valueRange;
-    $: linePath = points
-        .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-        .join(" ");
-    $: areaPath =
-        points.length > 0
-            ? `${linePath} L ${points[points.length - 1].x} ${zeroY} L ${points[0].x} ${zeroY} Z`
-            : "";
+    let latestNet = $derived(
+        chartData.length ? chartData[chartData.length - 1].net : 0
+    );
+
+    let lineColor = $derived(latestNet >= 0 ? "var(--color-success)" : "var(--color-error)");
 </script>
 
 <div class="border border-base-300 rounded-xl p-4 bg-base-100">
@@ -61,47 +48,32 @@
             </span>
         </div>
     {:else}
-        <svg
-            class="w-full h-[180px] block"
-            viewBox="0 0 {width} {height}"
-            role="img"
-            aria-label={$_("admin_direct_mm_pnl_chart_title")}
-            preserveAspectRatio="none"
-        >
-            <line
-                x1={paddingX}
-                x2={width - paddingX}
-                y1={zeroY}
-                y2={zeroY}
-                class="text-base-content/20"
-                stroke="currentColor"
-                stroke-width="1"
+        <div class="h-[180px]">
+            <AreaChart
+                data={chartData}
+                x="index"
+                xScale={scalePoint()}
+                y="net"
+                yBaseline={0}
+                yNice
+                series={[
+                    {
+                        key: "net",
+                        value: "net",
+                        color: lineColor,
+                    },
+                ]}
+                props={{
+                    area: { fillOpacity: 0.12 },
+                    line: { strokeWidth: 2.5 },
+                }}
+                axis={false}
+                grid={false}
+                rule={false}
+                legend={false}
+                tooltipContext={false}
+                highlight={false}
             />
-            <path
-                d={areaPath}
-                class={lineClass}
-                fill="currentColor"
-                opacity="0.12"
-            />
-            <path
-                d={linePath}
-                class={lineClass}
-                fill="none"
-                stroke="currentColor"
-                stroke-width="3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-            />
-            {#each points as point}
-                <circle
-                    cx={point.x}
-                    cy={point.y}
-                    r="2.5"
-                    class={lineClass}
-                    fill="currentColor"
-                    opacity="0.85"
-                />
-            {/each}
-        </svg>
+        </div>
     {/if}
 </div>

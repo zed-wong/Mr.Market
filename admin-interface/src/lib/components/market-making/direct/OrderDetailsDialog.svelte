@@ -167,20 +167,23 @@
                                 <path d="M8.25 13.5h7.5M8.25 16.5h4.5" />
                             </svg>
                         </div>
-                        <div class="flex flex-col">
+                        <div class="flex min-w-0 flex-col gap-0.5">
                             <span
                                 class="text-xs text-base-content/50 font-semibold"
                                 >{$_(
                                     "admin_direct_mm_order_details_title",
                                 )}</span
                             >
-                            <div class="flex items-center gap-1.5">
+                            <div
+                                class="flex max-w-[360px] items-center gap-1.5 text-base-content/35"
+                            >
                                 <span
-                                    class="text-sm font-bold text-base-content font-mono"
+                                    class="truncate font-mono text-[11px]"
+                                    title={order.orderId}
                                     >{order.orderId}</span
                                 >
                                 <button
-                                    class="text-base-content/30 hover:text-base-content/60 transition-colors"
+                                    class="shrink-0 text-base-content/25 transition-colors hover:text-base-content/60"
                                     on:click={copyOrderId}
                                     aria-label="Copy order ID"
                                 >
@@ -250,41 +253,81 @@
             {:else}
                 <div class="px-7 pb-7 flex flex-col gap-5">
                     <!-- Market Info Bar -->
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <span
-                            class="text-xs font-bold bg-base-200 px-2.5 py-1 rounded capitalize"
-                            >{order.exchangeName}</span
+                    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+                        <div
+                            class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
                         >
-                        <span
-                            class="text-xs font-bold bg-base-200 px-2.5 py-1 rounded"
-                            >{order.pair}</span
-                        >
-                        <span
-                            class="text-xs text-base-content/50 px-2.5 py-1 rounded bg-base-200"
-                            >{$_("admin_direct_mm_strategy_label")}: {order.strategyName}</span
-                        >
-                        {#if order.createdAt}
-                            <span
-                                class="text-[10px] text-base-content/40 ml-auto"
-                                >{$_("admin_direct_mm_created_at")}: {formatTimestamp(
-                                    order.createdAt,
-                                )}</span
+                            <div class="min-w-0">
+                                <div class="flex min-w-0 items-center gap-2">
+                                    <span
+                                        class="truncate text-xl font-bold tracking-tight text-base-content"
+                                    >
+                                        {order.pair}
+                                    </span>
+                                </div>
+                                <div
+                                    class="mt-2 flex min-w-0 flex-wrap items-center gap-1.5"
+                                >
+                                    <span
+                                        class="rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[10px] font-semibold capitalize text-base-content/70"
+                                    >
+                                        {order.exchangeName}
+                                    </span>
+                                    {#if stateLabel}
+                                        <span
+                                            class="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold capitalize text-success"
+                                        >
+                                            {stateLabel}
+                                        </span>
+                                    {/if}
+                                    <span
+                                        class="max-w-[220px] truncate rounded-full bg-base-200 px-2 py-0.5 text-[10px] font-medium text-base-content/55"
+                                        title={order.strategyName}
+                                    >
+                                        {order.strategyName}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div
+                                class="flex shrink-0 items-center justify-between gap-2 sm:justify-end"
                             >
-                        {/if}
-                        <button
-                            type="button"
-                            class="btn bg-base-300 hover:bg-base-300 text-base-content border-none min-h-[42px] h-[42px] px-4 rounded-lg text-sm font-semibold shadow-sm"
-                            on:click={onRefresh}
-                            disabled={loading || refreshing}
-                            aria-label={$_("admin_direct_mm_refresh_order_diagnosis")}
-                        >
-                            {#if refreshing}
-                                <span class="loading loading-spinner loading-xs" aria-hidden="true"></span>
-                                {$_("admin_direct_mm_refreshing_diagnosis")}
-                            {:else}
-                                {$_("admin_direct_mm_refresh_diagnosis")}
-                            {/if}
-                        </button>
+                                <div class="text-right">
+                                    <span
+                                        class="block text-[9px] font-semibold uppercase text-base-content/35"
+                                    >
+                                        {$_("admin_direct_mm_last_updated_label")}
+                                    </span>
+                                    <span class="font-mono text-[10px] text-base-content/50">
+                                        {lastUpdated || $_("admin_direct_mm_na")}
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="btn btn-outline btn-xs h-8 min-h-8 w-28 rounded-lg px-2 text-[11px] font-semibold capitalize"
+                                    on:click={onRefresh}
+                                    disabled={loading || refreshing}
+                                    aria-label={$_(
+                                        "admin_direct_mm_refresh_order_diagnosis",
+                                    )}
+                                >
+                                    {#if refreshing}
+                                        <span
+                                            class="loading loading-spinner loading-xs"
+                                            aria-hidden="true"
+                                        ></span>
+                                        <span class="sr-only">
+                                            {$_("admin_direct_mm_refreshing_diagnosis")}
+                                        </span>
+                                        <span aria-hidden="true">
+                                            {$_("admin_direct_mm_refresh")}
+                                        </span>
+                                    {:else}
+                                        {$_("admin_direct_mm_refresh")}
+                                    {/if}
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Warnings Banner -->
@@ -473,7 +516,7 @@
                                     >{stateLabel}</span
                                 >
                             </div>
-                            <div class="flex items-center justify-between h-6">
+                            <div class="flex items-center justify-between h-6 mb-2">
                                 <span
                                     class="text-xs text-base-content/60 tracking-wider capitalize"
                                     >{$_(
@@ -485,6 +528,16 @@
                                         $_("admin_direct_mm_na")}</span
                                 >
                             </div>
+                            {#if order.createdAt}
+                                <div class="flex items-center justify-between h-6">
+                                    <span class="text-xs text-base-content/60">
+                                        {$_("admin_direct_mm_created_at")}
+                                    </span>
+                                    <span class="text-[10px] text-base-content/50">
+                                        {formatTimestamp(order.createdAt)}
+                                    </span>
+                                </div>
+                            {/if}
                         </div>
 
                         <!-- Health Metrics -->
