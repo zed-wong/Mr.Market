@@ -11,7 +11,7 @@
   <span class="eyebrow">Replaced route</span>
   <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Opening the new order form</span>
   <span class="mt-4 block text-base-content/60">
-    Market-making setup now starts with an order, strategy, pair/spec, and order-attributed deposit.
+    Market-making setup now starts with an exchange pair, funding asset, amount, and order-attributed deposit.
   </span>
   <a class="btn-pill-primary mt-6 inline-flex" href="/app/market-making/order/new">Create order →</a>
 </section>

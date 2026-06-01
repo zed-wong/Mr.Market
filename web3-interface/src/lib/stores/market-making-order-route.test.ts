@@ -37,26 +37,27 @@ describe('market-making campaign detail to order route', () => {
     expect(source).not.toContain('/app/market-making/campaign/');
   });
 
-  it('surfaces wallet interaction recovery states and duplicate submit protection', () => {
+  it('requires SIWE and wallet approval before pure market-making submission', () => {
     const source = orderCreateSource();
 
-    expect(source).toContain('walletInteractionMode');
-    expect(source).toContain('getCreateOrderSubmissionBlockReason');
-    expect(source).toContain('getCreateOrderSessionBlockReason');
-    expect(source).toContain('Preview user rejection');
-    expect(source).toContain('Preview wallet timeout');
-    expect(source).toContain('Preview network mismatch');
-    expect(source).toContain('isSubmitting,');
+    expect(source).toContain('signInWithEthereum');
+    expect(source).toContain('hasAuthenticatedOrderScope');
+    expect(source).toContain('signWalletMessage(approvalMessage)');
+    expect(source).toContain("const PURE_MARKET_MAKING_KEY = 'pure_market_making'");
+    expect(source).toContain("submitState = 'signing'");
+    expect(source).toContain('isSubmitting = true');
     expect(source).toContain('disabled={isSubmitting');
   });
 
-  it('keeps strategy selection explicitly unselected until the user chooses one', () => {
+  it('hides normal strategy selection and derives the pure strategy automatically', () => {
     const source = orderCreateSource();
 
-    expect(source).toContain('<option value="">Choose a strategy…</option>');
-    expect(source).toContain('Choose a market-making strategy.');
-    expect(source).toContain('selectedStrategyId && !strategies.some');
-    expect(source).not.toContain('selectedStrategyId = strategies[0].id');
+    expect(source).toContain('isPureMarketMakingStrategy');
+    expect(source).toContain('selectedPureStrategy');
+    expect(source).toContain('strategyDefinitionId: selectedPureStrategy.id');
+    expect(source).not.toContain('data-testid="order-strategy-select"');
+    expect(source).not.toContain('Choose a strategy');
+    expect(source).not.toContain('selectedStrategyId');
   });
 
   it('wires the web3 market-making API helpers for create options and submission', () => {
