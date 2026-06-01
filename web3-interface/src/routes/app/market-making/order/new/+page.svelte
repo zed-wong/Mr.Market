@@ -123,7 +123,14 @@
 
   function assetMatchesBalance(assetId: string, balance: BalanceEntry): boolean {
     const assetKey = normalized(assetId);
-    return assetKey === normalized(balance.asset) || assetKey === normalized(balance.symbol);
+    const pairAsset = selectedPair
+      ? [selectedPair.base, selectedPair.quote].find(
+          (asset) => normalized(asset.assetId) === assetKey || normalized(asset.symbol) === assetKey
+        )
+      : null;
+    const balanceKeys = [balance.asset, balance.symbol].map(normalized);
+    const selectedAssetKeys = [assetId, pairAsset?.assetId, pairAsset?.symbol].map(normalized);
+    return selectedAssetKeys.some((key) => key && balanceKeys.includes(key));
   }
 
   const assetLabel = (assetId: string): string => {
@@ -170,7 +177,7 @@
 
   function validateCreateOrder(): Record<string, string> {
     const errors: Record<string, string> = {};
-    const amount = new BigNumber(depositAmount || '');
+    const amount = new BigNumber(depositAmount.trim() || 0);
 
     if (createOptionsState !== 'loaded') errors.options = $_('market_making_create_error_options_required');
     if (!selectedPureStrategy) errors.strategy = $_('market_making_create_error_strategy_unavailable');

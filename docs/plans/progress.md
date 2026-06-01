@@ -2,6 +2,7 @@
 
 ## 2026-06-01
 
+- Fix `web3-interface` `/app/market-making/order/new` browser step progression: the create page now drives Pair/Funds/Review panels with explicit `hidden` state instead of Tailwind-only `class:hidden`, tolerates empty amount input on first render, matches selected pair asset IDs to wallet balance symbols, and has focused panel-visibility coverage plus agent-browser proof that pair → funds → review renders the active panel.
 - Simplify `web3-interface` `/app/market-making/order/new` into a pure-market-making-only three-step create flow with hidden strategy selection, exchange/pair and funding inputs, balance/over-allocation validation, Reown wallet approval signing before submission, and create API requests tied to the public pure market-making strategy.
 - Make `web3-interface` browse-first for `/app/market-making`: the app layout no longer applies the global login wall to the public market-making overview, create-order CTAs route through SIWE with a return path, and private wallet/account/funding/order routes still redirect to login before showing protected data.
 - Redesign `web3-interface` `/app/market-making` as the order-management list surface: unauthenticated/connect gating and empty states lead to order creation, small order counts render rich status-first cards, and larger counts render compact rows with PnL/fees, locked funds, and lifecycle actions.
