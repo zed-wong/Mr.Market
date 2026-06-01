@@ -2,6 +2,7 @@
 
 ## 2026-06-01
 
+- Add authenticated `/web3/balances`: wallet available balances now come from the web3 wallet ledger projection, in-market-making funds are aggregated by asset from owned order-scoped balances while preserving per-`orderId + assetId` breakdowns, and funding activity is returned from persisted deposit/withdraw ledger entries.
 - Add `/web3/deposit/instructions` and authenticated `/web3/deposit/verify`: deposit instructions now return chain-specific operator receiving data with supported ERC-20 token metadata, while verification validates tx hash chain/token/recipient/amount/sender evidence through `Web3Service` and credits the user's ledger idempotently.
 - Add `contracts/MrMarketVault.sol` as a deployment-agnostic single-admin ERC-20 vault with user deposits, admin-only user payouts, admin withdraw/sweep functions, deposit/payout events, and a server-side ABI export with static Jest coverage for future backend integration.
 - Add validation-only market-making order list fixtures in `web3-interface`: authenticated validators can select `validationListState=empty`/`zero` for the empty-order CTA and `validationListState=many`/`compact` for a deterministic five-order compact list while production sessions keep using the real order API.
