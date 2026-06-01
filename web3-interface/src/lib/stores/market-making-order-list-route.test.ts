@@ -20,6 +20,9 @@ const layoutSource = () =>
     'utf8'
   );
 
+const localeSource = (locale: 'en' | 'zh') =>
+  readFileSync(fileURLToPath(new URL(`../../i18n/${locale}.json`, import.meta.url)), 'utf8');
+
 const legacyWeb3MarketMakingNamespace = () => ['/api/v1/web3', 'market-making'].join('/');
 
 describe('/app/market-making order list route', () => {
@@ -36,7 +39,8 @@ describe('/app/market-making order list route', () => {
   it('renders order-first loading, empty, error, retry, and populated states', () => {
     const source = listRouteSource();
 
-    expect(source).toContain('Market-making orders');
+    expect(source).toContain("$_('market_making_list_title')");
+    expect(source).toContain("$_('market_making_list_empty_cta')");
     expect(source).toContain('/app/market-making/order/new');
     expect(source).toContain('validationListState');
     expect(source).toContain('validationLoadingRequested');
@@ -47,6 +51,53 @@ describe('/app/market-making order list route', () => {
     expect(source).toContain('order-list');
     expect(source).toContain('orderDetailHref(order.orderId)');
     expect(source).toContain('encodeURIComponent(orderId)');
+  });
+
+  it('adapts small order counts to rich cards and larger counts to compact rows', () => {
+    const source = listRouteSource();
+
+    expect(source).toContain('filteredOrders.length <= 4');
+    expect(source).toContain('useRichOrderCards');
+    expect(source).toContain('data-layout="cards"');
+    expect(source).toContain('data-layout="compact"');
+    expect(source).toContain('order-card-{order.orderId}');
+    expect(source).toContain('order-row-{order.orderId}');
+  });
+
+  it('prioritizes status, PnL and fees, locked funds, and lifecycle actions on each order item', () => {
+    const source = listRouteSource();
+
+    expect(source).toContain('order-status-{order.orderId}');
+    expect(source).toContain("$_('market_making_list_pnl_fees')");
+    expect(source).toContain('orderFinancials(order)');
+    expect(source).toContain("$_('market_making_list_fees')");
+    expect(source).toContain("$_('market_making_list_locked_funds')");
+    expect(source).toContain('orderLockedFunds(order)');
+    expect(source).toContain('order-quick-start-{order.orderId}');
+    expect(source).toContain('order-quick-pause-{order.orderId}');
+    expect(source).toContain('order-quick-resume-{order.orderId}');
+    expect(source).not.toContain('uppercase');
+  });
+
+  it('keeps market-making list copy in the English and Chinese locale files', () => {
+    const en = JSON.parse(localeSource('en')) as Record<string, string>;
+    const zh = JSON.parse(localeSource('zh')) as Record<string, string>;
+    const expectedKeys = [
+      'market_making_list_title',
+      'market_making_list_connect_title',
+      'market_making_list_empty_cta',
+      'market_making_list_pnl_fees',
+      'market_making_list_fees',
+      'market_making_list_locked_funds',
+      'market_making_list_action_start',
+      'market_making_list_action_pause',
+      'market_making_list_action_resume',
+    ];
+
+    for (const key of expectedKeys) {
+      expect(en[key]).toBeTruthy();
+      expect(zh[key]).toBeTruthy();
+    }
   });
 
   it('clears stale rows and waits for auth that matches the active wallet scope', () => {
