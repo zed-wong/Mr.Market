@@ -11,6 +11,7 @@
   import {
     addAPIKey,
     getAllAPIKeys,
+    getAPIKeyAccountSnapshot,
     getEncryptionPublicKey,
     removeAPIKey,
   } from "$lib/helpers/mrm/admin/exchanges";
@@ -27,7 +28,7 @@
     getApiKeyUseReadiness,
     summarizeApiKeyReadiness,
   } from "$lib/helpers/admin/api-key-readiness";
-  import type { AdminSingleKey } from "$lib/types/hufi/admin";
+  import type { AdminAPIKeyAccountSnapshot, AdminSingleKey } from "$lib/types/hufi/admin";
   import type { GrowInfo } from "$lib/types/hufi/grow";
 
   type ExchangeVenue = {
@@ -55,8 +56,13 @@
   let metadataError = $state<AdminErrorState | null>(null);
   let expandedExchangeIds = $state<string[]>([]);
   let accountDialogEl = $state<HTMLDialogElement | null>(null);
+  let accountDetailDialogEl = $state<HTMLDialogElement | null>(null);
   let accountExchangeDropdownEl = $state<HTMLDivElement | null>(null);
   let accountDeleteCandidate = $state<AdminSingleKey | null>(null);
+  let selectedAccountKey = $state<AdminSingleKey | null>(null);
+  let accountSnapshot = $state<AdminAPIKeyAccountSnapshot | null>(null);
+  let accountSnapshotLoading = $state(false);
+  let accountSnapshotError = $state("");
   let accountExchangeDropdownOpen = $state(false);
   let pendingRefreshTimer: ReturnType<typeof setInterval> | null = null;
   let accountFormErrors = $state<FormErrors>({});
@@ -152,6 +158,33 @@
     return tail.match(/.{1,2}/g)?.join(".") || tail;
   };
 
+  const formatBalanceAmount = (value: number | string | undefined): string => {
+    if (value === undefined || value === null || value === "") return "0";
+    const numeric = Number(value);
+    if (Number.isNaN(numeric)) return String(value);
+    return new Intl.NumberFormat(undefined, {
+      maximumFractionDigits: numeric >= 1 ? 8 : 12,
+    }).format(numeric);
+  };
+
+  const getBalanceRows = (snapshot: AdminAPIKeyAccountSnapshot | null) => {
+    if (!snapshot?.balance) return [];
+    const assets = Array.from(
+      new Set([
+        ...Object.keys(snapshot.balance.free || {}),
+        ...Object.keys(snapshot.balance.used || {}),
+        ...Object.keys(snapshot.balance.total || {}),
+      ]),
+    ).sort((left, right) => left.localeCompare(right));
+
+    return assets.map((asset) => ({
+      asset,
+      free: snapshot.balance.free?.[asset],
+      used: snapshot.balance.used?.[asset],
+      total: snapshot.balance.total?.[asset],
+    }));
+  };
+
   const isExpanded = (exchangeId: string) => expandedExchangeIds.includes(exchangeId);
 
   const toggleExpanded = (exchangeId: string) => {
@@ -180,6 +213,50 @@
 
   const closeAddAccountDialog = () => {
     accountDialogEl?.close();
+  };
+
+  const resetAccountDetailDialog = () => {
+    selectedAccountKey = null;
+    accountSnapshot = null;
+    accountSnapshotError = "";
+    accountSnapshotLoading = false;
+  };
+
+  const closeAccountDetailDialog = () => {
+    accountDetailDialogEl?.close();
+  };
+
+  const loadAccountSnapshot = async (key: AdminSingleKey) => {
+    const adminToken = token();
+    if (!adminToken) {
+      accountSnapshotError = "Session expired. Sign in again before viewing account balances.";
+      return;
+    }
+
+    accountSnapshotLoading = true;
+    accountSnapshotError = "";
+
+    try {
+      accountSnapshot = await getAPIKeyAccountSnapshot(key.key_id, adminToken);
+    } catch (error) {
+      accountSnapshot = null;
+      accountSnapshotError = error instanceof Error ? error.message : "Failed to load account balances";
+    } finally {
+      accountSnapshotLoading = false;
+    }
+  };
+
+  const openAccountDetailDialog = (key: AdminSingleKey) => {
+    selectedAccountKey = key;
+    accountSnapshot = null;
+    accountSnapshotError = "";
+    accountDetailDialogEl?.showModal();
+    void loadAccountSnapshot(key);
+  };
+
+  const retryAccountSnapshot = () => {
+    if (!selectedAccountKey) return;
+    void loadAccountSnapshot(selectedAccountKey);
   };
 
   const closeExchangeDropdownAfterFocus = () => {
@@ -682,9 +759,15 @@
                             {@const keyReadiness = getApiKeyReadiness(key)}
                             <tr class="border-b border-base-300 last:border-b-0">
                               <td>
-                                <span class="flex flex-col">
-                                  <span class="text-sm font-medium">{key.name}</span>
-                                </span>
+                                <button
+                                  type="button"
+                                  class="group flex max-w-[260px] flex-col rounded-md px-2 py-1 text-left transition-colors hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                  onclick={() => openAccountDetailDialog(key)}
+                                  aria-label={`view ${key.name} account details`}
+                                >
+                                  <span class="truncate text-sm font-medium text-base-content group-hover:text-primary">{key.name}</span>
+                                  <span class="text-xs text-base-content/45">view balances</span>
+                                </button>
                               </td>
                               <td class="font-mono text-xs text-base-content/70">{fingerprint(key.api_key)}</td>
                               <td>
@@ -857,6 +940,113 @@
         {#if savingAccount}<span class="loading loading-spinner loading-xs"></span>{/if}
         add account
       </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button aria-label="close">close</button>
+  </form>
+</dialog>
+
+<dialog bind:this={accountDetailDialogEl} class="modal modal-bottom sm:modal-middle backdrop-blur-sm" onclose={resetAccountDetailDialog}>
+  <div class="modal-box max-w-3xl rounded-t-3xl border border-base-300 bg-base-100 p-0 shadow-2xl sm:rounded-3xl">
+    <div class="flex items-start justify-between gap-4 border-b border-base-300 px-6 pb-5 pt-6">
+      <span class="flex min-w-0 flex-col gap-1">
+        <span class="truncate text-xl font-semibold tracking-tight text-base-content">{selectedAccountKey?.name || "account"}</span>
+        <span class="text-sm text-base-content/60">
+          {selectedAccountKey?.exchange || "exchange"} · {fingerprint(selectedAccountKey?.api_key)}
+        </span>
+      </span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm btn-circle text-base-content/60"
+        onclick={closeAccountDetailDialog}
+        aria-label="close"
+      >✕</button>
+    </div>
+
+    <div class="grid gap-5 px-6 py-5">
+      {#if selectedAccountKey}
+        {@const selectedReadiness = getApiKeyReadiness(selectedAccountKey)}
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+            <span class="text-xs capitalize text-base-content/50">permission</span>
+            <span class="mt-2 flex flex-wrap gap-1">
+              {#each getApiKeyPermissionViews(selectedAccountKey) as permission (permission.capability)}
+                <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {permission.tone}" title={permission.description}>
+                  {permission.label}
+                </span>
+              {/each}
+            </span>
+          </div>
+          <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+            <span class="text-xs capitalize text-base-content/50">status</span>
+            <span class="mt-2 flex flex-col gap-1">
+              <span class="w-fit rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {selectedReadiness.tone}" title={selectedReadiness.description}>
+                {selectedReadiness.label}
+              </span>
+              {#if selectedAccountKey.validation_error}
+                <span class="truncate text-xs text-error" title={selectedAccountKey.validation_error}>{selectedAccountKey.validation_error}</span>
+              {/if}
+            </span>
+          </div>
+          <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+            <span class="text-xs capitalize text-base-content/50">last validation</span>
+            <span class="mt-2 block font-mono text-xs text-base-content/70">{formatDate(selectedAccountKey.validated_at || selectedAccountKey.last_update)}</span>
+          </div>
+        </div>
+      {/if}
+
+      <div class="rounded-lg border border-base-300 bg-base-100">
+        <div class="flex items-center justify-between gap-3 border-b border-base-300 px-4 py-3">
+          <span class="text-sm font-semibold capitalize text-base-content">balances</span>
+          {#if accountSnapshot}
+            <span class="font-mono text-xs text-base-content/45">{formatDate(accountSnapshot.generated_at)}</span>
+          {/if}
+        </div>
+
+        {#if accountSnapshotLoading}
+          <div class="flex items-center gap-2 px-4 py-8 text-sm text-base-content/60">
+            <span class="loading loading-spinner loading-sm"></span>
+            loading balances
+          </div>
+        {:else if accountSnapshotError}
+          <div class="grid gap-3 px-4 py-5">
+            <div class="alert alert-error py-2 text-sm">{accountSnapshotError}</div>
+            {#if selectedAccountKey}
+              <button
+                type="button"
+                class="btn btn-outline btn-sm w-fit rounded-full capitalize"
+                onclick={retryAccountSnapshot}
+              >retry</button>
+            {/if}
+          </div>
+        {:else if getBalanceRows(accountSnapshot).length > 0}
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr class="border-b border-base-300 text-xs capitalize text-base-content/50">
+                  <th class="font-medium">asset</th>
+                  <th class="text-right font-medium">free</th>
+                  <th class="text-right font-medium">used</th>
+                  <th class="text-right font-medium">total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each getBalanceRows(accountSnapshot) as row (row.asset)}
+                  <tr class="border-b border-base-300 last:border-b-0">
+                    <td class="font-semibold">{row.asset}</td>
+                    <td class="text-right font-mono text-xs">{formatBalanceAmount(row.free)}</td>
+                    <td class="text-right font-mono text-xs">{formatBalanceAmount(row.used)}</td>
+                    <td class="text-right font-mono text-xs">{formatBalanceAmount(row.total)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {:else}
+          <div class="px-4 py-8 text-sm text-base-content/60">No non-zero balances returned.</div>
+        {/if}
+      </div>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop">

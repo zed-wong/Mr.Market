@@ -35,3 +35,20 @@ export interface AdminSingleKey {
   created_at?: string;
   last_update?: string;
 }
+
+export interface AdminAPIKeyAccountSnapshot {
+  key_id: string;
+  exchange: string;
+  name: string;
+  permissions?: string;
+  validation_status?: string;
+  validation_error?: string | null;
+  validated_at?: string | null;
+  created_at?: string;
+  generated_at: string;
+  balance: {
+    free: Record<string, number | string>;
+    used: Record<string, number | string>;
+    total: Record<string, number | string>;
+  };
+}

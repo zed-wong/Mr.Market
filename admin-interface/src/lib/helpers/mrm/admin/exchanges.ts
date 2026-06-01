@@ -1,6 +1,6 @@
 import { MRM_BACKEND_URL } from "$lib/helpers/constants";
 import { getHeaders, handleApiResponse } from "$lib/helpers/mrm/common";
-import type { AdminSingleKey } from "$lib/types/hufi/admin";
+import type { AdminAPIKeyAccountSnapshot, AdminSingleKey } from "$lib/types/hufi/admin";
 
 export const getAllAPIKeys = async (token: string): Promise<AdminSingleKey[]> => {
   try {
@@ -38,6 +38,22 @@ export const removeAPIKey = async (keyId: string, token: string): Promise<unknow
     return handleApiResponse(response);
   } catch (error) {
     console.error("Error removing API key:", error);
+    throw error;
+  }
+}
+
+export const getAPIKeyAccountSnapshot = async (
+  keyId: string,
+  token: string,
+): Promise<AdminAPIKeyAccountSnapshot> => {
+  try {
+    const response = await fetch(`${MRM_BACKEND_URL}/admin/exchanges/keys/${keyId}/account`, {
+      method: "GET",
+      headers: getHeaders(token),
+    });
+    return handleApiResponse(response);
+  } catch (error) {
+    console.error("Error getting API key account snapshot:", error);
     throw error;
   }
 }
