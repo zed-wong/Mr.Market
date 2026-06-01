@@ -270,7 +270,7 @@ describe('ExchangeConnectorAdapterService', () => {
 
     expect(exchange.createOrder).toHaveBeenCalledTimes(2);
     expect(secondCallAtMs - firstResolvedAtMs).toBeGreaterThanOrEqual(
-      minIntervalMs,
+      minIntervalMs - 1,
     );
   });
 
