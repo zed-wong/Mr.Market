@@ -45,7 +45,7 @@ describe('/app/market-making/order/new pure market-making route', () => {
     expect(source).toContain('attachButtonClick');
     expect(source).toContain('data-testid="order-pair-next-button"');
     expect(source).toContain('bind:this={pairNextButton}');
-    expect(source).toContain('$effect(() => attachButtonClick(pairNextButton, () => void goToFunds()))');
+    expect(source).toContain('$effect(() => attachButtonClick(pairNextButton, showFundsStep))');
     expect(source).toContain('data-testid="order-review-button"');
     expect(source).toContain('bind:this={reviewButton}');
     expect(source).toContain('$effect(() => attachButtonClick(reviewButton, () => void reviewOrder()))');
