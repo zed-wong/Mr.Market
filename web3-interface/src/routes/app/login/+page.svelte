@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { tick } from 'svelte';
   import { _ } from 'svelte-i18n';
   import { getNonce, login } from '$lib/helpers/api/auth';
@@ -21,6 +22,14 @@
   } from '$lib/stores/wallet';
 
   let authError = $state<string | null>(null);
+
+  const nextPath = () => {
+    const next = page.url.searchParams.get('next');
+    if (!next || !next.startsWith('/app') || next.startsWith('//') || next === '/app/login') {
+      return '/app';
+    }
+    return next;
+  };
 
   const signIn = async () => {
     authError = null;
@@ -52,7 +61,7 @@
       );
       const signature = await signWalletMessage(message);
       await login(message, signature);
-      await goto('/app');
+      await goto(nextPath());
     } catch (error) {
       authError = error instanceof Error && error.message ? error.message : $_('login_error_generic');
     } finally {
@@ -116,7 +125,7 @@
         <span class="mt-2 block text-sm text-base-content/60">
           {$_('login_authenticated_hint')}
         </span>
-        <a href="/app" class="btn-pill-primary mt-5 inline-flex" data-testid="login-open-dashboard">{$_('login_open_dashboard')} →</a>
+        <a href={nextPath()} class="btn-pill-primary mt-5 inline-flex" data-testid="login-open-dashboard">{$_('login_open_dashboard')} →</a>
       {:else if $walletIsConnected}
         <span class="mt-3 block text-lg font-semibold text-base-content">{$_('login_wallet_connected')}</span>
         <span class="mt-2 block text-sm text-base-content/60">

@@ -110,12 +110,40 @@ describe('/app/market-making order list route', () => {
     expect(source).toContain('address: activeWalletAddress');
     expect(source).toContain('chainId: activeWalletChainId');
     expect(source).toContain('orders = [];');
-    expect(source).toContain('order-list-authenticating-state');
+    expect(source).toContain('market-making-public-overview');
+    expect(source).toContain('order-sign-in-gate');
     expect(layout).toContain('authenticatedWalletKey !== walletKey');
     expect(layout).toContain('checkSession()');
     expect(layout).toContain('/app/login');
     expect(layout).not.toContain('demo-signature');
     expect(layout).not.toContain('ensureWeb3Auth');
+  });
+
+  it('allows public market-making browsing while keeping private app routes protected', () => {
+    const source = listRouteSource();
+    const layout = layoutSource();
+    const en = JSON.parse(localeSource('en')) as Record<string, string>;
+    const zh = JSON.parse(localeSource('zh')) as Record<string, string>;
+
+    expect(layout).toContain("page.url.pathname === '/app/market-making'");
+    expect(layout).toContain('isPublicReadOnlyRoute');
+    expect(layout).toContain('canRenderCurrentRoute');
+    expect(layout).toContain("goto(loginHref())");
+    expect(source).toContain('createOrderHref');
+    expect(source).toContain("encodeURIComponent('/app/market-making/order/new')");
+    expect(source).toContain("$_('market_making_list_public_title')");
+    expect(source).toContain("$_('market_making_list_sign_in_to_create')");
+    expect(source).not.toContain('order-list-authenticating-state');
+
+    for (const key of [
+      'market_making_list_public_title',
+      'market_making_list_public_message',
+      'market_making_list_sign_in_title',
+      'market_making_list_sign_in_to_create',
+    ]) {
+      expect(en[key]).toBeTruthy();
+      expect(zh[key]).toBeTruthy();
+    }
   });
 
   it('removes campaign discovery controls and terminology from the list page', () => {

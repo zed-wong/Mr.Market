@@ -10,8 +10,8 @@
   } from '$lib/helpers/api/web3';
   import { authMatchesWalletScope } from '$lib/helpers/market-making/wallet-scope';
   import {
-    openMockWallet,
     openNetworkModal,
+    openWalletModal,
     walletAccount,
     walletIsConnected,
     walletIsUnsupported,
@@ -199,15 +199,20 @@
     validationListState === 'loading' || page.url.searchParams.get('validationLoading') === '1'
   );
 
-  type GateMode = 'connected' | 'connect' | 'unsupported' | 'authenticating';
+  type GateMode = 'connected' | 'connect' | 'unsupported' | 'sign-in';
   const gateMode = $derived<GateMode>(
     !$walletIsConnected && !$walletIsUnsupported
       ? 'connect'
       : $walletIsUnsupported
         ? 'unsupported'
         : !hasActiveOrderScope
-          ? 'authenticating'
+          ? 'sign-in'
           : 'connected'
+  );
+  const createOrderHref = $derived(
+    hasActiveOrderScope
+      ? '/app/market-making/order/new'
+      : `/app/login?next=${encodeURIComponent('/app/market-making/order/new')}`
   );
 
   const filteredOrders = $derived.by(() => {
@@ -320,7 +325,7 @@
       </span>
     </div>
     <a
-      href="/app/market-making/order/new"
+      href={createOrderHref}
       class="btn-pill-primary"
       data-testid="market-making-create-order-cta"
     >
@@ -329,50 +334,90 @@
   </section>
 
   {#if gateMode !== 'connected'}
-    <!-- Unified gate state -->
-    <section class="mt-12 card-surface mx-auto max-w-2xl px-8 py-12 text-center" data-testid={
-      gateMode === 'connect'
-        ? 'order-connect-gate'
-        : gateMode === 'unsupported'
-          ? 'order-unsupported-gate'
-          : 'order-list-authenticating-state'
-    }>
-      <div class="mx-auto mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full bg-base-300/60">
-        {#if gateMode === 'connect'}
-          <span class="text-2xl">⌁</span>
-        {:else if gateMode === 'unsupported'}
-          <span class="text-2xl">⚠</span>
-        {:else}
-          <span class="loading loading-spinner loading-sm"></span>
-        {/if}
-      </div>
-      <span class="block font-display text-2xl text-base-content">
-        {#if gateMode === 'connect'}
-          {$_('market_making_list_connect_title')}
-        {:else if gateMode === 'unsupported'}
-          {$_('market_making_list_unsupported_title')}
-        {:else}
-          {$_('market_making_list_authenticating_title')}
-        {/if}
-      </span>
-      <span class="mt-3 block text-sm text-base-content/60">
-        {#if gateMode === 'connect'}
-          {$_('market_making_list_connect_message')}
-        {:else if gateMode === 'unsupported'}
-          {$_('market_making_list_unsupported_message')}
-        {:else}
-          {$_('market_making_list_authenticating_message')}
-        {/if}
-      </span>
-      {#if gateMode === 'connect'}
-        <button class="btn-pill-primary mt-6" onclick={openMockWallet} data-testid="order-connect-action">
-          {$_('connect_wallet')}
-        </button>
-      {:else if gateMode === 'unsupported'}
-        <button class="btn-pill-primary mt-6" onclick={openNetworkModal} data-testid="order-switch-network">
-          {$_('switch_network')}
-        </button>
-      {/if}
+    <!-- Public read-only overview + action-boundary gate -->
+    <section class="mt-12 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]" data-testid="market-making-public-overview">
+      <article class="card-surface px-6 py-7">
+        <span class="eyebrow">{$_('market_making_list_public_eyebrow')}</span>
+        <span class="mt-3 block font-display text-3xl text-base-content">
+          {$_('market_making_list_public_title')}
+        </span>
+        <span class="mt-3 block text-sm leading-6 text-base-content/65">
+          {$_('market_making_list_public_message')}
+        </span>
+
+        <div class="mt-6 grid gap-3">
+          <div class="rounded-2xl border border-base-300/70 bg-base-200/40 px-4 py-3">
+            <span class="block text-sm font-semibold text-base-content">{$_('market_making_list_public_step_status')}</span>
+            <span class="mt-1 block text-xs leading-5 text-base-content/55">
+              {$_('market_making_list_public_step_status_detail')}
+            </span>
+          </div>
+          <div class="rounded-2xl border border-base-300/70 bg-base-200/40 px-4 py-3">
+            <span class="block text-sm font-semibold text-base-content">{$_('market_making_list_public_step_funding')}</span>
+            <span class="mt-1 block text-xs leading-5 text-base-content/55">
+              {$_('market_making_list_public_step_funding_detail')}
+            </span>
+          </div>
+          <div class="rounded-2xl border border-base-300/70 bg-base-200/40 px-4 py-3">
+            <span class="block text-sm font-semibold text-base-content">{$_('market_making_list_public_step_control')}</span>
+            <span class="mt-1 block text-xs leading-5 text-base-content/55">
+              {$_('market_making_list_public_step_control_detail')}
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <aside class="card-surface px-6 py-7" data-testid={
+        gateMode === 'connect'
+          ? 'order-connect-gate'
+          : gateMode === 'unsupported'
+            ? 'order-unsupported-gate'
+            : 'order-sign-in-gate'
+      }>
+        <div class="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full bg-base-300/60">
+          {#if gateMode === 'unsupported'}
+            <span class="text-2xl">⚠</span>
+          {:else}
+            <span class="text-2xl">⌁</span>
+          {/if}
+        </div>
+        <span class="block font-display text-2xl text-base-content">
+          {#if gateMode === 'connect'}
+            {$_('market_making_list_connect_title')}
+          {:else if gateMode === 'unsupported'}
+            {$_('market_making_list_unsupported_title')}
+          {:else}
+            {$_('market_making_list_sign_in_title')}
+          {/if}
+        </span>
+        <span class="mt-3 block text-sm leading-6 text-base-content/60">
+          {#if gateMode === 'connect'}
+            {$_('market_making_list_connect_message')}
+          {:else if gateMode === 'unsupported'}
+            {$_('market_making_list_unsupported_message')}
+          {:else}
+            {$_('market_making_list_sign_in_message')}
+          {/if}
+        </span>
+        <div class="mt-6 flex flex-wrap gap-2">
+          {#if gateMode === 'connect'}
+            <a class="btn-pill-primary" href={createOrderHref} data-testid="order-sign-in-create-action">
+              {$_('market_making_list_sign_in_to_create')}
+            </a>
+            <button class="btn-pill-ghost" onclick={openWalletModal} data-testid="order-connect-action">
+              {$_('connect_wallet')}
+            </button>
+          {:else if gateMode === 'unsupported'}
+            <button class="btn-pill-primary" onclick={openNetworkModal} data-testid="order-switch-network">
+              {$_('switch_network')}
+            </button>
+          {:else}
+            <a class="btn-pill-primary" href={createOrderHref} data-testid="order-sign-in-create-action">
+              {$_('market_making_list_sign_in_to_create')}
+            </a>
+          {/if}
+        </div>
+      </aside>
     </section>
   {:else}
     <!-- Filters + scope row -->
