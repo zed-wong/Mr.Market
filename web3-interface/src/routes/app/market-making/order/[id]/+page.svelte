@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import BigNumber from 'bignumber.js';
+  import { _ } from 'svelte-i18n';
   import Section from '$lib/components/common/Section.svelte';
   import {
     depositMarketMakingOrder,
@@ -12,8 +13,8 @@
   } from '$lib/helpers/api/web3';
   import { ApiError } from '$lib/helpers/api/client';
   import {
-    openMockWallet,
     openNetworkModal,
+    openWalletModal,
     walletIsConnected,
     walletIsUnsupported,
     walletNamespaceLabel,
@@ -28,7 +29,6 @@
 
   type LifecycleAction = 'start' | 'pause' | 'resume';
   type FundingAction = 'deposit' | 'withdraw';
-  type WalletInteractionMode = 'approve' | 'reject' | 'timeout' | 'network-mismatch';
 
   let order = $state<Web3MarketMakingOrderDetail | null>(null);
   let detailNamespace = $state('/web3/market-making');
@@ -46,7 +46,6 @@
   let actionLoading = $state<LifecycleAction | FundingAction | null>(null);
   let actionError = $state<string | null>(null);
   let actionMessage = $state<string | null>(null);
-  let walletInteractionMode = $state<WalletInteractionMode>('approve');
 
   const orderId = $derived($page.params.id);
   const canLoadDetail = $derived($walletIsConnected && $isAuthed && !$walletIsUnsupported && Boolean(orderId));
@@ -57,16 +56,15 @@
   );
   const depositValidationError = $derived(validateMoneyMovement(depositAsset, depositAmount, 'deposit'));
   const withdrawValidationError = $derived(validateMoneyMovement(withdrawAsset, withdrawAmount, 'withdraw'));
-
-  const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const spreadCaptureRows = $derived(order ? spreadCaptureMetrics(order) : []);
 
   const normalize = (value: string | null | undefined): string => String(value || '').trim().toLowerCase();
 
   const formatState = (value: string | null | undefined): string =>
-    value ? value.replace(/[_-]+/g, ' ') : 'unknown';
+    value ? value.replace(/[_-]+/g, ' ') : $_('market_making_detail_unknown');
 
   const formatText = (value: string | number | null | undefined): string => {
-    if (value === null || value === undefined || value === '') return 'Unavailable';
+    if (value === null || value === undefined || value === '') return $_('market_making_detail_unavailable');
     return String(value);
   };
 
@@ -89,11 +87,11 @@
       .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
       .replace(/[_-]+/g, ' ')
       .trim()
-      .replace(/^./, (letter) => letter.toUpperCase()) || 'Metric';
+      .replace(/^./, (letter) => letter.toUpperCase()) || $_('market_making_detail_metric');
 
   const formatAdditionalMetricValue = (value: unknown): string => {
-    if (value === null || value === undefined || value === '') return 'Unavailable';
-    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (value === null || value === undefined || value === '') return $_('market_making_detail_unavailable');
+    if (typeof value === 'boolean') return value ? $_('market_making_detail_yes') : $_('market_making_detail_no');
     if (typeof value === 'number' || typeof value === 'bigint') {
       const amount = new BigNumber(String(value));
       if (!amount.isFinite()) return String(value);
@@ -114,7 +112,7 @@
   };
 
   const formatDate = (value: string | null | undefined): string => {
-    if (!value) return 'Unavailable';
+    if (!value) return $_('market_making_detail_unavailable');
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -124,20 +122,20 @@
     value.length > 22 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
 
   const strategyLabel = (detail: Web3MarketMakingOrderDetail): string =>
-    detail.strategy?.name || detail.strategy?.key || detail.strategy?.controller || 'Strategy unavailable';
+    detail.strategy?.name || detail.strategy?.key || detail.strategy?.controller || $_('market_making_detail_strategy_unavailable');
 
   const specsSummary = (detail: Web3MarketMakingOrderDetail): string => {
     const specs = detail.specs;
     const parts = [
-      specs.exchangeName ? `exchange ${specs.exchangeName}` : null,
-      specs.bidSpread ? `bid spread ${formatAmount(specs.bidSpread)}` : null,
-      specs.askSpread ? `ask spread ${formatAmount(specs.askSpread)}` : null,
-      specs.orderAmount ? `order amount ${formatAmount(specs.orderAmount)}` : null,
-      specs.numberOfLayers ? `${specs.numberOfLayers} layers` : null,
-      specs.orderRefreshTime ? `refresh ${specs.orderRefreshTime}s` : null,
+      specs.exchangeName ? `${$_('market_making_detail_exchange')} ${specs.exchangeName}` : null,
+      specs.bidSpread ? `${$_('market_making_detail_bid_spread')} ${formatAmount(specs.bidSpread)}` : null,
+      specs.askSpread ? `${$_('market_making_detail_ask_spread')} ${formatAmount(specs.askSpread)}` : null,
+      specs.orderAmount ? `${$_('market_making_detail_order_amount')} ${formatAmount(specs.orderAmount)}` : null,
+      specs.numberOfLayers ? `${specs.numberOfLayers} ${$_('market_making_detail_layers')}` : null,
+      specs.orderRefreshTime ? `${$_('market_making_detail_refresh')} ${specs.orderRefreshTime}s` : null,
     ].filter((part): part is string => Boolean(part));
 
-    return parts.length > 0 ? parts.join(' · ') : 'Specs unavailable';
+    return parts.length > 0 ? parts.join(' · ') : $_('market_making_detail_specs_unavailable');
   };
 
   function supportedAssetsForOrder(detail: Web3MarketMakingOrderDetail): string[] {
@@ -156,16 +154,16 @@
   const eventSummary = (event: Web3MarketMakingOrderEvent): string => {
     const parts = [
       event.assetId ? `${event.assetId} ${formatAmount(event.amount)}` : null,
-      event.refType ? `source ${event.refType}` : null,
-      event.refId ? `reference ${event.refId}` : null,
+      event.refType ? `${$_('market_making_detail_source')} ${event.refType}` : null,
+      event.refId ? `${$_('market_making_detail_reference')} ${event.refId}` : null,
     ].filter((part): part is string => Boolean(part));
 
-    return parts.length > 0 ? parts.join(' · ') : 'Order-attributed event';
+    return parts.length > 0 ? parts.join(' · ') : $_('market_making_detail_order_attributed_event');
   };
 
   const errorMessage = (error: unknown): string => {
     if (error instanceof Error && error.message) return error.message;
-    return 'Order detail could not be loaded right now.';
+    return $_('market_making_detail_error_load_fallback');
   };
 
   const ensureAssetDefaults = (detail: Web3MarketMakingOrderDetail) => {
@@ -185,6 +183,27 @@
     ensureAssetDefaults(response.order);
   };
 
+  function spreadCaptureMetrics(detail: Web3MarketMakingOrderDetail): { label: string; value: string }[] {
+    const rows: { label: string; value: string }[] = [];
+    const snapshots = detail.performance.snapshots || [];
+    const latestSnapshot = snapshots[snapshots.length - 1] ?? null;
+    const metrics = latestSnapshot?.additionalMetrics || {};
+    const spreadKeys = Object.keys(metrics).filter((key) => /spread|capture/i.test(key));
+
+    for (const key of spreadKeys) {
+      rows.push({ label: formatMetricLabel(key), value: formatAdditionalMetricValue(metrics[key]) });
+    }
+
+    if (detail.specs.bidSpread) {
+      rows.push({ label: $_('market_making_detail_bid_spread'), value: formatAmount(detail.specs.bidSpread) });
+    }
+    if (detail.specs.askSpread) {
+      rows.push({ label: $_('market_making_detail_ask_spread'), value: formatAmount(detail.specs.askSpread) });
+    }
+
+    return rows;
+  }
+
   const loadOrderDetail = async () => {
     const sequence = ++loadSequence;
     const currentOrderId = orderId || '';
@@ -198,7 +217,7 @@
       const response = await getMarketMakingOrderDetail(currentOrderId);
       if (sequence !== loadSequence) return;
       if (response.order.source !== 'web3_market_making_order') {
-        throw new Error('Order is not available in the web3 market-making namespace.');
+        throw new Error($_('market_making_detail_error_namespace'));
       }
       applyDetailResponse(response);
     } catch (error) {
@@ -208,7 +227,7 @@
       detailError = isNotFound
         ? null
         : error instanceof ApiError && error.status === 401
-          ? 'Authenticate the connected wallet to view this market-making order.'
+          ? $_('market_making_detail_error_authenticate')
           : errorMessage(error);
     } finally {
       if (sequence === loadSequence) {
@@ -218,22 +237,27 @@
   };
 
   function validateMoneyMovement(asset: string, amountValue: string, action: FundingAction): string | null {
-    if (!order) return 'Order detail must load before moving funds.';
-    if (!order.validActions[action]) return `${action === 'deposit' ? 'Deposit' : 'Withdraw'} is unavailable for the latest order state.`;
-    if (!asset) return 'Choose an order-supported asset.';
-    if (!supportedAssets.some((item) => normalize(item) === normalize(asset))) {
-      return `${asset} is not supported by this order pair/spec.`;
+    const actionLabel = action === 'deposit' ? $_('market_making_detail_deposit') : $_('market_making_detail_withdraw');
+    if (!order) return $_('market_making_detail_validation_load_required');
+    if (!order.validActions[action]) {
+      return $_('market_making_detail_validation_action_unavailable', { values: { action: actionLabel } });
     }
-    if (!amountValue.trim()) return 'Enter a positive amount.';
+    if (!asset) return $_('market_making_detail_validation_asset_required');
+    if (!supportedAssets.some((item) => normalize(item) === normalize(asset))) {
+      return $_('market_making_detail_validation_asset_unsupported', { values: { asset } });
+    }
+    if (!amountValue.trim()) return $_('market_making_detail_validation_amount_required');
 
     const amount = new BigNumber(amountValue);
-    if (!amount.isFinite() || amount.isNaN()) return 'Enter a numeric amount.';
-    if (amount.isLessThanOrEqualTo(0)) return 'Amount must be greater than zero.';
+    if (!amount.isFinite() || amount.isNaN()) return $_('market_making_detail_validation_amount_numeric');
+    if (amount.isLessThanOrEqualTo(0)) return $_('market_making_detail_validation_amount_positive');
 
     if (action === 'withdraw') {
       const available = new BigNumber(selectedWithdrawBalance?.available || 0);
       if (amount.isGreaterThan(available)) {
-        return `Withdraw amount exceeds available ${asset} balance of ${formatAmount(available)}.`;
+        return $_('market_making_detail_validation_withdraw_available', {
+          values: { asset, amount: formatAmount(available) },
+        });
       }
     }
 
@@ -246,19 +270,6 @@
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     return `web3-detail:${orderId || 'unknown'}:${action}:${randomPart}`;
-  };
-
-  const simulateWalletInteraction = async (action: FundingAction) => {
-    await delay(200);
-    if (walletInteractionMode === 'reject') {
-      throw new Error(`Wallet approval for ${action} was rejected. Balances were left unchanged.`);
-    }
-    if (walletInteractionMode === 'timeout') {
-      throw new Error(`Wallet approval for ${action} timed out. Retry when the wallet is responsive.`);
-    }
-    if (walletInteractionMode === 'network-mismatch') {
-      throw new Error(`Wallet network changed during ${action}. Switch back to a supported network and retry.`);
-    }
   };
 
   const runFundingAction = async (action: FundingAction) => {
@@ -276,7 +287,6 @@
     actionMessage = null;
 
     try {
-      await simulateWalletInteraction(action);
       const request = {
         assetId: asset,
         amount: new BigNumber(amount).toFixed(),
@@ -289,7 +299,9 @@
       applyDetailResponse(response);
       if (action === 'deposit') depositAmount = '';
       if (action === 'withdraw') withdrawAmount = '';
-      actionMessage = `${action === 'deposit' ? 'Deposit' : 'Withdraw'} applied from the latest server response.`;
+      actionMessage = $_('market_making_detail_action_funding_success', {
+        values: { action: action === 'deposit' ? $_('market_making_detail_deposit') : $_('market_making_detail_withdraw') },
+      });
     } catch (error) {
       actionError = errorMessage(error);
     } finally {
@@ -311,7 +323,9 @@
             ? await pauseMarketMakingOrder(order.orderId)
             : await resumeMarketMakingOrder(order.orderId);
       applyDetailResponse(response);
-      actionMessage = `${action.charAt(0).toUpperCase()}${action.slice(1)} applied; controls now reflect the latest server state.`;
+      actionMessage = $_('market_making_detail_action_lifecycle_success', {
+        values: { action: $_(`market_making_detail_${action}`) },
+      });
     } catch (error) {
       actionError = errorMessage(error);
     } finally {
@@ -338,124 +352,154 @@
 <div data-testid="order-detail">
   {#if !$walletIsConnected && !$walletIsUnsupported}
     <section class="pt-2 max-w-xl" data-testid="order-detail-connect-gate">
-      <span class="eyebrow">Wallet scoped</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Connect wallet to view order</span>
+      <span class="eyebrow">{$_('market_making_detail_wallet_scoped')}</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_connect_title')}</span>
       <span class="mt-4 block text-base-content/60">
-        Market-making order detail is authenticated and owner scoped. Connect a supported wallet before loading protected order data.
+        {$_('market_making_detail_connect_message')}
       </span>
-      <button class="btn-pill-primary mt-6" onclick={openMockWallet} data-testid="order-detail-connect-action">Connect wallet</button>
+      <button class="btn-pill-primary mt-6" onclick={openWalletModal} data-testid="order-detail-connect-action">{$_('connect_wallet')}</button>
     </section>
   {:else if $walletIsUnsupported}
     <section class="pt-2 max-w-xl" data-testid="order-detail-unsupported-gate">
-      <span class="eyebrow">Network</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Switch to a supported wallet</span>
+      <span class="eyebrow">{$_('market_making_detail_network')}</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_unsupported_title')}</span>
       <span class="mt-4 block text-base-content/60">
-        Order management is blocked until the connected wallet is on a supported EVM or Solana network.
+        {$_('market_making_detail_unsupported_message')}
       </span>
-      <button class="btn-pill-primary mt-6" onclick={openNetworkModal} data-testid="order-detail-switch-network">Switch network</button>
+      <button class="btn-pill-primary mt-6" onclick={openNetworkModal} data-testid="order-detail-switch-network">{$_('switch_network')}</button>
     </section>
   {:else if isLoading}
     <section class="pt-2 max-w-xl" data-testid="order-loading-state">
-      <span class="eyebrow">Loading</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Loading order detail</span>
+      <span class="eyebrow">{$_('market_making_detail_loading_eyebrow')}</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_loading_title')}</span>
       <span class="mt-4 flex items-center gap-3 text-sm text-base-content/60">
         <span class="loading loading-spinner loading-sm"></span>
-        Loading order state, balances, events, and performance from the web3 market-making API.
+        {$_('market_making_detail_loading_message')}
       </span>
     </section>
   {:else if detailError}
     <section class="pt-2 max-w-xl" data-testid="order-error-state">
-      <span class="eyebrow">Recovery</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Order detail unavailable</span>
+      <span class="eyebrow">{$_('market_making_detail_recovery')}</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_error_title')}</span>
       <span class="mt-4 block text-base-content/60">
         {detailError}
       </span>
-      <button class="btn-pill-primary mt-6" onclick={() => void loadOrderDetail()} data-testid="order-detail-retry">Retry order detail</button>
+      <button class="btn-pill-primary mt-6" onclick={() => void loadOrderDetail()} data-testid="order-detail-retry">{$_('market_making_detail_retry')}</button>
     </section>
   {:else if isNotFound || !order}
     <section class="pt-2 max-w-xl" data-testid="order-not-found">
-      <span class="eyebrow">Not found</span>
-      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">Order not found</span>
+      <span class="eyebrow">{$_('market_making_detail_not_found_eyebrow')}</span>
+      <span class="mt-3 block font-display text-4xl tracking-tight text-base-content">{$_('market_making_detail_not_found_title')}</span>
       <span class="mt-4 block text-base-content/60">
-        This market-making order was not found for the authenticated wallet. Return to the order list to select an accessible order.
+        {$_('market_making_detail_not_found_message')}
       </span>
-      <a class="btn-pill-primary mt-6 inline-flex" href="/app/market-making">My orders</a>
+      <a class="btn-pill-primary mt-6 inline-flex" href="/app/market-making">{$_('market_making_detail_my_orders')}</a>
     </section>
   {:else}
     <section class="pt-2">
       <span class="eyebrow capitalize">{formatState(order.state)}</span>
-      <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content font-mono-num">Order {compactOrderId(order.orderId)}</span>
+      <span class="mt-3 block font-display text-5xl md:text-6xl tracking-tight text-base-content font-mono-num">{$_('market_making_detail_order_prefix')} {compactOrderId(order.orderId)}</span>
       <span class="mt-4 block text-base-content/60">
         <span class="font-mono-num">{order.orderId}</span> · {detailNamespace} · {$walletNamespaceLabel} · <span class="font-mono-num">{$walletShortAddress}</span>
       </span>
 
-      <section class="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-base-300 px-5 py-4" data-testid="order-detail-refresh-controls">
-        <span class="text-sm text-base-content/60">Actions are recalculated from the latest server detail or mutation response.</span>
-        <button class="btn-pill-outline" onclick={() => void loadOrderDetail()} disabled={isLoading || Boolean(actionLoading)} data-testid="order-detail-refresh">
-          Refresh order
-        </button>
+      <section class="mt-8 grid gap-4 rounded-2xl border border-base-300 px-5 py-4 lg:grid-cols-[1fr_auto]" data-testid="order-detail-top-controls">
+        <div class="flex flex-col gap-2">
+          <span class="eyebrow">{$_('market_making_detail_lifecycle_status')}</span>
+          <span class="text-2xl capitalize text-base-content">{formatState(order.state)}</span>
+          <span class="text-sm text-base-content/60">{$_('market_making_detail_actions_recalculated')}</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            class="btn-pill-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!order.validActions.start || Boolean(actionLoading)}
+            onclick={() => void runLifecycleAction('start')}
+            data-testid="order-start-action"
+          >
+            {actionLoading === 'start' ? $_('market_making_detail_starting') : $_('market_making_detail_start_order')}
+          </button>
+          <button
+            class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!order.validActions.pause || Boolean(actionLoading)}
+            onclick={() => void runLifecycleAction('pause')}
+            data-testid="order-pause-action"
+          >
+            {actionLoading === 'pause' ? $_('market_making_detail_pausing') : $_('market_making_detail_pause_order')}
+          </button>
+          <button
+            class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!order.validActions.resume || Boolean(actionLoading)}
+            onclick={() => void runLifecycleAction('resume')}
+            data-testid="order-resume-action"
+          >
+            {actionLoading === 'resume' ? $_('market_making_detail_resuming') : $_('market_making_detail_resume_order')}
+          </button>
+          <button class="btn-pill-outline" onclick={() => void loadOrderDetail()} disabled={isLoading || Boolean(actionLoading)} data-testid="order-detail-refresh">
+            {$_('market_making_detail_refresh_order')}
+          </button>
+        </div>
       </section>
 
       {#if actionError}
-        <section class="mt-6 rounded-2xl border border-error/40 px-5 py-4" data-testid="order-action-error">
-          <span class="block font-medium text-error">Order action failed.</span>
+        <section class="mt-6 rounded-2xl border border-error/40 px-5 py-4" aria-live="polite" data-testid="order-action-error">
+          <span class="block font-medium text-error">{$_('market_making_detail_action_failed')}</span>
           <span class="mt-1 block text-sm text-base-content/70">{actionError}</span>
         </section>
       {/if}
 
       {#if actionMessage}
-        <section class="mt-6 rounded-2xl border border-success/40 px-5 py-4" data-testid="order-action-success">
-          <span class="block font-medium text-success">Order updated.</span>
+        <section class="mt-6 rounded-2xl border border-success/40 px-5 py-4" aria-live="polite" data-testid="order-action-success">
+          <span class="block font-medium text-success">{$_('market_making_detail_action_updated')}</span>
           <span class="mt-1 block text-sm text-base-content/70">{actionMessage}</span>
         </section>
       {/if}
 
       <div class="mt-8 grid gap-px bg-base-300 border border-base-300 rounded-2xl overflow-hidden md:grid-cols-2 lg:grid-cols-4" data-testid="order-detail-summary">
         <div class="bg-base-100 p-5">
-          <span class="eyebrow">Lifecycle status</span>
+          <span class="eyebrow">{$_('market_making_detail_lifecycle_status')}</span>
           <span class="mt-2 block text-xl capitalize">{formatState(order.state)}</span>
         </div>
         <div class="bg-base-100 p-5">
-          <span class="eyebrow">Pair</span>
+          <span class="eyebrow">{$_('market_making_detail_pair')}</span>
           <span class="mt-2 block font-mono-num text-xl">{formatText(order.pair ?? order.specs.pair)}</span>
         </div>
         <div class="bg-base-100 p-5">
-          <span class="eyebrow">Strategy</span>
+          <span class="eyebrow">{$_('market_making_detail_strategy')}</span>
           <span class="mt-2 block text-xl">{strategyLabel(order)}</span>
         </div>
         <div class="bg-base-100 p-5">
-          <span class="eyebrow">Created</span>
+          <span class="eyebrow">{$_('market_making_detail_created')}</span>
           <span class="mt-2 block font-mono-num text-sm">{formatDate(order.createdAt)}</span>
         </div>
       </div>
     </section>
 
-    <Section title="Strategy and pair specs" eyebrow="Server detail" caption="Pair, exchange, strategy definition, and resolved config are read from the order detail API.">
+    <Section title={$_('market_making_detail_specs_title')} eyebrow={$_('market_making_detail_server_detail')} caption={$_('market_making_detail_specs_caption')}>
       <div class="grid gap-5 border-t border-base-300 pt-6 lg:grid-cols-2" data-testid="order-strategy-specs">
         <div class="rounded-2xl border border-base-300 px-5 py-4">
-          <span class="eyebrow">Strategy context</span>
+          <span class="eyebrow">{$_('market_making_detail_strategy_context')}</span>
           <span class="mt-2 block text-lg text-base-content">{strategyLabel(order)}</span>
           <span class="mt-1 block text-sm text-base-content/60">{formatText(order.strategy.description)}</span>
           <span class="mt-3 block font-mono-num text-xs text-base-content/50">
-            {formatText(order.strategy.key)} · {formatText(order.strategy.controller)} · resolved {formatDate(order.strategy.resolvedAt)}
+            {formatText(order.strategy.key)} · {formatText(order.strategy.controller)} · {$_('market_making_detail_resolved')} {formatDate(order.strategy.resolvedAt)}
           </span>
         </div>
         <div class="rounded-2xl border border-base-300 px-5 py-4">
-          <span class="eyebrow">Pair/spec summary</span>
+          <span class="eyebrow">{$_('market_making_detail_pair_spec_summary')}</span>
           <span class="mt-2 block text-lg font-mono-num text-base-content">{formatText(order.specs.pair ?? order.pair)}</span>
           <span class="mt-1 block text-sm text-base-content/60">{specsSummary(order)}</span>
           <span class="mt-3 block text-xs text-base-content/50">
-            Price source {formatText(order.specs.priceSourceType)} · amount change {formatText(order.specs.amountChangePerLayer)} {formatText(order.specs.amountChangeType)}
+            {$_('market_making_detail_price_source')} {formatText(order.specs.priceSourceType)} · {$_('market_making_detail_amount_change')} {formatText(order.specs.amountChangePerLayer)} {formatText(order.specs.amountChangeType)}
           </span>
         </div>
       </div>
     </Section>
 
-    <Section title="Order balances and funding" eyebrow="Order attributed" caption="Deposited, available, locked, fees, and liquidity values are scoped by order and asset.">
+    <Section title={$_('market_making_detail_balances_title')} eyebrow={$_('market_making_detail_order_attributed')} caption={$_('market_making_detail_balances_caption')}>
       <div class="border-t border-base-300 pt-6" data-testid="order-balances">
         {#if order.balances.length === 0}
           <span class="block rounded-2xl border border-base-300 px-5 py-4 text-sm text-base-content/60" data-testid="order-balances-empty">
-            No order-attributed balances have been recorded yet.
+            {$_('market_making_detail_balances_empty')}
           </span>
         {:else}
           <div class="grid gap-4 lg:grid-cols-2">
@@ -463,14 +507,14 @@
               <div class="rounded-2xl border border-base-300 px-5 py-4" data-testid="order-balance-{balance.assetId}">
                 <span class="eyebrow">{balance.assetId}</span>
                 <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
-                  <span class="flex flex-col"><span class="text-base-content/50">Deposited</span><span class="font-mono-num">{formatAmount(balance.initialDeposit)} {balance.assetId}</span></span>
-                  <span class="flex flex-col"><span class="text-base-content/50">Available</span><span class="font-mono-num">{formatAmount(balance.available)} {balance.assetId}</span></span>
-                  <span class="flex flex-col"><span class="text-base-content/50">Locked/reserved</span><span class="font-mono-num">{formatAmount(balance.locked)} {balance.assetId}</span></span>
-                  <span class="flex flex-col"><span class="text-base-content/50">Liquidity total</span><span class="font-mono-num">{formatAmount(balance.total)} {balance.assetId}</span></span>
-                  <span class="flex flex-col"><span class="text-base-content/50">Fees</span><span class="font-mono-num">{formatAmount(balance.feePaid)} {balance.assetId}</span></span>
-                  <span class="flex flex-col"><span class="text-base-content/50">Realized delta</span><span class="font-mono-num">{formatSignedAmount(balance.realizedDelta)} {balance.assetId}</span></span>
+                  <span class="flex flex-col"><span class="text-base-content/50">{$_('market_making_detail_deposited')}</span><span class="font-mono-num">{formatAmount(balance.initialDeposit)} {balance.assetId}</span></span>
+                  <span class="flex flex-col"><span class="text-base-content/50">{$_('market_making_detail_available')}</span><span class="font-mono-num">{formatAmount(balance.available)} {balance.assetId}</span></span>
+                  <span class="flex flex-col"><span class="text-base-content/50">{$_('market_making_detail_locked_reserved')}</span><span class="font-mono-num">{formatAmount(balance.locked)} {balance.assetId}</span></span>
+                  <span class="flex flex-col"><span class="text-base-content/50">{$_('market_making_detail_liquidity_total')}</span><span class="font-mono-num">{formatAmount(balance.total)} {balance.assetId}</span></span>
+                  <span class="flex flex-col"><span class="text-base-content/50">{$_('market_making_detail_fees')}</span><span class="font-mono-num">{formatAmount(balance.feePaid)} {balance.assetId}</span></span>
+                  <span class="flex flex-col"><span class="text-base-content/50">{$_('market_making_detail_realized_delta')}</span><span class="font-mono-num">{formatSignedAmount(balance.realizedDelta)} {balance.assetId}</span></span>
                 </div>
-                <span class="mt-3 block text-xs text-base-content/50">Updated {formatDate(balance.updatedAt)}</span>
+                <span class="mt-3 block text-xs text-base-content/50">{$_('market_making_detail_updated')} {formatDate(balance.updatedAt)}</span>
               </div>
             {/each}
           </div>
@@ -478,24 +522,14 @@
       </div>
     </Section>
 
-    <Section title="Deposit and withdraw" eyebrow="Funding actions" caption="Funding requests use order-scoped endpoints, idempotency keys, and latest-server-state balance refreshes.">
+    <Section title={$_('market_making_detail_funding_title')} eyebrow={$_('market_making_detail_funding_actions')} caption={$_('market_making_detail_funding_caption')}>
       <div class="border-t border-base-300 pt-6" data-testid="order-funding-actions">
-        <label class="mb-5 flex max-w-sm flex-col gap-2">
-          <span class="eyebrow">Wallet interaction preview</span>
-          <select class="bg-transparent border-b border-base-300 px-0 py-2 focus:outline-none focus:border-base-content" bind:value={walletInteractionMode} disabled={Boolean(actionLoading)} data-testid="order-wallet-interaction-mode">
-            <option value="approve">Approve wallet action</option>
-            <option value="reject">Preview user rejection</option>
-            <option value="timeout">Preview wallet timeout</option>
-            <option value="network-mismatch">Preview network mismatch</option>
-          </select>
-        </label>
-
         <div class="grid gap-6 lg:grid-cols-2">
           <form class="rounded-2xl border border-base-300 px-5 py-4" onsubmit={(event) => { event.preventDefault(); void runFundingAction('deposit'); }} data-testid="order-deposit-form">
-            <span class="eyebrow">Deposit</span>
-            <span class="mt-2 block text-sm text-base-content/60">Deposit funds into this order only. Server balances refresh after success.</span>
+            <span class="eyebrow">{$_('market_making_detail_deposit')}</span>
+            <span class="mt-2 block text-sm text-base-content/60">{$_('market_making_detail_deposit_hint')}</span>
             <label class="mt-4 flex flex-col gap-2">
-              <span class="text-xs text-base-content/50">Asset</span>
+              <span class="text-xs text-base-content/50">{$_('market_making_detail_asset')}</span>
               <select class="bg-transparent border-b border-base-300 px-0 py-2 focus:outline-none focus:border-base-content disabled:opacity-40" bind:value={depositAsset} disabled={!order.validActions.deposit || Boolean(actionLoading)} data-testid="order-deposit-asset">
                 {#each supportedAssets as asset}
                   <option value={asset}>{asset}</option>
@@ -503,22 +537,22 @@
               </select>
             </label>
             <label class="mt-4 flex flex-col gap-2">
-              <span class="text-xs text-base-content/50">Amount</span>
+              <span class="text-xs text-base-content/50">{$_('market_making_detail_amount')}</span>
               <input class="bg-transparent border-b border-base-300 px-0 py-2 font-mono-num focus:outline-none focus:border-base-content disabled:opacity-40" inputmode="decimal" bind:value={depositAmount} disabled={!order.validActions.deposit || Boolean(actionLoading)} data-testid="order-deposit-amount" />
             </label>
             {#if attemptedDeposit && depositValidationError}
               <span class="mt-3 block text-sm text-error" data-testid="order-deposit-validation">{depositValidationError}</span>
             {/if}
             <button class="btn-pill-primary mt-5 disabled:opacity-40 disabled:cursor-not-allowed" disabled={!order.validActions.deposit || Boolean(actionLoading)} data-testid="order-deposit-submit">
-              {actionLoading === 'deposit' ? 'Depositing…' : 'Deposit to order'}
+              {actionLoading === 'deposit' ? $_('market_making_detail_depositing') : $_('market_making_detail_deposit_to_order')}
             </button>
           </form>
 
           <form class="rounded-2xl border border-base-300 px-5 py-4" onsubmit={(event) => { event.preventDefault(); void runFundingAction('withdraw'); }} data-testid="order-withdraw-form">
-            <span class="eyebrow">Withdraw</span>
-            <span class="mt-2 block text-sm text-base-content/60">Withdraw only available funds. Locked/reserved balances stay protected.</span>
+            <span class="eyebrow">{$_('market_making_detail_withdraw')}</span>
+            <span class="mt-2 block text-sm text-base-content/60">{$_('market_making_detail_withdraw_hint')}</span>
             <label class="mt-4 flex flex-col gap-2">
-              <span class="text-xs text-base-content/50">Asset</span>
+              <span class="text-xs text-base-content/50">{$_('market_making_detail_asset')}</span>
               <select class="bg-transparent border-b border-base-300 px-0 py-2 focus:outline-none focus:border-base-content disabled:opacity-40" bind:value={withdrawAsset} disabled={!order.validActions.withdraw || Boolean(actionLoading)} data-testid="order-withdraw-asset">
                 {#each supportedAssets as asset}
                   <option value={asset}>{asset}</option>
@@ -526,76 +560,62 @@
               </select>
             </label>
             <label class="mt-4 flex flex-col gap-2">
-              <span class="text-xs text-base-content/50">Amount</span>
+              <span class="text-xs text-base-content/50">{$_('market_making_detail_amount')}</span>
               <input class="bg-transparent border-b border-base-300 px-0 py-2 font-mono-num focus:outline-none focus:border-base-content disabled:opacity-40" inputmode="decimal" bind:value={withdrawAmount} disabled={!order.validActions.withdraw || Boolean(actionLoading)} data-testid="order-withdraw-amount" />
             </label>
             <span class="mt-2 block text-xs text-base-content/50">
-              Available {formatAmount(selectedWithdrawBalance?.available || 0)} {withdrawAsset || 'asset'}
+              {$_('market_making_detail_available')} {formatAmount(selectedWithdrawBalance?.available || 0)} {withdrawAsset || $_('market_making_detail_asset')}
             </span>
             {#if attemptedWithdraw && withdrawValidationError}
               <span class="mt-3 block text-sm text-error" data-testid="order-withdraw-validation">{withdrawValidationError}</span>
             {/if}
             <button class="btn-pill-primary mt-5 disabled:opacity-40 disabled:cursor-not-allowed" disabled={!order.validActions.withdraw || Boolean(actionLoading)} data-testid="order-withdraw-submit">
-              {actionLoading === 'withdraw' ? 'Withdrawing…' : 'Withdraw available'}
+              {actionLoading === 'withdraw' ? $_('market_making_detail_withdrawing') : $_('market_making_detail_withdraw_available')}
             </button>
           </form>
         </div>
       </div>
     </Section>
 
-    <Section title="Lifecycle controls" eyebrow="State specific" caption="Invalid lifecycle actions remain unavailable and do not submit requests.">
-      <div class="flex flex-wrap gap-2 border-t border-base-300 pt-6" data-testid="order-lifecycle-actions">
-        <button
-          class="btn-pill-primary disabled:opacity-40 disabled:cursor-not-allowed"
-          disabled={!order.validActions.start || Boolean(actionLoading)}
-          onclick={() => void runLifecycleAction('start')}
-          data-testid="order-start-action"
-        >
-          {actionLoading === 'start' ? 'Starting…' : 'Start order'}
-        </button>
-        <button
-          class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed"
-          disabled={!order.validActions.pause || Boolean(actionLoading)}
-          onclick={() => void runLifecycleAction('pause')}
-          data-testid="order-pause-action"
-        >
-          {actionLoading === 'pause' ? 'Pausing…' : 'Pause order'}
-        </button>
-        <button
-          class="btn-pill-outline disabled:opacity-40 disabled:cursor-not-allowed"
-          disabled={!order.validActions.resume || Boolean(actionLoading)}
-          onclick={() => void runLifecycleAction('resume')}
-          data-testid="order-resume-action"
-        >
-          {actionLoading === 'resume' ? 'Resuming…' : 'Resume order'}
-        </button>
-      </div>
-    </Section>
-
-    <Section title="PnL and performance" eyebrow="Metrics" caption="Profit, PnL, fees, realized deltas, snapshots, counts, and timestamps are rendered from server-exposed fields when available.">
+    <Section title={$_('market_making_detail_performance_title')} eyebrow={$_('market_making_detail_metrics')} caption={$_('market_making_detail_performance_caption')}>
       <div class="grid gap-4 border-t border-base-300 pt-6 lg:grid-cols-3" data-testid="order-performance">
         {#each Object.entries(order.performance.pnlByAsset || {}) as [asset, value]}
           <div class="rounded-2xl border border-base-300 px-5 py-4" data-testid="order-pnl-{asset}">
-            <span class="eyebrow">PnL {asset}</span>
+            <span class="eyebrow">{$_('market_making_detail_pnl')} {asset}</span>
             <span class="mt-2 block font-mono-num text-2xl">{formatSignedAmount(value)} {asset}</span>
             <span class="mt-2 block text-xs text-base-content/50">
-              Realized {formatSignedAmount(order.performance.realizedDeltaByAsset?.[asset] || 0)} · fees {formatAmount(order.performance.feePaidByAsset?.[asset] || 0)}
+              {$_('market_making_detail_realized')} {formatSignedAmount(order.performance.realizedDeltaByAsset?.[asset] || 0)} · {$_('market_making_detail_fees')} {formatAmount(order.performance.feePaidByAsset?.[asset] || 0)}
             </span>
           </div>
         {/each}
+        <div class="rounded-2xl border border-base-300 px-5 py-4" data-testid="order-spread-capture">
+          <span class="eyebrow">{$_('market_making_detail_spread_capture')}</span>
+          {#if spreadCaptureRows.length === 0}
+            <span class="mt-2 block text-sm text-base-content/60">{$_('market_making_detail_spread_capture_empty')}</span>
+          {:else}
+            <div class="mt-3 grid gap-2 text-sm">
+              {#each spreadCaptureRows as row}
+                <span class="flex items-center justify-between gap-3">
+                  <span class="text-base-content/55">{row.label}</span>
+                  <span class="font-mono-num text-base-content">{row.value}</span>
+                </span>
+              {/each}
+            </div>
+          {/if}
+        </div>
         {#if Object.keys(order.performance.pnlByAsset || {}).length === 0}
-          <span class="rounded-2xl border border-base-300 px-5 py-4 text-sm text-base-content/60" data-testid="order-pnl-empty">PnL unavailable until order balances or fills are recorded.</span>
+          <span class="rounded-2xl border border-base-300 px-5 py-4 text-sm text-base-content/60" data-testid="order-pnl-empty">{$_('market_making_detail_pnl_empty')}</span>
         {/if}
       </div>
       <div class="mt-6 border-t border-base-300" data-testid="order-performance-snapshots">
         {#if order.performance.snapshots.length === 0}
-          <span class="block py-4 text-sm text-base-content/60">No performance snapshots are available yet.</span>
+          <span class="block py-4 text-sm text-base-content/60">{$_('market_making_detail_snapshots_empty')}</span>
         {:else}
           {#each order.performance.snapshots as snapshot}
             <div class="flex flex-wrap items-start justify-between gap-3 border-b border-base-300 py-4" data-testid="order-performance-snapshot">
               <div class="flex flex-col">
                 <span class="font-medium text-base-content">{formatText(snapshot.strategyType)}</span>
-                <span class="mt-1 font-mono-num text-sm text-base-content/70">Profit/Loss {formatSignedAmount(snapshot.profitLoss)}</span>
+                <span class="mt-1 font-mono-num text-sm text-base-content/70">{$_('market_making_detail_profit_loss')} {formatSignedAmount(snapshot.profitLoss)}</span>
                 {#if Object.entries(snapshot.additionalMetrics || {}).length > 0}
                   <div class="mt-3 grid gap-2 sm:grid-cols-2" data-testid="order-performance-additional-metrics">
                     {#each Object.entries(snapshot.additionalMetrics || {}) as [key, value]}
@@ -614,18 +634,23 @@
       </div>
     </Section>
 
-    <Section title="Execution timeline" eyebrow="Order events" caption="Chronological order-attributed events are loaded from the API, including deposits, withdrawals, fills, placements, failures, cancellations, and lifecycle records when exposed.">
+    <Section title={$_('market_making_detail_events_title')} eyebrow={$_('market_making_detail_order_events')} caption={$_('market_making_detail_events_caption')}>
       <div class="border-t border-base-300" data-testid="order-event-timeline">
         {#if orderedEvents.length === 0}
-          <span class="block py-6 text-sm text-base-content/60" data-testid="order-event-empty">No order events have been recorded yet.</span>
+          <span class="block py-6 text-sm text-base-content/60" data-testid="order-event-empty">{$_('market_making_detail_events_empty')}</span>
         {:else}
           {#each orderedEvents as event}
             <div class="flex items-start gap-4 border-b border-base-300 py-4" data-testid="order-event-row">
-            <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary"></span>
+            <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-base-content"></span>
             <div class="flex flex-1 flex-wrap items-baseline justify-between gap-2">
               <div class="flex flex-col">
                 <span class="font-medium text-base-content capitalize">{eventLabel(event)}</span>
                 <span class="text-xs text-base-content/55">{eventSummary(event)}</span>
+                {#if event.metadata && Object.keys(event.metadata).length > 0}
+                  <span class="mt-1 font-mono-num text-xs text-base-content/45" data-testid="order-event-metadata">
+                    {JSON.stringify(event.metadata)}
+                  </span>
+                {/if}
               </div>
               <span class="font-mono-num text-xs text-base-content/50">{formatDate(event.timestamp)}</span>
             </div>

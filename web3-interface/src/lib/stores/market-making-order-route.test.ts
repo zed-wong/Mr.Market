@@ -118,12 +118,33 @@ describe('market-making campaign detail to order route', () => {
     expect(source).toContain('order.validActions.resume');
     expect(source).toContain('order.validActions.deposit');
     expect(source).toContain('order.validActions.withdraw');
+    expect(source).toContain('order-detail-top-controls');
     expect(source).toContain('order-event-timeline');
+    expect(source).toContain('order-spread-capture');
     expect(source).toContain('snapshot.additionalMetrics');
     expect(source).toContain('formatAdditionalMetricValue');
-    expect(source).toContain('walletInteractionMode');
+    expect(source).toContain('depositMarketMakingOrder(order.orderId, request)');
+    expect(source).toContain('withdrawMarketMakingOrder(order.orderId, request)');
     expect(source).not.toContain('transitionOrderLifecycle');
+    expect(source).not.toContain('walletInteractionMode');
     expect(source).not.toContain('allCampaigns');
     expect(source).not.toContain('Unknown campaign');
+  });
+
+  it('localizes order detail copy and keeps funding validation inline', () => {
+    const source = orderDetailSource();
+    const en = readFileSync(fileURLToPath(new URL('../../i18n/en.json', import.meta.url)), 'utf8');
+    const zh = readFileSync(fileURLToPath(new URL('../../i18n/zh.json', import.meta.url)), 'utf8');
+
+    expect(source).toContain("import { _ } from 'svelte-i18n'");
+    expect(source).toContain("$_('market_making_detail_funding_title')");
+    expect(source).toContain("$_('market_making_detail_performance_title')");
+    expect(source).toContain("$_('market_making_detail_events_title')");
+    expect(source).toContain('order-deposit-validation');
+    expect(source).toContain('order-withdraw-validation');
+    expect(en).toContain('"market_making_detail_funding_title"');
+    expect(en).toContain('"market_making_detail_spread_capture"');
+    expect(zh).toContain('"market_making_detail_funding_title"');
+    expect(zh).toContain('"market_making_detail_spread_capture"');
   });
 });
