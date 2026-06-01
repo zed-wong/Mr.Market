@@ -242,9 +242,9 @@
       },
       {
         key: 'capital',
-        label: 'capital total',
+        label: 'tracked balances',
         value: formatNumber(summary.kpis.totalCapital, { maximumFractionDigits: 2 }),
-        unit: 'asset units',
+        unit: `${formatNumber(summary.capital.byAsset.length)} ${summary.capital.byAsset.length === 1 ? 'asset' : 'assets'}`,
         tone: 'neutral',
       },
     ] satisfies DashboardKpi[];

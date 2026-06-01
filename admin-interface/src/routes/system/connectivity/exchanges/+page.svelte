@@ -586,16 +586,16 @@
                 </span>
 
                 <span class="flex items-center gap-2">
-                  <span class="badge badge-sm capitalize {readiness.tone}">{hasVenue ? "metadata ready" : "metadata missing"}</span>
+                  <span class="badge badge-sm capitalize {readiness.tone}">{hasVenue ? "ready" : "missing"}</span>
                 </span>
 
                 <span class="flex items-center">
                   {#if readyTradeKeys.length > 0}
-                    <span class="badge badge-sm badge-success text-base-100 capitalize">execution ready</span>
+                    <span class="badge badge-sm badge-success text-base-100 capitalize">ready</span>
                   {:else if exchangeKeys.length > 0}
-                    <span class="badge badge-sm badge-warning text-base-content capitalize">execution blocked</span>
+                    <span class="badge badge-sm badge-warning text-base-content capitalize">blocked</span>
                   {:else}
-                    <span class="badge badge-sm badge-ghost capitalize">metadata only</span>
+                    <span class="badge badge-sm badge-ghost capitalize">no account</span>
                   {/if}
                 </span>
 
