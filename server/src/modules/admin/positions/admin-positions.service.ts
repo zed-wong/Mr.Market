@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
+import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
@@ -36,6 +37,8 @@ export class AdminPositionsService {
   constructor(
     @InjectRepository(MarketMakingOrderBalance)
     private readonly orderBalanceRepository: Repository<MarketMakingOrderBalance>,
+    @InjectRepository(GrowdataMarketMakingPair)
+    private readonly marketMakingPairRepository: Repository<GrowdataMarketMakingPair>,
     @InjectRepository(TrackedOrderEntity)
     private readonly trackedOrderRepository: Repository<TrackedOrderEntity>,
     @InjectRepository(StrategyInstance)
@@ -72,13 +75,15 @@ export class AdminPositionsService {
       .take(METADATA_SCAN_LIMIT)
       .getMany();
 
-    const [orderMetadata, strategyMetadata] = await Promise.all([
+    const [orderMetadata, strategyMetadata, assetSymbols] = await Promise.all([
       this.loadOrderMetadata(balances),
       this.loadStrategyMetadata(balances),
+      this.buildAssetSymbolMap(),
     ]);
     const items = balances.map((balance) =>
       this.serializePosition(
         balance,
+        assetSymbols,
         orderMetadata.get(balance.orderId),
         strategyMetadata.get(balance.orderId),
       ),
@@ -88,7 +93,7 @@ export class AdminPositionsService {
     return {
       generatedAt: getRFC3339Timestamp(),
       items,
-      summary: this.buildSummary(summaryBalances, total),
+      summary: this.buildSummary(summaryBalances, total, assetSymbols),
       pagination: {
         page: pagination.page,
         limit: pagination.limit,
@@ -172,7 +177,9 @@ export class AdminPositionsService {
     const parsed = Number(value);
 
     if (!Number.isSafeInteger(parsed) || parsed < 1) {
-      throw new BadRequestException(`${options.name} must be a positive integer.`);
+      throw new BadRequestException(
+        `${options.name} must be a positive integer.`,
+      );
     }
 
     if (parsed > options.maxValue) {
@@ -342,6 +349,7 @@ export class AdminPositionsService {
 
   private serializePosition(
     balance: MarketMakingOrderBalance,
+    assetSymbols: Map<string, string>,
     order?: {
       exchange: string | null;
       accountLabel: string | null;
@@ -358,11 +366,12 @@ export class AdminPositionsService {
     const available = this.formatDecimal(balance.available);
     const locked = this.formatDecimal(balance.locked);
     const total = this.formatDecimal(balance.total);
+    const asset = this.resolveAssetSymbol(balance.assetId, assetSymbols);
 
     return {
       id: `${balance.orderId}:${balance.assetId}`,
       orderId: balance.orderId,
-      asset: balance.assetId,
+      asset,
       assetId: balance.assetId,
       exchange: order?.exchange || null,
       accountLabel: order?.accountLabel || null,
@@ -379,7 +388,7 @@ export class AdminPositionsService {
       realizedDelta: this.formatDecimal(balance.realizedDelta),
       feePaid: this.formatDecimal(balance.feePaid),
       exposure: {
-        asset: balance.assetId,
+        asset,
         quantity: total,
         notional: null,
         currency: null,
@@ -407,6 +416,7 @@ export class AdminPositionsService {
   private buildSummary(
     balances: MarketMakingOrderBalance[],
     totalRows: number,
+    assetSymbols: Map<string, string>,
   ) {
     const byAsset = new Map<
       string,
@@ -419,19 +429,18 @@ export class AdminPositionsService {
     >();
 
     for (const balance of balances) {
-      const current =
-        byAsset.get(balance.assetId) ||
-        {
-          asset: balance.assetId,
-          available: new BigNumber(0),
-          locked: new BigNumber(0),
-          total: new BigNumber(0),
-        };
+      const asset = this.resolveAssetSymbol(balance.assetId, assetSymbols);
+      const current = byAsset.get(asset) || {
+        asset,
+        available: new BigNumber(0),
+        locked: new BigNumber(0),
+        total: new BigNumber(0),
+      };
 
       current.available = current.available.plus(balance.available || 0);
       current.locked = current.locked.plus(balance.locked || 0);
       current.total = current.total.plus(balance.total || 0);
-      byAsset.set(balance.assetId, current);
+      byAsset.set(asset, current);
     }
 
     return {
@@ -499,6 +508,36 @@ export class AdminPositionsService {
     const parsed = new BigNumber(value || 0);
 
     return parsed.isFinite() ? parsed.toFixed() : '0';
+  }
+
+  private async buildAssetSymbolMap(): Promise<Map<string, string>> {
+    const pairs = await this.marketMakingPairRepository.find({
+      select: [
+        'base_asset_id',
+        'base_symbol',
+        'quote_asset_id',
+        'quote_symbol',
+      ],
+    });
+    const symbols = new Map<string, string>();
+
+    for (const pair of pairs) {
+      if (pair.base_asset_id && pair.base_symbol) {
+        symbols.set(pair.base_asset_id.toLowerCase(), pair.base_symbol);
+      }
+      if (pair.quote_asset_id && pair.quote_symbol) {
+        symbols.set(pair.quote_asset_id.toLowerCase(), pair.quote_symbol);
+      }
+    }
+
+    return symbols;
+  }
+
+  private resolveAssetSymbol(
+    assetId: string,
+    assetSymbols: Map<string, string>,
+  ): string {
+    return assetSymbols.get(assetId.toLowerCase()) || assetId;
   }
 
   private normalizeTimestamp(value?: string | null): string | null {

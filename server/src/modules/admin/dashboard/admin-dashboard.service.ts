@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
+import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
@@ -68,6 +69,8 @@ export class AdminDashboardService {
     private readonly trackedOrderRepository: Repository<TrackedOrderEntity>,
     @InjectRepository(MarketMakingOrderBalance)
     private readonly orderBalanceRepository: Repository<MarketMakingOrderBalance>,
+    @InjectRepository(GrowdataMarketMakingPair)
+    private readonly marketMakingPairRepository: Repository<GrowdataMarketMakingPair>,
     @InjectRepository(APIKeysConfig)
     private readonly apiKeysRepository: Repository<APIKeysConfig>,
     @InjectRepository(StrategyExecutionHistory)
@@ -282,12 +285,13 @@ export class AdminDashboardService {
   }
 
   private async buildCapitalSummary() {
-    const [totalRows, rows] = await Promise.all([
+    const [totalRows, rows, assetSymbols] = await Promise.all([
       this.orderBalanceRepository.count(),
       this.orderBalanceRepository.find({
         order: { updatedAt: 'DESC' },
         take: CAPITAL_SCAN_LIMIT,
       }),
+      this.buildAssetSymbolMap(),
     ]);
     const byAsset = new Map<
       string,
@@ -301,15 +305,13 @@ export class AdminDashboardService {
     let aggregateTotal = new BigNumber(0);
 
     for (const row of rows) {
-      const asset = row.assetId.toUpperCase();
-      const existing =
-        byAsset.get(asset) ||
-        {
-          asset,
-          available: new BigNumber(0),
-          locked: new BigNumber(0),
-          total: new BigNumber(0),
-        };
+      const asset = this.resolveAssetSymbol(row.assetId, assetSymbols);
+      const existing = byAsset.get(asset) || {
+        asset,
+        available: new BigNumber(0),
+        locked: new BigNumber(0),
+        total: new BigNumber(0),
+      };
 
       existing.available = existing.available.plus(row.available || 0);
       existing.locked = existing.locked.plus(row.locked || 0);
@@ -352,6 +354,7 @@ export class AdminDashboardService {
         const status = key.validation_status || 'unknown';
 
         result[status] = (result[status] || 0) + 1;
+
         return result;
       },
       {},
@@ -468,6 +471,36 @@ export class AdminDashboardService {
     };
   }
 
+  private async buildAssetSymbolMap(): Promise<Map<string, string>> {
+    const pairs = await this.marketMakingPairRepository.find({
+      select: [
+        'base_asset_id',
+        'base_symbol',
+        'quote_asset_id',
+        'quote_symbol',
+      ],
+    });
+    const symbols = new Map<string, string>();
+
+    for (const pair of pairs) {
+      if (pair.base_asset_id && pair.base_symbol) {
+        symbols.set(pair.base_asset_id.toLowerCase(), pair.base_symbol);
+      }
+      if (pair.quote_asset_id && pair.quote_symbol) {
+        symbols.set(pair.quote_asset_id.toLowerCase(), pair.quote_symbol);
+      }
+    }
+
+    return symbols;
+  }
+
+  private resolveAssetSymbol(
+    assetId: string,
+    assetSymbols: Map<string, string>,
+  ): string {
+    return assetSymbols.get(assetId.toLowerCase()) || assetId.toUpperCase();
+  }
+
   private async countByKnownValues<T extends ObjectLiteral>(
     repository: Repository<T>,
     field: keyof T & string,
@@ -517,19 +550,25 @@ export class AdminDashboardService {
 
     if (value && typeof value === 'object') {
       return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
-          key,
-          key === 'timestamp' || key.endsWith('At') || key.endsWith('Timestamp')
-            ? this.normalizeTimestampValue(nested)
-            : this.normalizeNestedTimestamps(nested),
-        ]),
+        Object.entries(value as Record<string, unknown>).map(
+          ([key, nested]) => [
+            key,
+            key === 'timestamp' ||
+            key.endsWith('At') ||
+            key.endsWith('Timestamp')
+              ? this.normalizeTimestampValue(nested)
+              : this.normalizeNestedTimestamps(nested),
+          ],
+        ),
       );
     }
 
     return value;
   }
 
-  private normalizeTimestampFields<T extends Record<string, unknown>>(row: T): T {
+  private normalizeTimestampFields<T extends Record<string, unknown>>(
+    row: T,
+  ): T {
     const normalized: Record<string, unknown> = { ...row };
 
     for (const key of Object.keys(normalized)) {

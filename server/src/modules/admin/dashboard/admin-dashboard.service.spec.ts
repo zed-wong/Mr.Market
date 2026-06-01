@@ -4,7 +4,8 @@ import { AdminDashboardService } from './admin-dashboard.service';
 
 type Row = Record<string, any>;
 
-const ts = (minute: number) => `2026-05-23T00:${String(minute).padStart(2, '0')}:00.000Z`;
+const ts = (minute: number) =>
+  `2026-05-23T00:${String(minute).padStart(2, '0')}:00.000Z`;
 
 function createRepository(rows: Row[]) {
   return {
@@ -114,6 +115,7 @@ describe('AdminDashboardService', () => {
         updatedAt: ts(6),
       },
     ]);
+    const marketPairs = createRepository([]);
     const apiKeys = createRepository([
       {
         key_id: '1',
@@ -180,6 +182,7 @@ describe('AdminDashboardService', () => {
       overrides.intents || (intents as any),
       overrides.trackedOrders || (trackedOrders as any),
       overrides.balances || (balances as any),
+      overrides.marketPairs || (marketPairs as any),
       overrides.apiKeys || (apiKeys as any),
       overrides.executions || (executions as any),
       overrides.metrics || (metrics as any),
@@ -246,6 +249,68 @@ describe('AdminDashboardService', () => {
     expect(trackedOrders.count).toHaveBeenCalledWith();
   });
 
+  it('groups capital by display symbol when ledger rows contain asset ids', async () => {
+    const balances = createRepository([
+      {
+        orderId: 'order-1',
+        userId: 'user-1',
+        assetId: 'USDT',
+        available: '5',
+        locked: '0',
+        total: '5',
+        updatedAt: ts(1),
+      },
+      {
+        orderId: 'order-2',
+        userId: 'user-1',
+        assetId: 'asset-usdt',
+        available: '10',
+        locked: '1',
+        total: '11',
+        updatedAt: ts(2),
+      },
+      {
+        orderId: 'order-3',
+        userId: 'user-1',
+        assetId: 'asset-eth',
+        available: '0.25',
+        locked: '0',
+        total: '0.25',
+        updatedAt: ts(3),
+      },
+    ]);
+    const marketPairs = createRepository([
+      {
+        base_asset_id: 'asset-eth',
+        base_symbol: 'ETH',
+        quote_asset_id: 'asset-usdt',
+        quote_symbol: 'USDT',
+      },
+    ]);
+
+    const summary = await buildService({ balances, marketPairs }).getSummary(
+      '24h',
+    );
+
+    expect(summary.capital.byAsset).toEqual([
+      {
+        asset: 'USDT',
+        available: '15',
+        locked: '1',
+        total: '16',
+      },
+      {
+        asset: 'ETH',
+        available: '0.25',
+        locked: '0',
+        total: '0.25',
+      },
+    ]);
+    expect(summary.capital.byAsset.map((row) => row.asset)).not.toContain(
+      'asset-usdt',
+    );
+  });
+
   it('normalizes nested runtime and health timestamps to RFC3339 strings', async () => {
     const metrics = {
       getRuntimeMetrics: jest.fn(() => ({
@@ -310,7 +375,11 @@ describe('AdminDashboardService', () => {
     expect(
       reconciliation.reconcileIntentLifecycleConsistency,
     ).toHaveBeenCalledTimes(1);
-    expect(reconciliation.reconcileEstimatedFeeCorrections).not.toHaveBeenCalled();
-    expect(reconciliation.reconcileFillsAgainstExchangeTrades).not.toHaveBeenCalled();
+    expect(
+      reconciliation.reconcileEstimatedFeeCorrections,
+    ).not.toHaveBeenCalled();
+    expect(
+      reconciliation.reconcileFillsAgainstExchangeTrades,
+    ).not.toHaveBeenCalled();
   });
 });

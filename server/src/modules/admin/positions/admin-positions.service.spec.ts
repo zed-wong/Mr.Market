@@ -16,22 +16,27 @@ function createQueryBuilder(
     skipValue: undefined as number | undefined,
     andWhere: jest.fn((sql: string, params?: Record<string, unknown>) => {
       builder.clauses.push({ sql, params });
+
       return builder;
     }),
     orderBy: jest.fn((field: string, direction: 'ASC' | 'DESC') => {
       builder.orderBys.push({ field, direction });
+
       return builder;
     }),
     addOrderBy: jest.fn((field: string, direction: 'ASC' | 'DESC') => {
       builder.orderBys.push({ field, direction });
+
       return builder;
     }),
     take: jest.fn((value: number) => {
       builder.takeValue = value;
+
       return builder;
     }),
     skip: jest.fn((value: number) => {
       builder.skipValue = value;
+
       return builder;
     }),
     getMany: jest.fn(async () => rows),
@@ -66,6 +71,9 @@ describe('AdminPositionsService', () => {
         .fn()
         .mockReturnValueOnce(queryBuilder)
         .mockReturnValue(summaryQueryBuilder),
+    };
+    const marketPairs = {
+      find: jest.fn(async () => []),
     };
     const trackedOrders = {
       createQueryBuilder: jest.fn(() => ({
@@ -112,10 +120,12 @@ describe('AdminPositionsService', () => {
     return {
       service: new AdminPositionsService(
         balances as any,
+        marketPairs as any,
         trackedOrders as any,
         strategies as any,
       ),
       balances,
+      marketPairs,
       trackedOrders,
       strategies,
       queryBuilder,
@@ -124,7 +134,10 @@ describe('AdminPositionsService', () => {
   }
 
   it('returns bounded order-scoped balances with unavailable PnL metrics', async () => {
-    const { service, queryBuilder, trackedOrders } = buildService(undefined, 36);
+    const { service, queryBuilder, trackedOrders } = buildService(
+      undefined,
+      36,
+    );
 
     const result = await service.listPositions({});
 
@@ -240,7 +253,10 @@ describe('AdminPositionsService', () => {
         updatedAt: ts(5),
       },
     ];
-    const { service, queryBuilder, summaryQueryBuilder } = buildService(rows, 2);
+    const { service, queryBuilder, summaryQueryBuilder } = buildService(
+      rows,
+      2,
+    );
 
     const result = await service.listPositions({ limit: '1' });
 
@@ -253,6 +269,71 @@ describe('AdminPositionsService', () => {
         available: '5',
         locked: '7',
         total: '12',
+      },
+    ]);
+  });
+
+  it('displays asset symbols and merges summary rows for mapped asset ids', async () => {
+    const rows = [
+      {
+        orderId: 'order-1',
+        userId: 'user-1',
+        assetId: 'USDT',
+        available: '5',
+        locked: '0',
+        total: '5',
+        updatedAt: ts(1),
+      },
+      {
+        orderId: 'order-2',
+        userId: 'user-1',
+        assetId: 'asset-usdt',
+        available: '10',
+        locked: '1',
+        total: '11',
+        updatedAt: ts(2),
+      },
+      {
+        orderId: 'order-3',
+        userId: 'user-1',
+        assetId: 'asset-eth',
+        available: '0.25',
+        locked: '0',
+        total: '0.25',
+        updatedAt: ts(3),
+      },
+    ];
+    const { service, marketPairs } = buildService(rows, rows.length);
+
+    marketPairs.find.mockResolvedValueOnce([
+      {
+        base_asset_id: 'asset-eth',
+        base_symbol: 'ETH',
+        quote_asset_id: 'asset-usdt',
+        quote_symbol: 'USDT',
+      },
+    ]);
+
+    const result = await service.listPositions({});
+
+    expect(
+      result.items.find((item) => item.assetId === 'asset-usdt')?.asset,
+    ).toBe('USDT');
+    expect(
+      result.items.find((item) => item.assetId === 'asset-eth')?.asset,
+    ).toBe('ETH');
+    expect(result.summary.byAsset).toEqual([
+      {
+        asset: 'USDT',
+        available: '15',
+        locked: '1',
+        total: '16',
+      },
+      {
+        asset: 'ETH',
+        available: '0.25',
+        locked: '0',
+        total: '0.25',
       },
     ]);
   });
@@ -277,6 +358,7 @@ describe('AdminPositionsService', () => {
 
   it('returns an empty bounded page when an exchange has no tracked orders', async () => {
     const { service, queryBuilder, trackedOrders } = buildService();
+
     trackedOrders.createQueryBuilder.mockReturnValueOnce({
       select: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
