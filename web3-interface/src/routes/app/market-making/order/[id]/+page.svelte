@@ -6,12 +6,19 @@
   import {
     depositMarketMakingOrder,
     getMarketMakingOrderDetail,
+    listMarketMakingOptions,
     pauseMarketMakingOrder,
     resumeMarketMakingOrder,
     startMarketMakingOrder,
     withdrawMarketMakingOrder,
   } from '$lib/helpers/api/web3';
   import { ApiError } from '$lib/helpers/api/client';
+  import {
+    buildMarketMakingFundingAssetOptions,
+    isMarketMakingFundingAssetSupported,
+    marketMakingFundingAssetLabel,
+    type MarketMakingFundingAssetOption,
+  } from '$lib/helpers/market-making/order-funding-assets';
   import {
     openNetworkModal,
     openWalletModal,
@@ -31,6 +38,7 @@
   type FundingAction = 'deposit' | 'withdraw';
 
   let order = $state<Web3MarketMakingOrderDetail | null>(null);
+  let fundingAssetOptions = $state<MarketMakingFundingAssetOption[]>([]);
   let detailNamespace = $state('/web3/market-making');
   let isLoading = $state(false);
   let detailError = $state<string | null>(null);
@@ -49,7 +57,6 @@
 
   const orderId = $derived($page.params.id);
   const canLoadDetail = $derived($walletIsConnected && $isAuthed && !$walletIsUnsupported && Boolean(orderId));
-  const supportedAssets = $derived(order ? supportedAssetsForOrder(order) : []);
   const orderedEvents = $derived(order ? [...order.events].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) : []);
   const selectedWithdrawBalance = $derived(
     order?.balances.find((balance) => normalize(balance.assetId) === normalize(withdrawAsset)) ?? null
@@ -138,16 +145,6 @@
     return parts.length > 0 ? parts.join(' · ') : $_('market_making_detail_specs_unavailable');
   };
 
-  function supportedAssetsForOrder(detail: Web3MarketMakingOrderDetail): string[] {
-    return [
-      ...detail.balances.map((balance) => balance.assetId),
-      ...String(detail.pair || detail.specs.pair || '')
-        .split('/')
-        .map((asset) => asset.trim())
-        .filter(Boolean),
-    ].filter((asset, index, assets) => assets.findIndex((candidate) => normalize(candidate) === normalize(asset)) === index);
-  }
-
   const eventLabel = (event: Web3MarketMakingOrderEvent): string =>
     event.type.replace(/[_-]+/g, ' ');
 
@@ -166,21 +163,24 @@
     return $_('market_making_detail_error_load_fallback');
   };
 
-  const ensureAssetDefaults = (detail: Web3MarketMakingOrderDetail) => {
-    const assets = supportedAssetsForOrder(detail);
-    const firstAsset = assets[0] || '';
-    if (!assets.some((asset) => normalize(asset) === normalize(depositAsset))) {
+  const assetLabel = (assetId: string): string =>
+    marketMakingFundingAssetLabel(assetId, fundingAssetOptions);
+
+  const ensureAssetDefaults = (detail: Web3MarketMakingOrderDetail, assets = fundingAssetOptions) => {
+    const assetIds = assets.map((asset) => asset.assetId);
+    const firstAsset = assetIds[0] || '';
+    if (!assets.some((asset) => normalize(asset.assetId) === normalize(depositAsset))) {
       depositAsset = firstAsset;
     }
-    if (!assets.some((asset) => normalize(asset) === normalize(withdrawAsset))) {
+    if (!assets.some((asset) => normalize(asset.assetId) === normalize(withdrawAsset))) {
       withdrawAsset = detail.balances.find((balance) => new BigNumber(balance.available || 0).isGreaterThan(0))?.assetId || firstAsset;
     }
   };
 
-  const applyDetailResponse = (response: { namespace: string; order: Web3MarketMakingOrderDetail }) => {
+  const applyDetailResponse = (response: { namespace: string; order: Web3MarketMakingOrderDetail }, assets = fundingAssetOptions) => {
     detailNamespace = response.namespace;
     order = response.order;
-    ensureAssetDefaults(response.order);
+    ensureAssetDefaults(response.order, assets);
   };
 
   function spreadCaptureMetrics(detail: Web3MarketMakingOrderDetail): { label: string; value: string }[] {
@@ -214,15 +214,21 @@
     actionMessage = null;
 
     try {
-      const response = await getMarketMakingOrderDetail(currentOrderId);
+      const [response, optionsResponse] = await Promise.all([
+        getMarketMakingOrderDetail(currentOrderId),
+        listMarketMakingOptions(),
+      ]);
       if (sequence !== loadSequence) return;
       if (response.order.source !== 'web3_market_making_order') {
         throw new Error($_('market_making_detail_error_namespace'));
       }
-      applyDetailResponse(response);
+      const assets = buildMarketMakingFundingAssetOptions(response.order, optionsResponse.options);
+      fundingAssetOptions = assets;
+      applyDetailResponse(response, assets);
     } catch (error) {
       if (sequence !== loadSequence) return;
       order = null;
+      fundingAssetOptions = [];
       isNotFound = error instanceof ApiError && error.status === 404;
       detailError = isNotFound
         ? null
@@ -243,8 +249,8 @@
       return $_('market_making_detail_validation_action_unavailable', { values: { action: actionLabel } });
     }
     if (!asset) return $_('market_making_detail_validation_asset_required');
-    if (!supportedAssets.some((item) => normalize(item) === normalize(asset))) {
-      return $_('market_making_detail_validation_asset_unsupported', { values: { asset } });
+    if (!isMarketMakingFundingAssetSupported(asset, fundingAssetOptions)) {
+      return $_('market_making_detail_validation_asset_unsupported', { values: { asset: assetLabel(asset) } });
     }
     if (!amountValue.trim()) return $_('market_making_detail_validation_amount_required');
 
@@ -256,7 +262,7 @@
       const available = new BigNumber(selectedWithdrawBalance?.available || 0);
       if (amount.isGreaterThan(available)) {
         return $_('market_making_detail_validation_withdraw_available', {
-          values: { asset, amount: formatAmount(available) },
+          values: { asset: assetLabel(asset), amount: formatAmount(available) },
         });
       }
     }
@@ -342,6 +348,7 @@
       isNotFound = false;
       actionError = null;
       actionMessage = null;
+      fundingAssetOptions = [];
       return;
     }
 
@@ -531,8 +538,8 @@
             <label class="mt-4 flex flex-col gap-2">
               <span class="text-xs text-base-content/50">{$_('market_making_detail_asset')}</span>
               <select class="bg-transparent border-b border-base-300 px-0 py-2 focus:outline-none focus:border-base-content disabled:opacity-40" bind:value={depositAsset} disabled={!order.validActions.deposit || Boolean(actionLoading)} data-testid="order-deposit-asset">
-                {#each supportedAssets as asset}
-                  <option value={asset}>{asset}</option>
+                {#each fundingAssetOptions as asset}
+                  <option value={asset.assetId}>{asset.label}</option>
                 {/each}
               </select>
             </label>
@@ -554,8 +561,8 @@
             <label class="mt-4 flex flex-col gap-2">
               <span class="text-xs text-base-content/50">{$_('market_making_detail_asset')}</span>
               <select class="bg-transparent border-b border-base-300 px-0 py-2 focus:outline-none focus:border-base-content disabled:opacity-40" bind:value={withdrawAsset} disabled={!order.validActions.withdraw || Boolean(actionLoading)} data-testid="order-withdraw-asset">
-                {#each supportedAssets as asset}
-                  <option value={asset}>{asset}</option>
+                {#each fundingAssetOptions as asset}
+                  <option value={asset.assetId}>{asset.label}</option>
                 {/each}
               </select>
             </label>
@@ -564,7 +571,7 @@
               <input class="bg-transparent border-b border-base-300 px-0 py-2 font-mono-num focus:outline-none focus:border-base-content disabled:opacity-40" inputmode="decimal" bind:value={withdrawAmount} disabled={!order.validActions.withdraw || Boolean(actionLoading)} data-testid="order-withdraw-amount" />
             </label>
             <span class="mt-2 block text-xs text-base-content/50">
-              {$_('market_making_detail_available')} {formatAmount(selectedWithdrawBalance?.available || 0)} {withdrawAsset || $_('market_making_detail_asset')}
+              {$_('market_making_detail_available')} {formatAmount(selectedWithdrawBalance?.available || 0)} {withdrawAsset ? assetLabel(withdrawAsset) : $_('market_making_detail_asset')}
             </span>
             {#if attemptedWithdraw && withdrawValidationError}
               <span class="mt-3 block text-sm text-error" data-testid="order-withdraw-validation">{withdrawValidationError}</span>

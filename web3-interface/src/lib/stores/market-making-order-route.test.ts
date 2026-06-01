@@ -108,6 +108,8 @@ describe('market-making campaign detail to order route', () => {
     expect(helper).toContain("orderEndpoint(orderId, '/resume')");
 
     expect(source).toContain('getMarketMakingOrderDetail');
+    expect(source).toContain('listMarketMakingOptions');
+    expect(source).toContain('buildMarketMakingFundingAssetOptions');
     expect(source).toContain('depositMarketMakingOrder');
     expect(source).toContain('withdrawMarketMakingOrder');
     expect(source).toContain('startMarketMakingOrder');
@@ -125,6 +127,9 @@ describe('market-making campaign detail to order route', () => {
     expect(source).toContain('formatAdditionalMetricValue');
     expect(source).toContain('depositMarketMakingOrder(order.orderId, request)');
     expect(source).toContain('withdrawMarketMakingOrder(order.orderId, request)');
+    expect(source).toContain('assetId: asset');
+    expect(source).toContain('<option value={asset.assetId}>{asset.label}</option>');
+    expect(source).not.toContain(".split('/')");
     expect(source).not.toContain('transitionOrderLifecycle');
     expect(source).not.toContain('walletInteractionMode');
     expect(source).not.toContain('allCampaigns');
