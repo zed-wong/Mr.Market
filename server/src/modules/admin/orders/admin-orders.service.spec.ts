@@ -89,7 +89,6 @@ describe('AdminOrdersService', () => {
       service: new AdminOrdersService(
         trackedOrders as any,
         executions as any,
-        mappings as any,
       ),
       trackedOrders,
       executions,
@@ -140,16 +139,9 @@ describe('AdminOrdersService', () => {
     expect(executions.find).toHaveBeenCalledTimes(1);
   });
 
-  it('enriches create-limit-order execution history stored by exchange order id', async () => {
+  it('enriches execution history stored by the tracked exchange order id', async () => {
     const { service, executions, mappings } = buildService();
 
-    mappings.find.mockResolvedValueOnce([
-      {
-        orderId: 'order-1',
-        exchangeOrderId: 'exchange-1',
-        clientOrderId: 'client-1',
-      },
-    ]);
     executions.find.mockResolvedValueOnce([
       {
         id: 'exec-real-create-limit',
@@ -166,7 +158,7 @@ describe('AdminOrdersService', () => {
 
     const result = await service.listOrders({});
 
-    expect(mappings.find).toHaveBeenCalledTimes(1);
+    expect(mappings.find).not.toHaveBeenCalled();
     expect(result.items[0].executions).toEqual({
       count: 1,
       lastExecutedAt: ts(4),

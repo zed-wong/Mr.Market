@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { flushSync } from 'svelte';
   import BigNumber from 'bignumber.js';
   import { _ } from 'svelte-i18n';
   import Section from '$lib/components/common/Section.svelte';
@@ -55,6 +56,11 @@
   let fundingInstruction = $state<string | null>(null);
   let isSubmitting = $state(false);
   let loadSequence = 0;
+  let pairNextButton = $state<HTMLButtonElement | null>(null);
+  let fundsBackButton = $state<HTMLButtonElement | null>(null);
+  let reviewButton = $state<HTMLButtonElement | null>(null);
+  let reviewEditButton = $state<HTMLButtonElement | null>(null);
+  let confirmButton = $state<HTMLButtonElement | null>(null);
 
   const PURE_MARKET_MAKING_KEY = 'pure_market_making';
 
@@ -149,18 +155,18 @@
     return parts.length > 0 ? parts.join(' · ') : $_('market_making_create_specs_from_api');
   };
 
-  const clickAction = (node: HTMLElement, handler: () => void) => {
-    let current = handler;
-    const onClick = () => current();
-    node.addEventListener('click', onClick);
-    return {
-      update(next: () => void) {
-        current = next;
-      },
-      destroy() {
-        node.removeEventListener('click', onClick);
-      },
+  const attachButtonClick = (node: HTMLButtonElement | null, handler: () => void) => {
+    if (!node) return;
+    const onClick = () => {
+      if (node.disabled) return;
+      flushSync(handler);
     };
+    node.addEventListener('click', onClick);
+    return () => node.removeEventListener('click', onClick);
+  };
+
+  const setCreateStep = async (step: CreateFlowStep) => {
+    activeStep = step;
   };
 
   function validateCreateOrder(): Record<string, string> {
@@ -248,29 +254,22 @@
     return await beginAuthFlow();
   };
 
-  const goToFunds = async () => {
-    attemptedPair = true;
-    submitError = null;
-    if (hasPairErrors) return;
-    activeStep = 'funds';
-  };
-
   const showFundsStep = () => {
     attemptedPair = true;
     submitError = null;
-    activeStep = 'funds';
+    void setCreateStep('funds');
   };
 
   const reviewOrder = async () => {
     attemptedFunds = true;
     submitError = null;
     if (hasPairErrors) {
-      activeStep = 'pair';
+      void setCreateStep('pair');
       return;
     }
     if (hasFundsErrors) return;
     if (!(await requireAuthenticatedOrderScope())) return;
-    activeStep = 'review';
+    await setCreateStep('review');
   };
 
   const buildApprovalMessage = (): string =>
@@ -291,11 +290,11 @@
     submitError = null;
     fundingInstruction = null;
     if (hasPairErrors) {
-      activeStep = 'pair';
+      void setCreateStep('pair');
       return;
     }
     if (hasFundsErrors || !selectedPair || !selectedPureStrategy || !selectedDepositAsset) {
-      activeStep = 'funds';
+      void setCreateStep('funds');
       return;
     }
     if (!(await requireAuthenticatedOrderScope())) return;
@@ -354,6 +353,12 @@
       selectedDepositAsset = selectedPair.supportedDepositAssets[0] || '';
     }
   });
+
+  $effect(() => attachButtonClick(pairNextButton, showFundsStep));
+  $effect(() => attachButtonClick(fundsBackButton, () => void setCreateStep('pair')));
+  $effect(() => attachButtonClick(reviewButton, () => void reviewOrder()));
+  $effect(() => attachButtonClick(reviewEditButton, () => void setCreateStep('funds')));
+  $effect(() => attachButtonClick(confirmButton, () => void submitOrder()));
 </script>
 
 <div class="max-w-5xl" data-testid="order-create" data-strategy="pure_market_making">
@@ -385,11 +390,11 @@
       </span>
       <div class="flex flex-wrap gap-2">
         {#if $walletIsUnsupported}
-          <button class="btn-pill-primary" use:clickAction={() => void openNetworkModal()} data-testid="order-switch-network">{$_('switch_network')}</button>
+          <button class="btn-pill-primary" onclick={() => void openNetworkModal()} data-testid="order-switch-network">{$_('switch_network')}</button>
         {:else if !$walletIsConnected}
-          <button class="btn-pill-primary" use:clickAction={() => void openWalletModal()} data-testid="order-create-connect-action">{$_('connect_wallet')}</button>
+          <button class="btn-pill-primary" onclick={() => void openWalletModal()} data-testid="order-create-connect-action">{$_('connect_wallet')}</button>
         {:else}
-          <button class="btn-pill-primary" use:clickAction={() => void beginAuthFlow()} data-testid="order-create-sign-in-action">{$_('sign_in_button')}</button>
+          <button class="btn-pill-primary" onclick={() => void beginAuthFlow()} data-testid="order-create-sign-in-action">{$_('sign_in_button')}</button>
         {/if}
       </div>
       {#if authPromptError}
@@ -398,7 +403,7 @@
     </section>
   {/if}
 
-  {#if activeStep === 'pair'}
+  <div class:hidden={activeStep !== 'pair'}>
     <Section title={$_('market_making_create_pair_title')} eyebrow={$_('market_making_create_pair_eyebrow')}>
       {#if createOptionsState === 'loading'}
         <div class="flex items-center gap-3 border-t border-base-300 pt-6 text-sm text-base-content/70" data-testid="order-create-options-loading">
@@ -410,7 +415,7 @@
           <div class="rounded-2xl border border-error/40 px-5 py-4">
             <span class="block font-medium text-error">{$_('market_making_create_options_error_title')}</span>
             <span class="mt-2 block text-sm text-base-content/70">{optionsError}</span>
-            <button class="btn-pill-primary mt-4" use:clickAction={() => void loadCreateOptions()} data-testid="order-create-options-retry">{$_('market_making_create_retry_options')}</button>
+            <button class="btn-pill-primary mt-4" onclick={() => void loadCreateOptions()} data-testid="order-create-options-retry">{$_('market_making_create_retry_options')}</button>
           </div>
         </div>
       {:else}
@@ -450,7 +455,7 @@
       <div class="mt-6 flex flex-wrap justify-end gap-2">
         <button
           class="btn-pill-primary disabled:opacity-40"
-          use:clickAction={showFundsStep}
+          bind:this={pairNextButton}
           disabled={createOptionsState !== 'loaded' || isSubmitting}
           data-testid="order-pair-next-button"
         >
@@ -458,7 +463,9 @@
         </button>
       </div>
     </Section>
-  {:else if activeStep === 'funds'}
+  </div>
+
+  <div class:hidden={activeStep !== 'funds'}>
     <Section title={$_('market_making_create_funds_title')} eyebrow={$_('market_making_create_funds_eyebrow')}>
       <div class="grid gap-6 border-t border-base-300 pt-6 lg:grid-cols-[0.9fr_1.1fr]">
         <div class="flex flex-col gap-4">
@@ -527,13 +534,15 @@
       {/if}
 
       <div class="mt-6 flex flex-wrap justify-between gap-2">
-        <button class="btn-pill-outline" use:clickAction={() => (activeStep = 'pair')} disabled={isSubmitting} data-testid="order-funds-back-button">{$_('market_making_create_back_to_pair')}</button>
-        <button class="btn-pill-primary disabled:opacity-40" use:clickAction={() => void reviewOrder()} disabled={isSubmitting || createOptionsState !== 'loaded'} data-testid="order-review-button">
+        <button class="btn-pill-outline" bind:this={fundsBackButton} disabled={isSubmitting} data-testid="order-funds-back-button">{$_('market_making_create_back_to_pair')}</button>
+        <button class="btn-pill-primary disabled:opacity-40" bind:this={reviewButton} disabled={isSubmitting || createOptionsState !== 'loaded'} data-testid="order-review-button">
           {$_('market_making_create_review_order')}
         </button>
       </div>
     </Section>
-  {:else}
+  </div>
+
+  <div class:hidden={activeStep !== 'review'}>
     <Section title={$_('market_making_create_review_title')} eyebrow={$_('market_making_create_review_eyebrow')}>
       <div class="border-t border-base-300 pt-6">
         <div class="grid gap-px overflow-hidden rounded-2xl border border-base-300 bg-base-300 md:grid-cols-2 xl:grid-cols-4" data-testid="order-review-summary">
@@ -589,10 +598,10 @@
         {/if}
 
         <div class="mt-6 flex flex-wrap justify-between gap-2">
-          <button class="btn-pill-outline" use:clickAction={() => (activeStep = 'funds')} disabled={isSubmitting} data-testid="order-edit-button">{$_('market_making_create_edit_funds')}</button>
+          <button class="btn-pill-outline" bind:this={reviewEditButton} disabled={isSubmitting} data-testid="order-edit-button">{$_('market_making_create_edit_funds')}</button>
           <button
             class="btn-pill-primary disabled:opacity-40 disabled:cursor-not-allowed"
-            use:clickAction={() => void submitOrder()}
+            bind:this={confirmButton}
             disabled={isSubmitting || createOptionsState !== 'loaded'}
             data-testid="order-confirm-button"
           >
@@ -601,5 +610,5 @@
         </div>
       </div>
     </Section>
-  {/if}
+  </div>
 </div>

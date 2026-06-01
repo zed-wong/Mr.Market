@@ -1,7 +1,6 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { toast } from "svelte-sonner";
-    import { getApiKeyUseReadiness } from "$lib/helpers/admin/api-key-readiness";
     import { formatCampaignType } from "$lib/helpers/market-making/direct/helpers";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
 
@@ -68,11 +67,7 @@
     }
 
     function apiKeyOptionLabel(apiKey: AdminSingleKey): string {
-        const view = getApiKeyUseReadiness(apiKey, "read");
-        const readPermission = view.permissions.find(
-            (permission) => permission.capability === "read",
-        );
-        return `${apiKey.name} · ${apiKey.exchange} · ${view.label}${readPermission ? ` · ${readPermission.label}` : ""}`;
+        return `${apiKey.name} · ${apiKey.exchange.toUpperCase()}`;
     }
 </script>
 
@@ -191,16 +186,14 @@
                         <span
                             class="mb-2 text-xs font-semibold text-base-content/70"
                         >
-                            {$_("admin_direct_mm_api_key")}
+                            Read-only API key
                         </span>
                         <select
                             class="select select-bordered min-h-10 w-full bg-base-100 text-base-content focus:outline-none focus:border-primary"
                             bind:value={joinCampaignApiKeyId}
                         >
                             <option value="" disabled>
-                                <span class="text-xs text-base-content/60">
-                                    {$_("admin_direct_mm_read_only_keys")}
-                                </span>
+                                Select account
                             </option>
                             {#each readOnlyKeys as apiKey}
                                 <option value={apiKey.key_id}>

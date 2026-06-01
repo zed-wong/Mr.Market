@@ -38,4 +38,17 @@ describe('/app/market-making/order/new pure market-making route', () => {
     expect(createIndex).toBeGreaterThan(approvalIndex);
     expect(source).toContain('strategyDefinitionId: selectedPureStrategy.id');
   });
+
+  it('wires step progression buttons through Svelte event handlers', () => {
+    const source = routeSource();
+
+    expect(source).toContain('attachButtonClick');
+    expect(source).toContain('data-testid="order-pair-next-button"');
+    expect(source).toContain('bind:this={pairNextButton}');
+    expect(source).toContain('$effect(() => attachButtonClick(pairNextButton, () => void goToFunds()))');
+    expect(source).toContain('data-testid="order-review-button"');
+    expect(source).toContain('bind:this={reviewButton}');
+    expect(source).toContain('$effect(() => attachButtonClick(reviewButton, () => void reviewOrder()))');
+    expect(source).not.toContain('use:clickAction');
+  });
 });

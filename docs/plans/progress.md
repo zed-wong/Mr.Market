@@ -7,6 +7,7 @@
 - Redesign `web3-interface` `/app/market-making` as the order-management list surface: unauthenticated/connect gating and empty states lead to order creation, small order counts render rich status-first cards, and larger counts render compact rows with PnL/fees, locked funds, and lifecycle actions.
 - Add a validation-gated Reown/Wagmi EVM connector for browser SIWE checks: the web3 validation runtime now exposes an automatable local signing wallet only when `PUBLIC_ENABLE_VALIDATION_WALLET=1`, while login still requests `/auth/web3/nonce`, signs through the Wagmi signer, and submits `/auth/web3/login`.
 - Set `POST /auth/web3/logout` to return HTTP 200 while preserving its JWT guard and `{ ok: true }` response contract for web3 auth validation.
+- Bound admin tracked-order execution enrichment to the current page's internal and exchange order IDs, avoiding unbounded exchange-order mapping expansion that made `/admin/orders?status=filled` exceed SQLite bind-variable limits on high-volume orders.
 
 ## 2026-05-31
 

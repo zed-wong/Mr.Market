@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
-import { ExchangeOrderMapping } from 'src/common/entities/market-making/exchange-order-mapping.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
@@ -45,8 +44,6 @@ export class AdminOrdersService {
     private readonly trackedOrderRepository: Repository<TrackedOrderEntity>,
     @InjectRepository(StrategyExecutionHistory)
     private readonly executionHistoryRepository: Repository<StrategyExecutionHistory>,
-    @InjectRepository(ExchangeOrderMapping)
-    private readonly exchangeOrderMappingRepository: Repository<ExchangeOrderMapping>,
   ) {}
 
   async listOrders(input: AdminOrdersQuery) {
@@ -239,16 +236,6 @@ export class AdminOrdersService {
 
       if (order.exchangeOrderId) {
         historyIdToOrderId.set(order.exchangeOrderId, order.orderId);
-      }
-    }
-
-    const mappings = await this.exchangeOrderMappingRepository.find({
-      where: { orderId: In(orderIds) },
-    });
-
-    for (const mapping of mappings) {
-      if (mapping.exchangeOrderId && historyIdToOrderId.has(mapping.orderId)) {
-        historyIdToOrderId.set(mapping.exchangeOrderId, mapping.orderId);
       }
     }
 

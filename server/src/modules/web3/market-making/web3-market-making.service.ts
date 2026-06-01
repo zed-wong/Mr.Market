@@ -16,10 +16,7 @@ import {
   MarketMakingLifecycleEventType,
 } from 'src/common/entities/market-making/market-making-lifecycle-event.entity';
 import { Performance } from 'src/common/entities/market-making/performance.entity';
-import {
-  StrategyDefinition,
-  StrategyDefinitionVisibility,
-} from 'src/common/entities/market-making/strategy-definition.entity';
+import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
@@ -82,7 +79,6 @@ const STARTABLE_STATES: MarketMakingStates[] = [
 const PAUSABLE_STATES: MarketMakingStates[] = ['running'];
 const RESUMABLE_STATES: MarketMakingStates[] = ['paused'];
 const TERMINAL_STATES: MarketMakingStates[] = ['deleted', 'failed', 'refunded'];
-const VALIDATION_PAIR_ID = '00000000-0000-4000-8000-000000000101';
 const WEB3_MARKET_MAKING_NAMESPACE = '/web3/market-making';
 
 @Injectable()
@@ -199,7 +195,6 @@ export class Web3MarketMakingService {
   }
 
   async listStrategies() {
-    await this.ensureValidationOptions();
     const strategies =
       await this.userOrdersService.listEnabledMarketMakingStrategies();
 
@@ -219,8 +214,6 @@ export class Web3MarketMakingService {
   }
 
   async listPairOptions() {
-    await this.ensureValidationOptions();
-
     const pairs = await this.marketMakingPairRepository.find({
       where: { enable: true },
       order: { symbol: 'ASC' },
@@ -243,8 +236,6 @@ export class Web3MarketMakingService {
   }
 
   private async createOrderInternal(userId: string, body: CreateOrderBody) {
-    await this.ensureValidationOptions();
-
     if (Object.prototype.hasOwnProperty.call(body || {}, 'userId')) {
       throw this.badRequest(
         'USER_ID_OVERRIDE_REJECTED',
@@ -658,81 +649,15 @@ export class Web3MarketMakingService {
     );
   }
 
-  private async ensureValidationOptions(): Promise<void> {
-    const [publicStrategy, pureStrategy, validationPair] = await Promise.all([
-      this.strategyDefinitionRepository.findOne({
-        where: {
-          enabled: true,
-          visibility: StrategyDefinitionVisibility.PUBLIC,
-        },
-        order: { updatedAt: 'DESC' },
-      }),
-      this.strategyDefinitionRepository.findOne({
-        where: { key: 'pure_market_making' },
-      }),
-      this.marketMakingPairRepository.findOne({
-        where: { id: VALIDATION_PAIR_ID },
-      }),
-    ]);
-
-    if (!publicStrategy) {
-      await this.strategyDefinitionRepository.save(
-        this.strategyDefinitionRepository.create({
-          ...(pureStrategy ? { id: pureStrategy.id } : {}),
-          key: 'pure_market_making',
-          name: 'Pure Market Making',
-          description:
-            'Public validation strategy for order-first web3 market making',
-          controllerType: 'pureMarketMaking',
-          configSchema: {},
-          defaultConfig: this.defaultPureMarketMakingConfig(),
-          capabilities: {
-            launchSurfaces: ['strategy_settings'],
-            directExecutionMode: 'single_account',
-          },
-          enabled: true,
-          visibility: StrategyDefinitionVisibility.PUBLIC,
-          createdBy: 'web3-validation-seed',
-        }),
-      );
-    }
-
-    if (!validationPair) {
-      await this.marketMakingPairRepository.save(
-        this.marketMakingPairRepository.create({
-          id: VALIDATION_PAIR_ID,
-          symbol: 'ETH/USDC',
-          base_symbol: 'ETH',
-          quote_symbol: 'USDC',
-          base_asset_id: 'ETH',
-          base_icon_url: '',
-          base_chain_id: '1',
-          base_chain_icon_url: '',
-          quote_asset_id: 'USDC',
-          quote_icon_url: '',
-          quote_chain_id: '1',
-          quote_chain_icon_url: '',
-          base_price: '',
-          target_price: '',
-          exchange_id: 'binance',
-          custom_fee_rate: '',
-          min_order_amount: '0.01',
-          max_order_amount: '',
-          amount_significant_figures: '6',
-          price_significant_figures: '2',
-          enable: true,
-        }),
-      );
-    }
-  }
-
-  private defaultPureMarketMakingConfig(): Record<string, unknown> {
+  private defaultPureMarketMakingConfig(
+    pair: GrowdataMarketMakingPair,
+  ): Record<string, unknown> {
     return {
-      pair: 'ETH/USDC',
-      exchangeName: 'binance',
+      pair: pair.symbol,
+      exchangeName: pair.exchange_id,
       bidSpread: 0.001,
       askSpread: 0.001,
-      orderAmount: 10,
+      orderAmount: pair.min_order_amount || 10,
       orderRefreshTime: 15000,
       numberOfLayers: 1,
       priceSourceType: PriceSourceType.MID_PRICE,
@@ -764,7 +689,7 @@ export class Web3MarketMakingService {
     const resolvedConfig =
       params.intent.strategySnapshot?.resolvedConfig ||
       params.definition?.defaultConfig ||
-      this.defaultPureMarketMakingConfig();
+      this.defaultPureMarketMakingConfig(params.pair);
     const snapshot =
       params.intent.strategySnapshot ||
       (params.definition
