@@ -49,10 +49,11 @@ describe('admin shell navigation', () => {
     expect(isActive('/', '/trading/exchange-orders')).toBe(false);
   });
 
-  it('groups setup, trading, connectivity, system, and diagnostics as first-class sections', () => {
+  it('groups setup, trading, connectivity, system, and developer as first-class sections', () => {
     expect(NAV_ITEMS.map((item) => item.key)).toEqual(
-      expect.arrayContaining(['setup', 'trading', 'connectivity', 'system', 'diagnostics']),
+      expect.arrayContaining(['setup', 'trading', 'connectivity', 'system', 'developer']),
     );
+    expect(NAV_ITEMS.map((item) => item.key)).not.toContain('diagnostics');
     expect(NAV_ITEMS.find((item) => item.key === 'setup')?.children.map((entry) => entry.href)).toContain('/setup');
     expect(NAV_ITEMS.find((item) => item.key === 'trading')?.children.map((entry) => entry.href)).toEqual([
       '/trading/user-orders',
@@ -60,20 +61,20 @@ describe('admin shell navigation', () => {
       '/trading/market-making',
       '/trading/strategies',
       '/trading/positions',
-      '/trading/direct-market-making',
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'system')?.children.map((entry) => entry.href)).toEqual([
       '/system/health',
       '/system/config',
       '/system/password',
       '/system/passkeys',
+      '/system/audit',
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'connectivity')?.children.map((entry) => entry.href)).toEqual([
       '/system/connectivity/exchanges',
     ]);
-    expect(NAV_ITEMS.find((item) => item.key === 'diagnostics')?.children.map((entry) => entry.href)).toEqual(
-      ['/system/audit'],
-    );
+    expect(NAV_ITEMS.find((item) => item.key === 'developer')?.children.map((entry) => entry.href)).toEqual([
+      '/trading/direct-market-making',
+    ]);
   });
 
   it('exposes active group and child location for collapsed or narrow shell labels', () => {

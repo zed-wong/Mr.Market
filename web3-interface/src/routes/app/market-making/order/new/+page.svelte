@@ -10,6 +10,12 @@
     listMarketMakingOptions,
     listMarketMakingStrategies,
   } from '$lib/helpers/api/web3';
+  import {
+    createFlowSteps,
+    isCreateFlowStep,
+    isCreateStepPanelHidden,
+    type CreateFlowStep,
+  } from '$lib/helpers/market-making/create-step-panels';
   import { authMatchesWalletScope } from '$lib/helpers/market-making/wallet-scope';
   import { signInWithEthereum } from '$lib/helpers/siwe/siwe';
   import { balances } from '$lib/stores/balances';
@@ -32,12 +38,11 @@
   } from '$lib/types/market-making';
 
   type CreateOptionsState = 'loading' | 'loaded' | 'error';
-  type CreateFlowStep = 'pair' | 'funds' | 'review';
   type SubmitState = 'idle' | 'signing' | 'submitting' | 'success' | 'error';
 
   const stepFromUrl = (): CreateFlowStep => {
     const step = page.url.searchParams.get('step');
-    return step === 'funds' || step === 'review' ? step : 'pair';
+    return isCreateFlowStep(step) ? step : 'pair';
   };
 
   let strategies = $state<Web3MarketMakingStrategyOption[]>([]);
@@ -115,12 +120,6 @@
   const hasAuthenticatedOrderScope = $derived(
     $walletIsConnected && !$walletIsUnsupported && $isAuthed && authMatchesActiveWallet
   );
-
-  const steps: { key: CreateFlowStep; labelKey: string; detailKey: string }[] = [
-    { key: 'pair', labelKey: 'market_making_create_step_pair', detailKey: 'market_making_create_step_pair_detail' },
-    { key: 'funds', labelKey: 'market_making_create_step_funds', detailKey: 'market_making_create_step_funds_detail' },
-    { key: 'review', labelKey: 'market_making_create_step_review', detailKey: 'market_making_create_step_review_detail' },
-  ];
 
   function assetMatchesBalance(assetId: string, balance: BalanceEntry): boolean {
     const assetKey = normalized(assetId);
@@ -333,7 +332,7 @@
 
   $effect(() => {
     const step = page.url.searchParams.get('step');
-    if (step === 'pair' || step === 'funds' || step === 'review') {
+    if (isCreateFlowStep(step)) {
       activeStep = step;
     }
   });
@@ -374,7 +373,7 @@
   </section>
 
   <section class="mt-8 grid gap-3 md:grid-cols-3" data-testid="order-create-steps">
-    {#each steps as step, index}
+    {#each createFlowSteps as step, index}
       <div class="rounded-2xl border border-base-300 px-4 py-3 {activeStep === step.key ? 'bg-base-200' : 'bg-base-100'}" data-testid="order-create-step-{step.key}">
         <span class="inline-flex h-7 w-7 items-center justify-center rounded-full {activeStep === step.key ? 'bg-base-content text-base-100' : 'bg-base-200 text-base-content/60'} font-mono-num text-xs">{index + 1}</span>
         <span class="ml-2 font-medium text-base-content">{$_(step.labelKey)}</span>
@@ -403,7 +402,7 @@
     </section>
   {/if}
 
-  <div class:hidden={activeStep !== 'pair'}>
+  <div hidden={isCreateStepPanelHidden(activeStep, 'pair')} data-testid="order-pair-panel">
     <Section title={$_('market_making_create_pair_title')} eyebrow={$_('market_making_create_pair_eyebrow')}>
       {#if createOptionsState === 'loading'}
         <div class="flex items-center gap-3 border-t border-base-300 pt-6 text-sm text-base-content/70" data-testid="order-create-options-loading">
@@ -465,7 +464,7 @@
     </Section>
   </div>
 
-  <div class:hidden={activeStep !== 'funds'}>
+  <div hidden={isCreateStepPanelHidden(activeStep, 'funds')} data-testid="order-funds-panel">
     <Section title={$_('market_making_create_funds_title')} eyebrow={$_('market_making_create_funds_eyebrow')}>
       <div class="grid gap-6 border-t border-base-300 pt-6 lg:grid-cols-[0.9fr_1.1fr]">
         <div class="flex flex-col gap-4">
@@ -542,7 +541,7 @@
     </Section>
   </div>
 
-  <div class:hidden={activeStep !== 'review'}>
+  <div hidden={isCreateStepPanelHidden(activeStep, 'review')} data-testid="order-review-panel">
     <Section title={$_('market_making_create_review_title')} eyebrow={$_('market_making_create_review_eyebrow')}>
       <div class="border-t border-base-300 pt-6">
         <div class="grid gap-px overflow-hidden rounded-2xl border border-base-300 bg-base-300 md:grid-cols-2 xl:grid-cols-4" data-testid="order-review-summary">

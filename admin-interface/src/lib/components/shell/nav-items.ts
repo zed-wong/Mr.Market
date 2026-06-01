@@ -34,7 +34,6 @@ export const NAV_ITEMS: NavGroup[] = [
       { key: 'trading.market_making', label: 'admin.nav.market_making', href: '/trading/market-making' },
       { key: 'trading.strategies', label: 'admin.nav.strategies', href: '/trading/strategies' },
       { key: 'trading.positions', label: 'admin.nav.positions', href: '/trading/positions' },
-      { key: 'trading.direct_market_making', label: 'admin.nav.settings_direct_market_making', href: '/trading/direct-market-making' },
     ],
   },
   {
@@ -52,13 +51,14 @@ export const NAV_ITEMS: NavGroup[] = [
       { key: 'system.config', label: 'admin.nav.system_config', href: '/system/config' },
       { key: 'system.password', label: 'admin.nav.password', href: '/system/password' },
       { key: 'system.passkeys', label: 'admin.nav.passkeys', href: '/system/passkeys' },
+      { key: 'system.audit', label: 'admin.nav.audit_log', href: '/system/audit' },
     ],
   },
   {
-    key: 'diagnostics',
-    label: 'admin.nav.diagnostics',
+    key: 'developer',
+    label: 'admin.nav.developer',
     children: [
-      { key: 'system.audit', label: 'admin.nav.audit_log', href: '/system/audit' },
+      { key: 'developer.direct_market_making', label: 'admin.nav.settings_direct_market_making', href: '/trading/direct-market-making' },
     ],
   },
 ];

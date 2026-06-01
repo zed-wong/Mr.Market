@@ -61,7 +61,7 @@
     if (key === 'trading') return 'revenue';
     if (key === 'connectivity') return 'exchanges';
     if (key === 'system') return 'health';
-    if (key === 'diagnostics') return 'message';
+    if (key === 'developer') return 'settings';
     return key.replaceAll('.', '_');
   };
 

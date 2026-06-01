@@ -71,6 +71,7 @@
       "system": "system",
       "system_health": "system health",
       "diagnostics": "diagnostics",
+      "developer": "developer",
       "roles": "roles",
       "api_keys": "api keys",
       "system_config": "system config",
