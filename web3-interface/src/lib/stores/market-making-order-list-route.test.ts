@@ -14,6 +14,12 @@ const apiHelperSource = () =>
     'utf8'
   );
 
+const validationFixtureSource = () =>
+  readFileSync(
+    fileURLToPath(new URL('../helpers/market-making/validation-order-list-fixtures.ts', import.meta.url)),
+    'utf8'
+  );
+
 const layoutSource = () =>
   readFileSync(
     fileURLToPath(new URL('../../routes/app/+layout.svelte', import.meta.url)),
@@ -44,6 +50,7 @@ describe('/app/market-making order list route', () => {
     expect(source).toContain('/app/market-making/order/new');
     expect(source).toContain('validationListState');
     expect(source).toContain('validationLoadingRequested');
+    expect(source).toContain('validationOrderListFixtureForState');
     expect(source).toContain('order-list-loading-state');
     expect(source).toContain('order-list-empty-state');
     expect(source).toContain('order-list-error-state');
@@ -55,8 +62,11 @@ describe('/app/market-making order list route', () => {
 
   it('adapts small order counts to rich cards and larger counts to compact rows', () => {
     const source = listRouteSource();
+    const fixtures = validationFixtureSource();
 
     expect(source).toContain('filteredOrders.length <= 4');
+    expect(fixtures).toContain("'many'");
+    expect(fixtures).toContain('Array.from({ length: 5 }');
     expect(source).toContain('useRichOrderCards');
     expect(source).toContain('data-layout="cards"');
     expect(source).toContain('data-layout="compact"');

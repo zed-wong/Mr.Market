@@ -8,6 +8,7 @@
     resumeMarketMakingOrder,
     startMarketMakingOrder,
   } from '$lib/helpers/api/web3';
+  import { validationOrderListFixtureForState } from '$lib/helpers/market-making/validation-order-list-fixtures';
   import { authMatchesWalletScope } from '$lib/helpers/market-making/wallet-scope';
   import {
     openNetworkModal,
@@ -253,6 +254,13 @@
     orders = [];
 
     try {
+      const validationFixture = validationOrderListFixtureForState(validationListState);
+      if (validationFixture) {
+        if (sequence !== loadSequence) return;
+        orders = validationFixture.orders.filter((order) => order.source === 'web3_market_making_order');
+        return;
+      }
+
       const response = await listMarketMakingOrders();
       if (sequence !== loadSequence) return;
       orders = response.orders.filter((order) => order.source === 'web3_market_making_order');

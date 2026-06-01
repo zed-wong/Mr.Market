@@ -2,6 +2,7 @@
 
 ## 2026-06-01
 
+- Add validation-only market-making order list fixtures in `web3-interface`: authenticated validators can select `validationListState=empty`/`zero` for the empty-order CTA and `validationListState=many`/`compact` for a deterministic five-order compact list while production sessions keep using the real order API.
 - Fix `web3-interface` market-making order detail funding asset selection so deposit/withdraw controls load backend pair options, submit Growdata asset IDs such as `asset-btc`/`asset-usdt`, keep human symbols visible as labels, and validate unsupported parsed symbols before calling order funding APIs.
 - Redesign `web3-interface` `/app/market-making/order/[id]` detail UX with top lifecycle controls, per-asset order balances, text-only PnL/fees/spread-capture metrics, inline deposit/withdraw validation against order-supported assets and available funds, localized copy, and timestamped event history backed by existing order-level APIs.
 - Fix `web3-interface` `/app/market-making/order/new` browser step progression: the create page now drives Pair/Funds/Review panels with explicit `hidden` state instead of Tailwind-only `class:hidden`, tolerates empty amount input on first render, matches selected pair asset IDs to wallet balance symbols, and has focused panel-visibility coverage plus agent-browser proof that pair → funds → review renders the active panel.
