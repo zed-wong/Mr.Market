@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  createFundingRequest,
   depositMarketMakingOrder,
   getBalances,
   getDepositInstructions,
+  getFundingRequest,
   getMarketMakingOrderDetail,
   getWithdrawStatus,
   listMarketMakingOptions,
@@ -12,7 +14,7 @@ import {
   resumeMarketMakingOrder,
   startMarketMakingOrder,
   submitWithdraw,
-  verifyDeposit,
+  verifyFundingRequest,
   withdrawMarketMakingOrder,
 } from './web3';
 
@@ -100,16 +102,27 @@ describe('web3 market-making API helper URLs', () => {
 
     await getBalances();
     await getDepositInstructions('11155111');
-    await verifyDeposit({
+    await createFundingRequest({
       chainId: 11155111,
+      routerAddress: '0x1111111111111111111111111111111111111111',
       tokenAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
       amount: '1',
-      txHash: `0x${'a'.repeat(64)}`,
+      orderDraft: {
+        marketMakingPairId: 'pair-1',
+        strategyDefinitionId: 'strategy-1',
+      },
+    });
+    await getFundingRequest(`0x${'b'.repeat(64)}`);
+    await verifyFundingRequest(`0x${'b'.repeat(64)}`, {
+      txHash: `0x${'c'.repeat(64)}`,
     });
     await submitWithdraw({
+      orderId: 'order-1',
       chainId: 11155111,
+      routerAddress: '0x1111111111111111111111111111111111111111',
       tokenAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
       amount: '1',
+      recipientAddress: '0x2222222222222222222222222222222222222222',
       idempotencyKey: 'withdraw-1',
     });
     await getWithdrawStatus('withdrawal-1');
@@ -123,12 +136,15 @@ describe('web3 market-making API helper URLs', () => {
 
     expect(calls.map((call) => `${call.method} ${call.path}${call.search}`)).toEqual([
       'GET /web3/balances',
-      'GET /web3/deposit/instructions?chainId=11155111',
-      'POST /web3/deposit/verify',
-      'POST /web3/withdraw',
-      'GET /web3/withdraw/withdrawal-1',
+      'GET /web3/funding-requests/instructions?chainId=11155111',
+      'POST /web3/funding-requests',
+      `GET /web3/funding-requests/0x${'b'.repeat(64)}`,
+      `POST /web3/funding-requests/0x${'b'.repeat(64)}/verify`,
+      'POST /web3/withdrawal-requests',
+      'GET /web3/withdrawal-requests/withdrawal-1',
     ]);
-    expect(String(calls[2].body)).toContain('txHash');
-    expect(String(calls[3].body)).toContain('idempotencyKey');
+    expect(String(calls[2].body)).toContain('orderDraft');
+    expect(String(calls[4].body)).toContain('txHash');
+    expect(String(calls[5].body)).toContain('idempotencyKey');
   });
 });

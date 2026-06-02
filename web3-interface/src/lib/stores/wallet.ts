@@ -1,5 +1,10 @@
 import { derived, get, writable } from 'svelte/store';
-import { connect as wagmiConnect, signMessage as wagmiSignMessage } from '@wagmi/core';
+import {
+  connect as wagmiConnect,
+  signMessage as wagmiSignMessage,
+  waitForTransactionReceipt as wagmiWaitForTransactionReceipt,
+  writeContract as wagmiWriteContract,
+} from '@wagmi/core';
 import {
   deterministicAccountForWallet,
   isSupportedDemoWallet,
@@ -292,6 +297,147 @@ export const signWalletMessage = async (message: string): Promise<string> => {
     account: address as `0x${string}`,
     message,
   });
+};
+
+const ROUTER_ABI = [
+  {
+    type: 'function',
+    name: 'routeFunds',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'requestId', type: 'bytes32' },
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'payloadHash', type: 'bytes32' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'requestWithdrawal',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'requestId', type: 'bytes32' },
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'recipient', type: 'address' },
+      { name: 'payloadHash', type: 'bytes32' },
+    ],
+    outputs: [],
+  },
+] as const;
+
+const ERC20_APPROVE_ABI = [
+  {
+    type: 'function',
+    name: 'approve',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+] as const;
+
+const loadEvmWagmiConfig = async () => {
+  const appKit = await getWalletAppKit();
+  if (!appKit) {
+    throw new Error('Wallet connection is unavailable');
+  }
+
+  const address = get(walletAddress);
+  const namespace = get(walletNamespace);
+  if (namespace !== 'evm' || !address?.startsWith('0x')) {
+    throw new Error('Connect a supported EVM wallet before routing funds');
+  }
+
+  const { getWagmiAdapter } = await loadAppKitModule();
+  const adapter = getWagmiAdapter();
+  if (!adapter?.wagmiConfig) {
+    throw new Error('Reown AppKit wallet signer is unavailable');
+  }
+
+  return { wagmiConfig: adapter.wagmiConfig, address };
+};
+
+export const approveRouterTokenWithWallet = async (params: {
+  routerAddress: string;
+  tokenAddress: string;
+  amountBaseUnits: string;
+}): Promise<string> => {
+  const { wagmiConfig, address } = await loadEvmWagmiConfig();
+  const txHash = await wagmiWriteContract(wagmiConfig, {
+    account: address as `0x${string}`,
+    address: params.tokenAddress as `0x${string}`,
+    abi: ERC20_APPROVE_ABI,
+    functionName: 'approve',
+    args: [params.routerAddress as `0x${string}`, BigInt(params.amountBaseUnits)],
+  });
+
+  await wagmiWaitForTransactionReceipt(wagmiConfig, {
+    hash: txHash,
+  });
+
+  return String(txHash);
+};
+
+export const routeFundsWithWallet = async (params: {
+  routerAddress: string;
+  requestId: string;
+  tokenAddress: string;
+  amountBaseUnits: string;
+  payloadHash: string;
+}): Promise<string> => {
+  const { wagmiConfig, address } = await loadEvmWagmiConfig();
+  const txHash = await wagmiWriteContract(wagmiConfig, {
+    account: address as `0x${string}`,
+    address: params.routerAddress as `0x${string}`,
+    abi: ROUTER_ABI,
+    functionName: 'routeFunds',
+    args: [
+      params.requestId as `0x${string}`,
+      params.tokenAddress as `0x${string}`,
+      BigInt(params.amountBaseUnits),
+      params.payloadHash as `0x${string}`,
+    ],
+  });
+
+  await wagmiWaitForTransactionReceipt(wagmiConfig, {
+    hash: txHash,
+  });
+
+  return String(txHash);
+};
+
+export const requestWithdrawalWithWallet = async (params: {
+  routerAddress: string;
+  requestId: string;
+  tokenAddress: string;
+  amountBaseUnits: string;
+  recipientAddress: string;
+  payloadHash: string;
+}): Promise<string> => {
+  const { wagmiConfig, address } = await loadEvmWagmiConfig();
+  const txHash = await wagmiWriteContract(wagmiConfig, {
+    account: address as `0x${string}`,
+    address: params.routerAddress as `0x${string}`,
+    abi: ROUTER_ABI,
+    functionName: 'requestWithdrawal',
+    args: [
+      params.requestId as `0x${string}`,
+      params.tokenAddress as `0x${string}`,
+      BigInt(params.amountBaseUnits),
+      params.recipientAddress as `0x${string}`,
+      params.payloadHash as `0x${string}`,
+    ],
+  });
+
+  await wagmiWaitForTransactionReceipt(wagmiConfig, {
+    hash: txHash,
+  });
+
+  return String(txHash);
 };
 
 export const connectDemoWallet = (preset: DemoWalletPreset = 'evm', persist = true) => {

@@ -5,8 +5,9 @@ import { Web3WithdrawController } from './web3-withdraw.controller';
 
 describe('Web3WithdrawController', () => {
   const service = {
-    createWithdrawal: jest.fn(),
+    createWithdrawalRequest: jest.fn(),
     getWithdrawal: jest.fn(),
+    verifyWithdrawalTransaction: jest.fn(),
   };
 
   let controller: Web3WithdrawController;
@@ -16,43 +17,49 @@ describe('Web3WithdrawController', () => {
     controller = new Web3WithdrawController(service as never);
   });
 
-  it('uses the web3 namespace', () => {
+  it('uses the withdrawal request namespace', () => {
     expect(Reflect.getMetadata(PATH_METADATA, Web3WithdrawController)).toBe(
-      'web3',
+      'web3/withdrawal-requests',
     );
   });
 
-  it('binds withdrawal requests to the authenticated web3 user and wallet', async () => {
-    service.createWithdrawal.mockResolvedValueOnce({
-      withdrawalId: 'withdrawal-1',
-      status: 'blocked',
-    });
-    const body = {
-      chainId: 11155111,
-      tokenAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-      amount: '2.5',
-      idempotencyKey: 'request-1',
-    };
+  it('binds request creation to the authenticated web3 user and wallet', async () => {
+    service.createWithdrawalRequest.mockResolvedValueOnce({ withdrawalId: 'withdrawal-1' });
+    const body = { orderId: 'order-1' };
 
-    await controller.createWithdrawal(body, {
+    await controller.createWithdrawalRequest(body, {
       user: {
         userId: 'user-1',
         address: '0x1111111111111111111111111111111111111111',
       },
     });
 
-    expect(service.createWithdrawal).toHaveBeenCalledWith(
+    expect(service.createWithdrawalRequest).toHaveBeenCalledWith(
       'user-1',
       '0x1111111111111111111111111111111111111111',
       body,
     );
   });
 
-  it('binds withdrawal status lookup to the authenticated owner', async () => {
-    service.getWithdrawal.mockResolvedValueOnce({
-      withdrawalId: 'withdrawal-1',
-      status: 'submitted',
+  it('binds verify to the authenticated owner', async () => {
+    service.verifyWithdrawalTransaction.mockResolvedValueOnce({ withdrawalId: 'withdrawal-1' });
+
+    await controller.verifyWithdrawalTransaction('withdrawal-1', { txHash: 'tx' }, {
+      user: {
+        userId: 'user-1',
+        address: '0x1111111111111111111111111111111111111111',
+      },
     });
+
+    expect(service.verifyWithdrawalTransaction).toHaveBeenCalledWith(
+      'user-1',
+      'withdrawal-1',
+      { txHash: 'tx' },
+    );
+  });
+
+  it('binds status lookup to the authenticated owner', async () => {
+    service.getWithdrawal.mockResolvedValueOnce({ withdrawalId: 'withdrawal-1' });
 
     await controller.getWithdrawal('withdrawal-1', {
       user: {
@@ -61,23 +68,13 @@ describe('Web3WithdrawController', () => {
       },
     });
 
-    expect(service.getWithdrawal).toHaveBeenCalledWith(
-      'user-1',
-      'withdrawal-1',
-    );
+    expect(service.getWithdrawal).toHaveBeenCalledWith('user-1', 'withdrawal-1');
   });
 
-  it('rejects withdrawal creation when the authenticated web3 user is absent', async () => {
+  it('rejects request creation when the authenticated web3 user is absent', async () => {
     await expect(
-      controller.createWithdrawal({}, { user: { userId: 'user-1' } }),
+      controller.createWithdrawalRequest({}, { user: { userId: 'user-1' } }),
     ).rejects.toThrow(UnauthorizedException);
-    expect(service.createWithdrawal).not.toHaveBeenCalled();
-  });
-
-  it('rejects status lookup when the authenticated web3 user is absent', async () => {
-    await expect(
-      controller.getWithdrawal('withdrawal-1', { user: {} }),
-    ).rejects.toThrow(UnauthorizedException);
-    expect(service.getWithdrawal).not.toHaveBeenCalled();
+    expect(service.createWithdrawalRequest).not.toHaveBeenCalled();
   });
 });

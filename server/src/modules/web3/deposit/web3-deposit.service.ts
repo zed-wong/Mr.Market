@@ -1,17 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import BigNumber from 'bignumber.js';
 import { ethers } from 'ethers';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
-import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
 
 import { Web3Service } from '../web3.service';
-
-type DepositVerifyBody = {
-  chainId?: unknown;
-  txHash?: unknown;
-  tokenAddress?: unknown;
-  amount?: unknown;
-};
 
 export type SupportedToken = {
   chainId: number;
@@ -21,9 +12,6 @@ export type SupportedToken = {
   tokenAddress: string;
   decimals: number;
 };
-
-const WEB3_DEPOSIT_NAMESPACE = '/web3/deposit';
-const WEB3_WALLET_ORDER_PREFIX = 'web3:wallet';
 
 const SUPPORTED_TOKENS_BY_CHAIN: Record<number, SupportedToken[]> = {
   1: [
@@ -102,17 +90,14 @@ const SUPPORTED_TOKENS_BY_CHAIN: Record<number, SupportedToken[]> = {
 
 @Injectable()
 export class Web3DepositService {
-  constructor(
-    private readonly web3Service: Web3Service,
-    private readonly balanceLedgerService: BalanceLedgerService,
-  ) {}
+  constructor(private readonly web3Service: Web3Service) {}
 
   getInstructions(chainIdInput?: unknown) {
     const chainId = this.parseSupportedChainId(chainIdInput);
     const receiverAddress = this.web3Service.getOperatorAddress(chainId);
 
     return {
-      namespace: WEB3_DEPOSIT_NAMESPACE,
+      namespace: '/web3/funding-requests' as const,
       chainId,
       receiverAddress,
       supportedTokens: this.getSupportedTokens(chainId),
@@ -128,68 +113,6 @@ export class Web3DepositService {
     return this.resolveSupportedToken(chainId, tokenAddressInput);
   }
 
-  async verifyDeposit(
-    userId: string,
-    authenticatedWalletAddress: string,
-    body: DepositVerifyBody,
-  ) {
-    const chainId = this.parseSupportedChainId(body?.chainId);
-    const token = this.resolveSupportedToken(chainId, body?.tokenAddress);
-    const txHash = this.normalizeTxHash(body?.txHash);
-    const amount = this.normalizeHumanAmount(body?.amount);
-    const receiverAddress = this.web3Service.getOperatorAddress(chainId);
-    const onChainAmount = this.toTokenBaseUnits(amount, token);
-    const verified = await this.web3Service.verifyTransactionDetails(
-      chainId,
-      txHash,
-      token.tokenAddress,
-      receiverAddress,
-      onChainAmount,
-      authenticatedWalletAddress,
-    );
-
-    if (!verified) {
-      throw this.badRequest(
-        'DEPOSIT_TX_INVALID',
-        'Transaction does not match the authenticated deposit request',
-      );
-    }
-
-    const ledgerResult = await this.balanceLedgerService.creditDeposit({
-      orderId: this.getWalletLedgerOrderId(userId),
-      userId,
-      assetId: token.assetId,
-      amount,
-      idempotencyKey: `web3:deposit:tx:${chainId}:${txHash}`,
-      refType: 'web3_wallet_deposit',
-      refId: txHash,
-    });
-
-    return {
-      namespace: WEB3_DEPOSIT_NAMESPACE,
-      deposit: {
-        status: ledgerResult.applied ? 'credited' : 'already_credited',
-        applied: ledgerResult.applied,
-        chainId,
-        txHash,
-        tokenAddress: token.tokenAddress,
-        assetId: token.assetId,
-        amount,
-        receiverAddress,
-        fromAddress: authenticatedWalletAddress.toLowerCase(),
-        ledgerEntryId: ledgerResult.entry.entryId,
-      },
-      balance: {
-        orderId: ledgerResult.balance.orderId,
-        assetId: ledgerResult.balance.assetId,
-        available: ledgerResult.balance.available,
-        locked: ledgerResult.balance.locked,
-        total: ledgerResult.balance.total,
-        updatedAt: ledgerResult.balance.updatedAt,
-      },
-    };
-  }
-
   private parseSupportedChainId(chainIdInput?: unknown): number {
     const chainId = Number(chainIdInput);
 
@@ -199,7 +122,7 @@ export class Web3DepositService {
     if (!SUPPORTED_TOKENS_BY_CHAIN[chainId]) {
       throw this.badRequest(
         'CHAIN_UNSUPPORTED',
-        `chainId ${chainId} is not supported for deposits`,
+        `chainId ${chainId} is not supported for Router funding`,
       );
     }
 
@@ -251,49 +174,6 @@ export class Web3DepositService {
     } catch {
       throw this.badRequest(code, message);
     }
-  }
-
-  private normalizeTxHash(txHashInput?: unknown): string {
-    const txHash = String(txHashInput || '')
-      .trim()
-      .toLowerCase();
-
-    if (!ethers.utils.isHexString(txHash, 32)) {
-      throw this.badRequest(
-        'TX_HASH_INVALID',
-        'txHash must be a 32-byte hex transaction hash',
-      );
-    }
-
-    return txHash;
-  }
-
-  private normalizeHumanAmount(amountInput?: unknown): string {
-    const amount = new BigNumber(String(amountInput || '').trim());
-
-    if (!amount.isFinite() || amount.isLessThanOrEqualTo(0)) {
-      throw this.badRequest(
-        'AMOUNT_INVALID',
-        'amount must be a positive numeric string',
-      );
-    }
-
-    return amount.toFixed();
-  }
-
-  private toTokenBaseUnits(amount: string, token: SupportedToken) {
-    try {
-      return ethers.utils.parseUnits(amount, token.decimals);
-    } catch {
-      throw this.badRequest(
-        'AMOUNT_INVALID',
-        `amount must fit ${token.decimals} token decimals`,
-      );
-    }
-  }
-
-  private getWalletLedgerOrderId(userId: string): string {
-    return `${WEB3_WALLET_ORDER_PREFIX}:${userId}`;
   }
 
   private badRequest(code: string, message: string) {

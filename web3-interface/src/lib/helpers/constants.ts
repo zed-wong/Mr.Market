@@ -21,8 +21,8 @@ export const getMrmBackendUrl = (): string => requireEnv('PUBLIC_MRM_BACKEND_URL
 export const getReownProjectId = (): string => requireEnv('PUBLIC_REOWN_PROJECT_ID');
 export const isValidationWalletEnabled = (): boolean =>
   env.PUBLIC_ENABLE_VALIDATION_WALLET === '1' || env.PUBLIC_ENABLE_VALIDATION_WALLET === 'true';
-export const getEthereumVaultAddress = (): string | undefined =>
-  env.PUBLIC_ETHEREUM_VAULT_ADDRESS || undefined;
+export const getEthereumRouterAddress = (): string | undefined =>
+  env.PUBLIC_ETHEREUM_ROUTER_ADDRESS || undefined;
 
 export const SUPPORTED_CHAINS: Record<string, ChainConfig> = {
   ethereum: {

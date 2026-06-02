@@ -1,6 +1,11 @@
 import { apiFetch } from './client';
 import type { Web3BalancesResponse } from '$lib/types/balances';
-import type { DepositInstructions, DepositVerifyRequest, DepositVerifyResponse } from '$lib/types/deposit';
+import type { DepositInstructions } from '$lib/types/deposit';
+import type {
+  Web3FundingRequestBody,
+  Web3FundingRequestResponse,
+  Web3FundingVerifyBody,
+} from '$lib/types/funding';
 import type {
   Web3MarketMakingCreateRequest,
   Web3MarketMakingCreateResponse,
@@ -11,7 +16,7 @@ import type {
   Web3MarketMakingOrderListResponse,
   Web3MarketMakingStrategiesResponse,
 } from '$lib/types/market-making';
-import type { WithdrawRequest, WithdrawResponse } from '$lib/types/withdraw';
+import type { WithdrawRequest, WithdrawResponse, WithdrawVerifyRequest } from '$lib/types/withdraw';
 
 const WEB3_MARKET_MAKING_NAMESPACE = '/web3/market-making';
 
@@ -23,27 +28,63 @@ export const getBalances = async (): Promise<Web3BalancesResponse> => {
 };
 
 export const getDepositInstructions = async (chainId?: string): Promise<DepositInstructions> => {
-  return apiFetch<DepositInstructions>('/web3/deposit/instructions', {
+  return apiFetch<DepositInstructions>('/web3/funding-requests/instructions', {
     query: chainId ? { chainId } : undefined,
   });
 };
 
-export const verifyDeposit = async (request: DepositVerifyRequest): Promise<DepositVerifyResponse> => {
-  return apiFetch<DepositVerifyResponse>('/web3/deposit/verify', {
+export const createFundingRequest = async (
+  request: Web3FundingRequestBody
+): Promise<Web3FundingRequestResponse> => {
+  return apiFetch<Web3FundingRequestResponse>('/web3/funding-requests', {
     method: 'POST',
     json: request,
   });
 };
 
+export const getFundingRequest = async (
+  requestId: string
+): Promise<Web3FundingRequestResponse> => {
+  return apiFetch<Web3FundingRequestResponse>(
+    `/web3/funding-requests/${encodeURIComponent(requestId)}`
+  );
+};
+
+export const verifyFundingRequest = async (
+  requestId: string,
+  request: Web3FundingVerifyBody
+): Promise<Web3FundingRequestResponse> => {
+  return apiFetch<Web3FundingRequestResponse>(
+    `/web3/funding-requests/${encodeURIComponent(requestId)}/verify`,
+    {
+      method: 'POST',
+      json: request,
+    }
+  );
+};
+
 export const submitWithdraw = async (request: WithdrawRequest): Promise<WithdrawResponse> => {
-  return apiFetch<WithdrawResponse>('/web3/withdraw', {
+  return apiFetch<WithdrawResponse>('/web3/withdrawal-requests', {
     method: 'POST',
     json: request,
   });
 };
 
 export const getWithdrawStatus = async (id: string): Promise<WithdrawResponse> => {
-  return apiFetch<WithdrawResponse>(`/web3/withdraw/${id}`);
+  return apiFetch<WithdrawResponse>(`/web3/withdrawal-requests/${encodeURIComponent(id)}`);
+};
+
+export const verifyWithdrawRequest = async (
+  id: string,
+  request: WithdrawVerifyRequest
+): Promise<WithdrawResponse> => {
+  return apiFetch<WithdrawResponse>(
+    `/web3/withdrawal-requests/${encodeURIComponent(id)}/verify`,
+    {
+      method: 'POST',
+      json: request,
+    }
+  );
 };
 
 export const listMarketMakingOrders = async (): Promise<Web3MarketMakingOrderListResponse> => {

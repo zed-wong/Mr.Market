@@ -119,6 +119,42 @@ export class Web3Service {
     return { txHash: transaction.hash };
   }
 
+  public async getTransactionReceipt(
+    chainId: number,
+    transactionHash: string,
+  ): Promise<ethers.providers.TransactionReceipt | null> {
+    const signer = this.getSigner(chainId);
+
+    if (!signer?.provider) {
+      throw new Error(`Web3 signer is not configured for chain ${chainId}`);
+    }
+
+    return await signer.provider.getTransactionReceipt(transactionHash);
+  }
+
+  public async getCurrentBlockNumber(chainId: number): Promise<number> {
+    const signer = this.getSigner(chainId);
+
+    if (!signer?.provider) {
+      throw new Error(`Web3 signer is not configured for chain ${chainId}`);
+    }
+
+    return await signer.provider.getBlockNumber();
+  }
+
+  public async getLogs(
+    chainId: number,
+    filter: ethers.providers.Filter,
+  ): Promise<ethers.providers.Log[]> {
+    const signer = this.getSigner(chainId);
+
+    if (!signer?.provider) {
+      throw new Error(`Web3 signer is not configured for chain ${chainId}`);
+    }
+
+    return await signer.provider.getLogs(filter);
+  }
+
   async verifyTransactionDetails(
     chainId: number,
     transactionHash: string,

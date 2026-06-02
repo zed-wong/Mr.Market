@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -13,7 +14,8 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/jwt-auth.guard';
 
-import { Web3WithdrawService } from './web3-withdraw.service';
+import { Web3DepositService } from '../deposit/web3-deposit.service';
+import { Web3FundingService } from './web3-funding.service';
 
 type AuthenticatedRequest = {
   user?: {
@@ -22,59 +24,75 @@ type AuthenticatedRequest = {
   };
 };
 
-@ApiTags('Web3 Withdrawal Requests')
-@Controller('web3/withdrawal-requests')
-export class Web3WithdrawController {
-  constructor(private readonly web3WithdrawService: Web3WithdrawService) {}
+@ApiTags('Web3 Funding')
+@Controller('web3/funding-requests')
+export class Web3FundingController {
+  constructor(
+    private readonly web3FundingService: Web3FundingService,
+    private readonly web3DepositService: Web3DepositService,
+  ) {}
+
+  @Get('instructions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get Router funding token and receiver instructions',
+  })
+  getInstructions(@Query('chainId') chainId?: string) {
+    return this.web3DepositService.getInstructions(chainId);
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Prepare an authenticated Router withdrawal request' })
-  async createWithdrawalRequest(
+  @ApiOperation({
+    summary:
+      'Prepare a Router funding request for a future market-making order',
+  })
+  async createFundingRequest(
     @Body() body: Record<string, unknown>,
     @Req() request: AuthenticatedRequest,
   ) {
     const authenticatedUser = this.getAuthenticatedUser(request);
 
-    return await this.web3WithdrawService.createWithdrawalRequest(
+    return await this.web3FundingService.createFundingRequest(
       authenticatedUser.userId,
       authenticatedUser.address,
       body,
     );
   }
 
-  @Get(':withdrawalId')
+  @Get(':requestId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get authenticated Router withdrawal request status' })
-  async getWithdrawal(
-    @Param('withdrawalId') withdrawalId: string,
+  @ApiOperation({ summary: 'Get authenticated Router funding request status' })
+  async getFundingRequest(
+    @Param('requestId') requestId: string,
     @Req() request: AuthenticatedRequest,
   ) {
-    return await this.web3WithdrawService.getWithdrawal(
+    return await this.web3FundingService.getFundingRequest(
       this.getAuthenticatedUser(request).userId,
-      withdrawalId,
+      requestId,
     );
   }
 
-  @Post(':withdrawalId/verify')
+  @Post(':requestId/verify')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Verify a Router withdrawal request transaction and process payout',
+    summary:
+      'Verify a Router funding transaction and process its FundsRouted event',
   })
-  async verifyWithdrawalTransaction(
-    @Param('withdrawalId') withdrawalId: string,
+  async verifyFundingTransaction(
+    @Param('requestId') requestId: string,
     @Body() body: Record<string, unknown>,
     @Req() request: AuthenticatedRequest,
   ) {
-    return await this.web3WithdrawService.verifyWithdrawalTransaction(
+    return await this.web3FundingService.verifyFundingTransaction(
       this.getAuthenticatedUser(request).userId,
-      withdrawalId,
+      requestId,
       body,
     );
   }

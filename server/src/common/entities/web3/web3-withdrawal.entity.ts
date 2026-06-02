@@ -1,11 +1,15 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
 export type Web3WithdrawalStatus =
-  | 'pending'
+  | 'created'
+  | 'onchain_seen'
+  | 'processing'
   | 'submitted'
-  | 'completed'
+  | 'paid'
   | 'failed'
-  | 'blocked';
+  | 'blocked'
+  | 'rejected'
+  | 'expired';
 
 @Entity({ name: 'web3_withdrawal' })
 export class Web3Withdrawal {
@@ -17,7 +21,13 @@ export class Web3Withdrawal {
   userId: string;
 
   @Column()
+  orderId: string;
+
+  @Column()
   chainId: number;
+
+  @Column()
+  routerAddress: string;
 
   @Column()
   tokenAddress: string;
@@ -32,6 +42,15 @@ export class Web3Withdrawal {
   recipientAddress: string;
 
   @Column()
+  feeTokenAddress: string;
+
+  @Column()
+  feeAssetId: string;
+
+  @Column()
+  feeAmount: string;
+
+  @Column()
   status: Web3WithdrawalStatus;
 
   @Column()
@@ -42,19 +61,43 @@ export class Web3Withdrawal {
   payloadHash: string;
 
   @Column()
+  requestSecret: string;
+
+  @Column()
   ledgerDebitIdempotencyKey: string;
+
+  @Column()
+  feeDebitIdempotencyKey: string;
 
   @Column({ nullable: true })
   ledgerEntryId?: string;
 
   @Column({ nullable: true })
-  txHash?: string;
+  feeLedgerEntryId?: string;
+
+  @Column({ nullable: true })
+  requestTxHash?: string;
+
+  @Column({ nullable: true })
+  requestLogIndex?: number;
+
+  @Column({ nullable: true })
+  startBlockNumber?: number;
+
+  @Column({ nullable: true })
+  payoutTxHash?: string;
+
+  @Column({ nullable: true })
+  externalPayoutId?: string;
 
   @Column({ nullable: true })
   failureReason?: string;
 
   @Column()
   createdAt: string;
+
+  @Column()
+  expiresAt: string;
 
   @Column()
   updatedAt: string;

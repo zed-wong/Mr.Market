@@ -6,10 +6,13 @@
   import { _ } from 'svelte-i18n';
   import Section from '$lib/components/common/Section.svelte';
   import {
-    createMarketMakingOrder,
+    createFundingRequest,
+    getDepositInstructions,
     listMarketMakingOptions,
     listMarketMakingStrategies,
+    verifyFundingRequest,
   } from '$lib/helpers/api/web3';
+  import { getEthereumRouterAddress } from '$lib/helpers/constants';
   import {
     createFlowSteps,
     isCreateFlowStep,
@@ -21,9 +24,10 @@
   import { balances } from '$lib/stores/balances';
   import { authState, hasUsableAuthSession, isAuthed } from '$lib/stores/auth';
   import {
+    approveRouterTokenWithWallet,
     openNetworkModal,
     openWalletModal,
-    signWalletMessage,
+    routeFundsWithWallet,
     walletAccount,
     walletIsConnected,
     walletIsUnsupported,
@@ -106,7 +110,7 @@
   const amountValidationError = $derived(validationErrors.amount ?? validationErrors.asset ?? null);
   const hasFundsErrors = $derived(Boolean(validationErrors.asset || validationErrors.amount));
   const hasPairErrors = $derived(Boolean(validationErrors.options || validationErrors.strategy || validationErrors.specs));
-  const hasBalanceBlock = $derived(Boolean(validationErrors.amount?.toLowerCase().includes('available')));
+  const hasBalanceBlock = $derived(false);
   const activeWalletChainId = $derived(String($walletAccount?.chainId ?? '0'));
   const activeWalletAddress = $derived($walletAccount?.address ?? '');
   const authMatchesActiveWallet = $derived(
@@ -202,10 +206,6 @@
       errors.amount = $_('market_making_create_error_amount_maximum', {
         values: { amount: formatAmount(selectedMaximum), asset: assetLabel(selectedDepositAsset) },
       });
-    } else if (amount.isGreaterThan(selectedAvailableAmount)) {
-      errors.amount = $_('market_making_create_error_amount_available', {
-        values: { asset: assetLabel(selectedDepositAsset), amount: formatAmount(selectedAvailableAmount) },
-      });
     }
 
     return errors;
@@ -278,17 +278,25 @@
     await setCreateStep('review');
   };
 
-  const buildApprovalMessage = (): string =>
-    [
-      'Approve Mr.Market pure market-making order intent',
-      `strategy: ${PURE_MARKET_MAKING_KEY}`,
-      `pair: ${selectedPair?.pair ?? ''}`,
-      `exchange: ${selectedPair?.exchangeName ?? ''}`,
-      `asset: ${selectedDepositAsset}`,
-      `amount: ${new BigNumber(depositAmount || 0).toFixed()}`,
-      `wallet: ${activeWalletAddress}`,
-      `issuedAt: ${new Date().toISOString()}`,
-    ].join('\n');
+  const resolveFundingToken = async () => {
+    const chainId = Number(activeWalletChainId);
+    if (!Number.isInteger(chainId) || chainId <= 0) {
+      throw new Error('Connect a supported EVM network before routing funds.');
+    }
+    const instructions = await getDepositInstructions(String(chainId));
+    const selectedAssetLabel = assetLabel(selectedDepositAsset);
+    const token = instructions.supportedTokens.find((candidate) => {
+      const keys = [candidate.assetId, candidate.symbol, candidate.tokenAddress].map(normalized);
+      const selectedKeys = [selectedDepositAsset, selectedAssetLabel].map(normalized);
+      return selectedKeys.some((key) => key && keys.includes(key));
+    });
+
+    if (!token) {
+      throw new Error('Selected funding asset is not mapped to a supported EVM token for this network.');
+    }
+
+    return token;
+  };
 
   const submitOrder = async () => {
     attemptedPair = true;
@@ -309,22 +317,44 @@
     submitState = 'signing';
 
     try {
-      const approvalMessage = buildApprovalMessage();
-      const approvalSignature = await signWalletMessage(approvalMessage);
-      if (!approvalSignature) throw new Error($_('market_making_create_error_approval_missing'));
+      const routerAddress = getEthereumRouterAddress();
+      if (!routerAddress) {
+        throw new Error('Router address is not configured for web3-interface.');
+      }
+      const fundingToken = await resolveFundingToken();
 
       submitState = 'submitting';
-      const response = await createMarketMakingOrder({
-        marketMakingPairId: selectedPair.pairId,
-        strategyDefinitionId: selectedPureStrategy.id,
-        initialDeposit: {
-          assetId: selectedDepositAsset,
-          amount: new BigNumber(depositAmount).toFixed(),
+      const response = await createFundingRequest({
+        chainId: fundingToken.chainId,
+        routerAddress,
+        tokenAddress: fundingToken.tokenAddress,
+        amount: new BigNumber(depositAmount).toFixed(),
+        orderDraft: {
+          marketMakingPairId: selectedPair.pairId,
+          strategyDefinitionId: selectedPureStrategy.id,
         },
       });
-      fundingInstruction = response.funding?.depositEndpoint || response.initialDeposit?.message || null;
+      const routerCall = response.routerCall;
+      if (!routerCall) {
+        throw new Error('Funding request did not include Router call parameters.');
+      }
+      await approveRouterTokenWithWallet({
+        routerAddress: routerCall.routerAddress,
+        tokenAddress: routerCall.tokenAddress,
+        amountBaseUnits: routerCall.amountBaseUnits,
+      });
+      const txHash = await routeFundsWithWallet(routerCall);
+      const verified = await verifyFundingRequest(response.fundingRequest.requestId, {
+        txHash,
+      });
+      const orderId = verified.fundingRequest.orderId;
+      fundingInstruction = orderId
+        ? 'Router funding confirmed; order was created from the FundsRouted event.'
+        : 'Router funding submitted; order will appear after server indexing confirms the event.';
       submitState = 'success';
-      await goto(`/app/market-making/order/${encodeURIComponent(response.orderId)}`);
+      if (orderId) {
+        await goto(`/app/market-making/order/${encodeURIComponent(orderId)}`);
+      }
     } catch (error) {
       submitError = errorMessage(error);
       submitState = 'error';
