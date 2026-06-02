@@ -24,7 +24,7 @@
   class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-base-100 px-5 py-8 md:flex"
   data-testid="desktop-primary-navigation"
 >
-  <a href="/app" class="mb-10 flex items-center gap-2 px-2" onclick={closeMobileNav}>
+  <a href="/" class="mb-10 flex items-center gap-2 px-2" onclick={closeMobileNav}>
     <img src="/mr-market-logo-bg.png" alt="Mr.Market logo" class="size-8 rounded-full" />
     <span class="font-display text-lg tracking-tight text-base-content">Mr.Market</span>
   </a>
@@ -66,7 +66,7 @@
     data-testid="mobile-primary-navigation"
   >
     <div class="mb-10 flex items-start justify-between">
-      <a href="/app" class="flex items-center gap-2" onclick={closeMobileNav}>
+      <a href="/" class="flex items-center gap-2" onclick={closeMobileNav}>
         <img src="/mr-market-logo-bg.png" alt="Mr.Market logo" class="size-8 rounded-full" />
         <span class="font-display text-lg tracking-tight text-base-content">Mr.Market</span>
       </a>
