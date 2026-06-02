@@ -20,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { MetricsService } from '../market-making/metrics/metrics.service';
 import { AdminAuditInterceptor } from './system/admin-audit.interceptor';
 import {
   GrowdataArbitragePairDto,
@@ -51,7 +52,22 @@ export class AdminController {
     private readonly adminStrategyService: AdminStrategyService,
     private readonly adminGrowService: AdminGrowService,
     private readonly adminSpotService: AdminSpotService,
+    private readonly metricsService: MetricsService,
   ) {}
+
+  @Get('metrics')
+  @ApiOperation({ summary: 'Get strategy metrics' })
+  @ApiResponse({ status: 200, description: 'Strategy metrics' })
+  async getMetrics() {
+    return this.metricsService.getStrategyMetrics();
+  }
+
+  @Get('metrics/runtime')
+  @ApiOperation({ summary: 'Get market-making runtime timing metrics' })
+  @ApiResponse({ status: 200, description: 'Runtime timing metrics' })
+  getRuntimeMetrics() {
+    return this.metricsService.getRuntimeMetrics();
+  }
 
   @Post('strategy/definitions')
   @ApiOperation({ summary: 'Create a strategy definition' })

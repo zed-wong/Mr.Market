@@ -1,5 +1,13 @@
 # Execution Flow Changelog
 
+## 2026-06-02
+
+- Move metrics HTTP access behind the authenticated admin surface as `/admin/metrics` and `/admin/metrics/runtime`, removing the public `/metrics` controller while keeping `MetricsService` for dashboard/system-health internals.
+- Remove the legacy unauthenticated `/performance/:userId` controller while keeping `PerformanceService` available to the guarded admin and web3 order-performance endpoints.
+- Add a follow-up migration that backfills the missing `web3_funding_request.startBlockNumber` column for databases where the funding request table was created before the current entity shape.
+- Register `Web3FundingRequest` and `Web3EventLog` in the server TypeORM root entity list so the Router event poller repositories have metadata at runtime.
+- Start the Mixin blaze message loop from a deferred background callback so Nest bootstrap is not blocked by Mixin websocket/network startup, while preserving async failure logging for the message handler loop.
+
 ## 2026-06-01
 
 - Complete the selected Web3 Router refactor without keeping the old Vault/deposit/withdraw compatibility surface: `MrMarketRouter` replaces `MrMarketVault`, `/web3/funding-requests` owns funding prepare/status/verify, `/web3/withdrawal-requests` owns withdrawal prepare/status/verify, a background Router event poller processes pending funding/withdrawal events through the same idempotent processors as receipt verification, and `web3-interface` now calls Router transactions instead of submitting ordinary transfer hashes.

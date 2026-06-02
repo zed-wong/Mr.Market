@@ -4,7 +4,6 @@ import { Performance } from 'src/common/entities/market-making/performance.entit
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 
 import { LedgerModule } from '../ledger/ledger.module';
-import { PerformanceController } from './performance.controller';
 import { PerformanceService } from './performance.service';
 
 @Module({
@@ -12,7 +11,6 @@ import { PerformanceService } from './performance.service';
     TypeOrmModule.forFeature([Performance, MarketMakingOrder]),
     LedgerModule,
   ],
-  controllers: [PerformanceController],
   providers: [PerformanceService],
   exports: [PerformanceService],
 })

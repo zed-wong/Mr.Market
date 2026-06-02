@@ -35,8 +35,32 @@ export class MessageService implements OnModuleInit {
 
       return;
     }
-    this.client.blaze.loop(this.messageHandler);
-    this.logger.log('Start handling mixin messages');
+
+    setImmediate(() => {
+      try {
+        this.logger.log('Start handling mixin messages');
+
+        const loopResult = this.client.blaze.loop(this.messageHandler);
+
+        Promise.resolve(loopResult).catch((error) => {
+          const message =
+            error instanceof Error ? error.stack || error.message : String(error);
+
+          this.logger.error(
+            'Mixin message loop failed',
+            message,
+          );
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.stack || error.message : String(error);
+
+        this.logger.error(
+          'Failed to start mixin message loop',
+          message,
+        );
+      }
+    });
   }
 
   async addMessageHistory(message: MixinMessage) {

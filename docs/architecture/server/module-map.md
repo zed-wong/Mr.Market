@@ -324,7 +324,7 @@ This section explains each module with three questions:
 
 - What: provides the clock tick coordinator contract plus shared runtime timing recording.
 - Why: the runtime still needs deterministic strategy cadence plus per-tick/per-component/per-network timing evidence even after reconciliation and refresh leave the shared tick path.
-- Where: used by strategy service and by `/metrics/runtime`.
+- Where: used by strategy service and the admin `/admin/metrics/runtime` endpoint.
 
 #### `market-making/trackers/trackers.module.ts`
 
@@ -394,15 +394,15 @@ This section explains each module with three questions:
 
 #### `market-making/performance/performance.module.ts`
 
-- What: stores and serves strategy performance snapshots.
+- What: stores strategy performance snapshots and calculates order-scoped performance.
 - Why: operators and users need performance visibility.
-- Where: used by admin and analytics endpoints.
+- Where: used by guarded admin and web3 order-performance endpoints.
 
 #### `market-making/metrics/metrics.module.ts`
 
-- What: metrics API over strategy execution history.
+- What: metrics service over strategy execution history and runtime timing snapshots.
 - Why: runtime health and execution quality need quick query endpoints.
-- Where: used by monitoring dashboards and operational analysis.
+- Where: used by admin dashboard/system health and guarded `/admin/metrics` endpoints.
 
 #### `market-making/fee/fee.module.ts`
 
