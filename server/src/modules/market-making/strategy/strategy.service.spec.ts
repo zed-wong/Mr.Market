@@ -14,6 +14,7 @@ import { OrderScopedBalanceQueryService } from '../balance-state/order-scoped-ba
 import { ExchangeConnectorAdapterService } from '../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../execution/exchange-order-mapping.service';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
+import { OrderReservationService } from '../ledger/order-reservation.service';
 import { PerformanceService } from '../performance/performance.service';
 import { KillSwitchService } from '../risk/kill-switch.service';
 import { ExchangeOrderTrackerService } from '../trackers/exchange-order-tracker.service';
@@ -118,6 +119,9 @@ describe('StrategyService', () => {
     debitFee: jest.Mock;
     getExistingBalance: jest.Mock;
     isReservationPaused: jest.Mock;
+  };
+  let orderReservationService: {
+    releaseLimitOrderReservation: jest.Mock;
   };
   let balanceStateCacheService: {
     hasFreshAccountSnapshot: jest.Mock;
@@ -286,6 +290,11 @@ describe('StrategyService', () => {
         return { available, total: available };
       }),
       isReservationPaused: jest.fn().mockReturnValue(false),
+    };
+    orderReservationService = {
+      releaseLimitOrderReservation: jest
+        .fn()
+        .mockResolvedValue({ applied: true }),
     };
     setCachedBalances({
       default: { BTC: 10, USDT: 1000 },
@@ -477,6 +486,10 @@ describe('StrategyService', () => {
           provide: BalanceLedgerService,
           useValue: balanceLedgerService,
         },
+        {
+          provide: OrderReservationService,
+          useValue: orderReservationService,
+        },
         KillSwitchService,
         RuntimeObservationService,
         AdaptivePmmStateService,
@@ -610,7 +623,7 @@ describe('StrategyService', () => {
       );
 
   afterEach(async () => {
-    await service.onModuleDestroy();
+    await service?.onModuleDestroy();
   });
 
   it('registers a pure market making session without executing orders directly', async () => {
