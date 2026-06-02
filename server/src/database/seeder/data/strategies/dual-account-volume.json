@@ -6,7 +6,6 @@
   "configSchema": {
     "type": "object",
     "required": [
-      "exchangeName",
       "symbol",
       "baseTradeAmount",
       "baseIntervalTime",
@@ -15,10 +14,6 @@
       "pricePushRate"
     ],
     "properties": {
-      "exchangeName": {
-        "type": "string",
-        "description": "Exchange name shared by maker and taker accounts"
-      },
       "symbol": {
         "type": "string",
         "description": "Trading pair symbol (e.g. BTC/USDT)"
@@ -79,7 +74,6 @@
     "additionalProperties": false
   },
   "defaultConfig": {
-    "exchangeName": "binance",
     "symbol": "BTC/USDT",
     "baseTradeAmount": 0.1,
     "baseIntervalTime": 30,

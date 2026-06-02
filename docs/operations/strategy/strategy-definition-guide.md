@@ -137,16 +137,9 @@ Warning: do not rely on unsupported JSON Schema keywords such as `maximum`, `pat
 ```json
 {
   "type": "object",
-  "required": ["pair", "exchangeName", "orderAmount"],
+  "required": ["orderAmount"],
   "additionalProperties": false,
   "properties": {
-    "pair": {
-      "type": "string"
-    },
-    "exchangeName": {
-      "type": "string",
-      "enum": ["binance", "okx"]
-    },
     "orderAmount": {
       "type": "number",
       "minimum": 0.0001
@@ -161,6 +154,10 @@ Warning: do not rely on unsupported JSON Schema keywords such as `maximum`, `pat
   }
 }
 ```
+
+`pair` and `exchangeName` are runtime order fields. Do not put them in
+`configSchema` or `defaultConfig`; launch flows inject them from the selected
+order/pair after config validation.
 
 ## Built-in Controller Types
 

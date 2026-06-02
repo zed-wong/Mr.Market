@@ -102,8 +102,6 @@ export class MarketMakingOrderProcessor {
   private buildOrderSnapshotOverrides(params: {
     orderId: string;
     userId: string;
-    pair: string;
-    exchangeName: string;
     configOverrides?: Record<string, unknown> | null;
   }): Record<string, unknown> {
     return {
@@ -111,9 +109,26 @@ export class MarketMakingOrderProcessor {
       userId: params.userId,
       clientId: params.orderId,
       marketMakingOrderId: params.orderId,
-      pair: params.pair.replaceAll('-ERC20', ''),
-      exchangeName: params.exchangeName,
     };
+  }
+
+  private applyOrderRuntimeFields(
+    resolvedConfig: Record<string, unknown>,
+    params: {
+      orderId: string;
+      userId: string;
+      pair: string;
+      exchangeName: string;
+    },
+  ): void {
+    const pair = params.pair.replaceAll('-ERC20', '');
+
+    resolvedConfig.userId = params.userId;
+    resolvedConfig.clientId = params.orderId;
+    resolvedConfig.marketMakingOrderId = params.orderId;
+    resolvedConfig.pair = pair;
+    resolvedConfig.symbol = pair;
+    resolvedConfig.exchangeName = params.exchangeName;
   }
 
   private async refundUser(snapshot: SafeSnapshot, reason: string) {
@@ -707,11 +722,15 @@ export class MarketMakingOrderProcessor {
           this.buildOrderSnapshotOverrides({
             orderId,
             userId: paymentState.userId,
-            pair: pairConfig.symbol,
-            exchangeName: pairConfig.exchange_id,
             configOverrides: orderIntent.configOverrides,
           }),
         ));
+      this.applyOrderRuntimeFields(strategySnapshot.resolvedConfig, {
+        orderId,
+        userId: paymentState.userId,
+        pair: pairConfig.symbol,
+        exchangeName: pairConfig.exchange_id,
+      });
       const orderConfigFields =
         mapStrategySnapshotToMarketMakingOrderFields(strategySnapshot);
 

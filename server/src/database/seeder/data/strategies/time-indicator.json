@@ -4,7 +4,6 @@
     "required": [
       "userId",
       "clientId",
-      "exchangeName",
       "symbol",
       "timeframe",
       "lookback",
@@ -19,7 +18,6 @@
     "properties": {
       "userId": { "type": "string" },
       "clientId": { "type": "string" },
-      "exchangeName": { "type": "string" },
       "symbol": { "type": "string" },
       "timeframe": { "type": "string" },
       "lookback": { "type": "number", "minimum": 1 },
@@ -48,7 +46,6 @@
     "additionalProperties": false
   },
   "defaultConfig": {
-    "exchangeName": "binance",
     "symbol": "BTC/USDT",
     "timeframe": "5m",
     "lookback": 300,

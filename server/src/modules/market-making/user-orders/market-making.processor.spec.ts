@@ -724,7 +724,6 @@ describe('MarketMakingOrderProcessor', () => {
         userId: 'user-1',
         clientId: 'order-1',
         marketMakingOrderId: 'order-1',
-        exchangeName: 'binance',
         bidSpread: 0.002,
         orderRefreshTime: 1000,
       }),

@@ -330,11 +330,15 @@ export class UserOrdersService {
         this.buildOrderSnapshotOverrides({
           orderId,
           userId,
-          pair: pair.symbol,
-          exchangeName: pair.exchange_id,
           configOverrides,
         }),
       );
+    this.applyOrderRuntimeFields(strategySnapshot.resolvedConfig, {
+      orderId,
+      userId,
+      pair: pair.symbol,
+      exchangeName: pair.exchange_id,
+    });
     const memo = encodeMarketMakingCreateMemo({
       version: 1,
       tradingType: 'Market Making',
@@ -440,8 +444,6 @@ export class UserOrdersService {
   private buildOrderSnapshotOverrides(params: {
     orderId: string;
     userId: string;
-    pair: string;
-    exchangeName: string;
     configOverrides?: Record<string, unknown>;
   }): Record<string, unknown> {
     return {
@@ -449,9 +451,26 @@ export class UserOrdersService {
       userId: params.userId,
       clientId: params.orderId,
       marketMakingOrderId: params.orderId,
-      pair: params.pair.replaceAll('-ERC20', ''),
-      exchangeName: params.exchangeName,
     };
+  }
+
+  private applyOrderRuntimeFields(
+    resolvedConfig: Record<string, unknown>,
+    params: {
+      orderId: string;
+      userId: string;
+      pair: string;
+      exchangeName: string;
+    },
+  ): void {
+    const pair = params.pair.replaceAll('-ERC20', '');
+
+    resolvedConfig.userId = params.userId;
+    resolvedConfig.clientId = params.orderId;
+    resolvedConfig.marketMakingOrderId = params.orderId;
+    resolvedConfig.pair = pair;
+    resolvedConfig.symbol = pair;
+    resolvedConfig.exchangeName = params.exchangeName;
   }
 
   // Methods moved from StrategyService

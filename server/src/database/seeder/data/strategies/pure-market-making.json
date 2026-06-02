@@ -8,8 +8,6 @@
     "required": [
       "userId",
       "clientId",
-      "pair",
-      "exchangeName",
       "bidSpread",
       "askSpread",
       "orderAmount",
@@ -23,8 +21,6 @@
       "userId": { "type": "string" },
       "clientId": { "type": "string" },
       "marketMakingOrderId": { "type": "string" },
-      "pair": { "type": "string" },
-      "exchangeName": { "type": "string" },
       "oracleExchangeName": { "type": "string" },
       "bidSpread": { "type": "number", "minimum": 0 },
       "askSpread": { "type": "number", "minimum": 0 },
@@ -97,8 +93,6 @@
     "additionalProperties": false
   },
   "defaultConfig": {
-    "pair": "BTC/USDT",
-    "exchangeName": "binance",
     "bidSpread": 0.001,
     "askSpread": 0.001,
     "orderAmount": 0.001,

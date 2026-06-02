@@ -257,7 +257,14 @@ describe('UserOrdersService', () => {
         strategyDefinitionId: 'strategy-1',
         strategySnapshot: {
           controllerType: 'pureMarketMaking',
-          resolvedConfig: {},
+          resolvedConfig: expect.objectContaining({
+            userId: '123e4567-e89b-12d3-a456-426614174000',
+            clientId: expect.any(String),
+            marketMakingOrderId: expect.any(String),
+            pair: 'BTC/USDT',
+            symbol: 'BTC/USDT',
+            exchangeName: 'binance',
+          }),
         },
       });
       expect(
@@ -266,8 +273,6 @@ describe('UserOrdersService', () => {
         'strategy-1',
         expect.objectContaining({
           userId: '123e4567-e89b-12d3-a456-426614174000',
-          pair: 'BTC/USDT',
-          exchangeName: 'binance',
         }),
       );
       expect(saveSpy).toHaveBeenCalledWith(

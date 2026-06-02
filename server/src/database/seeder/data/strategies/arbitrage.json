@@ -4,7 +4,6 @@
     "required": [
       "userId",
       "clientId",
-      "pair",
       "amountToTrade",
       "minProfitability",
       "exchangeAName",
@@ -13,7 +12,6 @@
     "properties": {
       "userId": { "type": "string" },
       "clientId": { "type": "string" },
-      "pair": { "type": "string" },
       "amountToTrade": { "type": "number", "minimum": 0 },
       "minProfitability": { "type": "number", "minimum": 0 },
       "exchangeAName": { "type": "string" },
@@ -24,7 +22,6 @@
     "additionalProperties": false
   },
   "defaultConfig": {
-    "pair": "ETH/USDT",
     "amountToTrade": 1,
     "minProfitability": 0.01,
     "exchangeAName": "binance",

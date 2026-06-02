@@ -20,7 +20,6 @@
         "type": "string",
         "enum": ["cex", "dex"]
       },
-      "exchangeName": { "type": "string" },
       "symbol": { "type": "string" },
       "dexId": {
         "type": "string",
@@ -46,7 +45,6 @@
   },
   "defaultConfig": {
     "executionCategory": "clob_cex",
-    "exchangeName": "binance",
     "symbol": "BTC/USDT",
     "incrementPercentage": 0.5,
     "intervalTime": 30,

@@ -304,7 +304,6 @@ describe('StrategyConfigResolverService', () => {
       enabled: true,
       controllerType: 'dualAccountVolume',
       defaultConfig: {
-        exchangeName: 'binance',
         symbol: 'BTC/USDT',
         baseTradeAmount: 0.1,
         baseIntervalTime: 30,
@@ -329,7 +328,6 @@ describe('StrategyConfigResolverService', () => {
       definitionName: 'Dual Account Volume',
       controllerType: 'dualAccountVolume',
       resolvedConfig: expect.objectContaining({
-        exchangeName: 'binance',
         symbol: 'BTC/USDT',
         tradeAmountVariance: 0.15,
         priceOffsetVariance: 0.2,
