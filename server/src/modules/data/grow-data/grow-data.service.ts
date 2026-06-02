@@ -44,7 +44,7 @@ export class GrowdataService implements OnModuleInit {
   private growDataRefreshInFlight: Promise<unknown | null> | null = null;
 
   async onModuleInit() {
-    await this.refreshGrowDataCache('module_init');
+    void this.refreshGrowDataCache('module_init');
   }
 
   async getGrowData() {

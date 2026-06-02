@@ -108,7 +108,8 @@ describe('GrowdataService', () => {
   it('warms grow data on module init so API reads use the prepared snapshot', async () => {
     const { growdataRepository, service } = createService();
 
-    await service.onModuleInit();
+    service.onModuleInit();
+    await service.refreshGrowDataCache('test');
     const warmed = await service.getGrowData();
 
     expect(warmed).toBeTruthy();
@@ -121,12 +122,32 @@ describe('GrowdataService', () => {
   it('refreshes the prepared snapshot from the cron path', async () => {
     const { growdataRepository, service } = createService();
 
-    await service.onModuleInit();
+    service.onModuleInit();
+    await service.refreshGrowDataCache('test');
     await service.refreshGrowDataCacheFromCron();
 
     expect(growdataRepository.findAllExchanges).toHaveBeenCalledTimes(2);
     expect(growdataRepository.findAllMarketMakingPairs).toHaveBeenCalledTimes(
       2,
     );
+  });
+
+  it('does not block module init on grow data warmup', async () => {
+    const { growdataRepository, service } = createService();
+    let releaseFindAllExchanges: (value: unknown[]) => void = () => {};
+
+    growdataRepository.findAllExchanges.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseFindAllExchanges = resolve;
+      }),
+    );
+
+    await expect(service.onModuleInit()).resolves.toBeUndefined();
+    expect(growdataRepository.findAllExchanges).toHaveBeenCalledTimes(1);
+
+    releaseFindAllExchanges([
+      { exchange_id: 'binance', name: 'Binance', enable: true },
+    ]);
+    await service.refreshGrowDataCache('test');
   });
 });

@@ -2,6 +2,8 @@
 
 ## 2026-06-01
 
+- Make `GrowdataService` module-init cache warmup non-blocking so Nest can start listening without waiting on CCXT public market loads or Mixin asset price fetches; first grow-data callers still share the in-flight refresh.
+- Remove `pair` and `exchangeName` from strategy-definition config schemas/defaults across seed data and add a migration to clean persisted definitions; admin-direct and user order launch paths now inject those values only after schema validation as runtime order fields.
 - Reopen the Web3 wallet/market-making plan around the clarified Solidity Router funding design: EVM and SIWE remain first-class, but the vault/REST-withdraw prototype must be refactored so users fund orders by calling a Router that forwards ERC-20s to the static server-held address and emits events, while withdrawals start from Router request events that the server processes from the ledger.
 - Remove the remaining `web3-interface` global app login wall: `/app/*` routes now render normally for disconnected/unauthenticated visitors, while expired-session handling and action-level login redirects remain available when a protected API/action actually needs authentication.
 - Complete the Web3 wallet/market-making mission validation: server full Jest passes, server web3 scoped lint passes, server build passes, `web3-interface` check/unit/build pass, and validation-wallet route smoke on port 5177 covers wallet, deposit, withdraw, and account surfaces; the mission plan now has no remaining implementation or validation items.
