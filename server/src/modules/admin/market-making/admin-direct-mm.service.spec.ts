@@ -158,6 +158,7 @@ describe('AdminDirectMarketMakingService', () => {
     const exchangeOrderTrackerService = {
       getOpenOrders: jest.fn().mockReturnValue([]),
       getLiveOrders: jest.fn().mockReturnValue([]),
+      getTrackedOrders: jest.fn().mockReturnValue([]),
       getFillCount: jest.fn().mockReturnValue(0),
     };
     const userStreamTrackerService = {
@@ -196,6 +197,12 @@ describe('AdminDirectMarketMakingService', () => {
       creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
       getExistingBalance: jest.fn().mockResolvedValue(null),
       unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+    };
+    const orderReservationService = {
+      releaseRemainingLimitOrderReservation: jest
+        .fn()
+        .mockResolvedValue({ applied: true }),
+      recoverDanglingReservationsForOrder: jest.fn().mockResolvedValue([]),
     };
     const orderBalanceRepository = {
       find: jest.fn().mockResolvedValue([]),
@@ -239,6 +246,7 @@ describe('AdminDirectMarketMakingService', () => {
       campaignService as any,
       configService as any,
       balanceLedgerService as any,
+      orderReservationService as any,
       userStreamIngestionService as any,
       balanceStateCacheService as any,
       balanceStateRefreshService as any,
@@ -267,6 +275,7 @@ describe('AdminDirectMarketMakingService', () => {
       campaignService,
       configService,
       balanceLedgerService,
+      orderReservationService,
       orderBalanceRepository,
       balanceStateCacheService,
       balanceStateRefreshService,
@@ -717,41 +726,82 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('does not mark a stopped order successful when locked-balance reconciliation fails', async () => {
+  it('does not mark a stopped order successful when reservation recovery fails', async () => {
     const {
       service,
       marketMakingRepository,
-      balanceLedgerService,
+      orderReservationService,
       userOrdersService,
     } = buildService();
 
-    marketMakingRepository.findOne
-      .mockResolvedValueOnce({
-        orderId: 'order-1',
-        userId: 'admin-user',
-        source: 'admin_direct',
-        state: 'running',
-        pair: 'BTC/USDT',
-      })
-      .mockResolvedValueOnce({
-        pair: 'BTC/USDT',
-      });
-    balanceLedgerService.getExistingBalance.mockImplementation(
-      async (_orderId: string, assetId: string) =>
-        assetId === 'BTC'
-          ? {
-              orderId: 'order-1',
-              userId: 'admin-user',
-              assetId,
-              locked: '0.5',
-              updatedAt: '2026-05-23T00:00:00.000Z',
-            }
-          : null,
+    marketMakingRepository.findOne.mockResolvedValueOnce({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'running',
+      pair: 'BTC/USDT',
+    });
+    orderReservationService.recoverDanglingReservationsForOrder.mockRejectedValue(
+      new Error('reservation down'),
     );
-    balanceLedgerService.unlockFunds.mockRejectedValue(new Error('ledger down'));
 
-    await expect(service.directStop('order-1')).rejects.toThrow('ledger down');
+    await expect(service.directStop('order-1')).rejects.toThrow(
+      'reservation down',
+    );
     expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalled();
+  });
+
+  it('releases terminal tracked order reservations through reservation service during stop', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      exchangeOrderTrackerService,
+      orderReservationService,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'running',
+      pair: 'BTC/USDT',
+      strategySnapshot: buildStrategySnapshot({}),
+    });
+    exchangeOrderTrackerService.getTrackedOrders = jest.fn().mockReturnValue([
+      {
+        orderId: 'order-1',
+        strategyKey: 'pmm-order-1',
+        exchange: 'binance',
+        accountLabel: 'api-key-1',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-order-1',
+        clientOrderId: 'client-order-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        cumulativeFilledQty: '0.1',
+        status: 'cancelled',
+        createdAt: '2026-05-23T00:00:00.000Z',
+        updatedAt: '2026-05-23T00:00:01.000Z',
+      },
+    ]);
+
+    await service.directStop('order-1');
+
+    expect(
+      orderReservationService.releaseRemainingLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      intentId: 'client-order-1',
+      releaseId: 'client-order-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '0.5',
+      filledQty: '0.1',
+      reason: 'exchange_order_cancelled',
+    });
   });
 
   it('rejects stopping a missing direct order', async () => {

@@ -315,6 +315,44 @@ Reservation is expressed through ledger entries:
 - `reserve_lock`
 - `reserve_release`
 
+Reservation amounts are derived from the order side:
+
+- `sell`: lock base asset quantity.
+- `buy`: lock quote asset notional (`price * qty`).
+
+Terminal release uses `releaseRemainingLimitOrderReservation`, not a generic
+balance unlock. It releases only the currently locked remainder, bounded by the
+calculated unfilled amount and by the read-model locked amount. For partially
+filled orders, `filledQty` reduces the releasable amount.
+
+Reservation release paths:
+
+- exchange create failure before external acknowledgement releases the full
+  attempted reservation idempotently;
+- final cancel acknowledgement releases the unfilled remainder with
+  `exchange_order_cancelled`;
+- terminal filled handling releases any remaining locked remainder with
+  `exchange_order_filled` after fill settlement has consumed filled progress;
+- tracked-order terminal transitions also trigger reservation release so stream
+  and REST-recovered terminal evidence converge on the same ledger path;
+- startup recovery restores owned live exchange orders and keeps their
+  reservation, while interrupted create intents without an owned live order
+  release their reservation;
+- interrupted cancel intents are retried or reconciled before startup completes;
+- dangling reservations with no live intent and no open order are recovered by
+  `OrderReservationService.recoverDanglingReservations*` using
+  `reservation_recovery` entries.
+
+Admin-direct stop and removal also go through the reservation layer. Stopping a
+direct order first cancels tracked exchange orders through the shared runtime
+shutdown path. After that, only terminal tracked orders release reservation
+remainders. If any tracked order is still non-terminal (`open`,
+`partially_filled`, `pending_create`, or `pending_cancel`), residual recovery is
+skipped to avoid releasing funds while a live exchange order can still fill.
+When no tracked order remains, order-scoped dangling reservation recovery may
+release remaining locks for that stopped order. Admin-direct code must not call
+`BalanceLedgerService.unlockFunds` directly as a stop reconciliation shortcut.
+
 ## User Stream And Recovery
 
 Private stream handling is normalized before it reaches strategy runtime:

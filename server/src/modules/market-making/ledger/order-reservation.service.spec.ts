@@ -324,4 +324,67 @@ describe('OrderReservationService', () => {
     expect(recovered).toEqual([]);
     expect(balanceLedgerService.unlockFunds).not.toHaveBeenCalled();
   });
+
+  it('recovers dangling reservations for one stopped order without touching other orders', async () => {
+    const service = new OrderReservationService(
+      balanceLedgerService as any,
+      ledgerEntryRepository as any,
+    );
+
+    ledgerEntryRepository.find.mockResolvedValue([
+      {
+        orderId: 'order-1',
+        userId: 'user-1',
+        assetId: 'USDT',
+        amount: '100',
+        type: 'reserve_lock',
+        refId: 'intent-1',
+      },
+    ]);
+
+    const recovered = await service.recoverDanglingReservationsForOrder({
+      orderId: 'order-1',
+      liveIntentIds: [],
+      hasOpenOrder: false,
+    });
+
+    expect(ledgerEntryRepository.find).toHaveBeenCalledWith({
+      where: { orderId: 'order-1' },
+    });
+    expect(recovered).toEqual([
+      {
+        orderId: 'order-1',
+        userId: 'user-1',
+        assetId: 'USDT',
+        amount: '100',
+        liveIntentIds: ['intent-1'],
+      },
+    ]);
+    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      userId: 'user-1',
+      assetId: 'USDT',
+      amount: '100',
+      idempotencyKey: 'reservation-recovery:order-1:USDT',
+      refType: 'reservation_recovery',
+      refId: 'order-1',
+    });
+  });
+
+  it('does not recover order-scoped reservations while an open order remains', async () => {
+    const service = new OrderReservationService(
+      balanceLedgerService as any,
+      ledgerEntryRepository as any,
+    );
+
+    const recovered = await service.recoverDanglingReservationsForOrder({
+      orderId: 'order-1',
+      liveIntentIds: [],
+      hasOpenOrder: true,
+    });
+
+    expect(recovered).toEqual([]);
+    expect(ledgerEntryRepository.find).not.toHaveBeenCalled();
+    expect(balanceLedgerService.unlockFunds).not.toHaveBeenCalled();
+  });
 });

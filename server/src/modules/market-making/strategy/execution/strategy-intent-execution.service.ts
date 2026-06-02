@@ -470,7 +470,7 @@ export class StrategyIntentExecutionService {
           if (trackedOrder.status === 'cancelled') {
             const orderId = this.resolveOrderIdForClientOrderId(intent);
 
-            await this.orderReservationService?.releaseLimitOrderReservation({
+            await this.orderReservationService?.releaseRemainingLimitOrderReservation({
               orderId,
               userId: intent.userId,
               intentId: intent.intentId,
@@ -531,7 +531,7 @@ export class StrategyIntentExecutionService {
         );
 
         if (cancelSucceeded) {
-          await this.orderReservationService?.releaseLimitOrderReservation({
+          await this.orderReservationService?.releaseRemainingLimitOrderReservation({
             orderId,
             userId: intent.userId,
             intentId: intent.intentId,

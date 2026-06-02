@@ -189,6 +189,47 @@ export class OrderReservationService {
     return dangling;
   }
 
+  async recoverDanglingReservationsForOrder(params: {
+    orderId: string;
+    liveIntentIds: string[];
+    hasOpenOrder: boolean;
+    dryRun?: boolean;
+  }): Promise<ReservationRecoveryCandidate[]> {
+    if (!this.ledgerEntryRepository || !params.orderId || params.hasOpenOrder) {
+      return [];
+    }
+
+    const entries = await this.ledgerEntryRepository.find({
+      where: { orderId: params.orderId },
+    });
+    const activeReservations = this.buildActiveReservationCandidates(entries);
+    const liveIntentIds = new Set(params.liveIntentIds);
+    const dangling = activeReservations.filter(
+      (candidate) =>
+        !candidate.liveIntentIds.some((intentId) =>
+          liveIntentIds.has(intentId),
+        ),
+    );
+
+    if (params.dryRun) {
+      return dangling;
+    }
+
+    for (const candidate of dangling) {
+      await this.balanceLedgerService.unlockFunds({
+        orderId: candidate.orderId,
+        userId: candidate.userId,
+        assetId: candidate.assetId,
+        amount: candidate.amount,
+        idempotencyKey: `reservation-recovery:${candidate.orderId}:${candidate.assetId}`,
+        refType: 'reservation_recovery',
+        refId: candidate.orderId,
+      });
+    }
+
+    return dangling;
+  }
+
   private resolveReservationAsset(
     command: LimitOrderReservationCommand,
   ): Omit<OrderReservationResult, 'applied'> {

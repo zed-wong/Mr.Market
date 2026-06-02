@@ -29,6 +29,7 @@ import { BalanceStateCacheService } from 'src/modules/market-making/balance-stat
 import { BalanceStateRefreshService } from 'src/modules/market-making/balance-state/balance-state-refresh.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
 import { BalanceLedgerService } from 'src/modules/market-making/ledger/balance-ledger.service';
+import { OrderReservationService } from 'src/modules/market-making/ledger/order-reservation.service';
 import { assertStrategyConfigOverridesSafe } from 'src/modules/market-making/strategy/config/strategy-config-override.guard';
 import type { StrategyType } from 'src/modules/market-making/strategy/config/strategy-controller.types';
 import { normalizeControllerType } from 'src/modules/market-making/strategy/config/strategy-controller-aliases';
@@ -39,7 +40,10 @@ import {
   StrategyIntentStoreService,
 } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
-import { ExchangeOrderTrackerService } from 'src/modules/market-making/trackers/exchange-order-tracker.service';
+import {
+  ExchangeOrderTrackerService,
+  type TrackedOrder,
+} from 'src/modules/market-making/trackers/exchange-order-tracker.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
 import { UserStreamIngestionService } from 'src/modules/market-making/trackers/user-stream-ingestion.service';
 import { UserStreamTrackerService } from 'src/modules/market-making/trackers/user-stream-tracker.service';
@@ -123,6 +127,7 @@ export class AdminDirectMarketMakingService {
     private readonly campaignService: CampaignService,
     private readonly configService: ConfigService,
     private readonly balanceLedgerService: BalanceLedgerService,
+    private readonly orderReservationService: OrderReservationService,
     @Optional()
     private readonly userStreamIngestionService?: UserStreamIngestionService,
     @Optional()
@@ -172,11 +177,7 @@ export class AdminDirectMarketMakingService {
     const configOverrides = dto.configOverrides || {};
     const resolverInput = this.buildDirectResolverInput(
       definition,
-      {
-        ...configOverrides,
-        pair: dto.pair,
-        exchangeName: dto.exchangeName,
-      },
+      configOverrides,
       {
         symbol: dto.pair,
         userId: directUserId,
@@ -304,7 +305,10 @@ export class AdminDirectMarketMakingService {
       throw new NotFoundException('Order not found');
     }
     if (order.state === 'stopped') {
-      await this.reconcileOrderLockedBalances(orderId, order.userId || 'admin-direct');
+      await this.releaseStoppedOrderReservations(
+        order,
+        order.userId || 'admin-direct',
+      );
       return {
         orderId,
         state: 'stopped',
@@ -315,7 +319,10 @@ export class AdminDirectMarketMakingService {
       order,
       order.userId || 'admin-direct',
     );
-    await this.reconcileOrderLockedBalances(orderId, order.userId || 'admin-direct');
+    await this.releaseStoppedOrderReservations(
+      order,
+      order.userId || 'admin-direct',
+    );
     await this.userOrdersService.updateMarketMakingOrderState(
       orderId,
       'stopped',
@@ -440,7 +447,10 @@ export class AdminDirectMarketMakingService {
       );
     }
 
-    await this.reconcileOrderLockedBalances(orderId, order.userId || 'admin-direct');
+    await this.releaseStoppedOrderReservations(
+      order,
+      order.userId || 'admin-direct',
+    );
 
     await this.marketMakingRepository.update(
       {
@@ -1254,43 +1264,83 @@ export class AdminDirectMarketMakingService {
     return required.includes(field) || field in properties;
   }
 
-  private async reconcileOrderLockedBalances(
-    orderId: string,
+  private async releaseStoppedOrderReservations(
+    order: MarketMakingOrder,
     userId: string,
   ): Promise<void> {
-    const [baseAsset, quoteAsset] = (await this.marketMakingRepository.findOne({
-      where: { orderId },
-      select: ['pair'],
-    }))?.pair?.split('/') || [];
+    const strategyKey = this.buildStrategyKey(order);
+    const trackedOrders = this.getTrackedOrders(strategyKey);
 
-    if (!baseAsset || !quoteAsset) {
+    if (!trackedOrders.length) {
+      await this.orderReservationService.recoverDanglingReservationsForOrder({
+        orderId: order.orderId,
+        liveIntentIds: [],
+        hasOpenOrder: false,
+      });
       return;
     }
 
-    for (const assetId of [baseAsset, quoteAsset]) {
-      const balance = await this.balanceLedgerService.getExistingBalance(
-        orderId,
-        assetId,
-      );
+    const activeOrders = trackedOrders.filter(
+      (trackedOrder) => !this.isTrackedOrderTerminal(trackedOrder.status),
+    );
 
-      if (!balance || new BigNumber(balance.locked).isLessThanOrEqualTo(0)) {
-        continue;
-      }
-
-      await this.balanceLedgerService.unlockFunds({
-        orderId,
-        userId,
-        assetId,
-        amount: balance.locked,
-        idempotencyKey: `reconcile-stop:${orderId}:${assetId}:${balance.updatedAt}:${balance.locked}`,
-        refType: 'stop_reconciliation',
-        refId: orderId,
-      });
-
-      this.logger.log(
-        `Reconciled locked balance for order ${orderId} asset ${assetId}: released ${balance.locked}`,
+    if (activeOrders.length) {
+      this.logger.warn(
+        `Skipping stop reservation residual release for ${order.orderId}: ${activeOrders.length} tracked orders are not terminal`,
       );
     }
+
+    const terminalOrders = trackedOrders.filter((trackedOrder) =>
+      this.isTrackedOrderReservationReleasable(trackedOrder),
+    );
+
+    for (const trackedOrder of terminalOrders) {
+      await this.orderReservationService.releaseRemainingLimitOrderReservation({
+        orderId: trackedOrder.orderId,
+        userId,
+        intentId: trackedOrder.clientOrderId || trackedOrder.exchangeOrderId,
+        releaseId: trackedOrder.clientOrderId || trackedOrder.exchangeOrderId,
+        pair: trackedOrder.pair,
+        side: trackedOrder.side,
+        price: trackedOrder.price,
+        qty: trackedOrder.qty,
+        filledQty: trackedOrder.cumulativeFilledQty,
+        reason:
+          trackedOrder.status === 'filled'
+            ? 'exchange_order_filled'
+            : 'exchange_order_cancelled',
+      });
+    }
+
+    if (!activeOrders.length) {
+      await this.orderReservationService.recoverDanglingReservationsForOrder({
+        orderId: order.orderId,
+        liveIntentIds: [],
+        hasOpenOrder: false,
+      });
+    }
+  }
+
+  private getTrackedOrders(strategyKey: string): TrackedOrder[] {
+    const tracker = this.exchangeOrderTrackerService as ExchangeOrderTrackerService & {
+      getTrackedOrders?: (strategyKey: string) => TrackedOrder[];
+    };
+
+    return tracker.getTrackedOrders?.(strategyKey) || tracker.getOpenOrders(strategyKey);
+  }
+
+  private isTrackedOrderReservationReleasable(order: TrackedOrder): boolean {
+    return order.status === 'cancelled' || order.status === 'filled';
+  }
+
+  private isTrackedOrderTerminal(status: TrackedOrder['status']): boolean {
+    return (
+      status === 'filled' ||
+      status === 'cancelled' ||
+      status === 'failed' ||
+      status === 'external_missing' ||
+      status === 'internal_missing'
+    );
   }
 
   private backfillOrderRuntimeSnapshot(order: MarketMakingOrder): void {
