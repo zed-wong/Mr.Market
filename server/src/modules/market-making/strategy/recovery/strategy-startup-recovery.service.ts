@@ -7,7 +7,7 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
 import { ExchangeOrderMappingService } from '../../execution/exchange-order-mapping.service';
-import { BalanceLedgerService } from '../../ledger/balance-ledger.service';
+import { OrderReservationService } from '../../ledger/order-reservation.service';
 import {
   ExchangeOrderTrackerService,
   TrackedOrder,
@@ -29,7 +29,7 @@ export class StrategyStartupRecoveryService {
 
   constructor(
     private readonly strategyIntentStoreService: StrategyIntentStoreService,
-    private readonly balanceLedgerService: BalanceLedgerService,
+    private readonly orderReservationService: OrderReservationService,
     private readonly exchangeOrderMappingService: ExchangeOrderMappingService,
     @Optional()
     private readonly exchangeOrderTrackerService?: ExchangeOrderTrackerService,
@@ -391,26 +391,16 @@ export class StrategyStartupRecoveryService {
         continue;
       }
 
-      const reservation = this.calculateLimitOrderReservation(
-        intent.pair,
-        intent.side as 'buy' | 'sell',
-        intent.price,
-        intent.qty,
-      );
-
-      if (!reservation) {
-        continue;
-      }
-
       try {
-        await this.balanceLedgerService.unlockFunds({
+        await this.orderReservationService.releaseLimitOrderReservation({
           orderId: strategyOrderId,
           userId: intent.userId,
-          assetId: reservation.assetId,
-          amount: reservation.amount,
-          idempotencyKey: `reserve-release:${intent.intentId}:interrupted_intent_recovery`,
-          refType: 'interrupted_intent_recovery',
-          refId: intent.intentId,
+          intentId: intent.intentId,
+          pair: intent.pair,
+          side: intent.side as 'buy' | 'sell',
+          price: intent.price,
+          qty: intent.qty,
+          reason: 'interrupted_intent_recovery',
         });
         await this.strategyIntentStoreService.updateIntentStatus(
           intent.intentId,
@@ -873,40 +863,6 @@ export class StrategyStartupRecoveryService {
     }
 
     return false;
-  }
-
-  private calculateLimitOrderReservation(
-    pair: string,
-    side: 'buy' | 'sell',
-    priceValue: string,
-    qtyValue: string,
-  ): { assetId: string; amount: string } | null {
-    const [baseAssetId, quoteAssetId] = String(pair || '').split('/');
-
-    if (!baseAssetId || !quoteAssetId) {
-      return null;
-    }
-
-    const qty = new BigNumber(qtyValue);
-    const price = new BigNumber(priceValue);
-
-    if (
-      !qty.isFinite() ||
-      qty.isLessThanOrEqualTo(0) ||
-      !price.isFinite() ||
-      price.isLessThanOrEqualTo(0)
-    ) {
-      return null;
-    }
-
-    if (side === 'sell') {
-      return { assetId: baseAssetId, amount: qty.toFixed() };
-    }
-
-    return {
-      assetId: quoteAssetId,
-      amount: qty.multipliedBy(price).toFixed(),
-    };
   }
 
   private readString(...values: unknown[]): string {

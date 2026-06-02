@@ -117,6 +117,12 @@ describe('StrategyIntentExecutionService', () => {
       amount: '100',
       applied: true,
     }),
+    releaseRemainingLimitOrderReservation: jest.fn().mockResolvedValue({
+      orderId: 'c1',
+      assetId: 'USDT',
+      amount: '100',
+      applied: true,
+    }),
   };
 
   const intentStoreService = {
@@ -1216,7 +1222,7 @@ describe('StrategyIntentExecutionService', () => {
     await service.consumeIntents([cancelIntent]);
 
     expect(
-      orderReservationService.releaseLimitOrderReservation,
+      orderReservationService.releaseRemainingLimitOrderReservation,
     ).toHaveBeenCalledWith({
       orderId: 'c1',
       userId: 'u1',

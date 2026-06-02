@@ -48,8 +48,10 @@ describe('StrategyStartupRecoveryService', () => {
       updateIntentStatus: jest.fn().mockResolvedValue(undefined),
       attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
     };
-    const balanceLedgerService = {
-      unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+    const orderReservationService = {
+      releaseLimitOrderReservation: jest.fn().mockResolvedValue({
+        applied: true,
+      }),
     };
     const exchangeOrderMappingService = {
       findByClientOrderId: jest.fn().mockResolvedValue(mappingByClientOrderId),
@@ -63,7 +65,7 @@ describe('StrategyStartupRecoveryService', () => {
     };
     const service = new StrategyStartupRecoveryService(
       strategyIntentStoreService as any,
-      balanceLedgerService as any,
+      orderReservationService as any,
       exchangeOrderMappingService as any,
       exchangeOrderTrackerService as any,
     );
@@ -71,7 +73,7 @@ describe('StrategyStartupRecoveryService', () => {
     return {
       service,
       strategyIntentStoreService,
-      balanceLedgerService,
+      orderReservationService,
       exchangeOrderMappingService,
       exchangeOrderTrackerService,
     };
@@ -82,7 +84,7 @@ describe('StrategyStartupRecoveryService', () => {
   });
 
   it('releases interrupted create reservations when no owned exchange order remains', async () => {
-    const { service, balanceLedgerService, strategyIntentStoreService } =
+    const { service, orderReservationService, strategyIntentStoreService } =
       createService();
 
     await service.recoverInterruptedCreateIntentReservations(
@@ -90,14 +92,15 @@ describe('StrategyStartupRecoveryService', () => {
       [],
     );
 
-    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith({
+    expect(orderReservationService.releaseLimitOrderReservation).toHaveBeenCalledWith({
       orderId: 'order-1',
       userId: 'user-1',
-      assetId: 'USDT',
-      amount: '2.2488',
-      idempotencyKey: 'reserve-release:intent-1:interrupted_intent_recovery',
-      refType: 'interrupted_intent_recovery',
-      refId: 'intent-1',
+      intentId: 'intent-1',
+      pair: 'XIN/USDT',
+      side: 'buy',
+      price: '56.22',
+      qty: '0.04',
+      reason: 'interrupted_intent_recovery',
     });
     expect(strategyIntentStoreService.updateIntentStatus).toHaveBeenCalledWith(
       'intent-1',
@@ -109,7 +112,7 @@ describe('StrategyStartupRecoveryService', () => {
   it('restores an interrupted create intent when an owned open exchange order remains', async () => {
     const {
       service,
-      balanceLedgerService,
+      orderReservationService,
       strategyIntentStoreService,
       exchangeOrderMappingService,
       exchangeOrderTrackerService,
@@ -131,7 +134,9 @@ describe('StrategyStartupRecoveryService', () => {
       },
     ]);
 
-    expect(balanceLedgerService.unlockFunds).not.toHaveBeenCalled();
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).not.toHaveBeenCalled();
     expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
       orderId: 'order-1',
       exchangeOrderId: 'exchange-order-1',
@@ -161,7 +166,7 @@ describe('StrategyStartupRecoveryService', () => {
   });
 
   it('recovers interrupted creates independently instead of returning after the first open order', async () => {
-    const { service, balanceLedgerService, exchangeOrderTrackerService } =
+    const { service, orderReservationService, exchangeOrderTrackerService } =
       createService({
         intents: [
           createIntent({
@@ -192,16 +197,16 @@ describe('StrategyStartupRecoveryService', () => {
     ]);
 
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledTimes(1);
-    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith(
+    expect(orderReservationService.releaseLimitOrderReservation).toHaveBeenCalledWith(
       expect.objectContaining({
-        idempotencyKey:
-          'reserve-release:intent-dangling:interrupted_intent_recovery',
+        intentId: 'intent-dangling',
+        reason: 'interrupted_intent_recovery',
       }),
     );
   });
 
   it('releases an interrupted create with an attached exchange id when no open order remains', async () => {
-    const { service, balanceLedgerService, strategyIntentStoreService } =
+    const { service, orderReservationService, strategyIntentStoreService } =
       createService({
         intents: [createIntent({ mixinOrderId: 'exchange-order-1' })],
       });
@@ -211,9 +216,10 @@ describe('StrategyStartupRecoveryService', () => {
       [],
     );
 
-    expect(balanceLedgerService.unlockFunds).toHaveBeenCalledWith(
+    expect(orderReservationService.releaseLimitOrderReservation).toHaveBeenCalledWith(
       expect.objectContaining({
-        idempotencyKey: 'reserve-release:intent-1:interrupted_intent_recovery',
+        intentId: 'intent-1',
+        reason: 'interrupted_intent_recovery',
       }),
     );
     expect(strategyIntentStoreService.updateIntentStatus).toHaveBeenCalledWith(
