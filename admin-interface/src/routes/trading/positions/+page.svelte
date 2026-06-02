@@ -258,10 +258,9 @@
                 <span class="font-mono text-sm text-base-content">{formatNumber(asset.total, { maximumFractionDigits: 8 })}</span>
               </div>
               <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-base-300">
+                <div class="h-full w-full bg-base-content"></div>
                 <div
-                  class="h-full"
-                  class:bg-warning={lockedPct > 0}
-                  class:bg-base-content={lockedPct === 0}
+                  class="-mt-1.5 h-full bg-warning"
                   style="width: {Math.max(0, Math.min(100, lockedPct))}%"
                 ></div>
               </div>

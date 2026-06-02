@@ -292,40 +292,46 @@
                             <div
                                 class="flex shrink-0 items-center justify-between gap-2 sm:justify-end"
                             >
-                                <div class="text-right">
-                                    <span
-                                        class="block text-[9px] font-semibold uppercase text-base-content/35"
-                                    >
+                                <div class="flex items-center gap-1.5 text-base-content/55">
+                                    <span class="text-[10px] uppercase tracking-wide text-base-content/35">
                                         {$_("admin_direct_mm_last_updated_label")}
                                     </span>
-                                    <span class="font-mono text-[10px] text-base-content/50">
+                                    <span class="font-mono text-[10px]">
                                         {lastUpdated || $_("admin_direct_mm_na")}
                                     </span>
-                                </div>
-                                <button
-                                    type="button"
-                                    class="btn btn-outline btn-xs h-8 min-h-8 w-28 rounded-lg px-2 text-[11px] font-semibold capitalize"
-                                    on:click={onRefresh}
-                                    disabled={loading || refreshing}
-                                    aria-label={$_(
-                                        "admin_direct_mm_refresh_order_diagnosis",
-                                    )}
-                                >
-                                    {#if refreshing}
-                                        <span
-                                            class="loading loading-spinner loading-xs"
+                                    <button
+                                        type="button"
+                                        class="btn btn-ghost btn-xs h-6 min-h-6 w-6 rounded-full p-0 text-base-content/55 hover:text-base-content"
+                                        on:click={onRefresh}
+                                        disabled={loading || refreshing}
+                                        aria-label={$_(
+                                            "admin_direct_mm_refresh_order_diagnosis",
+                                        )}
+                                        title={$_("admin_direct_mm_refresh")}
+                                    >
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="13"
+                                            height="13"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            class={refreshing ? "animate-spin" : ""}
                                             aria-hidden="true"
-                                        ></span>
+                                        >
+                                            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                                            <path d="M21 3v5h-5" />
+                                        </svg>
                                         <span class="sr-only">
-                                            {$_("admin_direct_mm_refreshing_diagnosis")}
+                                            {refreshing
+                                                ? $_("admin_direct_mm_refreshing_diagnosis")
+                                                : $_("admin_direct_mm_refresh")}
                                         </span>
-                                        <span aria-hidden="true">
-                                            {$_("admin_direct_mm_refresh")}
-                                        </span>
-                                    {:else}
-                                        {$_("admin_direct_mm_refresh")}
-                                    {/if}
-                                </button>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

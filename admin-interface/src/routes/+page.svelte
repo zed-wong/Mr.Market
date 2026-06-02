@@ -325,15 +325,6 @@
       });
     }
 
-    if (statusTone(summary.health.status) !== 'success') {
-      rows.push({
-        key: 'health',
-        label: `${statusLabel(summary.health.status)} runtime health`,
-        meta: `snapshot ${formatTimestamp(summary.health.timestamp)}`,
-        tone: statusTone(summary.health.status) === 'error' ? 'error' : 'warning',
-      });
-    }
-
     if (summary.reconciliation.totalViolations > 0) {
       rows.push({
         key: 'reconciliation',
@@ -354,7 +345,7 @@
 
     return rows.length > 0
       ? rows
-      : [{ key: 'clear', label: 'No immediate action needed', meta: 'health, reconciliation and intent queues are clear', tone: 'success' }];
+      : [{ key: 'clear', label: 'No immediate action needed', meta: 'reconciliation and intent queues are clear', tone: 'success' }];
   });
 
   const isEmpty = $derived(

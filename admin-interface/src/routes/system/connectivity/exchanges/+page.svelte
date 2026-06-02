@@ -155,7 +155,7 @@
     const raw = String(value || "").replace(/\s/g, "");
     if (!raw) return "unavailable";
     const tail = raw.slice(-8).padStart(8, "*");
-    return tail.match(/.{1,2}/g)?.join(".") || tail;
+    return tail;
   };
 
   const formatBalanceAmount = (value: number | string | undefined): string => {
