@@ -117,6 +117,54 @@ describe('ExchangeApiKeyService', () => {
     expect(result[0].state).toBe('pending');
   });
 
+  it('returns an account snapshot for a stored API key', async () => {
+    const readAPIKey = jest.fn().mockResolvedValue({
+      key_id: '2',
+      exchange: 'binance',
+      name: 'main',
+      api_key: 'api-key',
+      api_secret: 'transport-secret',
+      permissions: 'read-trade',
+      validation_status: 'valid',
+      validation_error: null,
+      validated_at: '2026-05-22T00:00:00.000Z',
+      created_at: '2026-05-21T00:00:00.000Z',
+    } as APIKeysConfig);
+    const { service } = makeService({ readAPIKey });
+    const fetchBalanceSpy = jest
+      .spyOn((ccxt as any).binance.prototype, 'fetchBalance')
+      .mockResolvedValue({
+        free: { USDT: 100, BTC: 0 },
+        used: { USDT: 5, BTC: 0 },
+        total: { USDT: 105, BTC: 0 },
+      } as any);
+
+    try {
+      const snapshot = await service.getAPIKeyAccountSnapshot('2');
+
+      expect(readAPIKey).toHaveBeenCalledWith('2');
+      expect(fetchBalanceSpy).toHaveBeenCalledTimes(1);
+      expect(snapshot).toMatchObject({
+        key_id: '2',
+        exchange: 'binance',
+        name: 'main',
+        permissions: 'read-trade',
+        validation_status: 'valid',
+        validation_error: null,
+        validated_at: '2026-05-22T00:00:00.000Z',
+        created_at: '2026-05-21T00:00:00.000Z',
+        balance: {
+          free: { USDT: 100 },
+          used: { USDT: 5 },
+          total: { USDT: 105 },
+        },
+      });
+      expect(snapshot.generated_at).toEqual(expect.any(String));
+    } finally {
+      fetchBalanceSpy.mockRestore();
+    }
+  });
+
   it('trims name when adding an api key', async () => {
     const addAPIKey = jest.fn().mockImplementation(async (value) => value);
     const { service } = makeService({ addAPIKey });

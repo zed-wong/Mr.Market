@@ -45,6 +45,13 @@ export class AdminExchangesController {
     return this.exchangeService.getEncryptionPublicKey();
   }
 
+  @Get('/keys/:key_id/account')
+  @ApiOperation({ summary: 'Get API key account balance snapshot' })
+  @ApiResponse({ status: 200, description: 'Return API key account balances' })
+  async getAPIKeyAccountSnapshot(@Param('key_id') key_id: string) {
+    return await this.exchangeService.getAPIKeyAccountSnapshot(key_id);
+  }
+
   @Delete('/keys/:key_id')
   @ApiOperation({ summary: 'Remove an API key' })
   @ApiResponse({ status: 200, description: 'API key removed successfully' })

@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
@@ -297,6 +298,33 @@ export class ExchangeApiKeyService {
       );
       throw error;
     }
+  }
+
+  async getAPIKeyAccountSnapshot(keyId: string) {
+    const key = await this.readDecryptedAPIKey(keyId);
+
+    if (!key) {
+      throw new NotFoundException('API key not found');
+    }
+
+    const balance = await this.getBalance(
+      key.exchange,
+      key.api_key,
+      key.api_secret,
+    );
+
+    return {
+      key_id: key.key_id,
+      exchange: key.exchange,
+      name: key.name,
+      permissions: key.permissions,
+      validation_status: key.validation_status,
+      validation_error: key.validation_error,
+      validated_at: key.validated_at,
+      created_at: key.created_at,
+      generated_at: getRFC3339Timestamp(),
+      balance,
+    };
   }
 
   async getBalanceBySymbol(
