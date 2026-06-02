@@ -833,7 +833,7 @@ describe('Web3MarketMakingService', () => {
   });
 
   it('compensates pause runtime failures by reverting durable state and lifecycle events', async () => {
-    const { service, runtime, orders, lifecycleEvents } = buildService({
+    const { service, runtime, orders, lifecycleEvents, ledger } = buildService({
       orders: [
         createOrder({
           orderId: 'order-1',
@@ -850,6 +850,55 @@ describe('Web3MarketMakingService', () => {
     );
     expect(orders[0].state).toBe('running');
     expect(lifecycleEvents).toHaveLength(0);
+    expect(ledger.unlockFunds).not.toHaveBeenCalled();
+  });
+
+  it('releases runtime reservations after a successful pause', async () => {
+    const { service, ledger, balances } = buildService({
+      orders: [
+        createOrder({
+          orderId: 'order-1',
+          state: 'running',
+          apiKeyId: 'api-key-1',
+        }),
+      ],
+      balances: [
+        {
+          orderId: 'order-1',
+          userId: 'user-1',
+          assetId: 'asset-usdt',
+          available: '11.249',
+          locked: '0.001',
+          total: '11.25',
+          initialDeposit: '11.5',
+          realizedDelta: '0',
+          feePaid: '0',
+          updatedAt: '2026-06-01T03:46:46.897Z',
+        } as MarketMakingOrderBalance,
+      ],
+    });
+
+    await expect(service.pause('user-1', 'order-1')).resolves.toMatchObject({
+      order: { state: 'paused' },
+    });
+
+    expect(ledger.unlockFunds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        userId: 'user-1',
+        assetId: 'asset-usdt',
+        amount: '0.001',
+        idempotencyKey:
+          'web3:runtime-reservation-release:order-1:asset-usdt:pause:2026-06-01T03:46:46.897Z:0.001',
+        refType: 'web3_order_runtime_reservation_pause',
+        refId: 'order-1',
+      }),
+    );
+    expect(balances[0]).toMatchObject({
+      available: '11.25',
+      locked: '0',
+      total: '11.25',
+    });
   });
 
   it('blocks risk-increasing start when reconciliation has paused reservations', async () => {

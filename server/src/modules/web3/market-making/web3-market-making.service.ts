@@ -483,6 +483,7 @@ export class Web3MarketMakingService {
           throw error;
         },
       );
+      await this.releaseRuntimeReservations(order, userId, 'pause');
     });
 
     return {
@@ -1183,6 +1184,32 @@ export class Web3MarketMakingService {
       refType: `web3_order_runtime_reservation_${reason}`,
       refId: order.orderId,
     });
+  }
+
+  private async releaseRuntimeReservations(
+    order: MarketMakingOrder,
+    userId: string,
+    reason: 'pause',
+  ): Promise<void> {
+    const balances = await this.loadBalances(order.orderId);
+
+    for (const balance of balances) {
+      const locked = new BigNumber(balance.locked || 0);
+
+      if (!locked.isFinite() || locked.isLessThanOrEqualTo(0)) {
+        continue;
+      }
+
+      await this.balanceLedgerService.unlockFunds({
+        orderId: order.orderId,
+        userId,
+        assetId: balance.assetId,
+        amount: locked.toFixed(),
+        idempotencyKey: `web3:runtime-reservation-release:${order.orderId}:${balance.assetId}:${reason}:${balance.updatedAt}:${locked.toFixed()}`,
+        refType: `web3_order_runtime_reservation_${reason}`,
+        refId: order.orderId,
+      });
+    }
   }
 
   private async getSupportedAssets(order: MarketMakingOrder) {
