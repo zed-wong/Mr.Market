@@ -145,6 +145,9 @@ describe('PerformanceService order performance', () => {
     expect(result.summary.netPnlQuote).toBe('9');
     expect(result.summary.tradedQuoteVolume).toBe('210');
     expect(result.summary.fillCount).toBe(2);
+    expect(result.summary.inventoryBaseQty).toBe('0');
+    expect(result.summary.inventoryCostQuote).toBe('0');
+    expect(result.summary.inventoryAverageCostQuote).toBeNull();
     expect(result.series.at(-1)).toMatchObject({ realized: '10', net: '9' });
   });
 
@@ -157,6 +160,9 @@ describe('PerformanceService order performance', () => {
     const result = await service.getOrderPerformance('order-1');
 
     expect(result.summary.realizedPnlQuote).toBe('10');
+    expect(result.summary.inventoryBaseQty).toBe('1');
+    expect(result.summary.inventoryCostQuote).toBe('100');
+    expect(result.summary.inventoryAverageCostQuote).toBe('100');
     expect(result.series.at(-1)?.realized).toBe('10');
   });
 

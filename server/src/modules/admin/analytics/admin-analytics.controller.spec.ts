@@ -20,6 +20,7 @@ describe('AdminAnalyticsController', () => {
       getFoundation: jest.fn(async () => ({
         generatedAt: '2026-06-04T00:00:00.000Z',
       })),
+      getOrderAnalytics: jest.fn(),
     };
     const controller = new AdminAnalyticsController(analyticsService as any);
 
@@ -49,8 +50,44 @@ describe('AdminAnalyticsController', () => {
     });
   });
 
+  it('delegates per-order analytics queries to the service', async () => {
+    const analyticsService = {
+      getFoundation: jest.fn(),
+      getOrderAnalytics: jest.fn(async () => ({
+        orderId: 'order-1',
+      })),
+    };
+    const controller = new AdminAnalyticsController(analyticsService as any);
+
+    await expect(
+      controller.getOrderAnalytics(
+        'order-1',
+        'binance',
+        'BTC/USDT',
+        '2026-06-04T00:00:00.000Z',
+        '2026-06-04T01:00:00.000Z',
+        undefined,
+        '25',
+      ),
+    ).resolves.toEqual({
+      orderId: 'order-1',
+    });
+    expect(analyticsService.getOrderAnalytics).toHaveBeenCalledWith(
+      'order-1',
+      {
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        startAt: '2026-06-04T00:00:00.000Z',
+        endAt: '2026-06-04T01:00:00.000Z',
+        range: undefined,
+        limit: '25',
+      },
+    );
+  });
+
   it('surfaces deterministic validation errors for unsafe query shapes', async () => {
     const service = new AdminAnalyticsService(
+      {} as any,
       {} as any,
       {} as any,
       {} as any,

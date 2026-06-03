@@ -104,6 +104,22 @@ describe('AdminAnalyticsService', () => {
         createdAt: ts(1),
         updatedAt: ts(5),
       },
+      {
+        trackingKey: 'track-2',
+        orderId: 'order-1',
+        strategyKey: '**********',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-2',
+        clientOrderId: 'client-2',
+        side: 'sell',
+        price: '101',
+        qty: '0.01000000',
+        cumulativeFilledQty: '0',
+        status: 'canceled',
+        createdAt: ts(6),
+        updatedAt: ts(7),
+      },
     ]);
     const intents = createRepository([
       {
@@ -145,6 +161,36 @@ describe('AdminAnalyticsService', () => {
       queueSnapshot: jest.fn(),
       stop: jest.fn(),
     };
+    const performanceService = {
+      getOrderPerformance: jest.fn(async () => ({
+        series: [
+          {
+            t: ts(2),
+            realized: '0',
+            fees: '0',
+            net: '0',
+          },
+          {
+            t: ts(3),
+            realized: '10',
+            fees: '1',
+            net: '9',
+          },
+        ],
+        summary: {
+          realizedPnlQuote: '10',
+          feesQuote: '1',
+          netPnlQuote: '9',
+          tradedQuoteVolume: '210',
+          effectiveSpreadBps: '476.19047619047619048',
+          fillCount: 2,
+          otherFees: [],
+          inventoryBaseQty: '0.5',
+          inventoryCostQuote: '50',
+          inventoryAverageCostQuote: '100',
+        },
+      })),
+    };
 
     return {
       service: new AdminAnalyticsService(
@@ -154,9 +200,11 @@ describe('AdminAnalyticsService', () => {
         intents.repository as any,
         executions.repository as any,
         orderBookTracker as any,
+        performanceService as any,
       ),
       repositories: { ledger, balances, trackedOrders, intents, executions },
       orderBookTracker,
+      performanceService,
     };
   }
 
@@ -181,7 +229,7 @@ describe('AdminAnalyticsService', () => {
     expect(result.summary.counts).toEqual({
       ledgerEntries: 2,
       orderBalances: 1,
-      trackedOrders: 1,
+      trackedOrders: 2,
       strategyOrderIntents: 1,
       strategyExecutions: 1,
       orderBookMids: 1,
@@ -225,6 +273,139 @@ describe('AdminAnalyticsService', () => {
     );
     expect(orderBookTracker.queueSnapshot).not.toHaveBeenCalled();
     expect(orderBookTracker.stop).not.toHaveBeenCalled();
+  });
+
+  it('exposes required per-order PNL, inventory, spread, drawdown, and timeline metrics using live mid', async () => {
+    const { service, performanceService } = buildService();
+
+    const result = await service.getFoundation({
+      scope: 'order',
+      orderId: 'order-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(performanceService.getOrderPerformance).toHaveBeenCalledWith(
+      'order-1',
+    );
+    expect(result.analytics.perOrder).toMatchObject({
+      orderId: 'order-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      baseAsset: 'BTC',
+      quoteAsset: 'USDT',
+      markPrice: {
+        status: 'available',
+        value: '100.15',
+        currency: 'USDT',
+        source: 'order_book_mid',
+        unavailableReason: null,
+      },
+      pnl: {
+        realized: {
+          status: 'available',
+          value: '10',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+        unrealized: {
+          status: 'available',
+          value: '0.075',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+        net: {
+          status: 'available',
+          value: '9.075',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+      },
+      fees: {
+        total: {
+          status: 'available',
+          value: '1',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+      },
+      inventoryExposure: {
+        quantity: {
+          status: 'available',
+          value: '0.5',
+          currency: 'BTC',
+          unavailableReason: null,
+        },
+        notional: {
+          status: 'available',
+          value: '50.075',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+      },
+      spreadCapture: {
+        quote: {
+          status: 'available',
+          value: '10',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+        effectiveSpreadBps: '476.19047619047619048',
+      },
+      drawdown: {
+        status: 'available',
+        maxDrawdownQuote: '0',
+      },
+    });
+    expect(result.analytics.perOrder.timeline.events.map((event) => event.type))
+      .toEqual(expect.arrayContaining(['quote', 'fill', 'cancel']));
+  });
+
+  it('returns mark-dependent per-order metrics as unavailable when live mid is missing', async () => {
+    const { service, orderBookTracker } = buildService();
+
+    orderBookTracker.getOrderBook.mockReturnValueOnce(undefined);
+    orderBookTracker.getLastUpdateAt.mockReturnValueOnce(undefined);
+    orderBookTracker.isStale.mockReturnValueOnce(true);
+
+    const result = await service.getFoundation({
+      scope: 'order',
+      orderId: 'order-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.analytics.perOrder.pnl.realized).toMatchObject({
+      status: 'available',
+      value: '10',
+    });
+    expect(result.analytics.perOrder.fees.total).toMatchObject({
+      status: 'available',
+      value: '1',
+    });
+    expect(result.analytics.perOrder.pnl.unrealized).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-unavailable',
+    });
+    expect(result.analytics.perOrder.pnl.net).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-unavailable',
+    });
+    expect(result.analytics.perOrder.inventoryExposure.notional).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-unavailable',
+    });
+    expect(JSON.stringify(result.analytics.perOrder.pnl.unrealized)).not.toContain(
+      '"0"',
+    );
+    expect(result.analytics.perOrder.timeline.events.length).toBeGreaterThan(0);
   });
 
   it('honors scope, range, and filters across projection queries', async () => {

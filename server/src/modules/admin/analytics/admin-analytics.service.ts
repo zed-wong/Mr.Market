@@ -7,6 +7,7 @@ import { StrategyExecutionHistory } from 'src/common/entities/market-making/stra
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
+import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
 import { Repository } from 'typeorm';
 
@@ -25,6 +26,14 @@ const ORDER_BOOK_STALE_MS = 30 * 1000;
 
 type AnalyticsScope = (typeof ANALYTICS_SCOPES)[number];
 type AnalyticsRange = keyof typeof ANALYTICS_RANGES;
+type MetricStatus = 'available' | 'unavailable';
+
+type DecimalMetric = {
+  status: MetricStatus;
+  value: string | null;
+  currency: string | null;
+  unavailableReason: string | null;
+};
 
 export interface AdminAnalyticsQuery {
   scope?: unknown;
@@ -81,6 +90,7 @@ export class AdminAnalyticsService {
     @InjectRepository(StrategyExecutionHistory)
     private readonly executionHistoryRepository: Repository<StrategyExecutionHistory>,
     private readonly orderBookTrackerService: OrderBookTrackerService,
+    private readonly performanceService: PerformanceService,
   ) {}
 
   async getFoundation(input: AdminAnalyticsQuery = {}) {
@@ -106,6 +116,17 @@ export class AdminAnalyticsService {
     const orderBookMids = midPairs.map(({ exchange, pair }) =>
       this.readOrderBookMid(exchange, pair),
     );
+    const perOrderAnalytics =
+      filters.scope === 'order' && filters.orderId
+        ? await this.buildPerOrderAnalytics(filters, {
+            trackedOrders,
+            ledgerEntries,
+            orderBalances,
+            strategyOrderIntents,
+            executions,
+            orderBookMids,
+          })
+        : null;
 
     return {
       generatedAt: getRFC3339Timestamp(),
@@ -155,6 +176,9 @@ export class AdminAnalyticsService {
         ),
         orderBookMids,
       },
+      analytics: {
+        perOrder: perOrderAnalytics,
+      },
       dataSources: [
         'ledger_entries',
         'order_scoped_balances',
@@ -174,6 +198,25 @@ export class AdminAnalyticsService {
         appliedLimit: filters.limit,
         orderBookStaleMs: ORDER_BOOK_STALE_MS,
       },
+    };
+  }
+
+  async getOrderAnalytics(
+    orderId: string,
+    input: Omit<AdminAnalyticsQuery, 'scope' | 'orderId'> = {},
+  ) {
+    const foundation = await this.getFoundation({
+      ...input,
+      scope: 'order',
+      orderId,
+    });
+
+    return {
+      generatedAt: foundation.generatedAt,
+      scope: foundation.scope,
+      range: foundation.range,
+      filters: foundation.filters,
+      analytics: foundation.analytics.perOrder,
     };
   }
 
@@ -642,6 +685,392 @@ export class AdminAnalyticsService {
     };
   }
 
+  private async buildPerOrderAnalytics(
+    filters: ResolvedAnalyticsQuery,
+    sources: {
+      trackedOrders: TrackedOrderProjection[];
+      ledgerEntries: LedgerEntry[];
+      orderBalances: MarketMakingOrderBalance[];
+      strategyOrderIntents: StrategyOrderIntentEntity[];
+      executions: StrategyExecutionHistory[];
+      orderBookMids: Array<ReturnType<AdminAnalyticsService['readOrderBookMid']>>;
+    },
+  ) {
+    const performance = await this.performanceService.getOrderPerformance(
+      filters.orderId!,
+    );
+    const market = this.resolveOrderMarket(
+      filters,
+      sources.trackedOrders,
+      sources.executions,
+      sources.strategyOrderIntents,
+    );
+    const pairAssets = this.parsePair(market.pair);
+    const quoteCurrency = pairAssets.quote || null;
+    const baseCurrency = pairAssets.base || null;
+    const mark = this.resolveOrderMark(market, sources.orderBookMids);
+    const inventoryBaseQty = this.toDecimal(
+      performance.summary.inventoryBaseQty,
+    );
+    const inventoryCostQuote = this.toDecimal(
+      performance.summary.inventoryCostQuote,
+    );
+    const inventoryAverageCostQuote = this.resolveInventoryAverageCost(
+      inventoryBaseQty,
+      inventoryCostQuote,
+      performance.summary.inventoryAverageCostQuote,
+    );
+    const realizedPnlQuote = this.toDecimal(
+      performance.summary.realizedPnlQuote,
+    );
+    const feesQuote = this.toDecimal(performance.summary.feesQuote);
+    const realizedNetPnlQuote = this.toDecimal(performance.summary.netPnlQuote);
+    const markPrice =
+      mark.midPrice !== null ? this.toPositiveDecimal(mark.midPrice) : null;
+    const markUnavailableReason =
+      mark.unavailableReason ||
+      (!market.exchange || !market.pair
+        ? 'order-market-pair-unavailable'
+        : 'order-book-mid-unavailable');
+    const unrealizedPnlQuote =
+      markPrice && inventoryAverageCostQuote
+        ? inventoryBaseQty.multipliedBy(markPrice.minus(inventoryAverageCostQuote))
+        : null;
+    const inventoryNotionalQuote = markPrice
+      ? inventoryBaseQty.multipliedBy(markPrice)
+      : null;
+    const netPnlQuote = unrealizedPnlQuote
+      ? realizedNetPnlQuote.plus(unrealizedPnlQuote)
+      : null;
+
+    return {
+      orderId: filters.orderId,
+      exchange: market.exchange,
+      pair: market.pair,
+      baseAsset: baseCurrency,
+      quoteAsset: quoteCurrency,
+      markPrice: {
+        ...this.metricFromNullable(markPrice, quoteCurrency, markUnavailableReason),
+        source: 'order_book_mid',
+        stale: mark.stale,
+        updatedAt: mark.updatedAt,
+        bestBid: mark.bestBid,
+        bestAsk: mark.bestAsk,
+        sequence: mark.sequence,
+      },
+      pnl: {
+        realized: this.availableMetric(realizedPnlQuote, quoteCurrency),
+        unrealized: this.metricFromNullable(
+          unrealizedPnlQuote,
+          quoteCurrency,
+          markUnavailableReason,
+        ),
+        net: this.metricFromNullable(
+          netPnlQuote,
+          quoteCurrency,
+          markUnavailableReason,
+        ),
+        realizedNet: this.availableMetric(realizedNetPnlQuote, quoteCurrency),
+      },
+      fees: {
+        total: this.availableMetric(feesQuote, quoteCurrency),
+        other: performance.summary.otherFees,
+      },
+      inventoryExposure: {
+        quantity: this.availableMetric(inventoryBaseQty, baseCurrency),
+        costBasis: this.availableMetric(inventoryCostQuote, quoteCurrency),
+        averageCost: this.metricFromNullable(
+          inventoryAverageCostQuote,
+          quoteCurrency,
+          'inventory-cost-basis-unavailable',
+        ),
+        notional: this.metricFromNullable(
+          inventoryNotionalQuote,
+          quoteCurrency,
+          markUnavailableReason,
+        ),
+        balances: sources.orderBalances.map((balance) =>
+          this.serializeOrderBalance(balance),
+        ),
+      },
+      spreadCapture: {
+        quote: this.availableMetric(realizedPnlQuote, quoteCurrency),
+        effectiveSpreadBps: performance.summary.effectiveSpreadBps,
+        tradedQuoteVolume: this.availableMetric(
+          this.toDecimal(performance.summary.tradedQuoteVolume),
+          quoteCurrency,
+        ),
+        fillCount: performance.summary.fillCount,
+      },
+      drawdown: this.buildDrawdown(performance.series, quoteCurrency),
+      timeline: this.buildPerOrderTimeline(sources),
+      dataSources: [
+        'performance_service_order_performance',
+        'ledger_entries',
+        'order_scoped_balances',
+        'tracked_orders',
+        'strategy_order_intents',
+        'strategy_execution_history',
+        'order_book_tracker_mid',
+      ],
+    };
+  }
+
+  private resolveOrderMarket(
+    filters: ResolvedAnalyticsQuery,
+    trackedOrders: TrackedOrderProjection[],
+    executions: StrategyExecutionHistory[],
+    intents: StrategyOrderIntentEntity[],
+  ): { exchange: string | null; pair: string | null } {
+    const firstTracked = trackedOrders.find((order) => order.orderId);
+    const firstExecution = executions.find((execution) => execution.orderId);
+    const firstIntent = intents[0];
+
+    return {
+      exchange:
+        filters.exchange ||
+        firstTracked?.exchange?.toLowerCase() ||
+        firstExecution?.exchange?.toLowerCase() ||
+        firstIntent?.exchange?.toLowerCase() ||
+        null,
+      pair:
+        filters.pair ||
+        firstTracked?.pair?.toUpperCase() ||
+        firstExecution?.pair?.toUpperCase() ||
+        firstIntent?.pair?.toUpperCase() ||
+        null,
+    };
+  }
+
+  private resolveOrderMark(
+    market: { exchange: string | null; pair: string | null },
+    mids: Array<ReturnType<AdminAnalyticsService['readOrderBookMid']>>,
+  ) {
+    const matched = mids.find(
+      (mid) =>
+        mid.exchange === market.exchange &&
+        mid.pair === market.pair,
+    );
+
+    if (matched) {
+      return matched;
+    }
+
+    return {
+      exchange: market.exchange,
+      pair: market.pair,
+      midPrice: null,
+      bestBid: null,
+      bestAsk: null,
+      sequence: null,
+      updatedAt: null,
+      stale: true,
+      unavailableReason: 'order-market-pair-unavailable',
+    };
+  }
+
+  private resolveInventoryAverageCost(
+    inventoryBaseQty: BigNumber,
+    inventoryCostQuote: BigNumber,
+    reportedAverageCost?: string | null,
+  ): BigNumber | null {
+    const reported = this.toNullableDecimal(reportedAverageCost);
+
+    if (reported) {
+      return reported;
+    }
+
+    if (inventoryBaseQty.isGreaterThan(0)) {
+      return inventoryCostQuote.dividedBy(inventoryBaseQty);
+    }
+
+    return new BigNumber(0);
+  }
+
+  private buildDrawdown(
+    series: Array<{ t: string; net: string; realized: string; fees: string }>,
+    currency: string | null,
+  ) {
+    const points = [...series]
+      .sort((left, right) => left.t.localeCompare(right.t))
+      .map((point) => ({
+        t: point.t,
+        realized: this.serializeDecimal(point.realized),
+        fees: this.serializeDecimal(point.fees),
+        net: this.serializeDecimal(point.net),
+      }));
+    let peak: BigNumber | null = null;
+    let peakAt: string | null = null;
+    let troughAt: string | null = null;
+    let maxDrawdown = new BigNumber(0);
+
+    for (const point of points) {
+      const net = this.toDecimal(point.net);
+
+      if (peak === null || net.isGreaterThan(peak)) {
+        peak = net;
+        peakAt = point.t;
+      }
+
+      const drawdown = (peak || new BigNumber(0)).minus(net);
+
+      if (drawdown.isGreaterThan(maxDrawdown)) {
+        maxDrawdown = drawdown;
+        troughAt = point.t;
+      }
+    }
+
+    return {
+      status: 'available' as const,
+      maxDrawdownQuote: maxDrawdown.toFixed(),
+      currency,
+      peakAt,
+      troughAt,
+      series: points,
+      unavailableReason: null,
+    };
+  }
+
+  private buildPerOrderTimeline(sources: {
+    trackedOrders: TrackedOrderProjection[];
+    ledgerEntries: LedgerEntry[];
+    strategyOrderIntents: StrategyOrderIntentEntity[];
+    executions: StrategyExecutionHistory[];
+  }) {
+    const events: Array<{
+      id: string;
+      type: 'quote' | 'fill' | 'cancel' | 'decision';
+      at: string | null;
+      source: string;
+      sourceId: string;
+      status: string | null;
+      side: string | null;
+      price: string | null;
+      qty: string | null;
+    }> = [];
+
+    for (const intent of sources.strategyOrderIntents) {
+      events.push({
+        id: `intent:${intent.intentId}`,
+        type: 'quote',
+        at: this.normalizeTimestamp(intent.createdAt),
+        source: 'strategy_order_intent',
+        sourceId: intent.intentId,
+        status: intent.status || null,
+        side: intent.side || null,
+        price: this.serializeNullableDecimal(intent.price),
+        qty: this.serializeNullableDecimal(intent.qty),
+      });
+    }
+
+    for (const order of sources.trackedOrders) {
+      const filledQty = this.toDecimal(order.cumulativeFilledQty);
+
+      if (filledQty.isGreaterThan(0)) {
+        events.push({
+          id: `tracked:${order.trackingKey}:fill`,
+          type: 'fill',
+          at: this.normalizeTimestamp(order.updatedAt),
+          source: 'tracked_order',
+          sourceId: order.trackingKey,
+          status: order.status || null,
+          side: order.side || null,
+          price: this.serializeNullableDecimal(order.price),
+          qty: filledQty.toFixed(),
+        });
+      }
+
+      if (String(order.status || '').toLowerCase().includes('cancel')) {
+        events.push({
+          id: `tracked:${order.trackingKey}:cancel`,
+          type: 'cancel',
+          at: this.normalizeTimestamp(order.updatedAt),
+          source: 'tracked_order',
+          sourceId: order.trackingKey,
+          status: order.status || null,
+          side: order.side || null,
+          price: this.serializeNullableDecimal(order.price),
+          qty: this.serializeNullableDecimal(order.qty),
+        });
+      }
+    }
+
+    for (const execution of sources.executions) {
+      events.push({
+        id: `execution:${execution.id}`,
+        type: 'decision',
+        at: this.normalizeTimestamp(execution.executedAt),
+        source: 'strategy_execution_history',
+        sourceId: execution.id,
+        status: execution.status || null,
+        side: execution.side || null,
+        price: this.serializeNullableDecimal(execution.price),
+        qty: this.serializeNullableDecimal(execution.amount),
+      });
+    }
+
+    for (const entry of sources.ledgerEntries) {
+      if (entry.type !== 'fill_settle') {
+        continue;
+      }
+
+      events.push({
+        id: `ledger:${entry.entryId}`,
+        type: 'fill',
+        at: this.normalizeTimestamp(entry.createdAt),
+        source: 'ledger_entry',
+        sourceId: entry.entryId,
+        status: entry.type,
+        side: null,
+        price: null,
+        qty: this.serializeNullableDecimal(entry.amount),
+      });
+    }
+
+    return {
+      events: events.sort((left, right) => {
+        const atOrder = String(left.at || '').localeCompare(
+          String(right.at || ''),
+        );
+
+        if (atOrder !== 0) {
+          return atOrder;
+        }
+
+        return left.id.localeCompare(right.id);
+      }),
+    };
+  }
+
+  private availableMetric(
+    value: BigNumber,
+    currency: string | null,
+  ): DecimalMetric {
+    return {
+      status: 'available',
+      value: value.toFixed(),
+      currency,
+      unavailableReason: null,
+    };
+  }
+
+  private metricFromNullable(
+    value: BigNumber | null,
+    currency: string | null,
+    unavailableReason: string,
+  ): DecimalMetric {
+    if (!value || !value.isFinite()) {
+      return {
+        status: 'unavailable',
+        value: null,
+        currency,
+        unavailableReason,
+      };
+    }
+
+    return this.availableMetric(value, currency);
+  }
+
   private summarizeLedgerAmounts(entries: LedgerEntry[]) {
     const byAsset = new Map<string, BigNumber>();
 
@@ -798,6 +1227,16 @@ export class AdminAnalyticsService {
     return this.serializeDecimal(value);
   }
 
+  private toNullableDecimal(value: unknown): BigNumber | null {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    const decimal = new BigNumber(String(value));
+
+    return decimal.isFinite() ? decimal : null;
+  }
+
   private toDecimal(value: unknown): BigNumber {
     const decimal = new BigNumber(String(value ?? '0'));
 
@@ -818,6 +1257,15 @@ export class AdminAnalyticsService {
     const ms = Date.parse(value);
 
     return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+  }
+
+  private parsePair(pair?: string | null): { base: string; quote: string } {
+    const [base, quote] = String(pair || '').split('/');
+
+    return {
+      base: String(base || '').trim().toUpperCase(),
+      quote: String(quote || '').trim().toUpperCase(),
+    };
   }
 
   private unique(values: string[]): string[] {
