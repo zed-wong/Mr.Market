@@ -4,27 +4,37 @@ import {
   aggregateBalancesByAsset,
   buildDirectOrderDiagnosis,
   EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+  buildDirectVariationConfigOverrides,
+  describeDirectRuntimeBottleneck,
+  describeDirectRuntimeNextAction,
   describeReadinessBlockingReason,
   describeReadinessMissingBalance,
   filterDirectCreateStrategies,
+  formatDirectRuntimeRemainingEstimate,
   buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
   formatReadinessAmount,
   getDirectOrderActionAvailability,
   getDirectReadinessSubmitStatus,
+  getDirectRuntimeLifecycleView,
+  getDirectVariationEditableFields,
   getEfficientDualAccountModeOptions,
+  getLatestDirectRuntimeCycle,
   getReadinessCapitalRows,
+  initializeDirectVariationFormValues,
   isBestCapacityDirectOrderControllerType,
   isDualAccountOrder,
   isDualDirectOrderControllerType,
   isEfficientDualAccountStrategy,
   isSchemaDrivenDirectOrderControllerType,
   normalizeConfigOverrides,
+  normalizeDirectRuntimeCycles,
   normalizeEfficientDualAccountMode,
   readPositiveOrderAmount,
   resolveInventorySkewAllocation,
   resolveMinOrderAmount,
 } from './helpers';
+import type { DirectVariationMetadata } from '$lib/types/hufi/admin-direct-market-making';
 
 const diagnosisNow = Date.parse('2026-05-24T00:00:00.000Z');
 
@@ -305,6 +315,19 @@ describe('getDirectOrderActionAvailability', () => {
       canStop: false,
       canResume: true,
       canRemove: true,
+    });
+  });
+
+  it('allows readiness-gated resume but not stop or remove for paused orders', () => {
+    expect(
+      getDirectOrderActionAvailability({
+        state: 'paused',
+        runtimeState: 'paused',
+      }),
+    ).toEqual({
+      canStop: false,
+      canResume: true,
+      canRemove: false,
     });
   });
 
@@ -708,6 +731,151 @@ describe('direct controller helpers', () => {
   });
 });
 
+describe('Efficient Dual Account runtime cycle helpers', () => {
+  const readiness = {
+    canStart: false,
+    mode: 'balanced' as const,
+    bestFirstAction: {
+      makerAccountLabel: 'maker-main',
+      takerAccountLabel: 'taker-alt',
+      side: 'buy' as const,
+      baseAsset: 'BTC',
+      quoteAsset: 'USDT',
+      quantity: '0.5',
+      price: '30000',
+      notional: '15000',
+    },
+    maximumCycleQty: '0.8',
+    recommendedCycleQty: '0.5',
+    minimumCapitalByAccountAsset: [],
+    recommendedCapitalByAccountAsset: [],
+    missingBalances: [
+      {
+        accountLabel: 'taker-alt',
+        asset: 'BTC',
+        availableAmount: '0.1',
+        minimumUsefulAmount: '0.5',
+        missingAmount: '0.4',
+      },
+    ],
+    estimatedCycles: {
+      count: '3',
+      basis: 'current_available_balances',
+    },
+    estimatedVolume: {
+      baseAsset: 'BTC',
+      quoteAsset: 'USDT',
+      baseAmount: '1.5',
+      quoteAmount: '45000',
+    },
+    blockingReasons: [
+      {
+        code: 'below_exchange_minimums',
+        message: 'raw notional < costMin',
+        accountLabel: 'taker-alt',
+        asset: 'BTC',
+      },
+    ],
+  };
+
+  it('normalizes grouped maker and inline taker cycle legs without losing failure reasons', () => {
+    const cycles = normalizeDirectRuntimeCycles([
+      {
+        cycleId: 'cycle-2',
+        aggregateStatus: 'failed',
+        failureReason: 'taker IOC rejected',
+        legs: [
+          {
+            cycleRole: 'taker',
+            accountLabel: 'taker-alt',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '30000',
+            filledQty: '0',
+            notional: '15000',
+            status: 'failed',
+            failureReason: 'taker IOC rejected',
+            linkedIntentId: 'intent-taker',
+            linkedTrackedOrderId: null,
+          },
+          {
+            cycleRole: 'maker',
+            accountLabel: 'maker-main',
+            side: 'buy',
+            plannedQty: '0.5',
+            plannedPrice: '30000',
+            filledQty: '0.5',
+            notional: '15000',
+            status: 'filled',
+            failureReason: null,
+            linkedIntentId: 'intent-maker',
+            linkedTrackedOrderId: 'tracked-maker',
+          },
+        ],
+      },
+      {
+        cycleId: 'cycle-1',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+    ]);
+
+    expect(cycles.map((cycle) => cycle.cycleId)).toEqual(['cycle-1', 'cycle-2']);
+    expect(getLatestDirectRuntimeCycle(cycles)?.cycleId).toBe('cycle-2');
+    expect(cycles[1].legs.map((leg) => leg.cycleRole)).toEqual(['maker', 'taker']);
+    expect(cycles[1].legs[1]).toMatchObject({
+      cycleRole: 'taker',
+      accountLabel: 'taker-alt',
+      side: 'sell',
+      failureReason: 'taker IOC rejected',
+      linkedIntentId: 'intent-taker',
+    });
+  });
+
+  it('describes runtime next action, bottleneck, remaining estimates, and lifecycle gating', () => {
+    expect(describeDirectRuntimeNextAction(readiness)).toContain(
+      'Maker maker-main should buy 0.5 BTC against taker taker-alt',
+    );
+    expect(describeDirectRuntimeBottleneck(readiness)).toContain(
+      'taker-alt BTC is the current bottleneck: 0.4 BTC missing',
+    );
+    expect(formatDirectRuntimeRemainingEstimate(readiness)).toBe(
+      '3 cycles, 45000 USDT / 1.5 BTC estimated volume.',
+    );
+
+    expect(
+      getDirectRuntimeLifecycleView({
+        state: 'paused',
+        runtimeState: 'paused',
+        readiness,
+      }),
+    ).toMatchObject({
+      label: 'Paused by planner',
+      tone: 'warning',
+      canResumeNow: false,
+      readinessGated: true,
+    });
+
+    expect(
+      getDirectRuntimeLifecycleView({
+        state: 'stopped',
+        runtimeState: 'stopped',
+        readiness: {
+          ...readiness,
+          canStart: true,
+          missingBalances: [],
+          blockingReasons: [],
+        },
+      }),
+    ).toMatchObject({
+      label: 'Operator stopped',
+      tone: 'info',
+      canResumeNow: true,
+      readinessGated: true,
+    });
+  });
+});
+
 describe('isDualAccountOrder', () => {
   it('returns true when directExecutionMode is dual_account', () => {
     expect(
@@ -855,6 +1023,109 @@ describe('buildGenericSchemaConfigOverrides', () => {
     ).toEqual({
       threshold: 5,
       mode: 'safe',
+    });
+  });
+});
+
+describe('direct variation helpers', () => {
+  const metadata: DirectVariationMetadata = {
+    orderId: 'order-1',
+    state: 'paused',
+    strategyDefinitionId: 'strategy-1',
+    strategyDefinition: {
+      id: 'strategy-1',
+      key: 'pure-market-making',
+      name: 'Pure Market Making',
+      controllerType: 'pureMarketMaking',
+    },
+    editable: true,
+    editability: { editable: true, reason: null, state: 'paused' },
+    values: {
+      bidSpread: '0.001',
+      enabled: true,
+      pair: 'BTC/USDT',
+      strategyDefinitionId: 'spoofed',
+    },
+    fields: [
+      {
+        key: 'bidSpread',
+        type: 'number',
+        required: false,
+        currentValue: '0.001',
+        editable: true,
+        schema: { type: 'number' },
+      },
+      {
+        key: 'priceSourceType',
+        type: 'string',
+        required: false,
+        enum: ['mid_price', 'last_trade'],
+        currentValue: 'mid_price',
+        editable: true,
+        schema: { type: 'string', enum: ['mid_price', 'last_trade'] },
+      },
+      {
+        key: 'enabled',
+        type: 'boolean',
+        required: false,
+        currentValue: true,
+        editable: true,
+        schema: { type: 'boolean' },
+      },
+      {
+        key: 'pair',
+        type: 'string',
+        required: true,
+        currentValue: 'BTC/USDT',
+        editable: true,
+        schema: { type: 'string' },
+      },
+      {
+        key: 'strategyDefinitionId',
+        type: 'string',
+        required: true,
+        currentValue: 'strategy-1',
+        editable: true,
+        schema: { type: 'string' },
+      },
+      {
+        key: 'readonlyNote',
+        type: 'string',
+        required: false,
+        currentValue: 'server-owned',
+        editable: false,
+        schema: { type: 'string' },
+      },
+    ],
+  };
+
+  it('initializes variation form values from editable metadata and omits reserved fields', () => {
+    expect(getDirectVariationEditableFields(metadata).map((field) => field.key)).toEqual([
+      'bidSpread',
+      'priceSourceType',
+      'enabled',
+    ]);
+    expect(initializeDirectVariationFormValues(metadata)).toEqual({
+      bidSpread: '0.001',
+      priceSourceType: 'mid_price',
+      enabled: true,
+    });
+  });
+
+  it('builds save payloads from editable fields only and coerces primitive schema values', () => {
+    expect(
+      buildDirectVariationConfigOverrides(metadata, {
+        bidSpread: '0.002',
+        priceSourceType: 'last_trade',
+        enabled: false,
+        pair: 'ETH/USDT',
+        strategyDefinitionId: 'malicious',
+        readonlyNote: 'ignored',
+      }),
+    ).toEqual({
+      bidSpread: 0.002,
+      priceSourceType: 'last_trade',
+      enabled: false,
     });
   });
 });

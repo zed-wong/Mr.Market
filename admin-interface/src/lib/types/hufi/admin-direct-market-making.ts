@@ -10,11 +10,84 @@ export type EfficientDualAccountVolumeMode =
 export type DirectOrderRuntimeState =
   | 'created'
   | 'running'
+  | 'paused'
   | 'stopped'
+  | 'blocked'
   | 'failed'
   | 'active'
   | 'gone'
   | 'stale';
+
+export type DirectRuntimeCycleLegRole = 'maker' | 'taker';
+
+export type DirectRuntimeCycleLeg = {
+  cycleId: string;
+  cycleRole: DirectRuntimeCycleLegRole;
+  accountLabel: string;
+  side: 'buy' | 'sell';
+  plannedQty: string;
+  plannedPrice: string;
+  filledQty: string;
+  notional: string;
+  status: string;
+  failureReason: string | null;
+  linkedIntentId: string | null;
+  linkedTrackedOrderId: string | null;
+};
+
+export type DirectRuntimeCycle = {
+  cycleId: string;
+  aggregateStatus: string;
+  failureReason: string | null;
+  legs: DirectRuntimeCycleLeg[];
+};
+
+export type DirectVariationEditability = {
+  editable: boolean;
+  reason: 'order_not_paused' | null;
+  state: string;
+};
+
+export type DirectVariationFieldMetadata = {
+  key: string;
+  type: string | null;
+  required: boolean;
+  enum?: unknown[];
+  minimum?: number;
+  title?: string;
+  description?: string;
+  currentValue: unknown;
+  editable: boolean;
+  schema: Record<string, unknown>;
+};
+
+export type DirectVariationMetadata = {
+  orderId: string;
+  state: string;
+  strategyDefinitionId: string;
+  strategyDefinition: {
+    id: string;
+    key: string;
+    name: string;
+    controllerType: string;
+  };
+  editable: boolean;
+  editability: DirectVariationEditability;
+  values: Record<string, unknown>;
+  fields: DirectVariationFieldMetadata[];
+};
+
+export type DirectVariationSavePayload = {
+  configOverrides: Record<string, unknown>;
+};
+
+export type DirectVariationSaveResponse = {
+  orderId: string;
+  state: string;
+  strategyDefinitionId: string;
+  strategySnapshot: Record<string, unknown>;
+  flattenedFields: Record<string, unknown>;
+};
 
 export interface DirectOrderSummary {
   orderId: string;
@@ -115,7 +188,7 @@ export interface DirectOrderStatus {
     realizedPnlQuote: string | null;
   };
   readiness?: DirectReadinessResult | null;
-  cycles?: unknown[];
+  cycles?: DirectRuntimeCycle[];
   spread: {
     bid: string;
     ask: string;

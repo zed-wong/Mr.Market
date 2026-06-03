@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   evaluateDirectReadiness,
+  getDirectOrderVariation,
   getMarketMakingOrderPerformance,
   startDirectOrder,
+  updateDirectOrderVariation,
 } from "./direct-market-making";
 
 vi.mock("$env/dynamic/public", () => {
@@ -155,6 +157,81 @@ describe("admin direct market making helper", () => {
     expect(fetchSpy).toHaveBeenCalledWith(
       "http://localhost:3000/admin/market-making/orders/order-1/performance",
       expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("gets editable variation metadata for a direct order", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          orderId: "order-1",
+          state: "paused",
+          strategyDefinitionId: "strategy-1",
+          strategyDefinition: {
+            id: "strategy-1",
+            key: "pure-market-making",
+            name: "Pure Market Making",
+            controllerType: "pureMarketMaking",
+          },
+          editable: true,
+          editability: { editable: true, reason: null, state: "paused" },
+          values: { bidSpread: "0.001" },
+          fields: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await getDirectOrderVariation("order-1", "token");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:3000/admin/market-making/direct-orders/order-1/variation",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("patches only editable variation config overrides", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          orderId: "order-1",
+          state: "paused",
+          strategyDefinitionId: "strategy-1",
+          strategySnapshot: {},
+          flattenedFields: {},
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await updateDirectOrderVariation(
+      "order-1",
+      {
+        configOverrides: {
+          bidSpread: 0.002,
+          orderAmount: 25,
+        },
+      },
+      "token",
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:3000/admin/market-making/direct-orders/order-1/variation",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          configOverrides: {
+            bidSpread: 0.002,
+            orderAmount: 25,
+          },
+        }),
+      }),
     );
   });
 });

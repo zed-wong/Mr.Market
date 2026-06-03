@@ -4,6 +4,7 @@
     import { toast } from "svelte-sonner";
     import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
     import PnlChart from "$lib/components/market-making/direct/PnlChart.svelte";
+    import RuntimeCyclePanel from "$lib/components/market-making/direct/RuntimeCyclePanel.svelte";
     import type { AdminErrorState } from "$lib/helpers/admin/common-states";
     import type {
         DirectOrderSummary,
@@ -16,6 +17,7 @@
         aggregateBalancesByAsset,
         isBestCapacityDirectOrderControllerType,
         isDualAccountOrder,
+        isEfficientDualAccountControllerType,
         isKnownDirectStrategyControllerType,
         getStateLabel,
         explainDirectOrderWarning,
@@ -137,6 +139,8 @@
     });
     $: isBestCapacityStrategy =
         isBestCapacityDirectOrderControllerType(resolvedControllerType);
+    $: isEfficientDualAccountStrategy =
+        isEfficientDualAccountControllerType(resolvedControllerType);
     $: isKnownStrategy = isKnownDirectStrategyControllerType(resolvedControllerType);
     $: skewBalances = data
         ? isDualAccountStrategy
@@ -159,6 +163,10 @@
     $: takerBalances =
         data?.inventoryBalances.filter((b) => b.accountLabel === "taker") ?? [];
     $: recentErrors = data?.recentErrors ?? [];
+    $: efficientResumeDisabled =
+        isEfficientDualAccountStrategy &&
+        actionAvailability.canResume &&
+        data?.readiness?.canStart !== true;
 </script>
 
 <svelte:window on:keydown={(e) => show && e.key === "Escape" && onClose()} />
@@ -887,6 +895,10 @@
                         </div>
                     {/if}
 
+                    {#if data && isEfficientDualAccountStrategy}
+                        <RuntimeCyclePanel data={data} warnings={order.warnings || []} />
+                    {/if}
+
                     <!-- Order Config -->
                     <div>
                         <div class="flex items-center justify-between mb-3 h-5">
@@ -1463,6 +1475,10 @@
                                 <button
                                     class="btn flex-1 bg-indigo-600 hover:bg-indigo-700 border-none text-white h-[44px] min-h-[44px] rounded-[10px] font-semibold text-[14.5px] shadow-[0_10px_24px_-12px_rgba(79,70,229,0.9)] flex items-center justify-center gap-1.5"
                                     on:click={onStartOrder}
+                                    disabled={efficientResumeDisabled}
+                                    title={efficientResumeDisabled
+                                        ? "Resolve planner readiness blockers before resuming."
+                                        : ""}
                                 >
                                     {$_("admin_direct_mm_resume_order")}
                                     <svg

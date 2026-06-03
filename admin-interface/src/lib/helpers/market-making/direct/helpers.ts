@@ -6,6 +6,12 @@ import type {
   DirectReadinessBlockingReason,
   DirectReadinessCapitalRequirement,
   DirectReadinessMissingBalance,
+  DirectReadinessResult,
+  DirectRuntimeCycle,
+  DirectRuntimeCycleLeg,
+  DirectRuntimeCycleLegRole,
+  DirectVariationFieldMetadata,
+  DirectVariationMetadata,
 } from "$lib/types/hufi/admin-direct-market-making";
 
 export interface ExchangeMarketAmountLimits {
@@ -46,6 +52,14 @@ export interface DirectOrderActionAvailability {
   canStop: boolean;
   canResume: boolean;
   canRemove: boolean;
+}
+
+export interface DirectRuntimeLifecycleView {
+  label: string;
+  tone: "success" | "warning" | "error" | "info";
+  summary: string;
+  canResumeNow: boolean;
+  readinessGated: boolean;
 }
 
 export type {
@@ -134,15 +148,17 @@ export function getDirectOrderActionAvailability(
   const runtimeState = normalizeOrderLifecycleState(order?.runtimeState);
   const effectiveRuntimeState = runtimeState || persistedState;
   const isPersistedStopped = persistedState === "stopped";
+  const isPersistedPaused = persistedState === "paused";
   const isPersistedFailed = persistedState === "failed";
   const canStop =
+    !isPersistedPaused &&
     !isPersistedStopped &&
     !isPersistedFailed &&
     ["active", "created", "failed", "gone", "running", "stale"].includes(effectiveRuntimeState);
 
   return {
     canStop,
-    canResume: isPersistedStopped,
+    canResume: isPersistedStopped || isPersistedPaused,
     canRemove: isPersistedStopped || isPersistedFailed,
   };
 }
@@ -410,6 +426,276 @@ export function describeReadinessBlockingReason(
   return `${accountPrefix}${copyByCode[reason.code] || "Planner readiness is blocked. Review the account, asset, and market-rule details before starting."}${assetSuffix}`;
 }
 
+function readRuntimeString(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function readNullableRuntimeString(value: unknown): string | null {
+  const text = readRuntimeString(value);
+
+  return text || null;
+}
+
+function readRuntimeCycleRole(value: unknown): DirectRuntimeCycleLegRole | null {
+  const role = readRuntimeString(value);
+
+  return role === "maker" || role === "taker" ? role : null;
+}
+
+function readRuntimeSide(value: unknown): "buy" | "sell" | null {
+  const side = readRuntimeString(value);
+
+  return side === "buy" || side === "sell" ? side : null;
+}
+
+function normalizeRuntimeCycleLeg(
+  cycleId: string,
+  value: unknown,
+): DirectRuntimeCycleLeg | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const row = value as Record<string, unknown>;
+  const cycleRole = readRuntimeCycleRole(row.cycleRole);
+  const side = readRuntimeSide(row.side);
+
+  if (!cycleRole || !side) {
+    return null;
+  }
+
+  return {
+    cycleId,
+    cycleRole,
+    accountLabel: readRuntimeString(row.accountLabel),
+    side,
+    plannedQty: readRuntimeString(row.plannedQty),
+    plannedPrice: readRuntimeString(row.plannedPrice),
+    filledQty: readRuntimeString(row.filledQty),
+    notional: readRuntimeString(row.notional),
+    status: readRuntimeString(row.status) || "unknown",
+    failureReason: readNullableRuntimeString(row.failureReason),
+    linkedIntentId: readNullableRuntimeString(row.linkedIntentId),
+    linkedTrackedOrderId: readNullableRuntimeString(row.linkedTrackedOrderId),
+  };
+}
+
+export function normalizeDirectRuntimeCycles(
+  value: unknown,
+): DirectRuntimeCycle[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((row): DirectRuntimeCycle | null => {
+      if (!row || typeof row !== "object") {
+        return null;
+      }
+
+      const record = row as Record<string, unknown>;
+      const cycleId = readRuntimeString(record.cycleId);
+
+      if (!cycleId) {
+        return null;
+      }
+
+      const legs = Array.isArray(record.legs)
+        ? record.legs
+            .map((leg) => normalizeRuntimeCycleLeg(cycleId, leg))
+            .filter((leg): leg is DirectRuntimeCycleLeg => leg !== null)
+            .sort((left, right) => {
+              if (left.cycleRole !== right.cycleRole) {
+                return left.cycleRole === "maker" ? -1 : 1;
+              }
+
+              return left.accountLabel.localeCompare(right.accountLabel);
+            })
+        : [];
+
+      return {
+        cycleId,
+        aggregateStatus: readRuntimeString(record.aggregateStatus) || "unknown",
+        failureReason: readNullableRuntimeString(record.failureReason),
+        legs,
+      };
+    })
+    .filter((cycle): cycle is DirectRuntimeCycle => cycle !== null)
+    .sort((left, right) => left.cycleId.localeCompare(right.cycleId));
+}
+
+export function getLatestDirectRuntimeCycle(
+  cycles: DirectRuntimeCycle[],
+): DirectRuntimeCycle | null {
+  return cycles.length > 0 ? cycles[cycles.length - 1] : null;
+}
+
+export function describeDirectRuntimeNextAction(
+  readiness: DirectReadinessResult | null | undefined,
+): string {
+  const action = readiness?.bestFirstAction;
+
+  if (!action) {
+    return readiness
+      ? "Resolve planner blockers before the next cycle."
+      : "No next action was provided by runtime status.";
+  }
+
+  return `Maker ${action.makerAccountLabel} should ${action.side} ${formatReadinessAmount(
+    action.quantity,
+    action.baseAsset,
+  )} against taker ${action.takerAccountLabel} at ${formatReadinessAmount(
+    action.price,
+    action.quoteAsset,
+  )} (${formatReadinessAmount(action.notional, action.quoteAsset)} notional).`;
+}
+
+export function describeDirectRuntimeBottleneck(
+  readiness: DirectReadinessResult | null | undefined,
+): string {
+  const missing = readiness?.missingBalances?.[0];
+
+  if (missing) {
+    return `${missing.accountLabel} ${missing.asset} is the current bottleneck: ${formatReadinessAmount(
+      missing.missingAmount,
+      missing.asset,
+    )} missing, ${formatReadinessAmount(
+      missing.availableAmount,
+      missing.asset,
+    )} available, ${formatReadinessAmount(
+      missing.minimumUsefulAmount,
+      missing.asset,
+    )} minimum useful.`;
+  }
+
+  const blocker = readiness?.blockingReasons?.[0];
+
+  if (blocker) {
+    return describeReadinessBlockingReason(blocker);
+  }
+
+  return readiness?.canStart
+    ? "No current bottleneck reported by planner readiness."
+    : "Runtime status did not provide a current bottleneck.";
+}
+
+export function formatDirectRuntimeRemainingEstimate(
+  readiness: DirectReadinessResult | null | undefined,
+): string {
+  if (!readiness) {
+    return "No remaining estimate provided.";
+  }
+
+  return `${readiness.estimatedCycles.count} cycles, ${formatReadinessAmount(
+    readiness.estimatedVolume.quoteAmount,
+    readiness.estimatedVolume.quoteAsset,
+  )} / ${formatReadinessAmount(
+    readiness.estimatedVolume.baseAmount,
+    readiness.estimatedVolume.baseAsset,
+  )} estimated volume.`;
+}
+
+export function getDirectRuntimeLifecycleView(args: {
+  state?: string | null;
+  runtimeState?: string | null;
+  readiness?: DirectReadinessResult | null;
+  warnings?: string[];
+}): DirectRuntimeLifecycleView {
+  const persistedState = normalizeOrderLifecycleState(args.state);
+  const runtimeState = normalizeOrderLifecycleState(args.runtimeState);
+  const effectiveState = runtimeState || persistedState;
+  const hasPlannerBlocker =
+    args.readiness?.canStart === false ||
+    (args.readiness?.missingBalances?.length ?? 0) > 0 ||
+    (args.readiness?.blockingReasons?.length ?? 0) > 0;
+  const hasExecutionBlocker = (args.warnings || []).some((warning) =>
+    normalizeOrderLifecycleState(warning).includes("blocked"),
+  );
+  const canResumeNow =
+    (persistedState === "paused" || persistedState === "stopped") &&
+    args.readiness?.canStart === true;
+  const readinessGated = persistedState === "paused" || persistedState === "stopped";
+
+  if (persistedState === "paused") {
+    return {
+      label: hasPlannerBlocker ? "Paused by planner" : "Paused",
+      tone: hasPlannerBlocker ? "warning" : "info",
+      summary: hasPlannerBlocker
+        ? "Planner blockers paused this order. Resolve the blocker and pass readiness before resuming."
+        : "This order is paused. Resume is gated by the latest planner readiness result.",
+      canResumeNow,
+      readinessGated,
+    };
+  }
+
+  if (persistedState === "stopped") {
+    return {
+      label: "Operator stopped",
+      tone: "info",
+      summary:
+        "This order was stopped by an operator. Resume remains gated by current planner readiness.",
+      canResumeNow,
+      readinessGated,
+    };
+  }
+
+  if (
+    effectiveState === "failed" ||
+    effectiveState === "blocked" ||
+    hasExecutionBlocker
+  ) {
+    return {
+      label: "Failed or blocked",
+      tone: "error",
+      summary:
+        "Runtime execution is blocked and needs operator attention before more cycles can run.",
+      canResumeNow: false,
+      readinessGated: false,
+    };
+  }
+
+  if (hasPlannerBlocker) {
+    return {
+      label: "Blocked by planner",
+      tone: "warning",
+      summary:
+        "Planner readiness cannot produce a safe next cycle. Use the bottleneck and blocker details below.",
+      canResumeNow: false,
+      readinessGated: false,
+    };
+  }
+
+  if (effectiveState === "running" || effectiveState === "active") {
+    return {
+      label: "Running",
+      tone: "success",
+      summary:
+        "Runtime is active and planner readiness does not report blockers.",
+      canResumeNow: false,
+      readinessGated: false,
+    };
+  }
+
+  if (effectiveState === "created") {
+    return {
+      label: "Created",
+      tone: "info",
+      summary:
+        "Order is created and waiting for runtime execution to become active.",
+      canResumeNow: false,
+      readinessGated: false,
+    };
+  }
+
+  return {
+    label: effectiveState || "Unknown",
+    tone: "info",
+    summary: "Runtime lifecycle needs review before taking action.",
+    canResumeNow: false,
+    readinessGated: false,
+  };
+}
+
 export interface StrategySchemaProperty {
   type?: string;
   enum?: string[];
@@ -425,16 +711,22 @@ export interface StrategySchema {
 const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
   "userId",
   "clientId",
+  "orderId",
   "marketMakingOrderId",
   "pair",
   "symbol",
   "exchangeName",
+  "controllerType",
+  "strategyDefinitionId",
+  "definitionId",
+  "externalId",
   "accountLabel",
   "makerAccountLabel",
   "takerAccountLabel",
   "makerApiKeyId",
   "takerApiKeyId",
   "apiKeyId",
+  "id",
 ]);
 
 const EFFICIENT_DUAL_ACCOUNT_HIDDEN_MECHANICS_FIELDS = new Set([
@@ -862,6 +1154,105 @@ export function buildGenericSchemaConfigOverrides(
       }
 
       acc[key] = value;
+      return acc;
+    },
+    {},
+  );
+}
+
+function isReservedDirectVariationField(field: string): boolean {
+  if (DIRECT_RESERVED_CONFIG_FIELDS.has(field)) {
+    return true;
+  }
+
+  const normalized = field.trim().toLowerCase();
+
+  return normalized === "id" || normalized.endsWith("id");
+}
+
+export function getDirectVariationEditableFields(
+  metadata: DirectVariationMetadata | null | undefined,
+): DirectVariationFieldMetadata[] {
+  return (metadata?.fields || []).filter(
+    (field) =>
+      field.editable &&
+      Boolean(field.key) &&
+      !isReservedDirectVariationField(field.key),
+  );
+}
+
+export function stringifyDirectVariationInputValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+function coerceDirectVariationInputValue(
+  field: DirectVariationFieldMetadata,
+  value: unknown,
+): unknown {
+  if (field.type === "boolean") {
+    return Boolean(value);
+  }
+
+  if (field.type === "number" || field.type === "integer") {
+    if (value === "") {
+      return "";
+    }
+
+    const numeric = Number(value);
+    return Number.isNaN(numeric) ? value : numeric;
+  }
+
+  if (field.type === "object" || field.type === "array") {
+    const raw = String(value ?? "").trim();
+    if (!raw) {
+      return field.type === "array" ? [] : {};
+    }
+
+    return JSON.parse(raw);
+  }
+
+  return value;
+}
+
+export function initializeDirectVariationFormValues(
+  metadata: DirectVariationMetadata | null | undefined,
+): Record<string, string | boolean> {
+  return getDirectVariationEditableFields(metadata).reduce<
+    Record<string, string | boolean>
+  >((acc, field) => {
+    const currentValue =
+      metadata?.values && Object.prototype.hasOwnProperty.call(metadata.values, field.key)
+        ? metadata.values[field.key]
+        : field.currentValue;
+
+    acc[field.key] =
+      field.type === "boolean"
+        ? Boolean(currentValue)
+        : stringifyDirectVariationInputValue(currentValue);
+
+    return acc;
+  }, {});
+}
+
+export function buildDirectVariationConfigOverrides(
+  metadata: DirectVariationMetadata | null | undefined,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  return getDirectVariationEditableFields(metadata).reduce<Record<string, unknown>>(
+    (acc, field) => {
+      if (!Object.prototype.hasOwnProperty.call(values, field.key)) {
+        return acc;
+      }
+
+      acc[field.key] = coerceDirectVariationInputValue(field, values[field.key]);
       return acc;
     },
     {},
