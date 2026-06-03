@@ -31,20 +31,118 @@
   };
 
   let response = $state<AdminSystemHealthResponse | null>(null);
-  let groupFilter = $state('all');
+  let viewFilter = $state('all');
   let serviceFilter = $state('all');
   let loading = $state(true);
   let refreshing = $state(false);
   let error = $state<string | null>(null);
 
-  const services = $derived(response?.services ?? []);
-  const groups = $derived(['all', ...(response?.filters.availableGroups ?? [])]);
-  const serviceOptions = $derived.by(() => {
-    const available = response?.filters.availableServices ?? [];
-    const filtered = groupFilter === 'all' ? available : available.filter((row) => row.group === groupFilter);
+  type HealthViewKey = 'all' | 'trading' | 'data' | 'exchange' | 'orders' | 'infrastructure';
 
-    return ['all', ...filtered.map((row) => row.id)];
+  const healthViews: Array<{ key: HealthViewKey; label: string; description: string }> = [
+    { key: 'all', label: 'All', description: 'Every backend health check returned by the admin API.' },
+    { key: 'trading', label: 'Trading', description: 'Checks that affect whether trading can run.' },
+    { key: 'data', label: 'Data freshness', description: 'Balances, streams, and order state freshness.' },
+    { key: 'exchange', label: 'Exchange access', description: 'API keys and exchange account connectivity.' },
+    { key: 'orders', label: 'Orders', description: 'Tracked orders and user-stream order ingestion.' },
+    { key: 'infrastructure', label: 'Infrastructure', description: 'API process, queues, and runtime diagnostics.' },
+  ];
+
+  const rawServices = $derived(response?.services ?? []);
+  const serviceView = (service: AdminSystemHealthService): Exclude<HealthViewKey, 'all'>[] => {
+    if (service.id === 'core.api' || service.group === 'queue' || service.group === 'runtime') {
+      return ['infrastructure'];
+    }
+
+    if (service.group === 'connector') {
+      return service.id.startsWith('connector.balance-cache') ? ['trading', 'data', 'exchange'] : ['trading', 'exchange'];
+    }
+
+    if (service.group === 'orders') {
+      return ['trading', 'data', 'orders'];
+    }
+
+    if (service.group === 'stream') {
+      return ['trading', 'data', 'orders'];
+    }
+
+    return ['infrastructure'];
+  };
+
+  const viewServices = (view: HealthViewKey) =>
+    rawServices.filter((service) => view === 'all' || serviceView(service).includes(view));
+
+  const services = $derived.by(() => {
+    const rows = viewServices(viewFilter as HealthViewKey);
+
+    return serviceFilter === 'all' ? rows : rows.filter((service) => service.id === serviceFilter);
   });
+
+  const selectedView = $derived(healthViews.find((view) => view.key === viewFilter) ?? healthViews[0]);
+  const serviceOptions = $derived.by(() => {
+    const available = viewServices(viewFilter as HealthViewKey);
+
+    return ['all', ...available.map((row) => row.id)];
+  });
+
+  const reduceStatus = (rows: AdminSystemHealthService[]): AdminHealthStatus => {
+    if (rows.some((row) => row.status === 'critical')) {
+      return 'critical';
+    }
+
+    if (rows.some((row) => row.status === 'warning')) {
+      return 'warning';
+    }
+
+    if (rows.some((row) => row.status === 'unknown')) {
+      return 'unknown';
+    }
+
+    return rows.length > 0 ? 'healthy' : 'unknown';
+  };
+
+  const statusLabel = (status: AdminHealthStatus, emptyLabel = 'Not configured') => {
+    if (status === 'healthy') {
+      return 'Ready';
+    }
+
+    if (status === 'warning') {
+      return 'Degraded';
+    }
+
+    if (status === 'critical') {
+      return 'Blocked';
+    }
+
+    return emptyLabel;
+  };
+
+  const cardStatus = (view: HealthViewKey) => reduceStatus(viewServices(view));
+  const tradingStatus = $derived(cardStatus('trading'));
+  const dataStatus = $derived(cardStatus('data'));
+  const exchangeStatus = $derived(cardStatus('exchange'));
+  const infrastructureStatus = $derived(cardStatus('infrastructure'));
+
+  const cardSummary = (view: HealthViewKey) => {
+    const rows = viewServices(view);
+    const critical = rows.filter((row) => row.status === 'critical').length;
+    const warning = rows.filter((row) => row.status === 'warning').length;
+    const unknown = rows.filter((row) => row.status === 'unknown').length;
+
+    if (critical > 0) {
+      return `${formatNumber(critical)} blocked`;
+    }
+
+    if (warning > 0) {
+      return `${formatNumber(warning)} degraded`;
+    }
+
+    if (unknown > 0) {
+      return `${formatNumber(unknown)} not configured`;
+    }
+
+    return `${formatNumber(rows.length)} checks ready`;
+  };
 
   const formatNumber = (value: number | string | undefined) => {
     const number = Number(value ?? 0);
@@ -76,12 +174,44 @@
     });
   };
 
-  const labelize = (value?: string | null) => (value || 'unavailable').replaceAll('_', ' ');
-
   const readNumber = (value: unknown) => {
     const number = Number(value ?? 0);
 
     return Number.isFinite(number) ? number : 0;
+  };
+
+  const serviceImpact = (service: AdminSystemHealthService) => {
+    if (service.id === 'core.api') {
+      return 'Admin API is reachable.';
+    }
+
+    if (service.id === 'queue.snapshots') {
+      return 'Snapshot polling diagnostics. Usually not a trading blocker.';
+    }
+
+    if (service.id === 'runtime.timing') {
+      return 'Backend timing diagnostics for slow operations.';
+    }
+
+    if (service.id === 'connector.api-keys') {
+      return 'Exchange credentials and permissions can be checked.';
+    }
+
+    if (service.id.startsWith('connector.balance-cache')) {
+      return service.status === 'unknown'
+        ? 'No balance cache account is registered.'
+        : 'Balance data freshness for exchange accounts.';
+    }
+
+    if (service.id === 'stream.user') {
+      return 'Private user-stream events are being ingested.';
+    }
+
+    if (service.id === 'orders.tracker') {
+      return 'Tracked exchange orders can be reconciled with local orders.';
+    }
+
+    return service.message;
   };
 
   const serviceMeta = (service: AdminSystemHealthService) => {
@@ -123,10 +253,7 @@
     error = null;
 
     try {
-      response = await fetchAdminSystemHealth({
-        group: groupFilter,
-        service: serviceFilter,
-      });
+      response = await fetchAdminSystemHealth();
     } catch (cause) {
       error = errorMessage(cause);
       if (options.throwOnError) {
@@ -145,20 +272,16 @@
       error: 'failed to refresh health status',
     });
 
-  const changeGroup = (next: string) => {
-    groupFilter = next;
+  const changeView = (next: HealthViewKey) => {
+    viewFilter = next;
     serviceFilter = 'all';
-    void loadHealth();
   };
 
-  const changeService = () => {
-    void loadHealth();
-  };
+  const changeService = () => {};
 
   const resetFilters = () => {
-    groupFilter = 'all';
+    viewFilter = 'all';
     serviceFilter = 'all';
-    void loadHealth();
   };
 
   onMount(() => {
@@ -170,7 +293,7 @@
   <PageHeader
     eyebrow="system"
     title="health"
-    subtitle="Authenticated server health, connector, runtime, queue, and tracked-order status from the admin API."
+    subtitle="Trading readiness, data freshness, exchange access, and infrastructure diagnostics from the admin API."
   >
     {#snippet actions()}
       <button
@@ -182,66 +305,78 @@
     {/snippet}
   </PageHeader>
 
-  <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">overall status</span>
-        <span class="font-mono text-xl font-semibold capitalize {response ? statusTextTone[response.overallStatus] : 'text-base-content'}">
-          {response?.overallStatus ?? 'pending'}
+        <span class="text-xs text-base-content/60">Trading readiness</span>
+        <span class="font-mono text-xl font-semibold {statusTextTone[tradingStatus]}">
+          {response ? statusLabel(tradingStatus) : 'Pending'}
         </span>
+        <span class="text-xs text-base-content/50">{response ? cardSummary('trading') : 'loading checks'}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">critical services</span>
-        <span class="font-mono text-2xl font-semibold text-error">{formatNumber(response?.summary.critical)}</span>
+        <span class="text-xs text-base-content/60">Data freshness</span>
+        <span class="font-mono text-xl font-semibold {statusTextTone[dataStatus]}">
+          {response ? statusLabel(dataStatus) : 'Pending'}
+        </span>
+        <span class="text-xs text-base-content/50">{response ? cardSummary('data') : 'loading checks'}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">healthy services</span>
-        <span class="font-mono text-2xl font-semibold text-success">{formatNumber(response?.summary.healthy)}</span>
+        <span class="text-xs text-base-content/60">Exchange access</span>
+        <span class="font-mono text-xl font-semibold {statusTextTone[exchangeStatus]}">
+          {response ? statusLabel(exchangeStatus) : 'Pending'}
+        </span>
+        <span class="text-xs text-base-content/50">{response ? cardSummary('exchange') : 'loading checks'}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">warning services</span>
-        <span class="font-mono text-2xl font-semibold text-warning">{formatNumber(response?.summary.warning)}</span>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-none">
-      <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">updated</span>
-        <span class="font-mono text-sm font-semibold text-base-content">{formatTimestamp(response?.generatedAt)}</span>
+        <span class="text-xs text-base-content/60">Infrastructure</span>
+        <span class="font-mono text-xl font-semibold {statusTextTone[infrastructureStatus]}">
+          {response ? statusLabel(infrastructureStatus) : 'Pending'}
+        </span>
+        <span class="text-xs text-base-content/50">Updated {formatTimestamp(response?.generatedAt)}</span>
       </div>
     </div>
   </div>
 
   <div class="card border border-base-300 bg-base-100 shadow-none">
     <div class="card-body gap-4 p-5">
-      <div class="flex flex-wrap items-center gap-3">
-        <span class="text-lg font-semibold tracking-tight text-base-content capitalize">services</span>
-        <div class="join">
-          {#each groups as group (group)}
+      <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-1">
+          <span class="text-lg font-semibold tracking-tight text-base-content">Health checks</span>
+          <span class="text-sm text-base-content/55">{selectedView.description}</span>
+        </div>
+
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div class="join w-full overflow-x-auto lg:w-auto">
+          {#each healthViews as view (view.key)}
             <button
               type="button"
-              class="btn btn-sm join-item capitalize {groupFilter === group ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-100 text-base-content'}"
+              class="btn btn-sm join-item shrink-0 {viewFilter === view.key ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-100 text-base-content'}"
               disabled={loading || refreshing}
-              onclick={() => changeGroup(group)}
-            >{labelize(group)}</button>
+              onclick={() => changeView(view.key)}
+            >{view.label}</button>
           {/each}
+          </div>
+          <div class="flex items-center gap-3 lg:ml-auto">
+            <select
+              class="select select-sm select-bordered w-full border-base-300 bg-base-100 text-xs lg:w-72"
+              bind:value={serviceFilter}
+              disabled={loading || refreshing}
+              onchange={changeService}
+            >
+              {#each serviceOptions as service (service)}
+                <option value={service}>{service === 'all' ? 'All checks in this view' : service}</option>
+              {/each}
+            </select>
+            <span class="shrink-0 font-mono text-xs text-base-content/50">{services.length} / {rawServices.length}</span>
+          </div>
         </div>
-        <select
-          class="select select-sm select-bordered border-base-300 bg-base-100 font-mono text-xs"
-          bind:value={serviceFilter}
-          disabled={loading || refreshing}
-          onchange={changeService}
-        >
-          {#each serviceOptions as service (service)}
-            <option value={service}>{service === 'all' ? 'all services' : service}</option>
-          {/each}
-        </select>
-        <span class="ml-auto font-mono text-xs text-base-content/50">{services.length} / {response?.summary.total ?? 0}</span>
       </div>
 
       {#if loading}
@@ -279,9 +414,9 @@
             <table class="table table-sm">
               <thead>
                 <tr class="border-b border-base-300 text-xs capitalize tracking-wide text-base-content/50">
-                  <th class="font-medium">service</th>
-                  <th class="font-medium">status</th>
-                  <th class="font-medium">message</th>
+                  <th class="font-medium">check</th>
+                  <th class="font-medium">state</th>
+                  <th class="font-medium">what it means</th>
                   <th class="font-medium">issues</th>
                 </tr>
               </thead>
@@ -299,13 +434,14 @@
                       <div class="flex items-center gap-2">
                         <span class="h-1.5 w-1.5 rounded-full {statusDot[service.status]}"></span>
                         <span class="text-xs font-semibold capitalize {statusTone[service.status]}">
-                          {service.status}
+                          {statusLabel(service.status)}
                         </span>
                       </div>
                     </td>
                     <td>
                       <div class="flex flex-col gap-1">
-                        <span class="text-sm text-base-content/70">{service.message}</span>
+                        <span class="text-sm text-base-content/70">{serviceImpact(service)}</span>
+                        <span class="text-xs text-base-content/45">{service.message}</span>
                         {#if meta}
                           <span class="font-mono text-xs text-base-content/45">{meta}</span>
                         {/if}

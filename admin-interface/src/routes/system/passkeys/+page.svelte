@@ -27,6 +27,15 @@
   const shortId = (id: string) =>
     id.length <= 14 ? id : `${id.slice(0, 6)}…${id.slice(-6)}`;
 
+  const errorDescription = (err: unknown) => {
+    if (err instanceof Error) {
+      const cause = err.cause instanceof Error ? err.cause.message : '';
+      return cause && cause !== err.message ? `${err.message}: ${cause}` : err.message;
+    }
+
+    return String(err);
+  };
+
   async function refresh(options: { throwOnError?: boolean } = {}) {
     loading = true;
     error = null;
@@ -59,7 +68,9 @@
       await refresh();
     } catch (err) {
       console.error('Passkey registration failed', err);
-      toast.error($_('admin.passkey_registration_failed'));
+      toast.error($_('admin.passkey_registration_failed'), {
+        description: errorDescription(err),
+      });
     } finally {
       registering = false;
     }
