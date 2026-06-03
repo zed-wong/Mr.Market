@@ -31,6 +31,7 @@ describe('admin shell navigation', () => {
         '/trading/positions',
         '/trading/exchange-orders',
         '/trading/user-orders',
+        '/trading/analytics',
         '/system/connectivity/exchanges',
         '/trading/market-making',
         '/system/health',
@@ -62,6 +63,7 @@ describe('admin shell navigation', () => {
       '/trading/market-making',
       '/trading/strategies',
       '/trading/positions',
+      '/trading/analytics',
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'system')?.children.map((entry) => entry.href)).toEqual([
       '/system/health',
@@ -85,5 +87,29 @@ describe('admin shell navigation', () => {
     expect(location?.group.key).toBe('connectivity');
     expect(location?.child?.href).toBe('/system/connectivity/exchanges');
     expect(isGroupActive(location!.group, '/system/connectivity/exchanges')).toBe(true);
+  });
+
+  it('keeps mission analytics navigation in-scope only', () => {
+    const entries = flattenNav();
+
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'trading.analytics',
+          label: 'admin.nav.analytics',
+          href: '/trading/analytics',
+        }),
+      ]),
+    );
+    expect(entries.map((entry) => entry.href)).not.toEqual(
+      expect.arrayContaining([
+        '/interface',
+        '/web3-interface',
+        '/funding',
+        '/custody',
+        '/trading/hyperliquid-perps',
+        '/trading/live-exchange-e2e',
+      ]),
+    );
   });
 });
