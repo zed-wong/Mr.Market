@@ -1,4 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { INTERCEPTORS_METADATA } from '@nestjs/common/constants';
+import { firstValueFrom, of } from 'rxjs';
+
+import { AdminAuditInterceptor } from '../system/admin-audit.interceptor';
+import { AdminDirectMarketMakingController } from './admin-direct-mm.controller';
 import { AdminDirectMarketMakingService } from './admin-direct-mm.service';
 
 describe('AdminDirectMarketMakingService variation edits', () => {
@@ -69,6 +74,10 @@ describe('AdminDirectMarketMakingService variation edits', () => {
       findOne: jest.fn(),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
+    const strategyInstanceRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     const strategyDefinitionRepository = {
       findOne: jest.fn().mockResolvedValue({
         id: 'strategy-1',
@@ -136,6 +145,7 @@ describe('AdminDirectMarketMakingService variation edits', () => {
     Object.assign(service, {
       marketMakingRepository,
       strategyDefinitionRepository,
+      strategyInstanceRepository,
       strategyConfigResolver,
       ...mutationServices,
     });
@@ -143,6 +153,7 @@ describe('AdminDirectMarketMakingService variation edits', () => {
     return {
       service: service as AdminDirectMarketMakingService,
       marketMakingRepository,
+      strategyInstanceRepository,
       strategyDefinitionRepository,
       strategyConfigResolver,
       ...mutationServices,
@@ -198,6 +209,9 @@ describe('AdminDirectMarketMakingService variation edits', () => {
         configOverrides: {
           bidSpread: 0.003,
           orderAmount: 12,
+          orderRefreshTime: 2500,
+          numberOfLayers: 3,
+          amountChangeType: 'percentage',
         },
       }),
     ).resolves.toMatchObject({
@@ -208,6 +222,9 @@ describe('AdminDirectMarketMakingService variation edits', () => {
         resolvedConfig: expect.objectContaining({
           bidSpread: 0.003,
           orderAmount: 12,
+          orderRefreshTime: 2500,
+          numberOfLayers: 3,
+          amountChangeType: 'percentage',
           accountLabel: 'api-key-1',
           userId: 'admin-user',
           clientId: 'order-1',
@@ -224,10 +241,16 @@ describe('AdminDirectMarketMakingService variation edits', () => {
         strategyDefinitionId: 'strategy-1',
         bidSpread: '0.003',
         orderAmount: '12',
+        orderRefreshTime: '2500',
+        numberOfLayers: '3',
+        amountChangeType: 'percentage',
         strategySnapshot: expect.objectContaining({
           resolvedConfig: expect.objectContaining({
             bidSpread: 0.003,
             orderAmount: 12,
+            orderRefreshTime: 2500,
+            numberOfLayers: 3,
+            amountChangeType: 'percentage',
           }),
         }),
       }),
@@ -247,6 +270,68 @@ describe('AdminDirectMarketMakingService variation edits', () => {
     ).not.toHaveBeenCalled();
     expect(exchangeOrderTrackerService.getTrackedOrders).not.toHaveBeenCalled();
     expect(exchangeInitService.getExchange).not.toHaveBeenCalled();
+  });
+
+  it('updates matching paused runtime instance parameters without changing runtime identifiers', async () => {
+    const { service, marketMakingRepository, strategyInstanceRepository } =
+      buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue(pausedAdminDirectOrder);
+    strategyInstanceRepository.findOne.mockResolvedValue({
+      id: 42,
+      strategyKey: 'pmm-order-1',
+      status: 'paused',
+      marketMakingOrderId: 'order-1',
+      userId: 'admin-user',
+      clientId: 'order-1',
+      parameters: pausedAdminDirectOrder.strategySnapshot.resolvedConfig,
+    });
+
+    await service.editPausedVariation('order-1', {
+      configOverrides: {
+        bidSpread: 0.004,
+        askSpread: 0.005,
+        orderAmount: 15,
+      },
+    });
+
+    expect(strategyInstanceRepository.findOne).toHaveBeenCalledWith({
+      where: [
+        { marketMakingOrderId: 'order-1', status: 'paused' },
+        { strategyKey: 'order-1-pureMarketMaking', status: 'paused' },
+      ],
+    });
+    expect(strategyInstanceRepository.update).toHaveBeenCalledWith(
+      { id: 42 },
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          bidSpread: 0.004,
+          askSpread: 0.005,
+          orderAmount: 15,
+          accountLabel: 'api-key-1',
+          userId: 'admin-user',
+          clientId: 'order-1',
+          marketMakingOrderId: 'order-1',
+          pair: 'BTC/USDT',
+          symbol: 'BTC/USDT',
+          exchangeName: 'binance',
+        }),
+        strategyDefinitionId: 'strategy-1',
+        strategyDefinitionSnapshot: {
+          strategyDefinitionId: 'strategy-1',
+          definitionKey: 'pure-market-making',
+          definitionName: 'Pure Market Making',
+          controllerType: 'pureMarketMaking',
+          resolvedAt: '2026-04-01T00:00:00.000Z',
+        },
+        marketMakingOrderId: 'order-1',
+        updatedAt: expect.any(String),
+      }),
+    );
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ strategyKey: expect.any(String) }),
+      expect.anything(),
+    );
   });
 
   it('rejects active admin-direct variation edits before validation or persistence', async () => {
@@ -298,7 +383,8 @@ describe('AdminDirectMarketMakingService variation edits', () => {
   });
 
   it('allows paused snapshot edits when no paused runtime instance is loaded', async () => {
-    const { service, marketMakingRepository } = buildService();
+    const { service, marketMakingRepository, strategyInstanceRepository } =
+      buildService();
 
     marketMakingRepository.findOne.mockResolvedValue(pausedAdminDirectOrder);
 
@@ -311,6 +397,8 @@ describe('AdminDirectMarketMakingService variation edits', () => {
       state: 'paused',
     });
     expect(marketMakingRepository.update).toHaveBeenCalledTimes(1);
+    expect(strategyInstanceRepository.findOne).toHaveBeenCalled();
+    expect(strategyInstanceRepository.update).not.toHaveBeenCalled();
   });
 
   it('returns deterministic errors for missing snapshot data', async () => {
@@ -563,6 +651,74 @@ describe('AdminDirectMarketMakingService variation edits', () => {
       }),
     ).rejects.toThrow(
       'Strategy definition config schema is required for variation edit',
+    );
+  });
+
+  it('wires accepted variation edits through existing admin audit infrastructure', async () => {
+    const interceptors =
+      Reflect.getMetadata(
+        INTERCEPTORS_METADATA,
+        AdminDirectMarketMakingController,
+      ) || [];
+
+    expect(interceptors).toContain(AdminAuditInterceptor);
+
+    const auditLogService = {
+      record: jest.fn().mockResolvedValue({ id: 'audit-1' }),
+    };
+    const interceptor = new AdminAuditInterceptor(auditLogService as any);
+    const request = {
+      method: 'PATCH',
+      originalUrl: '/admin/market-making/direct-orders/order-1/variation',
+      params: { id: 'order-1' },
+      query: {},
+      body: {
+        configOverrides: {
+          bidSpread: 0.004,
+          orderAmount: 15,
+        },
+      },
+      ip: '127.0.0.1',
+      headers: { 'user-agent': 'jest' },
+      user: {
+        userId: 'admin-user-1',
+        username: 'admin@example.com',
+        authMethod: 'jwt',
+      },
+    };
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => request,
+      }),
+    };
+    const next = {
+      handle: () => of({ orderId: 'order-1', state: 'paused' }),
+    };
+
+    await expect(
+      firstValueFrom(interceptor.intercept(context as any, next)),
+    ).resolves.toEqual({ orderId: 'order-1', state: 'paused' });
+    expect(auditLogService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor: 'admin@example.com',
+        action: 'admin.patch',
+        resource: '/admin/market-making/direct-orders/order-1/variation',
+        status: 'success',
+        metadata: expect.objectContaining({
+          params: { id: 'order-1' },
+          body: {
+            configOverrides: {
+              bidSpread: 0.004,
+              orderAmount: 15,
+            },
+          },
+        }),
+        requestContext: expect.objectContaining({
+          method: 'PATCH',
+          path: '/admin/market-making/direct-orders/order-1/variation',
+          authMethod: 'jwt',
+        }),
+      }),
     );
   });
 

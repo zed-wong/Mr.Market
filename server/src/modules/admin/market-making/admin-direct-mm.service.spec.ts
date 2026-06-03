@@ -32,6 +32,7 @@ describe('AdminDirectMarketMakingService', () => {
     balanceStateCacheService?: any;
     balanceLedgerService?: any;
     dualAccountPlannerService?: any;
+    strategyInstanceRepository?: any;
     strategyOrderIntentRepository?: any;
     strategyExecutionHistoryRepository?: any;
     trackedOrderRepository?: any;
@@ -61,6 +62,10 @@ describe('AdminDirectMarketMakingService', () => {
       options?.strategyOrderIntentRepository || {
         find: jest.fn().mockResolvedValue([]),
       };
+    const strategyInstanceRepository = options?.strategyInstanceRepository || {
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     const strategyExecutionHistoryRepository =
       options?.strategyExecutionHistoryRepository || {
         find: jest.fn().mockResolvedValue([]),
@@ -306,6 +311,7 @@ describe('AdminDirectMarketMakingService', () => {
       balanceStateRefreshService as any,
       userStreamCapabilityService as any,
       dualAccountPlannerService as any,
+      strategyInstanceRepository as any,
       strategyOrderIntentRepository as any,
       strategyExecutionHistoryRepository as any,
       trackedOrderRepository as any,
@@ -340,6 +346,7 @@ describe('AdminDirectMarketMakingService', () => {
       userStreamCapabilityService,
       dualAccountPlannerService,
       readyReadiness,
+      strategyInstanceRepository,
       strategyOrderIntentRepository,
       strategyExecutionHistoryRepository,
       trackedOrderRepository,
@@ -1038,6 +1045,85 @@ describe('AdminDirectMarketMakingService', () => {
     await expect(service.directStop('missing')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('resumes a paused direct order using persisted edited strategy parameters', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      userOrdersService,
+      balanceLedgerService,
+      exchange,
+    } = buildService();
+
+    const editedSnapshot = buildStrategySnapshot({
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      symbol: 'BTC/USDT',
+      userId: 'admin-user',
+      clientId: 'order-1',
+      marketMakingOrderId: 'order-1',
+      accountLabel: 'api-key-1',
+      bidSpread: 0.004,
+      askSpread: 0.005,
+      orderAmount: 15,
+      orderRefreshTime: 2500,
+      numberOfLayers: 3,
+      priceSourceType: 'last_trade',
+      amountChangePerLayer: 0,
+      amountChangeType: 'fixed',
+      ceilingPrice: 0,
+      floorPrice: 0,
+      balanceA: '1',
+      balanceB: '1000',
+    });
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      source: 'admin_direct',
+      state: 'paused',
+      pair: 'BTC/USDT',
+      exchangeName: 'binance',
+      apiKeyId: 'api-key-1',
+      strategyDefinitionId: 'strategy-1',
+      strategySnapshot: editedSnapshot,
+      balanceA: '1',
+      balanceB: '1000',
+    });
+
+    await expect(service.directResume('order-1')).resolves.toEqual({
+      orderId: 'order-1',
+      state: 'running',
+      warnings: expect.any(Array),
+    });
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: 'paused',
+        strategySnapshot: expect.objectContaining({
+          resolvedConfig: expect.objectContaining({
+            bidSpread: 0.004,
+            askSpread: 0.005,
+            orderAmount: 15,
+            orderRefreshTime: 2500,
+            numberOfLayers: 3,
+            priceSourceType: 'last_trade',
+            clientId: 'order-1',
+            marketMakingOrderId: 'order-1',
+          }),
+        }),
+      }),
+    );
+    expect(userOrdersService.updateMarketMakingOrderState).toHaveBeenCalledWith(
+      'order-1',
+      'running',
+    );
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ refType: 'generic_balance_adjustment' }),
+    );
+    expect(exchange.fetchBalance).toHaveBeenCalledTimes(1);
+    expect(exchange.fetchTicker).toHaveBeenCalledTimes(1);
   });
 
   it('removes a stopped direct order', async () => {

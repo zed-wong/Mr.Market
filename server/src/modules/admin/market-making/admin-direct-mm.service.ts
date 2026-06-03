@@ -17,6 +17,7 @@ import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.ent
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
+import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import {
@@ -246,6 +247,9 @@ export class AdminDirectMarketMakingService {
     private readonly userStreamCapabilityService?: UserStreamCapabilityService,
     @Optional()
     private readonly dualAccountPlannerService?: DualAccountPlannerService,
+    @Optional()
+    @InjectRepository(StrategyInstance)
+    private readonly strategyInstanceRepository?: Repository<StrategyInstance>,
     @Optional()
     @InjectRepository(StrategyOrderIntentEntity)
     private readonly strategyOrderIntentRepository?: Repository<StrategyOrderIntentEntity>,
@@ -552,8 +556,10 @@ export class AdminDirectMarketMakingService {
     if (!order) {
       throw new NotFoundException('Order not found');
     }
-    if (order.state !== 'stopped') {
-      throw new BadRequestException('Only stopped orders can be resumed');
+    if (order.state !== 'stopped' && order.state !== 'paused') {
+      throw new BadRequestException(
+        'Only paused or stopped orders can be resumed',
+      );
     }
 
     this.backfillOrderRuntimeSnapshot(order);
@@ -743,6 +749,11 @@ export class AdminDirectMarketMakingService {
         strategySnapshot,
         ...flattenedFields,
       },
+    );
+    await this.updatePausedStrategyInstanceParameters(
+      order,
+      definition.id,
+      strategySnapshot,
     );
 
     return {
@@ -1995,6 +2006,51 @@ export class AdminDirectMarketMakingService {
         resolvedConfig[field] = value;
       }
     }
+  }
+
+  private async updatePausedStrategyInstanceParameters(
+    order: MarketMakingOrder,
+    strategyDefinitionId: string,
+    strategySnapshot: MarketMakingOrderStrategySnapshot,
+  ): Promise<void> {
+    if (!this.strategyInstanceRepository) {
+      return;
+    }
+
+    const strategyKey = this.buildStrategyKey({
+      ...order,
+      strategyDefinitionId,
+      strategySnapshot,
+    });
+    const instance = await this.strategyInstanceRepository.findOne({
+      where: [
+        { marketMakingOrderId: order.orderId, status: 'paused' },
+        { strategyKey, status: 'paused' },
+      ],
+    });
+
+    if (!instance) {
+      return;
+    }
+
+    await this.strategyInstanceRepository.update(
+      { id: instance.id },
+      {
+        parameters: {
+          ...(strategySnapshot.resolvedConfig as Record<string, any>),
+        },
+        strategyDefinitionId,
+        strategyDefinitionSnapshot: {
+          strategyDefinitionId: strategySnapshot.strategyDefinitionId,
+          definitionKey: strategySnapshot.definitionKey,
+          definitionName: strategySnapshot.definitionName,
+          controllerType: strategySnapshot.controllerType,
+          resolvedAt: strategySnapshot.resolvedAt,
+        },
+        marketMakingOrderId: order.orderId,
+        updatedAt: getRFC3339Timestamp(),
+      },
+    );
   }
 
   private schemaMentionsRootField(schema: unknown, field: string): boolean {
