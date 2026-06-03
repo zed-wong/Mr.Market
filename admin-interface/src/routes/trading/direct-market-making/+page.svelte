@@ -15,6 +15,7 @@
         evaluateDirectReadiness,
         getDirectWalletStatus,
         getDirectOrderStatus,
+        getDirectOrderVariation,
         getMarketMakingOrderPerformance,
         joinAdminCampaign,
         listAdminCampaigns,
@@ -24,6 +25,7 @@
         resumeDirectOrder,
         startDirectOrder,
         stopDirectOrder,
+        updateDirectOrderVariation,
     } from "$lib/helpers/mrm/admin/direct-market-making";
     import { getCcxtExchangeMarkets } from "$lib/helpers/mrm/admin/growdata";
     import { getGrowBasicInfoStrict } from "$lib/helpers/mrm/grow";
@@ -35,6 +37,7 @@
         DirectOrderSummary,
         DirectReadinessResult,
         DirectStartPayload,
+        DirectVariationMetadata,
         EfficientDualAccountVolumeMode,
         DirectWalletStatus,
     } from "$lib/types/hufi/admin-direct-market-making";
@@ -322,6 +325,11 @@
     let detailsOrder: DirectOrderSummary | null = null;
     let detailsData: DirectOrderStatus | null = null;
     let detailsPerformance: OrderPerformance | null = null;
+    let detailsVariationMetadata: DirectVariationMetadata | null = null;
+    let detailsVariationLoading = false;
+    let detailsVariationError: string | null = null;
+    let detailsVariationSaving = false;
+    let detailsVariationSaveError: string | null = null;
     let detailsError: AdminErrorState | null = null;
     let detailsLoading = false;
     let detailsRefreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -1007,6 +1015,9 @@
         detailsOrder = order;
         detailsData = null;
         detailsPerformance = null;
+        detailsVariationMetadata = null;
+        detailsVariationError = null;
+        detailsVariationSaveError = null;
         detailsError = null;
         showOrderDetails = true;
         await loadOrderDetails(order.orderId);
@@ -1054,6 +1065,9 @@
 
         if (!options.silent) {
             detailsLoading = true;
+            detailsVariationLoading = true;
+            detailsVariationError = null;
+            detailsVariationSaveError = null;
         }
 
         try {
@@ -1070,14 +1084,25 @@
                 return;
             }
 
-            const [nextDetails, nextPerformance] = await Promise.all([
+            const [nextDetails, nextPerformance, nextVariationResult] = await Promise.all([
                 getDirectOrderStatus(orderId, token),
                 getMarketMakingOrderPerformance(orderId, token),
+                getDirectOrderVariation(orderId, token)
+                    .then((value) => ({ value, error: null }))
+                    .catch((cause) => ({
+                        value: null,
+                        error:
+                            cause instanceof Error
+                                ? cause.message
+                                : $_("admin_direct_mm_variation_unavailable"),
+                    })),
             ]);
 
             if (detailsOrder?.orderId === orderId) {
                 detailsData = nextDetails;
                 detailsPerformance = nextPerformance;
+                detailsVariationMetadata = nextVariationResult.value;
+                detailsVariationError = nextVariationResult.error;
                 detailsError = null;
                 applyStatusToOrderSummary(nextDetails);
             }
@@ -1095,6 +1120,7 @@
             detailsRefreshing = false;
             detailsRefreshingOrderId = null;
             detailsLoading = false;
+            detailsVariationLoading = false;
 
             const nextRefresh = pendingOrderDetailsRefresh;
             pendingOrderDetailsRefresh = null;
@@ -1115,8 +1141,45 @@
         detailsOrder = null;
         detailsData = null;
         detailsPerformance = null;
+        detailsVariationMetadata = null;
+        detailsVariationError = null;
+        detailsVariationSaveError = null;
+        detailsVariationLoading = false;
+        detailsVariationSaving = false;
         detailsError = null;
         detailsLoading = false;
+    }
+
+    async function saveOrderVariation(configOverrides: Record<string, unknown>) {
+        if (!detailsOrder || detailsVariationSaving) {
+            return;
+        }
+
+        const token = getToken();
+        if (!token) {
+            detailsVariationSaveError = directMmSessionError();
+            throw new Error(detailsVariationSaveError);
+        }
+
+        detailsVariationSaving = true;
+        detailsVariationSaveError = null;
+
+        try {
+            await updateDirectOrderVariation(
+                detailsOrder.orderId,
+                { configOverrides },
+                token,
+            );
+            toast.success($_("admin_direct_mm_variation_success"), {
+                description: $_("admin_direct_mm_recovery_refresh_status"),
+            });
+            await loadOrderDetails(detailsOrder.orderId, { silent: true });
+        } catch (error) {
+            detailsVariationSaveError = getErrorMessage(error);
+            throw error;
+        } finally {
+            detailsVariationSaving = false;
+        }
     }
 
     onDestroy(() => {
@@ -1402,6 +1465,11 @@
     order={detailsOrder}
     data={detailsData}
     performance={detailsPerformance}
+    variationMetadata={detailsVariationMetadata}
+    variationLoading={detailsVariationLoading}
+    variationError={detailsVariationError}
+    variationSaving={detailsVariationSaving}
+    variationSaveError={detailsVariationSaveError}
     loading={detailsLoading}
     refreshing={detailsRefreshing && !detailsLoading}
     error={detailsError}
@@ -1436,6 +1504,7 @@
             handleRemoveOrder(order);
         }
     }}
+    onSaveVariation={saveOrderVariation}
 />
 
 <RemoveOrderModal
