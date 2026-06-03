@@ -552,33 +552,21 @@ export class DualAccountPlannerService {
     exchangeName: string,
     pair: string,
   ): Promise<BigNumber> {
-    if (!this.exchangeConnectorAdapterService) {
+    const rules = this.getCachedDualAccountTradingRules(exchangeName, pair);
+
+    if (!rules) {
       return new BigNumber(0);
     }
 
-    try {
-      const rules = await this.exchangeConnectorAdapterService.loadTradingRules(
-        exchangeName,
-        pair,
-      );
-      const makerFee = new BigNumber(rules.makerFee || 0);
-      const takerFee = new BigNumber(rules.takerFee || 0);
-      const totalFeeRate = makerFee.plus(takerFee);
+    const makerFee = new BigNumber(rules.makerFee || 0);
+    const takerFee = new BigNumber(rules.takerFee || 0);
+    const totalFeeRate = makerFee.plus(takerFee);
 
-      if (!totalFeeRate.isFinite() || totalFeeRate.isLessThanOrEqualTo(0)) {
-        return new BigNumber(0);
-      }
-
-      return totalFeeRate;
-    } catch (error) {
-      this.logger.warn(
-        `Failed to load dual-account fee buffer for ${exchangeName} ${pair}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-
+    if (!totalFeeRate.isFinite() || totalFeeRate.isLessThanOrEqualTo(0)) {
       return new BigNumber(0);
     }
+
+    return totalFeeRate;
   }
 
   async loadBalanceSnapshot(
@@ -1347,7 +1335,9 @@ export class DualAccountPlannerService {
     return this.attachCycleLinkedIntentMetadata(intent);
   }
 
-  private attachCycleLinkedIntentMetadata(intent: ExecutorAction): ExecutorAction {
+  private attachCycleLinkedIntentMetadata(
+    intent: ExecutorAction,
+  ): ExecutorAction {
     const metadata =
       intent.metadata && typeof intent.metadata === 'object'
         ? (intent.metadata as Record<string, unknown>)
@@ -1361,7 +1351,10 @@ export class DualAccountPlannerService {
       ...intent,
       metadata: {
         ...metadata,
-        linkedIntentId: this.readString(metadata.linkedIntentId, intent.intentId),
+        linkedIntentId: this.readString(
+          metadata.linkedIntentId,
+          intent.intentId,
+        ),
         linkedTrackedOrderId: metadata.linkedTrackedOrderId ?? null,
       },
     };
@@ -2899,13 +2892,12 @@ export class DualAccountPlannerService {
             feeBufferRate,
           )
         : resolvedAccounts.capacity;
-    const rules = this.exchangeConnectorAdapterService
-      ? await this.exchangeConnectorAdapterService.loadTradingRules(
-          params.exchangeName,
-          params.symbol,
-          resolvedAccounts.makerAccountLabel,
-        )
-      : {};
+    const rules =
+      this.getCachedDualAccountTradingRules(
+        params.exchangeName,
+        params.symbol,
+        resolvedAccounts.makerAccountLabel,
+      ) || {};
     let effectiveQty = requestedQty;
 
     if (
@@ -3315,6 +3307,27 @@ export class DualAccountPlannerService {
         takerFee?: number;
       }
     | undefined {
+    return this.getCachedDualAccountTradingRules(
+      params.exchangeName,
+      params.symbol,
+      params.makerAccountLabel,
+    );
+  }
+
+  private getCachedDualAccountTradingRules(
+    exchangeName: string,
+    pair: string,
+    accountLabel?: string,
+  ):
+    | {
+        amountMin?: number;
+        amountMax?: number;
+        costMin?: number;
+        costMax?: number;
+        makerFee?: number;
+        takerFee?: number;
+      }
+    | undefined {
     const connector = this.exchangeConnectorAdapterService as
       | (ExchangeConnectorAdapterService & {
           getCachedTradingRules?: (
@@ -3333,11 +3346,9 @@ export class DualAccountPlannerService {
       | undefined;
 
     return (
-      connector?.getCachedTradingRules?.(
-        params.exchangeName,
-        params.symbol,
-        params.makerAccountLabel,
-      ) || undefined
+      connector?.getCachedTradingRules?.(exchangeName, pair, accountLabel) ||
+      connector?.getCachedTradingRules?.(exchangeName, pair) ||
+      undefined
     );
   }
 

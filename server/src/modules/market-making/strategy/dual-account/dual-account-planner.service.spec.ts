@@ -60,6 +60,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     bestAsk?: string;
   }): {
     planner: DualAccountPlannerService;
+    balanceQuery: { getAvailableBalancesForPair: jest.Mock };
     exchangeConnector: jest.Mocked<
       Pick<
         ExchangeConnectorAdapterService,
@@ -68,7 +69,11 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
         | 'fetchOrderBook'
         | 'quantizeOrder'
       >
-    >;
+    > & {
+      fetchBalance: jest.Mock;
+      placeLimitOrder: jest.Mock;
+      cancelOrder: jest.Mock;
+    };
     intentStore: { createLimitOrderIntent: jest.Mock };
   } => {
     const rules = options?.rules || {
@@ -81,6 +86,9 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       getCachedTradingRules: jest.fn().mockReturnValue(rules),
       loadTradingRules: jest.fn().mockResolvedValue(rules),
       fetchOrderBook: jest.fn(),
+      fetchBalance: jest.fn(),
+      placeLimitOrder: jest.fn(),
+      cancelOrder: jest.fn(),
       quantizeOrder: jest.fn(
         (_exchangeName: string, _pair: string, qty: string, price: string) => ({
           qty: new BigNumber(qty)
@@ -164,7 +172,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       intentStore as unknown as StrategyIntentStoreService,
     );
 
-    return { planner, exchangeConnector, intentStore };
+    return { planner, balanceQuery, exchangeConnector, intentStore };
   };
 
   const buildScoreCandidate = (
@@ -285,6 +293,45 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     }
   });
 
+  it('plans efficient cycles from order-scoped balances and cached rules without blocking exchange I/O', async () => {
+    const { planner, balanceQuery, exchangeConnector } = buildPlanner();
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    try {
+      const actions = await planner.buildDualAccountBestCapacityVolumeActions(
+        'architecture-strategy',
+        baseParams,
+        '2026-06-04T00:00:00.000Z',
+      );
+
+      expect(actions).toHaveLength(1);
+      expect(balanceQuery.getAvailableBalancesForPair).toHaveBeenCalledWith(
+        'binance',
+        'BTC/USDT',
+        'account-a',
+        'mm-order-1',
+      );
+      expect(balanceQuery.getAvailableBalancesForPair).toHaveBeenCalledWith(
+        'binance',
+        'BTC/USDT',
+        'account-b',
+        'mm-order-1',
+      );
+      expect(exchangeConnector.getCachedTradingRules).toHaveBeenCalledWith(
+        'binance',
+        'BTC/USDT',
+        undefined,
+      );
+      expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
+      expect(exchangeConnector.fetchOrderBook).not.toHaveBeenCalled();
+      expect(exchangeConnector.fetchBalance).not.toHaveBeenCalled();
+      expect(exchangeConnector.placeLimitOrder).not.toHaveBeenCalled();
+      expect(exchangeConnector.cancelOrder).not.toHaveBeenCalled();
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   it('rejects below-minimum cycle and dust rebalance attempts instead of scheduling actions', async () => {
     const { planner } = buildPlanner({
       balances: {
@@ -396,12 +443,13 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
   });
 
   it('returns canStart true with a best first action for one-sided rotating inventory', async () => {
-    const { planner, intentStore } = buildPlanner({
-      balances: {
-        'account-a': buildBalances(0, 1_000),
-        'account-b': buildBalances(1, 0),
-      },
-    });
+    const { planner, balanceQuery, exchangeConnector, intentStore } =
+      buildPlanner({
+        balances: {
+          'account-a': buildBalances(0, 1_000),
+          'account-b': buildBalances(1, 0),
+        },
+      });
 
     const readiness = await planner.evaluateEfficientDualAccountReadiness({
       ...baseParams,
@@ -434,6 +482,23 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       }),
     );
     expect(readiness.missingBalances).toEqual([]);
+    expect(balanceQuery.getAvailableBalancesForPair).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'account-a',
+      'mm-order-1',
+    );
+    expect(balanceQuery.getAvailableBalancesForPair).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+      'account-b',
+      'mm-order-1',
+    );
+    expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
+    expect(exchangeConnector.fetchOrderBook).not.toHaveBeenCalled();
+    expect(exchangeConnector.fetchBalance).not.toHaveBeenCalled();
+    expect(exchangeConnector.placeLimitOrder).not.toHaveBeenCalled();
+    expect(exchangeConnector.cancelOrder).not.toHaveBeenCalled();
     expect(intentStore.createLimitOrderIntent).not.toHaveBeenCalled();
   });
 

@@ -157,6 +157,7 @@ describe('StrategyService', () => {
     getTrackedOrderBookFreshness: jest.Mock;
   };
   let exchangeConnectorAdapterService: {
+    getCachedTradingRules: jest.Mock;
     loadTradingRules: jest.Mock;
     quantizeOrder: jest.Mock;
     fetchBalance: jest.Mock;
@@ -342,6 +343,7 @@ describe('StrategyService', () => {
       stopBalanceWatcher: jest.fn(),
     };
     const latestIntentsByStrategy = new Map<string, any[]>();
+
     strategyIntentStoreService = {
       cancelPendingIntents: jest.fn().mockResolvedValue(0),
       createLimitOrderIntent: jest.fn(
@@ -388,6 +390,7 @@ describe('StrategyService', () => {
           strategyKey,
           actions,
         );
+
         latestIntentsByStrategy.set(strategyKey, published);
 
         return published;
@@ -410,6 +413,7 @@ describe('StrategyService', () => {
       sourceType: PriceSourceType.MID_PRICE,
       ageMs: 0,
     });
+
     strategyMarketDataProviderService = {
       getReferencePrice,
       getTrackedReferencePriceSnapshot,
@@ -445,6 +449,11 @@ describe('StrategyService', () => {
       }),
     };
     exchangeConnectorAdapterService = {
+      getCachedTradingRules: jest.fn().mockReturnValue({
+        amountMin: 0.001,
+        costMin: 10,
+        makerFee: 0.001,
+      }),
       loadTradingRules: jest.fn().mockResolvedValue({
         amountMin: 0.001,
         costMin: 10,
