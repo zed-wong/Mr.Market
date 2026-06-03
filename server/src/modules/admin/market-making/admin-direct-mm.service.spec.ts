@@ -283,6 +283,40 @@ describe('AdminDirectMarketMakingService', () => {
     };
   };
 
+  it('surfaces HuFi campaign join failure details to admin clients', async () => {
+    const { service, exchangeApiKeyService, campaignService, configService } =
+      buildService();
+
+    exchangeApiKeyService.readDecryptedAPIKey.mockResolvedValue({
+      exchange: 'binance',
+      key_id: 'api-key-readonly',
+      name: 'desk-readonly',
+      api_key: 'api-key-readonly',
+      api_secret: 'plain-secret',
+      permissions: 'read',
+    });
+    configService.get.mockReturnValue(
+      '0x0000000000000000000000000000000000000000000000000000000000000001',
+    );
+    campaignService.joinCampaignWithAuth.mockRejectedValue(
+      new Error('Invalid campaign details or already joined: campaign ended'),
+    );
+
+    await expect(
+      service.joinCampaign({
+        evmAddress: '0x1111111111111111111111111111111111111111',
+        apiKeyId: 'api-key-readonly',
+        chainId: 137,
+        campaignAddress: '0x2222222222222222222222222222222222222222',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        message:
+          'Invalid campaign details or already joined: campaign ended',
+      },
+    });
+  });
+
   const directStartDto = {
     exchangeName: 'binance',
     pair: 'BTC/USDT',

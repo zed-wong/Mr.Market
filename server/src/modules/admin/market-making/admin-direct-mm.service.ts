@@ -976,15 +976,19 @@ export class AdminDirectMarketMakingService {
       );
     }
 
-    await this.campaignService.joinCampaignWithAuth(
-      dto.evmAddress.toLowerCase(),
-      privateKey,
-      apiKey.exchange,
-      apiKey.api_key,
-      apiKey.api_secret,
-      normalizedChainId,
-      dto.campaignAddress.toLowerCase(),
-    );
+    try {
+      await this.campaignService.joinCampaignWithAuth(
+        dto.evmAddress.toLowerCase(),
+        privateKey,
+        apiKey.exchange,
+        apiKey.api_key,
+        apiKey.api_secret,
+        normalizedChainId,
+        dto.campaignAddress.toLowerCase(),
+      );
+    } catch (error) {
+      throw this.mapCampaignJoinError(error);
+    }
 
     const timestamp = getRFC3339Timestamp();
     const existingBinding = await this.campaignJoinRepository.findOne({
@@ -1124,6 +1128,16 @@ export class AdminDirectMarketMakingService {
 
     return new BadRequestException(
       error instanceof Error ? error.message : 'Unknown market-making error',
+    );
+  }
+
+  private mapCampaignJoinError(error: unknown): HttpException {
+    if (error instanceof HttpException) {
+      return error;
+    }
+
+    return new BadRequestException(
+      error instanceof Error ? error.message : 'Campaign join failed',
     );
   }
 
