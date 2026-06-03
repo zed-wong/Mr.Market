@@ -16,6 +16,9 @@ import { CampaignJoin } from 'src/common/entities/campaign/campaign-join.entity'
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
 import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
+import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
+import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
+import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import {
   createPureMarketMakingStrategyKey,
@@ -33,6 +36,11 @@ import { OrderReservationService } from 'src/modules/market-making/ledger/order-
 import { assertStrategyConfigOverridesSafe } from 'src/modules/market-making/strategy/config/strategy-config-override.guard';
 import type { StrategyType } from 'src/modules/market-making/strategy/config/strategy-controller.types';
 import { normalizeControllerType } from 'src/modules/market-making/strategy/config/strategy-controller-aliases';
+import type {
+  StrategyIntentStatus,
+  StrategyIntentType,
+  StrategyOrderIntent,
+} from 'src/modules/market-making/strategy/config/strategy-intent.types';
 import type { DualAccountVolumeStrategyParams } from 'src/modules/market-making/strategy/config/strategy-params.types';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
 import { normalizeEfficientDualAccountVolumeConfig } from 'src/modules/market-making/strategy/dual-account/dual-account-config';
@@ -45,7 +53,6 @@ import {
   StrategyIntentQueueState,
   StrategyIntentStoreService,
 } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
-import type { StrategyOrderIntent } from 'src/modules/market-making/strategy/config/strategy-intent.types';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import {
   ExchangeOrderTrackerService,
@@ -188,6 +195,15 @@ export class AdminDirectMarketMakingService {
     private readonly userStreamCapabilityService?: UserStreamCapabilityService,
     @Optional()
     private readonly dualAccountPlannerService?: DualAccountPlannerService,
+    @Optional()
+    @InjectRepository(StrategyOrderIntentEntity)
+    private readonly strategyOrderIntentRepository?: Repository<StrategyOrderIntentEntity>,
+    @Optional()
+    @InjectRepository(StrategyExecutionHistory)
+    private readonly strategyExecutionHistoryRepository?: Repository<StrategyExecutionHistory>,
+    @Optional()
+    @InjectRepository(TrackedOrderEntity)
+    private readonly trackedOrderRepository?: Repository<TrackedOrderEntity>,
   ) {}
 
   async evaluateDirectReadiness(
@@ -790,11 +806,25 @@ export class AdminDirectMarketMakingService {
       : null;
     const openOrders =
       this.exchangeOrderTrackerService.getLiveOrders(strategyKey);
-    const trackedOrders = this.getTrackedOrders(strategyKey);
-    const intents =
+    const cachedTrackedOrders = this.getTrackedOrders(strategyKey);
+    const latestIntents =
       order.state === 'stopped'
         ? []
         : this.strategyService.getLatestIntentsForStrategy(strategyKey);
+    const durableRuntimeCycleSources = isEfficientDualAccount
+      ? await this.loadDurableRuntimeCycleSources(
+          order,
+          strategyKey,
+          latestIntents,
+          cachedTrackedOrders,
+        )
+      : {
+          intents: latestIntents,
+          trackedOrders: cachedTrackedOrders,
+          executionHistory: [],
+        };
+    const intents = durableRuntimeCycleSources.intents;
+    const trackedOrders = durableRuntimeCycleSources.trackedOrders;
     const book = this.orderBookTrackerService.getOrderBook(
       order.exchangeName,
       order.pair,
@@ -1050,6 +1080,7 @@ export class AdminDirectMarketMakingService {
         resolvedConfig,
         intents,
         trackedOrders,
+        durableRuntimeCycleSources.executionHistory,
         queueState,
       ),
       spread,
@@ -1634,6 +1665,7 @@ export class AdminDirectMarketMakingService {
     resolvedConfig: Record<string, unknown>,
     intents: StrategyOrderIntent[],
     trackedOrders: TrackedOrder[],
+    executionHistory: StrategyExecutionHistory[] = [],
     queueState?: StrategyIntentQueueState | null,
   ): DirectCycleStatus[] {
     const groups = new Map<
@@ -1681,6 +1713,14 @@ export class AdminDirectMarketMakingService {
         linkedIntentId: null,
         linkedTrackedOrderId: null,
       });
+    }
+
+    for (const history of executionHistory) {
+      const leg = this.buildCycleLegFromExecutionHistory(history);
+
+      if (leg) {
+        this.upsertCycleLeg(groups, leg);
+      }
     }
 
     for (const intent of intents) {
@@ -1737,9 +1777,7 @@ export class AdminDirectMarketMakingService {
       return null;
     }
 
-    const cycleRole = this.readCycleRole(
-      metadata.cycleRole || metadata.role,
-    );
+    const cycleRole = this.readCycleRole(metadata.cycleRole || metadata.role);
 
     if (!cycleRole) {
       return null;
@@ -1784,6 +1822,59 @@ export class AdminDirectMarketMakingService {
         intent.mixinOrderId ||
         this.readTrimmedString(metadata.linkedTrackedOrderId) ||
         null,
+    };
+  }
+
+  private buildCycleLegFromExecutionHistory(
+    history: StrategyExecutionHistory,
+  ): DirectCycleLeg | null {
+    const metadata = this.readCycleMetadata(history.metadata);
+    const cycleId = this.readTrimmedString(metadata.cycleId);
+
+    if (!cycleId) {
+      return null;
+    }
+
+    const cycleRole = this.readCycleRole(metadata.cycleRole || metadata.role);
+    const side = this.readOrderSide(metadata.side || history.side);
+
+    if (!cycleRole || !side) {
+      return null;
+    }
+
+    const plannedQty =
+      this.readTrimmedString(metadata.plannedQty) ||
+      this.readTrimmedString(history.amount) ||
+      '0';
+    const plannedPrice =
+      this.readTrimmedString(metadata.plannedPrice) ||
+      this.readTrimmedString(history.price) ||
+      '0';
+    const linkedTrackedOrderId =
+      this.readTrimmedString(metadata.linkedTrackedOrderId) ||
+      this.readTrimmedString(metadata.exchangeOrderId) ||
+      null;
+
+    return {
+      cycleId,
+      cycleRole,
+      accountLabel: this.readTrimmedString(metadata.accountLabel),
+      side,
+      plannedQty,
+      plannedPrice,
+      filledQty: this.readTrimmedString(metadata.filledQty) || '0',
+      notional:
+        this.readTrimmedString(metadata.notional) ||
+        this.computeCycleLegNotional(plannedQty, plannedPrice),
+      status: this.normalizeCycleLegStatus(
+        this.readTrimmedString(metadata.status) || history.status,
+      ),
+      failureReason: this.readTrimmedString(metadata.failureReason) || null,
+      linkedIntentId:
+        this.readTrimmedString(metadata.linkedIntentId) ||
+        this.readTrimmedString(metadata.intentId) ||
+        null,
+      linkedTrackedOrderId,
     };
   }
 
@@ -1863,7 +1954,10 @@ export class AdminDirectMarketMakingService {
         ? {
             ...previous,
             ...leg,
-            failureReason: leg.failureReason || previous.failureReason,
+            failureReason: this.selectCycleLegFailureReason(
+              previous.failureReason,
+              leg.failureReason,
+            ),
             linkedIntentId: leg.linkedIntentId || previous.linkedIntentId,
             linkedTrackedOrderId:
               leg.linkedTrackedOrderId || previous.linkedTrackedOrderId,
@@ -1873,12 +1967,29 @@ export class AdminDirectMarketMakingService {
     groups.set(leg.cycleId, group);
   }
 
+  private selectCycleLegFailureReason(
+    previous: string | null,
+    next: string | null,
+  ): string | null {
+    if (!next) {
+      return previous;
+    }
+    if (next === 'tracked order failed' && previous) {
+      return previous;
+    }
+
+    return next;
+  }
+
   private findTrackedOrderForIntent(
     intent: StrategyOrderIntent,
     trackedOrders: TrackedOrder[],
   ): TrackedOrder | undefined {
     return trackedOrders.find((order) => {
-      if (intent.mixinOrderId && order.exchangeOrderId === intent.mixinOrderId) {
+      if (
+        intent.mixinOrderId &&
+        order.exchangeOrderId === intent.mixinOrderId
+      ) {
         return true;
       }
 
@@ -1902,7 +2013,10 @@ export class AdminDirectMarketMakingService {
     intents: StrategyOrderIntent[],
   ): StrategyOrderIntent | undefined {
     return intents.find((intent) => {
-      if (intent.mixinOrderId && intent.mixinOrderId === trackedOrder.exchangeOrderId) {
+      if (
+        intent.mixinOrderId &&
+        intent.mixinOrderId === trackedOrder.exchangeOrderId
+      ) {
         return true;
       }
 
@@ -1926,7 +2040,9 @@ export class AdminDirectMarketMakingService {
       return 'failed';
     }
     if (legs.some((leg) => leg.status === 'cancelled')) {
-      return legs.some((leg) => new BigNumber(leg.filledQty || 0).isGreaterThan(0))
+      return legs.some((leg) =>
+        new BigNumber(leg.filledQty || 0).isGreaterThan(0),
+      )
         ? 'partial'
         : 'cancelled';
     }
@@ -1955,19 +2071,17 @@ export class AdminDirectMarketMakingService {
     return 'unknown';
   }
 
-  private readActiveCycle(value: unknown):
-    | {
-        cycleId: string;
-        orderId: string;
-        makerSide: 'buy' | 'sell';
-        makerAccountLabel: string;
-        takerAccountLabel: string;
-        price: string;
-        requestedQty: string;
-        makerFilledQty: string;
-        takerFilledQty: string;
-      }
-    | null {
+  private readActiveCycle(value: unknown): {
+    cycleId: string;
+    orderId: string;
+    makerSide: 'buy' | 'sell';
+    makerAccountLabel: string;
+    takerAccountLabel: string;
+    price: string;
+    requestedQty: string;
+    makerFilledQty: string;
+    takerFilledQty: string;
+  } | null {
     if (!value || typeof value !== 'object') {
       return null;
     }
@@ -2060,6 +2174,245 @@ export class AdminDirectMarketMakingService {
     );
 
     return notional.isFinite() ? notional.toFixed() : '0';
+  }
+
+  private async loadDurableRuntimeCycleSources(
+    order: MarketMakingOrder,
+    strategyKey: string,
+    latestIntents: StrategyOrderIntent[],
+    cachedTrackedOrders: TrackedOrder[],
+  ): Promise<{
+    intents: StrategyOrderIntent[];
+    trackedOrders: TrackedOrder[];
+    executionHistory: StrategyExecutionHistory[];
+  }> {
+    const durableIntentRows = this.strategyOrderIntentRepository
+      ? await this.strategyOrderIntentRepository.find({
+          where: { strategyKey },
+          order: { updatedAt: 'DESC' },
+          take: 100,
+        })
+      : [];
+    const durableTrackedRows = this.trackedOrderRepository
+      ? await this.trackedOrderRepository.find({
+          where: { strategyKey },
+          order: { updatedAt: 'DESC' },
+          take: 100,
+        })
+      : [];
+    const executionHistory = this.strategyExecutionHistoryRepository
+      ? await this.strategyExecutionHistoryRepository.find({
+          where: { orderId: order.orderId },
+          order: { executedAt: 'DESC' },
+          take: 100,
+        })
+      : [];
+    const durableIntents = durableIntentRows
+      .map((row) => this.mapStrategyOrderIntentEntity(row))
+      .filter((intent): intent is StrategyOrderIntent => Boolean(intent));
+    const durableTrackedOrders = durableTrackedRows
+      .map((row) => this.mapTrackedOrderEntity(row))
+      .filter((trackedOrder): trackedOrder is TrackedOrder =>
+        Boolean(trackedOrder),
+      );
+
+    return {
+      intents: this.mergeDurableIntents(durableIntents, latestIntents),
+      trackedOrders: this.mergeDurableTrackedOrders(
+        durableTrackedOrders,
+        cachedTrackedOrders,
+      ),
+      executionHistory,
+    };
+  }
+
+  private mapStrategyOrderIntentEntity(
+    row: StrategyOrderIntentEntity,
+  ): StrategyOrderIntent | null {
+    const type = this.readIntentType(row.type);
+    const status = this.readIntentStatus(row.status);
+    const side = this.readOrderSide(row.side);
+
+    if (!type || !status || !side) {
+      return null;
+    }
+
+    return {
+      type,
+      intentId: row.intentId,
+      runtimeInstanceKey: row.runtimeInstanceKey,
+      strategyKey: row.strategyKey,
+      userId: row.userId,
+      clientId: row.clientId,
+      exchange: row.exchange,
+      accountLabel: row.accountLabel,
+      pair: row.pair,
+      side,
+      price: row.price,
+      qty: row.qty,
+      mixinOrderId: row.mixinOrderId,
+      executionCategory:
+        row.executionCategory as StrategyOrderIntent['executionCategory'],
+      postOnly: row.postOnly,
+      timeInForce:
+        row.timeInForce === 'GTC' || row.timeInForce === 'IOC'
+          ? row.timeInForce
+          : undefined,
+      slotKey: row.slotKey,
+      metadata: row.metadata,
+      createdAt: row.createdAt,
+      status,
+      errorReason: row.errorReason,
+    };
+  }
+
+  private mapTrackedOrderEntity(row: TrackedOrderEntity): TrackedOrder | null {
+    const side = this.readOrderSide(row.side);
+    const role = this.readTrackedOrderRole(row.role);
+    const status = this.readTrackedOrderStatus(row.status);
+
+    if (!side || !status) {
+      return null;
+    }
+
+    return {
+      orderId: row.orderId,
+      strategyKey: row.strategyKey,
+      exchange: row.exchange,
+      accountLabel: row.accountLabel,
+      pair: row.pair,
+      exchangeOrderId: row.exchangeOrderId,
+      clientOrderId: row.clientOrderId,
+      slotKey: row.slotKey,
+      role,
+      side,
+      price: row.price,
+      qty: row.qty,
+      cumulativeFilledQty: row.cumulativeFilledQty,
+      settledFilledQty: row.settledFilledQty,
+      status,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private mergeDurableIntents(
+    durableIntents: StrategyOrderIntent[],
+    latestIntents: StrategyOrderIntent[],
+  ): StrategyOrderIntent[] {
+    const byIntentId = new Map<string, StrategyOrderIntent>();
+
+    for (const intent of durableIntents) {
+      byIntentId.set(intent.intentId, intent);
+    }
+    for (const intent of latestIntents) {
+      if (!byIntentId.has(intent.intentId)) {
+        byIntentId.set(intent.intentId, intent);
+      }
+    }
+
+    return [...byIntentId.values()];
+  }
+
+  private mergeDurableTrackedOrders(
+    durableTrackedOrders: TrackedOrder[],
+    cachedTrackedOrders: TrackedOrder[],
+  ): TrackedOrder[] {
+    const byTrackedOrderId = new Map<string, TrackedOrder>();
+
+    for (const trackedOrder of durableTrackedOrders) {
+      byTrackedOrderId.set(
+        this.getTrackedOrderMergeKey(trackedOrder),
+        trackedOrder,
+      );
+    }
+    for (const trackedOrder of cachedTrackedOrders) {
+      const key = this.getTrackedOrderMergeKey(trackedOrder);
+
+      if (!byTrackedOrderId.has(key)) {
+        byTrackedOrderId.set(key, trackedOrder);
+      }
+    }
+
+    return [...byTrackedOrderId.values()];
+  }
+
+  private getTrackedOrderMergeKey(trackedOrder: TrackedOrder): string {
+    return (
+      trackedOrder.exchangeOrderId ||
+      trackedOrder.clientOrderId ||
+      [
+        trackedOrder.strategyKey,
+        trackedOrder.accountLabel,
+        trackedOrder.role,
+        trackedOrder.side,
+        trackedOrder.price,
+        trackedOrder.qty,
+      ].join(':')
+    );
+  }
+
+  private readIntentType(value: unknown): StrategyIntentType | null {
+    const type = String(value || '').trim();
+
+    return [
+      'CREATE_LIMIT_ORDER',
+      'CANCEL_ORDER',
+      'REPLACE_ORDER',
+      'EXECUTE_AMM_SWAP',
+      'STOP_CONTROLLER',
+      'STOP_EXECUTOR',
+    ].includes(type)
+      ? (type as StrategyIntentType)
+      : null;
+  }
+
+  private readIntentStatus(value: unknown): StrategyIntentStatus | null {
+    const status = String(value || '')
+      .trim()
+      .toUpperCase();
+
+    return ['NEW', 'SENT', 'ACKED', 'FAILED', 'DONE', 'CANCELLED'].includes(
+      status,
+    )
+      ? (status as StrategyIntentStatus)
+      : null;
+  }
+
+  private readOrderSide(value: unknown): 'buy' | 'sell' | null {
+    const side = String(value || '').trim();
+
+    return side === 'buy' || side === 'sell' ? side : null;
+  }
+
+  private readTrackedOrderRole(
+    value: unknown,
+  ): TrackedOrder['role'] | undefined {
+    const role = String(value || '').trim();
+
+    return role === 'maker' || role === 'taker' || role === 'rebalance'
+      ? role
+      : undefined;
+  }
+
+  private readTrackedOrderStatus(
+    value: unknown,
+  ): TrackedOrder['status'] | null {
+    const status = String(value || '').trim();
+
+    return [
+      'pending_create',
+      'open',
+      'partially_filled',
+      'pending_cancel',
+      'filled',
+      'cancelled',
+      'failed',
+      'external_missing',
+      'internal_missing',
+    ].includes(status)
+      ? (status as TrackedOrder['status'])
+      : null;
   }
 
   private readTrimmedString(value: unknown): string {
