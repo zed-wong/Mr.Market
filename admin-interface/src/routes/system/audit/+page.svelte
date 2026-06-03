@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
@@ -79,7 +80,7 @@
   };
 
   const errorMessage = (cause: unknown) =>
-    cause instanceof Error ? cause.message : 'Unable to load audit records';
+    cause instanceof Error ? cause.message : $_('admin_audit_load_failed');
 
   const toBackendDate = (value: string) => {
     if (!value.trim()) {
@@ -148,13 +149,23 @@
         link.download = `admin-audit-${new Date(next.generatedAt).toISOString()}.ndjson`;
         link.click();
         URL.revokeObjectURL(url);
-        actionMessage = `Exported ${formatNumber(next.pagination.returned)} redacted audit records (${formatNumber(next.export?.byteLength ?? 0)} bytes).`;
+        actionMessage = $_('admin_audit_exported_message', {
+          values: {
+            count: formatNumber(next.pagination.returned),
+            bytes: formatNumber(next.export?.byteLength ?? 0),
+          },
+        });
       }
 
       if (options.integrity) {
         actionMessage = next.integrity
-          ? `Verified ${formatNumber(next.integrity.checked)} records; chain valid: ${next.integrity.valid ? 'yes' : 'no'}.`
-          : 'Integrity verification response was unavailable.';
+          ? $_('admin_audit_integrity_verified_message', {
+              values: {
+                count: formatNumber(next.integrity.checked),
+                valid: next.integrity.valid ? $_('yes') : $_('no'),
+              },
+            })
+          : $_('admin_audit_integrity_response_unavailable');
       }
     } catch (cause) {
       if (options.exportAudit || options.integrity) {
@@ -175,9 +186,9 @@
 
   const refreshAudit = () =>
     toast.promise(loadAudit({ throwOnError: true }), {
-      loading: 'refreshing audit log',
-      success: 'audit log refreshed',
-      error: 'failed to refresh audit log',
+      loading: $_('admin_audit_refreshing'),
+      success: $_('admin_audit_refreshed'),
+      error: $_('admin_audit_refresh_failed'),
     });
 
   const applyFilters = () => {
@@ -217,9 +228,9 @@
 
 <section class="space-y-6" data-testid="system-audit-page">
   <PageHeader
-    eyebrow="system"
-    title="audit log"
-    subtitle="Persisted append-only admin audit records with bounded filters, redacted export, and read-only integrity verification."
+    eyebrow={$_('admin.nav.system')}
+    title={$_('admin.nav.audit_log')}
+    subtitle={$_('admin_audit_subtitle')}
   >
     {#snippet actions()}
       <button
@@ -233,32 +244,32 @@
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing || exporting || verifying}
         onclick={() => void refreshAudit()}
-      >{refreshing ? 'refreshing' : 'refresh'}</button>
+      >{refreshing ? $_('refreshing_msg') : $_('refresh')}</button>
     {/snippet}
   </PageHeader>
 
   <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">matching records</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_audit_matching_records')}</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.total)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">returned</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_audit_returned')}</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.returned)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">page</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_audit_page')}</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.page ?? page)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">updated</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_strategy_updated')}</span>
         <span class="font-mono text-sm font-semibold text-base-content">{formatTimestamp(response?.generatedAt)}</span>
       </div>
     </div>
@@ -269,7 +280,7 @@
       <div class="flex flex-wrap items-center gap-3">
         <input
           type="text"
-          placeholder="actor exact filter…"
+          placeholder={$_('admin_audit_actor_filter_placeholder')}
           class="input input-sm input-bordered min-w-[180px] border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxFilterLength ?? 120}
           bind:value={actorFilter}
@@ -277,7 +288,7 @@
         />
         <input
           type="text"
-          placeholder="action exact filter…"
+          placeholder={$_('admin_audit_action_filter_placeholder')}
           class="input input-sm input-bordered min-w-[160px] border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxFilterLength ?? 120}
           bind:value={actionFilter}
@@ -285,7 +296,7 @@
         />
         <input
           type="text"
-          placeholder="resource exact filter…"
+          placeholder={$_('admin_audit_resource_filter_placeholder')}
           class="input input-sm input-bordered min-w-[170px] border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxFilterLength ?? 120}
           bind:value={resourceFilter}
@@ -316,7 +327,7 @@
           bind:value={toFilter}
           aria-label="to timestamp"
         />
-        <button type="button" class="btn btn-sm btn-ghost rounded-full capitalize" disabled={loading || refreshing} onclick={applyFilters}>filter</button>
+        <button type="button" class="btn btn-sm btn-ghost rounded-full capitalize" disabled={loading || refreshing} onclick={applyFilters}>{$_('admin_filter')}</button>
         <select
           class="select select-sm select-bordered border-base-300 bg-base-100 font-mono text-xs"
           bind:value={limit}
@@ -332,25 +343,31 @@
       {#if loading}
         <div class="flex items-center gap-3 rounded-lg border border-base-300 p-4" data-testid="audit-loading">
           <span class="loading loading-spinner loading-sm text-base-content/60"></span>
-          <span class="text-sm text-base-content/60 capitalize">loading persisted audit records</span>
+          <span class="text-sm text-base-content/60 capitalize">{$_('admin_audit_loading')}</span>
         </div>
       {:else if error}
         <div class="rounded-lg border border-error/30 p-4" data-testid="audit-error">
           <div class="flex flex-col gap-3">
-            <span class="text-sm font-semibold text-base-content capitalize">audit unavailable</span>
+            <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_audit_unavailable')}</span>
             <span class="text-sm text-base-content/60">{error}</span>
             <div class="flex gap-2">
-              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadAudit()}>retry</button>
-              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>reset filters</button>
+              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadAudit()}>{$_('admin_retry')}</button>
+              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>{$_('admin_health_reset_filters')}</button>
             </div>
           </div>
         </div>
       {:else if response}
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-mono text-xs text-base-content/50">
-            page {response.pagination.page} · {response.pagination.returned} of {response.pagination.total}
+            {$_('admin_audit_page_count', {
+              values: {
+                page: response.pagination.page,
+                returned: response.pagination.returned,
+                total: response.pagination.total,
+              },
+            })}
           </span>
-          <span class="text-xs text-base-content/50">max {response.limits.maxLimit} records per page</span>
+          <span class="text-xs text-base-content/50">{$_('admin_audit_max_records', { values: { count: response.limits.maxLimit } })}</span>
           {#if refreshing}
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
           {/if}
@@ -364,22 +381,22 @@
 
         {#if rows.length === 0}
           <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 py-12 text-center" data-testid="audit-empty">
-            <span class="text-sm font-semibold text-base-content capitalize">no persisted audit records returned</span>
-            <span class="text-sm text-base-content/60">The audit API returned no records for the current filters; no demo audit rows are shown.</span>
-            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>reset filters</button>
+            <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_audit_empty_title')}</span>
+            <span class="text-sm text-base-content/60">{$_('admin_audit_empty_message')}</span>
+            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>{$_('admin_health_reset_filters')}</button>
           </div>
         {:else}
           <div class="overflow-x-auto">
             <table class="table table-sm">
               <thead>
                 <tr class="border-b border-base-300 text-xs capitalize tracking-wide text-base-content/50">
-                  <th class="font-medium">timestamp</th>
-                  <th class="font-medium">actor</th>
-                  <th class="font-medium">action</th>
-                  <th class="font-medium">resource</th>
-                  <th class="font-medium">request context</th>
-                  <th class="font-medium">status</th>
-                  <th class="font-medium">hash</th>
+                  <th class="font-medium">{$_('admin_audit_timestamp')}</th>
+                  <th class="font-medium">{$_('admin_audit_actor')}</th>
+                  <th class="font-medium">{$_('action')}</th>
+                  <th class="font-medium">{$_('admin_audit_resource')}</th>
+                  <th class="font-medium">{$_('admin_audit_request_context')}</th>
+                  <th class="font-medium">{$_('status')}</th>
+                  <th class="font-medium">{$_('admin_audit_hash')}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -413,7 +430,7 @@
                         class="btn btn-ghost btn-xs rounded-full text-base-content/60 capitalize"
                         disabled={!hasDetails(record)}
                         onclick={() => toggle(record.id)}
-                      >{expanded[record.id] ? 'hide' : 'details'}</button>
+                      >{expanded[record.id] ? $_('admin.hide') : $_('admin_strategy_details')}</button>
                     </td>
                   </tr>
                   {#if expanded[record.id]}
@@ -421,15 +438,15 @@
                       <td colspan="8" class="p-4">
                         <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
                           <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                            <span class="text-xs text-base-content/50 capitalize">metadata</span>
+                            <span class="text-xs text-base-content/50 capitalize">{$_('admin_audit_metadata')}</span>
                             <pre class="mt-2 whitespace-pre-wrap break-all font-mono text-xs text-base-content/70">{jsonPreview(record.metadata)}</pre>
                           </div>
                           <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                            <span class="text-xs text-base-content/50 capitalize">diff</span>
+                            <span class="text-xs text-base-content/50 capitalize">{$_('admin_audit_diff')}</span>
                             <pre class="mt-2 whitespace-pre-wrap break-all font-mono text-xs text-base-content/70">{jsonPreview(record.diff)}</pre>
                           </div>
                           <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                            <span class="text-xs text-base-content/50 capitalize">request context</span>
+                            <span class="text-xs text-base-content/50 capitalize">{$_('admin_audit_request_context')}</span>
                             <pre class="mt-2 whitespace-pre-wrap break-all font-mono text-xs text-base-content/70">{jsonPreview(record.requestContext)}</pre>
                           </div>
                         </div>
@@ -443,7 +460,7 @@
 
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">
-              Export and integrity checks use authenticated read-only backend responses for the same bounded dataset.
+              {$_('admin_audit_export_integrity_hint')}
             </span>
             <div class="join">
               <button
@@ -451,13 +468,13 @@
                 class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
                 disabled={page <= 1 || refreshing}
                 onclick={() => goToPage(page - 1)}
-              >previous</button>
+              >{$_('previous')}</button>
               <button
                 type="button"
                 class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
                 disabled={!response.pagination.hasMore || refreshing}
                 onclick={() => goToPage(page + 1)}
-              >next</button>
+              >{$_('next')}</button>
             </div>
           </div>
         {/if}

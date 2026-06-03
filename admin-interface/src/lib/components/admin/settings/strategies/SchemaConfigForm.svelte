@@ -141,7 +141,7 @@
                                 on:change={(e) =>
                                     setFieldValue(key, e.currentTarget.value)}
                             >
-                                <option value="" disabled>Select...</option>
+                                <option value="" disabled>{$_("select_placeholder")}</option>
                                 {#each prop.enum as opt}
                                     <option value={opt}>{opt}</option>
                                 {/each}

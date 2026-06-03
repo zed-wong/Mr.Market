@@ -54,9 +54,9 @@
 
   const refreshPasskeys = () =>
     toast.promise(refresh({ throwOnError: true }), {
-      loading: 'refreshing passkeys',
-      success: 'passkeys refreshed',
-      error: 'failed to refresh passkeys',
+      loading: $_('admin.passkeys_refreshing'),
+      success: $_('admin.passkeys_refreshed'),
+      error: $_('admin.passkeys_refresh_failed'),
     });
 
   async function handleRegister() {

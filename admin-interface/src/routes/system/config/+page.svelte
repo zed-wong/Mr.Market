@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
@@ -53,7 +54,7 @@
   };
 
   const errorMessage = (cause: unknown) =>
-    cause instanceof Error ? cause.message : 'Unable to load system config';
+    cause instanceof Error ? cause.message : $_('admin_config_load_failed');
 
   const loadConfig = async (options: { throwOnError?: boolean } = {}) => {
     const initialLoad = response === null;
@@ -82,9 +83,9 @@
 
   const refreshConfig = () =>
     toast.promise(loadConfig({ throwOnError: true }), {
-      loading: 'refreshing system config',
-      success: 'system config refreshed',
-      error: 'failed to refresh system config',
+      loading: $_('admin_config_refreshing'),
+      success: $_('admin_config_refreshed'),
+      error: $_('admin_config_refresh_failed'),
     });
 
   const displayValue = (item: AdminSystemConfigItem) => {
@@ -174,9 +175,9 @@
 
 <section class="space-y-6" data-testid="system-config-page">
   <PageHeader
-    eyebrow="system"
-    title="system config"
-    subtitle="Review and edit backend-allowlisted runtime config."
+    eyebrow={$_('admin.nav.system')}
+    title={$_('admin.nav.system_config')}
+    subtitle={$_('admin_config_subtitle')}
   >
     {#snippet actions()}
       <button
@@ -184,7 +185,7 @@
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing || Boolean(savingKey)}
         onclick={() => void refreshConfig()}
-      >{refreshing ? 'refreshing' : 'refresh'}</button>
+      >{refreshing ? $_('refreshing_msg') : $_('refresh')}</button>
     {/snippet}
   </PageHeader>
 
@@ -192,17 +193,17 @@
     <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="config-loading">
       <div class="card-body flex-row items-center gap-3 p-5">
         <span class="loading loading-spinner loading-sm text-base-content/60"></span>
-        <span class="text-sm text-base-content/60 capitalize">loading whitelisted backend config</span>
+        <span class="text-sm text-base-content/60 capitalize">{$_('admin_config_loading')}</span>
       </div>
     </div>
   {:else if error}
     <div class="card border border-error/30 bg-base-100 shadow-none" data-testid="config-error">
       <div class="card-body gap-3 p-5">
-        <span class="text-lg font-semibold text-base-content capitalize">config unavailable</span>
+        <span class="text-lg font-semibold text-base-content capitalize">{$_('admin_config_unavailable')}</span>
         <span class="text-sm text-base-content/60">{error}</span>
         <div class="flex gap-2">
-          <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadConfig()}>retry</button>
-          <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetView}>reset view</button>
+          <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadConfig()}>{$_('admin_retry')}</button>
+          <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetView}>{$_('admin_config_reset_view')}</button>
         </div>
       </div>
     </div>
@@ -216,8 +217,8 @@
     {#if response.items.length === 0}
       <div class="card border border-base-300 bg-base-100 shadow-none" data-testid="config-empty">
         <div class="card-body items-center gap-2 p-8 text-center">
-          <span class="text-sm font-semibold text-base-content capitalize">no whitelisted config returned</span>
-          <span class="text-sm text-base-content/60">The backend returned an empty allowlist; no fixture or environment-derived settings are shown.</span>
+          <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_config_empty_title')}</span>
+          <span class="text-sm text-base-content/60">{$_('admin_config_empty_message')}</span>
         </div>
       </div>
     {:else}
@@ -243,10 +244,10 @@
           <div class="card-body gap-4 p-5">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex flex-col">
-                <span class="text-lg font-semibold tracking-tight text-base-content capitalize">{sections.find((section) => section.key === activeSection)?.label ?? 'config'}</span>
-                <span class="text-xs text-base-content/50">Last synced {formatTimestamp(response.generatedAt)}</span>
+                <span class="text-lg font-semibold tracking-tight text-base-content capitalize">{sections.find((section) => section.key === activeSection)?.label ?? $_('admin_config_config')}</span>
+                <span class="text-xs text-base-content/50">{$_('admin_config_last_synced', { values: { time: formatTimestamp(response.generatedAt) } })}</span>
               </div>
-              <span class="font-mono text-xs text-base-content/50">{activeItems.length} keys in this section</span>
+              <span class="font-mono text-xs text-base-content/50">{$_('admin_config_keys_in_section', { values: { count: activeItems.length } })}</span>
             </div>
 
             <ul class="divide-y divide-base-300">
@@ -257,11 +258,11 @@
                       <span class="font-mono text-sm text-base-content">{item.key}</span>
                       {#if item.sourceState === 'override'}
                         <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider {sourceTone[item.sourceState]}">
-                          override
+                          {$_('admin_config_override')}
                         </span>
                       {/if}
                       {#if item.sensitive}
-                        <span class="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider text-warning">masked</span>
+                        <span class="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium capitalize tracking-wider text-warning">{$_('admin_config_masked')}</span>
                       {/if}
                     </div>
                     <span class="text-sm text-base-content/70">{item.label}</span>
@@ -291,29 +292,29 @@
 
                   <div class="flex items-center gap-1 xl:justify-end">
                     {#if item.sensitive || !item.mutable}
-                      <span class="text-xs text-base-content/40 capitalize">read-only</span>
+                      <span class="text-xs text-base-content/40 capitalize">{$_('read_only')}</span>
                     {:else if editingKey === item.key}
                       <button
                         type="button"
                         class="btn btn-primary btn-xs rounded-full capitalize"
                         disabled={savingKey === item.key}
                         onclick={() => void saveEdit(item)}
-                      >{savingKey === item.key ? 'saving' : 'save'}</button>
-                      <button type="button" class="btn btn-ghost btn-xs rounded-full capitalize" disabled={Boolean(savingKey)} onclick={cancelEdit}>cancel</button>
+                      >{savingKey === item.key ? $_('admin_config_saving') : $_('save')}</button>
+                      <button type="button" class="btn btn-ghost btn-xs rounded-full capitalize" disabled={Boolean(savingKey)} onclick={cancelEdit}>{$_('cancel')}</button>
                     {:else}
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/70"
                         disabled={Boolean(savingKey)}
                         onclick={() => startEdit(item)}
-                      >edit</button>
+                      >{$_('edit')}</button>
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs rounded-full capitalize text-error"
                         disabled={item.sourceState !== 'override' || Boolean(savingKey)}
-                        title={item.sourceState === 'override' ? 'Reset through the whitelisted backend config API.' : 'Already at backend default value.'}
+                        title={item.sourceState === 'override' ? $_('admin_config_reset_title') : $_('admin_config_already_default_title')}
                         onclick={() => void resetItem(item)}
-                      >reset</button>
+                      >{$_('admin_strategy_reset_to_template')}</button>
                     {/if}
                   </div>
                 </li>

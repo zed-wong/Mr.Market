@@ -55,7 +55,7 @@
       closeDialog();
     } catch (error) {
       console.error("Failed to add exchange:", error);
-      toast.error("Failed to add exchange. Review the exchange details and try again.");
+      toast.error($_("admin_connectivity_add_exchange_failed"));
     } finally {
       isAdding = false;
     }
@@ -128,7 +128,7 @@
           type="button"
           class="btn btn-sm btn-circle btn-ghost"
           on:click={closeDialog}
-          aria-label="Close"
+          aria-label={$_("close")}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -152,7 +152,7 @@
       <div class="form-control w-full">
         <span class="label">
           <span class="label-text font-medium">{$_("exchange_id")}</span>
-          <span class="label-text-alt text-base-content/60">(ccxt id)</span>
+          <span class="label-text-alt text-base-content/60">{$_("admin_ccxt_id_hint")}</span>
         </span>
         <div class="dropdown w-full" class:dropdown-open={isDropdownOpen}>
           <input
@@ -239,7 +239,7 @@
             <div class="rounded-xl">
               <img
                 src={AddNewIconUrl}
-                alt="Preview"
+                alt={$_("preview")}
                 on:error={(e) => {
                   const target = e.currentTarget;
                   if (target instanceof HTMLImageElement) {
@@ -270,6 +270,6 @@
     </div>
   </div>
   <form method="dialog" class="modal-backdrop">
-    <button aria-label="Close">close</button>
+    <button aria-label={$_("close")}>{$_("close")}</button>
   </form>
 </dialog>

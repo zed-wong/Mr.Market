@@ -26,15 +26,15 @@
     let previousShow = false;
 
     const CONTROLLER_TYPES = [
-        { value: "pureMarketMaking", label: "Market Making" },
-        { value: "arbitrage", label: "Arbitrage" },
-        { value: "volume", label: "Volume" },
+        { value: "pureMarketMaking", labelKey: "admin_strategy_controller_market_making" },
+        { value: "arbitrage", labelKey: "admin_strategy_controller_arbitrage" },
+        { value: "volume", labelKey: "admin_strategy_controller_volume" },
         {
             value: "dualAccountBestCapacityVolume",
-            label: "Dual Account Best Capacity",
+            labelKey: "admin_strategy_controller_dual_account_best_capacity",
         },
-        { value: "dualAccountVolume", label: "Dual Account Volume" },
-        { value: "timeIndicator", label: "Time Indicator" },
+        { value: "dualAccountVolume", labelKey: "admin_strategy_controller_dual_account_volume" },
+        { value: "timeIndicator", labelKey: "admin_strategy_controller_time_indicator" },
     ];
 
     function getInitialSchema(type: string): Record<string, unknown> {
@@ -202,7 +202,7 @@
                         >
                         <input
                             type="text"
-                            placeholder="e.g. pure-market-making-v2"
+                            placeholder={$_("admin_strategy_key_placeholder")}
                             class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 font-mono"
                             bind:value={key}
                         />
@@ -214,7 +214,7 @@
                         >
                         <input
                             type="text"
-                            placeholder="e.g. Pure Market Making v2"
+                            placeholder={$_("admin_strategy_name_placeholder")}
                             class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
                             bind:value={name}
                         />
@@ -228,7 +228,7 @@
                         >{$_("admin_strategy_description")}</span
                     >
                     <textarea
-                        placeholder="Optional description..."
+                        placeholder={$_("admin_strategy_description_placeholder")}
                         class="textarea textarea-bordered w-full bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300 resize-none h-20"
                         bind:value={description}
                     ></textarea>
@@ -250,7 +250,7 @@
                                 on:click={() =>
                                     handleControllerTypeChange(type.value)}
                             >
-                                {type.label}
+                                {$_(type.labelKey)}
                             </button>
                         {/each}
                     </div>
@@ -322,8 +322,8 @@
                             class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
                             bind:value={visibility}
                         >
-                            <option value="public">Public</option>
-                            <option value="admin">Admin</option>
+                            <option value="public">{$_("admin_strategy_visibility_public")}</option>
+                            <option value="admin">{$_("admin_strategy_visibility_admin")}</option>
                         </select>
                     </div>
                     <div class="flex-1 bg-base-200/40 rounded-xl p-4">
@@ -333,7 +333,7 @@
                         >
                         <input
                             type="text"
-                            placeholder="Optional"
+                            placeholder={$_("optional")}
                             class="input input-bordered w-full h-10 min-h-10 bg-base-100 text-base-content text-sm focus:outline-none focus:border-primary border-base-300"
                             bind:value={createdBy}
                         />

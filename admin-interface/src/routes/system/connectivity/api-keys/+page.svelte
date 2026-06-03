@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import AdminStatePanel from '$lib/components/admin/shared/AdminStatePanel.svelte';
@@ -137,9 +138,9 @@
     if (!adminToken) {
       loadError = {
         kind: 'session',
-        title: 'session required',
-        message: 'Sign in again before viewing exchange API keys.',
-        actionLabel: 'sign in again',
+        title: $_('admin_session_required'),
+        message: $_('admin_api_keys_session_message'),
+        actionLabel: $_('admin_sign_in_again'),
       };
       loading = false;
       if (options.throwOnError) {
@@ -156,7 +157,7 @@
       keys = await getAllAPIKeys(adminToken);
     } catch (error) {
       console.error(error);
-      loadError = classifyAdminError(error, 'Failed to load API keys');
+      loadError = classifyAdminError(error, $_('admin_api_keys_load_failed'));
       if (options.throwOnError) {
         throw new Error(loadError.message);
       }
@@ -168,9 +169,9 @@
 
   const refreshApiKeys = () =>
     toast.promise(loadApiKeys(true, { throwOnError: true }), {
-      loading: 'refreshing API keys',
-      success: 'API keys refreshed',
-      error: 'failed to refresh API keys',
+      loading: $_('admin_api_keys_refreshing'),
+      success: $_('admin_api_keys_refreshed'),
+      error: $_('admin_api_keys_refresh_failed'),
     });
 
   const loadFormMetadata = async () => {
@@ -179,9 +180,9 @@
     if (!adminToken) {
       metadataError = {
         kind: 'session',
-        title: 'session required',
-        message: 'Sign in again before loading API-key form metadata.',
-        actionLabel: 'sign in again',
+        title: $_('admin_session_required'),
+        message: $_('admin_api_keys_metadata_session_message'),
+        actionLabel: $_('admin_sign_in_again'),
       };
       metadataLoading = false;
       return;
@@ -195,13 +196,13 @@
       ]);
       ccxtExchanges = exchangesResult;
       if (!publicKeyResult.publicKey) {
-        throw new Error('Encryption public key was not returned by the backend.');
+        throw new Error($_('admin_encryption_public_key_missing'));
       }
       publicKey = publicKeyResult.publicKey;
     } catch (error) {
       console.error(error);
       publicKey = '';
-      metadataError = classifyAdminError(error, 'Failed to load API key metadata');
+      metadataError = classifyAdminError(error, $_('admin_api_keys_metadata_load_failed'));
       toast.error(metadataError.title, { description: metadataError.message });
     } finally {
       metadataLoading = false;
@@ -226,19 +227,19 @@
     const apiSecret = form.apiSecret.trim();
     const nextErrors: FormErrors = {};
 
-    if (!exchange) nextErrors.exchange = 'Choose or enter an exchange.';
-    if (!name) nextErrors.name = 'Enter a display name.';
-    if (!apiKey) nextErrors.apiKey = 'Paste the exchange API key.';
-    if (!apiSecret) nextErrors.apiSecret = 'Paste the exchange API secret.';
-    if (apiKey && apiKey.length < 4) nextErrors.apiKey = 'API key must be at least 4 characters.';
-    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = 'API secret must be at least 4 characters.';
+    if (!exchange) nextErrors.exchange = $_('admin_form_choose_exchange');
+    if (!name) nextErrors.name = $_('admin_form_enter_display_name');
+    if (!apiKey) nextErrors.apiKey = $_('admin_form_paste_api_key');
+    if (!apiSecret) nextErrors.apiSecret = $_('admin_form_paste_api_secret');
+    if (apiKey && apiKey.length < 4) nextErrors.apiKey = $_('admin_form_api_key_min_length');
+    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = $_('admin_form_api_secret_min_length');
     if (apiKey && existingExchangeApiKeys.has(`${exchange.toLowerCase()}:${apiKey}`)) {
-      nextErrors.duplicate = 'API key already exists for this exchange.';
+      nextErrors.duplicate = $_('admin_form_api_key_duplicate');
     }
     if (!encryptionReady) {
       nextErrors.metadata = metadataError
-        ? 'Encryption metadata failed to load. Retry metadata before submitting a secret.'
-        : 'Encryption metadata is still loading. Wait for it to finish before submitting a secret.';
+        ? $_('admin_form_encryption_metadata_failed')
+        : $_('admin_form_encryption_metadata_loading');
     }
 
     formErrors = nextErrors;
@@ -274,13 +275,13 @@
         },
         adminToken,
       );
-      toast.success('API key added');
+      toast.success($_('admin_api_keys_added'));
       closeAddDialog();
       resetForm();
       await loadApiKeys(false);
     } catch (error) {
       console.error(error);
-      errorMessage = error instanceof Error ? error.message : 'Failed to add API key';
+      errorMessage = error instanceof Error ? error.message : $_('admin_api_keys_add_failed');
     } finally {
       saving = false;
     }
@@ -293,12 +294,12 @@
     removingKeyId = deleteCandidate.key_id;
     try {
       await removeAPIKey(deleteCandidate.key_id, adminToken);
-      toast.success('API key deleted');
+      toast.success($_('admin_api_keys_deleted'));
       deleteCandidate = null;
       await loadApiKeys(false);
     } catch (error) {
       console.error(error);
-      toast.error('Failed to delete API key');
+      toast.error($_('admin_api_keys_delete_failed'));
     } finally {
       removingKeyId = null;
     }
@@ -323,14 +324,14 @@
 
 <section class="space-y-6">
   <PageHeader
-    eyebrow="system"
-    title="api keys"
-    subtitle="Exchange API credentials. Secrets are encrypted before they leave the browser."
+    eyebrow={$_('admin.nav.system')}
+    title={$_('admin.nav.api_keys')}
+    subtitle={$_('admin_api_keys_subtitle')}
   >
     {#snippet actions()}
-      <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={openAddDialog} disabled={!encryptionReady}>+ add key</button>
+      <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={openAddDialog} disabled={!encryptionReady}>+ {$_('admin_api_keys_add_key')}</button>
       <button class="btn btn-primary btn-sm rounded-full capitalize" onclick={() => refreshApiKeys()} disabled={refreshing}>
-        {refreshing ? 'refreshing' : 'refresh'}
+        {refreshing ? $_('refreshing_msg') : $_('refresh')}
       </button>
     {/snippet}
   </PageHeader>
@@ -344,19 +345,19 @@
               type="button"
               class="btn btn-sm join-item capitalize {statusFilter === s ? 'border-base-content bg-base-content text-base-100' : 'border-base-300 bg-base-100 text-base-content'}"
               onclick={() => (statusFilter = s)}
-            >{s === 'all' ? 'all' : s.replace('_', ' ')}</button>
+            >{s === 'all' ? $_('admin_strategy_all') : s.replace('_', ' ')}</button>
           {/each}
         </div>
 
         <select class="select select-sm select-bordered border-base-300 bg-base-100 capitalize" bind:value={exchangeFilter}>
           {#each exchanges as ex (ex)}
-            <option value={ex}>{ex === 'all' ? 'all exchanges' : ex}</option>
+            <option value={ex}>{ex === 'all' ? $_('all_exchanges') : ex}</option>
           {/each}
         </select>
 
         <input
           type="text"
-          placeholder="name, exchange, key id, fingerprint"
+          placeholder={$_('admin_api_keys_search_placeholder')}
           class="input input-sm input-bordered border-base-300 bg-base-100 min-w-[220px] flex-1 font-mono text-xs"
           bind:value={query}
         />
@@ -366,27 +367,27 @@
 
       <div class="grid grid-cols-2 gap-3 md:grid-cols-6">
         <div class="rounded-lg border border-base-300 p-3">
-          <span class="block text-xs text-base-content/60 capitalize">total keys</span>
+          <span class="block text-xs text-base-content/60 capitalize">{$_('admin_api_keys_total_keys')}</span>
           <span class="font-mono text-xl font-semibold">{totals.total}</span>
         </div>
         <div class="rounded-lg border border-base-300 p-3">
-          <span class="block text-xs text-base-content/60 capitalize">ready</span>
+          <span class="block text-xs text-base-content/60 capitalize">{$_('admin_health_ready')}</span>
           <span class="font-mono text-xl font-semibold text-success">{totals.ready}</span>
         </div>
         <div class="rounded-lg border border-base-300 p-3">
-          <span class="block text-xs text-base-content/60 capitalize">validation pending</span>
+          <span class="block text-xs text-base-content/60 capitalize">{$_('admin_api_keys_validation_pending')}</span>
           <span class="font-mono text-xl font-semibold text-warning">{totals.validation_pending}</span>
         </div>
         <div class="rounded-lg border border-base-300 p-3">
-          <span class="block text-xs text-base-content/60 capitalize">validation failed</span>
+          <span class="block text-xs text-base-content/60 capitalize">{$_('admin_api_keys_validation_failed')}</span>
           <span class="font-mono text-xl font-semibold text-error">{totals.validation_failed}</span>
         </div>
         <div class="rounded-lg border border-base-300 p-3">
-          <span class="block text-xs text-base-content/60 capitalize">disabled</span>
+          <span class="block text-xs text-base-content/60 capitalize">{$_('disabled')}</span>
           <span class="font-mono text-xl font-semibold">{totals.disabled}</span>
         </div>
         <div class="rounded-lg border border-base-300 p-3">
-          <span class="block text-xs text-base-content/60 capitalize">unknown</span>
+          <span class="block text-xs text-base-content/60 capitalize">{$_('admin_direct_mm_state_unknown')}</span>
           <span class="font-mono text-xl font-semibold">{totals.unknown}</span>
         </div>
       </div>
@@ -396,9 +397,9 @@
           <div class="mb-4">
             <AdminStatePanel
               kind="loading"
-              context="API key form metadata"
-              title="loading encryption metadata"
-              message="Loading the exchange list and encryption public key before secrets can be submitted."
+              context={$_('admin_api_keys_form_metadata')}
+              title={$_('admin_api_keys_loading_encryption_metadata')}
+              message={$_('admin_api_keys_loading_encryption_message')}
               testId="api-key-metadata-loading"
             />
           </div>
@@ -406,10 +407,10 @@
           <div class="mb-4">
             <AdminStatePanel
               kind={metadataError.kind}
-              context="API key form metadata"
+              context={$_('admin_api_keys_form_metadata')}
               title={metadataError.title}
               message={metadataError.message}
-              actionLabel="retry metadata"
+              actionLabel={$_('admin_connectivity_retry_metadata')}
               onAction={() => void loadFormMetadata()}
               testId="api-key-metadata-error"
             />
@@ -418,13 +419,13 @@
         <table class="table table-sm">
           <thead>
             <tr class="border-b border-base-300 text-xs capitalize text-base-content/50">
-              <th class="font-medium">label</th>
-              <th class="font-medium">exchange</th>
-              <th class="font-medium">fingerprint</th>
-              <th class="font-medium">permissions</th>
-              <th class="font-medium">status</th>
-              <th class="font-medium">last validation</th>
-              <th class="font-medium">created</th>
+              <th class="font-medium">{$_('admin_api_keys_label')}</th>
+              <th class="font-medium">{$_('exchange')}</th>
+              <th class="font-medium">{$_('admin_connectivity_fingerprint')}</th>
+              <th class="font-medium">{$_('permissions')}</th>
+              <th class="font-medium">{$_('status')}</th>
+              <th class="font-medium">{$_('admin_connectivity_last_validation')}</th>
+              <th class="font-medium">{$_('created')}</th>
               <th></th>
             </tr>
           </thead>
@@ -434,9 +435,9 @@
                 <td colspan="8" class="py-4">
                   <AdminStatePanel
                     kind="loading"
-                    context="API key management"
-                    title="loading API keys"
-                    message="Loading encrypted exchange API key readiness, validation status, and permissions."
+                    context={$_('admin_api_keys_management')}
+                    title={$_('admin_api_keys_loading_title')}
+                    message={$_('admin_api_keys_loading_message')}
                     testId="api-key-loading"
                   />
                 </td>
@@ -446,10 +447,10 @@
                 <td colspan="8" class="py-4">
                   <AdminStatePanel
                     kind={loadError.kind}
-                    context="API key management"
+                    context={$_('admin_api_keys_management')}
                     title={loadError.title}
                     message={loadError.message}
-                    actionLabel={loadError.kind === 'session' ? 'sign in again' : 'retry'}
+                    actionLabel={loadError.kind === 'session' ? $_('admin_sign_in_again') : $_('admin_retry')}
                     actionHref={loadError.kind === 'session' ? '/login' : ''}
                     onAction={loadError.kind === 'session' ? undefined : () => void loadApiKeys(true)}
                     testId="api-key-error"
@@ -461,10 +462,10 @@
                 <td colspan="8" class="py-4">
                   <AdminStatePanel
                     kind="empty"
-                    context="API key management"
-                    title={keys.length === 0 ? 'no API keys configured' : 'no API keys match the current filters'}
-                    message={keys.length === 0 ? 'Add an exchange API key after configuring an exchange so direct market-making can validate read or trade access.' : 'Clear filters or search for a different key, exchange, or fingerprint.'}
-                    actionLabel={keys.length === 0 ? 'add key' : 'clear filters'}
+                    context={$_('admin_api_keys_management')}
+                    title={keys.length === 0 ? $_('admin_api_keys_empty_title') : $_('admin_api_keys_empty_filtered_title')}
+                    message={keys.length === 0 ? $_('admin_api_keys_empty_message') : $_('admin_api_keys_empty_filtered_message')}
+                    actionLabel={keys.length === 0 ? $_('admin_api_keys_add_key') : $_('admin_api_keys_clear_filters')}
                     onAction={keys.length === 0 ? openAddDialog : () => {
                       statusFilter = 'all';
                       exchangeFilter = 'all';
@@ -515,8 +516,8 @@
                     <button
                       class="btn btn-ghost btn-xs rounded-full text-error"
                       onclick={() => (deleteCandidate = key)}
-                      aria-label="delete API key"
-                    >delete</button>
+                      aria-label={$_('remove_api_key')}
+                    >{$_('delete')}</button>
                   </td>
                 </tr>
               {/each}
@@ -532,27 +533,27 @@
   <div class="modal-box max-w-xl border border-base-300 bg-base-100">
     <div class="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
       <div class="flex flex-col gap-1">
-        <span class="text-lg font-semibold capitalize">add API key</span>
-        <span class="text-sm text-base-content/60">Secret values are encrypted in the browser before submission.</span>
+        <span class="text-lg font-semibold capitalize">{$_('add_api_key')}</span>
+        <span class="text-sm text-base-content/60">{$_('admin_api_keys_secret_hint')}</span>
       </div>
-      <button class="btn btn-ghost btn-sm btn-circle" onclick={closeAddDialog} aria-label="close">x</button>
+      <button class="btn btn-ghost btn-sm btn-circle" onclick={closeAddDialog} aria-label={$_('close')}>x</button>
     </div>
 
     <div class="mt-5 grid gap-4">
       {#if !encryptionReady}
         <div class="alert alert-warning py-2 text-sm" data-testid="api-key-encryption-not-ready">
           {#if metadataLoading}
-            Encryption metadata is loading. Secret submission is disabled until the public key is ready.
+            {$_('admin_connectivity_encryption_loading')}
           {:else if metadataError}
-            Encryption metadata failed to load. Retry metadata before submitting an API secret.
+            {$_('admin_connectivity_encryption_failed')}
           {:else}
-            Encryption public key is not ready. Secret submission is disabled.
+            {$_('admin_connectivity_encryption_not_ready')}
           {/if}
         </div>
       {/if}
 
       <label class="flex flex-col gap-1">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">exchange</span>
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_('exchange')}</span>
         <div class="dropdown w-full" class:dropdown-open={exchangeDropdownOpen}>
           <input
             class="input input-bordered w-full border-base-300 bg-base-100"
@@ -581,31 +582,31 @@
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">display name</span>
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_('display_name')}</span>
         <input class="input input-bordered border-base-300 bg-base-100" placeholder="e.g. account@email.com" bind:value={form.name} />
         {#if formErrors.name}<span class="text-xs text-error">{formErrors.name}</span>{/if}
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">API key</span>
-        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" placeholder="paste API key" bind:value={form.apiKey} />
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_('api_key')}</span>
+        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" placeholder={$_('admin_connectivity_paste_api_key')} bind:value={form.apiKey} />
         {#if formErrors.apiKey}<span class="text-xs text-error">{formErrors.apiKey}</span>{/if}
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">API secret</span>
-        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder="paste API secret" bind:value={form.apiSecret} />
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_('api_secret')}</span>
+        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder={$_('admin_connectivity_paste_api_secret')} bind:value={form.apiSecret} />
         {#if formErrors.apiSecret}<span class="text-xs text-error">{formErrors.apiSecret}</span>{/if}
       </label>
 
       <div class="flex flex-wrap gap-4">
         <label class="flex cursor-pointer items-center gap-2 text-sm capitalize">
           <input type="radio" class="radio radio-sm radio-primary" value="read" bind:group={form.permissions} />
-          read only
+          {$_('read_only')}
         </label>
         <label class="flex cursor-pointer items-center gap-2 text-sm capitalize">
           <input type="radio" class="radio radio-sm radio-primary" value="read-trade" bind:group={form.permissions} />
-          read + trade
+          {$_('read_trade')}
         </label>
       </div>
 
@@ -621,30 +622,35 @@
     </div>
 
     <div class="modal-action">
-      <button class="btn btn-ghost capitalize" onclick={closeAddDialog}>cancel</button>
+      <button class="btn btn-ghost capitalize" onclick={closeAddDialog}>{$_('cancel')}</button>
       <button class="btn btn-primary capitalize" onclick={submitApiKey} disabled={saving || !encryptionReady}>
         {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
-        add key
+        {$_('admin_api_keys_add_key')}
       </button>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop">
-    <button aria-label="close">close</button>
+    <button aria-label={$_('close')}>{$_('close')}</button>
   </form>
 </dialog>
 
 {#if deleteCandidate}
   <dialog class="modal modal-open">
     <div class="modal-box border border-base-300 bg-base-100">
-      <span class="text-lg font-semibold capitalize">delete API key</span>
+      <span class="text-lg font-semibold capitalize">{$_('admin_api_keys_delete_title')}</span>
       <span class="mt-2 block text-sm text-base-content/60">
-        Delete {deleteCandidate.name} on {deleteCandidate.exchange}? This cannot be undone.
+        {$_('admin_api_keys_delete_message', {
+          values: {
+            name: deleteCandidate.name,
+            exchange: deleteCandidate.exchange,
+          },
+        })}
       </span>
       <div class="modal-action">
-        <button class="btn btn-ghost capitalize" onclick={() => (deleteCandidate = null)}>cancel</button>
+        <button class="btn btn-ghost capitalize" onclick={() => (deleteCandidate = null)}>{$_('cancel')}</button>
         <button class="btn btn-error capitalize" onclick={confirmDelete} disabled={removingKeyId === deleteCandidate.key_id}>
           {#if removingKeyId === deleteCandidate.key_id}<span class="loading loading-spinner loading-xs"></span>{/if}
-          delete
+          {$_('delete')}
         </button>
       </div>
     </div>

@@ -139,10 +139,10 @@
               >{$_("supported")}</th
             >
             <th class="text-center capitalize text-xs font-semibold"
-              >readiness</th
+              >{$_("admin_exchange_readiness")}</th
             >
             <th class="text-center capitalize text-xs font-semibold"
-              >enablement</th
+              >{$_("admin_exchange_enablement")}</th
             >
             <th class="text-right capitalize text-xs font-semibold"
               >{$_("actions")}</th

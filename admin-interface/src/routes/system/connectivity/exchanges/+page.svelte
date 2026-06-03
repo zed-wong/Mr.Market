@@ -1,6 +1,7 @@
 <script lang="ts">
   import { toast } from "svelte-sonner";
   import { onDestroy, onMount } from "svelte";
+  import { _ } from "svelte-i18n";
   import { page } from "$app/stores";
   import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
   import PageHeader from "$lib/components/admin/shared/PageHeader.svelte";
@@ -145,7 +146,7 @@
   const token = () => getAccessToken() || "";
 
   const formatDate = (value?: string | null): string => {
-    if (!value) return "not validated";
+    if (!value) return $_("admin_connectivity_not_validated");
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString();
@@ -153,7 +154,7 @@
 
   const fingerprint = (value?: string): string => {
     const raw = String(value || "").replace(/\s/g, "");
-    if (!raw) return "unavailable";
+    if (!raw) return $_("admin_unavailable");
     const tail = raw.slice(-8).padStart(8, "*");
     return tail;
   };
@@ -229,7 +230,7 @@
   const loadAccountSnapshot = async (key: AdminSingleKey) => {
     const adminToken = token();
     if (!adminToken) {
-      accountSnapshotError = "Session expired. Sign in again before viewing account balances.";
+      accountSnapshotError = $_("admin_connectivity_balances_session_message");
       return;
     }
 
@@ -240,7 +241,7 @@
       accountSnapshot = await getAPIKeyAccountSnapshot(key.key_id, adminToken);
     } catch (error) {
       accountSnapshot = null;
-      accountSnapshotError = error instanceof Error ? error.message : "Failed to load account balances";
+      accountSnapshotError = error instanceof Error ? error.message : $_("admin_connectivity_balances_load_failed");
     } finally {
       accountSnapshotLoading = false;
     }
@@ -281,8 +282,8 @@
       growInfo = null;
       apiKeys = [];
       exchangeError = classifyAdminError(
-        new Error("Session expired. Sign in again before viewing exchange connectivity."),
-        "Exchange connectivity failed to load",
+        new Error($_("admin_connectivity_session_message")),
+        $_("admin_connectivity_load_failed"),
       );
       loading = false;
       return;
@@ -305,14 +306,14 @@
       growInfo = growResult.value;
     } else {
       growInfo = null;
-      exchangeError = classifyAdminError(growResult.reason, "Exchange metadata failed to load");
+      exchangeError = classifyAdminError(growResult.reason, $_("admin_connectivity_metadata_load_failed"));
     }
 
     if (keyResult.status === "fulfilled") {
       apiKeys = keyResult.value;
     } else {
       apiKeys = [];
-      accountError = classifyAdminError(keyResult.reason, "Exchange accounts failed to load");
+      accountError = classifyAdminError(keyResult.reason, $_("admin_connectivity_accounts_load_failed"));
     }
 
     loading = false;
@@ -325,9 +326,9 @@
     });
     if (showToast) {
       await toast.promise(refreshTask, {
-        loading: "refreshing exchange connectivity",
-        success: "exchange connectivity refreshed",
-        error: "failed to refresh exchange connectivity",
+        loading: $_("admin_connectivity_refreshing"),
+        success: $_("admin_connectivity_refreshed"),
+        error: $_("admin_connectivity_refresh_failed"),
       });
     } else {
       await refreshTask;
@@ -339,8 +340,8 @@
     metadataLoading = true;
     if (!adminToken) {
       metadataError = classifyAdminError(
-        new Error("Session expired. Sign in again before loading exchange metadata."),
-        "Exchange metadata failed to load",
+        new Error($_("admin_connectivity_metadata_session_message")),
+        $_("admin_connectivity_metadata_load_failed"),
       );
       metadataLoading = false;
       return;
@@ -356,12 +357,12 @@
       supportedExchanges = supported as string[];
       allCcxtExchanges = ccxt;
       if (!keyPair.publicKey) {
-        throw new Error("Encryption public key was not returned by the backend.");
+        throw new Error($_("admin_encryption_public_key_missing"));
       }
       publicKey = keyPair.publicKey;
     } catch (cause) {
       publicKey = "";
-      metadataError = classifyAdminError(cause, "Exchange metadata failed to load");
+      metadataError = classifyAdminError(cause, $_("admin_connectivity_metadata_load_failed"));
     } finally {
       metadataLoading = false;
     }
@@ -374,19 +375,19 @@
     const apiSecret = accountForm.apiSecret.trim();
     const nextErrors: FormErrors = {};
 
-    if (!exchange) nextErrors.exchange = "Choose or enter an exchange.";
-    if (!name) nextErrors.name = "Enter an account label.";
-    if (!apiKey) nextErrors.apiKey = "Paste the exchange API key.";
-    if (!apiSecret) nextErrors.apiSecret = "Paste the exchange API secret.";
-    if (apiKey && apiKey.length < 4) nextErrors.apiKey = "API key must be at least 4 characters.";
-    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = "API secret must be at least 4 characters.";
+    if (!exchange) nextErrors.exchange = $_("admin_form_choose_exchange");
+    if (!name) nextErrors.name = $_("admin_form_enter_account_label");
+    if (!apiKey) nextErrors.apiKey = $_("admin_form_paste_api_key");
+    if (!apiSecret) nextErrors.apiSecret = $_("admin_form_paste_api_secret");
+    if (apiKey && apiKey.length < 4) nextErrors.apiKey = $_("admin_form_api_key_min_length");
+    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = $_("admin_form_api_secret_min_length");
     if (apiKey && existingExchangeApiKeys.has(`${exchange.toLowerCase()}:${apiKey}`)) {
-      nextErrors.duplicate = "API key already exists for this exchange.";
+      nextErrors.duplicate = $_("admin_form_api_key_duplicate");
     }
     if (!encryptionReady) {
       nextErrors.metadata = metadataError
-        ? "Encryption metadata failed to load. Retry metadata before submitting a secret."
-        : "Encryption metadata is still loading. Wait for it to finish before submitting a secret.";
+        ? $_("admin_form_encryption_metadata_failed")
+        : $_("admin_form_encryption_metadata_loading");
     }
 
     accountFormErrors = nextErrors;
@@ -414,13 +415,13 @@
         },
         adminToken,
       );
-      toast.success("exchange account added");
+      toast.success($_("admin_connectivity_account_added"));
       expandedExchangeIds = Array.from(new Set([...expandedExchangeIds, exchange.toLowerCase()]));
       closeAddAccountDialog();
       resetAccountForm();
       await loadExchangeManagement(false);
     } catch (error) {
-      accountFormErrorMessage = error instanceof Error ? error.message : "Failed to add exchange account";
+      accountFormErrorMessage = error instanceof Error ? error.message : $_("admin_connectivity_account_add_failed");
     } finally {
       savingAccount = false;
     }
@@ -433,9 +434,9 @@
     removingExchangeId = exchange.exchange_id;
     try {
       await toast.promise(removeExchange(exchange.exchange_id, adminToken), {
-        loading: `deleting ${exchange.name}`,
-        success: `${exchange.name} deleted`,
-        error: `failed to delete ${exchange.name}`,
+        loading: $_("admin_connectivity_deleting_exchange", { values: { exchange: exchange.name } }),
+        success: $_("admin_connectivity_exchange_deleted", { values: { exchange: exchange.name } }),
+        error: $_("admin_connectivity_exchange_delete_failed", { values: { exchange: exchange.name } }),
       });
       await loadExchangeManagement(false);
     } finally {
@@ -450,11 +451,11 @@
     removingKeyId = accountDeleteCandidate.key_id;
     try {
       await removeAPIKey(accountDeleteCandidate.key_id, adminToken);
-      toast.success("exchange account deleted");
+      toast.success($_("admin_connectivity_account_deleted"));
       accountDeleteCandidate = null;
       await loadExchangeManagement(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to delete exchange account");
+      toast.error(error instanceof Error ? error.message : $_("admin_connectivity_account_delete_failed"));
     } finally {
       removingKeyId = null;
     }
@@ -464,7 +465,7 @@
     if ($page.data.growInfoError) {
       exchangeError = classifyAdminError(
         new Error(String($page.data.growInfoError)),
-        "Exchange connectivity failed to load",
+        $_("admin_connectivity_load_failed"),
       );
       loading = false;
     } else {
@@ -489,9 +490,9 @@
 
 <section class="space-y-6">
   <PageHeader
-    eyebrow="connectivity"
-    title="exchange connectivity"
-    subtitle="Manage public exchange venues and the execution accounts attached to each venue."
+    eyebrow={$_("admin.nav.connectivity")}
+    title={$_("admin.nav.exchange_connectivity")}
+    subtitle={$_("admin_connectivity_exchanges_subtitle")}
   >
     {#snippet actions()}
       <AddExchange
@@ -519,7 +520,7 @@
             d="M12 4.5v15m7.5-7.5h-15"
           />
         </svg>
-        add account
+        {$_("admin_connectivity_add_account")}
       </button>
       <button
         type="button"
@@ -527,7 +528,7 @@
         onclick={() => refreshExchangeManagement()}
         disabled={isRefreshing}
       >
-        {isRefreshing ? "refreshing" : "refresh"}
+        {isRefreshing ? $_("refreshing_msg") : $_("refresh")}
       </button>
     {/snippet}
   </PageHeader>
@@ -535,9 +536,9 @@
   {#if $page.data.waitingForClientSession || loading}
     <AdminStatePanel
       kind="loading"
-      context="exchange connectivity"
-      title="loading exchange connectivity"
-      message="Loading exchange venues, public metadata readiness, and attached execution accounts."
+      context={$_("admin.nav.exchange_connectivity")}
+      title={$_("admin_connectivity_loading_title")}
+      message={$_("admin_connectivity_loading_message")}
       testId="exchange-connectivity-loading"
     />
     <div class="grid grid-cols-1 gap-4 md:grid-cols-3" aria-hidden="true">
@@ -549,10 +550,10 @@
   {:else if exchangeError && !growInfo}
     <AdminStatePanel
       kind={exchangeError.kind}
-      context="exchange connectivity"
+      context={$_("admin.nav.exchange_connectivity")}
       title={exchangeError.title}
       message={exchangeError.message}
-      actionLabel={exchangeError.kind === "session" ? "sign in again" : "retry"}
+      actionLabel={exchangeError.kind === "session" ? $_("admin_sign_in_again") : $_("admin_retry")}
       actionHref={exchangeError.kind === "session" ? "/login" : ""}
       onAction={exchangeError.kind === "session" ? undefined : () => refreshExchangeManagement(false)}
       testId="exchange-connectivity-error"
@@ -561,10 +562,10 @@
     {#if metadataError}
       <AdminStatePanel
         kind={metadataError.kind}
-        context="exchange metadata"
+        context={$_("admin_connectivity_exchange_metadata")}
         title={metadataError.title}
         message={metadataError.message}
-        actionLabel="retry metadata"
+        actionLabel={$_("admin_connectivity_retry_metadata")}
         onAction={() => void loadMetadata()}
         testId="exchange-metadata-error"
       />
@@ -573,10 +574,10 @@
     {#if accountError}
       <AdminStatePanel
         kind={accountError.kind}
-        context="exchange accounts"
+        context={$_("admin_connectivity_exchange_accounts")}
         title={accountError.title}
         message={accountError.message}
-        actionLabel="retry accounts"
+        actionLabel={$_("admin_connectivity_retry_accounts")}
         onAction={() => refreshExchangeManagement(false)}
         testId="exchange-account-error"
       />
@@ -585,30 +586,30 @@
     <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
       <div class="card border border-base-300 bg-base-100 shadow-none">
         <div class="card-body gap-2 p-4">
-          <span class="text-xs text-base-content/60 capitalize">venues</span>
+          <span class="text-xs text-base-content/60 capitalize">{$_("admin_connectivity_venues")}</span>
           <span class="font-mono text-2xl font-semibold">{exchangeTotals.total}</span>
-          <span class="text-xs text-base-content/50">{metadataReadyCount} metadata ready</span>
+          <span class="text-xs text-base-content/50">{$_("admin_connectivity_metadata_ready_count", { values: { count: metadataReadyCount } })}</span>
         </div>
       </div>
       <div class="card border border-base-300 bg-base-100 shadow-none">
         <div class="card-body gap-2 p-4">
-          <span class="text-xs text-base-content/60 capitalize">accounts</span>
+          <span class="text-xs text-base-content/60 capitalize">{$_("admin_connectivity_accounts")}</span>
           <span class="font-mono text-2xl font-semibold">{accountTotals.total}</span>
-          <span class="text-xs text-base-content/50">execution credentials attached</span>
+          <span class="text-xs text-base-content/50">{$_("admin_connectivity_execution_credentials_attached")}</span>
         </div>
       </div>
       <div class="card border border-base-300 bg-base-100 shadow-none">
         <div class="card-body gap-2 p-4">
-          <span class="text-xs text-base-content/60 capitalize">read only</span>
+          <span class="text-xs text-base-content/60 capitalize">{$_("read_only")}</span>
           <span class="font-mono text-2xl font-semibold">{readOnlyApiKeyCount}</span>
-          <span class="text-xs text-base-content/50">api keys without trade permission</span>
+          <span class="text-xs text-base-content/50">{$_("admin_connectivity_read_only_hint")}</span>
         </div>
       </div>
       <div class="card border border-base-300 bg-base-100 shadow-none">
         <div class="card-body gap-2 p-4">
-          <span class="text-xs text-base-content/60 capitalize">execution</span>
+          <span class="text-xs text-base-content/60 capitalize">{$_("admin_connectivity_execution")}</span>
           <span class="font-mono text-2xl font-semibold text-success">{executionReadyCount}</span>
-          <span class="text-xs text-base-content/50">api keys with read+trade permission</span>
+          <span class="text-xs text-base-content/50">{$_("admin_connectivity_execution_hint")}</span>
         </div>
       </div>
     </div>
@@ -616,10 +617,10 @@
     {#if venueRows.length === 0}
       <AdminStatePanel
         kind="empty"
-        context="exchange connectivity"
-        title="no exchange venues configured"
-        message="Add an exchange venue to load public CCXT metadata, then attach an execution account when trading access is needed."
-        actionLabel="add exchange"
+        context={$_("admin.nav.exchange_connectivity")}
+        title={$_("admin_connectivity_empty_title")}
+        message={$_("admin_connectivity_empty_message")}
+        actionLabel={$_("add_exchange")}
         onAction={() => document.querySelector<HTMLButtonElement>('[data-testid="add-exchange-trigger"]')?.click()}
         testId="exchange-connectivity-empty"
       />
@@ -627,11 +628,11 @@
       <div class="card border border-base-300 bg-base-100 shadow-none">
         <div class="card-body gap-0 p-0">
           <div class="grid grid-cols-[minmax(220px,1.4fr)_minmax(120px,0.8fr)_minmax(140px,0.8fr)_minmax(120px,0.6fr)_auto] gap-3 border-b border-base-300 px-4 py-3 text-xs capitalize text-base-content/50 max-lg:hidden">
-            <span>exchange</span>
-            <span>metadata</span>
-            <span>execution</span>
-            <span>accounts</span>
-            <span class="text-right">actions</span>
+            <span>{$_("exchange")}</span>
+            <span>{$_("admin_connectivity_exchange_metadata")}</span>
+            <span>{$_("admin_connectivity_execution")}</span>
+            <span>{$_("admin_connectivity_accounts")}</span>
+            <span class="text-right">{$_("actions")}</span>
           </div>
 
           {#each venueRows as exchange (exchange.exchange_id)}
@@ -663,16 +664,16 @@
                 </span>
 
                 <span class="flex items-center gap-2">
-                  <span class="badge badge-sm capitalize {readiness.tone}">{hasVenue ? "ready" : "missing"}</span>
+                  <span class="badge badge-sm capitalize {readiness.tone}">{hasVenue ? $_("admin_health_ready") : $_("admin_setup_missing_data")}</span>
                 </span>
 
                 <span class="flex items-center">
                   {#if readyTradeKeys.length > 0}
-                    <span class="badge badge-sm badge-success text-base-100 capitalize">ready</span>
+                    <span class="badge badge-sm badge-success text-base-100 capitalize">{$_("admin_health_ready")}</span>
                   {:else if exchangeKeys.length > 0}
-                    <span class="badge badge-sm badge-warning text-base-content capitalize">blocked</span>
+                    <span class="badge badge-sm badge-warning text-base-content capitalize">{$_("admin_health_blocked")}</span>
                   {:else}
-                    <span class="badge badge-sm badge-ghost capitalize">no account</span>
+                    <span class="badge badge-sm badge-ghost capitalize">{$_("admin_connectivity_no_account")}</span>
                   {/if}
                 </span>
 
@@ -696,7 +697,7 @@
                         openAddAccountDialog(exchange.exchange_id);
                       }
                     }}
-                  >add account</span>
+                  >{$_("admin_connectivity_add_account")}</span>
                   {#if hasVenue}
                     <span
                       role="button"
@@ -726,7 +727,7 @@
                         void deleteExchangeVenue(exchange);
                       }}
                     >
-                      {removingExchangeId === exchange.exchange_id ? "deleting" : "delete"}
+                      {removingExchangeId === exchange.exchange_id ? $_("deleting_api_key") : $_("delete")}
                     </span>
                   {/if}
                 </span>
@@ -736,9 +737,9 @@
                 <div class="border-t border-base-300 bg-base-200/50 px-4 py-4">
                   {#if exchangeKeys.length === 0}
                     <div class="rounded-lg border border-dashed border-base-300 bg-base-100 p-4">
-                      <span class="text-sm font-semibold text-base-content capitalize">metadata only</span>
+                      <span class="text-sm font-semibold text-base-content capitalize">{$_("admin_connectivity_metadata_only")}</span>
                       <span class="mt-1 block text-sm text-base-content/60">
-                        This exchange can be used for public markets and pair setup. Add an account before running trading strategies.
+                        {$_("admin_connectivity_metadata_only_message")}
                       </span>
                     </div>
                   {:else}
@@ -746,11 +747,11 @@
                       <table class="table table-sm">
                         <thead>
                           <tr class="border-b border-base-300 text-xs capitalize text-base-content/50">
-                            <th class="font-medium">account</th>
-                            <th class="font-medium">fingerprint</th>
-                            <th class="font-medium">permission</th>
-                            <th class="font-medium">status</th>
-                            <th class="font-medium">last validation</th>
+                            <th class="font-medium">{$_("admin_connectivity_account")}</th>
+                            <th class="font-medium">{$_("admin_connectivity_fingerprint")}</th>
+                            <th class="font-medium">{$_("permissions")}</th>
+                            <th class="font-medium">{$_("status")}</th>
+                            <th class="font-medium">{$_("admin_connectivity_last_validation")}</th>
                             <th></th>
                           </tr>
                         </thead>
@@ -763,10 +764,10 @@
                                   type="button"
                                   class="group flex max-w-[260px] flex-col rounded-md px-2 py-1 text-left transition-colors hover:bg-base-200 focus:outline-none focus:ring-2 focus:ring-primary/40"
                                   onclick={() => openAccountDetailDialog(key)}
-                                  aria-label={`view ${key.name} account details`}
+                                  aria-label={$_("admin_connectivity_view_account_details", { values: { name: key.name } })}
                                 >
                                   <span class="truncate text-sm font-medium text-base-content group-hover:text-primary">{key.name}</span>
-                                  <span class="text-xs text-base-content/45">view balances</span>
+                                  <span class="text-xs text-base-content/45">{$_("admin_connectivity_view_balances")}</span>
                                 </button>
                               </td>
                               <td class="font-mono text-xs text-base-content/70">{fingerprint(key.api_key)}</td>
@@ -794,8 +795,8 @@
                                 <button
                                   class="btn btn-ghost btn-xs rounded-full text-error capitalize"
                                   onclick={() => (accountDeleteCandidate = key)}
-                                  aria-label="delete exchange account"
-                                >delete</button>
+                                  aria-label={$_("admin_connectivity_delete_account")}
+                                >{$_("delete")}</button>
                               </td>
                             </tr>
                           {/each}
@@ -817,14 +818,14 @@
   <div class="modal-box max-w-xl overflow-visible rounded-t-3xl border border-base-300 bg-base-100 p-0 shadow-2xl sm:rounded-3xl">
     <div class="flex items-start justify-between gap-4 px-6 pb-5 pt-6">
       <span class="flex flex-col gap-1">
-        <span class="text-xl font-semibold tracking-tight text-base-content capitalize">add exchange account</span>
-        <span class="text-sm text-base-content/60">Encrypted credential setup for the selected venue.</span>
+        <span class="text-xl font-semibold tracking-tight text-base-content capitalize">{$_("admin_connectivity_add_exchange_account")}</span>
+        <span class="text-sm text-base-content/60">{$_("admin_connectivity_encrypted_setup_hint")}</span>
       </span>
       <button
         type="button"
         class="btn btn-ghost btn-sm btn-circle text-base-content/60"
         onclick={closeAddAccountDialog}
-        aria-label="close"
+        aria-label={$_("close")}
       >✕</button>
     </div>
 
@@ -832,17 +833,17 @@
       {#if !encryptionReady}
         <div class="alert alert-warning py-2 text-sm" data-testid="exchange-account-encryption-not-ready">
           {#if metadataLoading}
-            Encryption metadata is loading. Secret submission is disabled until the public key is ready.
+            {$_("admin_connectivity_encryption_loading")}
           {:else if metadataError}
-            Encryption metadata failed to load. Retry metadata before submitting an API secret.
+            {$_("admin_connectivity_encryption_failed")}
           {:else}
-            Encryption public key is not ready. Secret submission is disabled.
+            {$_("admin_connectivity_encryption_not_ready")}
           {/if}
         </div>
       {/if}
 
       <label class="flex flex-col gap-1.5">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">exchange</span>
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_("exchange")}</span>
         <div
           class="dropdown w-full"
           class:dropdown-open={accountExchangeDropdownOpen}
@@ -861,7 +862,7 @@
             <ul class="dropdown-content z-50 mt-2 max-h-64 w-full overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-1.5 shadow-2xl">
               {#if !accountExchangeQuery}
                 <li class="px-3 pb-1 pt-2">
-                  <span class="text-xs text-base-content/50 capitalize">suggested exchanges</span>
+                  <span class="text-xs text-base-content/50 capitalize">{$_("admin_connectivity_suggested_exchanges")}</span>
                 </li>
               {/if}
               {#each matchingCcxtExchanges as exchange (exchange)}
@@ -877,7 +878,7 @@
                   >
                     <span class="font-medium text-base-content">{exchange}</span>
                     {#if supportedExchangeIds.has(exchange.toLowerCase())}
-                      <span class="rounded-full bg-base-content/5 px-2 py-0.5 text-[10px] font-medium text-base-content/50 capitalize">supported</span>
+                      <span class="rounded-full bg-base-content/5 px-2 py-0.5 text-[10px] font-medium text-base-content/50 capitalize">{$_("supported")}</span>
                     {/if}
                   </button>
                 </li>
@@ -885,7 +886,7 @@
             </ul>
           {:else if accountExchangeDropdownOpen && accountExchangeQuery}
             <div class="dropdown-content z-50 mt-2 w-full rounded-2xl border border-base-300 bg-base-100 px-4 py-3 shadow-2xl">
-              <span class="text-sm text-base-content/60">No exchange matches “{accountForm.exchange}”.</span>
+              <span class="text-sm text-base-content/60">{$_("admin_connectivity_no_exchange_matches", { values: { exchange: accountForm.exchange } })}</span>
             </div>
           {/if}
         </div>
@@ -893,7 +894,7 @@
       </label>
 
       <label class="flex flex-col gap-1.5">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">account label</span>
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_("admin_direct_mm_account_label")}</span>
         <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100" placeholder="account@gmail.com" bind:value={accountForm.name} />
         {#if accountFormErrors.name}<span class="text-xs text-error">{accountFormErrors.name}</span>{/if}
       </label>
@@ -901,25 +902,25 @@
       <div class="my-1 h-px bg-base-300"></div>
 
       <label class="flex flex-col gap-1.5">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">API key</span>
-        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" placeholder="paste API key" bind:value={accountForm.apiKey} />
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_("api_key")}</span>
+        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" placeholder={$_("admin_connectivity_paste_api_key")} bind:value={accountForm.apiKey} />
         {#if accountFormErrors.apiKey}<span class="text-xs text-error">{accountFormErrors.apiKey}</span>{/if}
       </label>
 
       <label class="flex flex-col gap-1.5">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">API secret</span>
-        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder="paste API secret" bind:value={accountForm.apiSecret} />
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_("api_secret")}</span>
+        <input class="input input-bordered w-full rounded-2xl border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder={$_("admin_connectivity_paste_api_secret")} bind:value={accountForm.apiSecret} />
         {#if accountFormErrors.apiSecret}<span class="text-xs text-error">{accountFormErrors.apiSecret}</span>{/if}
       </label>
 
       <div class="flex flex-wrap gap-4 pt-1">
         <label class="flex cursor-pointer items-center gap-2 text-sm capitalize">
           <input type="radio" class="radio radio-sm radio-primary" value="read" bind:group={accountForm.permissions} />
-          read only
+          {$_("read_only")}
         </label>
         <label class="flex cursor-pointer items-center gap-2 text-sm capitalize">
           <input type="radio" class="radio radio-sm radio-primary" value="read-trade" bind:group={accountForm.permissions} />
-          read + trade
+          {$_("read_trade")}
         </label>
       </div>
 
@@ -935,15 +936,15 @@
     </div>
 
     <div class="modal-action mt-4 border-t border-base-300 px-6 py-5">
-      <button type="button" class="btn btn-ghost rounded-full capitalize" onclick={closeAddAccountDialog}>cancel</button>
+      <button type="button" class="btn btn-ghost rounded-full capitalize" onclick={closeAddAccountDialog}>{$_("cancel")}</button>
       <button type="button" class="btn btn-primary rounded-full capitalize" onclick={submitAccount} disabled={savingAccount || !encryptionReady}>
         {#if savingAccount}<span class="loading loading-spinner loading-xs"></span>{/if}
-        add account
+        {$_("admin_connectivity_add_account")}
       </button>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop">
-    <button aria-label="close">close</button>
+    <button aria-label={$_("close")}>{$_("close")}</button>
   </form>
 </dialog>
 
@@ -951,16 +952,16 @@
   <div class="modal-box max-w-3xl rounded-t-3xl border border-base-300 bg-base-100 p-0 shadow-2xl sm:rounded-3xl">
     <div class="flex items-start justify-between gap-4 border-b border-base-300 px-6 pb-5 pt-6">
       <span class="flex min-w-0 flex-col gap-1">
-        <span class="truncate text-xl font-semibold tracking-tight text-base-content">{selectedAccountKey?.name || "account"}</span>
+        <span class="truncate text-xl font-semibold tracking-tight text-base-content">{selectedAccountKey?.name || $_("admin_connectivity_account")}</span>
         <span class="text-sm text-base-content/60">
-          {selectedAccountKey?.exchange || "exchange"} · {fingerprint(selectedAccountKey?.api_key)}
+          {selectedAccountKey?.exchange || $_("exchange")} · {fingerprint(selectedAccountKey?.api_key)}
         </span>
       </span>
       <button
         type="button"
         class="btn btn-ghost btn-sm btn-circle text-base-content/60"
         onclick={closeAccountDetailDialog}
-        aria-label="close"
+        aria-label={$_("close")}
       >✕</button>
     </div>
 
@@ -969,7 +970,7 @@
         {@const selectedReadiness = getApiKeyReadiness(selectedAccountKey)}
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-            <span class="text-xs capitalize text-base-content/50">permission</span>
+            <span class="text-xs capitalize text-base-content/50">{$_("permissions")}</span>
             <span class="mt-2 flex flex-wrap gap-1">
               {#each getApiKeyPermissionViews(selectedAccountKey) as permission (permission.capability)}
                 <span class="rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {permission.tone}" title={permission.description}>
@@ -979,7 +980,7 @@
             </span>
           </div>
           <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-            <span class="text-xs capitalize text-base-content/50">status</span>
+            <span class="text-xs capitalize text-base-content/50">{$_("status")}</span>
             <span class="mt-2 flex flex-col gap-1">
               <span class="w-fit rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {selectedReadiness.tone}" title={selectedReadiness.description}>
                 {selectedReadiness.label}
@@ -990,7 +991,7 @@
             </span>
           </div>
           <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-            <span class="text-xs capitalize text-base-content/50">last validation</span>
+            <span class="text-xs capitalize text-base-content/50">{$_("admin_connectivity_last_validation")}</span>
             <span class="mt-2 block font-mono text-xs text-base-content/70">{formatDate(selectedAccountKey.validated_at || selectedAccountKey.last_update)}</span>
           </div>
         </div>
@@ -998,7 +999,7 @@
 
       <div class="rounded-lg border border-base-300 bg-base-100">
         <div class="flex items-center justify-between gap-3 border-b border-base-300 px-4 py-3">
-          <span class="text-sm font-semibold capitalize text-base-content">balances</span>
+          <span class="text-sm font-semibold capitalize text-base-content">{$_("admin_connectivity_balances")}</span>
           {#if accountSnapshot}
             <span class="font-mono text-xs text-base-content/45">{formatDate(accountSnapshot.generated_at)}</span>
           {/if}
@@ -1007,7 +1008,7 @@
         {#if accountSnapshotLoading}
           <div class="flex items-center gap-2 px-4 py-8 text-sm text-base-content/60">
             <span class="loading loading-spinner loading-sm"></span>
-            loading balances
+            {$_("admin_connectivity_loading_balances")}
           </div>
         {:else if accountSnapshotError}
           <div class="grid gap-3 px-4 py-5">
@@ -1017,7 +1018,7 @@
                 type="button"
                 class="btn btn-outline btn-sm w-fit rounded-full capitalize"
                 onclick={retryAccountSnapshot}
-              >retry</button>
+              >{$_("admin_retry")}</button>
             {/if}
           </div>
         {:else if getBalanceRows(accountSnapshot).length > 0}
@@ -1025,10 +1026,10 @@
             <table class="table table-sm">
               <thead>
                 <tr class="border-b border-base-300 text-xs capitalize text-base-content/50">
-                  <th class="font-medium">asset</th>
-                  <th class="text-right font-medium">free</th>
-                  <th class="text-right font-medium">used</th>
-                  <th class="text-right font-medium">total</th>
+                  <th class="font-medium">{$_("asset_id")}</th>
+                  <th class="text-right font-medium">{$_("admin_direct_mm_free")}</th>
+                  <th class="text-right font-medium">{$_("admin_direct_mm_used")}</th>
+                  <th class="text-right font-medium">{$_("total")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1044,28 +1045,33 @@
             </table>
           </div>
         {:else}
-          <div class="px-4 py-8 text-sm text-base-content/60">No non-zero balances returned.</div>
+          <div class="px-4 py-8 text-sm text-base-content/60">{$_("admin_connectivity_no_nonzero_balances")}</div>
         {/if}
       </div>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop">
-    <button aria-label="close">close</button>
+    <button aria-label={$_("close")}>{$_("close")}</button>
   </form>
 </dialog>
 
 {#if accountDeleteCandidate}
   <dialog class="modal modal-open">
     <div class="modal-box border border-base-300 bg-base-100">
-      <span class="text-lg font-semibold capitalize">delete exchange account</span>
+      <span class="text-lg font-semibold capitalize">{$_("admin_connectivity_delete_account")}</span>
       <span class="mt-2 block text-sm text-base-content/60">
-        Delete {accountDeleteCandidate.name} on {accountDeleteCandidate.exchange}? This cannot be undone.
+        {$_("admin_connectivity_delete_account_message", {
+          values: {
+            name: accountDeleteCandidate.name,
+            exchange: accountDeleteCandidate.exchange,
+          },
+        })}
       </span>
       <div class="modal-action">
-        <button class="btn btn-ghost capitalize" onclick={() => (accountDeleteCandidate = null)}>cancel</button>
+        <button class="btn btn-ghost capitalize" onclick={() => (accountDeleteCandidate = null)}>{$_("cancel")}</button>
         <button class="btn btn-error capitalize" onclick={confirmDeleteAccount} disabled={removingKeyId === accountDeleteCandidate.key_id}>
           {#if removingKeyId === accountDeleteCandidate.key_id}<span class="loading loading-spinner loading-xs"></span>{/if}
-          delete
+          {$_("delete")}
         </button>
       </div>
     </div>
