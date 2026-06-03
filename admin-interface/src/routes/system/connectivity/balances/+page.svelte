@@ -351,7 +351,7 @@
 
 <section class="space-y-6" data-testid="exchange-balances-page">
   <PageHeader
-    eyebrow={$_('admin.nav.trading')}
+    eyebrow={$_('admin.nav.connectivity')}
     title={$_('admin.nav.balances')}
     subtitle={$_('admin_balances_subtitle')}
   >

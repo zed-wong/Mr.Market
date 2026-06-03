@@ -449,7 +449,7 @@
       {#each kpis as kpi (kpi.key)}
         {#if kpi.key === 'capital'}
           <a
-            href="/trading/balances"
+            href="/system/connectivity/balances"
             class="block rounded-xl focus:outline-none focus:ring-2 focus:ring-base-content/20"
             aria-label={kpi.label}
           >

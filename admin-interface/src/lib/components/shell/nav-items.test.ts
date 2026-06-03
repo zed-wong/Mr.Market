@@ -34,7 +34,7 @@ describe('admin shell navigation', () => {
         '/system/connectivity/exchanges',
         '/trading/market-making',
         '/system/health',
-        '/trading/balances',
+        '/system/connectivity/balances',
         '/system/password',
         '/system/passkeys',
         '/system/audit',
@@ -62,7 +62,6 @@ describe('admin shell navigation', () => {
       '/trading/market-making',
       '/trading/strategies',
       '/trading/positions',
-      '/trading/balances',
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'system')?.children.map((entry) => entry.href)).toEqual([
       '/system/health',
@@ -73,6 +72,7 @@ describe('admin shell navigation', () => {
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'connectivity')?.children.map((entry) => entry.href)).toEqual([
       '/system/connectivity/exchanges',
+      '/system/connectivity/balances',
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'developer')?.children.map((entry) => entry.href)).toEqual([
       '/trading/direct-market-making',
