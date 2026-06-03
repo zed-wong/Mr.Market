@@ -529,6 +529,7 @@
   "admin_analytics_scope_pair": "交易对",
   "admin_analytics_scope_order": "订单",
   "admin_analytics_scope_selected": "{scope} · {range}",
+  "admin_analytics_unapplied_filters": "存在未应用的筛选更改 — 应用后才会刷新卡片和图表。",
   "admin_analytics_order_id": "订单 ID",
   "admin_analytics_order_required": "选择订单范围前请输入订单 ID。",
   "admin_analytics_pair_required": "选择交易对范围前请输入交易所和交易对。",

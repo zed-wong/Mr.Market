@@ -529,6 +529,7 @@
   "admin_analytics_scope_pair": "pair",
   "admin_analytics_scope_order": "order",
   "admin_analytics_scope_selected": "{scope} · {range}",
+  "admin_analytics_unapplied_filters": "Unapplied filter changes — apply to refresh cards and charts.",
   "admin_analytics_order_id": "order id",
   "admin_analytics_order_required": "Choose order scope only after entering an order id.",
   "admin_analytics_pair_required": "Choose pair scope only after entering both exchange and pair.",

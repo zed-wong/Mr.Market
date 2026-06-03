@@ -18,65 +18,90 @@
     DirectMarketMakingDashboardResponse,
   } from '$lib/types/hufi/admin-analytics';
   import {
+    analyticsQueriesMatch,
     buildAnalyticsChartSections,
     buildAnalyticsRequestKey,
+    buildAnalyticsScopeLabel,
     buildDirectMarketMakingMetricCards,
     resolveAnalyticsPanelState,
+    type AnalyticsRouteQuery,
   } from './analytics-view-model';
   import AnalyticsChartCard from './components/AnalyticsChartCard.svelte';
   import AnalyticsMetricCard from './components/AnalyticsMetricCard.svelte';
 
   let foundation = $state<AdminAnalyticsFoundationResponse | null>(null);
   let dashboard = $state<DirectMarketMakingDashboardResponse | null>(null);
-  let scope = $state<AnalyticsScope>('admin');
-  let range = $state<AnalyticsRange>('24h');
-  let orderId = $state('');
-  let exchange = $state('');
-  let pair = $state('');
+  let appliedQuery = $state<AnalyticsRouteQuery>({ scope: 'admin', range: '24h' });
+  let draftScope = $state<AnalyticsScope>('admin');
+  let draftRange = $state<AnalyticsRange>('24h');
+  let draftOrderId = $state('');
+  let draftExchange = $state('');
+  let draftPair = $state('');
   let loading = $state(true);
   let refreshing = $state(false);
   let error = $state<string | null>(null);
+  let filterError = $state<string | null>(null);
   let activeRequestKey = '';
   let requestSequence = 0;
 
-  const requestQuery = $derived<AdminAnalyticsQuery>({
-    scope,
-    range,
-    orderId: orderId.trim(),
-    exchange: exchange.trim(),
-    pair: pair.trim(),
+  const draftQuery = $derived<AnalyticsRouteQuery>({
+    scope: draftScope,
+    range: draftRange,
+    orderId: draftOrderId.trim(),
+    exchange: draftExchange.trim(),
+    pair: draftPair.trim(),
   });
   const metricCards = $derived(buildDirectMarketMakingMetricCards(dashboard));
   const chartSections = $derived(buildAnalyticsChartSections(foundation));
   const panelState = $derived(resolveAnalyticsPanelState({ loading, error, foundation, dashboard }));
+  const hasUnappliedChanges = $derived(!analyticsQueriesMatch(appliedQuery, draftQuery));
   const selectedScopeLabel = $derived(
-    scope === 'order'
-      ? orderId.trim() || $_('admin_analytics_scope_order')
-      : scope === 'pair'
-        ? [exchange.trim(), pair.trim()].filter(Boolean).join(' ') || $_('admin_analytics_scope_pair')
-        : $_('admin_analytics_scope_admin'),
+    buildAnalyticsScopeLabel(appliedQuery, {
+      admin: $_('admin_analytics_scope_admin'),
+      pair: $_('admin_analytics_scope_pair'),
+      order: $_('admin_analytics_scope_order'),
+    }),
   );
 
   const errorMessage = (cause: unknown) =>
     cause instanceof Error ? cause.message : $_('admin_analytics_load_failed');
 
-  const validateQuery = () => {
-    if (scope === 'order' && !orderId.trim()) {
+  const validateQuery = (query: AnalyticsRouteQuery) => {
+    if (query.scope === 'order' && !query.orderId?.trim()) {
       return $_('admin_analytics_order_required');
     }
 
-    if (scope === 'pair' && (!exchange.trim() || !pair.trim())) {
+    if (query.scope === 'pair' && (!query.exchange?.trim() || !query.pair?.trim())) {
       return $_('admin_analytics_pair_required');
     }
 
     return null;
   };
 
-  const loadAnalytics = async (options: { throwOnError?: boolean; force?: boolean } = {}) => {
-    const validationError = validateQuery();
+  const toApiQuery = (query: AnalyticsRouteQuery): AdminAnalyticsQuery => ({
+    scope: query.scope,
+    range: query.range,
+    orderId: query.orderId?.trim() || '',
+    exchange: query.exchange?.trim() || '',
+    pair: query.pair?.trim() || '',
+  });
+
+  const syncDraftToApplied = (query: AnalyticsRouteQuery) => {
+    draftScope = query.scope;
+    draftRange = query.range;
+    draftOrderId = query.orderId || '';
+    draftExchange = query.exchange || '';
+    draftPair = query.pair || '';
+  };
+
+  const loadAnalytics = async (
+    query: AnalyticsRouteQuery = appliedQuery,
+    options: { throwOnError?: boolean; force?: boolean; commitDraft?: boolean } = {},
+  ) => {
+    const validationError = validateQuery(query);
 
     if (validationError) {
-      error = validationError;
+      filterError = validationError;
       loading = false;
       refreshing = false;
       if (options.throwOnError) {
@@ -86,11 +111,11 @@
     }
 
     const requestKey = buildAnalyticsRequestKey({
-      scope,
-      range,
-      orderId,
-      exchange,
-      pair,
+      scope: query.scope,
+      range: query.range,
+      orderId: query.orderId,
+      exchange: query.exchange,
+      pair: query.pair,
     });
 
     if (!options.force && requestKey === activeRequestKey && foundation && dashboard) {
@@ -104,11 +129,12 @@
     loading = initialLoad;
     refreshing = !initialLoad;
     error = null;
+    filterError = null;
 
     try {
       const [nextFoundation, nextDashboard] = await Promise.all([
-        fetchAdminAnalyticsFoundation(requestQuery),
-        fetchDirectMarketMakingDashboard(requestQuery),
+        fetchAdminAnalyticsFoundation(toApiQuery(query)),
+        fetchDirectMarketMakingDashboard(toApiQuery(query)),
       ]);
 
       if (sequence !== requestSequence) {
@@ -117,7 +143,14 @@
 
       foundation = nextFoundation;
       dashboard = nextDashboard;
-      range = nextFoundation.range.key === 'custom' ? range : nextFoundation.range.key;
+      const nextAppliedQuery: AnalyticsRouteQuery = {
+        ...query,
+        range: nextFoundation.range.key === 'custom' ? query.range : nextFoundation.range.key,
+      };
+      appliedQuery = nextAppliedQuery;
+      if (options.commitDraft) {
+        syncDraftToApplied(nextAppliedQuery);
+      }
     } catch (cause) {
       if (sequence !== requestSequence) {
         return;
@@ -138,26 +171,18 @@
   };
 
   const refreshAnalytics = () =>
-    toast.promise(loadAnalytics({ throwOnError: true, force: true }), {
+    toast.promise(loadAnalytics(appliedQuery, { throwOnError: true, force: true }), {
       loading: $_('admin_analytics_refreshing'),
       success: $_('admin_analytics_refreshed'),
       error: $_('admin_analytics_refresh_failed'),
     });
 
   const applyFilters = () => {
-    void loadAnalytics({ force: true });
-  };
-
-  const onScopeChange = () => {
-    void loadAnalytics({ force: true });
-  };
-
-  const onRangeChange = () => {
-    void loadAnalytics({ force: true });
+    void loadAnalytics(draftQuery, { force: true, commitDraft: true });
   };
 
   onMount(() => {
-    void loadAnalytics({ force: true });
+    void loadAnalytics(appliedQuery, { force: true, commitDraft: true });
   });
 </script>
 
@@ -184,13 +209,21 @@
       <div class="flex flex-col gap-1">
         <span class="text-lg font-semibold capitalize">{$_('admin_analytics_filters')}</span>
         <span class="text-sm text-base-content/60">
-          {$_('admin_analytics_scope_selected', { values: { scope: selectedScopeLabel, range } })}
+          {$_('admin_analytics_scope_selected', { values: { scope: selectedScopeLabel, range: appliedQuery.range } })}
         </span>
+        {#if hasUnappliedChanges}
+          <span class="text-xs text-base-content/60" data-testid="analytics-unapplied-filters">
+            {$_('admin_analytics_unapplied_filters')}
+          </span>
+        {/if}
+        {#if filterError}
+          <span class="text-xs text-error" data-testid="analytics-filter-error">{filterError}</span>
+        {/if}
       </div>
       <div class="grid grid-cols-1 gap-3 md:grid-cols-5">
         <label class="form-control gap-1">
           <span class="label-text text-xs capitalize">{$_('admin_analytics_scope')}</span>
-          <select bind:value={scope} onchange={onScopeChange} class="select select-bordered select-sm">
+          <select bind:value={draftScope} class="select select-bordered select-sm">
             {#each ANALYTICS_SCOPES as option}
               <option value={option}>{$_(`admin_analytics_scope_${option}`)}</option>
             {/each}
@@ -198,7 +231,7 @@
         </label>
         <label class="form-control gap-1">
           <span class="label-text text-xs capitalize">{$_('admin_direct_mm_date_range')}</span>
-          <select bind:value={range} onchange={onRangeChange} class="select select-bordered select-sm">
+          <select bind:value={draftRange} class="select select-bordered select-sm">
             {#each ANALYTICS_RANGES as option}
               <option value={option}>{option}</option>
             {/each}
@@ -206,20 +239,20 @@
         </label>
         <label class="form-control gap-1">
           <span class="label-text text-xs capitalize">{$_('admin_analytics_order_id')}</span>
-          <input bind:value={orderId} class="input input-bordered input-sm font-mono" placeholder="order-..." />
+          <input bind:value={draftOrderId} class="input input-bordered input-sm font-mono" placeholder="order-..." />
         </label>
         <label class="form-control gap-1">
           <span class="label-text text-xs capitalize">{$_('admin_direct_mm_exchange')}</span>
-          <input bind:value={exchange} class="input input-bordered input-sm" placeholder="binance" />
+          <input bind:value={draftExchange} class="input input-bordered input-sm" placeholder="binance" />
         </label>
         <label class="form-control gap-1">
           <span class="label-text text-xs capitalize">{$_('admin_symbol_pair')}</span>
           <div class="flex gap-2">
-            <input bind:value={pair} class="input input-bordered input-sm" placeholder="BTC/USDT" />
+            <input bind:value={draftPair} class="input input-bordered input-sm" placeholder="BTC/USDT" />
             <button
               type="button"
               class="btn btn-sm btn-outline capitalize"
-              disabled={loading || refreshing}
+              disabled={loading || refreshing || !hasUnappliedChanges}
               onclick={applyFilters}
             >
               {$_('admin_filter')}
@@ -245,7 +278,7 @@
       message={error || $_('admin_analytics_load_failed')}
       context={$_('admin_analytics_context')}
       actionLabel={$_('admin_retry')}
-      onAction={() => void loadAnalytics({ force: true })}
+      onAction={() => void loadAnalytics(appliedQuery, { force: true })}
       testId="analytics-error"
     />
   {:else if panelState === 'empty'}
@@ -255,7 +288,7 @@
       message={$_('admin_analytics_empty_message')}
       context={$_('admin_analytics_context')}
       actionLabel={$_('admin_retry')}
-      onAction={() => void loadAnalytics({ force: true })}
+      onAction={() => void loadAnalytics(appliedQuery, { force: true })}
       testId="analytics-empty"
     />
   {:else}

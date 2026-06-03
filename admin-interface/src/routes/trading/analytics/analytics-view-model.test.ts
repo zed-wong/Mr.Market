@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  analyticsQueriesMatch,
   buildAnalyticsChartSections,
   buildAnalyticsRequestKey,
+  buildAnalyticsScopeLabel,
   buildDirectMarketMakingMetricCards,
   resolveAnalyticsPanelState,
 } from './analytics-view-model';
@@ -144,6 +146,81 @@ describe('analytics dashboard view model', () => {
     ]);
   });
 
+  it('withholds unavailable and unparseable chart values instead of coercing them to zero', () => {
+    const invalidFoundation: AdminAnalyticsFoundationResponse = {
+      ...foundation,
+      analytics: {
+        perOrder: {
+          ...foundation.analytics.perOrder!,
+          inventoryExposure: {
+            ...foundation.analytics.perOrder!.inventoryExposure,
+            quantity: {
+              ...foundation.analytics.perOrder!.inventoryExposure.quantity,
+              value: 'not-a-number' as unknown as string,
+            },
+            notional: metric('25'),
+          },
+          drawdown: {
+            ...foundation.analytics.perOrder!.drawdown,
+            series: [
+              { t: 'invalid-null', realized: null, fees: null, net: null },
+              { t: 'invalid-text', realized: '1', fees: '0.1', net: 'not-a-number' as unknown as string },
+              { t: 'valid', realized: '5', fees: undefined, net: '5' },
+            ],
+          },
+        },
+        aggregate: null,
+      },
+    };
+
+    const sections = buildAnalyticsChartSections(invalidFoundation);
+    const pnl = sections.find((section) => section.key === 'pnl');
+    const inventory = sections.find((section) => section.key === 'inventory');
+    const drawdown = sections.find((section) => section.key === 'drawdown');
+
+    expect(pnl?.points).toEqual([{ index: 2, label: 'valid', value: 5, realized: 5, fees: undefined }]);
+    expect(pnl?.points.map((point) => point.value)).not.toContain(0);
+    expect(inventory).toMatchObject({
+      status: 'unavailable',
+      points: [],
+      unavailableReason: 'chart-values-unavailable',
+    });
+    expect(drawdown?.points).toEqual([{ index: 2, label: 'valid', value: 5 }]);
+    expect(drawdown?.points.map((point) => point.value)).not.toContain(0);
+  });
+
+  it('marks chart sections unavailable when every returned chart value is unavailable', () => {
+    const unavailableFoundation: AdminAnalyticsFoundationResponse = {
+      ...foundation,
+      analytics: {
+        perOrder: {
+          ...foundation.analytics.perOrder!,
+          drawdown: {
+            ...foundation.analytics.perOrder!.drawdown,
+            series: [
+              { t: 'missing', realized: null, fees: null, net: null },
+              { t: 'bad', realized: 'bad' as unknown as string, fees: undefined, net: undefined },
+            ],
+          },
+        },
+        aggregate: null,
+      },
+    };
+
+    const sections = buildAnalyticsChartSections(unavailableFoundation);
+
+    expect(sections.find((section) => section.key === 'pnl')).toMatchObject({
+      status: 'unavailable',
+      points: [],
+      unavailableReason: 'chart-values-unavailable',
+    });
+    expect(sections.find((section) => section.key === 'drawdown')).toMatchObject({
+      status: 'unavailable',
+      points: [],
+      unavailableReason: 'chart-values-unavailable',
+    });
+  });
+
   it('returns explicit loading, error, empty, and ready states', () => {
     expect(resolveAnalyticsPanelState({ loading: true, error: null, foundation: null, dashboard: null })).toBe('loading');
     expect(resolveAnalyticsPanelState({ loading: false, error: 'failed', foundation: null, dashboard: null })).toBe('error');
@@ -169,5 +246,15 @@ describe('analytics dashboard view model', () => {
     const orderChanged = buildAnalyticsRequestKey({ scope: 'order', orderId: 'order-2', range: '7d' });
 
     expect(new Set([first, rangeChanged, scopeChanged, orderChanged]).size).toBe(4);
+  });
+
+  it('compares draft and applied queries so controls can change without relabeling rendered data', () => {
+    const applied = { scope: 'admin' as const, range: '24h' as const };
+    const draft = { scope: 'pair' as const, range: '7d' as const, exchange: 'binance', pair: 'BTC/USDT' };
+    const labels = { admin: 'admin-wide', pair: 'pair', order: 'order' };
+
+    expect(analyticsQueriesMatch(applied, draft)).toBe(false);
+    expect(buildAnalyticsScopeLabel(applied, labels)).toBe('admin-wide');
+    expect(buildAnalyticsScopeLabel(draft, labels)).toBe('binance BTC/USDT');
   });
 });

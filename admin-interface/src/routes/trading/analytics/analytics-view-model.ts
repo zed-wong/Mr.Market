@@ -44,6 +44,7 @@ export interface ChartSectionView {
 }
 
 const unavailable = 'unavailable';
+const chartValuesUnavailable = 'chart-values-unavailable';
 
 const toDecimal = (value: string | number | null | undefined) => {
   const decimal = new BigNumber(value ?? '');
@@ -151,10 +152,10 @@ export const buildDirectMarketMakingMetricCards = (
   ];
 };
 
-const pointValue = (value: string | null | undefined) => {
+const pointValue = (value: string | number | null | undefined) => {
   const decimal = toDecimal(value);
 
-  return decimal ? decimal.toNumber() : 0;
+  return decimal ? decimal.toNumber() : null;
 };
 
 const timelineSummary = (events: AnalyticsTimelineEvent[]) => {
@@ -167,21 +168,35 @@ const timelineSummary = (events: AnalyticsTimelineEvent[]) => {
   return `${events.length} events · ${counts.quote || 0} quote · ${counts.fill || 0} fill · ${counts.cancel || 0} cancel`;
 };
 
-const buildPnlSection = (series: PnlSeriesPoint[]): ChartSectionView => ({
-  key: 'pnl',
-  titleKey: 'admin_analytics_chart_pnl_series',
-  summary: `${series.length} points · net PNL series`,
-  points: series.map((point, index) => ({
-    index,
-    label: point.t,
-    value: pointValue(point.net),
-    realized: pointValue(point.realized),
-    fees: pointValue(point.fees),
-  })),
-  valueLabelKey: 'admin_analytics_metric_net_pnl',
-  status: series.length > 0 ? 'available' : 'unavailable',
-  unavailableReason: series.length > 0 ? '' : 'pnl-series-empty',
-});
+const buildPnlSection = (series: PnlSeriesPoint[]): ChartSectionView => {
+  const points = series.flatMap((point, index) => {
+    const value = pointValue(point.net);
+
+    if (value === null) {
+      return [];
+    }
+
+    return [
+      {
+        index,
+        label: point.t,
+        value,
+        realized: pointValue(point.realized) ?? undefined,
+        fees: pointValue(point.fees) ?? undefined,
+      },
+    ];
+  });
+
+  return {
+    key: 'pnl',
+    titleKey: 'admin_analytics_chart_pnl_series',
+    summary: `${points.length} points · net PNL series`,
+    points,
+    valueLabelKey: 'admin_analytics_metric_net_pnl',
+    status: points.length > 0 ? 'available' : 'unavailable',
+    unavailableReason: points.length > 0 ? '' : series.length > 0 ? chartValuesUnavailable : 'pnl-series-empty',
+  };
+};
 
 const buildInventorySection = (
   foundation: AdminAnalyticsFoundationResponse,
@@ -192,18 +207,32 @@ const buildInventorySection = (
   const notional = perOrder?.inventoryExposure.notional ?? aggregate?.inventoryExposure.notional;
   const points =
     rows.length > 0
-      ? rows.map((row, index) => ({
-          index,
-          label: row.asset,
-          value: pointValue(row.quantity),
-        }))
-      : [
-          {
-            index: 0,
-            label: perOrder?.baseAsset || 'inventory',
-            value: pointValue(perOrder?.inventoryExposure.quantity.value),
-          },
-        ];
+      ? rows.flatMap((row, index) => {
+          const value = pointValue(row.quantity);
+
+          return value === null
+            ? []
+            : [
+                {
+                  index,
+                  label: row.asset,
+                  value,
+                },
+              ];
+        })
+      : (() => {
+          const value = pointValue(perOrder?.inventoryExposure.quantity.value);
+
+          return value === null
+            ? []
+            : [
+                {
+                  index: 0,
+                  label: perOrder?.baseAsset || 'inventory',
+                  value,
+                },
+              ];
+        })();
   const notionalSummary =
     notional?.status === 'unavailable'
       ? `notional ${unavailable}: ${notional.unavailableReason}`
@@ -215,24 +244,36 @@ const buildInventorySection = (
     summary: notionalSummary,
     points,
     valueLabelKey: 'admin_analytics_metric_inventory_skew',
-    status: notional?.status ?? 'unavailable',
-    unavailableReason: notional?.unavailableReason || '',
+    status: points.length > 0 && notional?.status === 'available' ? 'available' : 'unavailable',
+    unavailableReason: notional?.unavailableReason || (points.length > 0 ? '' : chartValuesUnavailable),
   };
 };
 
-const buildDrawdownSection = (series: PnlSeriesPoint[], maxDrawdownQuote?: string | null): ChartSectionView => ({
-  key: 'drawdown',
-  titleKey: 'admin_analytics_chart_drawdown_risk',
-  summary: `${series.length} points · max drawdown ${formatDecimal(maxDrawdownQuote)}`,
-  points: series.map((point, index) => ({
-    index,
-    label: point.t,
-    value: Math.abs(pointValue(point.net)),
-  })),
-  valueLabelKey: 'admin_analytics_metric_drawdown',
-  status: series.length > 0 ? 'available' : 'unavailable',
-  unavailableReason: series.length > 0 ? '' : 'drawdown-series-empty',
-});
+const buildDrawdownSection = (series: PnlSeriesPoint[], maxDrawdownQuote?: string | null): ChartSectionView => {
+  const points = series.flatMap((point, index) => {
+    const value = pointValue(point.net);
+
+    return value === null
+      ? []
+      : [
+          {
+            index,
+            label: point.t,
+            value: Math.abs(value),
+          },
+        ];
+  });
+
+  return {
+    key: 'drawdown',
+    titleKey: 'admin_analytics_chart_drawdown_risk',
+    summary: `${points.length} points · max drawdown ${formatDecimal(maxDrawdownQuote)}`,
+    points,
+    valueLabelKey: 'admin_analytics_metric_drawdown',
+    status: points.length > 0 ? 'available' : 'unavailable',
+    unavailableReason: points.length > 0 ? '' : series.length > 0 ? chartValuesUnavailable : 'drawdown-series-empty',
+  };
+};
 
 export const buildAnalyticsChartSections = (
   foundation: AdminAnalyticsFoundationResponse | null,
@@ -306,3 +347,21 @@ export const buildAnalyticsRequestKey = (query: AnalyticsRouteQuery) =>
     exchange: query.exchange?.trim().toLowerCase() || '',
     pair: query.pair?.trim().toUpperCase() || '',
   });
+
+export const analyticsQueriesMatch = (left: AnalyticsRouteQuery, right: AnalyticsRouteQuery) =>
+  buildAnalyticsRequestKey(left) === buildAnalyticsRequestKey(right);
+
+export const buildAnalyticsScopeLabel = (
+  query: AnalyticsRouteQuery,
+  labels: { admin: string; pair: string; order: string },
+) => {
+  if (query.scope === 'order') {
+    return query.orderId?.trim() || labels.order;
+  }
+
+  if (query.scope === 'pair') {
+    return [query.exchange?.trim(), query.pair?.trim()].filter(Boolean).join(' ') || labels.pair;
+  }
+
+  return labels.admin;
+};

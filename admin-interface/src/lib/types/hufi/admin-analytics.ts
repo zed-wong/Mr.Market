@@ -39,21 +39,21 @@ export interface InventorySkewMetric {
   status: MetricStatus;
   unavailableReason: string | null;
   quantity?: DecimalMetric;
-  quantityByAsset?: Array<{ asset: string; quantity: string }>;
+  quantityByAsset?: Array<{ asset: string; quantity: string | null | undefined }>;
   costBasis: DecimalMetric;
   notional: DecimalMetric;
 }
 
 export interface PnlSeriesPoint {
   t: string;
-  realized: string;
-  fees: string;
-  net: string;
+  realized: string | null | undefined;
+  fees: string | null | undefined;
+  net: string | null | undefined;
 }
 
 export interface DrawdownAnalytics {
   status: MetricStatus;
-  maxDrawdownQuote: string;
+  maxDrawdownQuote: string | null;
   currency: string | null;
   peakAt: string | null;
   troughAt: string | null;
@@ -139,7 +139,7 @@ export interface AggregateAnalytics {
     total: DecimalMetric;
   };
   inventoryExposure: {
-    quantityByAsset: Array<{ asset: string; quantity: string }>;
+    quantityByAsset: Array<{ asset: string; quantity: string | null | undefined }>;
     costBasis: DecimalMetric;
     notional: DecimalMetric;
   };
