@@ -17,8 +17,10 @@ import type {
   DualAccountPairBalances,
   DualAccountRebalanceCandidate,
   DualAccountResolvedAccounts,
+  DualAccountSafetyBufferConfig,
   DualAccountTradeabilityPlan,
   DualAccountVolumeStrategyParams,
+  EfficientDualAccountVolumeMode,
 } from '../config/strategy-params.types';
 import { VolumeStrategyController } from '../controllers/volume-strategy.controller';
 import * as dualAccountConfig from './dual-account-config';
@@ -41,6 +43,43 @@ export type DualAccountCapacityDiagnostics = {
     | 'balanced'
     | 'unknown';
   rebalanceNeeded: boolean;
+};
+
+const MODE_AWARE_BEST_CAPACITY_WEIGHTS: Record<
+  EfficientDualAccountVolumeMode,
+  {
+    volume: number;
+    futureCapacity: number;
+    feeCost: number;
+    spreadCost: number;
+    rebalance: number;
+    dust: number;
+  }
+> = {
+  cheapest_capital: {
+    volume: 0.8,
+    futureCapacity: 1.6,
+    feeCost: 1.4,
+    spreadCost: 1.4,
+    rebalance: 2,
+    dust: 2,
+  },
+  balanced: {
+    volume: 1,
+    futureCapacity: 1,
+    feeCost: 1,
+    spreadCost: 1,
+    rebalance: 1.2,
+    dust: 1.5,
+  },
+  fastest_volume: {
+    volume: 1.6,
+    futureCapacity: 0.6,
+    feeCost: 0.7,
+    spreadCost: 0.7,
+    rebalance: 0.7,
+    dust: 1,
+  },
 };
 
 @Injectable()
@@ -373,15 +412,32 @@ export class DualAccountPlannerService {
   scoreBestCapacityCandidate(
     params: Pick<
       DualAccountVolumeStrategyParams,
-      'targetQuoteVolume' | 'totalMatchedQuoteVolume'
+      'mode' | 'targetQuoteVolume' | 'totalMatchedQuoteVolume'
     >,
     candidate: Pick<
       DualAccountBestCapacityCandidate,
-      'capacity' | 'futureOppositeCapacity' | 'imbalanceRatio'
+      | 'capacity'
+      | 'quoteVolume'
+      | 'futureOppositeCapacity'
+      | 'nextCycleQuoteCapacity'
+      | 'estimatedFeeQuote'
+      | 'estimatedSpreadCostQuote'
+      | 'rebalanceRiskQuote'
+      | 'dustRiskQuote'
+      | 'imbalanceRatio'
     >,
     price: BigNumber,
   ): BigNumber {
-    const candidateQuoteCapacity = candidate.capacity.multipliedBy(price);
+    const mode = this.resolveBestCapacityMode(params.mode);
+    const weights = MODE_AWARE_BEST_CAPACITY_WEIGHTS[mode];
+    const candidateQuoteCapacity = this.readFiniteBigNumber(
+      candidate.quoteVolume,
+      candidate.capacity.multipliedBy(price),
+    );
+    const nextCycleQuoteCapacity = this.readFiniteBigNumber(
+      candidate.nextCycleQuoteCapacity,
+      candidate.futureOppositeCapacity.multipliedBy(price),
+    );
     const targetQuoteVolume = new BigNumber(params.targetQuoteVolume || 0);
     const matchedQuoteVolume = new BigNumber(
       params.totalMatchedQuoteVolume || 0,
@@ -393,12 +449,35 @@ export class DualAccountPlannerService {
       candidateQuoteCapacity,
       remainingTargetQuote,
     );
+    const estimatedFeeQuote = this.readFiniteBigNumber(
+      candidate.estimatedFeeQuote,
+      new BigNumber(0),
+    );
+    const estimatedSpreadCostQuote = this.readFiniteBigNumber(
+      candidate.estimatedSpreadCostQuote,
+      new BigNumber(0),
+    );
+    const rebalanceRiskQuote = this.readFiniteBigNumber(
+      candidate.rebalanceRiskQuote,
+      candidate.imbalanceRatio.isGreaterThan(1)
+        ? candidateQuoteCapacity.multipliedBy(
+            candidate.imbalanceRatio.minus(1),
+          )
+        : new BigNumber(0),
+    );
+    const dustRiskQuote = this.readFiniteBigNumber(
+      candidate.dustRiskQuote,
+      new BigNumber(0),
+    );
 
-    return candidate.capacity
-      .multipliedBy(1000)
-      .plus(candidate.futureOppositeCapacity.multipliedBy(100))
-      .plus(targetProgressScore.multipliedBy(10))
-      .minus(candidate.imbalanceRatio.multipliedBy(10));
+    return candidateQuoteCapacity
+      .multipliedBy(weights.volume)
+      .plus(nextCycleQuoteCapacity.multipliedBy(weights.futureCapacity))
+      .plus(targetProgressScore.multipliedBy(0.3))
+      .minus(estimatedFeeQuote.multipliedBy(weights.feeCost))
+      .minus(estimatedSpreadCostQuote.multipliedBy(weights.spreadCost))
+      .minus(rebalanceRiskQuote.multipliedBy(weights.rebalance))
+      .minus(dustRiskQuote.multipliedBy(weights.dust));
   }
 
   findCandidateCapacity(
@@ -1773,11 +1852,19 @@ export class DualAccountPlannerService {
   private scoreDualAccountBestCapacityCandidate(
     params: Pick<
       DualAccountVolumeStrategyParams,
-      'targetQuoteVolume' | 'totalMatchedQuoteVolume'
+      'mode' | 'targetQuoteVolume' | 'totalMatchedQuoteVolume'
     >,
     candidate: Pick<
       DualAccountBestCapacityCandidate,
-      'capacity' | 'futureOppositeCapacity' | 'imbalanceRatio'
+      | 'capacity'
+      | 'quoteVolume'
+      | 'futureOppositeCapacity'
+      | 'nextCycleQuoteCapacity'
+      | 'estimatedFeeQuote'
+      | 'estimatedSpreadCostQuote'
+      | 'rebalanceRiskQuote'
+      | 'dustRiskQuote'
+      | 'imbalanceRatio'
     >,
     price: BigNumber,
   ): BigNumber {
@@ -2328,51 +2415,149 @@ export class DualAccountPlannerService {
       return null;
     }
 
-    const requestedQty = this.isBestCapacityConfig(params)
-      ? new BigNumber(params.maxOrderAmount || 0)
-      : new BigNumber(
-          this.applyVariance(
-            params.baseTradeAmount,
-            profile.tradeAmountVariance ?? params.tradeAmountVariance,
-            profile.tradeAmountMultiplier,
-            tradeAmountVarianceSample,
-          ),
-        );
-
-    if (!requestedQty.isFinite() || requestedQty.isLessThanOrEqualTo(0)) {
-      this.logger.warn(
-        `Dual-account volume ${strategyKey}: invalid qty ${
-          (params.maxOrderAmount ?? params.baseTradeAmount) || 0
-        } for side=${side}`,
-      );
-
-      return null;
-    }
-
-    const adjustedQuote = await this.quantizeAndAdaptDualAccountQuote(
-      strategyKey,
+    const executionAttempts = this.buildExecutionVarianceAttempts(
       params,
-      side,
+      profile,
       price,
-      requestedQty,
-      resolvedAccounts,
-      bestBid,
-      bestAsk,
-      feeBufferRate,
+      tradeAmountVarianceSample,
     );
 
-    if (!adjustedQuote) {
-      return null;
+    for (const attempt of executionAttempts) {
+      if (
+        !attempt.requestedQty.isFinite() ||
+        attempt.requestedQty.isLessThanOrEqualTo(0) ||
+        !attempt.price.isFinite() ||
+        attempt.price.isLessThanOrEqualTo(0)
+      ) {
+        this.logger.warn(
+          `Dual-account volume ${strategyKey}: invalid ${attempt.reason} qty ${attempt.requestedQty.toFixed()} price ${attempt.price.toFixed()} for side=${side}`,
+        );
+        continue;
+      }
+
+      const adjustedQuote = await this.quantizeAndAdaptDualAccountQuote(
+        strategyKey,
+        params,
+        side,
+        attempt.price,
+        attempt.requestedQty,
+        resolvedAccounts,
+        bestBid,
+        bestAsk,
+        feeBufferRate,
+      );
+
+      if (!adjustedQuote) {
+        continue;
+      }
+
+      return {
+        side,
+        resolvedAccounts,
+        profile,
+        requestedQty: attempt.requestedQty,
+        adjustedQuote,
+        sideReason: 'preferred_side_tradable',
+      };
     }
 
-    return {
-      side,
-      resolvedAccounts,
-      profile,
-      requestedQty,
-      adjustedQuote,
-      sideReason: 'preferred_side_tradable',
-    };
+    this.logger.warn(
+      `Dual-account volume ${strategyKey}: no valid variance-safe qty/price found for side=${side}`,
+    );
+
+    return null;
+  }
+
+  private buildExecutionVarianceAttempts(
+    params: DualAccountVolumeStrategyParams,
+    profile: DualAccountBehaviorProfile,
+    price: BigNumber,
+    tradeAmountVarianceSample: number,
+  ): Array<{
+    requestedQty: BigNumber;
+    price: BigNumber;
+    reason: 'variance_sample' | 'variance_resample' | 'deterministic';
+  }> {
+    const isBestCapacity = this.isBestCapacityConfig(params);
+    const baseQty = isBestCapacity
+      ? Number(params.maxOrderAmount || 0)
+      : Number(params.baseTradeAmount || 0);
+    const tradeVariance =
+      profile.tradeAmountVariance ?? params.tradeAmountVariance;
+    const priceVariance =
+      profile.priceOffsetVariance ?? params.priceOffsetVariance;
+    const deterministicQty = new BigNumber(
+      this.applyVariance(baseQty, undefined, profile.tradeAmountMultiplier),
+    );
+    const deterministicPrice = new BigNumber(
+      this.applyVariance(
+        price.toNumber(),
+        undefined,
+        profile.priceOffsetMultiplier,
+      ),
+    );
+
+    if (
+      !isBestCapacity ||
+      ((!tradeVariance || tradeVariance <= 0) &&
+        (!priceVariance || priceVariance <= 0))
+    ) {
+      return [
+        {
+          requestedQty: new BigNumber(
+            this.applyVariance(
+              baseQty,
+              tradeVariance,
+              profile.tradeAmountMultiplier,
+              tradeAmountVarianceSample,
+            ),
+          ),
+          price: deterministicPrice,
+          reason:
+            tradeVariance || priceVariance
+              ? 'variance_sample'
+              : 'deterministic',
+        },
+      ];
+    }
+
+    const buildAttempt = (
+      reason: 'variance_sample' | 'variance_resample',
+      qtySample: number,
+      priceSample: number,
+    ): {
+      requestedQty: BigNumber;
+      price: BigNumber;
+      reason: 'variance_sample' | 'variance_resample';
+    } => ({
+      requestedQty: new BigNumber(
+        this.applyVariance(
+          baseQty,
+          tradeVariance,
+          profile.tradeAmountMultiplier,
+          qtySample,
+        ),
+      ),
+      price: new BigNumber(
+        this.applyVariance(
+          price.toNumber(),
+          priceVariance,
+          profile.priceOffsetMultiplier,
+          priceSample,
+        ),
+      ),
+      reason,
+    });
+
+    return [
+      buildAttempt('variance_sample', tradeAmountVarianceSample, Math.random()),
+      buildAttempt('variance_resample', Math.random(), Math.random()),
+      {
+        requestedQty: deterministicQty,
+        price: deterministicPrice,
+        reason: 'deterministic',
+      },
+    ];
   }
 
   private async quantizeAndAdaptDualAccountQuote(
@@ -2673,19 +2858,45 @@ export class DualAccountPlannerService {
     retainFactor: BigNumber,
     roleAssignment: 'configured' | 'swapped',
   ): Omit<DualAccountBestCapacityCandidate, 'candidateRank'> {
+    const feeBufferRate = new BigNumber(1).minus(retainFactor);
     const capacity = this.computeCapacity(
       makerBalances,
       takerBalances,
       side,
       price,
-      new BigNumber(1).minus(retainFactor),
+      feeBufferRate,
     );
     const futureOppositeCapacity = this.computeCapacity(
       makerBalances,
       takerBalances,
       side === 'buy' ? 'sell' : 'buy',
       price,
-      new BigNumber(1).minus(retainFactor),
+      feeBufferRate,
+    );
+    const quoteVolume = this.toPositiveFiniteBigNumber(
+      capacity.multipliedBy(price),
+    );
+    const nextCycleQuoteCapacity = this.toPositiveFiniteBigNumber(
+      futureOppositeCapacity.multipliedBy(price),
+    );
+    const estimatedFeeQuote = quoteVolume.multipliedBy(
+      feeBufferRate.isFinite() && feeBufferRate.isGreaterThan(0)
+        ? feeBufferRate
+        : 0,
+    );
+    const rebalanceRiskQuote = this.computeRebalanceRiskQuote(
+      quoteVolume,
+      nextCycleQuoteCapacity,
+      this.computeImbalanceRatio(capacity, futureOppositeCapacity),
+    );
+    const dustRiskQuote = this.computeDustRiskQuote(
+      params,
+      quoteVolume,
+      feeBufferRate,
+    );
+    const imbalanceRatio = this.computeImbalanceRatio(
+      capacity,
+      futureOppositeCapacity,
     );
 
     return {
@@ -2695,13 +2906,104 @@ export class DualAccountPlannerService {
       makerBalances,
       takerBalances,
       capacity,
+      quoteVolume,
       futureOppositeCapacity,
-      imbalanceRatio: this.computeImbalanceRatio(
-        capacity,
-        futureOppositeCapacity,
-      ),
+      nextCycleQuoteCapacity,
+      estimatedFeeQuote,
+      estimatedSpreadCostQuote: new BigNumber(0),
+      rebalanceRiskQuote,
+      dustRiskQuote,
+      imbalanceRatio,
       roleAssignment,
     };
+  }
+
+  private computeRebalanceRiskQuote(
+    quoteVolume: BigNumber,
+    nextCycleQuoteCapacity: BigNumber,
+    imbalanceRatio: BigNumber,
+  ): BigNumber {
+    if (
+      !quoteVolume.isFinite() ||
+      quoteVolume.isLessThanOrEqualTo(0) ||
+      !imbalanceRatio.isFinite() ||
+      imbalanceRatio.isLessThanOrEqualTo(1)
+    ) {
+      return new BigNumber(0);
+    }
+
+    const missingOppositeCapacity = BigNumber.max(
+      quoteVolume.minus(nextCycleQuoteCapacity),
+      0,
+    );
+
+    return missingOppositeCapacity.plus(
+      quoteVolume.multipliedBy(imbalanceRatio.minus(1)).dividedBy(10),
+    );
+  }
+
+  private computeDustRiskQuote(
+    params: Pick<DualAccountVolumeStrategyParams, 'safetyBuffer'>,
+    quoteVolume: BigNumber,
+    feeBufferRate: BigNumber,
+  ): BigNumber {
+    const safetyBufferQuote = this.computeSafetyBufferQuote(
+      params,
+      new BigNumber(0),
+      quoteVolume,
+      feeBufferRate,
+    );
+
+    if (
+      !quoteVolume.isFinite() ||
+      quoteVolume.isLessThanOrEqualTo(0) ||
+      quoteVolume.isGreaterThanOrEqualTo(safetyBufferQuote)
+    ) {
+      return new BigNumber(0);
+    }
+
+    return safetyBufferQuote.minus(quoteVolume);
+  }
+
+  private computeSafetyBufferQuote(
+    params: Pick<DualAccountVolumeStrategyParams, 'safetyBuffer'>,
+    exchangeCostMin: BigNumber,
+    cycleNotional: BigNumber,
+    feeBufferRate: BigNumber,
+  ): BigNumber {
+    const safetyBuffer = this.resolveSafetyBuffer(params.safetyBuffer);
+    const exchangeMinimumBranch = this.readFiniteBigNumber(
+      exchangeCostMin,
+      new BigNumber(0),
+    ).multipliedBy(safetyBuffer.exchangeCostMinMultiplier);
+    const feeBranch = this.readFiniteBigNumber(
+      cycleNotional,
+      new BigNumber(0),
+    )
+      .multipliedBy(
+        feeBufferRate.isFinite() && feeBufferRate.isGreaterThan(0)
+          ? feeBufferRate
+          : 0,
+      )
+      .multipliedBy(safetyBuffer.feeCostMultiplier);
+
+    return BigNumber.max(exchangeMinimumBranch, feeBranch);
+  }
+
+  private resolveSafetyBuffer(
+    safetyBuffer?: DualAccountSafetyBufferConfig,
+  ): DualAccountSafetyBufferConfig {
+    return safetyBuffer || dualAccountConfig.DEFAULT_DUAL_ACCOUNT_SAFETY_BUFFER;
+  }
+
+  private readFiniteBigNumber(value: BigNumber, fallback: BigNumber): BigNumber {
+    return value?.isFinite() ? value : fallback;
+  }
+
+  private toPositiveFiniteBigNumber(value: BigNumber): BigNumber {
+    return value.isFinite() && value.isGreaterThan(0)
+      ? value
+      : new BigNumber(0);
   }
 
   private resolveRetainFactor(feeBufferRate: BigNumber): BigNumber {
@@ -2713,6 +3015,14 @@ export class DualAccountPlannerService {
           new BigNumber(0),
         )
       : new BigNumber(1);
+  }
+
+  private resolveBestCapacityMode(
+    mode: EfficientDualAccountVolumeMode | undefined,
+  ): EfficientDualAccountVolumeMode {
+    return mode && MODE_AWARE_BEST_CAPACITY_WEIGHTS[mode]
+      ? mode
+      : 'balanced';
   }
 
   private resolveVolumeSide(
