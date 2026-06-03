@@ -1,0 +1,76 @@
+import { BadRequestException } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+
+import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { AdminAnalyticsController } from './admin-analytics.controller';
+import { AdminAnalyticsService } from './admin-analytics.service';
+
+describe('AdminAnalyticsController', () => {
+  it('protects analytics routes with the admin JWT guard', () => {
+    const guards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      AdminAnalyticsController,
+    );
+
+    expect(guards).toContain(JwtAuthGuard);
+  });
+
+  it('delegates foundation query validation and projection reads to the service', async () => {
+    const analyticsService = {
+      getFoundation: jest.fn(async () => ({
+        generatedAt: '2026-06-04T00:00:00.000Z',
+      })),
+    };
+    const controller = new AdminAnalyticsController(analyticsService as any);
+
+    await expect(
+      controller.getFoundation(
+        'pair',
+        undefined,
+        'binance',
+        'BTC/USDT',
+        '2026-06-04T00:00:00.000Z',
+        '2026-06-04T01:00:00.000Z',
+        undefined,
+        '25',
+      ),
+    ).resolves.toEqual({
+      generatedAt: '2026-06-04T00:00:00.000Z',
+    });
+    expect(analyticsService.getFoundation).toHaveBeenCalledWith({
+      scope: 'pair',
+      orderId: undefined,
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: '2026-06-04T00:00:00.000Z',
+      endAt: '2026-06-04T01:00:00.000Z',
+      range: undefined,
+      limit: '25',
+    });
+  });
+
+  it('surfaces deterministic validation errors for unsafe query shapes', async () => {
+    const service = new AdminAnalyticsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const controller = new AdminAnalyticsController(service);
+
+    await expect(
+      controller.getFoundation(
+        ['pair', 'order'] as any,
+        undefined,
+        'binance',
+        'BTC/USDT',
+        '2026-06-04T00:00:00.000Z',
+        '2026-06-04T01:00:00.000Z',
+        undefined,
+        '25',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
