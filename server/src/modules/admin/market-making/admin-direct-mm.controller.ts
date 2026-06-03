@@ -88,6 +88,14 @@ export class AdminDirectMarketMakingController {
     return this.adminDirectMarketMakingService.editPausedVariation(id, body);
   }
 
+  @Get('direct-orders/:id/variation')
+  @ApiOperation({
+    summary: 'Get editable variation metadata for a direct admin order',
+  })
+  async getPausedVariationMetadata(@Param('id') id: string) {
+    return this.adminDirectMarketMakingService.getPausedVariationMetadata(id);
+  }
+
   @Delete('direct-orders/:id')
   @ApiOperation({ summary: 'Remove a direct admin market-making order' })
   async removeDirectOrder(@Param('id') id: string) {

@@ -95,6 +95,8 @@ const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
   'apiKeyId',
   'makerApiKeyId',
   'takerApiKeyId',
+  'definitionId',
+  'externalId',
   'accountLabel',
   'makerAccountLabel',
   'takerAccountLabel',
@@ -116,6 +118,41 @@ type RuntimeSessionLike = {
 type DirectOrderControllerType = string;
 
 type AdminCampaign = Record<string, unknown> & { joined: boolean };
+
+type DirectVariationEditability = {
+  editable: boolean;
+  reason: 'order_not_paused' | null;
+  state: string;
+};
+
+type DirectVariationFieldMetadata = {
+  key: string;
+  type: string | null;
+  required: boolean;
+  enum?: unknown[];
+  minimum?: number;
+  title?: string;
+  description?: string;
+  currentValue: unknown;
+  editable: boolean;
+  schema: Record<string, unknown>;
+};
+
+type DirectVariationMetadata = {
+  orderId: string;
+  state: string;
+  strategyDefinitionId: string;
+  strategyDefinition: {
+    id: string;
+    key: string;
+    name: string;
+    controllerType: string;
+  };
+  editable: boolean;
+  editability: DirectVariationEditability;
+  values: Record<string, unknown>;
+  fields: DirectVariationFieldMetadata[];
+};
 
 type DirectExecutionAccount = {
   apiKeyId: string;
@@ -613,6 +650,38 @@ export class AdminDirectMarketMakingService {
     }
   }
 
+  async getPausedVariationMetadata(
+    orderId: string,
+  ): Promise<DirectVariationMetadata> {
+    const order = await this.loadDirectVariationOrder(orderId);
+    const definition = await this.loadVariationStrategyDefinition(order);
+    const schema = this.readVariationConfigSchema(definition);
+    const fields = this.buildVariationFieldMetadata(
+      schema,
+      order.strategySnapshot?.resolvedConfig || {},
+    );
+    const values = Object.fromEntries(
+      fields.map((field) => [field.key, field.currentValue]),
+    );
+    const editability = this.getVariationEditability(order);
+
+    return {
+      orderId: order.orderId,
+      state: order.state,
+      strategyDefinitionId: definition.id,
+      strategyDefinition: {
+        id: definition.id,
+        key: definition.key,
+        name: definition.name,
+        controllerType: definition.controllerType,
+      },
+      editable: editability.editable,
+      editability,
+      values,
+      fields,
+    };
+  }
+
   async editPausedVariation(
     orderId: string,
     dto: DirectEditVariationDto,
@@ -625,50 +694,22 @@ export class AdminDirectMarketMakingService {
       typeof mapStrategySnapshotToMarketMakingOrderFields
     >;
   }> {
-    const order = await this.marketMakingRepository.findOne({
-      where: { orderId },
-    });
+    const order = await this.loadDirectVariationOrder(orderId);
 
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-    if (order.source !== 'admin_direct') {
-      throw new BadRequestException(
-        'Strategy variation edits are only supported for admin-direct orders',
-      );
-    }
     if (order.state !== 'paused') {
       throw new BadRequestException(
         'Strategy variation edits require a paused order',
       );
     }
-    if (!order.strategySnapshot?.resolvedConfig) {
-      throw new BadRequestException(
-        'Strategy snapshot resolved config is required for variation edit',
-      );
-    }
 
-    const strategyDefinitionId =
-      order.strategyDefinitionId || order.strategySnapshot.strategyDefinitionId;
-
-    if (!strategyDefinitionId) {
-      throw new BadRequestException(
-        'Strategy definition is required for variation edit',
-      );
-    }
-
-    const definition = await this.strategyDefinitionRepository.findOne({
-      where: { id: strategyDefinitionId },
-    });
-
-    if (!definition) {
-      throw new BadRequestException('Strategy definition not found');
-    }
+    const definition = await this.loadVariationStrategyDefinition(order);
+    const schema = this.readVariationConfigSchema(definition);
 
     assertStrategyConfigOverridesSafe(
       dto.configOverrides,
       DIRECT_RESERVED_CONFIG_FIELDS,
     );
+    this.assertVariationOverridesEditable(schema, dto.configOverrides || {});
 
     const editConfig = this.buildPausedVariationResolverConfig(
       definition,
@@ -680,9 +721,10 @@ export class AdminDirectMarketMakingService {
       editConfig,
       this.buildOrderRuntimeFields(order),
     );
+    this.validateVariationConfig(resolverInput, schema);
     const strategySnapshot =
       await this.strategyConfigResolver.resolveForOrderSnapshot(
-        strategyDefinitionId,
+        definition.id,
         resolverInput,
       );
 
@@ -697,7 +739,7 @@ export class AdminDirectMarketMakingService {
         source: 'admin_direct',
       },
       {
-        strategyDefinitionId,
+        strategyDefinitionId: definition.id,
         strategySnapshot,
         ...flattenedFields,
       },
@@ -706,7 +748,7 @@ export class AdminDirectMarketMakingService {
     return {
       orderId,
       state: order.state,
-      strategyDefinitionId,
+      strategyDefinitionId: definition.id,
       strategySnapshot,
       flattenedFields,
     };
@@ -1694,6 +1736,175 @@ export class AdminDirectMarketMakingService {
     return resolverInput;
   }
 
+  private async loadDirectVariationOrder(
+    orderId: string,
+  ): Promise<MarketMakingOrder> {
+    const order = await this.marketMakingRepository.findOne({
+      where: { orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    if (order.source !== 'admin_direct') {
+      throw new BadRequestException(
+        'Strategy variation edits are only supported for admin-direct orders',
+      );
+    }
+    if (!order.strategySnapshot?.resolvedConfig) {
+      throw new BadRequestException(
+        'Strategy snapshot resolved config is required for variation edit',
+      );
+    }
+
+    return order;
+  }
+
+  private async loadVariationStrategyDefinition(
+    order: MarketMakingOrder,
+  ): Promise<StrategyDefinition> {
+    const strategyDefinitionId =
+      order.strategySnapshot?.strategyDefinitionId || order.strategyDefinitionId;
+
+    if (!strategyDefinitionId) {
+      throw new BadRequestException(
+        'Strategy definition is required for variation edit',
+      );
+    }
+
+    const definition = await this.strategyDefinitionRepository.findOne({
+      where: { id: strategyDefinitionId },
+    });
+
+    if (!definition) {
+      throw new BadRequestException('Strategy definition not found');
+    }
+
+    return definition;
+  }
+
+  private readVariationConfigSchema(
+    definition: Pick<StrategyDefinition, 'configSchema'>,
+  ): Record<string, unknown> {
+    const schema = definition.configSchema;
+
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+      throw new BadRequestException(
+        'Strategy definition config schema is required for variation edit',
+      );
+    }
+
+    const properties = (schema as { properties?: unknown }).properties;
+
+    if (
+      !properties ||
+      typeof properties !== 'object' ||
+      Array.isArray(properties)
+    ) {
+      throw new BadRequestException(
+        'Strategy definition config schema is required for variation edit',
+      );
+    }
+
+    return schema;
+  }
+
+  private getVariationEditability(
+    order: Pick<MarketMakingOrder, 'state'>,
+  ): DirectVariationEditability {
+    if (order.state === 'paused') {
+      return {
+        editable: true,
+        reason: null,
+        state: order.state,
+      };
+    }
+
+    return {
+      editable: false,
+      reason: 'order_not_paused',
+      state: order.state,
+    };
+  }
+
+  private buildVariationFieldMetadata(
+    schema: Record<string, unknown>,
+    currentConfig: Record<string, unknown>,
+  ): DirectVariationFieldMetadata[] {
+    const properties = (schema as { properties: Record<string, unknown> })
+      .properties;
+    const required = new Set(
+      Array.isArray((schema as { required?: unknown }).required)
+        ? (schema as { required: unknown[] }).required.filter(
+            (field): field is string => typeof field === 'string',
+          )
+        : [],
+    );
+
+    return Object.entries(properties)
+      .filter(([key]) => !this.isReservedVariationField(key))
+      .map(([key, rawRule]) => {
+        const rule =
+          rawRule && typeof rawRule === 'object' && !Array.isArray(rawRule)
+            ? (rawRule as Record<string, unknown>)
+            : {};
+
+        return {
+          key,
+          type: typeof rule.type === 'string' ? rule.type : null,
+          required: required.has(key),
+          ...(Array.isArray(rule.enum) ? { enum: rule.enum } : {}),
+          ...(typeof rule.minimum === 'number'
+            ? { minimum: rule.minimum }
+            : {}),
+          ...(typeof rule.title === 'string' ? { title: rule.title } : {}),
+          ...(typeof rule.description === 'string'
+            ? { description: rule.description }
+            : {}),
+          currentValue: currentConfig[key],
+          editable: true,
+          schema: rule,
+        };
+      });
+  }
+
+  private assertVariationOverridesEditable(
+    schema: Record<string, unknown>,
+    configOverrides: Record<string, unknown>,
+  ): void {
+    const schemaRootFields = this.readSchemaRootFields(schema);
+
+    for (const field of Object.keys(configOverrides)) {
+      if (this.isReservedVariationField(field)) {
+        throw new BadRequestException(
+          `configOverrides cannot override system field: ${field}`,
+        );
+      }
+      if (!schemaRootFields.has(field)) {
+        throw new BadRequestException(
+          `configOverrides field is not editable: ${field}`,
+        );
+      }
+    }
+  }
+
+  private validateVariationConfig(
+    config: Record<string, unknown>,
+    schema: Record<string, unknown>,
+  ): void {
+    try {
+      this.strategyConfigResolver.validateConfigAgainstSchema(config, schema);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new BadRequestException(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
   private buildPausedVariationResolverConfig(
     definition: Pick<StrategyDefinition, 'configSchema'>,
     currentConfig: Record<string, unknown>,
@@ -1704,7 +1915,7 @@ export class AdminDirectMarketMakingService {
     const editableCurrentConfig: Record<string, unknown> = {};
 
     for (const [field, value] of Object.entries(currentConfig || {})) {
-      if (DIRECT_RESERVED_CONFIG_FIELDS.has(field)) {
+      if (this.isReservedVariationField(field)) {
         continue;
       }
       if (hasExplicitSchemaFields && !schemaRootFields.has(field)) {
@@ -1735,6 +1946,16 @@ export class AdminDirectMarketMakingService {
     }
 
     return new Set(Object.keys(configSchema.properties));
+  }
+
+  private isReservedVariationField(field: string): boolean {
+    if (DIRECT_RESERVED_CONFIG_FIELDS.has(field)) {
+      return true;
+    }
+
+    const normalized = field.trim().toLowerCase();
+
+    return normalized === 'id' || normalized.endsWith('id');
   }
 
   private buildOrderRuntimeFields(
