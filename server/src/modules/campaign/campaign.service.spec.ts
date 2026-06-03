@@ -114,6 +114,57 @@ describe('CampaignService', () => {
     });
   });
 
+  describe('campaign detail proxy', () => {
+    it('treats the missing HuFi my-progress route as unavailable optional data', async () => {
+      const get = jest.fn().mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 404'), {
+          isAxiosError: true,
+          response: {
+            status: 404,
+            data: 'Cannot GET /campaigns/137-0xabc/my-progress',
+          },
+        }),
+      );
+
+      jest
+        .spyOn(service as any, 'getOperatorAccessToken')
+        .mockResolvedValue('token-123');
+      (service as any).hufiRecordingOracleAPI = { get };
+
+      await expect(service.getCampaignProgress(137, '0xabc')).resolves.toEqual(
+        {},
+      );
+
+      expect(get).toHaveBeenCalledWith('/campaigns/137-0xabc/my-progress', {
+        headers: { Authorization: 'Bearer token-123' },
+      });
+    });
+
+    it('still reports missing required HuFi detail routes as request failures', async () => {
+      const get = jest.fn().mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 404'), {
+          isAxiosError: true,
+          response: {
+            status: 404,
+            data: 'Cannot GET /campaigns/137-0xabc/leaderboard',
+          },
+        }),
+      );
+
+      jest
+        .spyOn(service as any, 'getOperatorAccessToken')
+        .mockResolvedValue('token-123');
+      (service as any).hufiRecordingOracleAPI = { get };
+
+      await expect(
+        service.getCampaignLeaderboard(137, '0xabc'),
+      ).rejects.toMatchObject({
+        message:
+          'HuFi campaign leaderboard request failed: Cannot GET /campaigns/137-0xabc/leaderboard',
+      });
+    });
+  });
+
   describe('register_exchange_api_key', () => {
     it('registers exchange api key with recording oracle', async () => {
       const post = jest.fn().mockResolvedValue({ data: { id: 'reg-1' } });

@@ -2,14 +2,10 @@
     import BigNumber from "bignumber.js";
     import { onDestroy } from "svelte";
     import { _ } from "svelte-i18n";
-    import {
-        getCampaignLeaderboard,
-        getCampaignProgress,
-    } from "$lib/helpers/mrm/admin/direct-market-making";
+    import { getCampaignLeaderboard } from "$lib/helpers/mrm/admin/direct-market-making";
     import type {
         AdminCampaign,
         CampaignLeaderboard,
-        CampaignProgress,
         LeaderboardEntry,
     } from "$lib/types/hufi/admin-direct-market-making";
 
@@ -21,7 +17,6 @@
 
     const REFRESH_INTERVAL_MS = 30000;
 
-    let progress: CampaignProgress | null = null;
     let leaderboard: CampaignLeaderboard | null = null;
     let loading = false;
     let refreshing = false;
@@ -42,11 +37,9 @@
     $: campaignName = String(campaign?.symbol || campaign?.name || "—");
     $: leaderboardRows = normalizeLeaderboardRows(leaderboard);
     $: updatedAt = formatTimestamp(String(leaderboard?.updated_at || ""));
-    $: progressPercent = getProgressPercent(progress);
 
     $: if (campaignKey && campaignKey !== activeCampaignKey) {
         activeCampaignKey = campaignKey;
-        progress = null;
         leaderboard = null;
         error = "";
         void loadDetails();
@@ -85,31 +78,13 @@
             loading = true;
         }
 
-        const failures: string[] = [];
-
         try {
-            const [progressResult, leaderboardResult] = await Promise.allSettled([
-                getCampaignProgress(chainId, campaignAddress, token),
-                getCampaignLeaderboard(chainId, campaignAddress, token),
-            ]);
-
-            if (progressResult.status === "fulfilled") {
-                progress = normalizeCampaignProgress(progressResult.value);
-            } else {
-                failures.push(
-                    `progress: ${getErrorMessage(progressResult.reason)}`,
-                );
-            }
-
-            if (leaderboardResult.status === "fulfilled") {
-                leaderboard = leaderboardResult.value;
-            } else {
-                failures.push(
-                    `leaderboard: ${getErrorMessage(leaderboardResult.reason)}`,
-                );
-            }
-
-            error = failures.join(" · ");
+            leaderboard = await getCampaignLeaderboard(
+                chainId,
+                campaignAddress,
+                token,
+            );
+            error = "";
         } catch (cause) {
             error =
                 cause instanceof Error
@@ -119,70 +94,6 @@
             loading = false;
             refreshing = false;
         }
-    }
-
-    function getErrorMessage(cause: unknown): string {
-        return cause instanceof Error ? cause.message : String(cause);
-    }
-
-    function normalizeCampaignProgress(value: unknown): CampaignProgress {
-        const source = findProgressSource(value);
-
-        return {
-            ...source,
-            score: toNumberLike(
-                pickFirst(source, [
-                    "score",
-                    "current_score",
-                    "currentScore",
-                    "points",
-                    "value",
-                ]),
-            ),
-            result: toNumberLike(
-                pickFirst(source, [
-                    "result",
-                    "target",
-                    "target_score",
-                    "targetScore",
-                    "required_score",
-                    "requiredScore",
-                ]),
-            ),
-            estimated_reward: toNumberLike(
-                pickFirst(source, [
-                    "estimated_reward",
-                    "estimatedReward",
-                    "estimated_rewards",
-                    "estimatedRewards",
-                    "reward",
-                    "rewards",
-                ]),
-            ),
-        };
-    }
-
-    function findProgressSource(value: unknown): UnknownRecord {
-        if (!isRecord(value)) return {};
-        for (const key of ["data", "progress", "my_progress", "myProgress"]) {
-            const nested = value[key];
-            if (isRecord(nested)) return nested;
-        }
-        return value;
-    }
-
-    function pickFirst(source: UnknownRecord, keys: string[]): unknown {
-        for (const key of keys) {
-            if (source[key] !== undefined && source[key] !== null) {
-                return source[key];
-            }
-        }
-        return undefined;
-    }
-
-    function toNumberLike(value: unknown): number {
-        const parsed = new BigNumber(String(value ?? 0));
-        return parsed.isFinite() ? parsed.toNumber() : 0;
     }
 
     function isRecord(value: unknown): value is UnknownRecord {
@@ -225,16 +136,6 @@
                 address &&
                 serverAddress.toLowerCase() === address.toLowerCase(),
         );
-    }
-
-    function getProgressPercent(value: CampaignProgress | null): number {
-        if (!value) return 0;
-        const score = new BigNumber(String(value.score ?? 0));
-        const result = new BigNumber(String(value.result ?? 0));
-        if (!score.isFinite() || !result.isFinite() || result.lte(0)) return 0;
-        return BigNumber.min(score.dividedBy(result).multipliedBy(100), 100)
-            .decimalPlaces(2)
-            .toNumber();
     }
 
     onDestroy(stopPolling);
@@ -284,12 +185,11 @@
             </div>
 
             <div class="px-7 pb-7 flex flex-col gap-5">
-                {#if loading && !progress && !leaderboard}
+                {#if loading && !leaderboard}
                     <div class="flex flex-col gap-3 py-8">
-                        <div class="skeleton h-20 w-full rounded-xl"></div>
                         <div class="skeleton h-48 w-full rounded-xl"></div>
                     </div>
-                {:else if error && !progress && !leaderboard}
+                {:else if error && !leaderboard}
                     <div
                         class="bg-error/10 border border-error/20 rounded-xl p-4 flex flex-col gap-3"
                     >
@@ -317,66 +217,29 @@
                         </div>
                     {/if}
 
-                    <div class="bg-base-200/50 rounded-xl p-4 flex flex-col gap-4">
-                        <div class="flex items-center justify-between gap-3">
-                            <span class="text-sm font-bold text-base-content">
-                                {$_("admin_direct_mm_campaign_progress")}
-                            </span>
-                            <button
-                                class="btn btn-xs btn-ghost text-base-content/60"
-                                disabled={loading || refreshing}
-                                on:click={() => loadDetails()}
-                            >
-                                {refreshing
-                                    ? $_("admin_direct_mm_refreshing")
-                                    : $_("admin_direct_mm_refresh")}
-                            </button>
-                        </div>
-                        <div class="grid grid-cols-3 gap-3">
-                            <div class="bg-base-100 rounded-lg p-3 flex flex-col gap-1">
-                                <span class="text-xs text-base-content/50">
-                                    {$_("admin_direct_mm_score")}
-                                </span>
-                                <span class="text-sm font-bold text-base-content">
-                                    {formatNumber(progress?.score)}
-                                </span>
-                            </div>
-                            <div class="bg-base-100 rounded-lg p-3 flex flex-col gap-1">
-                                <span class="text-xs text-base-content/50">
-                                    {$_("admin_direct_mm_result")}
-                                </span>
-                                <span class="text-sm font-bold text-base-content">
-                                    {formatNumber(progress?.result)}
-                                </span>
-                            </div>
-                            <div class="bg-base-100 rounded-lg p-3 flex flex-col gap-1">
-                                <span class="text-xs text-base-content/50">
-                                    {$_("admin_direct_mm_estimated_reward")}
-                                </span>
-                                <span class="text-sm font-bold text-base-content">
-                                    {formatNumber(progress?.estimated_reward)}
-                                </span>
-                            </div>
-                        </div>
-                        <progress
-                            class="progress progress-primary w-full"
-                            value={progressPercent}
-                            max="100"
-                        ></progress>
-                    </div>
-
                     <div class="flex flex-col gap-3">
                         <div class="flex items-center justify-between gap-3">
                             <span class="text-sm font-bold text-base-content">
                                 {$_("admin_direct_mm_campaign_leaderboard")}
                             </span>
-                            {#if updatedAt}
-                                <span class="text-xs text-base-content/50">
-                                    {$_("admin_direct_mm_campaign_updated_at", {
-                                        values: { time: updatedAt },
-                                    })}
-                                </span>
-                            {/if}
+                            <div class="flex items-center gap-3">
+                                {#if updatedAt}
+                                    <span class="text-xs text-base-content/50">
+                                        {$_("admin_direct_mm_campaign_updated_at", {
+                                            values: { time: updatedAt },
+                                        })}
+                                    </span>
+                                {/if}
+                                <button
+                                    class="btn btn-xs btn-ghost text-base-content/60"
+                                    disabled={loading || refreshing}
+                                    on:click={() => loadDetails()}
+                                >
+                                    {refreshing
+                                        ? $_("admin_direct_mm_refreshing")
+                                        : $_("admin_direct_mm_refresh")}
+                                </button>
+                            </div>
                         </div>
 
                         {#if leaderboardRows.length > 0}

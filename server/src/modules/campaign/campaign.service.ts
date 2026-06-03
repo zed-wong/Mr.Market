@@ -241,6 +241,17 @@ export class CampaignService {
         : undefined;
       const errorMessage = this.getAxiosErrorMessage(error);
 
+      if (
+        label === 'progress' &&
+        this.isMissingRecordingOracleRoute(status, errorMessage)
+      ) {
+        this.logger.debug(
+          `HuFi campaign ${label} route is unavailable (${path}): ${errorMessage}`,
+        );
+
+        return {};
+      }
+
       this.logger.warn(
         `HuFi campaign ${label} request failed (${path}): ${errorMessage}`,
       );
@@ -252,6 +263,13 @@ export class CampaignService {
           : HttpStatus.BAD_GATEWAY,
       );
     }
+  }
+
+  private isMissingRecordingOracleRoute(
+    status: number | undefined,
+    message: string,
+  ): boolean {
+    return status === 404 && /^Cannot GET\s+/i.test(message);
   }
 
   private getAxiosErrorMessage(error: unknown): string {
