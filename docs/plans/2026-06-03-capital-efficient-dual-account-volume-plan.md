@@ -4,6 +4,7 @@
 
 - **Plan date:** 2026-06-03
 - **Strategy name:** Efficient Dual Account Volume
+- **Chinese product name:** 高效双账户刷量策略
 - **Short name:** Efficient Volume
 - **Supersedes:** `dual account volume`, `dual account volume best capacity`
 
@@ -15,6 +16,7 @@ Design one user-facing dual-account volume strategy whose objective is:
 - Produce the most executable volume per unit time.
 - Keep running for as long as possible without manual rebalance.
 - Explain balance blockers in human terms before and during runtime.
+- Be fully usable from admin direct market making as a real production strategy, not only as backend planner logic.
 
 This plan replaces the current user-facing split between `dual account volume` and `dual account volume best capacity`. Those names expose implementation details instead of answering the user's real question: “How much do I need, how fast can it刷量, and why did it stop?”
 
@@ -38,6 +40,25 @@ raw notional 0.0333 USDT < costMin 1 USDT
 The product-level meaning is simpler:
 
 > The next cycle cannot execute because one side does not have enough usable inventory or quote value to satisfy the exchange minimum order size.
+
+## What Already Exists
+
+This plan is not a greenfield rewrite. The correct implementation path is to reuse and simplify the existing dual-account planner:
+
+- `DualAccountPlannerService.buildBestCapacityCandidates()` already builds the four useful candidates: buy/sell multiplied by configured/swapped account roles.
+- `DualAccountPlannerService.scoreBestCapacityCandidate()` already ranks candidates, but the weights are hard-coded and not tied to user-facing modes.
+- `dynamicRoleSwitching` already allows account role swaps.
+- `cycleMode: 'alternating'` already rotates roles after a matched cycle.
+- `activeCycle` already tracks the currently open dual-account cycle inside strategy parameters.
+- `OrderScopedBalanceQueryService.getAvailableBalancesForPair()` already provides the order-scoped balance read needed by the planner.
+- `ExchangeConnectorAdapterService.loadTradingRules()` already provides market precision, minimums, maker fee, and taker fee.
+
+The actual product change is therefore:
+
+1. Make best-capacity candidate planning the only normal planning path.
+2. Replace the hard-coded score with a mode-aware score.
+3. Add readiness/capacity projection using the same planner inputs.
+4. Add cycle-level visibility so maker and inline taker activity are shown as one user-understandable unit.
 
 ## Key Product Decision
 
@@ -105,11 +126,21 @@ For each candidate, compute:
 
 Then choose the candidate with the best score for the active mode.
 
-Suggested default score:
+The existing implementation already has a score, but it is hard-coded roughly as:
+
+```text
+score = capacity * 1000
+      + futureOppositeCapacity * 100
+      + targetProgress * 10
+      - imbalanceRatio * 10
+```
+
+That should be replaced with a normalized, mode-aware score. All score terms should be converted to quote value where possible so weights are comparable:
 
 ```text
 score = executable_volume
       + future_capacity_bonus
+      + target_progress_bonus
       - fee_cost_penalty
       - spread_cost_penalty
       - rebalance_penalty
@@ -117,6 +148,30 @@ score = executable_volume
 ```
 
 The default strategy should prefer a slightly smaller cycle that can repeat over a larger one that strands funds on the wrong side.
+
+### Mode Weights
+
+Use explicit weights so the three modes are real behavior, not labels.
+
+| Mode | Volume weight | Future capacity weight | Fee/spread cost weight | Rebalance penalty | Dust/minimum penalty | Behavior |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `cheapest_capital` | 0.8 | 1.6 | 1.4 | 2.0 | 2.0 | Prefer smaller repeatable cycles and avoid any action likely to strand funds or require rebalance. |
+| `balanced` | 1.0 | 1.0 | 1.0 | 1.2 | 1.5 | Default. Maximize volume while preserving enough opposite-side capacity for the next cycle. |
+| `fastest_volume` | 1.6 | 0.6 | 0.7 | 0.7 | 1.0 | Prefer the largest valid cycle, but still reject candidates that would immediately break the next cycle below exchange minimums. |
+
+Suggested normalized formula:
+
+```text
+score = quoteVolume * volumeWeight
+      + nextCycleQuoteCapacity * futureCapacityWeight
+      + targetProgressQuote * targetProgressWeight
+      - estimatedFeeQuote * feeCostWeight
+      - estimatedSpreadCostQuote * spreadCostWeight
+      - rebalanceRiskQuote * rebalancePenaltyWeight
+      - dustRiskQuote * dustPenaltyWeight
+```
+
+`targetProgressWeight` can stay `0.3` for all modes. Target completion is useful, but it must not dominate capital efficiency or continuity.
 
 ### 3. It Fails Before Running, Not After Confusing Logs
 
@@ -200,6 +255,24 @@ The useful minimum is:
 - The other account has at least the corresponding exchange-minimum buy notional of `QUOTE`.
 - Both accounts have enough extra balance to cover fees, precision rounding, and configured safety buffer.
 
+Default safety buffer:
+
+```text
+safetyQuoteBuffer = max(
+  exchangeCostMin * 0.5,
+  cycleNotional * (makerFee + takerFee) * 2
+)
+
+minimumUsefulQuote = exchangeCostMin + safetyQuoteBuffer
+minimumUsefulBase = minimumUsefulQuote / referencePrice
+```
+
+Reasoning:
+
+- `exchangeCostMin * 0.5` prevents balances that barely clear the minimum from turning into dust after rounding or price movement.
+- `2 * (makerFee + takerFee)` covers the two-leg cycle fee drag with a second-cycle buffer.
+- Taking the max keeps tiny-fee markets from under-buffering low notional pairs.
+
 For longer continuous runtime, the recommended capital is:
 
 - Enough `BASE` on one side and `QUOTE` on the other for the target cycle size.
@@ -225,6 +298,14 @@ This means the strategy should show three numbers, not one generic balance requi
 - Fee estimates.
 - Mode: cheapest capital, balanced, fastest volume.
 - User limits: max cycle size, max notional per cycle, max slippage/spread, cooldown.
+- Randomization settings: `tradeAmountVariance` and `priceOffsetVariance`.
+
+`tradeAmountVariance` and `priceOffsetVariance` should be retained, but they are not planning objectives. They are execution-shape noise applied after candidate selection and before final quantization:
+
+- Candidate scoring uses deterministic base capacity and reference price.
+- `tradeAmountVariance` samples a smaller final quantity within the selected candidate's safe capacity.
+- `priceOffsetVariance` samples a maker price offset within the user's configured slippage/spread guard.
+- Variance must never push a cycle below exchange minimums. If sampled output is invalid, resample once, then fall back to the deterministic safe quantity/price.
 
 ### Candidate Construction
 
@@ -256,6 +337,69 @@ expectedNextCycleCapacity
 ```
 
 The intent worker remains responsible for reservations, exchange calls, tracked orders, and state transitions.
+
+## Readiness / Capacity Evaluator
+
+Do not introduce a separate service unless the planner grows too large during implementation. The first implementation should add a read-only method on `DualAccountPlannerService` because the required dependencies already live there.
+
+Suggested method:
+
+```text
+DualAccountPlannerService.evaluateEfficientDualAccountReadiness(params)
+```
+
+It should reuse:
+
+- `OrderScopedBalanceQueryService.getAvailableBalancesForPair(exchange, pair, accountLabel, marketMakingOrderId)` for both selected accounts.
+- `ExchangeConnectorAdapterService.loadTradingRules(exchange, pair)` for precision, minimum notional, maker fee, and taker fee.
+- The same candidate construction and scoring used by runtime planning.
+
+It returns:
+
+```text
+canStart
+mode
+bestFirstAction
+maximumCycleQty
+recommendedCycleQty
+minimumCapitalByAccountAsset
+recommendedCapitalByAccountAsset
+missingBalances
+estimatedCycles
+estimatedVolume
+blockingReasons
+```
+
+This keeps create-time UX, runtime planning, and debug output using one source of truth.
+
+## Cycle Visibility Decision
+
+Use deterministic cycle id grouping first. Do not add a new cycle table in the first implementation.
+
+Reasoning:
+
+- `activeCycle` already exists in strategy parameters.
+- Strategy execution history and tracked order metadata can carry `cycleId`, maker/taker role, side, account, planned qty, filled qty, and failure reason.
+- A new table would add migration, lifecycle, and reconciliation surface area before proving the UX needs it.
+
+Required metadata for both maker and inline taker legs:
+
+```text
+cycleId
+cycleRole: maker | taker
+accountLabel
+side
+plannedQty
+plannedPrice
+filledQty
+notional
+status
+failureReason
+linkedIntentId
+linkedTrackedOrderId
+```
+
+If deterministic grouping cannot answer admin runtime queries after implementation, add a cycle table in a follow-up. Do not start there.
 
 ## Rebalance Behavior
 
@@ -313,26 +457,33 @@ Translate internal reasons:
 
 - Add a single strategy definition for Efficient Dual Account Volume.
 - Keep low-level execution policy internal.
-- Define config fields around user goals: pair, accounts, mode, max cycle size, max cost/slippage, cooldown, optional target volume.
+- Define config fields around user goals: pair, accounts, mode, max cycle size, max cost/slippage, cooldown, optional target volume, safety buffer override.
+- Preserve `tradeAmountVariance` and `priceOffsetVariance` as optional execution randomization fields.
+- Default missing persisted `mode` to `balanced`.
+- Default missing safety buffer fields to the formula in this plan.
+- Treat missing `dynamicRoleSwitching` on legacy data as `true` for the unified strategy. Legacy stopped/old-definition orders keep their existing behavior until explicitly migrated.
 - Mark existing dual-account variants as superseded in admin copy once replacement is ready.
 
 ### Phase 2: Add Readiness And Capacity Projection
 
-- Build a read-only capacity evaluator that can run before activation and during ticks.
+- Add a read-only capacity evaluator method on `DualAccountPlannerService` that can run before activation and during ticks.
 - Return structured readiness data: canStart, bestFirstAction, maximumCycleQty, missingBalances, estimatedCycles, estimatedVolume.
-- Use order-scoped ledger balances and tracked exchange rules only.
+- Reuse `OrderScopedBalanceQueryService.getAvailableBalancesForPair()` and `ExchangeConnectorAdapterService.loadTradingRules()`.
+- Use order-scoped ledger balances and tracked/rule snapshots only. No direct exchange balance fetch from the tick path.
 - Add focused unit tests for minimum-notional, dust, one-sided inventory, and balanced-inventory cases.
 
 ### Phase 3: Replace Fixed/Fallback Planning With Candidate Scoring
 
-- Evaluate all four account-role candidates every tick.
-- Score candidates by executable volume, future capacity, fees, spread, and rebalance risk.
+- Make the existing best-capacity candidate builder the only normal path for this strategy.
+- Remove the classic “preferred side then fallback side” behavior from the unified strategy path.
+- Replace the existing hard-coded score weights with the mode-aware normalized scoring table above.
+- Score candidates by executable volume, future capacity, fees, spread, dust risk, and rebalance risk.
 - Emit one cycle action with a human-readable reason.
 - Preserve the existing separation where scheduling emits intents/actions and workers own exchange mutation.
 
 ### Phase 4: Make Cycles First-Class Runtime Records
 
-- Record cycle-level state that groups maker and taker legs.
+- Use deterministic `cycleId` metadata to group maker and taker legs. Do not add a cycle table in the first implementation.
 - Render inline taker IOC attempts as visible cycle legs.
 - Attach failure reasons to the cycle, not only to the maker intent.
 - Keep order attribution so fills, fees, reversals, and reservations remain traceable to the market-making order.
@@ -347,11 +498,29 @@ Translate internal reasons:
 ### Phase 6: Migration / Removal
 
 - Do not keep old strategies as separate user-facing products once the unified strategy is ready.
-- Existing persisted orders should either keep their old definition until stopped or be migrated explicitly by an operator action.
+- Existing persisted orders keep their old strategy definition until stopped or explicitly migrated by an operator action.
+- Shared `DualAccountVolumeStrategyParams` fields remain backward-compatible.
+- Missing new fields resolve as: `mode = balanced`, default safety buffer formula, `cycleMode = alternating`, `dynamicRoleSwitching = true` for unified strategy only, variance fields unchanged if present and omitted if absent.
 - New admin order creation should use the unified strategy only.
+
+## Test Plan
+
+- Unit test mode scoring: same four candidates produce different winners for `cheapest_capital`, `balanced`, and `fastest_volume` when future capacity and volume conflict.
+- Unit test readiness: one account has base and the other has quote, strategy can start without mirrored two-sided inventory.
+- Unit test blocked readiness: quote balance below `costMin + safetyBuffer` returns exact missing quote amount.
+- Unit test dust rebalance: computed rebalance below exchange minimum is not scheduled and becomes a user-facing blocker.
+- Unit test variance: `tradeAmountVariance` and `priceOffsetVariance` never reduce final order below exchange minimum after quantization.
+- Integration test planner path: unified strategy uses best-capacity candidate selection and does not use classic preferred-side fallback as the primary path.
+- Admin UI test: create/edit flow renders minimum capital, recommended capital, best first action, and missing balances.
+- Admin UI/runtime test: one cycle shows both maker and taker legs even when taker execution is inline IOC.
 
 ## Acceptance Criteria
 
+- Admin direct market making can create a new Efficient Dual Account Volume order using two selected exchange accounts and a selected pair.
+- Admin direct market making can run the strategy against real order-scoped balances and exchange trading rules without requiring manual backend commands or hidden config edits.
+- Admin direct market making shows pre-start readiness: can start / cannot start, best first action, minimum capital, recommended capital, missing account/asset/amount, and estimated volume/cycles.
+- Admin direct market making shows runtime cycle visibility: cycle id, maker leg, taker leg, account labels, side, qty, price, status, and failure reason.
+- Admin direct market making can pause/stop the strategy and show the latest actionable blocker when the strategy cannot continue.
 - A user can understand before start whether two selected accounts can run the strategy.
 - The UI shows the minimum and recommended balances per account and asset.
 - The planner never schedules a cycle or rebalance whose adapted notional is known to be below exchange minimums.
@@ -362,7 +531,11 @@ Translate internal reasons:
 
 ## Open Questions
 
-- Should fastest-volume mode intentionally use mirrored base/quote inventory on both accounts, or should it still enforce a continuity score floor?
-- What default safety buffer should be used above exchange minimum notional: fixed percent, fixed quote amount, or both?
 - Should user-facing volume estimates include fee drag and expected failed-cycle probability, or keep estimates conservative and simple?
-- Do we need a cycle-level persistence table, or can tracked intents/orders be grouped by a deterministic cycle id without new storage?
+
+## NOT In Scope
+
+- New cycle persistence table in the first implementation. Use deterministic `cycleId` metadata first.
+- Direct exchange balance reads from strategy tick planning. Use order-scoped ledger/cache-backed balance queries.
+- Keeping both old dual-account strategies as first-class new-order choices after the unified strategy ships.
+- Automatic cross-account fund transfer. If balances are wrong, show the missing asset and recommended deposit/rebalance action.
