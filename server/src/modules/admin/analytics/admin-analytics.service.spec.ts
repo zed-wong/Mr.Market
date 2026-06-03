@@ -1578,6 +1578,250 @@ describe('AdminAnalyticsService', () => {
     );
   });
 
+  it('filters Direct MM fill-rate fallback intents to non-deleted admin_direct orders', async () => {
+    const marketMakingOrders = createRepository([
+      {
+        orderId: 'direct-active',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        source: 'admin_direct',
+        state: 'active',
+        createdAt: ts(0),
+      },
+      {
+        orderId: 'direct-deleted',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        source: 'admin_direct',
+        state: 'deleted',
+        createdAt: ts(0),
+      },
+      {
+        orderId: 'payment-active',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        source: 'payment_flow',
+        state: 'active',
+        createdAt: ts(0),
+      },
+    ]);
+    const intents = createRepository([
+      {
+        intentId: 'intent-direct',
+        strategyKey: 'strategy-direct',
+        type: 'CREATE_LIMIT_ORDER',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'DONE',
+        metadata: { orderId: 'direct-active' },
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+      {
+        intentId: 'intent-deleted',
+        strategyKey: 'strategy-deleted',
+        type: 'CREATE_LIMIT_ORDER',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'DONE',
+        metadata: { orderId: 'direct-deleted' },
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+      {
+        intentId: 'intent-payment',
+        strategyKey: 'strategy-payment',
+        type: 'CREATE_LIMIT_ORDER',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'DONE',
+        metadata: { orderId: 'payment-active' },
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+    ]);
+    const performanceService = {
+      getOrderPerformance: jest.fn(async (orderId: string) => {
+        if (orderId === 'direct-active') {
+          return {
+            series: [{ t: ts(2), realized: '10', fees: '1', net: '9' }],
+            summary: {
+              realizedPnlQuote: '10',
+              feesQuote: '1',
+              netPnlQuote: '9',
+              tradedQuoteVolume: '100',
+              effectiveSpreadBps: '1000',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '0',
+              inventoryCostQuote: '0',
+              inventoryAverageCostQuote: null,
+            },
+          };
+        }
+
+        if (orderId === 'payment-active') {
+          return {
+            series: [{ t: ts(2), realized: '100', fees: '10', net: '90' }],
+            summary: {
+              realizedPnlQuote: '100',
+              feesQuote: '10',
+              netPnlQuote: '90',
+              tradedQuoteVolume: '1000',
+              effectiveSpreadBps: '1000',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '0',
+              inventoryCostQuote: '0',
+              inventoryAverageCostQuote: null,
+            },
+          };
+        }
+
+        throw new Error(`Unexpected performance lookup for ${orderId}`);
+      }),
+    };
+    const orderBookTracker = {
+      getOrderBook: jest.fn(() => ({
+        bids: [[100, 1]],
+        asks: [[102, 1]],
+        sequence: 9,
+      })),
+      getLastUpdateAt: jest.fn(() => Date.parse(ts(8))),
+      isStale: jest.fn(() => false),
+      queueSnapshot: jest.fn(),
+      stop: jest.fn(),
+    };
+    const service = new AdminAnalyticsService(
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      marketMakingOrders.repository as any,
+      createRepository([]).repository as any,
+      intents.repository as any,
+      createRepository([]).repository as any,
+      orderBookTracker as any,
+      performanceService as any,
+    );
+
+    const result = await service.getDirectMarketMakingDashboard({
+      scope: 'admin',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.dashboard.orderIds).toEqual(['direct-active']);
+    expect(result.dashboard.costRevenue.fillRate).toMatchObject({
+      status: 'available',
+      value: '0',
+      filledQuotes: 0,
+      totalQuotes: 1,
+      denominator: {
+        source: 'strategy_order_intents',
+        filledSource: 'tracked_orders',
+        eligibleTrackedOrders: 0,
+        eligibleStrategyOrderIntents: 1,
+      },
+    });
+    expect(performanceService.getOrderPerformance).not.toHaveBeenCalledWith(
+      'direct-deleted',
+    );
+  });
+
+  it('marks Direct MM fill-rate fallback unavailable when intent order attribution is unsafe', async () => {
+    const performanceService = {
+      getOrderPerformance: jest.fn(async () => ({
+        series: [{ t: ts(2), realized: '10', fees: '1', net: '9' }],
+        summary: {
+          realizedPnlQuote: '10',
+          feesQuote: '1',
+          netPnlQuote: '9',
+          tradedQuoteVolume: '100',
+          effectiveSpreadBps: '1000',
+          fillCount: 1,
+          otherFees: [],
+          inventoryBaseQty: '0',
+          inventoryCostQuote: '0',
+          inventoryAverageCostQuote: null,
+        },
+      })),
+    };
+    const orderBookTracker = {
+      getOrderBook: jest.fn(() => ({
+        bids: [[100, 1]],
+        asks: [[102, 1]],
+        sequence: 9,
+      })),
+      getLastUpdateAt: jest.fn(() => Date.parse(ts(8))),
+      isStale: jest.fn(() => false),
+      queueSnapshot: jest.fn(),
+      stop: jest.fn(),
+    };
+    const service = new AdminAnalyticsService(
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      createRepository([
+        {
+          orderId: 'direct-active',
+          exchangeName: 'binance',
+          pair: 'BTC/USDT',
+          source: 'admin_direct',
+          state: 'active',
+          createdAt: ts(0),
+        },
+      ]).repository as any,
+      createRepository([]).repository as any,
+      createRepository([
+        {
+          intentId: 'intent-unattributed',
+          strategyKey: 'strategy-direct',
+          type: 'CREATE_LIMIT_ORDER',
+          exchange: 'binance',
+          pair: 'BTC/USDT',
+          side: 'buy',
+          price: '100',
+          qty: '1',
+          status: 'DONE',
+          metadata: {},
+          createdAt: ts(1),
+          updatedAt: ts(2),
+        },
+      ]).repository as any,
+      createRepository([]).repository as any,
+      orderBookTracker as any,
+      performanceService as any,
+    );
+
+    const result = await service.getDirectMarketMakingDashboard({
+      scope: 'admin',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.dashboard.costRevenue.fillRate).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'strategy-order-intent-order-attribution-unavailable',
+      filledQuotes: 0,
+      totalQuotes: 0,
+      denominator: {
+        source: 'strategy_order_intents',
+        filledSource: 'tracked_orders',
+        eligibleTrackedOrders: 0,
+        eligibleStrategyOrderIntents: 0,
+        unattributedStrategyOrderIntents: 1,
+      },
+    });
+  });
+
   it('marks admin-wide monetary totals unavailable across incompatible quote currencies and exposes per-currency breakdowns', async () => {
     const trackedOrders = createRepository([
       {
@@ -1781,5 +2025,23 @@ describe('AdminAnalyticsService', () => {
       result.analytics.aggregate.directMarketMakingTotals
         .quoteCurrencyBreakdown,
     ).toHaveLength(2);
+
+    const dashboardResult = await service.getDirectMarketMakingDashboard({
+      scope: 'admin',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(dashboardResult.dashboard.costRevenue.realizedPnl).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'cross-currency-aggregate-unavailable',
+    });
+    expect(
+      (dashboardResult.dashboard.costRevenue as any).quoteCurrencyBreakdown,
+    ).toEqual(
+      result.analytics.aggregate.directMarketMakingTotals
+        .quoteCurrencyBreakdown,
+    );
   });
 });

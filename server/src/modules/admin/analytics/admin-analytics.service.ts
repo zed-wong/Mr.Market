@@ -1321,6 +1321,7 @@ export class AdminAnalyticsService {
         directMarketMakingSnapshots,
         directMarketMakingTrackedOrders,
         sources.strategyOrderIntents,
+        directMarketMakingOrderIds,
       ),
       dataSources: [
         'performance_service_order_performance',
@@ -1337,6 +1338,7 @@ export class AdminAnalyticsService {
     snapshots: OrderAggregateSnapshot[],
     trackedOrders: TrackedOrderProjection[],
     intents: StrategyOrderIntentEntity[],
+    eligibleOrderIds: string[],
   ) {
     const quoteCurrency = this.resolveCommonCurrency(
       snapshots.map((snapshot) => snapshot.quoteAsset),
@@ -1425,7 +1427,10 @@ export class AdminAnalyticsService {
       inventoryExposure: crossCurrencyAggregate
         ? crossCurrencyMetric
         : inventoryExposure,
-      fillRate: this.buildFillRate(filters, trackedOrders, intents),
+      fillRate: this.buildFillRate(filters, trackedOrders, intents, {
+        eligibleOrderIds,
+        requireIntentOrderAttribution: true,
+      }),
       quoteUptime: this.buildQuoteUptime(filters, trackedOrders),
       quoteCurrencyBreakdown: this.buildQuoteCurrencyBreakdown(snapshots),
     };
@@ -1563,11 +1568,18 @@ export class AdminAnalyticsService {
     filters: ResolvedAnalyticsQuery,
     trackedOrders: TrackedOrderProjection[],
     intents: StrategyOrderIntentEntity[],
+    options: {
+      eligibleOrderIds?: string[];
+      requireIntentOrderAttribution?: boolean;
+    } = {},
   ) {
     const strategyKeys = new Set(
       trackedOrders.map((order) => order.strategyKey).filter(Boolean),
     );
-    const scopedIntents = intents.filter((intent) => {
+    const eligibleOrderIds = options.eligibleOrderIds
+      ? new Set(options.eligibleOrderIds)
+      : null;
+    const candidateIntents = intents.filter((intent) => {
       if (
         strategyKeys.size > 0 &&
         !strategyKeys.has(String(intent.strategyKey || ''))
@@ -1591,11 +1603,48 @@ export class AdminAnalyticsService {
 
       return true;
     });
+    const scopedIntents = eligibleOrderIds
+      ? candidateIntents.filter((intent) => {
+          const orderId = this.resolveIntentOrderId(intent);
+
+          return orderId !== null && eligibleOrderIds.has(orderId);
+        })
+      : candidateIntents;
+    const unattributedStrategyOrderIntents = eligibleOrderIds
+      ? candidateIntents.filter(
+          (intent) => this.resolveIntentOrderId(intent) === null,
+        ).length
+      : 0;
     const totalQuotes =
       trackedOrders.length > 0 ? trackedOrders.length : scopedIntents.length;
     const filledQuotes = trackedOrders.filter((order) =>
       this.toDecimal(order.cumulativeFilledQty).isGreaterThan(0),
     ).length;
+
+    if (
+      trackedOrders.length === 0 &&
+      options.requireIntentOrderAttribution &&
+      unattributedStrategyOrderIntents > 0
+    ) {
+      return {
+        ...this.unavailableMetric(
+          null,
+          'strategy-order-intent-order-attribution-unavailable',
+        ),
+        filledQuotes,
+        totalQuotes: 0,
+        denominator: {
+          source: 'strategy_order_intents',
+          filledSource: 'tracked_orders',
+          eligibleTrackedOrders: trackedOrders.length,
+          eligibleStrategyOrderIntents: scopedIntents.length,
+          unattributedStrategyOrderIntents,
+          description:
+            'Strategy order intents are used only when each fallback intent can be attributed to the same eligible order set as tracked orders and snapshots.',
+        },
+      };
+    }
+
     const value =
       totalQuotes > 0
         ? new BigNumber(filledQuotes).dividedBy(totalQuotes)
@@ -1613,10 +1662,29 @@ export class AdminAnalyticsService {
         filledSource: 'tracked_orders',
         eligibleTrackedOrders: trackedOrders.length,
         eligibleStrategyOrderIntents: scopedIntents.length,
+        unattributedStrategyOrderIntents,
         description:
           'Filled tracked orders divided by eligible placed tracked orders for the same scope/range; strategy order intents are used only when tracked orders are unavailable.',
       },
     };
+  }
+
+  private resolveIntentOrderId(intent: StrategyOrderIntentEntity) {
+    const metadata = intent.metadata;
+
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+
+    const orderId = metadata.orderId ?? metadata.marketMakingOrderId;
+
+    if (typeof orderId !== 'string') {
+      return null;
+    }
+
+    const normalized = orderId.trim();
+
+    return normalized || null;
   }
 
   private buildQuoteUptime(
@@ -1764,6 +1832,8 @@ export class AdminAnalyticsService {
         netPnl: aggregate.directMarketMakingTotals.netPnl,
         fillRate: aggregate.directMarketMakingTotals.fillRate,
         quoteUptime: aggregate.directMarketMakingTotals.quoteUptime,
+        quoteCurrencyBreakdown:
+          aggregate.directMarketMakingTotals.quoteCurrencyBreakdown,
       },
       sources: [
         'performance_service_order_performance',
