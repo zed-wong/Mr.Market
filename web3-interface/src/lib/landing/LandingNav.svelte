@@ -18,7 +18,7 @@
         <img src="/mr-market-logo-bg.png" alt="Mr.Market" class="h-full w-full object-cover" />
       </span>
       <span class="hidden flex-col leading-none sm:flex">
-        <span class="brand-title-font text-sm font-semibold capitalize">Mr.Market</span>
+        <span class="brand-title-font text-base font-semibold capitalize">Mr.Market</span>
       </span>
     </a>
 
