@@ -257,8 +257,8 @@
           type="button"
           class="btn-pill-ghost w-full justify-start gap-3"
           onclick={toggleLocale}
-          aria-label="Toggle language"
-          title="Toggle language"
+          aria-label={$_('admin.toggle_language')}
+          title={$_('admin.toggle_language')}
         >
           <HeroIcon name="language" className="h-6 w-6 shrink-0 opacity-80" />
           <span class="capitalize">{isChineseLocale ? '中文' : 'English'}</span>

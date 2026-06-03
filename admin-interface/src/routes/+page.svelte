@@ -71,7 +71,7 @@
 
   const formatTimestamp = (value?: string | null) => {
     if (!value) {
-      return 'unavailable';
+      return $_('admin_unavailable');
     }
 
     const date = new Date(value);
@@ -90,7 +90,7 @@
   };
 
   const errorMessage = (cause: unknown) =>
-    cause instanceof Error ? cause.message : 'Unable to load dashboard summary';
+    cause instanceof Error ? cause.message : $_('admin_dashboard_load_failed');
 
   const safeDot = (status?: string | null) =>
     statusDot[(status || 'unknown').toLowerCase()] || statusDot.unknown;
@@ -190,9 +190,9 @@
     }
 
     void toast.promise(loadDashboard(timeRange, { throwOnError: true }), {
-      loading: 'refreshing dashboard',
-      success: 'dashboard refreshed',
-      error: 'failed to refresh dashboard',
+      loading: $_('admin_dashboard_refreshing'),
+      success: $_('admin_dashboard_refreshed'),
+      error: $_('admin_dashboard_refresh_failed'),
     });
   };
 
@@ -214,37 +214,41 @@
     return [
       {
         key: 'health',
-        label: 'system health',
+        label: $_('admin_dashboard_kpi_system_health'),
         value: statusLabel(summary.health.status),
-        unit: summary.health.issues.length > 0 ? `${formatNumber(summary.health.issues.length)} issues` : 'no issues',
+        unit: summary.health.issues.length > 0
+          ? $_('admin_dashboard_issues_count', { values: { count: formatNumber(summary.health.issues.length) } })
+          : $_('admin_dashboard_no_issues'),
         tone: statusTone(summary.health.status),
       },
       {
         key: 'strategies',
-        label: 'active strategies',
+        label: $_('admin_dashboard_kpi_active_strategies'),
         value: formatNumber(summary.kpis.activeStrategies),
-        unit: `${formatNumber(summary.kpis.totalStrategies)} total`,
+        unit: $_('admin_dashboard_total_count', { values: { count: formatNumber(summary.kpis.totalStrategies) } }),
         tone: summary.kpis.activeStrategies > 0 ? 'success' : 'warning',
       },
       {
         key: 'orders',
-        label: 'open orders',
+        label: $_('admin_dashboard_kpi_open_orders'),
         value: formatNumber(summary.kpis.openOrders),
-        unit: `${formatNumber(summary.kpis.trackedOrders)} tracked`,
+        unit: $_('admin_dashboard_tracked_count', { values: { count: formatNumber(summary.kpis.trackedOrders) } }),
         tone: summary.kpis.openOrders > 0 ? 'success' : 'neutral',
       },
       {
         key: 'violations',
-        label: 'unresolved issues',
+        label: $_('admin_dashboard_kpi_unresolved_issues'),
         value: formatNumber(summary.reconciliation.totalViolations + summary.kpis.pendingIntents),
-        unit: `${formatNumber(summary.reconciliation.totalViolations)} reconciliation`,
+        unit: $_('admin_dashboard_reconciliation_count', { values: { count: formatNumber(summary.reconciliation.totalViolations) } }),
         tone: summary.reconciliation.totalViolations > 0 || summary.kpis.pendingIntents > 0 ? 'error' : 'success',
       },
       {
         key: 'capital',
-        label: 'tracked balances',
+        label: $_('admin_dashboard_kpi_tracked_balances'),
         value: formatNumber(summary.kpis.totalCapital, { maximumFractionDigits: 2 }),
-        unit: `${formatNumber(summary.capital.byAsset.length)} ${summary.capital.byAsset.length === 1 ? 'asset' : 'assets'}`,
+        unit: $_(summary.capital.byAsset.length === 1 ? 'admin_dashboard_asset_count_one' : 'admin_dashboard_asset_count_many', {
+          values: { count: formatNumber(summary.capital.byAsset.length) },
+        }),
         tone: 'neutral',
       },
     ] satisfies DashboardKpi[];
@@ -282,27 +286,27 @@
     return [
       {
         key: 'health',
-        label: 'runtime health',
+        label: $_('admin_dashboard_runtime_health'),
         status: summary.health.status,
-        meta: `snapshot ${formatTimestamp(summary.health.timestamp)}`,
+        meta: $_('admin_dashboard_snapshot_at', { values: { time: formatTimestamp(summary.health.timestamp) } }),
       },
       {
         key: 'exchanges',
-        label: 'exchange accounts',
+        label: $_('admin_dashboard_exchange_accounts'),
         status: summary.exchanges.total > 0 ? 'ok' : 'unknown',
-        meta: validationCounts || 'no accounts returned',
+        meta: validationCounts || $_('admin_dashboard_no_accounts_returned'),
       },
       {
         key: 'reconciliation',
-        label: 'reconciliation',
+        label: $_('admin_dashboard_reconciliation'),
         status: summary.reconciliation.totalViolations > 0 ? 'failed' : 'ok',
-        meta: `${formatNumber(summary.reconciliation.totalViolations)} violations`,
+        meta: $_('admin_dashboard_violations_count', { values: { count: formatNumber(summary.reconciliation.totalViolations) } }),
       },
       {
         key: 'runtime',
-        label: 'runtime metrics',
+        label: $_('admin_dashboard_runtime_metrics'),
         status: summary.runtime.stats.length > 0 || summary.runtime.recent.length > 0 ? 'ok' : 'unknown',
-        meta: `${formatNumber(summary.runtime.stats.length + summary.runtime.recent.length)} entries`,
+        meta: $_('admin_dashboard_entries_count', { values: { count: formatNumber(summary.runtime.stats.length + summary.runtime.recent.length) } }),
       },
     ];
   });
@@ -319,8 +323,8 @@
     if ($setupStatus?.initialized && !$setupStatus.completedAt && !setupCardDismissed) {
       rows.push({
         key: 'setup',
-        label: 'Setup needs completion',
-        meta: `${setupStepCount} setup steps complete`,
+        label: $_('admin_dashboard_setup_needs_completion'),
+        meta: $_('admin_dashboard_setup_steps_complete', { values: { count: setupStepCount } }),
         tone: 'warning',
       });
     }
@@ -328,8 +332,8 @@
     if (summary.reconciliation.totalViolations > 0) {
       rows.push({
         key: 'reconciliation',
-        label: 'Reconciliation violations',
-        meta: `${formatNumber(summary.reconciliation.totalViolations)} unresolved`,
+        label: $_('admin_dashboard_reconciliation_violations'),
+        meta: $_('admin_dashboard_unresolved_count', { values: { count: formatNumber(summary.reconciliation.totalViolations) } }),
         tone: 'error',
       });
     }
@@ -337,15 +341,15 @@
     if (summary.kpis.pendingIntents > 0) {
       rows.push({
         key: 'intents',
-        label: 'Pending intents',
-        meta: `${formatNumber(summary.kpis.pendingIntents)} waiting for processing`,
+        label: $_('admin_dashboard_pending_intents'),
+        meta: $_('admin_dashboard_waiting_processing_count', { values: { count: formatNumber(summary.kpis.pendingIntents) } }),
         tone: 'warning',
       });
     }
 
     return rows.length > 0
       ? rows
-      : [{ key: 'clear', label: 'No immediate action needed', meta: 'reconciliation and intent queues are clear', tone: 'success' }];
+      : [{ key: 'clear', label: $_('admin_dashboard_no_action_needed'), meta: $_('admin_dashboard_queues_clear'), tone: 'success' }];
   });
 
   const isEmpty = $derived(
@@ -385,10 +389,12 @@
         disabled={loading || refreshing}
         onclick={refresh}
       >
-        {refreshing ? 'refreshing' : 'refresh'}
+        {refreshing ? $_('refreshing_msg') : $_('refresh')}
       </button>
       <span class="hidden text-xs text-base-content/50 md:inline">
-        updated <span class="font-mono-num">{summary ? formatTimestamp(summary.generatedAt) : 'pending'}</span>
+        {$_('admin_dashboard_updated_at', {
+          values: { time: summary ? formatTimestamp(summary.generatedAt) : $_('admin_health_pending') },
+        })}
       </span>
       </div>
     {/snippet}
@@ -398,16 +404,16 @@
     <div class="card card-surface shadow-none" data-testid="dashboard-loading">
       <div class="card-body flex-row items-center gap-3 p-5">
         <span class="loading loading-spinner loading-sm text-base-content/60"></span>
-        <span class="text-sm text-base-content/60 capitalize">loading backend dashboard summary</span>
+        <span class="text-sm text-base-content/60 capitalize">{$_('admin_dashboard_loading_summary')}</span>
       </div>
     </div>
   {:else if error}
     <div class="card card-surface border-error/30 shadow-none" data-testid="dashboard-error">
       <div class="card-body gap-3 p-5">
-        <span class="text-lg font-semibold text-base-content capitalize">dashboard summary unavailable</span>
+        <span class="text-lg font-semibold text-base-content capitalize">{$_('admin_dashboard_unavailable')}</span>
         <span class="text-sm text-base-content/60">{error}</span>
         <div>
-          <button type="button" class="btn-pill-primary capitalize" onclick={refresh}>retry</button>
+          <button type="button" class="btn-pill-primary capitalize" onclick={refresh}>{$_('admin_retry')}</button>
         </div>
       </div>
     </div>
@@ -415,10 +421,9 @@
     {#if isEmpty}
       <div class="card card-surface shadow-none" data-testid="dashboard-empty">
         <div class="card-body gap-2 p-5">
-          <span class="text-lg font-semibold text-base-content capitalize">no dashboard activity yet</span>
+          <span class="text-lg font-semibold text-base-content capitalize">{$_('admin_dashboard_empty_title')}</span>
           <span class="text-sm text-base-content/60">
-            The backend summary returned zero strategies, orders, intents, capital rows, and exchange accounts for
-            {summary.range.key}.
+            {$_('admin_dashboard_empty_message', { values: { range: summary.range.key } })}
           </span>
         </div>
       </div>
@@ -434,14 +439,14 @@
       <div class="card-body gap-4 p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="flex flex-col gap-1">
-            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">needs attention</span>
-            <span class="text-sm text-base-content/60">Current items that can affect trading operations.</span>
+            <span class="text-lg font-semibold tracking-tight text-base-content capitalize">{$_('admin_dashboard_needs_attention')}</span>
+            <span class="text-sm text-base-content/60">{$_('admin_dashboard_needs_attention_subtitle')}</span>
           </div>
           {#if $setupStatus?.initialized && !$setupStatus.completedAt && !setupCardDismissed}
             <div class="flex flex-wrap gap-2">
-              <a class="btn btn-primary btn-sm rounded-full capitalize" href="/setup">continue setup</a>
+              <a class="btn btn-primary btn-sm rounded-full capitalize" href="/setup">{$_('admin_dashboard_continue_setup')}</a>
               <button type="button" class="btn btn-ghost btn-sm rounded-full capitalize" onclick={dismissSetupCard}>
-                dismiss
+                {$_('admin_dashboard_dismiss')}
               </button>
             </div>
           {/if}
@@ -479,16 +484,16 @@
         <div class="card-body gap-4 p-5">
           <div class="flex items-center justify-between">
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-              capital by asset
+              {$_('admin_dashboard_capital_by_asset')}
             </span>
             <a href="/trading/positions" class="btn-pill-ghost text-xs capitalize">
-              view positions →
+              {$_('admin_dashboard_view_positions')}
             </a>
           </div>
 
           {#if capitalRows.length === 0}
             <div class="card-surface-inset p-4">
-              <span class="text-sm text-base-content/60">No capital rows were returned by the backend summary.</span>
+              <span class="text-sm text-base-content/60">{$_('admin_dashboard_no_capital_rows')}</span>
             </div>
           {:else}
             <ul class="space-y-3">
@@ -507,7 +512,12 @@
                     <div class="h-full bg-base-content" style="width: {Math.max(0, Math.min(100, pct))}%"></div>
                   </div>
                   <span class="text-xs text-base-content/50">
-                    available {formatNumber(asset.available, { maximumFractionDigits: 8 })} · locked {formatNumber(asset.locked, { maximumFractionDigits: 8 })}
+                    {$_('admin_dashboard_available_locked', {
+                      values: {
+                        available: formatNumber(asset.available, { maximumFractionDigits: 8 }),
+                        locked: formatNumber(asset.locked, { maximumFractionDigits: 8 }),
+                      },
+                    })}
                   </span>
                 </li>
               {/each}
@@ -521,52 +531,52 @@
           <div class="flex items-center justify-between">
             <div class="flex flex-col">
               <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-                order activity
+                {$_('admin_dashboard_order_activity')}
               </span>
               <span class="text-xs text-base-content/50 capitalize">
-                active orders first · {summary.range.key}
+                {$_('admin_dashboard_active_orders_first', { values: { range: summary.range.key } })}
               </span>
             </div>
             <a href="/trading/exchange-orders" class="btn-pill-ghost text-xs capitalize">
-              view orders →
+              {$_('admin_dashboard_view_orders')}
             </a>
           </div>
 
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div class="card-surface-inset flex flex-col p-3">
-              <span class="text-xs text-base-content/50 capitalize">tracked</span>
+              <span class="text-xs text-base-content/50 capitalize">{$_('admin_dashboard_tracked')}</span>
               <span class="font-mono-num text-lg font-semibold text-base-content">{formatNumber(summary.orderFlow.total)}</span>
             </div>
             <div class="card-surface-inset flex flex-col p-3">
-              <span class="text-xs text-base-content/50 capitalize">trades</span>
+              <span class="text-xs text-base-content/50 capitalize">{$_('admin_dashboard_trades')}</span>
               <span class="font-mono-num text-lg font-semibold text-base-content">{formatNumber(summary.orderFlow.volume.tradeCount)}</span>
             </div>
             <div class="card-surface-inset flex flex-col p-3">
-              <span class="text-xs text-base-content/50 capitalize">notional</span>
+              <span class="text-xs text-base-content/50 capitalize">{$_('admin_dashboard_notional')}</span>
               <span class="font-mono-num text-lg font-semibold text-base-content">
                 {formatNumber(summary.orderFlow.volume.notionalVolume, { maximumFractionDigits: 8 })}
               </span>
             </div>
             <div class="card-surface-inset flex flex-col p-3">
-              <span class="text-xs text-base-content/50 capitalize">open</span>
+              <span class="text-xs text-base-content/50 capitalize">{$_('admin_dashboard_open')}</span>
               <span class="font-mono-num text-lg font-semibold text-base-content">{formatNumber(summary.kpis.openOrders)}</span>
             </div>
           </div>
 
           {#if displayedOrders.length === 0}
             <div class="card-surface-inset p-4">
-              <span class="text-sm text-base-content/60">No recent tracked orders were returned by the backend summary.</span>
+              <span class="text-sm text-base-content/60">{$_('admin_dashboard_no_recent_orders')}</span>
             </div>
           {:else}
             <div class="overflow-x-auto">
               <table class="table table-sm">
                 <thead>
                   <tr class="border-b border-base-300 text-xs font-medium capitalize tracking-wide text-base-content/50">
-                    <th class="font-medium">order</th>
-                    <th class="font-medium">pair</th>
-                    <th class="font-medium">side</th>
-                    <th class="font-medium text-right">filled</th>
-                    <th class="font-medium">status</th>
+                    <th class="font-medium">{$_('order_id')}</th>
+                    <th class="font-medium">{$_('pair')}</th>
+                    <th class="font-medium">{$_('side')}</th>
+                    <th class="font-medium text-right">{$_('filled_orders')}</th>
+                    <th class="font-medium">{$_('status')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -607,26 +617,26 @@
         <div class="card-body gap-4 p-5">
           <div class="flex items-center justify-between">
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-              active strategy health
+              {$_('admin_dashboard_active_strategy_health')}
             </span>
             <a href="/trading/strategies" class="btn-pill-ghost text-xs capitalize">
-              view strategies →
+              {$_('admin_dashboard_view_strategies')}
             </a>
           </div>
 
           {#if displayedStrategies.length === 0}
             <div class="card-surface-inset p-4">
-              <span class="text-sm text-base-content/60">No strategy rows were returned by the backend summary.</span>
+              <span class="text-sm text-base-content/60">{$_('admin_dashboard_no_strategy_rows')}</span>
             </div>
           {:else}
             <div class="overflow-x-auto">
               <table class="table table-sm">
                 <thead>
                   <tr class="border-b border-base-300 text-xs font-medium capitalize tracking-wide text-base-content/50">
-                    <th class="font-medium">strategy</th>
-                    <th class="font-medium">status</th>
-                    <th class="font-medium">definition</th>
-                    <th class="font-medium text-right">updated</th>
+                    <th class="font-medium">{$_('admin_direct_mm_strategy')}</th>
+                    <th class="font-medium">{$_('status')}</th>
+                    <th class="font-medium">{$_('admin_strategy_definition_name')}</th>
+                    <th class="font-medium text-right">{$_('admin_strategy_updated')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -635,7 +645,7 @@
                       <td>
                         <div class="flex flex-col">
                           <span class="text-sm font-medium text-base-content">{shortStrategyName(strategy.strategyKey)}</span>
-                          <span class="text-xs text-base-content/50 capitalize">{strategy.strategyType || 'type unavailable'}</span>
+                          <span class="text-xs text-base-content/50 capitalize">{strategy.strategyType || $_('admin_dashboard_type_unavailable')}</span>
                         </div>
                       </td>
                       <td>
@@ -645,7 +655,7 @@
                         </div>
                       </td>
                       <td>
-                        <span class="text-sm text-base-content/70">{strategy.definitionName || strategy.strategyDefinitionId || 'unavailable'}</span>
+                        <span class="text-sm text-base-content/70">{strategy.definitionName || strategy.strategyDefinitionId || $_('admin_unavailable')}</span>
                       </td>
                       <td class="text-right">
                         <span class="font-mono-num text-xs text-base-content/60">{formatTimestamp(strategy.updatedAt)}</span>
@@ -663,16 +673,16 @@
         <div class="card-body gap-3 p-5">
           <div class="flex items-center justify-between">
             <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-              recent intents
+              {$_('admin_dashboard_recent_intents')}
             </span>
             <span class="text-xs text-base-content/50 capitalize">
-              backend · last {summary.limits.recentItems}
+              {$_('admin_dashboard_backend_last', { values: { count: summary.limits.recentItems } })}
             </span>
           </div>
 
           {#if displayedIntents.length === 0}
             <div class="card-surface-inset p-4">
-              <span class="text-sm text-base-content/60">No recent intents were returned for {summary.range.key}.</span>
+              <span class="text-sm text-base-content/60">{$_('admin_dashboard_no_recent_intents', { values: { range: summary.range.key } })}</span>
             </div>
           {:else}
             <ul class="divide-y divide-base-300">
@@ -714,10 +724,10 @@
       <div class="card-body gap-4 p-5">
         <div class="flex items-center justify-between">
           <span class="text-lg font-semibold tracking-tight text-base-content capitalize">
-            system status
+            {$_('admin_system_status')}
           </span>
           <a href="/system/health" class="btn-pill-ghost text-xs capitalize">
-            view health →
+            {$_('admin_dashboard_view_health')}
           </a>
         </div>
 
@@ -735,7 +745,7 @@
 
         {#if summary.health.issues.length > 0}
           <div class="card-surface-inset p-4">
-            <span class="text-sm font-medium text-base-content capitalize">reported health issues</span>
+            <span class="text-sm font-medium text-base-content capitalize">{$_('admin_dashboard_reported_health_issues')}</span>
             <ul class="mt-2 space-y-1">
               {#each summary.health.issues as issue, index (index)}
                 <li class="font-mono-num text-xs text-base-content/60">{JSON.stringify(issue)}</li>

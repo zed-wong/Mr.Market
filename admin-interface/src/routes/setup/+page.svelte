@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
@@ -24,10 +25,10 @@
     | 'review';
 
   const steps: Array<{ key: StepKey; label: string; required: boolean }> = [
-    { key: 'password', label: 'admin password', required: true },
-    { key: 'exchange', label: 'exchange config', required: true },
-    { key: 'seed', label: 'database seed', required: true },
-    { key: 'review', label: 'review and complete', required: true },
+    { key: 'password', label: 'admin_setup_step_password', required: true },
+    { key: 'exchange', label: 'admin_setup_step_exchange', required: true },
+    { key: 'seed', label: 'admin_setup_step_seed', required: true },
+    { key: 'review', label: 'admin_setup_step_review', required: true },
   ];
 
   let activeStep = $state<StepKey>('password');
@@ -71,7 +72,7 @@
   const getToken = () => getAccessToken() || '';
 
   const messageFrom = (cause: unknown) =>
-    cause instanceof Error ? cause.message : 'Setup request failed';
+    cause instanceof Error ? cause.message : $_('admin_setup_request_failed');
 
   const refreshStatus = async () => {
     const status = await fetchSetupStatus();
@@ -121,9 +122,9 @@
 
   const refreshSetupStatus = () =>
     toast.promise(bootstrap({ throwOnError: true }), {
-      loading: 'refreshing setup status',
-      success: 'setup status refreshed',
-      error: 'failed to refresh setup status',
+      loading: $_('admin_setup_refreshing_status'),
+      success: $_('admin_setup_status_refreshed'),
+      error: $_('admin_setup_refresh_failed'),
     });
 
   const nextStep = (completed: Record<string, boolean>, seedRequired: boolean): StepKey => {
@@ -148,7 +149,7 @@
       toast.success(success);
     } catch (cause) {
       error = messageFrom(cause);
-      toast.error('setup step failed', { description: error });
+      toast.error($_('admin_setup_step_failed'), { description: error });
     } finally {
       saving = false;
     }
@@ -157,19 +158,19 @@
   const submitPassword = () =>
     runAction(async () => {
       if (passwordForm.password !== passwordForm.confirm) {
-        throw new Error('Password confirmation does not match.');
+        throw new Error($_('admin_setup_password_confirm_error'));
       }
       await setSetupPassword(passwordForm.password);
       correct.set(true);
       checked.set(true);
       await loadAuthenticatedMetadata();
-    }, 'admin password configured');
+    }, $_('admin_setup_password_configured'));
 
   const submitExchange = () =>
     runAction(async () => {
       const exchange_id = exchangeForm.exchange_id.trim();
       if (!exchange_id) {
-        throw new Error('Choose an exchange.');
+        throw new Error($_('admin_setup_choose_exchange'));
       }
       await addExchange(
         {
@@ -181,7 +182,7 @@
         getToken(),
       );
       await completeSetupStep('exchange');
-    }, 'exchange configured');
+    }, $_('admin_setup_exchange_configured'));
 
   const submitSeed = () =>
     runAction(async () => {
@@ -190,17 +191,17 @@
       }
       await completeSetupStep('seed');
       seedStatus = await fetchSetupSeedStatus();
-    }, 'database seed complete');
+    }, $_('admin_setup_seed_complete'));
 
   const finishSetup = () =>
     runAction(async () => {
       if (!requiredSetupComplete) {
-        throw new Error('Complete the required setup steps before locking setup.');
+        throw new Error($_('admin_setup_complete_required_first'));
       }
       await completeSetup();
       await refreshStatus();
       await goto('/');
-    }, 'setup complete');
+    }, $_('admin_setup_complete'));
 
   const jumpToStep = (key: StepKey) => {
     if (!$setupStatus?.initialized && key !== 'password') return;
@@ -222,18 +223,18 @@
       <div class="absolute inset-y-0 left-0 w-1 bg-base-content"></div>
       <div class="grid gap-6 p-6 md:grid-cols-[1fr_18rem] md:p-8">
         <PageHeader
-          eyebrow="setup ledger"
-          title="initialize admin operations"
-          subtitle="Create the admin access path, register one exchange, seed required reference data, then lock setup-only writes. Trading credentials and runtime tuning stay in their own settings pages."
+          eyebrow={$_('admin_setup_eyebrow')}
+          title={$_('admin_setup_title')}
+          subtitle={$_('admin_setup_subtitle')}
         />
         <div class="grid grid-cols-2 gap-3 md:grid-cols-1">
           <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
-            <span class="block text-xs text-base-content/50 capitalize">required progress</span>
+            <span class="block text-xs text-base-content/50 capitalize">{$_('admin_setup_required_progress')}</span>
             <span class="mt-1 block text-3xl font-semibold text-base-content">{progressPercent}%</span>
           </div>
           <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
-            <span class="block text-xs text-base-content/50 capitalize">setup scope</span>
-            <span class="mt-1 block text-sm font-semibold text-base-content capitalize">minimum viable admin</span>
+            <span class="block text-xs text-base-content/50 capitalize">{$_('admin_setup_scope')}</span>
+            <span class="mt-1 block text-sm font-semibold text-base-content capitalize">{$_('admin_setup_minimum_viable_admin')}</span>
           </div>
         </div>
       </div>
@@ -243,7 +244,7 @@
       <div class="rounded-[1.5rem] border border-base-300 bg-base-100 p-6 shadow-sm">
         <div class="flex items-center gap-3">
           <span class="loading loading-spinner loading-sm"></span>
-          <span class="text-sm text-base-content/60 capitalize">loading setup state</span>
+          <span class="text-sm text-base-content/60 capitalize">{$_('admin_setup_loading_state')}</span>
         </div>
       </div>
     {:else}
@@ -251,8 +252,10 @@
         <aside class="h-fit rounded-[1.5rem] border border-base-300 bg-base-100 p-5 shadow-sm">
           <div class="flex items-end justify-between gap-4 border-b border-base-300 pb-5">
             <div class="flex flex-col gap-1">
-              <span class="text-sm font-semibold text-base-content capitalize">initialization checklist</span>
-              <span class="text-xs text-base-content/50">{progressCount} of {requiredProgressSteps.length} required complete</span>
+              <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_setup_initialization_checklist')}</span>
+              <span class="text-xs text-base-content/50">{$_('admin_setup_required_complete_count', {
+                values: { completed: progressCount, total: requiredProgressSteps.length },
+              })}</span>
             </div>
             <span class="font-mono text-sm text-base-content/60">{progressPercent}%</span>
           </div>
@@ -291,9 +294,15 @@
                     {/if}
                   </span>
                   <span class="flex flex-1 flex-col gap-0.5">
-                    <span class="text-sm font-semibold text-base-content">{step.label}</span>
+                    <span class="text-sm font-semibold text-base-content">{$_(step.label)}</span>
                     <span class="text-xs text-base-content/50">
-                      {completed ? 'Complete' : isCurrent ? 'In review' : locked ? 'Locked until password' : 'Required'}
+                      {completed
+                        ? $_('admin_setup_status_complete')
+                        : isCurrent
+                          ? $_('admin_setup_status_in_review')
+                          : locked
+                            ? $_('admin_setup_status_locked_until_password')
+                            : $_('admin_setup_status_required')}
                     </span>
                   </span>
                   {#if isCurrent}
@@ -309,17 +318,19 @@
           <div class="border-b border-base-300 p-5 md:p-7">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="flex max-w-2xl flex-col gap-2">
-                <span class="text-xs font-semibold text-base-content/50 capitalize">step {Math.max(stepIndex + 1, 1)} of {steps.length}</span>
-                <span class="text-2xl font-semibold tracking-tight text-base-content capitalize md:text-3xl">{steps[stepIndex]?.label}</span>
+                <span class="text-xs font-semibold text-base-content/50 capitalize">{$_('admin_setup_step_count', {
+                  values: { current: Math.max(stepIndex + 1, 1), total: steps.length },
+                })}</span>
+                <span class="text-2xl font-semibold tracking-tight text-base-content capitalize md:text-3xl">{$_(steps[stepIndex]?.label)}</span>
                 <span class="text-sm leading-6 text-base-content/60">
                   {#if activeStep === 'password'}
-                    Set the admin password before any protected admin route becomes available.
+                    {$_('admin_setup_password_step_desc')}
                   {:else if activeStep === 'exchange'}
-                    Register the first exchange venue. API credentials are intentionally configured later.
+                    {$_('admin_setup_exchange_step_desc')}
                   {:else if activeStep === 'seed'}
-                    Verify required reference data and insert missing exchanges, tokens, pairs, config, or strategy definitions.
+                    {$_('admin_setup_seed_step_desc')}
                   {:else}
-                    Review required setup only. API keys and runtime settings can be configured afterwards.
+                    {$_('admin_setup_review_step_desc')}
                   {/if}
                 </span>
               </div>
@@ -328,7 +339,7 @@
                 class="btn min-h-10 h-10 rounded-full border border-base-300 bg-base-100 px-4 text-sm font-semibold text-base-content shadow-none hover:bg-base-300 capitalize"
                 onclick={() => void refreshSetupStatus()}
               >
-                refresh
+                {$_('refresh')}
               </button>
             </div>
           </div>
@@ -344,23 +355,23 @@
               <form onsubmit={(event) => { event.preventDefault(); void submitPassword(); }}>
                 <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
                   <label class="form-control gap-2 rounded-2xl border border-base-300 bg-base-100 p-4">
-                    <span class="label-text font-semibold capitalize">admin password</span>
-                    <input class="input input-bordered bg-base-100" type="password" minlength="8" autocomplete="new-password" placeholder="at least 8 characters" bind:value={passwordForm.password} required />
-                    <span class="text-xs text-base-content/60">Used to sign in to the admin console afterwards.</span>
+                    <span class="label-text font-semibold capitalize">{$_('admin_setup_admin_password')}</span>
+                    <input class="input input-bordered bg-base-100" type="password" minlength="8" autocomplete="new-password" placeholder={$_('admin_setup_password_placeholder')} bind:value={passwordForm.password} required />
+                    <span class="text-xs text-base-content/60">{$_('admin_setup_password_hint')}</span>
                   </label>
                   <label class="form-control gap-2 rounded-2xl border border-base-300 bg-base-100 p-4">
-                    <span class="label-text font-semibold capitalize">confirm password</span>
-                    <input class="input input-bordered bg-base-100" type="password" minlength="8" autocomplete="new-password" placeholder="re-enter the password" bind:value={passwordForm.confirm} required />
+                    <span class="label-text font-semibold capitalize">{$_('admin_setup_confirm_password')}</span>
+                    <input class="input input-bordered bg-base-100" type="password" minlength="8" autocomplete="new-password" placeholder={$_('admin_setup_confirm_password_placeholder')} bind:value={passwordForm.confirm} required />
                     {#if !passwordsMatch}
-                      <span class="text-xs text-error">Passwords do not match.</span>
+                      <span class="text-xs text-error">{$_('admin_setup_passwords_do_not_match')}</span>
                     {:else}
-                      <span class="text-xs text-base-content/50">Confirmation keeps accidental lockout away.</span>
+                      <span class="text-xs text-base-content/50">{$_('admin_setup_confirm_password_hint')}</span>
                     {/if}
                   </label>
                   <div class="flex flex-wrap gap-2 md:col-span-2">
                     <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving || !passwordsMatch} type="submit">
                       {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
-                      save password and sign in
+                      {$_('admin_setup_save_password')}
                     </button>
                   </div>
                 </fieldset>
@@ -369,14 +380,14 @@
               <form onsubmit={(event) => { event.preventDefault(); void submitExchange(); }}>
                 <fieldset class="grid gap-4 md:grid-cols-2" disabled={saving}>
                   <label class="form-control gap-2 rounded-2xl border border-base-300 bg-base-100 p-4">
-                    <span class="label-text font-semibold capitalize">exchange id</span>
-                    <input class="input input-bordered bg-base-100" list="ccxt-exchanges" placeholder="e.g. binance, okx, bybit" bind:value={exchangeForm.exchange_id} required />
-                    <span class="text-xs text-base-content/60">Lowercase CCXT identifier. Start typing to see suggestions.</span>
+                    <span class="label-text font-semibold capitalize">{$_('exchange_id')}</span>
+                    <input class="input input-bordered bg-base-100" list="ccxt-exchanges" placeholder={$_('admin_setup_exchange_id_placeholder')} bind:value={exchangeForm.exchange_id} required />
+                    <span class="text-xs text-base-content/60">{$_('admin_setup_exchange_id_hint')}</span>
                   </label>
                   <label class="form-control gap-2 rounded-2xl border border-base-300 bg-base-100 p-4">
-                    <span class="label-text font-semibold capitalize">display name</span>
-                    <input class="input input-bordered bg-base-100" placeholder="Shown in admin UI" bind:value={exchangeForm.name} required />
-                    <span class="text-xs text-base-content/60">Keep it recognizable for operators.</span>
+                    <span class="label-text font-semibold capitalize">{$_('display_name')}</span>
+                    <input class="input input-bordered bg-base-100" placeholder={$_('admin_setup_display_name_placeholder')} bind:value={exchangeForm.name} required />
+                    <span class="text-xs text-base-content/60">{$_('admin_setup_display_name_hint')}</span>
                   </label>
                   <datalist id="ccxt-exchanges">
                     {#each ccxtExchanges.slice(0, 300) as exchange (exchange)}
@@ -384,8 +395,8 @@
                     {/each}
                   </datalist>
                   <div class="flex flex-wrap gap-2 md:col-span-2">
-                    <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving} type="submit">save exchange</button>
-                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={goPrev}>previous</button>
+                    <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving} type="submit">{$_('admin_setup_save_exchange')}</button>
+                    <button class="btn btn-ghost rounded-full capitalize" type="button" onclick={goPrev}>{$_('previous')}</button>
                   </div>
                 </fieldset>
               </form>
@@ -395,12 +406,14 @@
                 <div class="rounded-2xl border border-base-300 bg-base-100 p-5">
                   <div class="flex flex-wrap items-start justify-between gap-4">
                     <div class="flex flex-col gap-1">
-                      <span class="text-base font-semibold text-base-content capitalize">seed status</span>
+                      <span class="text-base font-semibold text-base-content capitalize">{$_('admin_setup_seed_status')}</span>
                       <span class="text-sm leading-6 text-base-content/60">
-                        {seedMissing ? 'Reference data is missing and will be inserted before setup is locked.' : 'Required seed data is already present.'}
+                        {seedMissing
+                          ? $_('admin_setup_seed_missing_message')
+                          : $_('admin_setup_seed_ready_message')}
                       </span>
                     </div>
-                    <span class="badge {seedMissing ? 'badge-warning' : 'badge-success'} badge-lg capitalize">{seedMissing ? 'missing data' : 'ready'}</span>
+                    <span class="badge {seedMissing ? 'badge-warning' : 'badge-success'} badge-lg capitalize">{seedMissing ? $_('admin_setup_missing_data') : $_('admin_health_ready')}</span>
                   </div>
                 </div>
                 {#if seedCheckEntries.length > 0}
@@ -416,20 +429,22 @@
                 <div class="flex flex-wrap gap-2">
                   <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving} type="button" onclick={() => void submitSeed()}>
                     {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
-                    {seedMissing ? 'run database seed' : 'mark seed complete'}
+                    {seedMissing ? $_('admin_setup_run_database_seed') : $_('admin_setup_mark_seed_complete')}
                   </button>
-                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={goPrev}>previous</button>
+                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={goPrev}>{$_('previous')}</button>
                 </div>
               </div>
             {:else}
               <div class="space-y-5">
                 {#if incompleteRequiredSteps.length > 0}
                   <div class="rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-                    <span>Complete required setup first: {incompleteRequiredSteps.map((step) => step.label).join(', ')}.</span>
+                    <span>{$_('admin_setup_complete_required_list', {
+                      values: { steps: incompleteRequiredSteps.map((step) => $_(step.label)).join(', ') },
+                    })}</span>
                   </div>
                 {:else}
                   <div class="rounded-2xl border border-success/30 bg-success/10 p-4 text-sm text-success">
-                    <span>Required setup is complete. You can lock setup-only writes now.</span>
+                    <span>{$_('admin_setup_ready_to_lock')}</span>
                   </div>
                 {/if}
 
@@ -444,27 +459,27 @@
                       <span class="flex items-center gap-3">
                         <span class="font-mono text-xs text-base-content/40">0{index + 1}</span>
                         <span class="flex flex-col gap-1">
-                          <span class="font-semibold text-base-content capitalize">{step.label}</span>
-                          <span class="text-xs text-base-content/50 capitalize">{done ? 'no action needed' : 'click to open this step'}</span>
+                          <span class="font-semibold text-base-content capitalize">{$_(step.label)}</span>
+                          <span class="text-xs text-base-content/50 capitalize">{done ? $_('admin_dashboard_no_action_needed') : $_('admin_setup_click_to_open_step')}</span>
                         </span>
                       </span>
-                      <span class="badge {done ? 'badge-success' : 'badge-error'} badge-sm capitalize">{done ? 'complete' : 'required'}</span>
+                      <span class="badge {done ? 'badge-success' : 'badge-error'} badge-sm capitalize">{done ? $_('admin_setup_status_complete') : $_('admin_setup_status_required')}</span>
                     </button>
                   {/each}
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-2">
                   <div class="rounded-2xl border border-base-300 bg-base-100 p-5">
-                    <span class="block text-sm font-semibold text-base-content capitalize">trading credentials come next</span>
+                    <span class="block text-sm font-semibold text-base-content capitalize">{$_('admin_setup_trading_credentials_next')}</span>
                     <span class="mt-2 block text-sm leading-6 text-base-content/60">
-                      API keys are not required to finish initial setup. Add and validate exchange credentials before market-making or order execution.
+                      {$_('admin_setup_trading_credentials_hint')}
                     </span>
-                    <a class="btn btn-ghost btn-sm mt-4 rounded-full capitalize" href="/system/connectivity/api-keys">open API key settings</a>
+                    <a class="btn btn-ghost btn-sm mt-4 rounded-full capitalize" href="/system/connectivity/api-keys">{$_('admin_setup_open_api_key_settings')}</a>
                   </div>
                   <div class="rounded-2xl border border-base-300 bg-base-300 p-5">
-                    <span class="block text-sm font-semibold text-base-content capitalize">setup lock behavior</span>
+                    <span class="block text-sm font-semibold text-base-content capitalize">{$_('admin_setup_lock_behavior')}</span>
                     <span class="mt-2 block text-sm leading-6 text-base-content/60">
-                      Completion disables setup-only writes and redirects this route back to the dashboard.
+                      {$_('admin_setup_lock_behavior_hint')}
                     </span>
                   </div>
                 </div>
@@ -472,9 +487,9 @@
                 <div class="flex flex-wrap gap-2 border-t border-base-300 pt-5">
                   <button class="btn btn-primary rounded-full px-5 capitalize" disabled={saving || !requiredSetupComplete} type="button" onclick={() => void finishSetup()}>
                     {#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
-                    complete setup
+                    {$_('admin_setup_complete')}
                   </button>
-                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={goPrev}>previous</button>
+                  <button class="btn btn-ghost rounded-full capitalize" disabled={saving} type="button" onclick={goPrev}>{$_('previous')}</button>
                 </div>
               </div>
             {/if}

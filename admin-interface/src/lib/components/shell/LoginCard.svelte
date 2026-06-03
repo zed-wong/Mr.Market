@@ -50,7 +50,7 @@
       correct.set(false);
       submitted.set(true);
       checked.set(true);
-      errorMessage = err instanceof Error ? err.message : 'Login failed';
+      errorMessage = err instanceof Error ? err.message : $_('admin.login_failed');
       triggerShake();
     } finally {
       loginLoading.set(false);
@@ -75,7 +75,7 @@
       correct.set(false);
       submitted.set(true);
       checked.set(true);
-      errorMessage = err instanceof Error ? err.message : 'Passkey login failed';
+      errorMessage = err instanceof Error ? err.message : $_('admin.passkey_login_failed');
     } finally {
       loginLoading.set(false);
     }
