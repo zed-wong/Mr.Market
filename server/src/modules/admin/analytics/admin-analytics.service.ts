@@ -76,6 +76,25 @@ type TrackedOrderProjection = Pick<
   | 'updatedAt'
 >;
 
+type OrderAggregateSnapshot = {
+  orderId: string;
+  exchange: string | null;
+  pair: string | null;
+  baseAsset: string | null;
+  quoteAsset: string | null;
+  realizedPnlQuote: BigNumber;
+  feesQuote: BigNumber;
+  realizedNetPnlQuote: BigNumber;
+  unrealizedPnlQuote: BigNumber | null;
+  inventoryBaseQty: BigNumber;
+  inventoryCostQuote: BigNumber;
+  inventoryNotionalQuote: BigNumber | null;
+  tradedQuoteVolume: BigNumber;
+  fillCount: number;
+  series: Array<{ t: string; realized: string; fees: string; net: string }>;
+  markUnavailableReason: string | null;
+};
+
 @Injectable()
 export class AdminAnalyticsService {
   constructor(
@@ -122,6 +141,15 @@ export class AdminAnalyticsService {
             trackedOrders,
             ledgerEntries,
             orderBalances,
+            strategyOrderIntents,
+            executions,
+            orderBookMids,
+          })
+        : null;
+    const aggregateAnalytics =
+      filters.scope === 'pair' || filters.scope === 'admin'
+        ? await this.buildAggregateAnalytics(filters, {
+            trackedOrders,
             strategyOrderIntents,
             executions,
             orderBookMids,
@@ -178,6 +206,7 @@ export class AdminAnalyticsService {
       },
       analytics: {
         perOrder: perOrderAnalytics,
+        aggregate: aggregateAnalytics,
       },
       dataSources: [
         'ledger_entries',
@@ -885,6 +914,497 @@ export class AdminAnalyticsService {
     }
 
     return new BigNumber(0);
+  }
+
+  private async buildAggregateAnalytics(
+    filters: ResolvedAnalyticsQuery,
+    sources: {
+      trackedOrders: TrackedOrderProjection[];
+      strategyOrderIntents: StrategyOrderIntentEntity[];
+      executions: StrategyExecutionHistory[];
+      orderBookMids: Array<ReturnType<AdminAnalyticsService['readOrderBookMid']>>;
+    },
+  ) {
+    const scopedTrackedOrders = this.filterTrackedOrdersForAggregate(
+      filters,
+      sources.trackedOrders,
+    );
+    const eligibleOrderIds = this.unique(
+      scopedTrackedOrders.map((order) => order.orderId),
+    );
+    const snapshots: OrderAggregateSnapshot[] = [];
+
+    for (const orderId of eligibleOrderIds) {
+      const performance = await this.performanceService.getOrderPerformance(
+        orderId,
+      );
+      const orderTrackedOrders = scopedTrackedOrders.filter(
+        (order) => order.orderId === orderId,
+      );
+      const market = this.resolveAggregateOrderMarket(
+        filters,
+        orderId,
+        orderTrackedOrders,
+        sources.executions,
+      );
+      const pairAssets = this.parsePair(market.pair);
+      const quoteCurrency = pairAssets.quote || null;
+      const baseCurrency = pairAssets.base || null;
+      const mark = this.resolveOrderMark(market, sources.orderBookMids);
+      const inventoryBaseQty = this.toDecimal(
+        performance.summary.inventoryBaseQty,
+      );
+      const inventoryCostQuote = this.toDecimal(
+        performance.summary.inventoryCostQuote,
+      );
+      const inventoryAverageCostQuote = this.resolveInventoryAverageCost(
+        inventoryBaseQty,
+        inventoryCostQuote,
+        performance.summary.inventoryAverageCostQuote,
+      );
+      const markPrice =
+        mark.midPrice !== null ? this.toPositiveDecimal(mark.midPrice) : null;
+      const markUnavailableReason =
+        mark.unavailableReason ||
+        (!market.exchange || !market.pair
+          ? 'order-market-pair-unavailable'
+          : 'order-book-mid-unavailable');
+      const unrealizedPnlQuote =
+        markPrice && inventoryAverageCostQuote
+          ? inventoryBaseQty.multipliedBy(
+              markPrice.minus(inventoryAverageCostQuote),
+            )
+          : null;
+      const inventoryNotionalQuote = markPrice
+        ? inventoryBaseQty.multipliedBy(markPrice)
+        : null;
+
+      snapshots.push({
+        orderId,
+        exchange: market.exchange,
+        pair: market.pair,
+        baseAsset: baseCurrency,
+        quoteAsset: quoteCurrency,
+        realizedPnlQuote: this.toDecimal(
+          performance.summary.realizedPnlQuote,
+        ),
+        feesQuote: this.toDecimal(performance.summary.feesQuote),
+        realizedNetPnlQuote: this.toDecimal(performance.summary.netPnlQuote),
+        unrealizedPnlQuote,
+        inventoryBaseQty,
+        inventoryCostQuote,
+        inventoryNotionalQuote,
+        tradedQuoteVolume: this.toDecimal(
+          performance.summary.tradedQuoteVolume,
+        ),
+        fillCount: performance.summary.fillCount,
+        series: performance.series,
+        markUnavailableReason:
+          unrealizedPnlQuote && inventoryNotionalQuote
+            ? null
+            : markUnavailableReason,
+      });
+    }
+
+    const quoteCurrency = this.resolveCommonCurrency(
+      snapshots.map((snapshot) => snapshot.quoteAsset),
+    );
+    const realizedPnlQuote = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.realizedPnlQuote),
+    );
+    const feesQuote = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.feesQuote),
+    );
+    const realizedNetPnlQuote = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.realizedNetPnlQuote),
+    );
+    const tradedQuoteVolume = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.tradedQuoteVolume),
+    );
+    const inventoryCostQuote = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.inventoryCostQuote),
+    );
+    const fillCount = snapshots.reduce(
+      (total, snapshot) => total + snapshot.fillCount,
+      0,
+    );
+    const markDependentUnavailable = snapshots.some(
+      (snapshot) =>
+        snapshot.inventoryBaseQty.isGreaterThan(0) &&
+        (!snapshot.unrealizedPnlQuote || !snapshot.inventoryNotionalQuote),
+    );
+    const markUnavailableReason =
+      snapshots.find((snapshot) => snapshot.markUnavailableReason)
+        ?.markUnavailableReason || 'aggregate-mark-price-unavailable';
+    const unrealizedPnlQuote = markDependentUnavailable
+      ? null
+      : this.sumDecimals(
+          snapshots.map(
+            (snapshot) => snapshot.unrealizedPnlQuote || new BigNumber(0),
+          ),
+        );
+    const inventoryNotionalQuote = markDependentUnavailable
+      ? null
+      : this.sumDecimals(
+          snapshots.map(
+            (snapshot) => snapshot.inventoryNotionalQuote || new BigNumber(0),
+          ),
+        );
+    const netPnlQuote = unrealizedPnlQuote
+      ? realizedNetPnlQuote.plus(unrealizedPnlQuote)
+      : null;
+    const pnlSeries = this.buildAggregatePnlSeries(snapshots);
+    const fillRate = this.buildFillRate(
+      filters,
+      scopedTrackedOrders,
+      sources.strategyOrderIntents,
+    );
+    const quoteUptime = this.buildQuoteUptime(filters, scopedTrackedOrders);
+    const spreadCaptureQuote = this.availableMetric(
+      realizedPnlQuote,
+      quoteCurrency,
+    );
+    const feeCost = this.availableMetric(feesQuote, quoteCurrency);
+    const inventoryExposureNotional = this.metricFromNullable(
+      inventoryNotionalQuote,
+      quoteCurrency,
+      markUnavailableReason,
+    );
+
+    return {
+      scope: {
+        type: filters.scope,
+        exchange: filters.exchange || null,
+        pair: filters.pair || null,
+      },
+      eligibleOrderIds,
+      orderCount: eligibleOrderIds.length,
+      pnl: {
+        realized: this.availableMetric(realizedPnlQuote, quoteCurrency),
+        unrealized: this.metricFromNullable(
+          unrealizedPnlQuote,
+          quoteCurrency,
+          markUnavailableReason,
+        ),
+        net: this.metricFromNullable(
+          netPnlQuote,
+          quoteCurrency,
+          markUnavailableReason,
+        ),
+        realizedNet: this.availableMetric(
+          realizedNetPnlQuote,
+          quoteCurrency,
+        ),
+      },
+      fees: {
+        total: feeCost,
+      },
+      inventoryExposure: {
+        quantityByAsset: this.aggregateInventoryQuantityByAsset(snapshots),
+        costBasis: this.availableMetric(inventoryCostQuote, quoteCurrency),
+        notional: inventoryExposureNotional,
+      },
+      spreadCapture: {
+        quote: spreadCaptureQuote,
+        tradedQuoteVolume: this.availableMetric(
+          tradedQuoteVolume,
+          quoteCurrency,
+        ),
+        fillCount,
+        effectiveSpreadBps: tradedQuoteVolume.isGreaterThan(0)
+          ? realizedPnlQuote
+              .dividedBy(tradedQuoteVolume)
+              .multipliedBy(10000)
+              .toFixed()
+          : null,
+      },
+      fillRate,
+      quoteUptime,
+      pnlSeries,
+      drawdown: this.buildDrawdown(pnlSeries, quoteCurrency),
+      directMarketMakingTotals: {
+        realizedPnl: this.availableMetric(realizedPnlQuote, quoteCurrency),
+        unrealizedPnl: this.metricFromNullable(
+          unrealizedPnlQuote,
+          quoteCurrency,
+          markUnavailableReason,
+        ),
+        netPnl: this.metricFromNullable(
+          netPnlQuote,
+          quoteCurrency,
+          markUnavailableReason,
+        ),
+        feeCost,
+        spreadCapture: spreadCaptureQuote,
+        inventoryExposure: inventoryExposureNotional,
+        fillRate,
+        quoteUptime,
+      },
+      dataSources: [
+        'performance_service_order_performance',
+        'tracked_orders',
+        'strategy_order_intents',
+        'order_book_tracker_mid',
+      ],
+    };
+  }
+
+  private filterTrackedOrdersForAggregate(
+    filters: ResolvedAnalyticsQuery,
+    trackedOrders: TrackedOrderProjection[],
+  ): TrackedOrderProjection[] {
+    return trackedOrders.filter((order) => {
+      if (!order.orderId) {
+        return false;
+      }
+
+      if (
+        filters.exchange &&
+        String(order.exchange || '').toLowerCase() !== filters.exchange
+      ) {
+        return false;
+      }
+
+      if (
+        filters.pair &&
+        String(order.pair || '').toUpperCase() !== filters.pair
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  private resolveAggregateOrderMarket(
+    filters: ResolvedAnalyticsQuery,
+    orderId: string,
+    trackedOrders: TrackedOrderProjection[],
+    executions: StrategyExecutionHistory[],
+  ): { exchange: string | null; pair: string | null } {
+    const firstTracked = trackedOrders[0];
+    const firstExecution = executions.find(
+      (execution) => execution.orderId === orderId,
+    );
+
+    return {
+      exchange:
+        filters.exchange ||
+        firstTracked?.exchange?.toLowerCase() ||
+        firstExecution?.exchange?.toLowerCase() ||
+        null,
+      pair:
+        filters.pair ||
+        firstTracked?.pair?.toUpperCase() ||
+        firstExecution?.pair?.toUpperCase() ||
+        null,
+    };
+  }
+
+  private buildAggregatePnlSeries(snapshots: OrderAggregateSnapshot[]) {
+    const pointsByOrder = new Map<
+      string,
+      Array<{ t: string; realized: string; fees: string; net: string }>
+    >();
+    const timestamps = new Set<string>();
+
+    for (const snapshot of snapshots) {
+      const points = [...snapshot.series].sort((left, right) =>
+        left.t.localeCompare(right.t),
+      );
+
+      pointsByOrder.set(snapshot.orderId, points);
+      for (const point of points) {
+        timestamps.add(point.t);
+      }
+    }
+
+    const latestByOrder = new Map<
+      string,
+      { realized: BigNumber; fees: BigNumber; net: BigNumber }
+    >();
+    const cursors = new Map<string, number>();
+
+    return [...timestamps]
+      .sort((left, right) => left.localeCompare(right))
+      .map((timestamp) => {
+        for (const snapshot of snapshots) {
+          const points = pointsByOrder.get(snapshot.orderId) || [];
+          let cursor = cursors.get(snapshot.orderId) || 0;
+
+          while (
+            cursor < points.length &&
+            points[cursor].t.localeCompare(timestamp) <= 0
+          ) {
+            latestByOrder.set(snapshot.orderId, {
+              realized: this.toDecimal(points[cursor].realized),
+              fees: this.toDecimal(points[cursor].fees),
+              net: this.toDecimal(points[cursor].net),
+            });
+            cursor += 1;
+          }
+
+          cursors.set(snapshot.orderId, cursor);
+        }
+
+        const totals = [...latestByOrder.values()].reduce(
+          (accumulator, point) => ({
+            realized: accumulator.realized.plus(point.realized),
+            fees: accumulator.fees.plus(point.fees),
+            net: accumulator.net.plus(point.net),
+          }),
+          {
+            realized: new BigNumber(0),
+            fees: new BigNumber(0),
+            net: new BigNumber(0),
+          },
+        );
+
+        return {
+          t: timestamp,
+          realized: totals.realized.toFixed(),
+          fees: totals.fees.toFixed(),
+          net: totals.net.toFixed(),
+        };
+      });
+  }
+
+  private buildFillRate(
+    filters: ResolvedAnalyticsQuery,
+    trackedOrders: TrackedOrderProjection[],
+    intents: StrategyOrderIntentEntity[],
+  ) {
+    const strategyKeys = new Set(
+      trackedOrders.map((order) => order.strategyKey).filter(Boolean),
+    );
+    const scopedIntents = intents.filter((intent) => {
+      if (
+        strategyKeys.size > 0 &&
+        !strategyKeys.has(String(intent.strategyKey || ''))
+      ) {
+        return false;
+      }
+
+      if (
+        filters.exchange &&
+        String(intent.exchange || '').toLowerCase() !== filters.exchange
+      ) {
+        return false;
+      }
+
+      if (
+        filters.pair &&
+        String(intent.pair || '').toUpperCase() !== filters.pair
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+    const totalQuotes =
+      scopedIntents.length > 0 ? scopedIntents.length : trackedOrders.length;
+    const filledQuotes = trackedOrders.filter((order) =>
+      this.toDecimal(order.cumulativeFilledQty).isGreaterThan(0),
+    ).length;
+    const value =
+      totalQuotes > 0
+        ? new BigNumber(filledQuotes).dividedBy(totalQuotes)
+        : new BigNumber(0);
+
+    return {
+      ...this.availableMetric(value, null),
+      filledQuotes,
+      totalQuotes,
+    };
+  }
+
+  private buildQuoteUptime(
+    filters: ResolvedAnalyticsQuery,
+    trackedOrders: TrackedOrderProjection[],
+  ) {
+    const startedAtMs = Date.parse(filters.startedAt);
+    const endedAtMs = Date.parse(filters.endedAt);
+    const windowMs = Math.max(endedAtMs - startedAtMs, 0);
+    const intervals = trackedOrders
+      .map((order) => ({
+        start: Math.max(Date.parse(order.createdAt || ''), startedAtMs),
+        end: Math.min(Date.parse(order.updatedAt || ''), endedAtMs),
+      }))
+      .filter(
+        (interval) =>
+          Number.isFinite(interval.start) &&
+          Number.isFinite(interval.end) &&
+          interval.end > interval.start,
+      )
+      .sort((left, right) => left.start - right.start);
+    const merged: Array<{ start: number; end: number }> = [];
+
+    for (const interval of intervals) {
+      const previous = merged[merged.length - 1];
+
+      if (!previous || interval.start > previous.end) {
+        merged.push({ ...interval });
+        continue;
+      }
+
+      previous.end = Math.max(previous.end, interval.end);
+    }
+
+    const activeMs = merged.reduce(
+      (total, interval) => total + interval.end - interval.start,
+      0,
+    );
+    const value =
+      windowMs > 0
+        ? BigNumber.min(
+            new BigNumber(activeMs).dividedBy(windowMs),
+            new BigNumber(1),
+          )
+        : new BigNumber(0);
+
+    return {
+      ...this.availableMetric(value, null),
+      activeMs,
+      windowMs,
+    };
+  }
+
+  private aggregateInventoryQuantityByAsset(
+    snapshots: OrderAggregateSnapshot[],
+  ) {
+    const byAsset = new Map<string, BigNumber>();
+
+    for (const snapshot of snapshots) {
+      if (!snapshot.baseAsset) {
+        continue;
+      }
+
+      byAsset.set(
+        snapshot.baseAsset,
+        (byAsset.get(snapshot.baseAsset) || new BigNumber(0)).plus(
+          snapshot.inventoryBaseQty,
+        ),
+      );
+    }
+
+    return [...byAsset.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([asset, quantity]) => ({ asset, quantity: quantity.toFixed() }));
+  }
+
+  private resolveCommonCurrency(currencies: Array<string | null>) {
+    const uniqueCurrencies = this.unique(
+      currencies.filter(Boolean) as string[],
+    );
+
+    return uniqueCurrencies.length === 1 ? uniqueCurrencies[0] : null;
+  }
+
+  private sumDecimals(values: BigNumber[]): BigNumber {
+    return values.reduce(
+      (total, value) => total.plus(value),
+      new BigNumber(0),
+    );
   }
 
   private buildDrawdown(

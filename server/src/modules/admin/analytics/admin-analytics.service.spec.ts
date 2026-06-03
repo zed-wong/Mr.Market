@@ -507,4 +507,397 @@ describe('AdminAnalyticsService', () => {
       unavailableReason: 'order-book-mid-unavailable',
     });
   });
+
+  it('aggregates per-pair analytics from only matching exchange and pair orders', async () => {
+    const trackedOrders = createRepository([
+      {
+        trackingKey: 'track-btc-1',
+        orderId: 'order-1',
+        strategyKey: 'strategy-1',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-1',
+        clientOrderId: 'client-1',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        cumulativeFilledQty: '1',
+        status: 'filled',
+        createdAt: ts(1),
+        updatedAt: ts(3),
+      },
+      {
+        trackingKey: 'track-btc-2',
+        orderId: 'order-2',
+        strategyKey: 'strategy-2',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-2',
+        clientOrderId: 'client-2',
+        side: 'sell',
+        price: '110',
+        qty: '2',
+        cumulativeFilledQty: '2',
+        status: 'filled',
+        createdAt: ts(4),
+        updatedAt: ts(7),
+      },
+      {
+        trackingKey: 'track-eth-control',
+        orderId: 'order-control',
+        strategyKey: 'strategy-control',
+        exchange: 'kraken',
+        pair: 'ETH/USDT',
+        exchangeOrderId: 'exchange-control',
+        clientOrderId: 'client-control',
+        side: 'buy',
+        price: '200',
+        qty: '1',
+        cumulativeFilledQty: '1',
+        status: 'filled',
+        createdAt: ts(2),
+        updatedAt: ts(8),
+      },
+    ]);
+    const intents = createRepository([
+      {
+        intentId: 'intent-btc-1',
+        strategyKey: 'strategy-1',
+        type: 'place',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'DONE',
+        createdAt: ts(1),
+        updatedAt: ts(1),
+      },
+      {
+        intentId: 'intent-btc-2',
+        strategyKey: 'strategy-2',
+        type: 'place',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'sell',
+        price: '110',
+        qty: '2',
+        status: 'DONE',
+        createdAt: ts(4),
+        updatedAt: ts(4),
+      },
+      {
+        intentId: 'intent-control',
+        strategyKey: 'strategy-control',
+        type: 'place',
+        exchange: 'kraken',
+        pair: 'ETH/USDT',
+        side: 'buy',
+        price: '200',
+        qty: '1',
+        status: 'DONE',
+        createdAt: ts(2),
+        updatedAt: ts(2),
+      },
+    ]);
+    const performanceService = {
+      getOrderPerformance: jest.fn(async (orderId: string) => {
+        const performances = {
+          'order-1': {
+            series: [
+              { t: ts(1), realized: '5', fees: '1', net: '4' },
+              { t: ts(2), realized: '10', fees: '1', net: '9' },
+            ],
+            summary: {
+              realizedPnlQuote: '10',
+              feesQuote: '1',
+              netPnlQuote: '9',
+              tradedQuoteVolume: '100',
+              effectiveSpreadBps: '1000',
+              fillCount: 2,
+              otherFees: [],
+              inventoryBaseQty: '1',
+              inventoryCostQuote: '100',
+              inventoryAverageCostQuote: '100',
+            },
+          },
+          'order-2': {
+            series: [
+              { t: ts(1), realized: '1.5', fees: '0.5', net: '1' },
+              { t: ts(3), realized: '-2', fees: '0.5', net: '-2.5' },
+            ],
+            summary: {
+              realizedPnlQuote: '-2',
+              feesQuote: '0.5',
+              netPnlQuote: '-2.5',
+              tradedQuoteVolume: '50',
+              effectiveSpreadBps: '-400',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '2',
+              inventoryCostQuote: '180',
+              inventoryAverageCostQuote: '90',
+            },
+          },
+          'order-control': {
+            series: [{ t: ts(2), realized: '999', fees: '0', net: '999' }],
+            summary: {
+              realizedPnlQuote: '999',
+              feesQuote: '0',
+              netPnlQuote: '999',
+              tradedQuoteVolume: '999',
+              effectiveSpreadBps: '999',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '0',
+              inventoryCostQuote: '0',
+              inventoryAverageCostQuote: null,
+            },
+          },
+        };
+
+        return performances[orderId];
+      }),
+    };
+    const orderBookTracker = {
+      getOrderBook: jest.fn((exchange: string, pair: string) =>
+        exchange === 'binance' && pair === 'BTC/USDT'
+          ? { bids: [[109, 1]], asks: [[111, 1]], sequence: 10 }
+          : { bids: [[200, 1]], asks: [[202, 1]], sequence: 11 },
+      ),
+      getLastUpdateAt: jest.fn(() => Date.parse(ts(8))),
+      isStale: jest.fn(() => false),
+      queueSnapshot: jest.fn(),
+      stop: jest.fn(),
+    };
+    const service = new AdminAnalyticsService(
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      trackedOrders.repository as any,
+      intents.repository as any,
+      createRepository([]).repository as any,
+      orderBookTracker as any,
+      performanceService as any,
+    );
+
+    const result = await service.getFoundation({
+      scope: 'pair',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(performanceService.getOrderPerformance).toHaveBeenCalledTimes(2);
+    expect(performanceService.getOrderPerformance).toHaveBeenCalledWith(
+      'order-1',
+    );
+    expect(performanceService.getOrderPerformance).toHaveBeenCalledWith(
+      'order-2',
+    );
+    expect(performanceService.getOrderPerformance).not.toHaveBeenCalledWith(
+      'order-control',
+    );
+    expect(result.analytics.aggregate).toMatchObject({
+      scope: {
+        type: 'pair',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+      },
+      eligibleOrderIds: ['order-1', 'order-2'],
+      pnl: {
+        realized: { status: 'available', value: '8', currency: 'USDT' },
+        unrealized: { status: 'available', value: '50', currency: 'USDT' },
+        realizedNet: { status: 'available', value: '6.5', currency: 'USDT' },
+        net: { status: 'available', value: '56.5', currency: 'USDT' },
+      },
+      fees: {
+        total: { status: 'available', value: '1.5', currency: 'USDT' },
+      },
+      inventoryExposure: {
+        notional: { status: 'available', value: '330', currency: 'USDT' },
+        quantityByAsset: [{ asset: 'BTC', quantity: '3' }],
+      },
+      spreadCapture: {
+        quote: { status: 'available', value: '8', currency: 'USDT' },
+        tradedQuoteVolume: {
+          status: 'available',
+          value: '150',
+          currency: 'USDT',
+        },
+        fillCount: 3,
+        effectiveSpreadBps: '533.3333333333333333',
+      },
+      fillRate: {
+        status: 'available',
+        value: '1',
+        filledQuotes: 2,
+        totalQuotes: 2,
+      },
+      quoteUptime: {
+        status: 'available',
+        value: '0.5',
+      },
+      drawdown: {
+        status: 'available',
+        maxDrawdownQuote: '3.5',
+        peakAt: ts(2),
+        troughAt: ts(3),
+      },
+    });
+    expect(result.analytics.aggregate.pnlSeries).toEqual([
+      { t: ts(1), realized: '6.5', fees: '1.5', net: '5' },
+      { t: ts(2), realized: '11.5', fees: '1.5', net: '10' },
+      { t: ts(3), realized: '8', fees: '1.5', net: '6.5' },
+    ]);
+  });
+
+  it('aggregates admin-wide analytics across eligible admin-visible orders only', async () => {
+    const trackedOrders = createRepository([
+      {
+        trackingKey: 'track-btc',
+        orderId: 'order-btc',
+        strategyKey: 'strategy-btc',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-btc',
+        clientOrderId: 'client-btc',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        cumulativeFilledQty: '1',
+        status: 'filled',
+        createdAt: ts(1),
+        updatedAt: ts(3),
+      },
+      {
+        trackingKey: 'track-eth',
+        orderId: 'order-eth',
+        strategyKey: 'strategy-eth',
+        exchange: 'kraken',
+        pair: 'ETH/USDT',
+        exchangeOrderId: 'exchange-eth',
+        clientOrderId: 'client-eth',
+        side: 'buy',
+        price: '50',
+        qty: '1',
+        cumulativeFilledQty: '0',
+        status: 'open',
+        createdAt: ts(5),
+        updatedAt: ts(9),
+      },
+    ]);
+    const performanceService = {
+      getOrderPerformance: jest.fn(async (orderId: string) => {
+        const performances = {
+          'order-btc': {
+            series: [{ t: ts(2), realized: '5', fees: '1', net: '4' }],
+            summary: {
+              realizedPnlQuote: '5',
+              feesQuote: '1',
+              netPnlQuote: '4',
+              tradedQuoteVolume: '100',
+              effectiveSpreadBps: '500',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '1',
+              inventoryCostQuote: '100',
+              inventoryAverageCostQuote: '100',
+            },
+          },
+          'order-eth': {
+            series: [{ t: ts(6), realized: '3', fees: '0.25', net: '2.75' }],
+            summary: {
+              realizedPnlQuote: '3',
+              feesQuote: '0.25',
+              netPnlQuote: '2.75',
+              tradedQuoteVolume: '50',
+              effectiveSpreadBps: '600',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '0',
+              inventoryCostQuote: '0',
+              inventoryAverageCostQuote: null,
+            },
+          },
+          'ledger-only-control': {
+            series: [{ t: ts(7), realized: '1000', fees: '0', net: '1000' }],
+            summary: {
+              realizedPnlQuote: '1000',
+              feesQuote: '0',
+              netPnlQuote: '1000',
+              tradedQuoteVolume: '1000',
+              effectiveSpreadBps: '10000',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '0',
+              inventoryCostQuote: '0',
+              inventoryAverageCostQuote: null,
+            },
+          },
+        };
+
+        return performances[orderId];
+      }),
+    };
+    const orderBookTracker = {
+      getOrderBook: jest.fn((exchange: string, pair: string) =>
+        exchange === 'binance' && pair === 'BTC/USDT'
+          ? { bids: [[109, 1]], asks: [[111, 1]], sequence: 10 }
+          : { bids: [[49, 1]], asks: [[51, 1]], sequence: 11 },
+      ),
+      getLastUpdateAt: jest.fn(() => Date.parse(ts(9))),
+      isStale: jest.fn(() => false),
+      queueSnapshot: jest.fn(),
+      stop: jest.fn(),
+    };
+    const service = new AdminAnalyticsService(
+      createRepository([
+        {
+          entryId: 'ledger-only',
+          orderId: 'ledger-only-control',
+          assetId: 'USDT',
+          amount: '1000',
+          type: 'fill_settle',
+          createdAt: ts(7),
+        },
+      ]).repository as any,
+      createRepository([]).repository as any,
+      trackedOrders.repository as any,
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      orderBookTracker as any,
+      performanceService as any,
+    );
+
+    const result = await service.getFoundation({
+      scope: 'admin',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.analytics.aggregate.eligibleOrderIds).toEqual([
+      'order-btc',
+      'order-eth',
+    ]);
+    expect(performanceService.getOrderPerformance).toHaveBeenCalledTimes(2);
+    expect(performanceService.getOrderPerformance).not.toHaveBeenCalledWith(
+      'ledger-only-control',
+    );
+    expect(result.analytics.aggregate.pnl).toMatchObject({
+      realized: { status: 'available', value: '8', currency: 'USDT' },
+      unrealized: { status: 'available', value: '10', currency: 'USDT' },
+      realizedNet: { status: 'available', value: '6.75', currency: 'USDT' },
+      net: { status: 'available', value: '16.75', currency: 'USDT' },
+    });
+    expect(result.analytics.aggregate.directMarketMakingTotals).toMatchObject({
+      realizedPnl: { status: 'available', value: '8', currency: 'USDT' },
+      unrealizedPnl: { status: 'available', value: '10', currency: 'USDT' },
+      netPnl: { status: 'available', value: '16.75', currency: 'USDT' },
+      feeCost: { status: 'available', value: '1.25', currency: 'USDT' },
+      spreadCapture: { status: 'available', value: '8', currency: 'USDT' },
+      fillRate: { status: 'available', value: '0.5' },
+      quoteUptime: { status: 'available', value: '0.6' },
+    });
+  });
 });
