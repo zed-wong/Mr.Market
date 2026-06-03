@@ -41,20 +41,32 @@
         toast.success($_("admin_direct_mm_order_id_copied"));
     }
 
+    function isRunningState(state: string): boolean {
+        return ["active", "created", "running"].includes(state);
+    }
+
     function getHealthDot(health: string): string {
         if (health === "active") return "bg-success";
         if (health === "gone") return "bg-error";
         return "bg-warning";
     }
 
-    function getHealthLabel(health: string): string {
+    function getHealthLabel(health: string, runtimeState = ""): string {
+        if (!isRunningState(runtimeState))
+            return $_("admin_direct_mm_not_running");
         return health.charAt(0).toUpperCase() + health.slice(1);
     }
 
-    function getHealthColor(health: string): string {
+    function getHealthColor(health: string, runtimeState = ""): string {
+        if (!isRunningState(runtimeState)) return "text-base-content/55";
         if (health === "active") return "text-success";
         if (health === "gone") return "text-error";
         return "text-warning";
+    }
+
+    function getContextualHealthDot(health: string, runtimeState = ""): string {
+        if (!isRunningState(runtimeState)) return "bg-base-content/30";
+        return getHealthDot(health);
     }
 
     function getConnectivity(d: DirectOrderStatus): string {
@@ -103,6 +115,7 @@
 
     $: currentRuntimeState = data?.runtimeState ?? order?.runtimeState ?? "";
     $: stateLabel = currentRuntimeState ? getStateLabel(currentRuntimeState) : "";
+    $: isOrderRunning = isRunningState(currentRuntimeState);
 
     $: lastUpdated = data?.lastUpdatedAt
         ? data.lastUpdatedAt.replace("T", " ").slice(0, 19)
@@ -185,7 +198,7 @@
                                 <button
                                     class="shrink-0 text-base-content/25 transition-colors hover:text-base-content/60"
                                     on:click={copyOrderId}
-                                    aria-label="Copy order ID"
+                                    aria-label={$_("copy_order_id")}
                                 >
                                     <svg
                                         xmlns="http://www.w3.org/2000/svg"
@@ -228,13 +241,70 @@
             </div>
 
             {#if loading && !data && !error}
-                <div class="px-7 pb-16 py-12">
-                    <AdminStatePanel
-                        kind="loading"
-                        title={$_("admin_direct_mm_detail_loading_title")}
-                        message={$_("admin_direct_mm_detail_loading_message")}
-                        testId="direct-mm-detail-loading"
-                    />
+                <div
+                    class="px-7 pb-7 flex flex-col gap-5"
+                    data-testid="direct-mm-detail-loading"
+                    aria-busy="true"
+                >
+                    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+                        <div
+                            class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+                        >
+                            <div class="min-w-0 space-y-2">
+                                <div class="skeleton h-7 w-36 rounded-lg"></div>
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <div class="skeleton h-5 w-20 rounded-full"></div>
+                                    <div class="skeleton h-5 w-16 rounded-full"></div>
+                                    <div class="skeleton h-5 w-28 rounded-full"></div>
+                                </div>
+                            </div>
+
+                            <div class="flex shrink-0 items-center gap-2">
+                                <div class="skeleton h-4 w-20 rounded"></div>
+                                <div class="skeleton h-4 w-28 rounded"></div>
+                                <div class="skeleton h-6 w-6 rounded-full"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="skeleton h-20 rounded-xl"></div>
+                        <div class="skeleton h-20 rounded-xl"></div>
+                        <div class="skeleton h-20 rounded-xl"></div>
+                    </div>
+
+                    <div>
+                        <div class="mb-3 flex h-5 items-center justify-between">
+                            <div class="skeleton h-4 w-28 rounded"></div>
+                            <div class="skeleton h-3 w-36 rounded"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
+                            <div class="skeleton h-20 rounded-xl"></div>
+                            <div class="skeleton h-20 rounded-xl"></div>
+                            <div class="skeleton h-20 rounded-xl"></div>
+                            <div class="skeleton h-20 rounded-xl"></div>
+                            <div class="skeleton h-20 rounded-xl"></div>
+                        </div>
+                        <div class="skeleton mt-3 h-44 w-full rounded-xl"></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="skeleton h-36 rounded-xl"></div>
+                        <div class="skeleton h-36 rounded-xl"></div>
+                    </div>
+
+                    <div>
+                        <div class="mb-3 flex h-5 items-center justify-between">
+                            <div class="skeleton h-4 w-32 rounded"></div>
+                            <div class="skeleton h-3 w-28 rounded"></div>
+                        </div>
+                        <div class="skeleton h-48 w-full rounded-xl"></div>
+                    </div>
+
+                    <div class="flex gap-3 mt-2">
+                        <div class="skeleton h-11 w-[120px] rounded-[10px]"></div>
+                        <div class="skeleton h-11 flex-1 rounded-[10px]"></div>
+                    </div>
                 </div>
             {:else if error}
                 <div class="px-7 pb-16 py-12">
@@ -365,44 +435,75 @@
 
                     <!-- Key Metrics Row -->
                     <div class="grid grid-cols-3 gap-3">
-                        <!-- Spread -->
-                        <div
-                            class="border border-base-300 rounded-xl p-3 text-center"
-                        >
-                            <span
-                                class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                >{$_("admin_direct_mm_spread_label")}</span
+                        {#if isOrderRunning}
+                            <!-- Spread -->
+                            <div
+                                class="border border-base-300 rounded-xl p-3 text-center"
                             >
-                            {#if data?.spread}
+                                <span
+                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                    >{$_("admin_direct_mm_spread_label")}</span
+                                >
+                                {#if data?.spread}
+                                    <span
+                                        class="text-sm font-bold text-base-content block"
+                                        >{data.spread.absolute}</span
+                                    >
+                                    <span class="text-[10px] text-base-content/40"
+                                        >{data.spread.bid} / {data.spread.ask}</span
+                                    >
+                                {:else}
+                                    <span class="text-sm text-base-content/30"
+                                        >{$_("admin_direct_mm_no_spread")}</span
+                                    >
+                                {/if}
+                            </div>
+
+                            <!-- Last Tick Ago -->
+                            <div
+                                class="border border-base-300 rounded-xl p-3 text-center"
+                            >
+                                <span
+                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                    >{$_("admin_direct_mm_last_tick_ago")}</span
+                                >
                                 <span
                                     class="text-sm font-bold text-base-content block"
-                                    >{data.spread.absolute}</span
+                                    >{formatTimeAgo(
+                                        data?.lastTickAt ?? order.lastTickAt,
+                                    )}</span
                                 >
-                                <span class="text-[10px] text-base-content/40"
-                                    >{data.spread.bid} / {data.spread.ask}</span
+                            </div>
+                        {:else}
+                            <div
+                                class="border border-base-300 rounded-xl p-3 text-center"
+                            >
+                                <span
+                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                    >{$_("admin_direct_mm_final_net_pnl")}</span
                                 >
-                            {:else}
-                                <span class="text-sm text-base-content/30"
-                                    >{$_("admin_direct_mm_no_spread")}</span
+                                <span
+                                    class="text-sm font-bold text-base-content block"
+                                    >{formatDecimal(performance?.summary.netPnlQuote)}</span
                                 >
-                            {/if}
-                        </div>
+                            </div>
 
-                        <!-- Last Tick Ago -->
-                        <div
-                            class="border border-base-300 rounded-xl p-3 text-center"
-                        >
-                            <span
-                                class="text-[10px] text-base-content/40 font-semibold block mb-1"
-                                >{$_("admin_direct_mm_last_tick_ago")}</span
+                            <div
+                                class="border border-base-300 rounded-xl p-3 text-center"
                             >
-                            <span
-                                class="text-sm font-bold text-base-content block"
-                                >{formatTimeAgo(
-                                    data?.lastTickAt ?? order.lastTickAt,
-                                )}</span
-                            >
-                        </div>
+                                <span
+                                    class="text-[10px] text-base-content/40 font-semibold block mb-1"
+                                    >{$_("admin_direct_mm_volume")}</span
+                                >
+                                <span
+                                    class="text-sm font-bold text-base-content block"
+                                    >{formatDecimal(
+                                        performance?.summary.tradedQuoteVolume,
+                                        2,
+                                    )}</span
+                                >
+                            </div>
+                        {/if}
 
                         <div
                             class="border border-base-300 rounded-xl p-3 text-center"
@@ -587,16 +688,19 @@
                                             : ""}
                                     >
                                         <span
-                                            class="w-2 h-2 rounded-full {getHealthDot(
+                                            class="w-2 h-2 rounded-full {getContextualHealthDot(
                                                 data.executorHealth,
+                                                currentRuntimeState,
                                             )}"
                                         ></span>
                                         <span
                                             class="text-xs font-semibold {getHealthColor(
                                                 data.executorHealth,
+                                                currentRuntimeState,
                                             )}"
                                             >{getHealthLabel(
                                                 data.executorHealth,
+                                                currentRuntimeState,
                                             )}</span
                                         >
                                     </div>
@@ -749,14 +853,27 @@
                                         <span
                                             class="text-[10px] text-base-content/40 font-semibold block mb-1"
                                             >{$_(
-                                                "admin_direct_mm_api_key",
+                                                "admin_direct_mm_exchange_access",
                                             )}</span
                                         >
                                         <span
                                             class="text-sm font-bold text-base-content block"
-                                            >{data.apiKeyId ||
-                                                $_("admin_direct_mm_na")}</span
+                                            >{$_("read_trade")}</span
                                         >
+                                        {#if data.apiKeyId}
+                                            <span
+                                                class="mt-1 block truncate font-mono text-[10px] text-base-content/40"
+                                                title={data.apiKeyId}
+                                                >{$_(
+                                                    "admin_direct_mm_api_key_ref",
+                                                    {
+                                                        values: {
+                                                            id: data.apiKeyId,
+                                                        },
+                                                    },
+                                                )}</span
+                                            >
+                                        {/if}
                                     </div>
                                 </div>
                             {/if}

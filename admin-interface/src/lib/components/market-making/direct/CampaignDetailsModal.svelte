@@ -37,6 +37,24 @@
     $: campaignName = String(campaign?.symbol || campaign?.name || "—");
     $: leaderboardRows = normalizeLeaderboardRows(leaderboard);
     $: updatedAt = formatTimestamp(String(leaderboard?.updated_at || ""));
+    $: currentServerRow = leaderboardRows.find((row) =>
+        isServerAddress(String(row.address || "")),
+    );
+    $: currentServerRank = currentServerRow
+        ? leaderboardRows.findIndex((row) =>
+              isServerAddress(String(row.address || "")),
+          ) + 1
+        : 0;
+    $: campaignVenue = [
+        campaignValue("exchange") || campaignValue("exchange_name"),
+        chainId
+            ? $_("admin_direct_mm_chain_id_value", {
+                  values: { id: chainId },
+              })
+            : "",
+    ]
+        .filter(Boolean)
+        .join(" · ");
 
     $: if (campaignKey && campaignKey !== activeCampaignKey) {
         activeCampaignKey = campaignKey;
@@ -118,6 +136,11 @@
         return parsed.decimalPlaces(decimals).toFormat();
     }
 
+    function formatReward(value: unknown): string {
+        const formatted = formatNumber(value, 4);
+        return formatted === $_("admin_direct_mm_na") ? formatted : `${formatted} USDT`;
+    }
+
     function formatTimestamp(value: string): string {
         if (!value) return "";
         const date = new Date(value);
@@ -130,12 +153,23 @@
         return `${address.slice(0, 6)}...${address.slice(-4)}`;
     }
 
+    function rankLabel(rank: number): string {
+        return `#${rank}`;
+    }
+
     function isServerAddress(address: string): boolean {
         return Boolean(
             serverAddress &&
                 address &&
                 serverAddress.toLowerCase() === address.toLowerCase(),
         );
+    }
+
+    function campaignValue(key: string): string {
+        const value = campaign?.[key];
+        return typeof value === "string" || typeof value === "number"
+            ? String(value)
+            : "";
     }
 
     onDestroy(stopPolling);
@@ -151,14 +185,22 @@
             <div class="px-7 pt-6 pb-4">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex flex-col gap-1">
-                        <span class="text-xs text-base-content/50 font-semibold">
+                        <span class="text-xs text-base-content/45 font-semibold">
                             {$_("admin_direct_mm_campaign_details_title")}
                         </span>
-                        <span class="text-lg font-bold text-base-content">
-                            {campaignName}
-                        </span>
-                        <span class="text-xs text-base-content/50 font-mono">
-                            {chainId}:{shortAddress(campaignAddress)}
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-xl font-bold text-base-content">
+                                {campaignName}
+                            </span>
+                            {#if campaign.joined}
+                                <span class="badge badge-success badge-outline badge-sm">
+                                    {$_("admin_direct_mm_joined")}
+                                </span>
+                            {/if}
+                        </div>
+                        <span class="text-xs text-base-content/50">
+                            {campaignVenue || $_("admin_direct_mm_campaign")} ·
+                            <span class="font-mono">{shortAddress(campaignAddress)}</span>
                         </span>
                     </div>
                     <button
@@ -217,40 +259,72 @@
                         </div>
                     {/if}
 
+                    {#if currentServerRow}
+                        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            <div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                <span class="text-xs text-base-content/50">
+                                    {$_("admin_direct_mm_this_server_rank")}
+                                </span>
+                                <div class="mt-1 font-mono text-lg font-semibold text-base-content">
+                                    {rankLabel(currentServerRank)}
+                                </div>
+                            </div>
+                            <div class="rounded-xl border border-base-300 bg-base-200/40 p-3">
+                                <span class="text-xs text-base-content/50">
+                                    {$_("admin_direct_mm_score")}
+                                </span>
+                                <div class="mt-1 font-mono text-lg font-semibold text-base-content">
+                                    {formatNumber(currentServerRow.score)}
+                                </div>
+                            </div>
+                            <div class="col-span-2 rounded-xl border border-base-300 bg-base-200/40 p-3 sm:col-span-1">
+                                <span class="text-xs text-base-content/50">
+                                    {$_("admin_direct_mm_estimated_reward")}
+                                </span>
+                                <div class="mt-1 font-mono text-lg font-semibold text-base-content">
+                                    {formatReward(currentServerRow.estimated_reward)}
+                                </div>
+                            </div>
+                        </div>
+                    {/if}
+
                     <div class="flex flex-col gap-3">
-                        <div class="flex items-center justify-between gap-3">
-                            <span class="text-sm font-bold text-base-content">
-                                {$_("admin_direct_mm_campaign_leaderboard")}
-                            </span>
-                            <div class="flex items-center gap-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex flex-col gap-1">
+                                <span class="text-sm font-bold text-base-content">
+                                    {$_("admin_direct_mm_campaign_leaderboard")}
+                                </span>
                                 {#if updatedAt}
-                                    <span class="text-xs text-base-content/50">
+                                    <span class="text-xs text-base-content/45">
                                         {$_("admin_direct_mm_campaign_updated_at", {
                                             values: { time: updatedAt },
                                         })}
                                     </span>
                                 {/if}
+                            </div>
+                            <div class="flex items-center gap-3">
                                 <button
-                                    class="btn btn-xs btn-ghost text-base-content/60"
+                                    class="btn btn-xs btn-outline h-7 min-h-7 rounded-full border-base-300 px-3 text-base-content/60"
                                     disabled={loading || refreshing}
                                     on:click={() => loadDetails()}
                                 >
-                                    {refreshing
-                                        ? $_("admin_direct_mm_refreshing")
-                                        : $_("admin_direct_mm_refresh")}
+                                    {#if refreshing}
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                    {/if}
+                                    <span>{$_("admin_direct_mm_refresh")}</span>
                                 </button>
                             </div>
                         </div>
 
                         {#if leaderboardRows.length > 0}
-                            <div class="overflow-x-auto rounded-xl border border-base-300">
+                            <div class="overflow-x-auto rounded-xl border border-base-300 bg-base-100">
                                 <table class="table table-sm">
-                                    <thead>
-                                        <tr>
+                                    <thead class="bg-base-200/60">
+                                        <tr class="text-xs text-base-content/55">
                                             <th>{$_("admin_direct_mm_rank")}</th>
                                             <th>{$_("admin_direct_mm_wallet")}</th>
                                             <th>{$_("admin_direct_mm_score")}</th>
-                                            <th>{$_("admin_direct_mm_estimated_reward")}</th>
+                                            <th>{$_("admin_direct_mm_reward")}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -258,10 +332,18 @@
                                             {@const address = String(row.address || "")}
                                             <tr
                                                 class={isServerAddress(address)
-                                                    ? "bg-primary/10"
-                                                    : ""}
+                                                    ? "border-l-2 border-l-primary bg-primary/[0.07]"
+                                                    : "hover:bg-base-200/35"}
                                             >
-                                                <td>{index + 1}</td>
+                                                <td>
+                                                    <span
+                                                        class="badge badge-sm border-base-300 bg-base-100 font-mono text-base-content"
+                                                        class:badge-primary={index === 0}
+                                                        class:text-primary-content={index === 0}
+                                                    >
+                                                        {rankLabel(index + 1)}
+                                                    </span>
+                                                </td>
                                                 <td class="font-mono">
                                                     {shortAddress(address)}
                                                     {#if isServerAddress(address)}
@@ -273,8 +355,8 @@
                                                         >
                                                     {/if}
                                                 </td>
-                                                <td>{formatNumber(row.score)}</td>
-                                                <td>{formatNumber(row.estimated_reward)}</td>
+                                                <td class="font-mono">{formatNumber(row.score)}</td>
+                                                <td class="font-mono">{formatReward(row.estimated_reward)}</td>
                                             </tr>
                                         {/each}
                                     </tbody>

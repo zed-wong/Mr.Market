@@ -98,7 +98,7 @@
                             >{apiKey.name}</span
                         >
                         <span class="text-xs text-base-content/50 capitalize">
-                            {apiKey.exchange} • {getStatusText(apiKey)}
+                            {apiKey.exchange}
                         </span>
                         <div class="mt-1 flex flex-wrap gap-1">
                             {#each getApiKeyPermissionViews(apiKey) as permission (permission.capability)}

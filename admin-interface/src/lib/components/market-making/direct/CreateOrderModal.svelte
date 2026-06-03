@@ -270,6 +270,25 @@
 
             <!-- Form -->
             <div class="px-7 pb-7 flex flex-col gap-5">
+                <!-- Strategy -->
+                <div class="bg-base-200/40 rounded-xl p-4">
+                    <span
+                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
+                        >{$_("admin_direct_mm_strategy")}</span
+                    >
+                    <select
+                        class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
+                        bind:value={startStrategyDefinitionId}
+                    >
+                        <option value="" disabled selected hidden
+                            >{$_("admin_direct_mm_select_strategy")}</option
+                        >
+                        {#each strategies as strategy}
+                            <option value={strategy.id}>{strategy.name}</option>
+                        {/each}
+                    </select>
+                </div>
+
                 <!-- Exchange -->
                 <div class="bg-base-200/40 rounded-xl p-4">
                     <span
@@ -516,25 +535,6 @@
                             </div>
                         {/if}
                     </div>
-                </div>
-
-                <!-- Strategy -->
-                <div class="bg-base-200/40 rounded-xl p-4">
-                    <span
-                        class="text-xs font-semibold text-base-content/50 tracking-wider block mb-2"
-                        >{$_("admin_direct_mm_strategy")}</span
-                    >
-                    <select
-                        class="select select-bordered w-full h-10 min-h-10 bg-base-100 text-base-content focus:outline-none focus:border-primary border-base-300"
-                        bind:value={startStrategyDefinitionId}
-                    >
-                        <option value="" disabled selected hidden
-                            >{$_("admin_direct_mm_select_strategy")}</option
-                        >
-                        {#each strategies as strategy}
-                            <option value={strategy.id}>{strategy.name}</option>
-                        {/each}
-                    </select>
                 </div>
 
                 {#if startStrategyDefinitionId}
