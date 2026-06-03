@@ -4,12 +4,16 @@ import {
   aggregateBalancesByAsset,
   buildDirectOrderDiagnosis,
   EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+  describeReadinessBlockingReason,
+  describeReadinessMissingBalance,
   filterDirectCreateStrategies,
   buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
+  formatReadinessAmount,
   getDirectOrderActionAvailability,
   getDirectReadinessSubmitStatus,
   getEfficientDualAccountModeOptions,
+  getReadinessCapitalRows,
   isBestCapacityDirectOrderControllerType,
   isDualAccountOrder,
   isDualDirectOrderControllerType,
@@ -628,6 +632,79 @@ describe('direct controller helpers', () => {
         canStart: true,
       }),
     ).toBe('ready');
+  });
+
+  it('preserves backend readiness numeric strings and units for display rows', () => {
+    expect(formatReadinessAmount('0.12345678', 'BTC')).toBe('0.12345678 BTC');
+    expect(
+      getReadinessCapitalRows(
+        [
+          {
+            accountLabel: 'maker-main',
+            asset: 'USDT',
+            amount: '100.00000001',
+          },
+          {
+            accountLabel: 'taker-alt',
+            asset: 'BTC',
+            amount: '0.00250000',
+          },
+        ],
+        'recommended',
+      ),
+    ).toEqual([
+      {
+        accountLabel: 'maker-main',
+        asset: 'USDT',
+        value: '100.00000001',
+        label: '100.00000001 USDT',
+        testId: 'readiness-recommended-maker-main-USDT',
+      },
+      {
+        accountLabel: 'taker-alt',
+        asset: 'BTC',
+        value: '0.00250000',
+        label: '0.00250000 BTC',
+        testId: 'readiness-recommended-taker-alt-BTC',
+      },
+    ]);
+  });
+
+  it('translates readiness blockers and missing balances into actionable copy', () => {
+    expect(
+      describeReadinessMissingBalance({
+        accountLabel: 'maker-main',
+        asset: 'USDT',
+        availableAmount: '4.00000001',
+        minimumUsefulAmount: '15.00000000',
+        missingAmount: '10.99999999',
+      }),
+    ).toContain('maker-main needs 10.99999999 USDT');
+    expect(
+      describeReadinessMissingBalance({
+        accountLabel: 'maker-main',
+        asset: 'USDT',
+        availableAmount: '4.00000001',
+        minimumUsefulAmount: '15.00000000',
+        missingAmount: '10.99999999',
+      }),
+    ).toContain('Deposit the missing asset amount or lower the cycle limit');
+    expect(
+      describeReadinessBlockingReason({
+        code: 'below_exchange_minimums',
+        message: 'raw notional < costMin',
+        accountLabel: 'taker-alt',
+        asset: 'BTC',
+      }),
+    ).toBe(
+      'taker-alt: Current balances cannot satisfy exchange minimums plus the safety buffer. (BTC)',
+    );
+    expect(
+      describeReadinessBlockingReason({
+        code: 'raw notional < costMin',
+        message: 'raw notional < costMin',
+      }),
+    ).not.toContain('raw notional');
   });
 });
 

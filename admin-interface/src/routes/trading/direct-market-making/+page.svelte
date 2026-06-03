@@ -837,6 +837,12 @@
                 },
             );
         } catch (error) {
+            if (
+                isEfficientDualAccountStrategy &&
+                directReadinessCurrentSignature
+            ) {
+                await refreshDirectReadiness(directReadinessCurrentSignature);
+            }
             toast.error(getErrorMessage(error), {
                 description: getRecoveryHint(error),
             });

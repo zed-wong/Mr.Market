@@ -73,6 +73,12 @@ export type DualAccountReadinessCapitalRequirement = {
   amount: string;
 };
 
+export type DualAccountReadinessBalance = {
+  accountLabel: string;
+  asset: string;
+  availableAmount: string;
+};
+
 export type DualAccountReadinessResult = {
   canStart: boolean;
   mode: EfficientDualAccountVolumeMode;
@@ -88,8 +94,10 @@ export type DualAccountReadinessResult = {
   } | null;
   maximumCycleQty: string;
   recommendedCycleQty: string;
+  currentBalancesByAccountAsset: DualAccountReadinessBalance[];
   minimumCapitalByAccountAsset: DualAccountReadinessCapitalRequirement[];
   recommendedCapitalByAccountAsset: DualAccountReadinessCapitalRequirement[];
+  maximumUsefulCapitalByAccountAsset: DualAccountReadinessCapitalRequirement[];
   missingBalances: DualAccountReadinessMissingBalance[];
   estimatedCycles: {
     count: string;
@@ -776,8 +784,14 @@ export class DualAccountPlannerService {
         },
         maximumCycleQty: plan.maximumCycleQty.toFixed(),
         recommendedCycleQty: plan.recommendedCycleQty.toFixed(),
+        currentBalancesByAccountAsset: this.buildReadinessCurrentBalances(
+          params,
+          snapshot,
+          assets,
+        ),
         minimumCapitalByAccountAsset: plan.minimumCapital,
         recommendedCapitalByAccountAsset: plan.recommendedCapital,
+        maximumUsefulCapitalByAccountAsset: plan.maximumCapital,
         missingBalances: [],
         estimatedCycles: {
           count: estimatedCycles.toFixed(),
@@ -808,6 +822,11 @@ export class DualAccountPlannerService {
         message:
           'No dual-account role/direction candidate satisfies exchange minimums with the current balances',
       }),
+      currentBalancesByAccountAsset: this.buildReadinessCurrentBalances(
+        params,
+        snapshot,
+        assets,
+      ),
       missingBalances,
     };
   }
@@ -3634,6 +3653,7 @@ export class DualAccountPlannerService {
     recommendedCycleQty: BigNumber;
     minimumCapital: DualAccountReadinessCapitalRequirement[];
     recommendedCapital: DualAccountReadinessCapitalRequirement[];
+    maximumCapital: DualAccountReadinessCapitalRequirement[];
   } | null {
     let effectivePrice = price;
     const requestedQty =
@@ -3740,6 +3760,17 @@ export class DualAccountPlannerService {
       rules,
       assets,
     );
+    const maximumRequirements = this.buildReadinessCapitalRequirements(
+      candidate.side,
+      candidate.makerAccountLabel,
+      candidate.takerAccountLabel,
+      maximumCycleQty,
+      effectivePrice,
+      feeBufferRate,
+      params,
+      rules,
+      assets,
+    );
 
     return {
       price: effectivePrice,
@@ -3755,7 +3786,44 @@ export class DualAccountPlannerService {
         asset: requirement.asset,
         amount: requirement.minimumUsefulAmount.toFixed(),
       })),
+      maximumCapital: maximumRequirements.map((requirement) => ({
+        accountLabel: requirement.accountLabel,
+        asset: requirement.asset,
+        amount: requirement.minimumUsefulAmount.toFixed(),
+      })),
     };
+  }
+
+  private buildReadinessCurrentBalances(
+    params: Pick<
+      DualAccountVolumeStrategyParams,
+      'makerAccountLabel' | 'takerAccountLabel'
+    >,
+    snapshot: DualAccountBalanceSnapshot,
+    assets: { base: string; quote: string },
+  ): DualAccountReadinessBalance[] {
+    return [
+      {
+        accountLabel: params.makerAccountLabel,
+        asset: assets.base,
+        availableAmount: snapshot.makerBalances.base.toFixed(),
+      },
+      {
+        accountLabel: params.makerAccountLabel,
+        asset: assets.quote,
+        availableAmount: snapshot.makerBalances.quote.toFixed(),
+      },
+      {
+        accountLabel: params.takerAccountLabel,
+        asset: assets.base,
+        availableAmount: snapshot.takerBalances.base.toFixed(),
+      },
+      {
+        accountLabel: params.takerAccountLabel,
+        asset: assets.quote,
+        availableAmount: snapshot.takerBalances.quote.toFixed(),
+      },
+    ];
   }
 
   private pickBestReadinessMissingBalances(
@@ -3943,8 +4011,10 @@ export class DualAccountPlannerService {
       bestFirstAction: null,
       maximumCycleQty: '0',
       recommendedCycleQty: '0',
+      currentBalancesByAccountAsset: [],
       minimumCapitalByAccountAsset: [],
       recommendedCapitalByAccountAsset: [],
+      maximumUsefulCapitalByAccountAsset: [],
       missingBalances: [],
       estimatedCycles: {
         count: '0',

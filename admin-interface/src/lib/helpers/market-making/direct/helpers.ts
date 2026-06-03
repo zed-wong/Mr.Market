@@ -1,6 +1,12 @@
 import { _ } from "svelte-i18n";
 import { get } from "svelte/store";
 import BigNumber from "bignumber.js";
+import type {
+  DirectReadinessBalance,
+  DirectReadinessBlockingReason,
+  DirectReadinessCapitalRequirement,
+  DirectReadinessMissingBalance,
+} from "$lib/types/hufi/admin-direct-market-making";
 
 export interface ExchangeMarketAmountLimits {
   amount?: {
@@ -226,6 +232,20 @@ export type DirectReadinessSubmitStatus =
   | "blocked"
   | "ready";
 
+export type DirectReadinessCapitalKind =
+  | "current"
+  | "minimum"
+  | "recommended"
+  | "maximum";
+
+export interface DirectReadinessDisplayAmount {
+  accountLabel: string;
+  asset: string;
+  value: string;
+  label: string;
+  testId: string;
+}
+
 export const EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE =
   "efficientDualAccountVolume";
 
@@ -317,6 +337,77 @@ export function getDirectReadinessSubmitStatus(args: {
     return "stale";
   }
   return args.canStart ? "ready" : "blocked";
+}
+
+export function formatReadinessAmount(value: unknown, asset: unknown): string {
+  const amount = String(value ?? "").trim();
+  const unit = String(asset ?? "").trim();
+
+  if (!amount && !unit) return "—";
+  if (!unit) return amount || "—";
+  if (!amount) return unit;
+
+  return `${amount} ${unit}`;
+}
+
+export function getReadinessCapitalRows(
+  rows: Array<DirectReadinessCapitalRequirement | DirectReadinessBalance>,
+  kind: DirectReadinessCapitalKind,
+): DirectReadinessDisplayAmount[] {
+  return rows.map((row) => {
+    const value =
+      "amount" in row ? row.amount : row.availableAmount;
+
+    return {
+      accountLabel: row.accountLabel,
+      asset: row.asset,
+      value,
+      label: formatReadinessAmount(value, row.asset),
+      testId: `readiness-${kind}-${row.accountLabel}-${row.asset}`,
+    };
+  });
+}
+
+export function describeReadinessMissingBalance(
+  missing: DirectReadinessMissingBalance,
+): string {
+  return `${missing.accountLabel} needs ${formatReadinessAmount(
+    missing.missingAmount,
+    missing.asset,
+  )}. Available ${formatReadinessAmount(
+    missing.availableAmount,
+    missing.asset,
+  )}; minimum useful ${formatReadinessAmount(
+    missing.minimumUsefulAmount,
+    missing.asset,
+  )}. Deposit the missing asset amount or lower the cycle limit if market rules allow.`;
+}
+
+export function describeReadinessBlockingReason(
+  reason: DirectReadinessBlockingReason,
+): string {
+  const accountPrefix = reason.accountLabel ? `${reason.accountLabel}: ` : "";
+  const assetSuffix = reason.asset ? ` (${reason.asset})` : "";
+  const copyByCode: Record<string, string> = {
+    market_data_stale:
+      "Market data is stale. Refresh market data before starting.",
+    market_data_missing:
+      "Reference market data is unavailable. Configure deterministic market data before starting.",
+    trading_rules_missing:
+      "Trading rules are unavailable for this pair. Load exchange rules before starting.",
+    trading_rules_incomplete:
+      "Trading rules are incomplete for this pair. Add amount and notional minimums before starting.",
+    fee_data_missing:
+      "Fee data is unavailable. Configure maker and taker fee data before starting.",
+    balance_snapshot_unavailable:
+      "Current balances are unavailable or stale. Refresh account balances before starting.",
+    below_exchange_minimums:
+      "Current balances cannot satisfy exchange minimums plus the safety buffer.",
+    capacity_limited:
+      "Usable capital is below the minimum useful cycle size.",
+  };
+
+  return `${accountPrefix}${copyByCode[reason.code] || "Planner readiness is blocked. Review the account, asset, and market-rule details before starting."}${assetSuffix}`;
 }
 
 export interface StrategySchemaProperty {

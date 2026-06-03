@@ -188,6 +188,12 @@ export interface DirectReadinessCapitalRequirement {
   amount: string;
 }
 
+export interface DirectReadinessBalance {
+  accountLabel: string;
+  asset: string;
+  availableAmount: string;
+}
+
 export interface DirectReadinessResult {
   canStart: boolean;
   mode: EfficientDualAccountVolumeMode;
@@ -203,8 +209,10 @@ export interface DirectReadinessResult {
   } | null;
   maximumCycleQty: string;
   recommendedCycleQty: string;
+  currentBalancesByAccountAsset?: DirectReadinessBalance[];
   minimumCapitalByAccountAsset: DirectReadinessCapitalRequirement[];
   recommendedCapitalByAccountAsset: DirectReadinessCapitalRequirement[];
+  maximumUsefulCapitalByAccountAsset?: DirectReadinessCapitalRequirement[];
   missingBalances: DirectReadinessMissingBalance[];
   estimatedCycles: {
     count: string;
