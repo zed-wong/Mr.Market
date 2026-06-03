@@ -1,16 +1,16 @@
 import BigNumber from 'bignumber.js';
 
 import { ExchangeConnectorAdapterService } from '../../execution/exchange-connector-adapter.service';
-import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
-import { StrategyIntentStoreService } from '../execution/strategy-intent-store.service';
-import { QuotePlannerService } from '../quote/quote-planner.service';
 import type {
   DualAccountBestCapacityCandidate,
   DualAccountPairBalances,
   DualAccountVolumeStrategyParams,
 } from '../config/strategy-params.types';
-import { DualAccountPlannerService } from './dual-account-planner.service';
+import { StrategyMarketDataProviderService } from '../data/strategy-market-data-provider.service';
+import { StrategyIntentStoreService } from '../execution/strategy-intent-store.service';
+import { QuotePlannerService } from '../quote/quote-planner.service';
 import { DEFAULT_DUAL_ACCOUNT_SAFETY_BUFFER } from './dual-account-config';
+import { DualAccountPlannerService } from './dual-account-planner.service';
 
 describe('DualAccountPlannerService efficient best-capacity planning', () => {
   const buildBalances = (
@@ -61,7 +61,13 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
   }): {
     planner: DualAccountPlannerService;
     exchangeConnector: jest.Mocked<
-      Pick<ExchangeConnectorAdapterService, 'loadTradingRules' | 'quantizeOrder'>
+      Pick<
+        ExchangeConnectorAdapterService,
+        | 'getCachedTradingRules'
+        | 'loadTradingRules'
+        | 'fetchOrderBook'
+        | 'quantizeOrder'
+      >
     >;
     intentStore: { createLimitOrderIntent: jest.Mock };
   } => {
@@ -72,14 +78,11 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       takerFee: 0.001,
     };
     const exchangeConnector = {
+      getCachedTradingRules: jest.fn().mockReturnValue(rules),
       loadTradingRules: jest.fn().mockResolvedValue(rules),
+      fetchOrderBook: jest.fn(),
       quantizeOrder: jest.fn(
-        (
-          _exchangeName: string,
-          _pair: string,
-          qty: string,
-          price: string,
-        ) => ({
+        (_exchangeName: string, _pair: string, qty: string, price: string) => ({
           qty: new BigNumber(qty)
             .decimalPlaces(6, BigNumber.ROUND_DOWN)
             .toFixed(),
@@ -97,11 +100,8 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       } satisfies Record<string, DualAccountPairBalances>);
     const balanceQuery = {
       getAvailableBalancesForPair: jest.fn(
-        async (
-          _exchangeName: string,
-          _pair: string,
-          accountLabel: string,
-        ) => balances[accountLabel],
+        async (_exchangeName: string, _pair: string, accountLabel: string) =>
+          balances[accountLabel],
       ),
     };
     const marketDataProvider = {
@@ -381,5 +381,136 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
         new BigNumber(0.001),
       ).toFixed(),
     ).toBe('20');
+  });
+
+  it('returns canStart true with a best first action for one-sided rotating inventory', async () => {
+    const { planner, intentStore } = buildPlanner({
+      balances: {
+        'account-a': buildBalances(0, 1_000),
+        'account-b': buildBalances(1, 0),
+      },
+    });
+
+    const readiness = await planner.evaluateEfficientDualAccountReadiness({
+      ...baseParams,
+      baseTradeAmount: 0.5,
+      maxOrderAmount: 0.5,
+    });
+
+    expect(readiness).toEqual(
+      expect.objectContaining({
+        canStart: true,
+        mode: 'balanced',
+        maximumCycleQty: '1',
+        recommendedCycleQty: '0.5',
+        estimatedCycles: expect.objectContaining({
+          count: expect.any(String),
+        }),
+        estimatedVolume: expect.objectContaining({
+          baseAsset: 'BTC',
+          quoteAsset: 'USDT',
+        }),
+        bestFirstAction: expect.objectContaining({
+          makerAccountLabel: 'account-a',
+          takerAccountLabel: 'account-b',
+          side: 'buy',
+          baseAsset: 'BTC',
+          quoteAsset: 'USDT',
+          quantity: '0.5',
+          notional: '50',
+        }),
+      }),
+    );
+    expect(readiness.missingBalances).toEqual([]);
+    expect(intentStore.createLimitOrderIntent).not.toHaveBeenCalled();
+  });
+
+  it('returns actionable missing balances when all readiness candidates are blocked', async () => {
+    const { planner } = buildPlanner({
+      balances: {
+        'account-a': buildBalances(0, 4),
+        'account-b': buildBalances(0, 0),
+      },
+    });
+
+    const readiness = await planner.evaluateEfficientDualAccountReadiness({
+      ...baseParams,
+      baseTradeAmount: 0.5,
+      maxOrderAmount: 0.5,
+    });
+
+    expect(readiness.canStart).toBe(false);
+    expect(readiness.bestFirstAction).toBeNull();
+    expect(readiness.blockingReasons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'below_exchange_minimums' }),
+      ]),
+    );
+    expect(readiness.missingBalances).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          accountLabel: 'account-a',
+          asset: 'USDT',
+          availableAmount: '4',
+          minimumUsefulAmount: expect.any(String),
+          missingAmount: expect.any(String),
+        }),
+        expect.objectContaining({
+          accountLabel: 'account-b',
+          asset: 'BTC',
+          availableAmount: '0',
+          minimumUsefulAmount: expect.any(String),
+          missingAmount: expect.any(String),
+        }),
+      ]),
+    );
+    for (const missing of readiness.missingBalances) {
+      expect(new BigNumber(missing.missingAmount).isGreaterThan(0)).toBe(true);
+    }
+  });
+
+  it('blocks safely on stale market data without live exchange fallback', async () => {
+    const { planner, exchangeConnector } = buildPlanner();
+    const marketDataProvider = (
+      planner as unknown as {
+        strategyMarketDataProviderService: {
+          getTrackedOrderBookFreshness: jest.Mock;
+          getTrackedBestBidAsk: jest.Mock;
+        };
+      }
+    ).strategyMarketDataProviderService;
+
+    marketDataProvider.getTrackedOrderBookFreshness.mockReturnValue({
+      fresh: false,
+      ageMs: 60_000,
+      freshnessTimestamp: '2026-06-04T00:00:00.000Z',
+    });
+    marketDataProvider.getTrackedBestBidAsk.mockReturnValue(null);
+
+    const readiness = await planner.evaluateEfficientDualAccountReadiness(
+      baseParams,
+    );
+
+    expect(readiness.canStart).toBe(false);
+    expect(readiness.blockingReasons).toEqual([
+      expect.objectContaining({ code: 'market_data_stale' }),
+    ]);
+    expect(exchangeConnector.fetchOrderBook).not.toHaveBeenCalled();
+  });
+
+  it('blocks safely when deterministic trading rules are unavailable', async () => {
+    const { planner, exchangeConnector } = buildPlanner();
+
+    exchangeConnector.getCachedTradingRules.mockReturnValue(undefined);
+
+    const readiness = await planner.evaluateEfficientDualAccountReadiness(
+      baseParams,
+    );
+
+    expect(readiness.canStart).toBe(false);
+    expect(readiness.blockingReasons).toEqual([
+      expect.objectContaining({ code: 'trading_rules_missing' }),
+    ]);
+    expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
   });
 });

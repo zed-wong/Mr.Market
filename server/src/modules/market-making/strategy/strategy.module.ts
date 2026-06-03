@@ -151,6 +151,7 @@ const STRATEGY_CONTROLLERS = 'STRATEGY_CONTROLLERS';
     StrategyConfigResolverService,
     StrategyRuntimeDispatcherService,
     StrategyIntentStoreService,
+    DualAccountPlannerService,
   ],
 })
 export class StrategyModule {}

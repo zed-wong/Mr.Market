@@ -225,6 +225,38 @@ describe('AdminDirectMarketMakingService', () => {
         tier: 'full',
       }),
     };
+    const readyReadiness = {
+      canStart: true,
+      mode: 'balanced',
+      bestFirstAction: {
+        makerAccountLabel: 'api-key-1',
+        takerAccountLabel: 'api-key-2',
+        side: 'buy',
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        quantity: '0.5',
+        price: '100',
+        notional: '50',
+      },
+      maximumCycleQty: '0.5',
+      recommendedCycleQty: '0.5',
+      minimumCapitalByAccountAsset: [],
+      recommendedCapitalByAccountAsset: [],
+      missingBalances: [],
+      estimatedCycles: { count: '2', basis: 'current_available_balances' },
+      estimatedVolume: {
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        baseAmount: '1',
+        quoteAmount: '100',
+      },
+      blockingReasons: [],
+    };
+    const dualAccountPlannerService = {
+      evaluateEfficientDualAccountReadiness: jest
+        .fn()
+        .mockResolvedValue(readyReadiness),
+    };
 
     const service = new AdminDirectMarketMakingService(
       marketMakingRepository as any,
@@ -251,6 +283,7 @@ describe('AdminDirectMarketMakingService', () => {
       balanceStateCacheService as any,
       balanceStateRefreshService as any,
       userStreamCapabilityService as any,
+      dualAccountPlannerService as any,
     );
 
     return {
@@ -280,6 +313,8 @@ describe('AdminDirectMarketMakingService', () => {
       balanceStateCacheService,
       balanceStateRefreshService,
       userStreamCapabilityService,
+      dualAccountPlannerService,
+      readyReadiness,
     };
   };
 
@@ -1091,6 +1126,7 @@ describe('AdminDirectMarketMakingService', () => {
       strategyDefinitionRepository,
       strategyConfigResolver,
       userOrdersService,
+      dualAccountPlannerService,
     } = buildService();
 
     strategyDefinitionRepository.findOne.mockResolvedValue({
@@ -1167,6 +1203,212 @@ describe('AdminDirectMarketMakingService', () => {
         }),
       }),
     );
+    expect(
+      dualAccountPlannerService.evaluateEfficientDualAccountReadiness,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        makerAccountLabel: 'api-key-1',
+        takerAccountLabel: 'api-key-2',
+        mode: 'balanced',
+      }),
+    );
+  });
+
+  it('returns planner-backed readiness without creating execution side effects', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      dualAccountPlannerService,
+      readyReadiness,
+      userOrdersService,
+      marketMakingRuntimeService,
+      balanceLedgerService,
+      exchange,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-efficient',
+      key: 'efficient-dual-account-volume',
+      name: 'Efficient Dual Account Volume',
+      enabled: true,
+      controllerType: 'efficientDualAccountVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'efficientDualAccountVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'efficientDualAccountVolume',
+      definitionKey: 'efficient-dual-account-volume',
+      definitionName: 'Efficient Dual Account Volume',
+      resolvedConfig: {
+        symbol: 'BTC/USDT',
+        maxOrderAmount: '0.5',
+        interval: 30,
+      },
+    });
+
+    await expect(
+      service.evaluateDirectReadiness({
+        ...dualAccountStartDto,
+        strategyDefinitionId: 'strategy-efficient',
+      }),
+    ).resolves.toEqual(readyReadiness);
+
+    expect(
+      dualAccountPlannerService.evaluateEfficientDualAccountReadiness,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyContract: 'efficientDualAccountVolume',
+        makerAccountLabel: 'api-key-1',
+        takerAccountLabel: 'api-key-2',
+      }),
+    );
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
+    expect(exchange.fetchBalance).not.toHaveBeenCalled();
+    expect(exchange.fetchTicker).not.toHaveBeenCalled();
+  });
+
+  it('blocks efficient direct start when planner readiness is not startable', async () => {
+    const {
+      service,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      dualAccountPlannerService,
+      userOrdersService,
+      marketMakingRuntimeService,
+      balanceLedgerService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-efficient',
+      key: 'efficient-dual-account-volume',
+      name: 'Efficient Dual Account Volume',
+      enabled: true,
+      controllerType: 'efficientDualAccountVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'efficientDualAccountVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'efficientDualAccountVolume',
+      definitionKey: 'efficient-dual-account-volume',
+      definitionName: 'Efficient Dual Account Volume',
+      resolvedConfig: {
+        symbol: 'BTC/USDT',
+        maxOrderAmount: '0.5',
+        interval: 30,
+      },
+    });
+    dualAccountPlannerService.evaluateEfficientDualAccountReadiness.mockResolvedValue(
+      {
+        canStart: false,
+        mode: 'balanced',
+        bestFirstAction: null,
+        maximumCycleQty: '0',
+        recommendedCycleQty: '0',
+        minimumCapitalByAccountAsset: [],
+        recommendedCapitalByAccountAsset: [],
+        missingBalances: [
+          {
+            accountLabel: 'api-key-1',
+            asset: 'USDT',
+            availableAmount: '4',
+            minimumUsefulAmount: '15',
+            missingAmount: '11',
+          },
+        ],
+        estimatedCycles: { count: '0', basis: 'current_available_balances' },
+        estimatedVolume: {
+          baseAsset: 'BTC',
+          quoteAsset: 'USDT',
+          baseAmount: '0',
+          quoteAmount: '0',
+        },
+        blockingReasons: [
+          {
+            code: 'below_exchange_minimums',
+            message: 'USDT balance is below the exchange minimum plus buffer',
+          },
+        ],
+      },
+    );
+
+    await expect(
+      service.directStart(
+        {
+          ...dualAccountStartDto,
+          strategyDefinitionId: 'strategy-efficient',
+        },
+        'admin-user',
+      ),
+    ).rejects.toThrow(
+      'Planner readiness blocked start: USDT balance is below the exchange minimum plus buffer; api-key-1 needs 11 USDT',
+    );
+
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
+  });
+
+  it('includes planner-backed readiness in efficient direct status without live exchange balance fetch', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      exchange,
+      dualAccountPlannerService,
+      readyReadiness,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-efficient',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'stopped',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-efficient',
+          marketMakingOrderId: 'order-efficient',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          maxOrderAmount: '0.5',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+
+    const result = await service.getDirectOrderStatus('order-efficient');
+
+    expect(result.readiness).toEqual(readyReadiness);
+    expect(
+      dualAccountPlannerService.evaluateEfficientDualAccountReadiness,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        marketMakingOrderId: 'order-efficient',
+        makerAccountLabel: 'api-key-1',
+        takerAccountLabel: 'api-key-2',
+      }),
+    );
+    expect(exchange.fetchBalance).not.toHaveBeenCalled();
   });
 
   it('rejects legacy dual-account definitions for new direct-start orders', async () => {
