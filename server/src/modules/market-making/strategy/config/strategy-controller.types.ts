@@ -1,14 +1,15 @@
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 
+import type { ExecutorAction } from './executor-action.types';
 import type {
   ArbitrageStrategyDto,
   DexAdapterId,
   ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ExecuteDualAccountVolumeStrategyDto,
+  ExecuteEfficientDualAccountVolumeStrategyDto,
   PureMarketMakingStrategyDto,
   VolumeExecutionVenue,
 } from './strategy.dto';
-import type { ExecutorAction } from './executor-action.types';
 import type { TimeIndicatorStrategyDto } from './timeIndicator.dto';
 
 export type StrategyType =
@@ -16,6 +17,7 @@ export type StrategyType =
   | 'pureMarketMaking'
   | 'dualAccountVolume'
   | 'dualAccountBestCapacityVolume'
+  | 'efficientDualAccountVolume'
   | 'volume'
   | 'timeIndicator';
 
@@ -82,6 +84,9 @@ export type StrategyControllerFacade = {
   ): Promise<void>;
   executeDualAccountBestCapacityVolumeStrategy(
     strategyParamsDto: ExecuteDualAccountBestCapacityVolumeStrategyDto,
+  ): Promise<void>;
+  executeEfficientDualAccountVolumeStrategy(
+    strategyParamsDto: ExecuteEfficientDualAccountVolumeStrategyDto,
   ): Promise<void>;
   executeTimeIndicatorStrategy(params: TimeIndicatorStrategyDto): Promise<void>;
 };

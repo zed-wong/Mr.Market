@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import type { StrategyType } from '../config/strategy-controller.types';
 import { normalizeControllerType } from '../config/strategy-controller-aliases';
 import { normalizeExecutionCategory } from '../config/strategy-execution-category';
+import { normalizeEfficientDualAccountVolumeConfig } from '../dual-account/dual-account-config';
 import { StrategyRuntimeDispatcherService } from '../execution/strategy-runtime-dispatcher.service';
 
 type StrategyConfig = Record<string, unknown>;
@@ -163,12 +164,34 @@ export class StrategyConfigResolverService {
         normalizedConfig.executionCategory === 'amm_dex' ? 'dex' : 'cex';
     }
 
+    if (strategyType === 'efficientDualAccountVolume') {
+      Object.assign(
+        normalizedConfig,
+        this.mapConfigError(() =>
+          normalizeEfficientDualAccountVolumeConfig(normalizedConfig, {
+            requireAccounts: false,
+            requireMarket: false,
+          }),
+        ),
+      );
+    }
+
     this.validateConfigAgainstSchema(
       normalizedConfig,
       this.toConfigSchema(definition.configSchema),
     );
 
     return this.normalizeDecimalStringFields(normalizedConfig);
+  }
+
+  private mapConfigError<T>(fn: () => T): T {
+    try {
+      return fn();
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
   validateConfigAgainstSchema(

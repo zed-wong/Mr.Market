@@ -14,9 +14,9 @@ import { Wallet } from 'ethers';
 import { APIKeysConfig } from 'src/common/entities/admin/api-keys.entity';
 import { CampaignJoin } from 'src/common/entities/campaign/campaign-join.entity';
 import { GrowdataMarketMakingPair } from 'src/common/entities/data/grow-data.entity';
+import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
-import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-making-order-balance.entity';
 import {
   createPureMarketMakingStrategyKey,
   createStrategyKey,
@@ -34,6 +34,7 @@ import { assertStrategyConfigOverridesSafe } from 'src/modules/market-making/str
 import type { StrategyType } from 'src/modules/market-making/strategy/config/strategy-controller.types';
 import { normalizeControllerType } from 'src/modules/market-making/strategy/config/strategy-controller-aliases';
 import { StrategyConfigResolverService } from 'src/modules/market-making/strategy/dex/strategy-config-resolver.service';
+import { normalizeEfficientDualAccountVolumeConfig } from 'src/modules/market-making/strategy/dual-account/dual-account-config';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import {
   StrategyIntentQueueState,
@@ -72,6 +73,11 @@ const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
   'symbol',
   'exchangeName',
 ]);
+const LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES = new Set([
+  'dualAccountVolume',
+  'dualAccountBestCapacityVolume',
+]);
+const EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE = 'efficientDualAccountVolume';
 
 type RuntimeSessionLike = {
   orderId: string;
@@ -164,6 +170,12 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException('Strategy definition not found');
     }
 
+    if (LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES.has(controllerType)) {
+      throw new BadRequestException(
+        'Legacy dual-account strategy variants cannot be used for new direct orders',
+      );
+    }
+
     const executionAccounts = await this.resolveExecutionAccounts(
       dto,
       capabilities.directExecutionMode,
@@ -210,6 +222,12 @@ export class AdminDirectMarketMakingService {
       executionAccounts,
       capabilities.directExecutionMode,
     );
+    if (controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE) {
+      Object.assign(
+        resolvedConfig.resolvedConfig,
+        this.normalizeEfficientDirectConfig(resolvedConfig.resolvedConfig),
+      );
+    }
     const primaryMarketSnapshot = await this.resolveDirectMarketSnapshot(
       dto.exchangeName,
       dto.pair,
@@ -309,6 +327,7 @@ export class AdminDirectMarketMakingService {
         order,
         order.userId || 'admin-direct',
       );
+
       return {
         orderId,
         state: 'stopped',
@@ -931,8 +950,7 @@ export class AdminDirectMarketMakingService {
     let joinedKeys: Set<string>;
 
     try {
-      const privateKey =
-        this.configService.get<string>('web3.private_key');
+      const privateKey = this.configService.get<string>('web3.private_key');
 
       const accessToken = await this.campaignService.getAccessToken(
         walletStatus.address,
@@ -994,8 +1012,7 @@ export class AdminDirectMarketMakingService {
       throw new BadRequestException('API key not found');
     }
 
-    const privateKey =
-      this.configService.get<string>('web3.private_key');
+    const privateKey = this.configService.get<string>('web3.private_key');
 
     if (!privateKey) {
       throw new BadRequestException('WEB3 private key is not configured');
@@ -1098,8 +1115,7 @@ export class AdminDirectMarketMakingService {
     configured: boolean;
     address: string | null;
   }> {
-    const privateKey =
-      this.configService.get<string>('web3.private_key');
+    const privateKey = this.configService.get<string>('web3.private_key');
 
     if (!privateKey) {
       return {
@@ -1130,12 +1146,15 @@ export class AdminDirectMarketMakingService {
     return definitions
       .map((definition) => attachStrategyDefinitionCapabilities(definition))
       .filter((definition) => {
-        const controllerType = String(definition.controllerType || '').trim();
+        const controllerType = normalizeControllerType(
+          String(definition.controllerType || '').trim(),
+        );
         const visibility = String(definition.visibility || 'admin').trim();
 
         return (
           ['public', 'admin'].includes(visibility) &&
           controllerType.length > 0 &&
+          !LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES.has(controllerType) &&
           definition.directOrderCompatible
         );
       });
@@ -1164,6 +1183,21 @@ export class AdminDirectMarketMakingService {
     return new BadRequestException(
       error instanceof Error ? error.message : 'Unknown market-making error',
     );
+  }
+
+  private normalizeEfficientDirectConfig(
+    config: Record<string, unknown>,
+  ): Record<string, unknown> {
+    try {
+      return normalizeEfficientDualAccountVolumeConfig(config, {
+        requireAccounts: true,
+        requireMarket: true,
+      });
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
   private mapCampaignJoinError(error: unknown): HttpException {
@@ -1326,6 +1360,7 @@ export class AdminDirectMarketMakingService {
         liveIntentIds: [],
         hasOpenOrder: false,
       });
+
       return;
     }
 
@@ -1371,11 +1406,15 @@ export class AdminDirectMarketMakingService {
   }
 
   private getTrackedOrders(strategyKey: string): TrackedOrder[] {
-    const tracker = this.exchangeOrderTrackerService as ExchangeOrderTrackerService & {
+    const tracker = this
+      .exchangeOrderTrackerService as ExchangeOrderTrackerService & {
       getTrackedOrders?: (strategyKey: string) => TrackedOrder[];
     };
 
-    return tracker.getTrackedOrders?.(strategyKey) || tracker.getOpenOrders(strategyKey);
+    return (
+      tracker.getTrackedOrders?.(strategyKey) ||
+      tracker.getOpenOrders(strategyKey)
+    );
   }
 
   private getActiveTrackedOrders(order: MarketMakingOrder): TrackedOrder[] {
@@ -1497,6 +1536,7 @@ export class AdminDirectMarketMakingService {
       }
 
       const current = alreadyAllocated.get(bal.assetId) || new BigNumber(0);
+
       alreadyAllocated.set(
         bal.assetId,
         current.plus(new BigNumber(bal.total || 0)),
@@ -1508,25 +1548,33 @@ export class AdminDirectMarketMakingService {
     if (baseAsset) {
       currentAllocations.set(
         baseAsset,
-        new BigNumber(this.readPositiveAmount(currentAllocation?.balanceA) || 0),
+        new BigNumber(
+          this.readPositiveAmount(currentAllocation?.balanceA) || 0,
+        ),
       );
     }
     if (quoteAsset) {
       currentAllocations.set(
         quoteAsset,
-        new BigNumber(this.readPositiveAmount(currentAllocation?.balanceB) || 0),
+        new BigNumber(
+          this.readPositiveAmount(currentAllocation?.balanceB) || 0,
+        ),
       );
     }
 
     const relevantAssets = [baseAsset, quoteAsset].filter(Boolean);
     const balanceSnapshot =
       snapshot ||
-      (await this.resolveDirectMarketSnapshot(exchangeName, pair, accountLabel));
+      (await this.resolveDirectMarketSnapshot(
+        exchangeName,
+        pair,
+        accountLabel,
+      ));
 
     for (const assetId of relevantAssets) {
-      const allocated = (alreadyAllocated.get(assetId) || new BigNumber(0)).plus(
-        currentAllocations.get(assetId) || 0,
-      );
+      const allocated = (
+        alreadyAllocated.get(assetId) || new BigNumber(0)
+      ).plus(currentAllocations.get(assetId) || 0);
 
       if (allocated.isLessThanOrEqualTo(0)) {
         continue;
@@ -1538,7 +1586,9 @@ export class AdminDirectMarketMakingService {
 
       if (allocated.isGreaterThan(exchangeFree)) {
         throw new BadRequestException(
-          `Account overlap: ${overlappingOrderIds.length} active order(s) already allocate ${allocated.toFixed()} ${assetId}, but exchange free balance is only ${exchangeFree.toFixed()} ${assetId}. Reduce order amount or stop conflicting orders first.`,
+          `Account overlap: ${
+            overlappingOrderIds.length
+          } active order(s) already allocate ${allocated.toFixed()} ${assetId}, but exchange free balance is only ${exchangeFree.toFixed()} ${assetId}. Reduce order amount or stop conflicting orders first.`,
         );
       }
     }
@@ -2259,7 +2309,8 @@ export class AdminDirectMarketMakingService {
 
     return (
       controllerType === 'dualAccountVolume' ||
-      controllerType === 'dualAccountBestCapacityVolume'
+      controllerType === 'dualAccountBestCapacityVolume' ||
+      controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE
     );
   }
 

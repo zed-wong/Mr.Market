@@ -1,6 +1,7 @@
 import { ArbitrageStrategyController } from './arbitrage-strategy.controller';
 import { DualAccountBestCapacityVolumeStrategyController } from './dual-account-best-capacity-volume-strategy.controller';
 import { DualAccountVolumeStrategyController } from './dual-account-volume-strategy.controller';
+import { EfficientDualAccountVolumeStrategyController } from './efficient-dual-account-volume-strategy.controller';
 import { PureMarketMakingStrategyController } from './pure-market-making-strategy.controller';
 import { StrategyControllerRegistry } from './strategy-controller.registry';
 import { VolumeStrategyController } from './volume-strategy.controller';
@@ -11,11 +12,13 @@ describe('StrategyControllerRegistry', () => {
     const arbitrage = new ArbitrageStrategyController();
     const bestCapacity = new DualAccountBestCapacityVolumeStrategyController();
     const dualAccount = new DualAccountVolumeStrategyController();
+    const efficient = new EfficientDualAccountVolumeStrategyController();
     const volume = new VolumeStrategyController();
 
     const registry = new StrategyControllerRegistry([
       pure,
       arbitrage,
+      efficient,
       bestCapacity,
       dualAccount,
       volume,
@@ -26,12 +29,16 @@ describe('StrategyControllerRegistry', () => {
     expect(registry.getController('dualAccountBestCapacityVolume')).toBe(
       bestCapacity,
     );
+    expect(registry.getController('efficientDualAccountVolume')).toBe(
+      efficient,
+    );
     expect(registry.getController('dualAccountVolume')).toBe(dualAccount);
     expect(registry.getController('volume')).toBe(volume);
     expect(registry.getController('missing')).toBeUndefined();
     expect(registry.listControllerTypes()).toEqual([
       'pureMarketMaking',
       'arbitrage',
+      'efficientDualAccountVolume',
       'dualAccountBestCapacityVolume',
       'dualAccountVolume',
       'volume',

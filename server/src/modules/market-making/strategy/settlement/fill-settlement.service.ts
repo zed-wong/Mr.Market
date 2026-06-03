@@ -12,9 +12,9 @@ import {
   ExchangeOrderTrackerService,
   TrackedOrder,
 } from '../../trackers/exchange-order-tracker.service';
-import { DualAccountVolumeStrategyParams } from '../config/strategy-params.types';
 import { PureMarketMakingStrategyDto } from '../config/strategy.dto';
 import { StrategyRuntimeSession } from '../config/strategy-controller.types';
+import { DualAccountVolumeStrategyParams } from '../config/strategy-params.types';
 import { DualAccountPlannerService } from '../dual-account/dual-account-planner.service';
 import { RuntimeObservationService } from '../observation/runtime-observation.service';
 
@@ -76,7 +76,8 @@ export class FillSettlementService {
     if (
       session.strategyType !== 'pureMarketMaking' &&
       session.strategyType !== 'dualAccountVolume' &&
-      session.strategyType !== 'dualAccountBestCapacityVolume'
+      session.strategyType !== 'dualAccountBestCapacityVolume' &&
+      session.strategyType !== 'efficientDualAccountVolume'
     ) {
       return;
     }
@@ -113,17 +114,19 @@ export class FillSettlementService {
 
     if (
       session.strategyType === 'dualAccountVolume' ||
-      session.strategyType === 'dualAccountBestCapacityVolume'
+      session.strategyType === 'dualAccountBestCapacityVolume' ||
+      session.strategyType === 'efficientDualAccountVolume'
     ) {
       const persistedParams = (
         await this.strategyInstanceRepository?.findOne({
           where: { strategyKey: session.strategyKey },
         })
       )?.parameters as Partial<DualAccountVolumeStrategyParams> | undefined;
-      let nextParams = this.getDualAccountPlanner().mergeFillRuntimeIntoPersisted(
-        session.params as DualAccountVolumeStrategyParams,
-        persistedParams,
-      );
+      let nextParams =
+        this.getDualAccountPlanner().mergeFillRuntimeIntoPersisted(
+          session.params as DualAccountVolumeStrategyParams,
+          persistedParams,
+        );
 
       if (trackedOrder) {
         nextParams = await this.getDualAccountPlanner().applyFillProgress(
@@ -171,11 +174,12 @@ export class FillSettlementService {
     const exchange = this.readString(session.params?.exchangeName);
 
     if (exchangeOrderId) {
-      const trackedOrder = this.exchangeOrderTrackerService?.getByExchangeOrderId(
-        exchange,
-        exchangeOrderId,
-        accountLabel || undefined,
-      );
+      const trackedOrder =
+        this.exchangeOrderTrackerService?.getByExchangeOrderId(
+          exchange,
+          exchangeOrderId,
+          accountLabel || undefined,
+        );
 
       if (trackedOrder?.strategyKey === session.strategyKey) {
         return trackedOrder;
@@ -191,7 +195,8 @@ export class FillSettlementService {
         return false;
       }
 
-      const accountMatches = !accountLabel || order.accountLabel === accountLabel;
+      const accountMatches =
+        !accountLabel || order.accountLabel === accountLabel;
 
       return (
         accountMatches &&
@@ -230,7 +235,11 @@ export class FillSettlementService {
         : trackedCumulative;
     }
 
-    if (!effectiveCumulative && fillQty.isFinite() && fillQty.isGreaterThan(0)) {
+    if (
+      !effectiveCumulative &&
+      fillQty.isFinite() &&
+      fillQty.isGreaterThan(0)
+    ) {
       effectiveCumulative = settledCumulative.plus(fillQty);
     }
 
@@ -374,7 +383,9 @@ export class FillSettlementService {
 
     if (!eventKey) {
       this.logger.warn(
-        `Skipping fill ledger update for strategyKey=${command.strategyKey}: missing canonical fill identity (need exchangeOrderId/clientOrderId AND cumulativeQty). exchangeOrderId=${
+        `Skipping fill ledger update for strategyKey=${
+          command.strategyKey
+        }: missing canonical fill identity (need exchangeOrderId/clientOrderId AND cumulativeQty). exchangeOrderId=${
           command.fill.exchangeOrderId || ''
         } clientOrderId=${command.fill.clientOrderId || ''} cumulativeQty=${
           command.fill.cumulativeQty || ''

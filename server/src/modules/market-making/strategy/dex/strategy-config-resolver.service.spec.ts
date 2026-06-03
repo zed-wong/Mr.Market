@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { StrategyDefinition } from 'src/common/entities/market-making/strategy-definition.entity';
 import dualAccountVolumeSeedDefinition from 'src/database/seeder/data/strategies/dual-account-volume.json';
+import efficientDualAccountVolumeSeedDefinition from 'src/database/seeder/data/strategies/efficient-dual-account-volume.json';
 import { Repository } from 'typeorm';
 
 import { StrategyRuntimeDispatcherService } from '../execution/strategy-runtime-dispatcher.service';
@@ -19,6 +20,9 @@ describe('StrategyConfigResolverService', () => {
       if (controllerType === 'dualAccountVolume') return 'dualAccountVolume';
       if (controllerType === 'dualAccountBestCapacityVolume') {
         return 'dualAccountBestCapacityVolume';
+      }
+      if (controllerType === 'efficientDualAccountVolume') {
+        return 'efficientDualAccountVolume';
       }
       if (controllerType === 'volume') return 'volume';
       throw new BadRequestException('Unsupported controllerType');
@@ -334,5 +338,71 @@ describe('StrategyConfigResolverService', () => {
       }),
       resolvedAt: expect.any(String),
     });
+  });
+
+  it('normalizes efficient dual-account volume snapshots with balanced defaults and variance fields', async () => {
+    strategyDefinitionRepository.findOne = jest.fn().mockResolvedValueOnce({
+      id: 'definition-efficient-dual-volume',
+      key: 'efficient-dual-account-volume',
+      name: 'Efficient Dual Account Volume',
+      enabled: true,
+      controllerType: 'efficientDualAccountVolume',
+      defaultConfig: efficientDualAccountVolumeSeedDefinition.defaultConfig,
+      configSchema: efficientDualAccountVolumeSeedDefinition.configSchema,
+    } as unknown as StrategyDefinition);
+
+    const result = await service.resolveForOrderSnapshot(
+      'definition-efficient-dual-volume',
+      {
+        symbol: 'ETH/USDT',
+        makerAccountLabel: 'maker-desk',
+        takerAccountLabel: 'taker-desk',
+        userId: 'admin-user',
+        clientId: 'order-1',
+        tradeAmountVariance: 0.2,
+        priceOffsetVariance: 0.05,
+      },
+    );
+
+    expect(result).toEqual({
+      strategyDefinitionId: 'definition-efficient-dual-volume',
+      definitionKey: 'efficient-dual-account-volume',
+      definitionName: 'Efficient Dual Account Volume',
+      controllerType: 'efficientDualAccountVolume',
+      resolvedConfig: expect.objectContaining({
+        symbol: 'ETH/USDT',
+        pair: 'ETH/USDT',
+        mode: 'balanced',
+        cycleMode: 'alternating',
+        dynamicRoleSwitching: true,
+        strategyContract: 'efficientDualAccountVolume',
+        tradeAmountVariance: 0.2,
+        priceOffsetVariance: 0.05,
+      }),
+      resolvedAt: expect.any(String),
+    });
+  });
+
+  it('rejects malformed efficient dual-account volume snapshots with clear validation errors', async () => {
+    strategyDefinitionRepository.findOne = jest.fn().mockResolvedValue({
+      id: 'definition-efficient-dual-volume',
+      key: 'efficient-dual-account-volume',
+      name: 'Efficient Dual Account Volume',
+      enabled: true,
+      controllerType: 'efficientDualAccountVolume',
+      defaultConfig: efficientDualAccountVolumeSeedDefinition.defaultConfig,
+      configSchema: efficientDualAccountVolumeSeedDefinition.configSchema,
+    } as unknown as StrategyDefinition);
+
+    await expect(
+      service.resolveForOrderSnapshot('definition-efficient-dual-volume', {
+        symbol: 'BTCUSDT',
+        makerAccountLabel: 'same',
+        takerAccountLabel: 'same',
+        userId: 'admin-user',
+        clientId: 'order-1',
+        mode: 'classic',
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 });

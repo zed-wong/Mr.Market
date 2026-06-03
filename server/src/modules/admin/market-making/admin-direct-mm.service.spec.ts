@@ -311,8 +311,7 @@ describe('AdminDirectMarketMakingService', () => {
       }),
     ).rejects.toMatchObject({
       response: {
-        message:
-          'Invalid campaign details or already joined: campaign ended',
+        message: 'Invalid campaign details or already joined: campaign ended',
       },
     });
   });
@@ -782,7 +781,9 @@ describe('AdminDirectMarketMakingService', () => {
     await expect(service.directStop('order-1')).rejects.toThrow(
       'reservation down',
     );
-    expect(userOrdersService.updateMarketMakingOrderState).not.toHaveBeenCalled();
+    expect(
+      userOrdersService.updateMarketMakingOrderState,
+    ).not.toHaveBeenCalled();
   });
 
   it('releases terminal tracked order reservations through reservation service during stop', async () => {
@@ -1001,7 +1002,7 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('starts a dual-account direct order and stores maker and taker metadata', async () => {
+  it('rejects classic dual-account direct starts so new orders use the unified contract', async () => {
     const {
       service,
       strategyDefinitionRepository,
@@ -1034,33 +1035,17 @@ describe('AdminDirectMarketMakingService', () => {
       },
     });
 
-    const result = await service.directStart(dualAccountStartDto, 'admin-user');
-
-    expect(result).toEqual({
-      orderId: expect.any(String),
-      state: 'running',
-      warnings: [],
-    });
-    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
-      expect.objectContaining({
-        apiKeyId: 'api-key-1',
-        strategySnapshot: expect.objectContaining({
-          controllerType: 'dualAccountVolume',
-          resolvedConfig: expect.objectContaining({
-            makerAccountLabel: 'api-key-1',
-            takerAccountLabel: 'api-key-2',
-            makerApiKeyId: 'api-key-1',
-            takerApiKeyId: 'api-key-2',
-          }),
-        }),
-      }),
+    await expect(
+      service.directStart(dualAccountStartDto, 'admin-user'),
+    ).rejects.toThrow(
+      'Legacy dual-account strategy variants cannot be used for new direct orders',
     );
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
   });
 
-  it('starts a best-capacity dual-account direct order and stores maker and taker metadata', async () => {
+  it('rejects best-capacity dual-account direct starts so hidden variants do not re-enter', async () => {
     const {
       service,
-      marketMakingRuntimeService,
       strategyDefinitionRepository,
       strategyConfigResolver,
       userOrdersService,
@@ -1091,7 +1076,63 @@ describe('AdminDirectMarketMakingService', () => {
       },
     });
 
-    const result = await service.directStart(dualAccountStartDto, 'admin-user');
+    await expect(
+      service.directStart(dualAccountStartDto, 'admin-user'),
+    ).rejects.toThrow(
+      'Legacy dual-account strategy variants cannot be used for new direct orders',
+    );
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
+  });
+
+  it('starts an efficient unified dual-account direct order with normalized contract defaults', async () => {
+    const {
+      service,
+      marketMakingRuntimeService,
+      strategyDefinitionRepository,
+      strategyConfigResolver,
+      userOrdersService,
+    } = buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-efficient',
+      key: 'efficient-dual-account-volume',
+      name: 'Efficient Dual Account Volume',
+      enabled: true,
+      controllerType: 'efficientDualAccountVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'efficientDualAccountVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'efficientDualAccountVolume',
+      definitionKey: 'efficient-dual-account-volume',
+      definitionName: 'Efficient Dual Account Volume',
+      resolvedConfig: {
+        symbol: 'BTC/USDT',
+        maxOrderAmount: '0.5',
+        interval: 30,
+        tradeAmountVariance: 0.2,
+        priceOffsetVariance: 0.05,
+        balanceA: '1',
+        balanceB: '1000',
+      },
+    });
+
+    const result = await service.directStart(
+      {
+        ...dualAccountStartDto,
+        strategyDefinitionId: 'strategy-efficient',
+        configOverrides: {
+          maxOrderAmount: 0.5,
+          interval: 30,
+          tradeAmountVariance: 0.2,
+          priceOffsetVariance: 0.05,
+        },
+      },
+      'admin-user',
+    );
 
     expect(result).toEqual({
       orderId: expect.any(String),
@@ -1100,17 +1141,21 @@ describe('AdminDirectMarketMakingService', () => {
     });
     expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiKeyId: 'api-key-1',
         strategySnapshot: expect.objectContaining({
-          controllerType: 'dualAccountBestCapacityVolume',
+          controllerType: 'efficientDualAccountVolume',
+          definitionKey: 'efficient-dual-account-volume',
           resolvedConfig: expect.objectContaining({
+            exchangeName: 'binance',
             symbol: 'BTC/USDT',
             pair: 'BTC/USDT',
-            exchangeName: 'binance',
             makerAccountLabel: 'api-key-1',
             takerAccountLabel: 'api-key-2',
-            makerApiKeyId: 'api-key-1',
-            takerApiKeyId: 'api-key-2',
+            mode: 'balanced',
+            cycleMode: 'alternating',
+            dynamicRoleSwitching: true,
+            strategyContract: 'efficientDualAccountVolume',
+            tradeAmountVariance: 0.2,
+            priceOffsetVariance: 0.05,
           }),
         }),
       }),
@@ -1118,13 +1163,80 @@ describe('AdminDirectMarketMakingService', () => {
     expect(marketMakingRuntimeService.startOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         strategySnapshot: expect.objectContaining({
-          resolvedConfig: expect.objectContaining({
-            symbol: 'BTC/USDT',
-            exchangeName: 'binance',
-          }),
+          controllerType: 'efficientDualAccountVolume',
         }),
       }),
     );
+  });
+
+  it('rejects legacy dual-account definitions for new direct-start orders', async () => {
+    const { service, strategyDefinitionRepository, strategyConfigResolver } =
+      buildService();
+
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-legacy',
+      enabled: true,
+      controllerType: 'dualAccountBestCapacityVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'dualAccountBestCapacityVolume',
+    );
+
+    await expect(
+      service.directStart(
+        {
+          ...dualAccountStartDto,
+          strategyDefinitionId: 'strategy-legacy',
+        },
+        'admin-user',
+      ),
+    ).rejects.toThrow(
+      'Legacy dual-account strategy variants cannot be used for new direct orders',
+    );
+
+    expect(
+      strategyConfigResolver.resolveForOrderSnapshot,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('hides legacy dual-account variants from new direct strategy definitions', async () => {
+    const { service, strategyDefinitionRepository } = buildService();
+
+    strategyDefinitionRepository.find.mockResolvedValue([
+      {
+        id: 'strategy-classic',
+        name: 'Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'dualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+      {
+        id: 'strategy-best',
+        name: 'Dual Account Best Capacity Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'dualAccountBestCapacityVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+      {
+        id: 'strategy-efficient',
+        name: 'Efficient Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'efficientDualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+    ]);
+
+    await expect(service.listDirectStrategyDefinitions()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'strategy-efficient',
+        controllerType: 'efficientDualAccountVolume',
+      }),
+    ]);
   });
 
   it('rejects reserved config override fields before resolving dual-account config', async () => {
@@ -1134,12 +1246,12 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: 'strategy-2',
       enabled: true,
-      controllerType: 'dualAccountVolume',
+      controllerType: 'efficientDualAccountVolume',
       capabilities: dualAccountLaunchConfig,
       configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
-      'dualAccountVolume',
+      'efficientDualAccountVolume',
     );
 
     await expect(
@@ -1176,12 +1288,12 @@ describe('AdminDirectMarketMakingService', () => {
     strategyDefinitionRepository.findOne.mockResolvedValue({
       id: 'strategy-2',
       enabled: true,
-      controllerType: 'dualAccountVolume',
+      controllerType: 'efficientDualAccountVolume',
       capabilities: dualAccountLaunchConfig,
       configSchema: {},
     });
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
-      'dualAccountVolume',
+      'efficientDualAccountVolume',
     );
     exchangeApiKeyService.readAPIKey.mockResolvedValue({
       exchange: 'binance',

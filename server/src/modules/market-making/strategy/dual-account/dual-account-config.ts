@@ -5,12 +5,31 @@ import type {
   DualAccountBehaviorProfilesDto,
   ExecuteDualAccountBestCapacityVolumeStrategyDto,
   ExecuteDualAccountVolumeStrategyDto,
+  ExecuteEfficientDualAccountVolumeStrategyDto,
 } from '../config/strategy.dto';
 import type {
   DualAccountBehaviorProfile,
+  DualAccountSafetyBufferConfig,
   DualAccountVolumeStrategyParams,
+  EfficientDualAccountVolumeMode,
   VolumeStrategyParams,
 } from '../config/strategy-params.types';
+
+export const EFFICIENT_DUAL_ACCOUNT_VOLUME_MODES = [
+  'cheapest_capital',
+  'balanced',
+  'fastest_volume',
+] as const satisfies readonly EfficientDualAccountVolumeMode[];
+
+export const EFFICIENT_DUAL_ACCOUNT_VOLUME_STRATEGY_CONTRACT =
+  'efficientDualAccountVolume' as const;
+
+export const DEFAULT_DUAL_ACCOUNT_SAFETY_BUFFER: DualAccountSafetyBufferConfig =
+  {
+    kind: 'default_formula',
+    exchangeCostMinMultiplier: 0.5,
+    feeCostMultiplier: 2,
+  };
 
 export function mergeDualAccountConfigIntoRuntime(
   runtime: DualAccountVolumeStrategyParams,
@@ -110,6 +129,25 @@ export function mergeDualAccountConfigIntoRuntime(
     merged.dynamicRoleSwitching = persisted.dynamicRoleSwitching;
   }
 
+  if (isEfficientDualAccountMode(persisted.mode)) {
+    merged.mode = persisted.mode;
+  }
+
+  if (
+    persisted.strategyContract ===
+    EFFICIENT_DUAL_ACCOUNT_VOLUME_STRATEGY_CONTRACT
+  ) {
+    merged.strategyContract = persisted.strategyContract;
+  }
+
+  if (
+    persisted.safetyBuffer &&
+    typeof persisted.safetyBuffer === 'object' &&
+    !Array.isArray(persisted.safetyBuffer)
+  ) {
+    merged.safetyBuffer = persisted.safetyBuffer;
+  }
+
   if (persisted.targetQuoteVolume === undefined) {
     merged.targetQuoteVolume = undefined;
   } else if (Number.isFinite(Number(persisted.targetQuoteVolume))) {
@@ -144,8 +182,8 @@ export function resolveDualAccountBehaviorProfile(
     accountLabel === params.makerAccountLabel
       ? profiles.maker
       : accountLabel === params.takerAccountLabel
-        ? profiles.taker
-        : undefined;
+      ? profiles.taker
+      : undefined;
 
   return candidate ? normalizeBehaviorProfile(candidate) : {};
 }
@@ -273,10 +311,248 @@ export function normalizeDualAccountBestCapacityStrategyParams(
   };
 }
 
+export function normalizeEfficientDualAccountVolumeStrategyParams(
+  params: ExecuteEfficientDualAccountVolumeStrategyDto,
+): DualAccountVolumeStrategyParams {
+  const normalized = normalizeEfficientDualAccountVolumeConfig(
+    params as unknown as Record<string, unknown>,
+    {
+      requireAccounts: true,
+      requireMarket: true,
+    },
+  ) as unknown as ExecuteEfficientDualAccountVolumeStrategyDto;
+
+  const maxOrderAmount = Number(normalized.maxOrderAmount);
+  const interval = Number(normalized.interval || 10);
+  const dailyVolumeTarget =
+    normalized.dailyVolumeTarget !== undefined
+      ? Number(normalized.dailyVolumeTarget)
+      : normalized.targetQuoteVolume !== undefined
+      ? Number(normalized.targetQuoteVolume)
+      : undefined;
+  const pair = resolveStrategyInputPair(normalized.symbol, normalized.pair);
+
+  return {
+    exchangeName: String(normalized.exchangeName || '').trim(),
+    symbol: pair,
+    pair,
+    baseIncrementPercentage: 0,
+    baseIntervalTime: interval,
+    baseTradeAmount: maxOrderAmount,
+    maxOrderAmount,
+    interval,
+    numTrades: 0,
+    userId: normalized.userId,
+    clientId: normalized.clientId,
+    marketMakingOrderId: normalized.marketMakingOrderId || normalized.clientId,
+    pricePushRate: 0,
+    executionCategory: 'clob_cex',
+    executionVenue: 'cex',
+    makerAccountLabel: String(normalized.makerAccountLabel || '').trim(),
+    takerAccountLabel: String(normalized.takerAccountLabel || '').trim(),
+    dailyVolumeTarget,
+    targetQuoteVolume: dailyVolumeTarget,
+    tradeAmountVariance: readOptionalUnitIntervalNumber(
+      normalized.tradeAmountVariance,
+      'tradeAmountVariance',
+    ),
+    priceOffsetVariance: readOptionalUnitIntervalNumber(
+      normalized.priceOffsetVariance,
+      'priceOffsetVariance',
+    ),
+    mode: normalized.mode || 'balanced',
+    strategyContract: EFFICIENT_DUAL_ACCOUNT_VOLUME_STRATEGY_CONTRACT,
+    safetyBuffer: normalizeSafetyBuffer(normalized.safetyBuffer),
+    publishedCycles: 0,
+    completedCycles: 0,
+    cycleMode: normalized.cycleMode || 'alternating',
+    makerProtectionMode: normalized.makerProtectionMode || 'alive_only',
+    dynamicRoleSwitching:
+      normalized.dynamicRoleSwitching === undefined
+        ? true
+        : normalized.dynamicRoleSwitching,
+    nextMakerAccountLabel: normalized.makerAccountLabel,
+    nextTakerAccountLabel: normalized.takerAccountLabel,
+    orderBookReady: false,
+    consecutiveFallbackCycles: 0,
+    tradedQuoteVolume: 0,
+    realizedPnlQuote: 0,
+    inventoryBaseQty: 0,
+    inventoryCostQuote: 0,
+  };
+}
+
+export function normalizeEfficientDualAccountVolumeConfig(
+  params: Record<string, unknown>,
+  options: {
+    requireAccounts?: boolean;
+    requireMarket?: boolean;
+  } = {},
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {
+    ...params,
+  };
+  const exchangeName = readString(normalized.exchangeName);
+  const pair = resolveStrategyInputPair(normalized.symbol, normalized.pair);
+
+  if (options.requireMarket && !exchangeName) {
+    throw new Error(
+      'Efficient dual account volume strategy requires exchangeName',
+    );
+  }
+
+  if (exchangeName) {
+    normalized.exchangeName = exchangeName;
+  }
+
+  if (options.requireMarket && !pair) {
+    throw new Error('Efficient dual account volume strategy requires pair');
+  }
+
+  if (pair) {
+    if (!isValidTradingPair(pair)) {
+      throw new Error(
+        'Efficient dual account volume strategy requires a valid pair like BASE/QUOTE',
+      );
+    }
+    normalized.symbol = pair;
+    normalized.pair = pair;
+  }
+
+  const makerAccountLabel = readString(normalized.makerAccountLabel);
+  const takerAccountLabel = readString(normalized.takerAccountLabel);
+
+  if (options.requireAccounts && (!makerAccountLabel || !takerAccountLabel)) {
+    throw new Error(
+      'Efficient dual account volume strategy requires makerAccountLabel and takerAccountLabel',
+    );
+  }
+
+  if (makerAccountLabel) {
+    normalized.makerAccountLabel = makerAccountLabel;
+  }
+
+  if (takerAccountLabel) {
+    normalized.takerAccountLabel = takerAccountLabel;
+  }
+
+  if (
+    makerAccountLabel &&
+    takerAccountLabel &&
+    makerAccountLabel === takerAccountLabel
+  ) {
+    throw new Error(
+      'Efficient dual account volume strategy requires different maker and taker account labels',
+    );
+  }
+
+  normalized.mode = normalizeEfficientDualAccountMode(normalized.mode);
+  normalized.cycleMode = normalizeCycleMode(normalized.cycleMode);
+  normalized.dynamicRoleSwitching = normalizeDynamicRoleSwitching(
+    normalized.dynamicRoleSwitching,
+  );
+  normalized.strategyContract = EFFICIENT_DUAL_ACCOUNT_VOLUME_STRATEGY_CONTRACT;
+  normalized.safetyBuffer = normalizeSafetyBuffer(normalized.safetyBuffer);
+
+  if (normalized.maxOrderAmount !== undefined) {
+    normalized.maxOrderAmount = readRequiredPositiveNumber(
+      normalized.maxOrderAmount,
+      'maxOrderAmount',
+    );
+  }
+
+  if (normalized.baseTradeAmount !== undefined) {
+    normalized.baseTradeAmount = readRequiredPositiveNumber(
+      normalized.baseTradeAmount,
+      'baseTradeAmount',
+    );
+  }
+
+  if (
+    options.requireMarket &&
+    normalized.maxOrderAmount === undefined &&
+    normalized.baseTradeAmount === undefined
+  ) {
+    throw new Error(
+      'Efficient dual account volume strategy requires a positive maxOrderAmount',
+    );
+  }
+
+  if (normalized.interval !== undefined) {
+    normalized.interval = readRequiredPositiveNumber(
+      normalized.interval,
+      'interval',
+    );
+  }
+
+  if (normalized.baseIntervalTime !== undefined) {
+    normalized.baseIntervalTime = readRequiredPositiveNumber(
+      normalized.baseIntervalTime,
+      'baseIntervalTime',
+    );
+  }
+
+  if (normalized.maxNotional !== undefined) {
+    normalized.maxNotional = readRequiredPositiveNumber(
+      normalized.maxNotional,
+      'maxNotional',
+    );
+  }
+
+  if (normalized.cooldownSeconds !== undefined) {
+    normalized.cooldownSeconds = readRequiredPositiveNumber(
+      normalized.cooldownSeconds,
+      'cooldownSeconds',
+    );
+  }
+
+  if (normalized.dailyVolumeTarget !== undefined) {
+    normalized.dailyVolumeTarget = readRequiredNonNegativeNumber(
+      normalized.dailyVolumeTarget,
+      'dailyVolumeTarget',
+    );
+  }
+
+  if (normalized.targetQuoteVolume !== undefined) {
+    normalized.targetQuoteVolume = readRequiredNonNegativeNumber(
+      normalized.targetQuoteVolume,
+      'targetQuoteVolume',
+    );
+  }
+
+  if (normalized.tradeAmountVariance !== undefined) {
+    normalized.tradeAmountVariance = readOptionalUnitIntervalNumber(
+      normalized.tradeAmountVariance,
+      'tradeAmountVariance',
+    );
+  }
+
+  if (normalized.priceOffsetVariance !== undefined) {
+    normalized.priceOffsetVariance = readOptionalUnitIntervalNumber(
+      normalized.priceOffsetVariance,
+      'priceOffsetVariance',
+    );
+  }
+
+  return normalized;
+}
+
 export function isBestCapacityConfig(
   params: DualAccountVolumeStrategyParams,
 ): boolean {
-  return Number.isFinite(Number(params.maxOrderAmount));
+  return (
+    params.strategyContract ===
+      EFFICIENT_DUAL_ACCOUNT_VOLUME_STRATEGY_CONTRACT ||
+    Number.isFinite(Number(params.maxOrderAmount))
+  );
+}
+
+export function isEfficientDualAccountMode(
+  mode: unknown,
+): mode is EfficientDualAccountVolumeMode {
+  return EFFICIENT_DUAL_ACCOUNT_VOLUME_MODES.includes(
+    mode as EfficientDualAccountVolumeMode,
+  );
 }
 
 export function resolveStrategyInputPair(
@@ -320,7 +596,7 @@ export function applyVariance(
   }
 
   const normalizedMultiplier =
-    multiplier !== undefined ? (readPositiveNumber(multiplier) ?? 1) : 1;
+    multiplier !== undefined ? readPositiveNumber(multiplier) ?? 1 : 1;
   const effectiveBase = normalizedBase.multipliedBy(normalizedMultiplier);
   const normalizedVariance = readNonNegativeNumber(variance);
 
@@ -352,6 +628,131 @@ export function readUnitIntervalNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
     ? parsed
     : undefined;
+}
+
+function normalizeEfficientDualAccountMode(
+  mode: unknown,
+): EfficientDualAccountVolumeMode {
+  if (mode === undefined || mode === null || mode === '') {
+    return 'balanced';
+  }
+
+  if (isEfficientDualAccountMode(mode)) {
+    return mode;
+  }
+
+  throw new Error(
+    `Efficient dual account volume strategy mode must be one of: ${EFFICIENT_DUAL_ACCOUNT_VOLUME_MODES.join(
+      ', ',
+    )}`,
+  );
+}
+
+function normalizeCycleMode(cycleMode: unknown): 'alternating' | 'static' {
+  if (cycleMode === undefined || cycleMode === null || cycleMode === '') {
+    return 'alternating';
+  }
+
+  if (cycleMode === 'alternating' || cycleMode === 'static') {
+    return cycleMode;
+  }
+
+  throw new Error(
+    'Efficient dual account volume strategy cycleMode must be alternating or static',
+  );
+}
+
+function normalizeDynamicRoleSwitching(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') {
+    return true;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  throw new Error(
+    'Efficient dual account volume strategy dynamicRoleSwitching must be boolean',
+  );
+}
+
+function normalizeSafetyBuffer(value: unknown): DualAccountSafetyBufferConfig {
+  if (value === undefined || value === null || value === '') {
+    return { ...DEFAULT_DUAL_ACCOUNT_SAFETY_BUFFER };
+  }
+
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(
+      'Efficient dual account volume strategy safetyBuffer must be an object',
+    );
+  }
+
+  const buffer = value as Partial<DualAccountSafetyBufferConfig>;
+  const exchangeCostMinMultiplier = readRequiredNonNegativeNumber(
+    buffer.exchangeCostMinMultiplier ??
+      DEFAULT_DUAL_ACCOUNT_SAFETY_BUFFER.exchangeCostMinMultiplier,
+    'safetyBuffer.exchangeCostMinMultiplier',
+  );
+  const feeCostMultiplier = readRequiredNonNegativeNumber(
+    buffer.feeCostMultiplier ??
+      DEFAULT_DUAL_ACCOUNT_SAFETY_BUFFER.feeCostMultiplier,
+    'safetyBuffer.feeCostMultiplier',
+  );
+
+  return {
+    kind: 'default_formula',
+    exchangeCostMinMultiplier,
+    feeCostMultiplier,
+  };
+}
+
+function readRequiredPositiveNumber(value: unknown, field: string): number {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(
+      `Efficient dual account volume strategy ${field} must be positive`,
+    );
+  }
+
+  return parsed;
+}
+
+function readRequiredNonNegativeNumber(value: unknown, field: string): number {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(
+      `Efficient dual account volume strategy ${field} must be non-negative`,
+    );
+  }
+
+  return parsed;
+}
+
+function readOptionalUnitIntervalNumber(
+  value: unknown,
+  field: string,
+): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(
+      `Efficient dual account volume strategy ${field} must be between 0 and 1`,
+    );
+  }
+
+  return parsed;
+}
+
+function isValidTradingPair(pair: string): boolean {
+  const [base, quote, extra] = pair.split('/');
+
+  return Boolean(base?.trim() && quote?.trim() && !extra);
 }
 
 export function isWithinDualAccountProfileWindow(
