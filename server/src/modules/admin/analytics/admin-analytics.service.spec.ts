@@ -1156,7 +1156,11 @@ describe('AdminAnalyticsService', () => {
       getOrderPerformance: jest.fn(async (orderId: string) => {
         const performances = {
           'order-btc': {
-            series: [{ t: ts(2), realized: '5', fees: '1', net: '4' }],
+            series: [
+              { t: ts(2), realized: '5', fees: '1', net: '4' },
+              { t: ts(4), realized: '13', fees: '1', net: '12' },
+              { t: ts(8), realized: '5', fees: '1', net: '4' },
+            ],
             summary: {
               realizedPnlQuote: '5',
               feesQuote: '1',
@@ -1272,6 +1276,18 @@ describe('AdminAnalyticsService', () => {
       unrealized: { status: 'available', value: '10', currency: 'USDT' },
       realizedNet: { status: 'available', value: '6.75', currency: 'USDT' },
       net: { status: 'available', value: '16.75', currency: 'USDT' },
+    });
+    expect(result.analytics.aggregate.pnlSeries).toEqual([
+      { t: ts(2), realized: '5', fees: '1', net: '4' },
+      { t: ts(4), realized: '13', fees: '1', net: '12' },
+      { t: ts(6), realized: '16', fees: '1.25', net: '14.75' },
+      { t: ts(8), realized: '8', fees: '1.25', net: '6.75' },
+    ]);
+    expect(result.analytics.aggregate.drawdown).toMatchObject({
+      status: 'available',
+      maxDrawdownQuote: '8',
+      peakAt: ts(6),
+      troughAt: ts(8),
     });
     expect(result.analytics.aggregate.directMarketMakingTotals).toMatchObject({
       realizedPnl: { status: 'available', value: '5', currency: 'USDT' },
