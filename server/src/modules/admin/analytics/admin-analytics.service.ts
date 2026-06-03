@@ -819,7 +819,7 @@ export class AdminAnalyticsService {
       ORDER_BOOK_STALE_MS,
     );
 
-    if (!book || !bestBid || !bestAsk) {
+    if (!book || !bestBid || !bestAsk || stale) {
       return {
         exchange,
         pair,
@@ -829,7 +829,10 @@ export class AdminAnalyticsService {
         sequence: book?.sequence ?? null,
         updatedAt: lastUpdateAt ? new Date(lastUpdateAt).toISOString() : null,
         stale,
-        unavailableReason: 'order-book-mid-unavailable',
+        unavailableReason:
+          !book || !bestBid || !bestAsk
+            ? 'order-book-mid-unavailable'
+            : 'order-book-mid-stale',
       };
     }
 
@@ -1191,7 +1194,7 @@ export class AdminAnalyticsService {
     );
     const markDependentUnavailable = snapshots.some(
       (snapshot) =>
-        snapshot.inventoryBaseQty.isGreaterThan(0) &&
+        !snapshot.inventoryBaseQty.isZero() &&
         (!snapshot.unrealizedPnlQuote || !snapshot.inventoryNotionalQuote),
     );
     const markUnavailableReason =
@@ -1323,7 +1326,7 @@ export class AdminAnalyticsService {
     );
     const markDependentUnavailable = snapshots.some(
       (snapshot) =>
-        snapshot.inventoryBaseQty.isGreaterThan(0) &&
+        !snapshot.inventoryBaseQty.isZero() &&
         (!snapshot.unrealizedPnlQuote || !snapshot.inventoryNotionalQuote),
     );
     const markUnavailableReason =
@@ -1869,6 +1872,7 @@ export class AdminAnalyticsService {
         type: string;
         id: string;
       };
+      metadata?: Record<string, unknown> | null;
     }> = [];
 
     for (const intent of sources.strategyOrderIntents) {
@@ -1944,6 +1948,7 @@ export class AdminAnalyticsService {
         side: execution.side || null,
         price: this.serializeNullableDecimal(execution.price),
         qty: this.serializeNullableDecimal(execution.amount),
+        metadata: execution.metadata ?? null,
       });
     }
 
@@ -2164,6 +2169,7 @@ export class AdminAnalyticsService {
       price: this.serializeNullableDecimal(execution.price),
       strategyType: execution.strategyType,
       status: execution.status || null,
+      metadata: execution.metadata ?? null,
       executedAt: this.normalizeTimestamp(execution.executedAt),
     };
   }

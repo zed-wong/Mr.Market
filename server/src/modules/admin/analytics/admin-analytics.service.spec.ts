@@ -157,6 +157,19 @@ describe('AdminAnalyticsService', () => {
         price: '100.00000001',
         strategyType: 'pureMarketMaking',
         status: 'completed',
+        metadata: {
+          decisionId: 'decision-1',
+          quotes: [
+            {
+              side: 'buy',
+              price: '100.00000001',
+              quantity: '0.01000000',
+            },
+          ],
+          risk: {
+            inventorySkew: '0.12',
+          },
+        },
         executedAt: ts(2),
       },
     ]);
@@ -402,6 +415,19 @@ describe('AdminAnalyticsService', () => {
         at: ts(2),
         source: 'strategy_execution_history',
         sourceId: 'execution-1',
+        metadata: {
+          decisionId: 'decision-1',
+          quotes: [
+            {
+              side: 'buy',
+              price: '100.00000001',
+              quantity: '0.01000000',
+            },
+          ],
+          risk: {
+            inventorySkew: '0.12',
+          },
+        },
         sourceRef: {
           type: 'strategy_execution_history',
           id: 'execution-1',
@@ -479,6 +505,69 @@ describe('AdminAnalyticsService', () => {
         params: { startedAt: ts(0), endedAt: ts(10) },
       }),
     );
+    expect(result.sources.strategyExecutions[0]).toMatchObject({
+      id: 'execution-1',
+      metadata: {
+        decisionId: 'decision-1',
+        risk: {
+          inventorySkew: '0.12',
+        },
+      },
+    });
+  });
+
+  it('treats stale order-book snapshots as unavailable for mark-dependent analytics', async () => {
+    const { service, orderBookTracker } = buildService();
+
+    orderBookTracker.isStale.mockReturnValueOnce(true);
+
+    const result = await service.getFoundation({
+      scope: 'order',
+      orderId: 'order-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.sources.orderBookMids[0]).toMatchObject({
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      midPrice: null,
+      bestBid: '100.1',
+      bestAsk: '100.2',
+      stale: true,
+      unavailableReason: 'order-book-mid-stale',
+    });
+    expect(result.analytics.perOrder.markPrice).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-stale',
+      stale: true,
+    });
+    expect(result.analytics.perOrder.pnl.unrealized).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-stale',
+    });
+    expect(result.analytics.perOrder.pnl.net).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-stale',
+    });
+    expect(result.analytics.perOrder.inventoryExposure.notional).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-stale',
+    });
+    expect(result.analytics.perOrder.pnl.realized).toMatchObject({
+      status: 'available',
+      value: '10',
+    });
+    expect(result.analytics.perOrder.fees.total).toMatchObject({
+      status: 'available',
+      value: '1',
+    });
   });
 
   it('returns a Direct Market Making dashboard DTO with cost and revenue fields for a complete order', async () => {
