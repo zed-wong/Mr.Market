@@ -61,6 +61,13 @@ export class DirectResumeMarketMakingDto {
   orderId: string;
 }
 
+export class DirectEditVariationDto {
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true })
+  @IsOptional()
+  @IsObject()
+  configOverrides?: Record<string, unknown>;
+}
+
 export class CampaignJoinRequestDto {
   @ApiProperty()
   @IsString()

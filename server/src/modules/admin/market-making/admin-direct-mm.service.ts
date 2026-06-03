@@ -19,7 +19,10 @@ import { StrategyDefinition } from 'src/common/entities/market-making/strategy-d
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
-import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
+import {
+  MarketMakingOrder,
+  type MarketMakingOrderStrategySnapshot,
+} from 'src/common/entities/orders/user-orders.entity';
 import {
   createPureMarketMakingStrategyKey,
   createStrategyKey,
@@ -74,6 +77,7 @@ import {
 } from '../strategy/strategy-definition-capabilities';
 import {
   CampaignJoinRequestDto,
+  DirectEditVariationDto,
   DirectStartMarketMakingDto,
 } from './admin-direct-mm.dto';
 
@@ -81,10 +85,20 @@ const DIRECT_ORDER_STALE_MS = 15_000;
 const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
   'userId',
   'clientId',
+  'orderId',
   'marketMakingOrderId',
   'pair',
   'symbol',
   'exchangeName',
+  'controllerType',
+  'strategyDefinitionId',
+  'apiKeyId',
+  'makerApiKeyId',
+  'takerApiKeyId',
+  'accountLabel',
+  'makerAccountLabel',
+  'takerAccountLabel',
+  'id',
 ]);
 const LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES = new Set([
   'dualAccountVolume',
@@ -597,6 +611,105 @@ export class AdminDirectMarketMakingService {
       );
       throw this.mapCCXTError(error);
     }
+  }
+
+  async editPausedVariation(
+    orderId: string,
+    dto: DirectEditVariationDto,
+  ): Promise<{
+    orderId: string;
+    state: string;
+    strategyDefinitionId: string;
+    strategySnapshot: MarketMakingOrderStrategySnapshot;
+    flattenedFields: ReturnType<
+      typeof mapStrategySnapshotToMarketMakingOrderFields
+    >;
+  }> {
+    const order = await this.marketMakingRepository.findOne({
+      where: { orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    if (order.source !== 'admin_direct') {
+      throw new BadRequestException(
+        'Strategy variation edits are only supported for admin-direct orders',
+      );
+    }
+    if (order.state !== 'paused') {
+      throw new BadRequestException(
+        'Strategy variation edits require a paused order',
+      );
+    }
+    if (!order.strategySnapshot?.resolvedConfig) {
+      throw new BadRequestException(
+        'Strategy snapshot resolved config is required for variation edit',
+      );
+    }
+
+    const strategyDefinitionId =
+      order.strategyDefinitionId || order.strategySnapshot.strategyDefinitionId;
+
+    if (!strategyDefinitionId) {
+      throw new BadRequestException(
+        'Strategy definition is required for variation edit',
+      );
+    }
+
+    const definition = await this.strategyDefinitionRepository.findOne({
+      where: { id: strategyDefinitionId },
+    });
+
+    if (!definition) {
+      throw new BadRequestException('Strategy definition not found');
+    }
+
+    assertStrategyConfigOverridesSafe(
+      dto.configOverrides,
+      DIRECT_RESERVED_CONFIG_FIELDS,
+    );
+
+    const editConfig = this.buildPausedVariationResolverConfig(
+      definition,
+      order.strategySnapshot.resolvedConfig,
+      dto.configOverrides || {},
+    );
+    const resolverInput = this.buildDirectResolverInput(
+      definition,
+      editConfig,
+      this.buildOrderRuntimeFields(order),
+    );
+    const strategySnapshot =
+      await this.strategyConfigResolver.resolveForOrderSnapshot(
+        strategyDefinitionId,
+        resolverInput,
+      );
+
+    this.applyOrderRuntimeFields(strategySnapshot.resolvedConfig, order);
+
+    const flattenedFields =
+      mapStrategySnapshotToMarketMakingOrderFields(strategySnapshot);
+
+    await this.marketMakingRepository.update(
+      {
+        orderId,
+        source: 'admin_direct',
+      },
+      {
+        strategyDefinitionId,
+        strategySnapshot,
+        ...flattenedFields,
+      },
+    );
+
+    return {
+      orderId,
+      state: order.state,
+      strategyDefinitionId,
+      strategySnapshot,
+      flattenedFields,
+    };
   }
 
   async removeDirectOrder(
@@ -1579,6 +1692,88 @@ export class AdminDirectMarketMakingService {
     }
 
     return resolverInput;
+  }
+
+  private buildPausedVariationResolverConfig(
+    definition: Pick<StrategyDefinition, 'configSchema'>,
+    currentConfig: Record<string, unknown>,
+    configOverrides: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const schemaRootFields = this.readSchemaRootFields(definition.configSchema);
+    const hasExplicitSchemaFields = schemaRootFields.size > 0;
+    const editableCurrentConfig: Record<string, unknown> = {};
+
+    for (const [field, value] of Object.entries(currentConfig || {})) {
+      if (DIRECT_RESERVED_CONFIG_FIELDS.has(field)) {
+        continue;
+      }
+      if (hasExplicitSchemaFields && !schemaRootFields.has(field)) {
+        continue;
+      }
+      editableCurrentConfig[field] = value;
+    }
+
+    return {
+      ...editableCurrentConfig,
+      ...configOverrides,
+    };
+  }
+
+  private readSchemaRootFields(schema: unknown): Set<string> {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+      return new Set();
+    }
+
+    const configSchema = schema as { properties?: unknown };
+
+    if (
+      !configSchema.properties ||
+      typeof configSchema.properties !== 'object' ||
+      Array.isArray(configSchema.properties)
+    ) {
+      return new Set();
+    }
+
+    return new Set(Object.keys(configSchema.properties));
+  }
+
+  private buildOrderRuntimeFields(
+    order: MarketMakingOrder,
+  ): Record<string, string> {
+    const runtimeFields: Record<string, string> = {
+      userId: order.userId || 'admin-direct',
+      clientId: order.orderId,
+      orderId: order.orderId,
+      marketMakingOrderId: order.orderId,
+      pair: order.pair,
+      symbol: order.pair,
+      exchangeName: order.exchangeName,
+    };
+
+    if (this.isDualAccountMode(order)) {
+      runtimeFields.makerAccountLabel = this.readMakerAccountLabel(order);
+      runtimeFields.takerAccountLabel = this.readTakerAccountLabel(order);
+      runtimeFields.makerApiKeyId = order.apiKeyId || '';
+      runtimeFields.takerApiKeyId = this.readTakerApiKeyId(order);
+    } else {
+      runtimeFields.accountLabel = this.readAccountLabel(order);
+      runtimeFields.apiKeyId = order.apiKeyId || '';
+    }
+
+    return runtimeFields;
+  }
+
+  private applyOrderRuntimeFields(
+    resolvedConfig: Record<string, unknown>,
+    order: MarketMakingOrder,
+  ): void {
+    const runtimeFields = this.buildOrderRuntimeFields(order);
+
+    for (const [field, value] of Object.entries(runtimeFields)) {
+      if (value) {
+        resolvedConfig[field] = value;
+      }
+    }
   }
 
   private schemaMentionsRootField(schema: unknown, field: string): boolean {
