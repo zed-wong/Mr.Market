@@ -179,8 +179,17 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     label: string,
     quoteVolume: number,
     nextCycleQuoteCapacity: number,
-    rebalanceRiskQuote = 0,
+    rankingCosts:
+      | number
+      | {
+          rebalanceRiskQuote?: number;
+          estimatedSpreadCostQuote?: number;
+        } = 0,
   ): DualAccountBestCapacityCandidate & { label: string } => {
+    const options =
+      typeof rankingCosts === 'number'
+        ? { rebalanceRiskQuote: rankingCosts }
+        : rankingCosts;
     const capacity = new BigNumber(quoteVolume);
     const futureOppositeCapacity = new BigNumber(nextCycleQuoteCapacity);
 
@@ -196,8 +205,10 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       futureOppositeCapacity,
       nextCycleQuoteCapacity: new BigNumber(nextCycleQuoteCapacity),
       estimatedFeeQuote: new BigNumber(1),
-      estimatedSpreadCostQuote: new BigNumber(0),
-      rebalanceRiskQuote: new BigNumber(rebalanceRiskQuote),
+      estimatedSpreadCostQuote: new BigNumber(
+        options.estimatedSpreadCostQuote || 0,
+      ),
+      rebalanceRiskQuote: new BigNumber(options.rebalanceRiskQuote || 0),
       dustRiskQuote: new BigNumber(0),
       imbalanceRatio: new BigNumber(1),
       roleAssignment: 'configured',
@@ -256,6 +267,101 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     expect(selectWinner(undefined)).toBe('balanced');
     expect(selectWinner('balanced')).toBe('balanced');
     expect(selectWinner('fastest_volume')).toBe('fast-volume');
+  });
+
+  it('simulates post-cycle inventory and fees before scoring future capacity', () => {
+    const { planner } = buildPlanner();
+    const price = new BigNumber(100);
+    const feeBufferRate = new BigNumber(0.002);
+    const snapshot = {
+      makerBalances: buildBalances(0, 100),
+      takerBalances: buildBalances(1, 0),
+    };
+    const preCycleOppositeCapacity = planner.computeCapacity(
+      snapshot.makerBalances,
+      snapshot.takerBalances,
+      'sell',
+      price,
+      feeBufferRate,
+    );
+
+    const candidate = planner
+      .buildBestCapacityCandidates(baseParams, price, feeBufferRate, snapshot, {
+        bestBid: new BigNumber(99),
+        bestAsk: new BigNumber(101),
+        referencePrice: price,
+      })
+      .find(
+        (entry) =>
+          entry.roleAssignment === 'configured' && entry.side === 'buy',
+      );
+
+    expect(preCycleOppositeCapacity.toFixed()).toBe('0');
+    expect(candidate).toBeDefined();
+    expect(
+      (candidate as DualAccountBestCapacityCandidate).nextCycleQuoteCapacity
+        .isGreaterThan(0),
+    ).toBe(true);
+    expect(
+      (candidate as DualAccountBestCapacityCandidate).rebalanceRiskQuote.isLessThan(
+        (candidate as DualAccountBestCapacityCandidate).quoteVolume,
+      ),
+    ).toBe(true);
+  });
+
+  it('computes deterministic spread cost and lets spread penalties affect ranking', () => {
+    const { planner } = buildPlanner();
+    const price = new BigNumber(100);
+    const feeBufferRate = new BigNumber(0.002);
+    const candidates = planner.buildBestCapacityCandidates(
+      baseParams,
+      price,
+      feeBufferRate,
+      {
+        makerBalances: buildBalances(1, 100),
+        takerBalances: buildBalances(1, 100),
+      },
+      {
+        bestBid: new BigNumber(99),
+        bestAsk: new BigNumber(101),
+        referencePrice: price,
+      },
+    );
+    const configuredBuy = candidates.find(
+      (candidate) =>
+        candidate.roleAssignment === 'configured' && candidate.side === 'buy',
+    );
+
+    expect(configuredBuy).toBeDefined();
+    expect(
+      (configuredBuy as DualAccountBestCapacityCandidate).estimatedSpreadCostQuote.isGreaterThan(
+        0,
+      ),
+    ).toBe(true);
+
+    const rankingCandidates = [
+      buildScoreCandidate('higher-volume-wide-spread', 100, 100, {
+        estimatedSpreadCostQuote: 60,
+      }),
+      buildScoreCandidate('lower-volume-tight-spread', 80, 80),
+    ];
+    const selectWinner = (mode: DualAccountVolumeStrategyParams['mode']) =>
+      rankingCandidates
+        .map((candidate) => ({
+          label: candidate.label,
+          score: planner.scoreBestCapacityCandidate(
+            { mode, targetQuoteVolume: 0, totalMatchedQuoteVolume: 0 },
+            candidate,
+            new BigNumber(1),
+          ),
+        }))
+        .sort((left, right) => right.score.comparedTo(left.score))[0].label;
+
+    expect(selectWinner('cheapest_capital')).toBe(
+      'lower-volume-tight-spread',
+    );
+    expect(selectWinner('balanced')).toBe('lower-volume-tight-spread');
+    expect(selectWinner('fastest_volume')).toBe('higher-volume-wide-spread');
   });
 
   it('emits the unified best-capacity path with all four candidates evaluated', async () => {
