@@ -872,6 +872,121 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
+  it('cancels active tracked exchange orders before removing a stopped direct order', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      exchangeOrderTrackerService,
+      orderReservationService,
+    } = buildService();
+    const trackedOrder = {
+      orderId: 'order-1',
+      strategyKey: 'pmm-order-1',
+      exchange: 'binance',
+      accountLabel: 'api-key-1',
+      pair: 'BTC/USDT',
+      exchangeOrderId: 'exchange-order-1',
+      clientOrderId: 'client-order-1',
+      side: 'buy',
+      price: '100',
+      qty: '0.5',
+      cumulativeFilledQty: '0',
+      status: 'open',
+      createdAt: '2026-05-23T00:00:00.000Z',
+      updatedAt: '2026-05-23T00:00:01.000Z',
+    };
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      state: 'stopped',
+      source: 'admin_direct',
+      pair: 'BTC/USDT',
+      strategySnapshot: buildStrategySnapshot({}),
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockImplementation(() => [
+      trackedOrder,
+    ]);
+    marketMakingRuntimeService.stopOrder.mockImplementation(async () => {
+      trackedOrder.status = 'cancelled';
+    });
+
+    await expect(service.removeDirectOrder('order-1')).resolves.toEqual({
+      orderId: 'order-1',
+      state: 'removed',
+    });
+    expect(marketMakingRuntimeService.stopOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: 'order-1' }),
+      'admin-user',
+    );
+    expect(
+      orderReservationService.releaseRemainingLimitOrderReservation,
+    ).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      intentId: 'client-order-1',
+      releaseId: 'client-order-1',
+      pair: 'BTC/USDT',
+      side: 'buy',
+      price: '100',
+      qty: '0.5',
+      filledQty: '0',
+      reason: 'exchange_order_cancelled',
+    });
+    expect(marketMakingRepository.update).toHaveBeenCalledWith(
+      {
+        orderId: 'order-1',
+        source: 'admin_direct',
+      },
+      {
+        state: 'deleted',
+      },
+    );
+  });
+
+  it('does not remove a direct order when active tracked exchange orders remain after cancellation', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      marketMakingRuntimeService,
+      exchangeOrderTrackerService,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-1',
+      userId: 'admin-user',
+      state: 'failed',
+      source: 'admin_direct',
+      pair: 'BTC/USDT',
+      strategySnapshot: buildStrategySnapshot({}),
+    });
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'order-1',
+        strategyKey: 'pmm-order-1',
+        exchange: 'binance',
+        accountLabel: 'api-key-1',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'exchange-order-1',
+        clientOrderId: 'client-order-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        cumulativeFilledQty: '0',
+        status: 'open',
+        createdAt: '2026-05-23T00:00:00.000Z',
+        updatedAt: '2026-05-23T00:00:01.000Z',
+      },
+    ]);
+
+    await expect(service.removeDirectOrder('order-1')).rejects.toThrow(
+      'active exchange order(s) remain after cancellation',
+    );
+    expect(marketMakingRuntimeService.stopOrder).toHaveBeenCalled();
+    expect(marketMakingRepository.update).not.toHaveBeenCalled();
+  });
+
   it('rejects removing a running direct order', async () => {
     const { service, marketMakingRepository } = buildService();
 

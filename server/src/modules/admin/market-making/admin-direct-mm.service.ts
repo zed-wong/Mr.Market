@@ -447,10 +447,12 @@ export class AdminDirectMarketMakingService {
       );
     }
 
+    await this.cancelActiveTrackedOrdersBeforeRemoval(order);
     await this.releaseStoppedOrderReservations(
       order,
       order.userId || 'admin-direct',
     );
+    this.assertNoActiveTrackedOrdersBeforeRemoval(order);
 
     await this.marketMakingRepository.update(
       {
@@ -466,6 +468,39 @@ export class AdminDirectMarketMakingService {
       orderId,
       state: 'removed',
     };
+  }
+
+  private async cancelActiveTrackedOrdersBeforeRemoval(
+    order: MarketMakingOrder,
+  ): Promise<void> {
+    if (!this.getActiveTrackedOrders(order).length) {
+      return;
+    }
+
+    try {
+      await this.marketMakingRuntimeService.stopOrder(
+        order,
+        order.userId || 'admin-direct',
+      );
+    } catch (error) {
+      if (this.getActiveTrackedOrders(order).length) {
+        throw error;
+      }
+    }
+  }
+
+  private assertNoActiveTrackedOrdersBeforeRemoval(
+    order: MarketMakingOrder,
+  ): void {
+    const activeOrders = this.getActiveTrackedOrders(order);
+
+    if (!activeOrders.length) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Cannot remove direct order ${order.orderId}: ${activeOrders.length} active exchange order(s) remain after cancellation`,
+    );
   }
 
   async listDirectOrders() {
@@ -1341,6 +1376,12 @@ export class AdminDirectMarketMakingService {
     };
 
     return tracker.getTrackedOrders?.(strategyKey) || tracker.getOpenOrders(strategyKey);
+  }
+
+  private getActiveTrackedOrders(order: MarketMakingOrder): TrackedOrder[] {
+    return this.getTrackedOrders(this.buildStrategyKey(order)).filter(
+      (trackedOrder) => !this.isTrackedOrderTerminal(trackedOrder.status),
+    );
   }
 
   private isTrackedOrderReservationReleasable(order: TrackedOrder): boolean {
