@@ -1,10 +1,12 @@
 <script lang="ts">
   import clsx from 'clsx';
-  import { _ } from 'svelte-i18n';
+  import { _, locale } from 'svelte-i18n';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { NAV_ITEMS, isActive, isGroupActive } from './nav-items';
   import SideBarIcons from '$lib/components/admin/dashboard/sideBarIcons.svelte';
+  import HeroIcon from '$lib/components/common/HeroIcon.svelte';
+  import { darkTheme, toggleDarkTheme } from '$lib/stores/theme';
 
   interface Props {
     open: boolean;
@@ -19,6 +21,8 @@
   let visibleNavItems = $derived(
     setupCompleted ? NAV_ITEMS.filter((item) => item.key !== 'setup') : NAV_ITEMS,
   );
+  let currentLocale = $derived($locale || 'en-US');
+  let isChineseLocale = $derived(currentLocale.startsWith('zh'));
 
   // Track which sections are expanded; auto-expand the active group
   let expandedSections = $state<Record<string, boolean>>({});
@@ -68,6 +72,14 @@
   const requestLogout = () => {
     closeOnMobile();
     onLogout();
+  };
+
+  const toggleLocale = () => {
+    const nextLocale = isChineseLocale ? 'en-US' : 'zh-CN';
+    locale.set(nextLocale);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('admin-locale', nextLocale);
+    }
   };
 
   // Scroll shadow state
@@ -240,9 +252,32 @@
 
     <!-- Footer -->
     <div class="mt-auto border-t border-base-300 px-3 pt-5">
-      <div class="mb-3 flex flex-col gap-0.5">
-        <span class="eyebrow">admin console</span>
-        <span class="text-xs text-base-content/40">Operational preview</span>
+      <div class="mb-3 flex flex-col gap-1">
+        <button
+          type="button"
+          class="btn-pill-ghost w-full justify-start gap-3"
+          onclick={toggleLocale}
+          aria-label="Toggle language"
+          title="Toggle language"
+        >
+          <HeroIcon name="language" className="h-6 w-6 shrink-0 opacity-80" />
+          <span class="capitalize">{isChineseLocale ? '中文' : 'English'}</span>
+        </button>
+        <button
+          type="button"
+          class="btn-pill-ghost w-full justify-start gap-3"
+          onclick={() => toggleDarkTheme($darkTheme)}
+          aria-label={$_('toggle_theme')}
+          title={$_('toggle_theme')}
+        >
+          {#if $darkTheme}
+            <HeroIcon name="sun" className="h-6 w-6 shrink-0 opacity-80" />
+            <span class="capitalize">{$_('admin.theme_light')}</span>
+          {:else}
+            <HeroIcon name="moon" className="h-6 w-6 shrink-0 opacity-80" />
+            <span class="capitalize">{$_('admin.theme_dark')}</span>
+          {/if}
+        </button>
       </div>
       <button
         type="button"

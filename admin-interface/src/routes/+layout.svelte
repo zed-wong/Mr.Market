@@ -7,7 +7,8 @@
   import { Toaster } from 'svelte-sonner';
   import { _ } from 'svelte-i18n';
   import { initi18n } from '../i18n/i18n';
-  import { ADMIN_LIGHT_THEME } from '$lib/theme/themes';
+  import { toAdminTheme } from '$lib/theme/themes';
+  import { darkTheme, initTheme } from '$lib/stores/theme';
   import { checkSession, logout } from '$lib/helpers/api/auth';
   import { fetchSetupStatus } from '$lib/helpers/api/setup';
   import { getAuthLayoutState } from '$lib/helpers/admin/auth-layout-state';
@@ -40,7 +41,7 @@
 
   $effect(() => {
     if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', ADMIN_LIGHT_THEME);
+      document.documentElement.setAttribute('data-theme', toAdminTheme($darkTheme));
     }
   });
 
@@ -81,6 +82,7 @@
     })();
 
     if (typeof window === 'undefined') return;
+    initTheme();
     const mediaQuery = window.matchMedia('(min-width: 1024px)');
     sidebarOpen = mediaQuery.matches;
     const sync = () => {
