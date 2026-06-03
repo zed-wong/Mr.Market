@@ -16,6 +16,7 @@
 - Add chart views for total / realized / unrealized PNL.
 - Add pair-level PNL, inventory exposure, fee cost, spread capture, and drawdown views.
 - Add quote / fill / cancel timeline views backed by strategy decision snapshots and tracked-order state.
+- Build an admin Direct Market Making cost/revenue dashboard surfacing the metrics market makers care about (spread capture, fee cost, inventory skew, realized vs unrealized PNL, fill rate, quote uptime).
 
 ---
 
@@ -38,7 +39,31 @@
 
 ---
 
-## 5. Long Term
+## 5. Strategy Variation Editing
+
+- Treat Strategy Definition and Strategy Variation as distinct concepts: editing the definition is supported today, editing and saving a variation is not.
+- Land the existing plan to allow editing and persisting variations end-to-end (admin UI + API + storage).
+- Ensure variation edits flow safely into running strategies without corrupting reservations, tracked orders, or decision snapshots.
+
+---
+
+## 6. Hyperliquid Support
+
+- Scope is trading-only: exchange API key adapter layer + trading/market-making execution. No funding, custody, or product-loop work in this phase.
+- Add a Hyperliquid adapter under the existing exchange API key management so credentials, signing, and venue routing match the current CEX pattern.
+- Plug it into the trading/market-making path (order placement, fills, fees, reconciliation) under the same intent-worker model.
+
+---
+
+## 7. DeFi Support (Uniswap / PancakeSwap)
+
+- Extend the trading layer to support on-chain execution via Uniswap and PancakeSwap.
+- Reuse the order-attributed reservation, ledger, and reconciliation invariants for DEX fills, gas, and slippage.
+- Coordinate with the EVM key split work in "To be determined" so DEX execution uses a dedicated key boundary.
+
+---
+
+## 8. Long Term
 
 - Backtesting / replay.
 - TEE / easyenclave.com.
