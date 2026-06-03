@@ -184,7 +184,7 @@
               supportedExchanges = supported as string[];
               allCcxtExchanges = ccxt;
             })
-            .catch((cause) => (metadataError = classifyAdminError(cause, 'Exchange metadata failed to load')));
+            .catch((cause) => (metadataError = classifyAdminError(cause, $_('admin_exchanges_metadata_load_failed'))));
         }}
         testId="exchange-metadata-error"
       />
