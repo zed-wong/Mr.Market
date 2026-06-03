@@ -2,6 +2,7 @@
 
 ## 2026-06-02
 
+- Archive completed or superseded active plans for future Web3 endpoints, one-time setup wizard, order-performance PnL, campaign leaderboard, and Web3 wallet/market-making Router implementation so `docs/plans/` stays focused on current work.
 - Add the runtime startup/readiness refactor plan: introduce a NestJS-aligned runtime module, move external I/O out of constructors/module-init blockers, expose readiness state, and keep trading safety behind explicit exchange/reconciliation risk gates.
 - Move metrics HTTP access behind the authenticated admin surface as `/admin/metrics` and `/admin/metrics/runtime`, removing the public `/metrics` controller while keeping `MetricsService` for dashboard/system-health internals.
 - Remove the legacy unauthenticated `/performance/:userId` controller while keeping `PerformanceService` available to the guarded admin and web3 order-performance endpoints.
