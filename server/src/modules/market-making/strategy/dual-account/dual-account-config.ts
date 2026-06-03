@@ -654,7 +654,7 @@ function normalizeCycleMode(cycleMode: unknown): 'alternating' | 'static' {
   }
 
   if (cycleMode === 'alternating' || cycleMode === 'static') {
-    return cycleMode;
+    return 'alternating';
   }
 
   throw new Error(
@@ -668,7 +668,7 @@ function normalizeDynamicRoleSwitching(value: unknown): boolean {
   }
 
   if (typeof value === 'boolean') {
-    return value;
+    return true;
   }
 
   throw new Error(

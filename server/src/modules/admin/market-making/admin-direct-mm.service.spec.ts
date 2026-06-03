@@ -1151,6 +1151,8 @@ describe('AdminDirectMarketMakingService', () => {
         interval: 30,
         tradeAmountVariance: 0.2,
         priceOffsetVariance: 0.05,
+        cycleMode: 'static',
+        dynamicRoleSwitching: false,
         balanceA: '1',
         balanceB: '1000',
       },
@@ -1165,6 +1167,8 @@ describe('AdminDirectMarketMakingService', () => {
           interval: 30,
           tradeAmountVariance: 0.2,
           priceOffsetVariance: 0.05,
+          cycleMode: 'static',
+          dynamicRoleSwitching: false,
         },
       },
       'admin-user',
@@ -1212,6 +1216,8 @@ describe('AdminDirectMarketMakingService', () => {
         makerAccountLabel: 'api-key-1',
         takerAccountLabel: 'api-key-2',
         mode: 'balanced',
+        cycleMode: 'alternating',
+        dynamicRoleSwitching: true,
       }),
     );
   });
@@ -1249,6 +1255,8 @@ describe('AdminDirectMarketMakingService', () => {
         symbol: 'BTC/USDT',
         maxOrderAmount: '0.5',
         interval: 30,
+        cycleMode: 'static',
+        dynamicRoleSwitching: false,
       },
     });
 
@@ -1256,6 +1264,10 @@ describe('AdminDirectMarketMakingService', () => {
       service.evaluateDirectReadiness({
         ...dualAccountStartDto,
         strategyDefinitionId: 'strategy-efficient',
+        configOverrides: {
+          cycleMode: 'static',
+          dynamicRoleSwitching: false,
+        },
       }),
     ).resolves.toEqual(readyReadiness);
 
@@ -1266,6 +1278,8 @@ describe('AdminDirectMarketMakingService', () => {
         strategyContract: 'efficientDualAccountVolume',
         makerAccountLabel: 'api-key-1',
         takerAccountLabel: 'api-key-2',
+        cycleMode: 'alternating',
+        dynamicRoleSwitching: true,
       }),
     );
     expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();

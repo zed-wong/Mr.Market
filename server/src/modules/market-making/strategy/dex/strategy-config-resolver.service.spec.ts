@@ -361,6 +361,8 @@ describe('StrategyConfigResolverService', () => {
         clientId: 'order-1',
         tradeAmountVariance: 0.2,
         priceOffsetVariance: 0.05,
+        cycleMode: 'static',
+        dynamicRoleSwitching: false,
       },
     );
 
