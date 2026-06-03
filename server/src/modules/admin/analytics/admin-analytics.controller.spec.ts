@@ -134,6 +134,7 @@ describe('AdminAnalyticsController', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
     const controller = new AdminAnalyticsController(service);
 

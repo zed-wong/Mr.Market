@@ -6,6 +6,7 @@ import { MarketMakingOrderBalance } from 'src/common/entities/ledger/market-maki
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyOrderIntentEntity } from 'src/common/entities/market-making/strategy-order-intent.entity';
 import { TrackedOrderEntity } from 'src/common/entities/market-making/tracked-order.entity';
+import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { PerformanceService } from 'src/modules/market-making/performance/performance.service';
 import { OrderBookTrackerService } from 'src/modules/market-making/trackers/order-book-tracker.service';
@@ -76,6 +77,11 @@ type TrackedOrderProjection = Pick<
   | 'updatedAt'
 >;
 
+type MarketMakingOrderProjection = Pick<
+  MarketMakingOrder,
+  'orderId' | 'exchangeName' | 'pair' | 'source' | 'state' | 'createdAt'
+>;
+
 type OrderAggregateSnapshot = {
   orderId: string;
   exchange: string | null;
@@ -102,6 +108,8 @@ export class AdminAnalyticsService {
     private readonly ledgerEntryRepository: Repository<LedgerEntry>,
     @InjectRepository(MarketMakingOrderBalance)
     private readonly orderBalanceRepository: Repository<MarketMakingOrderBalance>,
+    @InjectRepository(MarketMakingOrder)
+    private readonly marketMakingOrderRepository: Repository<MarketMakingOrder>,
     @InjectRepository(TrackedOrderEntity)
     private readonly trackedOrderRepository: Repository<TrackedOrderEntity>,
     @InjectRepository(StrategyOrderIntentEntity)
@@ -115,10 +123,23 @@ export class AdminAnalyticsService {
   async getFoundation(input: AdminAnalyticsQuery = {}) {
     const filters = this.resolveQuery(input);
 
-    const trackedOrders = await this.loadTrackedOrders(filters);
-    const scopedOrderIds = this.resolveScopedOrderIds(filters, trackedOrders);
+    const [eligibleOrders, directMarketMakingOrders, trackedOrders] =
+      await Promise.all([
+        this.loadEligibleMarketMakingOrders(filters),
+        this.loadEligibleMarketMakingOrders(filters, {
+          directMarketMakingOnly: true,
+        }),
+        this.loadTrackedOrders(filters),
+      ]);
+    const scopedOrderIds = this.resolveScopedOrderIds(filters, eligibleOrders);
     const strategyKeys = this.unique(
-      trackedOrders.map((order) => order.strategyKey).filter(Boolean),
+      trackedOrders
+        .filter(
+          (order) =>
+            scopedOrderIds.length === 0 || scopedOrderIds.includes(order.orderId),
+        )
+        .map((order) => order.strategyKey)
+        .filter(Boolean),
     );
 
     const [ledgerEntries, orderBalances, strategyOrderIntents, executions] =
@@ -128,10 +149,12 @@ export class AdminAnalyticsService {
         this.loadStrategyOrderIntents(filters, strategyKeys),
         this.loadStrategyExecutions(filters),
       ]);
-    const midPairs = this.resolveMidPairs(filters, trackedOrders, [
-      ...strategyOrderIntents,
-      ...executions,
-    ]);
+    const midPairs = this.resolveMidPairs(
+      filters,
+      eligibleOrders,
+      trackedOrders,
+      [...strategyOrderIntents, ...executions],
+    );
     const orderBookMids = midPairs.map(({ exchange, pair }) =>
       this.readOrderBookMid(exchange, pair),
     );
@@ -139,6 +162,7 @@ export class AdminAnalyticsService {
       filters.scope === 'order' && filters.orderId
         ? await this.buildPerOrderAnalytics(filters, {
             trackedOrders,
+            eligibleOrders,
             ledgerEntries,
             orderBalances,
             strategyOrderIntents,
@@ -150,6 +174,8 @@ export class AdminAnalyticsService {
       filters.scope === 'pair' || filters.scope === 'admin'
         ? await this.buildAggregateAnalytics(filters, {
             trackedOrders,
+            eligibleOrders,
+            directMarketMakingOrders,
             strategyOrderIntents,
             executions,
             orderBookMids,
@@ -182,6 +208,8 @@ export class AdminAnalyticsService {
           strategyOrderIntents: strategyOrderIntents.length,
           strategyExecutions: executions.length,
           orderBookMids: orderBookMids.length,
+          marketMakingOrders: eligibleOrders.length,
+          directMarketMakingOrders: directMarketMakingOrders.length,
         },
         ledgerAmountByAsset: this.summarizeLedgerAmounts(ledgerEntries),
         balanceTotalsByAsset: this.summarizeBalances(orderBalances),
@@ -195,6 +223,12 @@ export class AdminAnalyticsService {
         ),
         trackedOrders: trackedOrders.map((order) =>
           this.serializeTrackedOrder(order),
+        ),
+        marketMakingOrders: eligibleOrders.map((order) =>
+          this.serializeMarketMakingOrder(order),
+        ),
+        directMarketMakingOrders: directMarketMakingOrders.map((order) =>
+          this.serializeMarketMakingOrder(order),
         ),
         strategyOrderIntents: strategyOrderIntents.map((intent) =>
           this.serializeStrategyOrderIntent(intent),
@@ -212,6 +246,7 @@ export class AdminAnalyticsService {
         'ledger_entries',
         'order_scoped_balances',
         'tracked_orders',
+        'market_making_orders',
         'strategy_order_intents',
         'strategy_execution_history',
         'order_book_tracker_mid',
@@ -495,6 +530,91 @@ export class AdminAnalyticsService {
       .getMany();
   }
 
+  private async loadEligibleMarketMakingOrders(
+    filters: ResolvedAnalyticsQuery,
+    options: { directMarketMakingOnly?: boolean } = {},
+  ): Promise<MarketMakingOrderProjection[]> {
+    const query =
+      this.marketMakingOrderRepository.createQueryBuilder('marketMakingOrder');
+
+    query.andWhere('marketMakingOrder.state != :deletedState', {
+      deletedState: 'deleted',
+    });
+
+    if (options.directMarketMakingOnly) {
+      query.andWhere('marketMakingOrder.source = :directSource', {
+        directSource: 'admin_direct',
+      });
+    }
+
+    if (filters.orderId) {
+      query.andWhere('marketMakingOrder.orderId = :orderId', {
+        orderId: filters.orderId,
+      });
+    }
+
+    if (filters.exchange) {
+      query.andWhere('LOWER(marketMakingOrder.exchangeName) = :exchange', {
+        exchange: filters.exchange,
+      });
+    }
+
+    if (filters.pair) {
+      query.andWhere('UPPER(marketMakingOrder.pair) = :pair', {
+        pair: filters.pair,
+      });
+    }
+
+    const rows = await query
+      .orderBy('marketMakingOrder.createdAt', 'DESC')
+      .getMany();
+
+    return this.filterEligibleMarketMakingOrders(
+      rows as MarketMakingOrderProjection[],
+      filters,
+      options,
+    );
+  }
+
+  private filterEligibleMarketMakingOrders(
+    rows: MarketMakingOrderProjection[],
+    filters: ResolvedAnalyticsQuery,
+    options: { directMarketMakingOnly?: boolean },
+  ): MarketMakingOrderProjection[] {
+    return rows.filter((order) => {
+      if (!order.orderId || order.state === 'deleted') {
+        return false;
+      }
+
+      if (
+        options.directMarketMakingOnly &&
+        order.source !== 'admin_direct'
+      ) {
+        return false;
+      }
+
+      if (filters.orderId && order.orderId !== filters.orderId) {
+        return false;
+      }
+
+      if (
+        filters.exchange &&
+        String(order.exchangeName || '').toLowerCase() !== filters.exchange
+      ) {
+        return false;
+      }
+
+      if (
+        filters.pair &&
+        String(order.pair || '').toUpperCase() !== filters.pair
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
   private async loadLedgerEntries(
     filters: ResolvedAnalyticsQuery,
     scopedOrderIds: string[],
@@ -502,7 +622,7 @@ export class AdminAnalyticsService {
     const query = this.ledgerEntryRepository.createQueryBuilder('ledgerEntry');
 
     this.applyWindow(query, 'ledgerEntry', 'createdAt', filters);
-    this.applyScopedOrderIds(query, 'ledgerEntry', filters, scopedOrderIds);
+    this.applyScopedOrderIds(query, 'ledgerEntry', scopedOrderIds);
 
     return await query
       .orderBy('ledgerEntry.createdAt', 'DESC')
@@ -517,7 +637,7 @@ export class AdminAnalyticsService {
     const query = this.orderBalanceRepository.createQueryBuilder('balance');
 
     this.applyWindow(query, 'balance', 'updatedAt', filters);
-    this.applyScopedOrderIds(query, 'balance', filters, scopedOrderIds);
+    this.applyScopedOrderIds(query, 'balance', scopedOrderIds);
 
     return await query
       .orderBy('balance.updatedAt', 'DESC')
@@ -583,24 +703,16 @@ export class AdminAnalyticsService {
   private applyScopedOrderIds(
     query: { andWhere: (sql: string, params?: Record<string, unknown>) => any },
     alias: string,
-    filters: ResolvedAnalyticsQuery,
     scopedOrderIds: string[],
   ) {
-    if (filters.orderId) {
-      this.applyOrderFilter(query, alias, filters.orderId);
+    if (scopedOrderIds.length === 0) {
+      query.andWhere('1 = 0');
       return;
     }
 
-    if (filters.exchange || filters.pair) {
-      if (scopedOrderIds.length === 0) {
-        query.andWhere('1 = 0');
-        return;
-      }
-
-      query.andWhere(`${alias}.orderId IN (:...orderIds)`, {
-        orderIds: scopedOrderIds,
-      });
-    }
+    query.andWhere(`${alias}.orderId IN (:...orderIds)`, {
+      orderIds: scopedOrderIds,
+    });
   }
 
   private applyExchangePairFilters(
@@ -643,21 +755,20 @@ export class AdminAnalyticsService {
 
   private resolveScopedOrderIds(
     filters: ResolvedAnalyticsQuery,
-    trackedOrders: TrackedOrderProjection[],
+    eligibleOrders: MarketMakingOrderProjection[],
   ): string[] {
     if (filters.orderId) {
-      return [filters.orderId];
+      return eligibleOrders.some((order) => order.orderId === filters.orderId)
+        ? [filters.orderId]
+        : [];
     }
 
-    if (!filters.exchange && !filters.pair) {
-      return [];
-    }
-
-    return this.unique(trackedOrders.map((order) => order.orderId));
+    return this.unique(eligibleOrders.map((order) => order.orderId));
   }
 
   private resolveMidPairs(
     filters: ResolvedAnalyticsQuery,
+    eligibleOrders: MarketMakingOrderProjection[],
     trackedOrders: TrackedOrderProjection[],
     rows: Array<{ exchange?: string; pair?: string }>,
   ): Array<{ exchange: string; pair: string }> {
@@ -678,6 +789,10 @@ export class AdminAnalyticsService {
     };
 
     add(filters.exchange, filters.pair);
+
+    for (const order of eligibleOrders) {
+      add(order.exchangeName, order.pair);
+    }
 
     for (const order of trackedOrders) {
       add(order.exchange, order.pair);
@@ -735,6 +850,7 @@ export class AdminAnalyticsService {
     filters: ResolvedAnalyticsQuery,
     sources: {
       trackedOrders: TrackedOrderProjection[];
+      eligibleOrders: MarketMakingOrderProjection[];
       ledgerEntries: LedgerEntry[];
       orderBalances: MarketMakingOrderBalance[];
       strategyOrderIntents: StrategyOrderIntentEntity[];
@@ -748,6 +864,7 @@ export class AdminAnalyticsService {
     const market = this.resolveOrderMarket(
       filters,
       sources.trackedOrders,
+      sources.eligibleOrders,
       sources.executions,
       sources.strategyOrderIntents,
     );
@@ -852,6 +969,7 @@ export class AdminAnalyticsService {
       timeline: this.buildPerOrderTimeline(sources),
       dataSources: [
         'performance_service_order_performance',
+        'market_making_orders',
         'ledger_entries',
         'order_scoped_balances',
         'tracked_orders',
@@ -865,22 +983,28 @@ export class AdminAnalyticsService {
   private resolveOrderMarket(
     filters: ResolvedAnalyticsQuery,
     trackedOrders: TrackedOrderProjection[],
+    eligibleOrders: MarketMakingOrderProjection[],
     executions: StrategyExecutionHistory[],
     intents: StrategyOrderIntentEntity[],
   ): { exchange: string | null; pair: string | null } {
     const firstTracked = trackedOrders.find((order) => order.orderId);
+    const matchedOrder = filters.orderId
+      ? eligibleOrders.find((order) => order.orderId === filters.orderId)
+      : eligibleOrders[0];
     const firstExecution = executions.find((execution) => execution.orderId);
     const firstIntent = intents[0];
 
     return {
       exchange:
         filters.exchange ||
+        matchedOrder?.exchangeName?.toLowerCase() ||
         firstTracked?.exchange?.toLowerCase() ||
         firstExecution?.exchange?.toLowerCase() ||
         firstIntent?.exchange?.toLowerCase() ||
         null,
       pair:
         filters.pair ||
+        matchedOrder?.pair?.toUpperCase() ||
         firstTracked?.pair?.toUpperCase() ||
         firstExecution?.pair?.toUpperCase() ||
         firstIntent?.pair?.toUpperCase() ||
@@ -937,21 +1061,36 @@ export class AdminAnalyticsService {
     filters: ResolvedAnalyticsQuery,
     sources: {
       trackedOrders: TrackedOrderProjection[];
+      eligibleOrders: MarketMakingOrderProjection[];
+      directMarketMakingOrders: MarketMakingOrderProjection[];
       strategyOrderIntents: StrategyOrderIntentEntity[];
       executions: StrategyExecutionHistory[];
       orderBookMids: Array<ReturnType<AdminAnalyticsService['readOrderBookMid']>>;
     },
   ) {
+    const eligibleOrderIds = this.unique(
+      sources.eligibleOrders.map((order) => order.orderId),
+    );
+    const directMarketMakingOrderIds = this.unique(
+      sources.directMarketMakingOrders.map((order) => order.orderId),
+    );
     const scopedTrackedOrders = this.filterTrackedOrdersForAggregate(
       filters,
       sources.trackedOrders,
+      eligibleOrderIds,
     );
-    const eligibleOrderIds = this.unique(
-      scopedTrackedOrders.map((order) => order.orderId),
-    );
+    const directMarketMakingTrackedOrders =
+      this.filterTrackedOrdersForAggregate(
+        filters,
+        sources.trackedOrders,
+        directMarketMakingOrderIds,
+      );
     const snapshots: OrderAggregateSnapshot[] = [];
 
     for (const orderId of eligibleOrderIds) {
+      const sourceOrder = sources.eligibleOrders.find(
+        (order) => order.orderId === orderId,
+      );
       const performance = await this.performanceService.getOrderPerformance(
         orderId,
       );
@@ -963,6 +1102,7 @@ export class AdminAnalyticsService {
         orderId,
         orderTrackedOrders,
         sources.executions,
+        sourceOrder,
       );
       const pairAssets = this.parsePair(market.pair);
       const quoteCurrency = pairAssets.quote || null;
@@ -1022,6 +1162,10 @@ export class AdminAnalyticsService {
             : markUnavailableReason,
       });
     }
+
+    const directMarketMakingSnapshots = snapshots.filter((snapshot) =>
+      directMarketMakingOrderIds.includes(snapshot.orderId),
+    );
 
     const quoteCurrency = this.resolveCommonCurrency(
       snapshots.map((snapshot) => snapshot.quoteAsset),
@@ -1139,31 +1283,16 @@ export class AdminAnalyticsService {
       quoteUptime,
       pnlSeries,
       drawdown: this.buildDrawdown(pnlSeries, quoteCurrency),
-      directMarketMakingTotals: {
-        realizedPnl: this.availableMetric(realizedPnlQuote, quoteCurrency),
-        unrealizedPnl: this.metricFromNullable(
-          unrealizedPnlQuote,
-          quoteCurrency,
-          markUnavailableReason,
-        ),
-        netPnl: this.metricFromNullable(
-          netPnlQuote,
-          quoteCurrency,
-          markUnavailableReason,
-        ),
-        feeCost,
-        spreadCapture: spreadCaptureQuote,
-        inventorySkew: this.buildInventorySkew({
-          quantityByAsset: this.aggregateInventoryQuantityByAsset(snapshots),
-          costBasis: this.availableMetric(inventoryCostQuote, quoteCurrency),
-          notional: inventoryExposureNotional,
-        }),
-        inventoryExposure: inventoryExposureNotional,
-        fillRate,
-        quoteUptime,
-      },
+      directMarketMakingOrderIds,
+      directMarketMakingTotals: this.buildDirectMarketMakingAggregateTotals(
+        filters,
+        directMarketMakingSnapshots,
+        directMarketMakingTrackedOrders,
+        sources.strategyOrderIntents,
+      ),
       dataSources: [
         'performance_service_order_performance',
+        'market_making_orders',
         'tracked_orders',
         'strategy_order_intents',
         'order_book_tracker_mid',
@@ -1171,12 +1300,95 @@ export class AdminAnalyticsService {
     };
   }
 
+  private buildDirectMarketMakingAggregateTotals(
+    filters: ResolvedAnalyticsQuery,
+    snapshots: OrderAggregateSnapshot[],
+    trackedOrders: TrackedOrderProjection[],
+    intents: StrategyOrderIntentEntity[],
+  ) {
+    const quoteCurrency = this.resolveCommonCurrency(
+      snapshots.map((snapshot) => snapshot.quoteAsset),
+    );
+    const realizedPnlQuote = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.realizedPnlQuote),
+    );
+    const feesQuote = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.feesQuote),
+    );
+    const realizedNetPnlQuote = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.realizedNetPnlQuote),
+    );
+    const inventoryCostQuote = this.sumDecimals(
+      snapshots.map((snapshot) => snapshot.inventoryCostQuote),
+    );
+    const markDependentUnavailable = snapshots.some(
+      (snapshot) =>
+        snapshot.inventoryBaseQty.isGreaterThan(0) &&
+        (!snapshot.unrealizedPnlQuote || !snapshot.inventoryNotionalQuote),
+    );
+    const markUnavailableReason =
+      snapshots.find((snapshot) => snapshot.markUnavailableReason)
+        ?.markUnavailableReason || 'aggregate-mark-price-unavailable';
+    const unrealizedPnlQuote = markDependentUnavailable
+      ? null
+      : this.sumDecimals(
+          snapshots.map(
+            (snapshot) => snapshot.unrealizedPnlQuote || new BigNumber(0),
+          ),
+        );
+    const netPnlQuote = unrealizedPnlQuote
+      ? realizedNetPnlQuote.plus(unrealizedPnlQuote)
+      : null;
+    const inventoryNotionalQuote = markDependentUnavailable
+      ? null
+      : this.sumDecimals(
+          snapshots.map(
+            (snapshot) => snapshot.inventoryNotionalQuote || new BigNumber(0),
+          ),
+        );
+    const inventoryExposure = this.metricFromNullable(
+      inventoryNotionalQuote,
+      quoteCurrency,
+      markUnavailableReason,
+    );
+
+    return {
+      orderIds: snapshots.map((snapshot) => snapshot.orderId),
+      realizedPnl: this.availableMetric(realizedPnlQuote, quoteCurrency),
+      unrealizedPnl: this.metricFromNullable(
+        unrealizedPnlQuote,
+        quoteCurrency,
+        markUnavailableReason,
+      ),
+      netPnl: this.metricFromNullable(
+        netPnlQuote,
+        quoteCurrency,
+        markUnavailableReason,
+      ),
+      feeCost: this.availableMetric(feesQuote, quoteCurrency),
+      spreadCapture: this.availableMetric(realizedPnlQuote, quoteCurrency),
+      inventorySkew: this.buildInventorySkew({
+        quantityByAsset: this.aggregateInventoryQuantityByAsset(snapshots),
+        costBasis: this.availableMetric(inventoryCostQuote, quoteCurrency),
+        notional: inventoryExposure,
+      }),
+      inventoryExposure,
+      fillRate: this.buildFillRate(filters, trackedOrders, intents),
+      quoteUptime: this.buildQuoteUptime(filters, trackedOrders),
+    };
+  }
+
   private filterTrackedOrdersForAggregate(
     filters: ResolvedAnalyticsQuery,
     trackedOrders: TrackedOrderProjection[],
+    eligibleOrderIds: string[],
   ): TrackedOrderProjection[] {
     return trackedOrders.filter((order) => {
       if (!order.orderId) {
+        return false;
+      }
+
+      if (!eligibleOrderIds.includes(order.orderId)) {
         return false;
       }
 
@@ -1203,6 +1415,7 @@ export class AdminAnalyticsService {
     orderId: string,
     trackedOrders: TrackedOrderProjection[],
     executions: StrategyExecutionHistory[],
+    marketMakingOrder?: MarketMakingOrderProjection,
   ): { exchange: string | null; pair: string | null } {
     const firstTracked = trackedOrders[0];
     const firstExecution = executions.find(
@@ -1212,11 +1425,13 @@ export class AdminAnalyticsService {
     return {
       exchange:
         filters.exchange ||
+        marketMakingOrder?.exchangeName?.toLowerCase() ||
         firstTracked?.exchange?.toLowerCase() ||
         firstExecution?.exchange?.toLowerCase() ||
         null,
       pair:
         filters.pair ||
+        marketMakingOrder?.pair?.toUpperCase() ||
         firstTracked?.pair?.toUpperCase() ||
         firstExecution?.pair?.toUpperCase() ||
         null,
@@ -1403,13 +1618,17 @@ export class AdminAnalyticsService {
     sources: {
       trackedOrders: Array<Record<string, unknown>>;
       strategyOrderIntents: Array<Record<string, unknown>>;
+      directMarketMakingOrders: Array<Record<string, unknown>>;
     };
   }) {
     const perOrder = foundation.analytics.perOrder;
+    const directOrder = foundation.sources.directMarketMakingOrders.find(
+      (order) => order.orderId === foundation.scope.orderId,
+    );
 
-    if (!perOrder) {
+    if (!perOrder || !directOrder) {
       throw new BadRequestException(
-        'Direct Market Making dashboard order analytics are unavailable.',
+        'Direct Market Making dashboard order analytics require a non-deleted admin_direct order.',
       );
     }
 
@@ -1420,7 +1639,7 @@ export class AdminAnalyticsService {
         exchange: perOrder.exchange,
         pair: perOrder.pair,
       },
-      orderIds: perOrder.orderId ? [perOrder.orderId] : [],
+      orderIds: [perOrder.orderId],
       costRevenue: {
         spreadCapture: perOrder.spreadCapture.quote,
         feeCost: perOrder.fees.total,
@@ -1471,23 +1690,20 @@ export class AdminAnalyticsService {
         exchange: foundation.scope.exchange,
         pair: foundation.scope.pair,
       },
-      orderIds: aggregate.eligibleOrderIds,
+      orderIds: aggregate.directMarketMakingTotals.orderIds,
       costRevenue: {
-        spreadCapture: aggregate.spreadCapture.quote,
-        feeCost: aggregate.fees.total,
-        inventorySkew: this.buildInventorySkew({
-          quantityByAsset: aggregate.inventoryExposure.quantityByAsset,
-          costBasis: aggregate.inventoryExposure.costBasis,
-          notional: aggregate.inventoryExposure.notional,
-        }),
-        realizedPnl: aggregate.pnl.realized,
-        unrealizedPnl: aggregate.pnl.unrealized,
-        netPnl: aggregate.pnl.net,
-        fillRate: aggregate.fillRate,
-        quoteUptime: aggregate.quoteUptime,
+        spreadCapture: aggregate.directMarketMakingTotals.spreadCapture,
+        feeCost: aggregate.directMarketMakingTotals.feeCost,
+        inventorySkew: aggregate.directMarketMakingTotals.inventorySkew,
+        realizedPnl: aggregate.directMarketMakingTotals.realizedPnl,
+        unrealizedPnl: aggregate.directMarketMakingTotals.unrealizedPnl,
+        netPnl: aggregate.directMarketMakingTotals.netPnl,
+        fillRate: aggregate.directMarketMakingTotals.fillRate,
+        quoteUptime: aggregate.directMarketMakingTotals.quoteUptime,
       },
       sources: [
         'performance_service_order_performance',
+        'market_making_orders',
         'tracked_orders',
         'strategy_order_intents',
         'order_book_tracker_mid',
@@ -1907,6 +2123,17 @@ export class AdminAnalyticsService {
       status: order.status,
       createdAt: this.normalizeTimestamp(order.createdAt),
       updatedAt: this.normalizeTimestamp(order.updatedAt),
+    };
+  }
+
+  private serializeMarketMakingOrder(order: MarketMakingOrderProjection) {
+    return {
+      orderId: order.orderId,
+      exchange: order.exchangeName?.toLowerCase() || null,
+      pair: order.pair?.toUpperCase() || null,
+      source: order.source,
+      state: order.state,
+      createdAt: this.normalizeTimestamp(order.createdAt),
     };
   }
 

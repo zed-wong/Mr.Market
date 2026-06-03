@@ -87,6 +87,16 @@ describe('AdminAnalyticsService', () => {
         updatedAt: ts(4),
       },
     ]);
+    const marketMakingOrders = createRepository([
+      {
+        orderId: 'order-1',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        source: 'admin_direct',
+        state: 'active',
+        createdAt: ts(0),
+      },
+    ]);
     const trackedOrders = createRepository([
       {
         trackingKey: 'track-1',
@@ -196,13 +206,21 @@ describe('AdminAnalyticsService', () => {
       service: new AdminAnalyticsService(
         ledger.repository as any,
         balances.repository as any,
+        marketMakingOrders.repository as any,
         trackedOrders.repository as any,
         intents.repository as any,
         executions.repository as any,
         orderBookTracker as any,
         performanceService as any,
       ),
-      repositories: { ledger, balances, trackedOrders, intents, executions },
+      repositories: {
+        ledger,
+        balances,
+        marketMakingOrders,
+        trackedOrders,
+        intents,
+        executions,
+      },
       orderBookTracker,
       performanceService,
     };
@@ -233,6 +251,8 @@ describe('AdminAnalyticsService', () => {
       strategyOrderIntents: 1,
       strategyExecutions: 1,
       orderBookMids: 1,
+      marketMakingOrders: 1,
+      directMarketMakingOrders: 1,
     });
     expect(result.summary.ledgerAmountByAsset).toEqual([
       { asset: 'USDT', amount: '0.3' },
@@ -904,6 +924,24 @@ describe('AdminAnalyticsService', () => {
     const service = new AdminAnalyticsService(
       createRepository([]).repository as any,
       createRepository([]).repository as any,
+      createRepository([
+        {
+          orderId: 'order-1',
+          exchangeName: 'binance',
+          pair: 'BTC/USDT',
+          source: 'admin_direct',
+          state: 'active',
+          createdAt: ts(0),
+        },
+        {
+          orderId: 'order-2',
+          exchangeName: 'binance',
+          pair: 'BTC/USDT',
+          source: 'admin_direct',
+          state: 'active',
+          createdAt: ts(0),
+        },
+      ]).repository as any,
       trackedOrders.repository as any,
       intents.repository as any,
       createRepository([]).repository as any,
@@ -1094,6 +1132,24 @@ describe('AdminAnalyticsService', () => {
         },
       ]).repository as any,
       createRepository([]).repository as any,
+      createRepository([
+        {
+          orderId: 'order-btc',
+          exchangeName: 'binance',
+          pair: 'BTC/USDT',
+          source: 'admin_direct',
+          state: 'active',
+          createdAt: ts(0),
+        },
+        {
+          orderId: 'order-eth',
+          exchangeName: 'kraken',
+          pair: 'ETH/USDT',
+          source: 'payment_flow',
+          state: 'active',
+          createdAt: ts(0),
+        },
+      ]).repository as any,
       trackedOrders.repository as any,
       createRepository([]).repository as any,
       createRepository([]).repository as any,
@@ -1122,13 +1178,266 @@ describe('AdminAnalyticsService', () => {
       net: { status: 'available', value: '16.75', currency: 'USDT' },
     });
     expect(result.analytics.aggregate.directMarketMakingTotals).toMatchObject({
-      realizedPnl: { status: 'available', value: '8', currency: 'USDT' },
+      realizedPnl: { status: 'available', value: '5', currency: 'USDT' },
       unrealizedPnl: { status: 'available', value: '10', currency: 'USDT' },
-      netPnl: { status: 'available', value: '16.75', currency: 'USDT' },
-      feeCost: { status: 'available', value: '1.25', currency: 'USDT' },
-      spreadCapture: { status: 'available', value: '8', currency: 'USDT' },
-      fillRate: { status: 'available', value: '0.5' },
-      quoteUptime: { status: 'available', value: '0.6' },
+      netPnl: { status: 'available', value: '14', currency: 'USDT' },
+      feeCost: { status: 'available', value: '1', currency: 'USDT' },
+      spreadCapture: { status: 'available', value: '5', currency: 'USDT' },
+      fillRate: { status: 'available', value: '1' },
+      quoteUptime: { status: 'available', value: '0.2' },
     });
+  });
+
+  it('scopes pair ledger, balances, and aggregate eligibility from MarketMakingOrder rows when tracked orders are absent', async () => {
+    const ledger = createRepository([
+      {
+        entryId: 'entry-valid',
+        orderId: 'order-valid',
+        assetId: 'USDT',
+        amount: '12.5',
+        type: 'fill_settle',
+        createdAt: ts(4),
+      },
+    ]);
+    const balances = createRepository([
+      {
+        orderId: 'order-valid',
+        assetId: 'BTC',
+        available: '0.25',
+        locked: '0',
+        total: '0.25',
+        initialDeposit: '0',
+        realizedDelta: '0',
+        feePaid: '0',
+        updatedAt: ts(5),
+      },
+    ]);
+    const marketMakingOrders = createRepository([
+      {
+        orderId: 'order-valid',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        source: 'admin_direct',
+        state: 'active',
+        createdAt: ts(0),
+      },
+    ]);
+    const performanceService = {
+      getOrderPerformance: jest.fn(async () => ({
+        series: [{ t: ts(5), realized: '12.5', fees: '0.5', net: '12' }],
+        summary: {
+          realizedPnlQuote: '12.5',
+          feesQuote: '0.5',
+          netPnlQuote: '12',
+          tradedQuoteVolume: '250',
+          effectiveSpreadBps: '500',
+          fillCount: 1,
+          otherFees: [],
+          inventoryBaseQty: '0.25',
+          inventoryCostQuote: '25',
+          inventoryAverageCostQuote: '100',
+        },
+      })),
+    };
+    const orderBookTracker = {
+      getOrderBook: jest.fn(() => ({
+        bids: [[109, 1]],
+        asks: [[111, 1]],
+        sequence: 12,
+      })),
+      getLastUpdateAt: jest.fn(() => Date.parse(ts(8))),
+      isStale: jest.fn(() => false),
+      queueSnapshot: jest.fn(),
+      stop: jest.fn(),
+    };
+    const service = new AdminAnalyticsService(
+      ledger.repository as any,
+      balances.repository as any,
+      marketMakingOrders.repository as any,
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      orderBookTracker as any,
+      performanceService as any,
+    );
+
+    const result = await service.getFoundation({
+      scope: 'pair',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.sources.trackedOrders).toEqual([]);
+    expect(result.sources.ledgerEntries).toEqual([
+      expect.objectContaining({ orderId: 'order-valid', amount: '12.5' }),
+    ]);
+    expect(result.sources.orderBalances).toEqual([
+      expect.objectContaining({ orderId: 'order-valid', total: '0.25' }),
+    ]);
+    expect(result.analytics.aggregate.eligibleOrderIds).toEqual([
+      'order-valid',
+    ]);
+    expect(performanceService.getOrderPerformance).toHaveBeenCalledWith(
+      'order-valid',
+    );
+    expect(ledger.builders[0].clauses).toContainEqual(
+      expect.objectContaining({ params: { orderIds: ['order-valid'] } }),
+    );
+    expect(balances.builders[0].clauses).toContainEqual(
+      expect.objectContaining({ params: { orderIds: ['order-valid'] } }),
+    );
+    expect(orderBookTracker.getOrderBook).toHaveBeenCalledWith(
+      'binance',
+      'BTC/USDT',
+    );
+  });
+
+  it('restricts aggregate Direct MM dashboard totals to non-deleted admin_direct orders', async () => {
+    const marketMakingOrders = createRepository([
+      {
+        orderId: 'direct-active',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        source: 'admin_direct',
+        state: 'active',
+        createdAt: ts(0),
+      },
+      {
+        orderId: 'direct-deleted',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        source: 'admin_direct',
+        state: 'deleted',
+        createdAt: ts(0),
+      },
+      {
+        orderId: 'payment-active',
+        exchangeName: 'binance',
+        pair: 'BTC/USDT',
+        source: 'payment_flow',
+        state: 'active',
+        createdAt: ts(0),
+      },
+    ]);
+    const trackedOrders = createRepository([
+      {
+        trackingKey: 'track-direct',
+        orderId: 'direct-active',
+        strategyKey: 'strategy-direct',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        cumulativeFilledQty: '1',
+        status: 'filled',
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+      {
+        trackingKey: 'track-deleted',
+        orderId: 'direct-deleted',
+        strategyKey: 'strategy-deleted',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        cumulativeFilledQty: '1',
+        status: 'filled',
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+      {
+        trackingKey: 'track-payment',
+        orderId: 'payment-active',
+        strategyKey: 'strategy-payment',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        cumulativeFilledQty: '1',
+        status: 'filled',
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+    ]);
+    const performanceService = {
+      getOrderPerformance: jest.fn(async (orderId: string) => {
+        const summaries = {
+          'direct-active': {
+            realizedPnlQuote: '10',
+            feesQuote: '1',
+            netPnlQuote: '9',
+            tradedQuoteVolume: '100',
+            inventoryBaseQty: '0',
+            inventoryCostQuote: '0',
+            inventoryAverageCostQuote: null,
+          },
+          'payment-active': {
+            realizedPnlQuote: '100',
+            feesQuote: '10',
+            netPnlQuote: '90',
+            tradedQuoteVolume: '1000',
+            inventoryBaseQty: '0',
+            inventoryCostQuote: '0',
+            inventoryAverageCostQuote: null,
+          },
+        };
+
+        if (!(orderId in summaries)) {
+          throw new Error(`Unexpected performance lookup for ${orderId}`);
+        }
+
+        return {
+          series: [
+            {
+              t: ts(2),
+              realized: summaries[orderId].realizedPnlQuote,
+              fees: summaries[orderId].feesQuote,
+              net: summaries[orderId].netPnlQuote,
+            },
+          ],
+          summary: {
+            ...summaries[orderId],
+            effectiveSpreadBps: '1000',
+            fillCount: 1,
+            otherFees: [],
+          },
+        };
+      }),
+    };
+    const orderBookTracker = {
+      getOrderBook: jest.fn(() => ({
+        bids: [[100, 1]],
+        asks: [[102, 1]],
+        sequence: 9,
+      })),
+      getLastUpdateAt: jest.fn(() => Date.parse(ts(8))),
+      isStale: jest.fn(() => false),
+      queueSnapshot: jest.fn(),
+      stop: jest.fn(),
+    };
+    const service = new AdminAnalyticsService(
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      marketMakingOrders.repository as any,
+      trackedOrders.repository as any,
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      orderBookTracker as any,
+      performanceService as any,
+    );
+
+    const result = await service.getDirectMarketMakingDashboard({
+      scope: 'admin',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.dashboard.orderIds).toEqual(['direct-active']);
+    expect(result.dashboard.costRevenue).toMatchObject({
+      realizedPnl: { status: 'available', value: '10', currency: 'USDT' },
+      feeCost: { status: 'available', value: '1', currency: 'USDT' },
+      spreadCapture: { status: 'available', value: '10', currency: 'USDT' },
+      fillRate: { status: 'available', value: '1', filledQuotes: 1 },
+    });
+    expect(performanceService.getOrderPerformance).not.toHaveBeenCalledWith(
+      'direct-deleted',
+    );
   });
 });
