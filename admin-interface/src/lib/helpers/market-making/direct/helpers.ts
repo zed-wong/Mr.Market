@@ -196,6 +196,127 @@ export interface DualAccountVolumeFields {
   cadenceVariance: string;
   tradeAmountVariance: string;
   priceOffsetVariance: string;
+  mode?: EfficientDualAccountVolumeMode;
+}
+
+export type EfficientDualAccountVolumeMode =
+  | "cheapest_capital"
+  | "balanced"
+  | "fastest_volume";
+
+export interface DirectStrategyOptionLike {
+  id: string;
+  key?: string;
+  name?: string;
+  controllerType?: string;
+  directExecutionMode?: string | null;
+}
+
+export interface EfficientDualAccountModeOption {
+  value: EfficientDualAccountVolumeMode;
+  label: string;
+  description: string;
+}
+
+export type DirectReadinessSubmitStatus =
+  | "missing"
+  | "loading"
+  | "failed"
+  | "stale"
+  | "blocked"
+  | "ready";
+
+export const EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE =
+  "efficientDualAccountVolume";
+
+export const EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY =
+  "efficient-dual-account-volume";
+
+const LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES = new Set([
+  "dualAccountVolume",
+  "dualAccountBestCapacityVolume",
+]);
+
+const SUPPORTED_EFFICIENT_DUAL_ACCOUNT_MODES: EfficientDualAccountVolumeMode[] =
+  ["cheapest_capital", "balanced", "fastest_volume"];
+
+export function normalizeEfficientDualAccountMode(
+  value: unknown,
+): EfficientDualAccountVolumeMode {
+  return SUPPORTED_EFFICIENT_DUAL_ACCOUNT_MODES.includes(
+    value as EfficientDualAccountVolumeMode,
+  )
+    ? (value as EfficientDualAccountVolumeMode)
+    : "balanced";
+}
+
+export function getEfficientDualAccountModeOptions(): EfficientDualAccountModeOption[] {
+  return [
+    {
+      value: "cheapest_capital",
+      label: "Cheapest capital",
+      description:
+        "Prioritizes reusing available balances and minimizing extra capital.",
+    },
+    {
+      value: "balanced",
+      label: "Balanced",
+      description:
+        "Balances capital efficiency, volume pace, fees, and future cycle capacity.",
+    },
+    {
+      value: "fastest_volume",
+      label: "Fastest volume",
+      description:
+        "Prioritizes eligible cycle volume while still respecting exchange minimums.",
+    },
+  ];
+}
+
+export function isEfficientDualAccountControllerType(
+  controllerType: unknown,
+): boolean {
+  return controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE;
+}
+
+export function isLegacyDualAccountControllerType(
+  controllerType: unknown,
+): boolean {
+  return LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES.has(String(controllerType || ""));
+}
+
+export function isEfficientDualAccountStrategy(
+  strategy: DirectStrategyOptionLike | null | undefined,
+): boolean {
+  if (!strategy) return false;
+  return (
+    strategy.controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE ||
+    strategy.key === EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY ||
+    /efficient\s+dual\s+account\s+volume/i.test(strategy.name || "")
+  );
+}
+
+export function filterDirectCreateStrategies<T extends DirectStrategyOptionLike>(
+  strategies: T[],
+): T[] {
+  return strategies.filter(isEfficientDualAccountStrategy);
+}
+
+export function getDirectReadinessSubmitStatus(args: {
+  requiredInputsComplete: boolean;
+  loading: boolean;
+  failed: boolean;
+  displayedSignature: string;
+  currentSignature: string;
+  canStart?: boolean | null;
+}): DirectReadinessSubmitStatus {
+  if (!args.requiredInputsComplete) return "missing";
+  if (args.loading) return "loading";
+  if (args.failed) return "failed";
+  if (!args.displayedSignature || args.displayedSignature !== args.currentSignature) {
+    return "stale";
+  }
+  return args.canStart ? "ready" : "blocked";
 }
 
 export interface StrategySchemaProperty {
@@ -223,6 +344,11 @@ const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
   "makerApiKeyId",
   "takerApiKeyId",
   "apiKeyId",
+]);
+
+const EFFICIENT_DUAL_ACCOUNT_HIDDEN_MECHANICS_FIELDS = new Set([
+  "cycleMode",
+  "dynamicRoleSwitching",
 ]);
 
 function normalizeMarketSymbol(symbol: unknown): string {
@@ -415,15 +541,18 @@ export function resolveInventorySkewAllocation(
 
 export function isDualDirectOrderControllerType(controllerType: unknown): boolean {
   return (
-    controllerType === "dualAccountVolume" ||
-    controllerType === "dualAccountBestCapacityVolume"
+    isLegacyDualAccountControllerType(controllerType) ||
+    isEfficientDualAccountControllerType(controllerType)
   );
 }
 
 export function isBestCapacityDirectOrderControllerType(
   controllerType: unknown,
 ): boolean {
-  return controllerType === "dualAccountBestCapacityVolume";
+  return (
+    controllerType === "dualAccountBestCapacityVolume" ||
+    isEfficientDualAccountControllerType(controllerType)
+  );
 }
 
 export function isSchemaDrivenDirectOrderControllerType(
@@ -432,8 +561,7 @@ export function isSchemaDrivenDirectOrderControllerType(
   if (!controllerType) return false;
   return !(
     controllerType === "pureMarketMaking" ||
-    controllerType === "dualAccountVolume" ||
-    controllerType === "dualAccountBestCapacityVolume"
+    isDualDirectOrderControllerType(controllerType)
   );
 }
 
@@ -442,8 +570,7 @@ export function isKnownDirectStrategyControllerType(
 ): boolean {
   return (
     controllerType === "pureMarketMaking" ||
-    controllerType === "dualAccountVolume" ||
-    controllerType === "dualAccountBestCapacityVolume"
+    isDualDirectOrderControllerType(controllerType)
   );
 }
 
@@ -502,10 +629,18 @@ export function normalizeConfigOverrides(
   dualFields?: DualAccountVolumeFields,
 ): Record<string, unknown> {
   const isDualAccountStrategy = isDualDirectOrderControllerType(controllerType);
+  const isEfficientDualAccountStrategy =
+    isEfficientDualAccountControllerType(controllerType);
   const accumulator = configRows.reduce<Record<string, unknown>>((acc, row) => {
     const key = row.key.trim();
 
     if (!key || DIRECT_RESERVED_CONFIG_FIELDS.has(key)) return acc;
+    if (
+      isEfficientDualAccountStrategy &&
+      EFFICIENT_DUAL_ACCOUNT_HIDDEN_MECHANICS_FIELDS.has(key)
+    ) {
+      return acc;
+    }
     acc[key] = parseConfigValue(row.value);
     return acc;
   }, {});
@@ -513,7 +648,10 @@ export function normalizeConfigOverrides(
     const num = Number(orderAmount);
     const value = isNaN(num) ? orderAmount : num;
 
-    if (controllerType === "dualAccountBestCapacityVolume") {
+    if (
+      controllerType === "dualAccountBestCapacityVolume" ||
+      isEfficientDualAccountStrategy
+    ) {
       accumulator["maxOrderAmount"] = value;
     } else if (isDualAccountStrategy) {
       accumulator["baseTradeAmount"] = value;
@@ -526,7 +664,10 @@ export function normalizeConfigOverrides(
     const value = isNaN(num) ? orderSpread : num;
     const fractionalSpread = isNaN(num) ? orderSpread : num / 100;
 
-    if (controllerType === "dualAccountBestCapacityVolume") {
+    if (
+      controllerType === "dualAccountBestCapacityVolume" ||
+      isEfficientDualAccountStrategy
+    ) {
       // Best-capacity strategy does not use spread configuration.
     } else if (isDualAccountStrategy) {
       accumulator["baseIncrementPercentage"] = value;
@@ -536,6 +677,28 @@ export function normalizeConfigOverrides(
     }
   }
   if (isDualAccountStrategy && dualFields) {
+    if (isEfficientDualAccountStrategy) {
+      accumulator["mode"] = normalizeEfficientDualAccountMode(dualFields.mode);
+      if (dualFields.intervalTime) {
+        const num = Number(dualFields.intervalTime);
+        if (!isNaN(num)) accumulator["interval"] = num;
+      }
+      if (dualFields.targetQuoteVolume) {
+        const num = Number(dualFields.targetQuoteVolume);
+        if (!isNaN(num)) accumulator["dailyVolumeTarget"] = num;
+      }
+      if (dualFields.tradeAmountVariance) {
+        const num = Number(dualFields.tradeAmountVariance);
+        if (!isNaN(num)) accumulator["tradeAmountVariance"] = num;
+      }
+      if (dualFields.priceOffsetVariance) {
+        const num = Number(dualFields.priceOffsetVariance);
+        if (!isNaN(num)) accumulator["priceOffsetVariance"] = num;
+      }
+
+      return accumulator;
+    }
+
     if (controllerType === "dualAccountBestCapacityVolume") {
       if (dualFields.intervalTime) {
         const num = Number(dualFields.intervalTime);

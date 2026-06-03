@@ -12,6 +12,7 @@
 
     import { getAllAPIKeys } from "$lib/helpers/mrm/admin/exchanges";
     import {
+        evaluateDirectReadiness,
         getDirectWalletStatus,
         getDirectOrderStatus,
         getMarketMakingOrderPerformance,
@@ -32,6 +33,9 @@
         AdminCampaign,
         DirectOrderStatus,
         DirectOrderSummary,
+        DirectReadinessResult,
+        DirectStartPayload,
+        EfficientDualAccountVolumeMode,
         DirectWalletStatus,
     } from "$lib/types/hufi/admin-direct-market-making";
     import type { GrowInfo } from "$lib/types/hufi/grow";
@@ -39,13 +43,17 @@
 
     import {
         buildGenericSchemaConfigOverrides,
+        filterDirectCreateStrategies,
         formatOrderAmountForDisplay,
         getDirectOrderActionAvailability,
+        getDirectReadinessSubmitStatus,
         getErrorMessage,
         getRecoveryHint,
+        isEfficientDualAccountControllerType,
         isDualDirectOrderControllerType,
         isSchemaDrivenDirectOrderControllerType,
         normalizeConfigOverrides,
+        normalizeEfficientDualAccountMode,
         resolveMinOrderAmount,
         type StrategySchema,
         type ExchangeMarketMetadata,
@@ -285,9 +293,16 @@
     let postOnlySide = "buy";
     let dynamicRoleSwitching = false;
     let targetQuoteVolume = "";
+    let efficientMode: EfficientDualAccountVolumeMode = "balanced";
     let configRows: OverrideRow[] = [{ key: "", value: "" }];
     let genericConfig: Record<string, unknown> = {};
     let genericConfigStrategyDefinitionId = "";
+    let directReadiness: DirectReadinessResult | null = null;
+    let directReadinessSignature = "";
+    let directReadinessRequestSignature = "";
+    let directReadinessRequestId = 0;
+    let directReadinessLoading = false;
+    let directReadinessError = "";
     let exchangeMarketsById: Record<string, ExchangeMarketMetadata[]> = {};
     let loadingExchangeMarketIds: string[] = [];
     let loadedExchangeMarketIds: string[] = [];
@@ -360,12 +375,25 @@
         selectedPairConfig?.amount_significant_figures,
     );
     $: selectedStrategy =
-        strategies.find(
+        directCreateStrategies.find(
             (strategy) => strategy.id === startStrategyDefinitionId,
         ) || null;
     $: selectedControllerType = selectedStrategy?.controllerType || "";
+    $: directCreateStrategies = filterDirectCreateStrategies(strategies);
+    $: if (
+        showStartForm &&
+        directCreateStrategies.length > 0 &&
+        (!startStrategyDefinitionId ||
+            !directCreateStrategies.some(
+                (strategy) => strategy.id === startStrategyDefinitionId,
+            ))
+    ) {
+        startStrategyDefinitionId = directCreateStrategies[0].id;
+    }
     $: selectedStrategySchema =
         (selectedStrategy?.configSchema as StrategySchema) || {};
+    $: isEfficientDualAccountStrategy =
+        isEfficientDualAccountControllerType(selectedControllerType);
     $: isDualAccountStrategy =
         selectedStrategy?.directExecutionMode === "dual_account" ||
         isDualDirectOrderControllerType(selectedControllerType);
@@ -407,6 +435,48 @@
     ) {
         genericConfigStrategyDefinitionId = startStrategyDefinitionId;
         genericConfig = { ...(selectedStrategy?.defaultConfig || {}) };
+        if (isEfficientDualAccountStrategy) {
+            efficientMode = normalizeEfficientDualAccountMode(
+                selectedStrategy?.defaultConfig?.mode,
+            );
+        }
+    }
+    $: directReadinessRequiredInputsComplete =
+        showStartForm &&
+        isEfficientDualAccountStrategy &&
+        Boolean(
+            startExchangeName &&
+                startPair &&
+                startStrategyDefinitionId &&
+                selectedMakerApiKey &&
+                selectedTakerApiKey &&
+                String(selectedMakerApiKey.key_id) !==
+                    String(selectedTakerApiKey.key_id),
+        );
+    $: directReadinessCurrentSignature =
+        directReadinessRequiredInputsComplete
+            ? JSON.stringify(buildStartPayload())
+            : "";
+    $: directReadinessStatus = getDirectReadinessSubmitStatus({
+        requiredInputsComplete: directReadinessRequiredInputsComplete,
+        loading: directReadinessLoading,
+        failed: Boolean(directReadinessError),
+        displayedSignature: directReadinessSignature,
+        currentSignature: directReadinessCurrentSignature,
+        canStart: directReadiness?.canStart ?? null,
+    });
+    $: if (
+        directReadinessRequiredInputsComplete &&
+        directReadinessCurrentSignature &&
+        directReadinessCurrentSignature !== directReadinessRequestSignature
+    ) {
+        void refreshDirectReadiness(directReadinessCurrentSignature);
+    }
+    $: if (!directReadinessRequiredInputsComplete && !directReadinessLoading) {
+        directReadinessError = "";
+        directReadinessSignature = "";
+        directReadinessRequestSignature = "";
+        directReadiness = null;
     }
 
     function getToken(): string {
@@ -513,6 +583,12 @@
         postOnlySide = "buy";
         dynamicRoleSwitching = false;
         targetQuoteVolume = "";
+        efficientMode = "balanced";
+        directReadiness = null;
+        directReadinessSignature = "";
+        directReadinessRequestSignature = "";
+        directReadinessError = "";
+        directReadinessLoading = false;
     }
 
     function applyOrderStatusToStartForm(
@@ -539,6 +615,7 @@
         postOnlySide = status.orderConfig.postOnlySide || "buy";
         dynamicRoleSwitching = status.orderConfig.dynamicRoleSwitching ?? false;
         targetQuoteVolume = status.orderConfig.targetQuoteVolume || "";
+        efficientMode = normalizeEfficientDualAccountMode(status.orderConfig.mode);
         configRows = [{ key: "", value: "" }];
         genericConfig = {
             ...(strategies.find(
@@ -548,6 +625,113 @@
         genericConfigStrategyDefinitionId = startStrategyDefinitionId;
         showStartForm = true;
         prefillingFromOrderId = order.orderId;
+    }
+
+    function buildDirectConfigOverrides(): Record<string, unknown> {
+        const baseConfigOverrides = normalizeConfigOverrides(
+            selectedControllerType,
+            configRows,
+            orderAmount,
+            orderSpread,
+            {
+                intervalTime,
+                numTrades,
+                pricePushRate,
+                postOnlySide,
+                dynamicRoleSwitching,
+                targetQuoteVolume,
+                cadenceVariance: "",
+                tradeAmountVariance: "",
+                priceOffsetVariance: "",
+                mode: efficientMode,
+            },
+        );
+
+        return isSchemaDrivenStrategy
+            ? buildGenericSchemaConfigOverrides(
+                  selectedStrategySchema,
+                  genericConfig,
+              )
+            : {
+                  ...baseConfigOverrides,
+                  ...(isPureMarketMakingStrategy
+                      ? buildGenericSchemaConfigOverrides(
+                            selectedStrategySchema,
+                            genericConfig,
+                            ADAPTIVE_PMM_SCHEMA_EXCLUDED_FIELDS,
+                        )
+                      : {}),
+              };
+    }
+
+    function buildStartPayload(): DirectStartPayload | null {
+        if (
+            !startExchangeName ||
+            !startPair ||
+            !startStrategyDefinitionId
+        ) {
+            return null;
+        }
+
+        const configOverrides = buildDirectConfigOverrides();
+
+        return isDualAccountStrategy
+            ? selectedMakerApiKey && selectedTakerApiKey
+                ? {
+                      exchangeName: startExchangeName,
+                      pair: startPair,
+                      strategyDefinitionId: startStrategyDefinitionId,
+                      makerApiKeyId: selectedMakerApiKey.key_id,
+                      takerApiKeyId: selectedTakerApiKey.key_id,
+                      configOverrides,
+                  }
+                : null
+            : selectedApiKey
+              ? {
+                    exchangeName: startExchangeName,
+                    pair: startPair,
+                    strategyDefinitionId: startStrategyDefinitionId,
+                    apiKeyId: selectedApiKey.key_id,
+                    configOverrides,
+                }
+              : null;
+    }
+
+    async function refreshDirectReadiness(signature: string) {
+        const token = getToken();
+        const payload = buildStartPayload();
+
+        if (!token || !payload || !isEfficientDualAccountStrategy) {
+            return;
+        }
+
+        const requestId = ++directReadinessRequestId;
+        directReadinessRequestSignature = signature;
+        directReadinessLoading = true;
+        directReadinessError = "";
+
+        try {
+            const result = await evaluateDirectReadiness(payload, token);
+
+            if (requestId !== directReadinessRequestId) {
+                return;
+            }
+
+            directReadiness = result;
+            directReadinessSignature = signature;
+        } catch (error) {
+            if (requestId !== directReadinessRequestId) {
+                return;
+            }
+
+            directReadiness = null;
+            directReadinessSignature = signature;
+            directReadinessError = getErrorMessage(error);
+        } finally {
+            if (requestId === directReadinessRequestId) {
+                directReadinessLoading = false;
+            }
+        }
     }
 
     async function handleStartOrder() {
@@ -614,6 +798,16 @@
             return;
         }
 
+        if (
+            isEfficientDualAccountStrategy &&
+            directReadinessStatus !== "ready"
+        ) {
+            toast.error($_("admin_direct_mm_readiness_start_blocked"), {
+                description: directReadinessError || $_("admin_direct_mm_readiness_start_blocked_hint"),
+            });
+            return;
+        }
+
         isStarting = true;
         startCooldown = true;
         setTimeout(() => {
@@ -621,54 +815,10 @@
         }, 2000);
 
         try {
-            const baseConfigOverrides = normalizeConfigOverrides(
-                selectedControllerType,
-                configRows,
-                orderAmount,
-                orderSpread,
-                {
-                    intervalTime,
-                    numTrades,
-                    pricePushRate,
-                    postOnlySide,
-                    dynamicRoleSwitching,
-                    targetQuoteVolume,
-                    cadenceVariance: "",
-                    tradeAmountVariance: "",
-                    priceOffsetVariance: "",
-                },
-            );
-            const configOverrides = isSchemaDrivenStrategy
-                ? buildGenericSchemaConfigOverrides(
-                      selectedStrategySchema,
-                      genericConfig,
-                  )
-                : {
-                      ...baseConfigOverrides,
-                      ...(isPureMarketMakingStrategy
-                          ? buildGenericSchemaConfigOverrides(
-                                selectedStrategySchema,
-                                genericConfig,
-                                ADAPTIVE_PMM_SCHEMA_EXCLUDED_FIELDS,
-                            )
-                          : {}),
-                  };
-            const payload = isDualAccountStrategy
-                ? {
-                      exchangeName: startExchangeName,
-                      pair: startPair,
-                      strategyDefinitionId: startStrategyDefinitionId,
-                      makerApiKeyId: selectedMakerApiKey!.key_id,
-                      takerApiKeyId: selectedTakerApiKey!.key_id,
-                      configOverrides,
-                  }
-                : {
-                      exchangeName: startExchangeName,
-                      pair: startPair,
-                      strategyDefinitionId: startStrategyDefinitionId,
-                      apiKeyId: selectedApiKey!.key_id,
-                      configOverrides,
-                  };
+            const payload = buildStartPayload();
+            if (!payload) {
+                throw new Error($_("admin_direct_mm_error_missing_fields"));
+            }
             const result = await startDirectOrder(payload, token);
             const successExchange = startExchangeName;
             const successPair = startPair;
@@ -1155,7 +1305,7 @@
     {filteredPairs}
     {filteredApiKeys}
     blockedApiKeyViews={blockedStartApiKeyViews}
-    {strategies}
+    strategies={directCreateStrategies}
     {prefillingFromOrderId}
     {selectedStrategySchema}
     bind:genericConfig
@@ -1177,6 +1327,10 @@
     bind:postOnlySide
     bind:dynamicRoleSwitching
     bind:targetQuoteVolume
+    bind:efficientMode
+    readiness={directReadiness}
+    readinessStatus={directReadinessStatus}
+    readinessError={directReadinessError}
     onSubmit={handleStartOrder}
     onClose={resetStartForm}
 />

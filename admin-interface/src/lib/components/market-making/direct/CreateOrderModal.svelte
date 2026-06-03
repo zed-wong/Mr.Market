@@ -8,10 +8,17 @@
     import type { DirectApiKeyUseView } from "$lib/helpers/market-making/direct/api-key-filter";
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
+    import type {
+        DirectReadinessResult,
+        EfficientDualAccountVolumeMode,
+    } from "$lib/types/hufi/admin-direct-market-making";
     import {
+        getEfficientDualAccountModeOptions,
+        isEfficientDualAccountControllerType,
         isBestCapacityDirectOrderControllerType,
         isDualAccountOrder,
         isSchemaDrivenDirectOrderControllerType,
+        type DirectReadinessSubmitStatus,
         type StrategySchema,
     } from "$lib/helpers/market-making/direct/helpers";
 
@@ -48,6 +55,10 @@
     export let postOnlySide = "";
     export let dynamicRoleSwitching = true;
     export let targetQuoteVolume = "";
+    export let efficientMode: EfficientDualAccountVolumeMode = "balanced";
+    export let readiness: DirectReadinessResult | null = null;
+    export let readinessStatus: DirectReadinessSubmitStatus = "missing";
+    export let readinessError = "";
 
     export let onSubmit: () => void;
     export let onClose: () => void;
@@ -86,6 +97,8 @@
     $: isBestCapacityStrategy = isBestCapacityDirectOrderControllerType(
         selectedControllerType,
     );
+    $: isEfficientDualAccountStrategy =
+        isEfficientDualAccountControllerType(selectedControllerType);
     $: isSchemaDrivenStrategy = isSchemaDrivenDirectOrderControllerType(
         selectedControllerType,
     );
@@ -137,7 +150,9 @@
         dualRequiredMissing ||
         dualAccountSelectionMissing ||
         dualAccountUnavailable ||
-        dualSameAccount;
+        dualSameAccount ||
+        (isEfficientDualAccountStrategy && readinessStatus !== "ready");
+    $: efficientModeOptions = getEfficientDualAccountModeOptions();
 
     $: searchedPairs = pairSearch
         ? filteredPairs.filter((p) =>
@@ -204,6 +219,31 @@
             (permission) => permission.capability === "trade",
         );
         return `${apiKey.name} (${apiKey.key_id}) · ${view.label}${tradePermission ? ` · ${tradePermission.label}` : ""}`;
+    }
+
+    function readinessTitle(status: DirectReadinessSubmitStatus): string {
+        if (status === "ready") return "Ready to start";
+        if (status === "blocked") return "Cannot start yet";
+        if (status === "loading") return "Checking readiness";
+        if (status === "failed") return "Readiness check failed";
+        if (status === "stale") return "Readiness is stale";
+        return "Complete selections to check readiness";
+    }
+
+    function readinessDescription(status: DirectReadinessSubmitStatus): string {
+        if (status === "ready") return "Planner readiness allows direct start for the selected accounts.";
+        if (status === "blocked") return "Planner readiness found blockers. Review the account and asset details below.";
+        if (status === "loading") return "Waiting for backend planner readiness before enabling start.";
+        if (status === "failed") return readinessError || "Retry after fixing the readiness request.";
+        if (status === "stale") return "Inputs changed; waiting for a fresh planner readiness result.";
+        return "Select exchange, pair, two accounts, mode, and cycle limits.";
+    }
+
+    function readinessBadgeClass(status: DirectReadinessSubmitStatus): string {
+        if (status === "ready") return "bg-success/10 text-success";
+        if (status === "blocked" || status === "failed") return "bg-error/10 text-error";
+        if (status === "loading" || status === "stale") return "bg-warning/10 text-warning";
+        return "bg-base-300/50 text-base-content/60";
     }
 
     import SchemaConfigForm from "$lib/components/admin/settings/strategies/SchemaConfigForm.svelte";
@@ -288,6 +328,37 @@
                         {/each}
                     </select>
                 </div>
+
+                {#if isEfficientDualAccountStrategy}
+                    <div class="bg-base-200/40 rounded-xl p-4">
+                        <span
+                            class="text-xs font-semibold text-base-content/50 tracking-wider block mb-3"
+                            >Efficient volume mode</span
+                        >
+                        <div class="grid grid-cols-1 gap-2">
+                            {#each efficientModeOptions as option}
+                                <label
+                                    class="flex items-start gap-3 rounded-lg border border-base-300 bg-base-100 p-3 cursor-pointer hover:border-primary"
+                                >
+                                    <input
+                                        type="radio"
+                                        class="radio radio-primary radio-sm mt-0.5"
+                                        bind:group={efficientMode}
+                                        value={option.value}
+                                    />
+                                    <span class="min-w-0">
+                                        <span class="block text-sm font-semibold text-base-content">
+                                            {option.label}
+                                        </span>
+                                        <span class="block text-xs text-base-content/60 mt-1">
+                                            {option.description}
+                                        </span>
+                                    </span>
+                                </label>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
 
                 <!-- Exchange -->
                 <div class="bg-base-200/40 rounded-xl p-4">
@@ -989,6 +1060,99 @@
                                 {/if}
                             </div>
                         {/if}
+                    {/if}
+
+                    {#if isEfficientDualAccountStrategy}
+                        <div class="bg-base-200/40 rounded-xl p-4" data-testid="efficient-readiness-panel">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <span class="text-xs font-semibold text-base-content/50 tracking-wider block">
+                                        Planner readiness
+                                    </span>
+                                    <span class="text-sm font-semibold text-base-content block mt-1">
+                                        {readinessTitle(readinessStatus)}
+                                    </span>
+                                    <span class="text-xs text-base-content/60 block mt-1">
+                                        {readinessDescription(readinessStatus)}
+                                    </span>
+                                </div>
+                                <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {readinessBadgeClass(readinessStatus)}">
+                                    {readinessStatus.replace("_", " ")}
+                                </span>
+                            </div>
+
+                            {#if readinessStatus === "loading"}
+                                <div class="mt-3 flex items-center gap-2 text-xs text-base-content/60">
+                                    <span class="loading loading-spinner loading-xs"></span>
+                                    <span>Waiting for deterministic planner readiness</span>
+                                </div>
+                            {/if}
+
+                            {#if readiness}
+                                {#if readiness.bestFirstAction}
+                                    <div class="mt-3 rounded-lg border border-base-300 bg-base-100 p-3">
+                                        <span class="text-[10px] font-semibold text-base-content/50 block mb-1">
+                                            Best first action
+                                        </span>
+                                        <span class="text-xs text-base-content block">
+                                            Maker {readiness.bestFirstAction.makerAccountLabel}
+                                            {readiness.bestFirstAction.side}
+                                            {readiness.bestFirstAction.quantity}
+                                            {readiness.bestFirstAction.baseAsset}
+                                            against taker {readiness.bestFirstAction.takerAccountLabel}
+                                            at {readiness.bestFirstAction.price}
+                                            {readiness.bestFirstAction.quoteAsset}
+                                        </span>
+                                    </div>
+                                {/if}
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                                    <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+                                        <span class="text-[10px] text-base-content/50 block">Recommended cycle qty</span>
+                                        <span class="text-sm font-semibold text-base-content">{readiness.recommendedCycleQty}</span>
+                                    </div>
+                                    <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+                                        <span class="text-[10px] text-base-content/50 block">Estimated volume</span>
+                                        <span class="text-sm font-semibold text-base-content">
+                                            {readiness.estimatedVolume.quoteAmount}
+                                            {readiness.estimatedVolume.quoteAsset}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {#if readiness.missingBalances.length > 0}
+                                    <div class="mt-3 space-y-2">
+                                        {#each readiness.missingBalances as missing}
+                                            <div class="rounded-lg border border-error/20 bg-error/10 p-3">
+                                                <span class="text-xs font-semibold text-error block">
+                                                    {missing.accountLabel} needs {missing.missingAmount} more {missing.asset}
+                                                </span>
+                                                <span class="text-[11px] text-base-content/70 block mt-1">
+                                                    Available {missing.availableAmount}; minimum useful {missing.minimumUsefulAmount}. Deposit the missing asset amount or lower the cycle limit if market rules allow.
+                                                </span>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {/if}
+
+                                {#if readiness.blockingReasons.length > 0 && readiness.missingBalances.length === 0}
+                                    <div class="mt-3 space-y-2">
+                                        {#each readiness.blockingReasons as reason}
+                                            <div class="rounded-lg border border-error/20 bg-error/10 p-3">
+                                                <span class="text-xs font-semibold text-error block">
+                                                    {reason.accountLabel ? `${reason.accountLabel}: ` : ""}{reason.message}
+                                                </span>
+                                                {#if reason.asset}
+                                                    <span class="text-[11px] text-base-content/70 block mt-1">
+                                                        Asset: {reason.asset}
+                                                    </span>
+                                                {/if}
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {/if}
+                            {/if}
+                        </div>
                     {/if}
 
                     {#if isPureMarketMakingStrategy}

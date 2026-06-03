@@ -749,6 +749,8 @@
   "admin_direct_mm_read_only_keys": "Only showing Read-only API Keys",
   "admin_direct_mm_read_only_api_key": "Read-only API key",
   "admin_direct_mm_read_trade_keys": "Showing Read + Trade API Keys",
+  "admin_direct_mm_readiness_start_blocked": "Readiness blocks start.",
+  "admin_direct_mm_readiness_start_blocked_hint": "Wait for a fresh ready planner result before launching this order.",
   "admin_direct_mm_realized_pnl_quote": "Realized PnL",
   "admin_direct_mm_recent_errors": "Recent Errors",
   "admin_direct_mm_recovery_api_keys": "Check Settings > API Keys and verify the selected exchange account.",

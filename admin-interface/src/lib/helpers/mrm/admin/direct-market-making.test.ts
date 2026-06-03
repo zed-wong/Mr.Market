@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  evaluateDirectReadiness,
   getMarketMakingOrderPerformance,
   startDirectOrder,
 } from "./direct-market-making";
@@ -57,6 +58,70 @@ describe("admin direct market making helper", () => {
           takerApiKeyId: "taker-key",
           configOverrides: {
             baseTradeAmount: 0.001,
+          },
+        }),
+      }),
+    );
+  });
+
+  it("posts efficient dual-account readiness payloads to the deterministic readiness endpoint", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            canStart: true,
+            mode: "balanced",
+            bestFirstAction: null,
+            maximumCycleQty: "1",
+            recommendedCycleQty: "0.5",
+            minimumCapitalByAccountAsset: [],
+            recommendedCapitalByAccountAsset: [],
+            missingBalances: [],
+            estimatedCycles: { count: "2", basis: "current_available_balances" },
+            estimatedVolume: {
+              baseAsset: "BTC",
+              quoteAsset: "USDT",
+              baseAmount: "1",
+              quoteAmount: "50000",
+            },
+            blockingReasons: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+
+    await evaluateDirectReadiness(
+      {
+        exchangeName: "binance",
+        pair: "BTC/USDT",
+        strategyDefinitionId: "def-efficient",
+        makerApiKeyId: "maker-key",
+        takerApiKeyId: "taker-key",
+        configOverrides: {
+          mode: "balanced",
+          maxOrderAmount: 0.01,
+        },
+      },
+      "token",
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:3000/admin/market-making/direct-readiness",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          exchangeName: "binance",
+          pair: "BTC/USDT",
+          strategyDefinitionId: "def-efficient",
+          makerApiKeyId: "maker-key",
+          takerApiKeyId: "taker-key",
+          configOverrides: {
+            mode: "balanced",
+            maxOrderAmount: 0.01,
           },
         }),
       }),

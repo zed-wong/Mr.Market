@@ -3,14 +3,20 @@ import { describe, expect, it } from 'vitest';
 import {
   aggregateBalancesByAsset,
   buildDirectOrderDiagnosis,
+  EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+  filterDirectCreateStrategies,
   buildGenericSchemaConfigOverrides,
   formatOrderAmountForDisplay,
   getDirectOrderActionAvailability,
+  getDirectReadinessSubmitStatus,
+  getEfficientDualAccountModeOptions,
   isBestCapacityDirectOrderControllerType,
   isDualAccountOrder,
   isDualDirectOrderControllerType,
+  isEfficientDualAccountStrategy,
   isSchemaDrivenDirectOrderControllerType,
   normalizeConfigOverrides,
+  normalizeEfficientDualAccountMode,
   readPositiveOrderAmount,
   resolveInventorySkewAllocation,
   resolveMinOrderAmount,
@@ -430,6 +436,64 @@ describe('normalizeConfigOverrides', () => {
       maxOrderAmount: 5,
     });
   });
+
+  it('serializes efficient dual-account volume config with balanced mode by default', () => {
+    expect(
+      normalizeConfigOverrides(
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+        [
+          { key: 'cycleMode', value: 'static' },
+          { key: 'dynamicRoleSwitching', value: 'false' },
+        ],
+        '5',
+        '0.4',
+        {
+          intervalTime: '30',
+          numTrades: '100',
+          pricePushRate: '0',
+          postOnlySide: 'buy',
+          dynamicRoleSwitching: false,
+          targetQuoteVolume: '50000',
+          cadenceVariance: '',
+          tradeAmountVariance: '0.15',
+          priceOffsetVariance: '0.2',
+        },
+      ),
+    ).toEqual({
+      maxOrderAmount: 5,
+      mode: 'balanced',
+      interval: 30,
+      dailyVolumeTarget: 50000,
+      tradeAmountVariance: 0.15,
+      priceOffsetVariance: 0.2,
+    });
+  });
+
+  it('serializes explicit efficient dual-account modes into payload config', () => {
+    expect(
+      normalizeConfigOverrides(
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+        [],
+        '2',
+        '',
+        {
+          intervalTime: '',
+          numTrades: '',
+          pricePushRate: '',
+          postOnlySide: '',
+          dynamicRoleSwitching: false,
+          targetQuoteVolume: '',
+          cadenceVariance: '',
+          tradeAmountVariance: '',
+          priceOffsetVariance: '',
+          mode: 'fastest_volume',
+        },
+      ),
+    ).toEqual({
+      maxOrderAmount: 2,
+      mode: 'fastest_volume',
+    });
+  });
 });
 
 describe('direct controller helpers', () => {
@@ -438,6 +502,7 @@ describe('direct controller helpers', () => {
     expect(
       isDualDirectOrderControllerType('dualAccountBestCapacityVolume'),
     ).toBe(true);
+    expect(isDualDirectOrderControllerType(EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE)).toBe(true);
     expect(isDualDirectOrderControllerType('pureMarketMaking')).toBe(false);
   });
 
@@ -447,6 +512,11 @@ describe('direct controller helpers', () => {
         'dualAccountBestCapacityVolume',
       ),
     ).toBe(true);
+    expect(
+      isBestCapacityDirectOrderControllerType(
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      ),
+    ).toBe(true);
     expect(isBestCapacityDirectOrderControllerType('dualAccountVolume')).toBe(
       false,
     );
@@ -454,9 +524,110 @@ describe('direct controller helpers', () => {
 
   it('detects controller types that should use schema-driven direct forms', () => {
     expect(isSchemaDrivenDirectOrderControllerType('arbitrage')).toBe(true);
+    expect(
+      isSchemaDrivenDirectOrderControllerType(
+        EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      ),
+    ).toBe(false);
     expect(isSchemaDrivenDirectOrderControllerType('pureMarketMaking')).toBe(
       false,
     );
+  });
+
+  it('filters new-order strategies to only Efficient Dual Account Volume', () => {
+    const strategies = [
+      { id: 'legacy-classic', key: 'dual-account-volume', name: 'dual account volume', controllerType: 'dualAccountVolume' },
+      { id: 'legacy-best', key: 'dual-account-best-capacity-volume', name: 'dual account volume best capacity', controllerType: 'dualAccountBestCapacityVolume' },
+      { id: 'pmm', key: 'pure-market-making', name: 'Pure Market Making', controllerType: 'pureMarketMaking' },
+      { id: 'efficient', key: 'efficient-dual-account-volume', name: 'Efficient Dual Account Volume', controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE },
+    ];
+
+    expect(filterDirectCreateStrategies(strategies).map((strategy) => strategy.id)).toEqual([
+      'efficient',
+    ]);
+  });
+
+  it('recognizes efficient strategies and exposes human mode copy', () => {
+    expect(
+      isEfficientDualAccountStrategy({
+        id: 'efficient',
+        key: 'efficient-dual-account-volume',
+        controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      }),
+    ).toBe(true);
+    expect(normalizeEfficientDualAccountMode(undefined)).toBe('balanced');
+    expect(normalizeEfficientDualAccountMode('unsupported')).toBe('balanced');
+    expect(getEfficientDualAccountModeOptions().map((option) => option.value)).toEqual([
+      'cheapest_capital',
+      'balanced',
+      'fastest_volume',
+    ]);
+    expect(
+      getEfficientDualAccountModeOptions().find((option) => option.value === 'balanced')?.description,
+    ).toContain('Balances');
+  });
+
+  it('blocks start while readiness is missing, loading, failed, stale, or blocked', () => {
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: false,
+        loading: false,
+        failed: false,
+        displayedSignature: '',
+        currentSignature: '',
+        canStart: true,
+      }),
+    ).toBe('missing');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: true,
+        failed: false,
+        displayedSignature: 'a',
+        currentSignature: 'a',
+        canStart: true,
+      }),
+    ).toBe('loading');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: true,
+        displayedSignature: 'a',
+        currentSignature: 'a',
+        canStart: true,
+      }),
+    ).toBe('failed');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: false,
+        displayedSignature: 'old',
+        currentSignature: 'new',
+        canStart: true,
+      }),
+    ).toBe('stale');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: false,
+        displayedSignature: 'a',
+        currentSignature: 'a',
+        canStart: false,
+      }),
+    ).toBe('blocked');
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: false,
+        displayedSignature: 'a',
+        currentSignature: 'a',
+        canStart: true,
+      }),
+    ).toBe('ready');
   });
 });
 

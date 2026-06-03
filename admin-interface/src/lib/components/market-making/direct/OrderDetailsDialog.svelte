@@ -75,6 +75,13 @@
         return $_("admin_direct_mm_connectivity_active");
     }
 
+    function formatEfficientMode(value?: string | null): string {
+        if (value === "cheapest_capital") return "Cheapest capital";
+        if (value === "fastest_volume") return "Fastest volume";
+        if (value === "balanced") return "Balanced";
+        return value || $_("admin_direct_mm_na");
+    }
+
     function formatTimeAgo(iso: string | null): string {
         if (!iso) return $_("admin_direct_mm_na");
         const diffMs = Date.now() - Date.parse(iso);
@@ -966,6 +973,21 @@
                             <div
                                 class="border border-base-300 rounded-xl p-4 mb-3"
                             >
+                                {#if data?.orderConfig?.mode}
+                                    <div
+                                        class="flex items-center justify-between h-6 mb-1"
+                                    >
+                                        <span class="text-xs text-base-content/60"
+                                            >Efficient mode</span
+                                        >
+                                        <span
+                                            class="text-xs font-semibold text-base-content"
+                                            >{formatEfficientMode(
+                                                data?.orderConfig?.mode,
+                                            )}</span
+                                        >
+                                    </div>
+                                {/if}
                                 <div
                                     class="flex items-center justify-between h-6 mb-1"
                                 >

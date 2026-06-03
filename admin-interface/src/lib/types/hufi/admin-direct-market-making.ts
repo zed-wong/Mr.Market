@@ -2,6 +2,11 @@ export type DirectOrderControllerType = string;
 
 export type StrategyDirectExecutionMode = 'single_account' | 'dual_account';
 
+export type EfficientDualAccountVolumeMode =
+  | 'cheapest_capital'
+  | 'balanced'
+  | 'fastest_volume';
+
 export type DirectOrderRuntimeState =
   | 'created'
   | 'running'
@@ -89,6 +94,7 @@ export interface DirectOrderStatus {
     source?: string;
   }>;
   orderConfig: {
+    mode?: EfficientDualAccountVolumeMode | string | null;
     orderAmount: string | null;
     bidSpread: string | null;
     askSpread: string | null;
@@ -108,6 +114,8 @@ export interface DirectOrderStatus {
     tradedQuoteVolume: string | null;
     realizedPnlQuote: string | null;
   };
+  readiness?: DirectReadinessResult | null;
+  cycles?: unknown[];
   spread: {
     bid: string;
     ask: string;
@@ -149,6 +157,66 @@ export interface DirectOrderStatus {
     lastBalanceRefreshAt?: string | null;
   }>;
   stale: boolean;
+}
+
+export interface DirectReadinessBlockingReason {
+  code:
+    | 'market_data_stale'
+    | 'market_data_missing'
+    | 'trading_rules_missing'
+    | 'trading_rules_incomplete'
+    | 'fee_data_missing'
+    | 'balance_snapshot_unavailable'
+    | 'below_exchange_minimums'
+    | string;
+  message: string;
+  accountLabel?: string;
+  asset?: string;
+}
+
+export interface DirectReadinessMissingBalance {
+  accountLabel: string;
+  asset: string;
+  availableAmount: string;
+  minimumUsefulAmount: string;
+  missingAmount: string;
+}
+
+export interface DirectReadinessCapitalRequirement {
+  accountLabel: string;
+  asset: string;
+  amount: string;
+}
+
+export interface DirectReadinessResult {
+  canStart: boolean;
+  mode: EfficientDualAccountVolumeMode;
+  bestFirstAction: {
+    makerAccountLabel: string;
+    takerAccountLabel: string;
+    side: 'buy' | 'sell';
+    baseAsset: string;
+    quoteAsset: string;
+    quantity: string;
+    price: string;
+    notional: string;
+  } | null;
+  maximumCycleQty: string;
+  recommendedCycleQty: string;
+  minimumCapitalByAccountAsset: DirectReadinessCapitalRequirement[];
+  recommendedCapitalByAccountAsset: DirectReadinessCapitalRequirement[];
+  missingBalances: DirectReadinessMissingBalance[];
+  estimatedCycles: {
+    count: string;
+    basis: 'current_available_balances' | string;
+  };
+  estimatedVolume: {
+    baseAsset: string;
+    quoteAsset: string;
+    baseAmount: string;
+    quoteAmount: string;
+  };
+  blockingReasons: DirectReadinessBlockingReason[];
 }
 
 export interface AdminCampaign {
@@ -196,6 +264,8 @@ export type DirectStartPayload =
       takerApiKeyId: string;
       configOverrides?: Record<string, unknown>;
     };
+
+export type DirectReadinessPayload = DirectStartPayload;
 
 export interface CampaignJoinPayload {
   evmAddress: string;

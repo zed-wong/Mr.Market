@@ -1075,6 +1075,8 @@
   "admin_direct_mm_order_id_copied": "订单 ID 已复制",
   "admin_direct_mm_order_state": "订单状态",
   "admin_direct_mm_read_trade_keys": "显示 Read + Trade API 密钥",
+  "admin_direct_mm_readiness_start_blocked": "就绪检查阻止启动。",
+  "admin_direct_mm_readiness_start_blocked_hint": "请等待规划器返回最新可启动状态后再启动订单。",
   "admin_direct_mm_realized_pnl_quote": "已实现盈亏",
   "admin_direct_mm_remove": "移除",
   "admin_direct_mm_remove_confirm_body": "从管理员列表中移除 {pair} 的已停止或失败订单。这不会恢复或停止交易活动。",
