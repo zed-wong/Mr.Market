@@ -47,8 +47,8 @@
     if (!token) {
       growInfo = null;
       exchangeError = classifyAdminError(
-        new Error('Session expired. Sign in again before viewing exchange management.'),
-        'Exchange configuration failed to load',
+        new Error($_('admin_exchanges_session_message')),
+        $_('admin_exchanges_configuration_load_failed'),
       );
       loading = false;
       return;
@@ -64,7 +64,7 @@
       growInfo = await getGrowBasicInfoStrict(token);
     } catch (cause) {
       growInfo = null;
-      exchangeError = classifyAdminError(cause, 'Exchange configuration failed to load');
+      exchangeError = classifyAdminError(cause, $_('admin_exchanges_configuration_load_failed'));
     } finally {
       loading = false;
     }
@@ -83,9 +83,9 @@
           }
         }),
         {
-          loading: "refreshing exchanges",
-          success: "exchanges refreshed",
-          error: "failed to refresh exchanges",
+          loading: $_("admin_exchanges_refreshing"),
+          success: $_("admin_exchanges_refreshed"),
+          error: $_("admin_exchanges_refresh_failed"),
         },
       );
     } else {
@@ -101,7 +101,7 @@
       supportedExchanges = (await getSupportedExchanges(token)) as string[];
       allCcxtExchanges = await getAllCcxtExchanges(token);
     } catch (cause) {
-      metadataError = classifyAdminError(cause, 'Exchange metadata failed to load');
+      metadataError = classifyAdminError(cause, $_('admin_exchanges_metadata_load_failed'));
     }
   }
 
@@ -109,7 +109,7 @@
     if ($page.data.growInfoError) {
       exchangeError = classifyAdminError(
         new Error(String($page.data.growInfoError)),
-        'Exchange configuration failed to load',
+        $_('admin_exchanges_configuration_load_failed'),
       );
       loading = false;
     } else {
@@ -121,7 +121,7 @@
 
 <section class="space-y-6">
   <PageHeader
-    eyebrow="trading"
+    eyebrow={$_("admin.nav.trading")}
     title={$_("exchanges")}
     subtitle={$_("manage_connected_exchanges")}
   >
@@ -137,7 +137,7 @@
         onclick={() => RefreshExchanges()}
         disabled={isRefreshing}
       >
-        {isRefreshing ? "refreshing" : "refresh"}
+        {isRefreshing ? $_("refreshing_msg") : $_("refresh")}
       </button>
     {/snippet}
   </PageHeader>
@@ -145,9 +145,9 @@
   {#if $page.data.waitingForClientSession || loading}
     <AdminStatePanel
       kind="loading"
-      context="exchange management"
-      title="loading exchange management"
-      message="Loading configured exchanges, readiness status, and enablement before showing empty or completed exchange-management content."
+      context={$_("admin_exchanges_management")}
+      title={$_("admin_exchanges_loading_title")}
+      message={$_("admin_exchanges_loading_message")}
       testId="exchange-loading"
     />
     <div class="grid grid-cols-2 gap-4 md:grid-cols-5" aria-hidden="true">
@@ -159,10 +159,10 @@
   {:else if exchangeError}
     <AdminStatePanel
       kind={exchangeError.kind}
-      context="exchange management"
+      context={$_("admin_exchanges_management")}
       title={exchangeError.title}
       message={exchangeError.message}
-      actionLabel={exchangeError.kind === 'session' ? 'sign in again' : 'retry'}
+      actionLabel={exchangeError.kind === 'session' ? $_("admin_sign_in_again") : $_("admin_retry")}
       actionHref={exchangeError.kind === 'session' ? '/login' : ''}
       onAction={exchangeError.kind === 'session' ? undefined : () => RefreshExchanges(false)}
       testId="exchange-error"
@@ -171,10 +171,10 @@
     {#if metadataError}
       <AdminStatePanel
         kind={metadataError.kind}
-        context="exchange metadata"
+        context={$_("admin_connectivity_exchange_metadata")}
         title={metadataError.title}
         message={metadataError.message}
-        actionLabel="retry metadata"
+        actionLabel={$_("admin_connectivity_retry_metadata")}
         onAction={() => {
           const token = getAccessToken();
           if (!token) return;
@@ -194,31 +194,31 @@
     <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">total exchanges</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("admin_exchanges_total")}</span>
         <span class="font-mono text-2xl font-semibold">{totals.total}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">ready</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("admin_health_ready")}</span>
         <span class="font-mono text-2xl font-semibold text-success">{totals.ready}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">disabled</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("disabled")}</span>
         <span class="font-mono text-2xl font-semibold text-warning">{totals.disabled}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">supported</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("supported")}</span>
         <span class="font-mono text-2xl font-semibold">{totals.supported}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">unknown</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("admin_direct_mm_state_unknown")}</span>
         <span class="font-mono text-2xl font-semibold">{totals.unknown}</span>
       </div>
     </div>
@@ -227,10 +227,10 @@
     {#if exchanges.length === 0}
       <AdminStatePanel
         kind="empty"
-        context="exchange management"
-        title="exchange readiness missing"
-        message="No exchanges are configured yet. Add the first exchange before configuring API keys or starting direct market-making operations."
-        actionLabel="add exchange"
+        context={$_("admin_exchanges_management")}
+        title={$_("admin_exchanges_empty_title")}
+        message={$_("admin_exchanges_empty_message")}
+        actionLabel={$_("add_exchange")}
         onAction={() => document.querySelector<HTMLButtonElement>('[data-testid="add-exchange-trigger"]')?.click()}
         testId="exchange-empty"
       />

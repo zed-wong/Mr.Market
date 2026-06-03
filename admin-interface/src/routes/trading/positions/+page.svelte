@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
@@ -80,7 +81,7 @@
   const labelize = (value?: string | null) => (value || 'unavailable').replaceAll('_', ' ');
 
   const errorMessage = (cause: unknown) =>
-    cause instanceof Error ? cause.message : 'Unable to load backend positions';
+    cause instanceof Error ? cause.message : $_('admin_positions_load_failed');
 
   const shortId = (value?: string | null) => {
     if (!value) {
@@ -185,9 +186,9 @@
 
 <section class="space-y-6" data-testid="positions-page">
   <PageHeader
-    eyebrow="trading"
-    title="positions"
-    subtitle="Track available and locked balances by asset, exchange, and strategy."
+    eyebrow={$_('admin.nav.trading')}
+    title={$_('admin.nav.positions')}
+    subtitle={$_('admin_positions_subtitle')}
   >
     {#snippet actions()}
       <button
@@ -195,20 +196,20 @@
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing}
         onclick={() => void refreshPositions()}
-      >{refreshing ? 'refreshing' : 'refresh'}</button>
+      >{refreshing ? $_('refreshing_msg') : $_('refresh')}</button>
     {/snippet}
   </PageHeader>
 
   <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">positions</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin.nav.positions')}</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.total ?? 0)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">locked positions</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_positions_locked')}</span>
         <span class="font-mono text-2xl font-semibold" class:text-warning={lockedRows.length > 0} class:text-base-content={lockedRows.length === 0}>
           {formatNumber(lockedRows.length)}
         </span>
@@ -216,7 +217,7 @@
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">mapped accounts</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_positions_mapped_accounts')}</span>
         <span class="font-mono text-2xl font-semibold text-base-content">
           {formatNumber(mappedRows.length)} / {formatNumber(rows.length)}
         </span>
@@ -224,7 +225,7 @@
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">updated</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_strategy_updated')}</span>
         <span class="font-mono text-sm font-semibold text-base-content">{formatTimestamp(response?.generatedAt)}</span>
       </div>
     </div>
@@ -233,18 +234,20 @@
   <div class="card border border-base-300 bg-base-100 shadow-none">
     <div class="card-body gap-4 p-5">
       <div class="flex items-center justify-between">
-        <span class="text-lg font-semibold tracking-tight capitalize">inventory by asset</span>
-        <span class="text-xs text-base-content/50 font-mono">{assetRows.length} assets</span>
+        <span class="text-lg font-semibold tracking-tight capitalize">{$_('admin_positions_inventory_by_asset')}</span>
+        <span class="text-xs text-base-content/50 font-mono">{$_('admin_dashboard_asset_count_many', {
+          values: { count: assetRows.length },
+        })}</span>
       </div>
 
       {#if loading}
         <div class="flex items-center gap-3 rounded-lg border border-base-300 p-4">
           <span class="loading loading-spinner loading-sm text-base-content/60"></span>
-          <span class="text-sm text-base-content/60 capitalize">loading backend position summary</span>
+          <span class="text-sm text-base-content/60 capitalize">{$_('admin_positions_loading_summary')}</span>
         </div>
       {:else if assetRows.length === 0}
         <div class="rounded-lg border border-base-300 p-4">
-          <span class="text-sm text-base-content/60">No asset totals were returned by the backend summary.</span>
+          <span class="text-sm text-base-content/60">{$_('admin_positions_no_asset_totals')}</span>
         </div>
       {:else}
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -266,17 +269,24 @@
               </div>
               <div class="mt-2 flex flex-col gap-1">
                 <span class="text-xs text-base-content/50">
-                  available {formatNumber(asset.available, { maximumFractionDigits: 8 })}
+                  {$_('admin_positions_available_value', {
+                    values: { amount: formatNumber(asset.available, { maximumFractionDigits: 8 }) },
+                  })}
                 </span>
                 <span class="text-xs {lockedPct > 0 ? 'text-warning' : 'text-base-content/50'}">
-                  locked {formatNumber(asset.locked, { maximumFractionDigits: 8 })} · {lockedPct.toFixed(1)}%
+                  {$_('admin_positions_locked_value', {
+                    values: {
+                      amount: formatNumber(asset.locked, { maximumFractionDigits: 8 }),
+                      percent: lockedPct.toFixed(1),
+                    },
+                  })}
                 </span>
               </div>
             </div>
           {/each}
         </div>
         {#if response?.summary.truncated}
-          <span class="text-xs text-warning">Summary is truncated by backend metadata scan limits.</span>
+          <span class="text-xs text-warning">{$_('admin_positions_summary_truncated')}</span>
         {/if}
       {/if}
     </div>
@@ -285,7 +295,7 @@
   <div class="card border border-base-300 bg-base-100 shadow-none">
     <div class="card-body gap-4 p-5">
       <div class="flex flex-wrap items-center gap-3">
-        <span class="text-lg font-semibold tracking-tight capitalize">positions</span>
+        <span class="text-lg font-semibold tracking-tight capitalize">{$_('admin.nav.positions')}</span>
         <select
           class="select select-sm select-bordered ml-auto min-w-44 border-base-300 bg-base-100 capitalize"
           bind:value={exchangeFilter}
@@ -322,36 +332,43 @@
         />
         <label class="flex cursor-pointer items-center gap-2 rounded-full border border-base-300 px-3 py-1.5 text-xs text-base-content/70">
           <input type="checkbox" class="checkbox checkbox-xs" bind:checked={lockedOnly} />
-          <span class="capitalize">locked only</span>
+          <span class="capitalize">{$_('admin_positions_locked_only')}</span>
         </label>
         <button
           type="button"
           class="btn btn-sm btn-primary rounded-full capitalize"
           disabled={loading || refreshing}
           onclick={applyFilters}
-        >filter</button>
+        >{$_('admin_filter')}</button>
       </div>
 
       {#if loading}
         <div class="flex items-center gap-3 rounded-lg border border-base-300 p-4" data-testid="positions-loading">
           <span class="loading loading-spinner loading-sm text-base-content/60"></span>
-          <span class="text-sm text-base-content/60 capitalize">loading backend positions</span>
+          <span class="text-sm text-base-content/60 capitalize">{$_('admin_positions_loading')}</span>
         </div>
       {:else if error}
         <div class="rounded-lg border border-error/30 p-4" data-testid="positions-error">
           <div class="flex flex-col gap-3">
-            <span class="text-sm font-semibold text-base-content capitalize">positions unavailable</span>
+            <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_positions_unavailable')}</span>
             <span class="text-sm text-base-content/60">{error}</span>
             <div class="flex gap-2">
-              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadPositions()}>retry</button>
-              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>reset filters</button>
+              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadPositions()}>{$_('admin_retry')}</button>
+              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>{$_('admin_health_reset_filters')}</button>
             </div>
           </div>
         </div>
       {:else if response}
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-mono text-xs text-base-content/50">
-            page {response.pagination.page} / {response.pagination.totalPages} · {displayedRows.length} shown · {response.pagination.total} total
+            {$_('admin_positions_page_count', {
+              values: {
+                page: response.pagination.page,
+                totalPages: response.pagination.totalPages,
+                shown: displayedRows.length,
+                total: response.pagination.total,
+              },
+            })}
           </span>
           {#if refreshing}
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
@@ -360,27 +377,27 @@
 
         {#if displayedRows.length === 0}
           <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 py-12 text-center" data-testid="positions-empty">
-            <span class="text-sm font-semibold text-base-content capitalize">no backend positions returned</span>
+            <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_positions_empty_title')}</span>
             <span class="text-sm text-base-content/60">
-              The admin API returned an empty result for the current filters; no sample balances are shown.
+              {$_('admin_positions_empty_message')}
             </span>
-            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>reset filters</button>
+            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>{$_('admin_health_reset_filters')}</button>
           </div>
         {:else}
           <div class="overflow-x-auto">
             <table class="table table-sm">
               <thead>
                 <tr class="border-b border-base-300 text-xs capitalize tracking-wide text-base-content/50">
-                  <th class="font-medium">asset</th>
-                  <th class="font-medium">exchange</th>
-                  <th class="font-medium">strategy</th>
-                  <th class="font-medium">order</th>
-                  <th class="font-medium">status</th>
-                  <th class="font-medium text-right">total</th>
-                  <th class="font-medium text-right">available</th>
-                  <th class="font-medium text-right">locked</th>
-                  <th class="font-medium">source</th>
-                  <th class="font-medium">updated</th>
+                  <th class="font-medium">{$_('asset_id')}</th>
+                  <th class="font-medium">{$_('exchange')}</th>
+                  <th class="font-medium">{$_('admin_direct_mm_strategy')}</th>
+                  <th class="font-medium">{$_('order_id')}</th>
+                  <th class="font-medium">{$_('status')}</th>
+                  <th class="font-medium text-right">{$_('total')}</th>
+                  <th class="font-medium text-right">{$_('status_available')}</th>
+                  <th class="font-medium text-right">{$_('admin_positions_locked_short')}</th>
+                  <th class="font-medium">{$_('source')}</th>
+                  <th class="font-medium">{$_('admin_strategy_updated')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -436,7 +453,12 @@
 
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">
-              API limit max {response.limits.maxLimit}; metadata scan limit {response.limits.metadataScanLimit}
+              {$_('admin_positions_limit_hint', {
+                values: {
+                  max: response.limits.maxLimit,
+                  scan: response.limits.metadataScanLimit,
+                },
+              })}
             </span>
             <div class="flex flex-wrap items-center gap-2">
               <select
@@ -447,7 +469,7 @@
                 aria-label="rows per page"
               >
                 {#each limitOptions as option (option)}
-                  <option value={option}>{option} rows</option>
+                  <option value={option}>{$_('admin_rows_count', { values: { count: option } })}</option>
                 {/each}
               </select>
               <div class="join">
@@ -456,13 +478,13 @@
                   class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
                   disabled={!response.pagination.hasPrevious || refreshing}
                   onclick={() => goToPage(page - 1)}
-                >previous</button>
+                >{$_('previous')}</button>
                 <button
                   type="button"
                   class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
                   disabled={!response.pagination.hasNext || refreshing}
                   onclick={() => goToPage(page + 1)}
-                >next</button>
+                >{$_('next')}</button>
               </div>
             </div>
           </div>

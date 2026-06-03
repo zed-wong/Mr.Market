@@ -108,8 +108,8 @@
 
     $: pairs = growInfo?.market_making?.pairs || [];
 
-    const DIRECT_MM_SESSION_ERROR =
-        "Session expired. Sign in again before viewing direct market-making operations.";
+    const directMmSessionError = () =>
+        $_("admin_direct_mm_session_message");
 
     async function settle<T>(task: Promise<T>, fallback: T) {
         try {
@@ -120,7 +120,7 @@
                 error:
                     cause instanceof Error
                         ? cause.message
-                        : "Direct market-making data failed to load",
+                        : $_("admin_direct_mm_data_load_failed"),
             };
         }
     }
@@ -144,8 +144,8 @@
         if (!token) {
             clearPageData();
             pageLoadError = classifyAdminError(
-                new Error(DIRECT_MM_SESSION_ERROR),
-                "Direct market-making orders failed to load",
+                new Error(directMmSessionError()),
+                $_("admin_direct_mm_orders_load_failed"),
             );
             pageLoading = false;
             return;
@@ -185,15 +185,15 @@
             pageLoadError = orders.error
                 ? classifyAdminError(
                       new Error(String(orders.error)),
-                      "Direct market-making orders failed to load",
+                      $_("admin_direct_mm_orders_load_failed"),
                   )
                 : null;
             supportingLoadErrors = [
-                gInfo.error ? `exchange configuration: ${gInfo.error}` : "",
-                strats.error ? `strategies: ${strats.error}` : "",
-                keys.error ? `API keys: ${keys.error}` : "",
-                camps.error ? `campaigns: ${camps.error}` : "",
-                wallet.error ? `wallet: ${wallet.error}` : "",
+                gInfo.error ? `${$_("admin_direct_mm_exchange_configuration")}: ${gInfo.error}` : "",
+                strats.error ? `${$_("admin_direct_mm_strategies")}: ${strats.error}` : "",
+                keys.error ? `${$_("admin_direct_mm_api_keys")}: ${keys.error}` : "",
+                camps.error ? `${$_("admin_direct_mm_campaigns")}: ${camps.error}` : "",
+                wallet.error ? `${$_("admin_direct_mm_wallet")}: ${wallet.error}` : "",
             ].filter(Boolean);
         } finally {
             if (requestId === pageLoadRequestId) {
@@ -573,8 +573,8 @@
             if (!startExchangeName) missing.push("exchange");
             if (!startPair) missing.push("pair");
             if (!startStrategyDefinitionId) missing.push("strategy");
-            if (missingSingleAccount) missing.push("API key");
-            if (missingDualAccount) missing.push("maker/taker API keys");
+            if (missingSingleAccount) missing.push($_("admin_direct_mm_api_key"));
+            if (missingDualAccount) missing.push($_("admin_direct_mm_maker_taker_api_keys"));
             toast.error($_("admin_direct_mm_error_missing_fields"), {
                 description: `${$_("admin_direct_mm_recovery_required_fields")} (${missing.join(", ")})`,
             });
@@ -903,10 +903,10 @@
         try {
             const token = getToken();
             if (!token) {
-                const sessionError = new Error("Session expired. Sign in again before viewing direct market-making operations.");
+                const sessionError = new Error(directMmSessionError());
                 detailsError = classifyAdminError(
                     sessionError,
-                    "Direct market-making order diagnosis failed to load",
+                    $_("admin_direct_mm_order_diagnosis_load_failed"),
                 );
                 if (options.throwOnError) {
                     throw sessionError;
@@ -929,7 +929,7 @@
             if (detailsOrder?.orderId === orderId) {
                 detailsError = classifyAdminError(
                     error,
-                    "Direct market-making order diagnosis failed to load",
+                    $_("admin_direct_mm_order_diagnosis_load_failed"),
                 );
             }
             if (options.throwOnError) {

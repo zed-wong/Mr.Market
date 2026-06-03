@@ -130,13 +130,12 @@
 
             <div class="px-7 pb-7 pt-6">
                 <span class="block text-sm leading-7 text-base-content/70">
-                    You are about to join
-                    <span class="font-semibold text-primary"
-                        >{campaignName} {campaignType}</span
-                    >
-                    campaign{exchange !== $_("admin_direct_mm_na")
-                        ? ` on ${exchange}`
-                        : ""}.
+                    {$_("admin_direct_mm_join_campaign_body", {
+                        values: {
+                            campaign: `${campaignName} ${campaignType}`.trim(),
+                            exchange,
+                        },
+                    })}
                 </span>
 
                 <div class="mt-6 flex flex-col gap-4">
@@ -186,14 +185,14 @@
                         <span
                             class="mb-2 text-xs font-semibold text-base-content/70"
                         >
-                            Read-only API key
+                            {$_("admin_direct_mm_read_only_api_key")}
                         </span>
                         <select
                             class="select select-bordered min-h-10 w-full bg-base-100 text-base-content focus:outline-none focus:border-primary"
                             bind:value={joinCampaignApiKeyId}
                         >
                             <option value="" disabled>
-                                Select account
+                                {$_("admin_direct_mm_select_account")}
                             </option>
                             {#each readOnlyKeys as apiKey}
                                 <option value={apiKey.key_id}>

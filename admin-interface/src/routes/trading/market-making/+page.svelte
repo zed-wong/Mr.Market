@@ -70,25 +70,25 @@
   <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">total pairs</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("admin_market_making_total_pairs")}</span>
         <span class="font-mono text-2xl font-semibold">{totals.total}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">enabled</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("enabled")}</span>
         <span class="font-mono text-2xl font-semibold text-success">{totals.enabled}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">venues</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("admin_connectivity_venues")}</span>
         <span class="font-mono text-2xl font-semibold">{totals.venues}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">exchanges configured</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_("admin_market_making_exchanges_configured")}</span>
         <span class="font-mono text-2xl font-semibold">{configuredExchanges.length}</span>
       </div>
     </div>

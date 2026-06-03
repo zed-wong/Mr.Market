@@ -91,7 +91,7 @@
   };
 
   const errorMessage = (cause: unknown) =>
-    cause instanceof Error ? cause.message : 'Unable to load user orders';
+    cause instanceof Error ? cause.message : $_('admin_user_orders_load_failed');
 
   const loadOrders = async (options: { throwOnError?: boolean; silentError?: boolean; background?: boolean } = {}) => {
     const initialLoad = response === null;
@@ -219,9 +219,9 @@
 
 <section class="space-y-6" data-testid="user-orders-page">
   <PageHeader
-    eyebrow="trading"
+    eyebrow={$_('admin.nav.trading')}
     title={$_('admin.nav.user_orders')}
-    subtitle="User-initiated market-making and simply-grow orders from authenticated clients."
+    subtitle={$_('admin_user_orders_subtitle')}
   >
     {#snippet actions()}
       <button
@@ -229,32 +229,32 @@
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing}
         onclick={() => void refreshOrders()}
-      >{refreshing ? 'refreshing' : 'refresh'}</button>
+      >{refreshing ? $_('refreshing_msg') : $_('refresh')}</button>
     {/snippet}
   </PageHeader>
 
   <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">matching user orders</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_user_orders_matching')}</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{summary.total}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">market making on page</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_user_orders_market_making_on_page')}</span>
         <span class="font-mono text-2xl font-semibold text-info">{summary.marketMaking}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">simply grow on page</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_user_orders_simply_grow_on_page')}</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{summary.simplyGrow}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">active on page</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_user_orders_active_on_page')}</span>
         <span class="font-mono text-2xl font-semibold text-success">{summary.active}</span>
       </div>
     </div>
@@ -281,13 +281,13 @@
           onchange={changeState}
         >
           {#each states as state (state || 'all')}
-            <option value={state}>{state ? labelize(state) : 'all states'}</option>
+            <option value={state}>{state ? labelize(state) : $_('admin_user_orders_all_states')}</option>
           {/each}
         </select>
 
         <input
           type="text"
-          placeholder="order id, user id, pair, exchange or asset…"
+          placeholder={$_('admin_user_orders_search_placeholder')}
           class="input input-sm input-bordered min-w-[240px] flex-1 border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxQueryLength ?? 100}
           bind:value={query}
@@ -303,7 +303,7 @@
           class="btn btn-sm btn-ghost rounded-full capitalize"
           disabled={loading || refreshing}
           onclick={applySearch}
-        >search</button>
+        >{$_('search')}</button>
 
         <select
           class="select select-sm select-bordered border-base-300 bg-base-100 font-mono text-xs"
@@ -320,23 +320,30 @@
       {#if loading}
         <div class="flex items-center gap-3 rounded-lg border border-base-300 p-4" data-testid="user-orders-loading">
           <span class="loading loading-spinner loading-sm text-base-content/60"></span>
-          <span class="text-sm text-base-content/60 capitalize">loading backend user orders</span>
+          <span class="text-sm text-base-content/60 capitalize">{$_('admin_user_orders_loading')}</span>
         </div>
       {:else if error}
         <div class="rounded-lg border border-error/30 p-4" data-testid="user-orders-error">
           <div class="flex flex-col gap-3">
-            <span class="text-sm font-semibold text-base-content capitalize">user orders unavailable</span>
+            <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_user_orders_unavailable')}</span>
             <span class="text-sm text-base-content/60">{error}</span>
             <div class="flex gap-2">
-              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadOrders()}>retry</button>
-              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>reset filters</button>
+              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadOrders()}>{$_('admin_retry')}</button>
+              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>{$_('admin_health_reset_filters')}</button>
             </div>
           </div>
         </div>
       {:else if response}
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-mono text-xs text-base-content/50">
-            page {response.pagination.page} / {response.pagination.totalPages} · {rows.length} of {response.pagination.total}
+            {$_('admin_page_count', {
+              values: {
+                page: response.pagination.page,
+                totalPages: response.pagination.totalPages,
+                rows: rows.length,
+                total: response.pagination.total,
+              },
+            })}
           </span>
           {#if refreshing}
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
@@ -345,24 +352,24 @@
 
         {#if rows.length === 0}
           <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 py-12 text-center" data-testid="user-orders-empty">
-            <span class="text-sm font-semibold text-base-content capitalize">no user orders returned</span>
-            <span class="text-sm text-base-content/60">The admin API returned an empty result for the current filters.</span>
-            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>reset filters</button>
+            <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_user_orders_empty_title')}</span>
+            <span class="text-sm text-base-content/60">{$_('admin_user_orders_empty_message')}</span>
+            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>{$_('admin_health_reset_filters')}</button>
           </div>
         {:else}
           <div class="overflow-x-auto">
             <table class="table table-sm">
               <thead>
                 <tr class="border-b border-base-300 text-xs capitalize tracking-wide text-base-content/50">
-                  <th class="font-medium">created</th>
-                  <th class="font-medium">order</th>
-                  <th class="font-medium">user</th>
-                  <th class="font-medium">type</th>
-                  <th class="font-medium">state</th>
-                  <th class="font-medium">details</th>
-                  <th class="font-medium text-right">amount</th>
-                  <th class="font-medium">balances</th>
-                  <th class="font-medium">reward</th>
+                  <th class="font-medium">{$_('created')}</th>
+                  <th class="font-medium">{$_('order_id')}</th>
+                  <th class="font-medium">{$_('admin_strategy_user')}</th>
+                  <th class="font-medium">{$_('type')}</th>
+                  <th class="font-medium">{$_('state')}</th>
+                  <th class="font-medium">{$_('admin_strategy_details')}</th>
+                  <th class="font-medium text-right">{$_('amount')}</th>
+                  <th class="font-medium">{$_('admin_connectivity_balances')}</th>
+                  <th class="font-medium">{$_('admin_direct_mm_reward')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -386,8 +393,8 @@
                     <td class="text-right font-mono text-sm">{formatValue(order.amount)}</td>
                     <td>
                       <div class="flex flex-col font-mono text-[10px] text-base-content/50">
-                        <span>base {formatValue(order.baseBalance)}</span>
-                        <span>quote {formatValue(order.quoteBalance)}</span>
+                        <span>{$_('admin_user_orders_base_balance', { values: { value: formatValue(order.baseBalance) } })}</span>
+                        <span>{$_('admin_user_orders_quote_balance', { values: { value: formatValue(order.quoteBalance) } })}</span>
                       </div>
                     </td>
                     <td class="font-mono text-[10px] text-base-content/50">{order.rewardAddress || '—'}</td>
@@ -399,7 +406,12 @@
 
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">
-              API limit max {response.limits.maxLimit}; scan limit {response.limits.maxScanRows} per order type
+              {$_('admin_user_orders_limit_hint', {
+                values: {
+                  max: response.limits.maxLimit,
+                  scan: response.limits.maxScanRows,
+                },
+              })}
             </span>
             <div class="join">
               <button
@@ -407,13 +419,13 @@
                 class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
                 disabled={!response.pagination.hasPrevious || refreshing}
                 onclick={() => goToPage(page - 1)}
-              >previous</button>
+              >{$_('previous')}</button>
               <button
                 type="button"
                 class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
                 disabled={!response.pagination.hasNext || refreshing}
                 onclick={() => goToPage(page + 1)}
-              >next</button>
+              >{$_('next')}</button>
             </div>
           </div>
         {/if}

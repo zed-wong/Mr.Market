@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import {
@@ -69,7 +70,7 @@
   };
 
   const errorMessage = (cause: unknown) =>
-    cause instanceof Error ? cause.message : 'Unable to load tracked orders';
+    cause instanceof Error ? cause.message : $_('admin_exchange_orders_load_failed');
 
   const labelize = (value?: string | null) => (value || 'unavailable').replaceAll('_', ' ');
 
@@ -198,9 +199,9 @@
 
 <section class="space-y-6" data-testid="orders-page">
   <PageHeader
-    eyebrow="trading"
-    title="orders"
-    subtitle="Exchange-tracked orders loaded from the admin API."
+    eyebrow={$_('admin.nav.trading')}
+    title={$_('orders')}
+    subtitle={$_('admin_exchange_orders_subtitle')}
   >
     {#snippet actions()}
       <button
@@ -208,20 +209,20 @@
         class="btn btn-primary btn-sm rounded-full capitalize"
         disabled={loading || refreshing}
         onclick={() => void refreshOrders()}
-      >{refreshing ? 'refreshing' : 'refresh'}</button>
+      >{refreshing ? $_('refreshing_msg') : $_('refresh')}</button>
     {/snippet}
   </PageHeader>
 
   <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">matching orders</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_exchange_orders_matching')}</span>
         <span class="font-mono text-2xl font-semibold text-base-content">{formatNumber(response?.pagination.total ?? 0)}</span>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-none">
       <div class="card-body gap-1 p-4">
-        <span class="text-xs text-base-content/60 capitalize">updated</span>
+        <span class="text-xs text-base-content/60 capitalize">{$_('admin_strategy_updated')}</span>
         <span class="font-mono text-sm font-semibold text-base-content">{formatTimestamp(response?.generatedAt)}</span>
       </div>
     </div>
@@ -243,7 +244,7 @@
 
         <input
           type="text"
-          placeholder="order id, pair, exchange or strategy…"
+          placeholder={$_('admin_exchange_orders_search_placeholder')}
           class="input input-sm input-bordered min-w-[260px] flex-1 border-base-300 bg-base-100 font-mono text-xs"
           maxlength={response?.limits.maxQueryLength ?? 100}
           bind:value={query}
@@ -261,29 +262,36 @@
           class="btn btn-sm btn-ghost rounded-full capitalize"
           disabled={loading || refreshing}
           onclick={applySearch}
-        >search</button>
+        >{$_('search')}</button>
       </div>
 
       {#if loading}
         <div class="flex items-center gap-3 rounded-lg border border-base-300 p-4" data-testid="orders-loading">
           <span class="loading loading-spinner loading-sm text-base-content/60"></span>
-          <span class="text-sm text-base-content/60 capitalize">loading backend tracked orders</span>
+          <span class="text-sm text-base-content/60 capitalize">{$_('admin_exchange_orders_loading')}</span>
         </div>
       {:else if error}
         <div class="rounded-lg border border-error/30 p-4" data-testid="orders-error">
           <div class="flex flex-col gap-3">
-            <span class="text-sm font-semibold text-base-content capitalize">orders unavailable</span>
+            <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_exchange_orders_unavailable')}</span>
             <span class="text-sm text-base-content/60">{error}</span>
             <div class="flex gap-2">
-              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadOrders()}>retry</button>
-              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>reset filters</button>
+              <button type="button" class="btn btn-sm btn-primary capitalize" onclick={() => void loadOrders()}>{$_('admin_retry')}</button>
+              <button type="button" class="btn btn-sm btn-ghost capitalize" onclick={resetFilters}>{$_('admin_health_reset_filters')}</button>
             </div>
           </div>
         </div>
       {:else if response}
         <div class="flex flex-wrap items-center gap-3">
           <span class="font-mono text-xs text-base-content/50">
-            page {response.pagination.page} / {response.pagination.totalPages} · {rows.length} of {response.pagination.total}
+            {$_('admin_page_count', {
+              values: {
+                page: response.pagination.page,
+                totalPages: response.pagination.totalPages,
+                rows: rows.length,
+                total: response.pagination.total,
+              },
+            })}
           </span>
           {#if refreshing}
             <span class="loading loading-spinner loading-xs text-base-content/50"></span>
@@ -292,30 +300,30 @@
 
         {#if rows.length === 0}
           <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 py-12 text-center" data-testid="orders-empty">
-            <span class="text-sm font-semibold text-base-content capitalize">no backend orders returned</span>
+            <span class="text-sm font-semibold text-base-content capitalize">{$_('admin_exchange_orders_empty_title')}</span>
             <span class="text-sm text-base-content/60">
-              The admin API returned an empty result for the current filters; no sample orders are shown.
+              {$_('admin_exchange_orders_empty_message')}
             </span>
-            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>reset filters</button>
+            <button class="btn btn-ghost btn-xs rounded-full capitalize" onclick={resetFilters}>{$_('admin_health_reset_filters')}</button>
           </div>
         {:else}
           <div class="overflow-x-auto">
             <table class="table table-sm">
               <thead>
                 <tr class="border-b border-base-300 text-xs capitalize tracking-wide text-base-content/50">
-                  <th class="font-medium">time</th>
-                  <th class="font-medium">order id</th>
-                  <th class="font-medium">symbol / pair</th>
-                  <th class="font-medium">side</th>
-                  <th class="font-medium">type</th>
-                  <th class="font-medium text-right">quantity</th>
-                  <th class="font-medium text-right">filled</th>
-                  <th class="font-medium text-right">price</th>
-                  <th class="font-medium">fill</th>
-                  <th class="font-medium">status</th>
-                  <th class="font-medium">exchange</th>
-                  <th class="font-medium">strategy</th>
-                  <th class="font-medium">actions</th>
+                  <th class="font-medium">{$_('time')}</th>
+                  <th class="font-medium">{$_('order_id')}</th>
+                  <th class="font-medium">{$_('admin_symbol_pair')}</th>
+                  <th class="font-medium">{$_('side')}</th>
+                  <th class="font-medium">{$_('type')}</th>
+                  <th class="font-medium text-right">{$_('admin_quantity')}</th>
+                  <th class="font-medium text-right">{$_('filled_orders')}</th>
+                  <th class="font-medium text-right">{$_('price')}</th>
+                  <th class="font-medium">{$_('admin_fill')}</th>
+                  <th class="font-medium">{$_('status')}</th>
+                  <th class="font-medium">{$_('exchange')}</th>
+                  <th class="font-medium">{$_('admin_direct_mm_strategy')}</th>
+                  <th class="font-medium">{$_('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -379,8 +387,8 @@
                         type="button"
                         class="btn btn-ghost btn-xs rounded-full capitalize text-base-content/60"
                         disabled
-                        title="No safe scoped order mutation endpoint is exposed for this action."
-                      >disabled</button>
+                        title={$_('admin_exchange_orders_action_disabled_title')}
+                      >{$_('disabled')}</button>
                     </td>
                   </tr>
                 {/each}
@@ -390,7 +398,12 @@
 
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">
-              API limit max {response.limits.maxLimit}; execution scan limit {response.limits.executionScanLimit}
+              {$_('admin_exchange_orders_limit_hint', {
+                values: {
+                  max: response.limits.maxLimit,
+                  scan: response.limits.executionScanLimit,
+                },
+              })}
             </span>
             <div class="join">
               <button
@@ -398,13 +411,13 @@
                 class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
                 disabled={!response.pagination.hasPrevious || refreshing}
                 onclick={() => goToPage(page - 1)}
-              >previous</button>
+              >{$_('previous')}</button>
               <button
                 type="button"
                 class="btn btn-sm join-item border-base-300 bg-base-100 capitalize"
                 disabled={!response.pagination.hasNext || refreshing}
                 onclick={() => goToPage(page + 1)}
-              >next</button>
+              >{$_('next')}</button>
             </div>
           </div>
         {/if}
