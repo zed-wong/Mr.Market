@@ -1,5 +1,9 @@
 # Execution Flow Changelog
 
+## 2026-06-03
+
+- Add the capital-efficient dual-account volume plan: replace the confusing `dual account volume` / `best capacity` split with one Efficient Dual Account Volume strategy that scores all account-role directions, rotates inventory to minimize capital, exposes readiness/missing-balance diagnostics, and renders maker/taker cycle state clearly.
+
 ## 2026-06-02
 
 - Archive completed or superseded active plans for future Web3 endpoints, one-time setup wizard, order-performance PnL, campaign leaderboard, and Web3 wallet/market-making Router implementation so `docs/plans/` stays focused on current work.
