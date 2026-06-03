@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BalanceStateCacheService } from 'src/modules/market-making/balance-state/balance-state-cache.service';
+import { OrderScopedBalanceQueryService } from 'src/modules/market-making/balance-state/order-scoped-balance-query.service';
+import { DualAccountPlannerService } from 'src/modules/market-making/strategy/dual-account/dual-account-planner.service';
+import { QuotePlannerService } from 'src/modules/market-making/strategy/quote/quote-planner.service';
 
 import { AdminDirectMarketMakingService } from './admin-direct-mm.service';
 
@@ -24,7 +28,11 @@ describe('AdminDirectMarketMakingService', () => {
     resolvedAt: '2026-04-01T00:00:00.000Z',
   });
 
-  const buildService = () => {
+  const buildService = (options?: {
+    balanceStateCacheService?: any;
+    balanceLedgerService?: any;
+    dualAccountPlannerService?: any;
+  }) => {
     const marketMakingRepository = {
       create: jest.fn((payload) => payload),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -192,7 +200,7 @@ describe('AdminDirectMarketMakingService', () => {
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
     };
-    const balanceLedgerService = {
+    const balanceLedgerService = options?.balanceLedgerService || {
       hasDepositCredit: jest.fn().mockResolvedValue(false),
       creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
       getExistingBalance: jest.fn().mockResolvedValue(null),
@@ -207,7 +215,7 @@ describe('AdminDirectMarketMakingService', () => {
     const orderBalanceRepository = {
       find: jest.fn().mockResolvedValue([]),
     };
-    const balanceStateCacheService = {
+    const balanceStateCacheService = options?.balanceStateCacheService || {
       getBalance: jest.fn().mockReturnValue(undefined),
       applyBalanceSnapshot: jest.fn(),
       isFresh: jest.fn().mockReturnValue(false),
@@ -252,7 +260,7 @@ describe('AdminDirectMarketMakingService', () => {
       },
       blockingReasons: [],
     };
-    const dualAccountPlannerService = {
+    const dualAccountPlannerService = options?.dualAccountPlannerService || {
       evaluateEfficientDualAccountReadiness: jest
         .fn()
         .mockResolvedValue(readyReadiness),
@@ -316,6 +324,134 @@ describe('AdminDirectMarketMakingService', () => {
       dualAccountPlannerService,
       readyReadiness,
     };
+  };
+
+  const buildServiceWithRealEfficientReadiness = (options?: {
+    makerBalance?: Record<string, Record<string, number>>;
+    takerBalance?: Record<string, Record<string, number>>;
+  }) => {
+    const balanceStateCacheService = new BalanceStateCacheService();
+    const freshnessTimestamp = new Date().toISOString();
+    const balanceLedgerService = {
+      hasDepositCredit: jest.fn().mockResolvedValue(false),
+      creditDeposit: jest.fn().mockResolvedValue({ applied: true }),
+      getExistingBalance: jest.fn().mockResolvedValue(null),
+      unlockFunds: jest.fn().mockResolvedValue({ applied: true }),
+    };
+    const exchangeConnector = {
+      getCachedTradingRules: jest.fn().mockReturnValue({
+        amountMin: 0.001,
+        costMin: 10,
+        makerFee: 0.001,
+        takerFee: 0.001,
+      }),
+      loadTradingRules: jest.fn(),
+      fetchOrderBook: jest.fn(),
+      fetchBalance: jest.fn(),
+      placeLimitOrder: jest.fn(),
+      cancelOrder: jest.fn(),
+      quantizeOrder: jest.fn(
+        (_exchangeName: string, _pair: string, qty: string, price: string) => ({
+          qty,
+          price,
+        }),
+      ),
+    };
+    const marketDataProvider = {
+      getTrackedOrderBookFreshness: jest.fn(() => ({ fresh: true })),
+      getTrackedBestBidAsk: jest.fn(() => ({
+        bestBid: '99',
+        bestAsk: '101',
+      })),
+    };
+    const intentStore = {
+      createLimitOrderIntent: jest.fn(),
+    };
+    const orderScopedBalanceQueryService = new OrderScopedBalanceQueryService(
+      balanceLedgerService as any,
+      balanceStateCacheService,
+    );
+    const quotePlanner = new QuotePlannerService(exchangeConnector as any);
+    const dualAccountPlannerService = new DualAccountPlannerService(
+      exchangeConnector as any,
+      orderScopedBalanceQueryService,
+      marketDataProvider as any,
+      undefined,
+      quotePlanner,
+      intentStore as any,
+    );
+
+    balanceStateCacheService.applyBalanceSnapshot(
+      'binance',
+      'api-key-1',
+      options?.makerBalance || {
+        free: { BTC: 0, USDT: 1000 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 0, USDT: 1000 },
+      },
+      freshnessTimestamp,
+      'ws',
+    );
+    balanceStateCacheService.applyBalanceSnapshot(
+      'binance',
+      'api-key-2',
+      options?.takerBalance || {
+        free: { BTC: 1, USDT: 0 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 1, USDT: 0 },
+      },
+      freshnessTimestamp,
+      'ws',
+    );
+
+    return {
+      ...buildService({
+        balanceStateCacheService,
+        balanceLedgerService,
+        dualAccountPlannerService,
+      }),
+      balanceStateCacheService,
+      balanceLedgerService,
+      exchangeConnector,
+      marketDataProvider,
+      intentStore,
+      orderScopedBalanceQueryService,
+      dualAccountPlannerService,
+    };
+  };
+
+  const configureEfficientDefinition = ({
+    strategyDefinitionRepository,
+    strategyConfigResolver,
+  }: {
+    strategyDefinitionRepository: { findOne: jest.Mock };
+    strategyConfigResolver: {
+      getDefinitionControllerType: jest.Mock;
+      resolveForOrderSnapshot: jest.Mock;
+    };
+  }) => {
+    strategyDefinitionRepository.findOne.mockResolvedValue({
+      id: 'strategy-efficient',
+      key: 'efficient-dual-account-volume',
+      name: 'Efficient Dual Account Volume',
+      enabled: true,
+      controllerType: 'efficientDualAccountVolume',
+      capabilities: dualAccountLaunchConfig,
+      configSchema: {},
+    });
+    strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
+      'efficientDualAccountVolume',
+    );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'efficientDualAccountVolume',
+      definitionKey: 'efficient-dual-account-volume',
+      definitionName: 'Efficient Dual Account Volume',
+      resolvedConfig: {
+        symbol: 'BTC/USDT',
+        maxOrderAmount: '0.5',
+        interval: 30,
+      },
+    });
   };
 
   it('surfaces HuFi campaign join failure details to admin clients', async () => {
@@ -1289,6 +1425,147 @@ describe('AdminDirectMarketMakingService', () => {
     expect(exchange.fetchTicker).not.toHaveBeenCalled();
   });
 
+  it('evaluates new efficient direct-readiness from selected-account balances before order ledger rows exist', async () => {
+    const fixture = buildServiceWithRealEfficientReadiness();
+    const {
+      service,
+      balanceLedgerService,
+      exchange,
+      exchangeConnector,
+      intentStore,
+      userOrdersService,
+      marketMakingRuntimeService,
+      orderReservationService,
+    } = fixture;
+
+    configureEfficientDefinition(fixture);
+
+    await expect(
+      service.evaluateDirectReadiness({
+        ...dualAccountStartDto,
+        strategyDefinitionId: 'strategy-efficient',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        canStart: true,
+        mode: 'balanced',
+        blockingReasons: [],
+        missingBalances: [],
+        bestFirstAction: expect.objectContaining({
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          side: 'buy',
+          quantity: '0.5',
+        }),
+      }),
+    );
+
+    expect(balanceLedgerService.getExistingBalance).not.toHaveBeenCalled();
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
+    expect(
+      orderReservationService.recoverDanglingReservationsForOrder,
+    ).not.toHaveBeenCalled();
+    expect(exchange.fetchBalance).not.toHaveBeenCalled();
+    expect(exchange.fetchTicker).not.toHaveBeenCalled();
+    expect(exchangeConnector.fetchBalance).not.toHaveBeenCalled();
+    expect(exchangeConnector.fetchOrderBook).not.toHaveBeenCalled();
+    expect(exchangeConnector.placeLimitOrder).not.toHaveBeenCalled();
+    expect(exchangeConnector.cancelOrder).not.toHaveBeenCalled();
+    expect(intentStore.createLimitOrderIntent).not.toHaveBeenCalled();
+  });
+
+  it('direct-start revalidates new efficient orders from selected-account balances before seeding order ledger rows', async () => {
+    const fixture = buildServiceWithRealEfficientReadiness();
+    const {
+      service,
+      balanceLedgerService,
+      userOrdersService,
+      marketMakingRuntimeService,
+    } = fixture;
+
+    configureEfficientDefinition(fixture);
+
+    await expect(
+      service.directStart(
+        {
+          ...dualAccountStartDto,
+          strategyDefinitionId: 'strategy-efficient',
+        },
+        'admin-user',
+      ),
+    ).resolves.toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
+
+    expect(balanceLedgerService.getExistingBalance).not.toHaveBeenCalled();
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'admin_direct',
+        strategySnapshot: expect.objectContaining({
+          resolvedConfig: expect.objectContaining({
+            marketMakingOrderId: expect.any(String),
+            makerAccountLabel: 'api-key-1',
+            takerAccountLabel: 'api-key-2',
+          }),
+        }),
+      }),
+    );
+    expect(balanceLedgerService.creditDeposit).toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).toHaveBeenCalled();
+  });
+
+  it('direct-start blocks unsafe efficient orders with planner balance blockers from real collaborators', async () => {
+    const fixture = buildServiceWithRealEfficientReadiness({
+      makerBalance: {
+        free: { BTC: 0, USDT: 4 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 0, USDT: 4 },
+      },
+      takerBalance: {
+        free: { BTC: 0, USDT: 0 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 0, USDT: 0 },
+      },
+    });
+    const {
+      service,
+      userOrdersService,
+      marketMakingRuntimeService,
+      balanceLedgerService,
+    } = fixture;
+
+    configureEfficientDefinition(fixture);
+
+    await expect(
+      service.directStart(
+        {
+          ...dualAccountStartDto,
+          strategyDefinitionId: 'strategy-efficient',
+        },
+        'admin-user',
+      ),
+    ).rejects.toThrow(
+      'Planner readiness blocked start: No dual-account role/direction candidate satisfies exchange minimums with the current balances',
+    );
+
+    await expect(
+      service.directStart(
+        {
+          ...dualAccountStartDto,
+          strategyDefinitionId: 'strategy-efficient',
+        },
+        'admin-user',
+      ),
+    ).rejects.toThrow(/api-key-1 needs .* USDT/);
+    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
+    expect(marketMakingRuntimeService.startOrder).not.toHaveBeenCalled();
+    expect(balanceLedgerService.creditDeposit).not.toHaveBeenCalled();
+  });
+
   it('blocks efficient direct start when planner readiness is not startable', async () => {
     const {
       service,
@@ -1421,6 +1698,83 @@ describe('AdminDirectMarketMakingService', () => {
         makerAccountLabel: 'api-key-1',
         takerAccountLabel: 'api-key-2',
       }),
+    );
+    expect(exchange.fetchBalance).not.toHaveBeenCalled();
+  });
+
+  it('keeps persisted efficient status readiness bound to order-scoped ledger balances', async () => {
+    const fixture = buildServiceWithRealEfficientReadiness({
+      makerBalance: {
+        free: { BTC: 0, USDT: 0 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 0, USDT: 0 },
+      },
+      takerBalance: {
+        free: { BTC: 0, USDT: 0 },
+        used: { BTC: 0, USDT: 0 },
+        total: { BTC: 0, USDT: 0 },
+      },
+    });
+    const { service, marketMakingRepository, balanceLedgerService, exchange } =
+      fixture;
+
+    balanceLedgerService.getExistingBalance.mockImplementation(
+      async (_orderId: string, assetId: string) => {
+        const amount = assetId === 'BTC' ? '1' : '1000';
+
+        return {
+          available: amount,
+          total: amount,
+        };
+      },
+    );
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-efficient',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'stopped',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-efficient',
+          marketMakingOrderId: 'order-efficient',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          maxOrderAmount: '0.5',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+
+    const result = await service.getDirectOrderStatus('order-efficient');
+
+    expect(result.readiness).toEqual(
+      expect.objectContaining({
+        canStart: true,
+        bestFirstAction: expect.objectContaining({
+          makerAccountLabel: expect.any(String),
+          takerAccountLabel: expect.any(String),
+        }),
+      }),
+    );
+    expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
+      'order-efficient',
+      'BTC',
+    );
+    expect(balanceLedgerService.getExistingBalance).toHaveBeenCalledWith(
+      'order-efficient',
+      'USDT',
     );
     expect(exchange.fetchBalance).not.toHaveBeenCalled();
   });

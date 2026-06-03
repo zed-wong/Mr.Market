@@ -256,7 +256,7 @@ export class AdminDirectMarketMakingService {
       this.normalizeEfficientDirectConfig(resolvedConfig.resolvedConfig),
     );
 
-    return this.evaluateEfficientReadinessFromConfig(
+    return this.evaluateCreateTimeEfficientReadinessFromConfig(
       resolvedConfig.resolvedConfig,
     );
   }
@@ -345,7 +345,7 @@ export class AdminDirectMarketMakingService {
         this.normalizeEfficientDirectConfig(resolvedConfig.resolvedConfig),
       );
       this.assertPlannerReadinessCanStart(
-        await this.evaluateEfficientReadinessFromConfig(
+        await this.evaluateCreateTimeEfficientReadinessFromConfig(
           resolvedConfig.resolvedConfig,
         ),
       );
@@ -1373,6 +1373,16 @@ export class AdminDirectMarketMakingService {
     return this.dualAccountPlannerService.evaluateEfficientDualAccountReadiness(
       config as DualAccountVolumeStrategyParams,
     );
+  }
+
+  private async evaluateCreateTimeEfficientReadinessFromConfig(
+    config: Record<string, unknown>,
+  ): Promise<DualAccountReadinessResult> {
+    const createTimeReadinessConfig = { ...config };
+
+    delete createTimeReadinessConfig.marketMakingOrderId;
+
+    return this.evaluateEfficientReadinessFromConfig(createTimeReadinessConfig);
   }
 
   private assertPlannerReadinessCanStart(
