@@ -321,7 +321,7 @@
                                 <table class="table table-sm">
                                     <thead class="bg-base-200/60">
                                         <tr class="text-xs text-base-content/55">
-                                            <th>{$_("admin_direct_mm_rank")}</th>
+                                            <th class="w-16">{$_("admin_direct_mm_rank")}</th>
                                             <th>{$_("admin_direct_mm_wallet")}</th>
                                             <th>{$_("admin_direct_mm_score")}</th>
                                             <th>{$_("admin_direct_mm_reward")}</th>
@@ -335,11 +335,15 @@
                                                     ? "border-l-2 border-l-primary bg-primary/[0.07]"
                                                     : "hover:bg-base-200/35"}
                                             >
-                                                <td>
+                                                <td class="w-16">
                                                     <span
-                                                        class="badge badge-sm border-base-300 bg-base-100 font-mono text-base-content"
-                                                        class:badge-primary={index === 0}
+                                                        class="inline-flex h-6 min-w-9 items-center justify-center rounded-full border px-2 font-mono text-xs font-semibold"
+                                                        class:border-primary={index === 0}
+                                                        class:bg-primary={index === 0}
                                                         class:text-primary-content={index === 0}
+                                                        class:border-base-300={index !== 0}
+                                                        class:bg-base-100={index !== 0}
+                                                        class:text-base-content={index !== 0}
                                                     >
                                                         {rankLabel(index + 1)}
                                                     </span>
