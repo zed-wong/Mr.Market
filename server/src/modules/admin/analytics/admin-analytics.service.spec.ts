@@ -392,8 +392,9 @@ describe('AdminAnalyticsService', () => {
         maxDrawdownQuote: '0',
       },
     });
-    expect(result.analytics.perOrder.timeline.events.map((event) => event.type))
-      .toEqual(expect.arrayContaining(['quote', 'fill', 'cancel']));
+    expect(
+      result.analytics.perOrder.timeline.events.map((event) => event.type),
+    ).toEqual(expect.arrayContaining(['quote', 'fill', 'cancel']));
   });
 
   it('merges timeline events with deterministic ordering, stable source refs, and range-scoped queries', async () => {
@@ -633,6 +634,12 @@ describe('AdminAnalyticsService', () => {
           value: '0.5',
           filledQuotes: 1,
           totalQuotes: 2,
+          denominator: {
+            source: 'tracked_orders',
+            filledSource: 'tracked_orders',
+            eligibleTrackedOrders: 2,
+            eligibleStrategyOrderIntents: 1,
+          },
         },
         quoteUptime: {
           status: 'available',
@@ -689,9 +696,9 @@ describe('AdminAnalyticsService', () => {
       value: null,
       unavailableReason: 'order-book-mid-unavailable',
     });
-    expect(JSON.stringify(result.analytics.perOrder.pnl.unrealized)).not.toContain(
-      '"0"',
-    );
+    expect(
+      JSON.stringify(result.analytics.perOrder.pnl.unrealized),
+    ).not.toContain('"0"');
     expect(result.analytics.perOrder.timeline.events.length).toBeGreaterThan(0);
   });
 
@@ -811,9 +818,9 @@ describe('AdminAnalyticsService', () => {
     await expect(
       service.getFoundation({ startAt: ts(10), endAt: ts(1) }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    await expect(
-      service.getFoundation({ scope: 'order' }),
-    ).rejects.toThrow('orderId is required');
+    await expect(service.getFoundation({ scope: 'order' })).rejects.toThrow(
+      'orderId is required',
+    );
     await expect(
       service.getFoundation({ scope: 'pair', exchange: 'binance' }),
     ).rejects.toThrow('pair is required');
@@ -1445,6 +1452,36 @@ describe('AdminAnalyticsService', () => {
         updatedAt: ts(2),
       },
     ]);
+    const intents = createRepository([
+      {
+        intentId: 'intent-direct',
+        strategyKey: 'strategy-direct',
+        type: 'CREATE_LIMIT_ORDER',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'DONE',
+        metadata: { orderId: 'direct-active' },
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+      {
+        intentId: 'intent-payment',
+        strategyKey: 'strategy-payment',
+        type: 'CREATE_LIMIT_ORDER',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        side: 'buy',
+        price: '100',
+        qty: '1',
+        status: 'DONE',
+        metadata: { orderId: 'payment-active' },
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+    ]);
     const performanceService = {
       getOrderPerformance: jest.fn(async (orderId: string) => {
         const summaries = {
@@ -1506,7 +1543,7 @@ describe('AdminAnalyticsService', () => {
       createRepository([]).repository as any,
       marketMakingOrders.repository as any,
       trackedOrders.repository as any,
-      createRepository([]).repository as any,
+      intents.repository as any,
       createRepository([]).repository as any,
       orderBookTracker as any,
       performanceService as any,
@@ -1523,10 +1560,226 @@ describe('AdminAnalyticsService', () => {
       realizedPnl: { status: 'available', value: '10', currency: 'USDT' },
       feeCost: { status: 'available', value: '1', currency: 'USDT' },
       spreadCapture: { status: 'available', value: '10', currency: 'USDT' },
-      fillRate: { status: 'available', value: '1', filledQuotes: 1 },
+      fillRate: {
+        status: 'available',
+        value: '1',
+        filledQuotes: 1,
+        totalQuotes: 1,
+        denominator: {
+          source: 'tracked_orders',
+          filledSource: 'tracked_orders',
+          eligibleTrackedOrders: 1,
+          eligibleStrategyOrderIntents: 1,
+        },
+      },
     });
     expect(performanceService.getOrderPerformance).not.toHaveBeenCalledWith(
       'direct-deleted',
     );
+  });
+
+  it('marks admin-wide monetary totals unavailable across incompatible quote currencies and exposes per-currency breakdowns', async () => {
+    const trackedOrders = createRepository([
+      {
+        trackingKey: 'track-usdt',
+        orderId: 'order-usdt',
+        strategyKey: 'strategy-usdt',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+        cumulativeFilledQty: '1',
+        status: 'filled',
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+      {
+        trackingKey: 'track-usd',
+        orderId: 'order-usd',
+        strategyKey: 'strategy-usd',
+        exchange: 'kraken',
+        pair: 'ETH/USD',
+        cumulativeFilledQty: '1',
+        status: 'filled',
+        createdAt: ts(1),
+        updatedAt: ts(2),
+      },
+    ]);
+    const performanceService = {
+      getOrderPerformance: jest.fn(async (orderId: string) => {
+        const performances = {
+          'order-usdt': {
+            series: [{ t: ts(2), realized: '5', fees: '1', net: '4' }],
+            summary: {
+              realizedPnlQuote: '5',
+              feesQuote: '1',
+              netPnlQuote: '4',
+              tradedQuoteVolume: '100',
+              effectiveSpreadBps: '500',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '1',
+              inventoryCostQuote: '100',
+              inventoryAverageCostQuote: '100',
+            },
+          },
+          'order-usd': {
+            series: [{ t: ts(3), realized: '3', fees: '0.5', net: '2.5' }],
+            summary: {
+              realizedPnlQuote: '3',
+              feesQuote: '0.5',
+              netPnlQuote: '2.5',
+              tradedQuoteVolume: '50',
+              effectiveSpreadBps: '600',
+              fillCount: 1,
+              otherFees: [],
+              inventoryBaseQty: '1',
+              inventoryCostQuote: '50',
+              inventoryAverageCostQuote: '50',
+            },
+          },
+        };
+
+        return performances[orderId];
+      }),
+    };
+    const orderBookTracker = {
+      getOrderBook: jest.fn((exchange: string, pair: string) =>
+        exchange === 'binance' && pair === 'BTC/USDT'
+          ? { bids: [[109, 1]], asks: [[111, 1]], sequence: 10 }
+          : { bids: [[59, 1]], asks: [[61, 1]], sequence: 11 },
+      ),
+      getLastUpdateAt: jest.fn(() => Date.parse(ts(8))),
+      isStale: jest.fn(() => false),
+      queueSnapshot: jest.fn(),
+      stop: jest.fn(),
+    };
+    const service = new AdminAnalyticsService(
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      createRepository([
+        {
+          orderId: 'order-usdt',
+          exchangeName: 'binance',
+          pair: 'BTC/USDT',
+          source: 'admin_direct',
+          state: 'active',
+          createdAt: ts(0),
+        },
+        {
+          orderId: 'order-usd',
+          exchangeName: 'kraken',
+          pair: 'ETH/USD',
+          source: 'admin_direct',
+          state: 'active',
+          createdAt: ts(0),
+        },
+      ]).repository as any,
+      trackedOrders.repository as any,
+      createRepository([]).repository as any,
+      createRepository([]).repository as any,
+      orderBookTracker as any,
+      performanceService as any,
+    );
+
+    const result = await service.getFoundation({
+      scope: 'admin',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.analytics.aggregate.pnl).toMatchObject({
+      realized: {
+        status: 'unavailable',
+        value: null,
+        currency: null,
+        unavailableReason: 'cross-currency-aggregate-unavailable',
+      },
+      unrealized: {
+        status: 'unavailable',
+        value: null,
+        currency: null,
+        unavailableReason: 'cross-currency-aggregate-unavailable',
+      },
+      net: {
+        status: 'unavailable',
+        value: null,
+        currency: null,
+        unavailableReason: 'cross-currency-aggregate-unavailable',
+      },
+    });
+    expect(result.analytics.aggregate.pnlSeries).toEqual([]);
+    expect(result.analytics.aggregate.quoteCurrencyBreakdown).toEqual([
+      expect.objectContaining({
+        quoteCurrency: 'USD',
+        orderIds: ['order-usd'],
+        realizedPnl: {
+          status: 'available',
+          value: '3',
+          currency: 'USD',
+          unavailableReason: null,
+        },
+        unrealizedPnl: {
+          status: 'available',
+          value: '10',
+          currency: 'USD',
+          unavailableReason: null,
+        },
+        netPnl: {
+          status: 'available',
+          value: '12.5',
+          currency: 'USD',
+          unavailableReason: null,
+        },
+        feeCost: {
+          status: 'available',
+          value: '0.5',
+          currency: 'USD',
+          unavailableReason: null,
+        },
+      }),
+      expect.objectContaining({
+        quoteCurrency: 'USDT',
+        orderIds: ['order-usdt'],
+        realizedPnl: {
+          status: 'available',
+          value: '5',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+        unrealizedPnl: {
+          status: 'available',
+          value: '10',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+        netPnl: {
+          status: 'available',
+          value: '14',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+        feeCost: {
+          status: 'available',
+          value: '1',
+          currency: 'USDT',
+          unavailableReason: null,
+        },
+      }),
+    ]);
+    expect(result.analytics.aggregate.directMarketMakingTotals).toMatchObject({
+      realizedPnl: {
+        status: 'unavailable',
+        value: null,
+        unavailableReason: 'cross-currency-aggregate-unavailable',
+      },
+      feeCost: {
+        status: 'unavailable',
+        value: null,
+        unavailableReason: 'cross-currency-aggregate-unavailable',
+      },
+    });
+    expect(
+      result.analytics.aggregate.directMarketMakingTotals
+        .quoteCurrencyBreakdown,
+    ).toHaveLength(2);
   });
 });
