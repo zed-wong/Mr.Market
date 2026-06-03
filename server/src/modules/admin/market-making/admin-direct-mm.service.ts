@@ -45,6 +45,7 @@ import {
   StrategyIntentQueueState,
   StrategyIntentStoreService,
 } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
+import type { StrategyOrderIntent } from 'src/modules/market-making/strategy/config/strategy-intent.types';
 import { StrategyService } from 'src/modules/market-making/strategy/strategy.service';
 import {
   ExchangeOrderTrackerService,
@@ -105,6 +106,44 @@ type DirectExecutionAccount = {
 type DirectMarketSnapshot = {
   balance?: ccxt.Balances;
   tickerPrice?: BigNumber | null;
+};
+
+type DirectCycleLegRole = 'maker' | 'taker';
+
+type DirectCycleLegStatus =
+  | 'planned'
+  | 'new'
+  | 'sent'
+  | 'acked'
+  | 'done'
+  | 'pending_create'
+  | 'open'
+  | 'partially_filled'
+  | 'filled'
+  | 'cancelled'
+  | 'failed'
+  | 'unknown';
+
+type DirectCycleLeg = {
+  cycleId: string;
+  cycleRole: DirectCycleLegRole;
+  accountLabel: string;
+  side: 'buy' | 'sell';
+  plannedQty: string;
+  plannedPrice: string;
+  filledQty: string;
+  notional: string;
+  status: DirectCycleLegStatus;
+  failureReason: string | null;
+  linkedIntentId: string | null;
+  linkedTrackedOrderId: string | null;
+};
+
+type DirectCycleStatus = {
+  cycleId: string;
+  aggregateStatus: string;
+  failureReason: string | null;
+  legs: DirectCycleLeg[];
 };
 
 @Injectable()
@@ -751,6 +790,7 @@ export class AdminDirectMarketMakingService {
       : null;
     const openOrders =
       this.exchangeOrderTrackerService.getLiveOrders(strategyKey);
+    const trackedOrders = this.getTrackedOrders(strategyKey);
     const intents =
       order.state === 'stopped'
         ? []
@@ -1006,6 +1046,12 @@ export class AdminDirectMarketMakingService {
       recentErrors,
       orderConfig,
       readiness,
+      cycles: this.buildRuntimeCycleStatuses(
+        resolvedConfig,
+        intents,
+        trackedOrders,
+        queueState,
+      ),
       spread,
       inventoryBalances,
       balanceCacheStatus,
@@ -1572,6 +1618,449 @@ export class AdminDirectMarketMakingService {
         hasOpenOrder: false,
       });
     }
+  }
+
+  private buildRuntimeCycleStatuses(
+    resolvedConfig: Record<string, unknown>,
+    intents: StrategyOrderIntent[],
+    trackedOrders: TrackedOrder[],
+    queueState?: StrategyIntentQueueState | null,
+  ): DirectCycleStatus[] {
+    const groups = new Map<
+      string,
+      { cycleId: string; legs: Map<string, DirectCycleLeg> }
+    >();
+    const activeCycle = this.readActiveCycle(resolvedConfig.activeCycle);
+
+    if (activeCycle) {
+      this.upsertCycleLeg(groups, {
+        cycleId: activeCycle.cycleId,
+        cycleRole: 'maker',
+        accountLabel: activeCycle.makerAccountLabel,
+        side: activeCycle.makerSide,
+        plannedQty: activeCycle.requestedQty,
+        plannedPrice: activeCycle.price,
+        filledQty: activeCycle.makerFilledQty,
+        notional: this.computeCycleLegNotional(
+          activeCycle.requestedQty,
+          activeCycle.price,
+        ),
+        status: new BigNumber(activeCycle.makerFilledQty || 0).isGreaterThan(0)
+          ? 'partially_filled'
+          : 'planned',
+        failureReason: null,
+        linkedIntentId: null,
+        linkedTrackedOrderId: null,
+      });
+      this.upsertCycleLeg(groups, {
+        cycleId: activeCycle.cycleId,
+        cycleRole: 'taker',
+        accountLabel: activeCycle.takerAccountLabel,
+        side: activeCycle.makerSide === 'buy' ? 'sell' : 'buy',
+        plannedQty: activeCycle.requestedQty,
+        plannedPrice: activeCycle.price,
+        filledQty: activeCycle.takerFilledQty,
+        notional: this.computeCycleLegNotional(
+          activeCycle.requestedQty,
+          activeCycle.price,
+        ),
+        status: new BigNumber(activeCycle.takerFilledQty || 0).isGreaterThan(0)
+          ? 'partially_filled'
+          : 'planned',
+        failureReason: null,
+        linkedIntentId: null,
+        linkedTrackedOrderId: null,
+      });
+    }
+
+    for (const intent of intents) {
+      const leg = this.buildCycleLegFromIntent(intent, trackedOrders);
+
+      if (leg) {
+        this.upsertCycleLeg(groups, leg);
+      }
+    }
+
+    for (const trackedOrder of trackedOrders) {
+      const leg = this.buildCycleLegFromTrackedOrder(
+        trackedOrder,
+        intents,
+        activeCycle,
+        queueState,
+      );
+
+      if (leg) {
+        this.upsertCycleLeg(groups, leg);
+      }
+    }
+
+    return [...groups.values()]
+      .map((group) => {
+        const legs = [...group.legs.values()].sort((left, right) => {
+          if (left.cycleRole !== right.cycleRole) {
+            return left.cycleRole === 'maker' ? -1 : 1;
+          }
+
+          return left.accountLabel.localeCompare(right.accountLabel);
+        });
+        const failureReason =
+          legs.find((leg) => leg.failureReason)?.failureReason || null;
+
+        return {
+          cycleId: group.cycleId,
+          aggregateStatus: this.resolveCycleAggregateStatus(legs),
+          failureReason,
+          legs,
+        };
+      })
+      .sort((left, right) => left.cycleId.localeCompare(right.cycleId));
+  }
+
+  private buildCycleLegFromIntent(
+    intent: StrategyOrderIntent,
+    trackedOrders: TrackedOrder[],
+  ): DirectCycleLeg | null {
+    const metadata = this.readCycleMetadata(intent.metadata);
+    const cycleId = this.readTrimmedString(metadata.cycleId);
+
+    if (!cycleId) {
+      return null;
+    }
+
+    const cycleRole = this.readCycleRole(
+      metadata.cycleRole || metadata.role,
+    );
+
+    if (!cycleRole) {
+      return null;
+    }
+
+    const trackedOrder = this.findTrackedOrderForIntent(intent, trackedOrders);
+    const plannedQty =
+      this.readTrimmedString(metadata.plannedQty) || intent.qty || '0';
+    const plannedPrice =
+      this.readTrimmedString(metadata.plannedPrice) || intent.price || '0';
+
+    return {
+      cycleId,
+      cycleRole,
+      accountLabel:
+        this.readTrimmedString(metadata.accountLabel) ||
+        intent.accountLabel ||
+        '',
+      side: intent.side,
+      plannedQty,
+      plannedPrice,
+      filledQty:
+        trackedOrder?.cumulativeFilledQty ||
+        this.readTrimmedString(metadata.filledQty) ||
+        '0',
+      notional:
+        this.readTrimmedString(metadata.notional) ||
+        this.computeCycleLegNotional(plannedQty, plannedPrice),
+      status: trackedOrder
+        ? this.normalizeCycleLegStatus(trackedOrder.status)
+        : this.normalizeCycleLegStatus(
+            this.readTrimmedString(metadata.status) || intent.status,
+          ),
+      failureReason:
+        intent.errorReason ||
+        this.readTrimmedString(metadata.failureReason) ||
+        null,
+      linkedIntentId:
+        this.readTrimmedString(metadata.linkedIntentId) || intent.intentId,
+      linkedTrackedOrderId:
+        trackedOrder?.exchangeOrderId ||
+        intent.mixinOrderId ||
+        this.readTrimmedString(metadata.linkedTrackedOrderId) ||
+        null,
+    };
+  }
+
+  private buildCycleLegFromTrackedOrder(
+    trackedOrder: TrackedOrder,
+    intents: StrategyOrderIntent[],
+    activeCycle: ReturnType<AdminDirectMarketMakingService['readActiveCycle']>,
+    queueState?: StrategyIntentQueueState | null,
+  ): DirectCycleLeg | null {
+    const matchedIntent = this.findIntentForTrackedOrder(trackedOrder, intents);
+    const metadata = this.readCycleMetadata(matchedIntent?.metadata);
+    const cycleId =
+      this.readTrimmedString(metadata.cycleId) ||
+      (activeCycle &&
+      trackedOrder.orderId === activeCycle.orderId &&
+      trackedOrder.role &&
+      (trackedOrder.accountLabel === activeCycle.makerAccountLabel ||
+        trackedOrder.accountLabel === activeCycle.takerAccountLabel)
+        ? activeCycle.cycleId
+        : '');
+    const cycleRole = this.readCycleRole(
+      metadata.cycleRole || metadata.role || trackedOrder.role,
+    );
+
+    if (!cycleId || !cycleRole) {
+      return null;
+    }
+
+    const plannedQty =
+      this.readTrimmedString(metadata.plannedQty) || trackedOrder.qty || '0';
+    const plannedPrice =
+      this.readTrimmedString(metadata.plannedPrice) ||
+      trackedOrder.price ||
+      '0';
+    const failureReason =
+      this.readTrimmedString(metadata.failureReason) ||
+      matchedIntent?.errorReason ||
+      (trackedOrder.status === 'failed'
+        ? queueState?.failedHeadErrorReason || 'tracked order failed'
+        : null);
+
+    return {
+      cycleId,
+      cycleRole,
+      accountLabel: trackedOrder.accountLabel || '',
+      side: trackedOrder.side,
+      plannedQty,
+      plannedPrice,
+      filledQty: trackedOrder.cumulativeFilledQty || '0',
+      notional:
+        this.readTrimmedString(metadata.notional) ||
+        this.computeCycleLegNotional(plannedQty, plannedPrice),
+      status: this.normalizeCycleLegStatus(trackedOrder.status),
+      failureReason,
+      linkedIntentId:
+        this.readTrimmedString(metadata.linkedIntentId) ||
+        matchedIntent?.intentId ||
+        null,
+      linkedTrackedOrderId: trackedOrder.exchangeOrderId,
+    };
+  }
+
+  private upsertCycleLeg(
+    groups: Map<string, { cycleId: string; legs: Map<string, DirectCycleLeg> }>,
+    leg: DirectCycleLeg,
+  ): void {
+    const group = groups.get(leg.cycleId) || {
+      cycleId: leg.cycleId,
+      legs: new Map<string, DirectCycleLeg>(),
+    };
+    const key = `${leg.cycleRole}:${leg.accountLabel}:${leg.side}`;
+    const previous = group.legs.get(key);
+
+    group.legs.set(
+      key,
+      previous
+        ? {
+            ...previous,
+            ...leg,
+            failureReason: leg.failureReason || previous.failureReason,
+            linkedIntentId: leg.linkedIntentId || previous.linkedIntentId,
+            linkedTrackedOrderId:
+              leg.linkedTrackedOrderId || previous.linkedTrackedOrderId,
+          }
+        : leg,
+    );
+    groups.set(leg.cycleId, group);
+  }
+
+  private findTrackedOrderForIntent(
+    intent: StrategyOrderIntent,
+    trackedOrders: TrackedOrder[],
+  ): TrackedOrder | undefined {
+    return trackedOrders.find((order) => {
+      if (intent.mixinOrderId && order.exchangeOrderId === intent.mixinOrderId) {
+        return true;
+      }
+
+      const role = this.readCycleRole(
+        this.readCycleMetadata(intent.metadata).cycleRole ||
+          this.readCycleMetadata(intent.metadata).role,
+      );
+
+      return (
+        (!role || order.role === role) &&
+        order.accountLabel === intent.accountLabel &&
+        order.side === intent.side &&
+        order.price === intent.price &&
+        order.qty === intent.qty
+      );
+    });
+  }
+
+  private findIntentForTrackedOrder(
+    trackedOrder: TrackedOrder,
+    intents: StrategyOrderIntent[],
+  ): StrategyOrderIntent | undefined {
+    return intents.find((intent) => {
+      if (intent.mixinOrderId && intent.mixinOrderId === trackedOrder.exchangeOrderId) {
+        return true;
+      }
+
+      const role = this.readCycleRole(
+        this.readCycleMetadata(intent.metadata).cycleRole ||
+          this.readCycleMetadata(intent.metadata).role,
+      );
+
+      return (
+        (!role || role === trackedOrder.role) &&
+        intent.accountLabel === trackedOrder.accountLabel &&
+        intent.side === trackedOrder.side &&
+        intent.price === trackedOrder.price &&
+        intent.qty === trackedOrder.qty
+      );
+    });
+  }
+
+  private resolveCycleAggregateStatus(legs: DirectCycleLeg[]): string {
+    if (legs.some((leg) => leg.status === 'failed' || leg.failureReason)) {
+      return 'failed';
+    }
+    if (legs.some((leg) => leg.status === 'cancelled')) {
+      return legs.some((leg) => new BigNumber(leg.filledQty || 0).isGreaterThan(0))
+        ? 'partial'
+        : 'cancelled';
+    }
+    if (
+      legs.length >= 2 &&
+      legs.every((leg) => leg.status === 'filled' || leg.status === 'done')
+    ) {
+      return 'completed';
+    }
+    if (
+      legs.some(
+        (leg) =>
+          leg.status === 'partially_filled' ||
+          new BigNumber(leg.filledQty || 0).isGreaterThan(0),
+      )
+    ) {
+      return 'partial';
+    }
+    if (legs.some((leg) => leg.status === 'open')) {
+      return 'open';
+    }
+    if (legs.length > 0) {
+      return 'pending';
+    }
+
+    return 'unknown';
+  }
+
+  private readActiveCycle(value: unknown):
+    | {
+        cycleId: string;
+        orderId: string;
+        makerSide: 'buy' | 'sell';
+        makerAccountLabel: string;
+        takerAccountLabel: string;
+        price: string;
+        requestedQty: string;
+        makerFilledQty: string;
+        takerFilledQty: string;
+      }
+    | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const cycle = value as Record<string, unknown>;
+    const makerSide = String(cycle.makerSide || '').trim();
+
+    if (makerSide !== 'buy' && makerSide !== 'sell') {
+      return null;
+    }
+
+    const cycleId = this.readTrimmedString(cycle.cycleId);
+    const orderId = this.readTrimmedString(cycle.orderId);
+    const makerAccountLabel = this.readTrimmedString(cycle.makerAccountLabel);
+    const takerAccountLabel = this.readTrimmedString(cycle.takerAccountLabel);
+    const price = this.readTrimmedString(cycle.price);
+    const requestedQty = this.readTrimmedString(cycle.requestedQty);
+
+    if (
+      !cycleId ||
+      !orderId ||
+      !makerAccountLabel ||
+      !takerAccountLabel ||
+      !price ||
+      !requestedQty
+    ) {
+      return null;
+    }
+
+    return {
+      cycleId,
+      orderId,
+      makerSide,
+      makerAccountLabel,
+      takerAccountLabel,
+      price,
+      requestedQty,
+      makerFilledQty: this.readTrimmedString(cycle.makerFilledQty) || '0',
+      takerFilledQty: this.readTrimmedString(cycle.takerFilledQty) || '0',
+    };
+  }
+
+  private readCycleMetadata(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object'
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private readCycleRole(value: unknown): DirectCycleLegRole | null {
+    const role = String(value || '').trim();
+
+    return role === 'maker' || role === 'taker' ? role : null;
+  }
+
+  private normalizeCycleLegStatus(value: unknown): DirectCycleLegStatus {
+    const status = String(value || '')
+      .trim()
+      .toLowerCase();
+
+    if (
+      [
+        'planned',
+        'new',
+        'sent',
+        'acked',
+        'done',
+        'pending_create',
+        'open',
+        'partially_filled',
+        'filled',
+        'cancelled',
+        'failed',
+      ].includes(status)
+    ) {
+      return status as DirectCycleLegStatus;
+    }
+    if (status === 'canceled') {
+      return 'cancelled';
+    }
+    if (status === 'closed') {
+      return 'filled';
+    }
+
+    return 'unknown';
+  }
+
+  private computeCycleLegNotional(qty: string, price: string): string {
+    const notional = new BigNumber(qty || 0).multipliedBy(
+      new BigNumber(price || 0),
+    );
+
+    return notional.isFinite() ? notional.toFixed() : '0';
+  }
+
+  private readTrimmedString(value: unknown): string {
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    return '';
   }
 
   private getTrackedOrders(strategyKey: string): TrackedOrder[] {

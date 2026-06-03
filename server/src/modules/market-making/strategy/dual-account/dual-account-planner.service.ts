@@ -1325,7 +1325,7 @@ export class DualAccountPlannerService {
       throw new Error('strategy intent store is not available');
     }
 
-    return this.strategyIntentStoreService.createLimitOrderIntent(
+    const intent = this.strategyIntentStoreService.createLimitOrderIntent(
       runtimeInstanceKey,
       strategyKey,
       userId,
@@ -1343,6 +1343,28 @@ export class DualAccountPlannerService {
       accountLabel,
       timeInForce,
     );
+
+    return this.attachCycleLinkedIntentMetadata(intent);
+  }
+
+  private attachCycleLinkedIntentMetadata(intent: ExecutorAction): ExecutorAction {
+    const metadata =
+      intent.metadata && typeof intent.metadata === 'object'
+        ? (intent.metadata as Record<string, unknown>)
+        : undefined;
+
+    if (!metadata?.cycleId) {
+      return intent;
+    }
+
+    return {
+      ...intent,
+      metadata: {
+        ...metadata,
+        linkedIntentId: this.readString(metadata.linkedIntentId, intent.intentId),
+        linkedTrackedOrderId: metadata.linkedTrackedOrderId ?? null,
+      },
+    };
   }
 
   async buildDualAccountVolumeActions(
@@ -1565,6 +1587,17 @@ export class DualAccountPlannerService {
           tickId,
           orderId,
           role: 'maker',
+          cycleRole: 'maker',
+          accountLabel: resolvedAccounts.makerAccountLabel,
+          side,
+          plannedQty: adjustedQuote.qty.toFixed(),
+          plannedPrice: adjustedQuote.price.toFixed(),
+          filledQty: '0',
+          notional: estimatedLegNotional.toFixed(),
+          status: 'planned',
+          failureReason: null,
+          linkedIntentId: null,
+          linkedTrackedOrderId: null,
           preferredSide,
           selectedSide: side,
           sideReason,
@@ -1785,6 +1818,17 @@ export class DualAccountPlannerService {
           tickId: ts,
           orderId,
           role: 'maker',
+          cycleRole: 'maker',
+          accountLabel: resolvedAccounts.makerAccountLabel,
+          side,
+          plannedQty: adjustedQuote.qty.toFixed(),
+          plannedPrice: adjustedQuote.price.toFixed(),
+          filledQty: '0',
+          notional: estimatedLegNotional.toFixed(),
+          status: 'planned',
+          failureReason: null,
+          linkedIntentId: null,
+          linkedTrackedOrderId: null,
           selectionModel: 'best_capacity',
           candidateRank: candidate.candidateRank,
           candidateCount: rawCandidates.length,

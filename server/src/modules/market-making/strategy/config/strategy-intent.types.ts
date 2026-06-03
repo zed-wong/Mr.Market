@@ -37,4 +37,5 @@ export type StrategyOrderIntent = {
   metadata?: Record<string, unknown>;
   createdAt: string;
   status: StrategyIntentStatus;
+  errorReason?: string;
 };

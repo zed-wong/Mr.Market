@@ -129,6 +129,7 @@ describe('StrategyIntentExecutionService', () => {
     updateIntentStatus: jest.fn().mockResolvedValue(undefined),
     attachMixinOrderId: jest.fn().mockResolvedValue(undefined),
     getMixinOrderId: jest.fn().mockResolvedValue(undefined),
+    upsertIntent: jest.fn().mockResolvedValue(undefined),
   };
 
   const durabilityService = {
@@ -300,6 +301,7 @@ describe('StrategyIntentExecutionService', () => {
             toTrackedOrderKey(exchange, accountLabel, exchangeOrderId),
           ),
       );
+    intentStoreService.upsertIntent.mockClear();
     exchangeOrderMappingService.countMappingsForOrder
       .mockReset()
       .mockResolvedValue(0);
@@ -735,11 +737,13 @@ describe('StrategyIntentExecutionService', () => {
         status: 'closed',
         filled: '1',
       });
+    const executionHistoryRepository = createExecutionHistoryRepository();
     const service = createService(
       true,
       createConfigService(true, {
         'strategy.dual_account_inline_taker_max_delay_ms': 0,
       }),
+      executionHistoryRepository,
     );
 
     await service.consumeIntents([
@@ -804,6 +808,67 @@ describe('StrategyIntentExecutionService', () => {
         accountLabel: 'taker',
         role: 'taker',
         exchangeOrderId: 'taker-order-1',
+      }),
+    );
+    expect(intentStoreService.upsertIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intentId: 'dual-maker:inline-taker',
+        accountLabel: 'taker',
+        side: 'sell',
+        timeInForce: 'IOC',
+        metadata: expect.objectContaining({
+          cycleId: 'cycle-1',
+          cycleRole: 'taker',
+          role: 'taker',
+          accountLabel: 'taker',
+          side: 'sell',
+          plannedQty: '1',
+          plannedPrice: '100',
+          filledQty: '0',
+          notional: '100',
+          status: 'planned',
+          failureReason: null,
+          linkedIntentId: 'dual-maker:inline-taker',
+          linkedTrackedOrderId: null,
+          makerIntentId: 'dual-maker',
+          makerOrderId: 'maker-order-1',
+        }),
+      }),
+    );
+    expect(executionHistoryRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          cycleId: 'cycle-1',
+          cycleRole: 'maker',
+          accountLabel: 'maker',
+          side: 'buy',
+          plannedQty: '1',
+          plannedPrice: '100',
+          filledQty: '0',
+          notional: '100',
+          status: 'open',
+          failureReason: null,
+          linkedIntentId: 'dual-maker',
+          linkedTrackedOrderId: 'maker-order-1',
+        }),
+      }),
+    );
+    expect(executionHistoryRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          cycleId: 'cycle-1',
+          cycleRole: 'taker',
+          accountLabel: 'taker',
+          side: 'sell',
+          plannedQty: '1',
+          plannedPrice: '100',
+          filledQty: '1',
+          notional: '100',
+          status: 'closed',
+          failureReason: null,
+          linkedIntentId: 'dual-maker:inline-taker',
+          linkedTrackedOrderId: 'taker-order-1',
+        }),
       }),
     );
   });

@@ -1411,6 +1411,179 @@ describe('AdminDirectMarketMakingService', () => {
     expect(exchange.fetchBalance).not.toHaveBeenCalled();
   });
 
+  it('aggregates deterministic runtime cycle status from intents, tracked orders, and active params', async () => {
+    const {
+      service,
+      marketMakingRepository,
+      strategyService,
+      exchangeOrderTrackerService,
+    } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-cycle',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-cycle',
+          marketMakingOrderId: 'order-cycle',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+          activeCycle: {
+            cycleId: 'cycle-runtime-1',
+            tickId: '2026-04-01T00:00:01.000Z',
+            orderId: 'order-cycle',
+            makerSide: 'buy',
+            makerAccountLabel: 'api-key-1',
+            takerAccountLabel: 'api-key-2',
+            price: '100',
+            requestedQty: '0.5',
+            makerFilledQty: '0.25',
+            takerFilledQty: '0.1',
+          },
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([
+      {
+        intentId: 'maker-intent',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        status: 'DONE',
+        metadata: {
+          cycleId: 'cycle-runtime-1',
+          cycleRole: 'maker',
+          role: 'maker',
+          accountLabel: 'api-key-1',
+          side: 'buy',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          filledQty: '0',
+          notional: '50',
+          status: 'planned',
+          failureReason: null,
+          linkedIntentId: 'maker-intent',
+          linkedTrackedOrderId: null,
+        },
+      },
+      {
+        intentId: 'maker-intent:inline-taker',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-2',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        status: 'FAILED',
+        errorReason: 'Immediate dual-account taker did not fill any quantity',
+        metadata: {
+          cycleId: 'cycle-runtime-1',
+          cycleRole: 'taker',
+          role: 'taker',
+          accountLabel: 'api-key-2',
+          side: 'sell',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          filledQty: '0',
+          notional: '50',
+          status: 'failed',
+          failureReason: 'Immediate dual-account taker did not fill any quantity',
+          linkedIntentId: 'maker-intent:inline-taker',
+          linkedTrackedOrderId: null,
+        },
+      },
+    ]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([
+      {
+        orderId: 'order-cycle',
+        strategyKey: 'strategy-cycle',
+        exchange: 'binance',
+        accountLabel: 'api-key-1',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'maker-order',
+        role: 'maker',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        cumulativeFilledQty: '0.25',
+        status: 'partially_filled',
+        createdAt: '2026-04-01T00:00:01.000Z',
+        updatedAt: '2026-04-01T00:00:02.000Z',
+      },
+      {
+        orderId: 'order-cycle',
+        strategyKey: 'strategy-cycle',
+        exchange: 'binance',
+        accountLabel: 'api-key-2',
+        pair: 'BTC/USDT',
+        exchangeOrderId: 'taker-order',
+        role: 'taker',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        cumulativeFilledQty: '0.1',
+        status: 'failed',
+        createdAt: '2026-04-01T00:00:01.000Z',
+        updatedAt: '2026-04-01T00:00:03.000Z',
+      },
+    ]);
+
+    const result = await service.getDirectOrderStatus('order-cycle');
+
+    expect(result.cycles).toEqual([
+      expect.objectContaining({
+        cycleId: 'cycle-runtime-1',
+        aggregateStatus: 'failed',
+        failureReason: 'Immediate dual-account taker did not fill any quantity',
+        legs: expect.arrayContaining([
+          expect.objectContaining({
+            cycleRole: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0.25',
+            notional: '50',
+            status: 'partially_filled',
+            failureReason: null,
+            linkedIntentId: 'maker-intent',
+            linkedTrackedOrderId: 'maker-order',
+          }),
+          expect.objectContaining({
+            cycleRole: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0.1',
+            notional: '50',
+            status: 'failed',
+            failureReason:
+              'Immediate dual-account taker did not fill any quantity',
+            linkedIntentId: 'maker-intent:inline-taker',
+            linkedTrackedOrderId: 'taker-order',
+          }),
+        ]),
+      }),
+    ]);
+  });
+
   it('rejects legacy dual-account definitions for new direct-start orders', async () => {
     const { service, strategyDefinitionRepository, strategyConfigResolver } =
       buildService();

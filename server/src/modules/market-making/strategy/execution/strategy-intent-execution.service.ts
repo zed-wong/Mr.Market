@@ -373,12 +373,13 @@ export class StrategyIntentExecutionService {
               orderId,
               status:
                 typeof result?.status === 'string' ? result.status : 'open',
-              metadata: {
-                intentId: intent.intentId,
-                intentType: intent.type,
+              metadata: this.buildExecutionHistoryMetadata(
+                intent,
                 clientOrderId,
-                exchangeOrderId: String(result.id),
-              },
+                String(result.id),
+                typeof result?.status === 'string' ? result.status : 'open',
+                this.normalizeFilledValue(result?.filled) || '0',
+              ),
             }),
           );
           this.exchangeOrderTrackerService?.upsertOrder({
@@ -736,6 +737,55 @@ export class StrategyIntentExecutionService {
       : undefined;
   }
 
+  private buildExecutionHistoryMetadata(
+    intent: StrategyOrderIntent,
+    clientOrderId: string,
+    exchangeOrderId: string,
+    status: string,
+    filledQty: string,
+  ): Record<string, unknown> {
+    const metadata =
+      intent.metadata && typeof intent.metadata === 'object'
+        ? { ...(intent.metadata as Record<string, unknown>) }
+        : {};
+    const cycleRole =
+      this.readMetadataString(intent, 'cycleRole') ||
+      this.resolveIntentRole(intent);
+
+    return {
+      ...metadata,
+      intentId: intent.intentId,
+      intentType: intent.type,
+      clientOrderId,
+      exchangeOrderId,
+      ...(metadata.cycleId
+        ? {
+            cycleRole,
+            accountLabel:
+              this.readMetadataString(intent, 'accountLabel') ||
+              intent.accountLabel ||
+              null,
+            side: intent.side,
+            plannedQty:
+              this.readMetadataString(intent, 'plannedQty') || intent.qty,
+            plannedPrice:
+              this.readMetadataString(intent, 'plannedPrice') || intent.price,
+            filledQty,
+            notional:
+              this.readMetadataString(intent, 'notional') ||
+              this.computeNotional(intent.qty, intent.price),
+            status,
+            failureReason:
+              this.readMetadataString(intent, 'failureReason') || null,
+            linkedIntentId:
+              this.readMetadataString(intent, 'linkedIntentId') ||
+              intent.intentId,
+            linkedTrackedOrderId: exchangeOrderId,
+          }
+        : {}),
+    };
+  }
+
   private async assertCreateLimitOrderRisk(
     intent: StrategyOrderIntent,
     orderId: string,
@@ -875,6 +925,14 @@ export class StrategyIntentExecutionService {
       : undefined;
   }
 
+  private computeNotional(qty: string, price: string): string {
+    const qtyBn = new BigNumber(qty || 0);
+    const priceBn = new BigNumber(price || 0);
+    const notional = qtyBn.multipliedBy(priceBn);
+
+    return notional.isFinite() ? notional.toFixed() : '0';
+  }
+
   private readInlineDualAccountRetryAttempt(
     intent: StrategyOrderIntent,
   ): number {
@@ -977,6 +1035,8 @@ export class StrategyIntentExecutionService {
         makerExchangeOrderId,
         takerQty,
       );
+
+      await this.strategyIntentStoreService?.upsertIntent(takerIntent);
       const takerResult = await this.consumeIntent(takerIntent);
 
       await this.assertImmediateDualAccountPairedFill(
@@ -1030,6 +1090,17 @@ export class StrategyIntentExecutionService {
       metadata: {
         ...metadata,
         role: 'taker',
+        cycleRole: 'taker',
+        accountLabel: takerAccountLabel,
+        side: intent.side === 'buy' ? 'sell' : 'buy',
+        plannedQty: takerQty.toFixed(),
+        plannedPrice: intent.price,
+        filledQty: '0',
+        notional: this.computeNotional(takerQty.toFixed(), intent.price),
+        status: 'planned',
+        failureReason: null,
+        linkedIntentId: `${intent.intentId}:inline-taker`,
+        linkedTrackedOrderId: null,
         makerOrderId: makerExchangeOrderId,
         makerIntentId: intent.intentId,
         trigger: 'maker_ack',

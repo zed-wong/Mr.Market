@@ -264,6 +264,18 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
       expect(actions).toHaveLength(1);
       expect(actions[0].metadata).toEqual(
         expect.objectContaining({
+          cycleId: 'strategy-1:cycle:0:2026-06-04T00:00:00.000Z',
+          cycleRole: 'maker',
+          accountLabel: actions[0].accountLabel,
+          side: actions[0].side,
+          plannedQty: actions[0].qty,
+          plannedPrice: actions[0].price,
+          filledQty: '0',
+          notional: '50',
+          status: 'planned',
+          failureReason: null,
+          linkedIntentId: actions[0].intentId,
+          linkedTrackedOrderId: null,
           selectionModel: 'best_capacity',
           candidateCount: 4,
         }),
