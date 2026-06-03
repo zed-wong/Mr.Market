@@ -11,6 +11,7 @@ export type BaseVolumeStrategyParams = {
   exchangeName: string;
   symbol: string;
   pair?: string;
+  marketMakingOrderId?: string;
   baseIncrementPercentage: number;
   baseIntervalTime: number;
   baseTradeAmount: number;

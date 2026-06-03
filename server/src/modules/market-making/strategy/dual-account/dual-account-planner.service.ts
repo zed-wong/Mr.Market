@@ -1,4 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import BigNumber from 'bignumber.js';
 
 import { OrderScopedBalanceQueryService } from '../../balance-state/order-scoped-balance-query.service';
@@ -60,6 +61,8 @@ export class DualAccountPlannerService {
     private readonly quotePlannerService?: QuotePlannerService,
     @Optional()
     private readonly strategyIntentStoreService?: StrategyIntentStoreService,
+    @Optional()
+    private readonly configService?: ConfigService,
   ) {}
 
   resolveCycleAccountsFromBalances(
@@ -173,7 +176,10 @@ export class DualAccountPlannerService {
     const capacityUtilization = selectedSideCapacity.isGreaterThan(0)
       ? effectiveQty.dividedBy(selectedSideCapacity)
       : new BigNumber(0);
-    const imbalanceRatio = this.computeImbalanceRatio(buyCapacity, sellCapacity);
+    const imbalanceRatio = this.computeImbalanceRatio(
+      buyCapacity,
+      sellCapacity,
+    );
 
     return {
       buyCapacity,
@@ -449,11 +455,13 @@ export class DualAccountPlannerService {
           params.exchangeName,
           params.symbol,
           params.makerAccountLabel,
+          params.marketMakingOrderId,
         ),
         this.orderScopedBalanceQueryService?.getAvailableBalancesForPair(
           params.exchangeName,
           params.symbol,
           params.takerAccountLabel,
+          params.marketMakingOrderId,
         ),
       ]);
 
@@ -497,6 +505,7 @@ export class DualAccountPlannerService {
         params.exchangeName,
         params.symbol,
         params.makerAccountLabel,
+        params.marketMakingOrderId,
       ));
 
     if (!resolvedMakerBalances) {
@@ -505,7 +514,10 @@ export class DualAccountPlannerService {
 
     const quoteValue = resolvedMakerBalances.quote;
     const baseValue = resolvedMakerBalances.base.multipliedBy(
-      await this.resolveInventoryReferencePrice(params.exchangeName, params.symbol),
+      await this.resolveInventoryReferencePrice(
+        params.exchangeName,
+        params.symbol,
+      ),
     );
     const totalValue = quoteValue.plus(baseValue);
 
@@ -542,10 +554,11 @@ export class DualAccountPlannerService {
         .dividedBy(2);
     }
 
-    const bestBidAsk = await this.strategyMarketDataProviderService?.getBestBidAsk(
-      exchangeName,
-      pair,
-    );
+    const bestBidAsk =
+      await this.strategyMarketDataProviderService?.getBestBidAsk(
+        exchangeName,
+        pair,
+      );
 
     if (bestBidAsk?.bestBid && bestBidAsk?.bestAsk) {
       return new BigNumber(bestBidAsk.bestBid)
@@ -632,7 +645,9 @@ export class DualAccountPlannerService {
       : price.isGreaterThan(bestBid) && price.isLessThanOrEqualTo(bestAsk);
   }
 
-  clonePairBalances(balances: DualAccountPairBalances): DualAccountPairBalances {
+  clonePairBalances(
+    balances: DualAccountPairBalances,
+  ): DualAccountPairBalances {
     return {
       base: new BigNumber(balances.base),
       quote: new BigNumber(balances.quote),
@@ -642,9 +657,10 @@ export class DualAccountPlannerService {
     };
   }
 
-  resolveCycleRoles(
-    params: DualAccountVolumeStrategyParams,
-  ): { makerAccountLabel: string; takerAccountLabel: string } {
+  resolveCycleRoles(params: DualAccountVolumeStrategyParams): {
+    makerAccountLabel: string;
+    takerAccountLabel: string;
+  } {
     if (params.cycleMode === 'static') {
       return {
         makerAccountLabel: params.makerAccountLabel,
@@ -654,11 +670,15 @@ export class DualAccountPlannerService {
 
     return {
       makerAccountLabel:
-        this.readString(params.nextMakerAccountLabel, params.makerAccountLabel) ||
-        params.makerAccountLabel,
+        this.readString(
+          params.nextMakerAccountLabel,
+          params.makerAccountLabel,
+        ) || params.makerAccountLabel,
       takerAccountLabel:
-        this.readString(params.nextTakerAccountLabel, params.takerAccountLabel) ||
-        params.takerAccountLabel,
+        this.readString(
+          params.nextTakerAccountLabel,
+          params.takerAccountLabel,
+        ) || params.takerAccountLabel,
     };
   }
 
@@ -860,8 +880,12 @@ export class DualAccountPlannerService {
       return { params, underHedged: false };
     }
 
-    const makerFilledQty = new BigNumber(params.activeCycle.makerFilledQty || 0);
-    const takerFilledQty = new BigNumber(params.activeCycle.takerFilledQty || 0);
+    const makerFilledQty = new BigNumber(
+      params.activeCycle.makerFilledQty || 0,
+    );
+    const takerFilledQty = new BigNumber(
+      params.activeCycle.takerFilledQty || 0,
+    );
     const nextParams: DualAccountVolumeStrategyParams = {
       ...params,
       activeCycle: undefined,
@@ -1017,6 +1041,10 @@ export class DualAccountPlannerService {
       throw new Error('strategy market data provider is not available');
     }
 
+    if (!this.hasFreshTrackedOrderBook(strategyKey, params, 'volume')) {
+      return [];
+    }
+
     const trackedBestBidAsk =
       this.strategyMarketDataProviderService.getTrackedBestBidAsk(
         params.exchangeName,
@@ -1059,10 +1087,7 @@ export class DualAccountPlannerService {
     const spreadPosition = new BigNumber(Math.random());
     const price = bestBidBn.plus(spread.multipliedBy(spreadPosition));
     const decisionStartedAtMs = Date.now();
-    const balanceSnapshot = await this.loadBalanceSnapshot(
-      params,
-      'execution',
-    );
+    const balanceSnapshot = await this.loadBalanceSnapshot(params, 'execution');
 
     if (!balanceSnapshot) {
       this.logger.warn(
@@ -1149,6 +1174,7 @@ export class DualAccountPlannerService {
 
     const tickId = ts;
     const cycleId = `${strategyKey}:cycle:${publishedCycles}:${tickId}`;
+    const orderId = this.resolveOrderScopedOrderId(params);
     const accountBuyBias = profile.buyBias ?? params.buyBias;
     const fallbackApplied = side !== preferredSide;
     const capacityDiagnostics = balanceSnapshot
@@ -1224,7 +1250,7 @@ export class DualAccountPlannerService {
         {
           cycleId,
           tickId,
-          orderId: `${params.clientId}:cycle:${publishedCycles}`,
+          orderId,
           role: 'maker',
           preferredSide,
           selectedSide: side,
@@ -1275,6 +1301,16 @@ export class DualAccountPlannerService {
 
     this.maybeWarnDualAccountBestCapacityIgnoredFields(strategyKey, params);
 
+    if (
+      !this.hasFreshTrackedOrderBook(
+        strategyKey,
+        params,
+        'best-capacity volume',
+      )
+    ) {
+      return [];
+    }
+
     const trackedBestBidAsk =
       this.strategyMarketDataProviderService.getTrackedBestBidAsk(
         params.exchangeName,
@@ -1316,10 +1352,7 @@ export class DualAccountPlannerService {
     const spreadPosition = new BigNumber(Math.random());
     const price = bestBidBn.plus(spread.multipliedBy(spreadPosition));
     const decisionStartedAtMs = Date.now();
-    const balanceSnapshot = await this.loadBalanceSnapshot(
-      params,
-      'execution',
-    );
+    const balanceSnapshot = await this.loadBalanceSnapshot(params, 'execution');
 
     if (!balanceSnapshot) {
       return [];
@@ -1385,6 +1418,7 @@ export class DualAccountPlannerService {
       candidate,
     } = resolvedExecution;
     const cycleId = `${strategyKey}:cycle:${publishedCycles}:${ts}`;
+    const orderId = this.resolveOrderScopedOrderId(params);
     const accountBuyBias = profile.buyBias ?? params.buyBias;
     const selectedCapacity = candidate.capacity;
     const estimatedLegNotional = adjustedQuote.qty.multipliedBy(
@@ -1436,7 +1470,7 @@ export class DualAccountPlannerService {
         {
           cycleId,
           tickId: ts,
-          orderId: `${params.clientId}:cycle:${publishedCycles}`,
+          orderId,
           role: 'maker',
           selectionModel: 'best_capacity',
           candidateRank: candidate.candidateRank,
@@ -1503,8 +1537,7 @@ export class DualAccountPlannerService {
     }
 
     const snapshot =
-      balanceSnapshot ||
-      (await this.loadBalanceSnapshot(params, 'execution'));
+      balanceSnapshot || (await this.loadBalanceSnapshot(params, 'execution'));
 
     if (!snapshot) {
       return configured;
@@ -1559,6 +1592,56 @@ export class DualAccountPlannerService {
       price,
       feeBufferRate,
     );
+  }
+
+  private resolveOrderScopedOrderId(
+    params: Pick<
+      DualAccountVolumeStrategyParams,
+      'marketMakingOrderId' | 'clientId'
+    >,
+  ): string {
+    return this.readString(params.marketMakingOrderId, params.clientId);
+  }
+
+  private hasFreshTrackedOrderBook(
+    strategyKey: string,
+    params: DualAccountVolumeStrategyParams,
+    label: string,
+  ): boolean {
+    if (!this.strategyMarketDataProviderService?.getTrackedOrderBookFreshness) {
+      return true;
+    }
+
+    const freshness =
+      this.strategyMarketDataProviderService.getTrackedOrderBookFreshness(
+        params.exchangeName,
+        params.symbol,
+        this.getMarketDataMaxAgeMs(),
+      );
+
+    if (freshness.fresh) {
+      return true;
+    }
+
+    this.logger.warn(
+      [
+        `Skipping dual-account ${label} cycle for ${strategyKey}: stale tracked market data`,
+        `exchange=${params.exchangeName}`,
+        `pair=${params.symbol}`,
+        `ageMs=${freshness.ageMs ?? 'missing'}`,
+        `freshnessTimestamp=${freshness.freshnessTimestamp ?? 'missing'}`,
+      ].join(' | '),
+    );
+
+    return false;
+  }
+
+  private getMarketDataMaxAgeMs(): number {
+    const parsed = Number(
+      this.configService?.get('strategy.market_data_max_age_ms', 30_000),
+    );
+
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 30_000;
   }
 
   private buildDualAccountCapacityDiagnostics(
@@ -1684,10 +1767,7 @@ export class DualAccountPlannerService {
     primaryCapacity: BigNumber,
     oppositeCapacity: BigNumber,
   ): BigNumber {
-    return this.computeImbalanceRatio(
-      primaryCapacity,
-      oppositeCapacity,
-    );
+    return this.computeImbalanceRatio(primaryCapacity, oppositeCapacity);
   }
 
   private scoreDualAccountBestCapacityCandidate(
@@ -1701,11 +1781,7 @@ export class DualAccountPlannerService {
     >,
     price: BigNumber,
   ): BigNumber {
-    return this.scoreBestCapacityCandidate(
-      params,
-      candidate,
-      price,
-    );
+    return this.scoreBestCapacityCandidate(params, candidate, price);
   }
 
   private async resolveBestExecutableDualAccountCandidate(
@@ -1769,8 +1845,7 @@ export class DualAccountPlannerService {
     balanceSnapshot?: DualAccountBalanceSnapshot | null,
   ): Promise<ExecutorAction | null> {
     const snapshot =
-      balanceSnapshot ||
-      (await this.loadBalanceSnapshot(params, 'rebalance'));
+      balanceSnapshot || (await this.loadBalanceSnapshot(params, 'rebalance'));
 
     if (!snapshot) {
       return null;
@@ -2055,7 +2130,7 @@ export class DualAccountPlannerService {
       return null;
     }
 
-    const orderId = `${params.clientId}:rebalance:${publishedCycles}:${accountLabel}:${side}:${ts}`;
+    const orderId = this.resolveOrderScopedOrderId(params);
     const cycleId = `${strategyKey}:rebalance:${ts}:${accountLabel}:${side}`;
 
     const rebalanceNotional = adjustedQuote.qty.multipliedBy(
@@ -2521,7 +2596,6 @@ export class DualAccountPlannerService {
     return { price: effectivePrice, qty };
   }
 
-
   private resolveBehaviorProfile(
     params: DualAccountVolumeStrategyParams,
     accountLabel: string,
@@ -2542,9 +2616,7 @@ export class DualAccountPlannerService {
     strategyKey: string,
     params: DualAccountVolumeStrategyParams,
   ): void {
-    if (
-      this.loggedBestCapacityIgnoredConfigWarnings.has(strategyKey)
-    ) {
+    if (this.loggedBestCapacityIgnoredConfigWarnings.has(strategyKey)) {
       return;
     }
 
@@ -2586,9 +2658,7 @@ export class DualAccountPlannerService {
     );
   }
 
-  private isWithinProfileWindow(
-    profile: DualAccountBehaviorProfile,
-  ): boolean {
+  private isWithinProfileWindow(profile: DualAccountBehaviorProfile): boolean {
     return dualAccountConfig.isWithinDualAccountProfileWindow(profile);
   }
 
@@ -2626,7 +2696,10 @@ export class DualAccountPlannerService {
       takerBalances,
       capacity,
       futureOppositeCapacity,
-      imbalanceRatio: this.computeImbalanceRatio(capacity, futureOppositeCapacity),
+      imbalanceRatio: this.computeImbalanceRatio(
+        capacity,
+        futureOppositeCapacity,
+      ),
       roleAssignment,
     };
   }

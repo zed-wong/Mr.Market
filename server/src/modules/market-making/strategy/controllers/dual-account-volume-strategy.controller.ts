@@ -126,10 +126,12 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       return;
     }
 
-    const params = activeBeforePersist.params as DualAccountVolumeStrategyParams;
-    const persistedStrategy = await this.getStrategyInstanceRepository().findOne({
-      where: { strategyKey: session.strategyKey },
-    });
+    const params =
+      activeBeforePersist.params as DualAccountVolumeStrategyParams;
+    const persistedStrategy =
+      await this.getStrategyInstanceRepository().findOne({
+        where: { strategyKey: session.strategyKey },
+      });
     const persistedParams = persistedStrategy?.parameters as
       | Partial<DualAccountVolumeStrategyParams>
       | undefined;
@@ -199,8 +201,12 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     }
 
     if (result.underHedged) {
-      const makerFilledQty = new BigNumber(params.activeCycle.makerFilledQty || 0);
-      const takerFilledQty = new BigNumber(params.activeCycle.takerFilledQty || 0);
+      const makerFilledQty = new BigNumber(
+        params.activeCycle.makerFilledQty || 0,
+      );
+      const takerFilledQty = new BigNumber(
+        params.activeCycle.takerFilledQty || 0,
+      );
 
       this.logger.warn(
         `Dual-account cycle settled under-hedged for ${
@@ -235,9 +241,18 @@ export class DualAccountVolumeStrategyController implements StrategyController {
       runtimeParams,
       persistedParams,
     );
-    const activeTrackedOrders = this.getTrackedOrderShutdown().getCancelableTrackedOrders(
-      session.strategyKey,
-    );
+
+    if (!latestParams.marketMakingOrderId && session.marketMakingOrderId) {
+      latestParams = {
+        ...latestParams,
+        marketMakingOrderId: session.marketMakingOrderId,
+      };
+    }
+
+    const activeTrackedOrders =
+      this.getTrackedOrderShutdown().getCancelableTrackedOrders(
+        session.strategyKey,
+      );
 
     if (activeTrackedOrders.length === 0) {
       latestParams = await this.finalizeSettledDualAccountCycle(
@@ -260,20 +275,21 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     const targetQuoteVolume = Number(latestParams.targetQuoteVolume || 0);
 
     if (latestParams.repairRequired) {
-      const repairAction = await this.getDualAccountPlanner().maybeBuildDualAccountRebalanceAction(
-        session.strategyKey,
-        latestParams,
-        'buy',
-        new BigNumber(0),
-        new BigNumber(0),
-        new BigNumber(0),
-        await this.getDualAccountPlanner().resolveFeeBufferRate(
-          latestParams.exchangeName,
-          latestParams.symbol,
-        ),
-        Number(latestParams.publishedCycles || 0),
-        ts,
-      );
+      const repairAction =
+        await this.getDualAccountPlanner().maybeBuildDualAccountRebalanceAction(
+          session.strategyKey,
+          latestParams,
+          'buy',
+          new BigNumber(0),
+          new BigNumber(0),
+          new BigNumber(0),
+          await this.getDualAccountPlanner().resolveFeeBufferRate(
+            latestParams.exchangeName,
+            latestParams.symbol,
+          ),
+          Number(latestParams.publishedCycles || 0),
+          ts,
+        );
 
       return repairAction ? [repairAction] : [];
     }
@@ -354,7 +370,10 @@ export class DualAccountVolumeStrategyController implements StrategyController {
     active: StrategyRuntimeSession | undefined,
     expected: StrategyRuntimeSession,
   ): active is StrategyRuntimeSession {
-    return this.getStrategySessionRegistry().isSameActiveSession(active, expected);
+    return this.getStrategySessionRegistry().isSameActiveSession(
+      active,
+      expected,
+    );
   }
 
   private async persistStrategyParams(

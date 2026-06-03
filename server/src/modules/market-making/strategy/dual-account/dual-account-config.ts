@@ -25,7 +25,10 @@ export function mergeDualAccountConfigIntoRuntime(
   };
 
   if (typeof persisted.exchangeName === 'string') {
-    merged.exchangeName = readString(persisted.exchangeName, runtime.exchangeName);
+    merged.exchangeName = readString(
+      persisted.exchangeName,
+      runtime.exchangeName,
+    );
   }
 
   if (typeof persisted.symbol === 'string') {
@@ -37,6 +40,13 @@ export function mergeDualAccountConfigIntoRuntime(
     if (!readString(merged.symbol)) {
       merged.symbol = merged.pair;
     }
+  }
+
+  if (typeof persisted.marketMakingOrderId === 'string') {
+    merged.marketMakingOrderId = readString(
+      persisted.marketMakingOrderId,
+      runtime.marketMakingOrderId,
+    );
   }
 
   if (Number.isFinite(Number(persisted.baseIncrementPercentage))) {
@@ -134,8 +144,8 @@ export function resolveDualAccountBehaviorProfile(
     accountLabel === params.makerAccountLabel
       ? profiles.maker
       : accountLabel === params.takerAccountLabel
-      ? profiles.taker
-      : undefined;
+        ? profiles.taker
+        : undefined;
 
   return candidate ? normalizeBehaviorProfile(candidate) : {};
 }
@@ -170,6 +180,7 @@ export function normalizeDualAccountStrategyParams(
     numTrades: Number(params.numTrades || 0),
     userId: params.userId,
     clientId: params.clientId,
+    marketMakingOrderId: params.marketMakingOrderId || params.clientId,
     pricePushRate: Number(params.pricePushRate || 0),
     executionCategory: 'clob_cex',
     executionVenue: 'cex',
@@ -239,6 +250,7 @@ export function normalizeDualAccountBestCapacityStrategyParams(
     numTrades: 0,
     userId: params.userId,
     clientId: params.clientId,
+    marketMakingOrderId: params.marketMakingOrderId || params.clientId,
     pricePushRate: 0,
     executionCategory: 'clob_cex',
     executionVenue: 'cex',
@@ -267,7 +279,10 @@ export function isBestCapacityConfig(
   return Number.isFinite(Number(params.maxOrderAmount));
 }
 
-export function resolveStrategyInputPair(symbol: unknown, pair: unknown): string {
+export function resolveStrategyInputPair(
+  symbol: unknown,
+  pair: unknown,
+): string {
   return readString(symbol, readString(pair));
 }
 
@@ -305,7 +320,7 @@ export function applyVariance(
   }
 
   const normalizedMultiplier =
-    multiplier !== undefined ? readPositiveNumber(multiplier) ?? 1 : 1;
+    multiplier !== undefined ? (readPositiveNumber(multiplier) ?? 1) : 1;
   const effectiveBase = normalizedBase.multipliedBy(normalizedMultiplier);
   const normalizedVariance = readNonNegativeNumber(variance);
 
@@ -314,9 +329,7 @@ export function applyVariance(
   }
 
   const sample = readUnitIntervalNumber(varianceSample) ?? Math.random();
-  const swing = new BigNumber(sample * 2 - 1).multipliedBy(
-    normalizedVariance,
-  );
+  const swing = new BigNumber(sample * 2 - 1).multipliedBy(normalizedVariance);
 
   return effectiveBase.multipliedBy(new BigNumber(1).plus(swing)).toNumber();
 }
