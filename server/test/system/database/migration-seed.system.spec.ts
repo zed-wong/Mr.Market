@@ -93,6 +93,9 @@ describe('Database migration and seed scripts', () => {
     const paymentStateTable = (await dataSource.query(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='market_making_payment_state'",
     )) as Array<{ name: string }>;
+    const web3WithdrawalColumns = (await dataSource.query(
+      "PRAGMA table_info('web3_withdrawal')",
+    )) as Array<{ name: string }>;
 
     log.result('migration tables inspected', {
       migrationsTableCount: migrationsTable.length,
@@ -101,6 +104,9 @@ describe('Database migration and seed scripts', () => {
 
     expect(migrationsTable).toHaveLength(1);
     expect(paymentStateTable).toHaveLength(1);
+    expect(web3WithdrawalColumns.map((column) => column.name)).toContain(
+      'startBlockNumber',
+    );
 
     await dataSource.destroy();
   });
