@@ -1422,7 +1422,9 @@ export class AdminAnalyticsService {
         costBasis: crossCurrencyAggregate
           ? crossCurrencyMetric
           : this.availableMetric(inventoryCostQuote, quoteCurrency),
-        notional: crossCurrencyAggregate ? crossCurrencyMetric : inventoryExposure,
+        notional: crossCurrencyAggregate
+          ? crossCurrencyMetric
+          : inventoryExposure,
       }),
       inventoryExposure: crossCurrencyAggregate
         ? crossCurrencyMetric
@@ -2023,10 +2025,7 @@ export class AdminAnalyticsService {
             realizedNetPnlQuote,
             quoteCurrency,
           ),
-          spreadCapture: this.availableMetric(
-            realizedPnlQuote,
-            quoteCurrency,
-          ),
+          spreadCapture: this.availableMetric(realizedPnlQuote, quoteCurrency),
           tradedQuoteVolume: this.availableMetric(
             tradedQuoteVolume,
             quoteCurrency,

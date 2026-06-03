@@ -175,9 +175,6 @@ export class SetupConfigService implements OnModuleInit {
   }
 
   private getEncryptionPrivateKey(): string {
-    return (
-      this.configService.get<string>('admin.encryption_private_key') ||
-      ''
-    );
+    return this.configService.get<string>('admin.encryption_private_key') || '';
   }
 }

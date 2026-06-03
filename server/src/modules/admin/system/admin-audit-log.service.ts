@@ -175,7 +175,9 @@ export class AdminAuditLogService {
     const to = this.normalizeTimestampFilter(input.to, 'to');
 
     if (from && to && Date.parse(from) > Date.parse(to)) {
-      throw new BadRequestException('from must be earlier than or equal to to.');
+      throw new BadRequestException(
+        'from must be earlier than or equal to to.',
+      );
     }
 
     return {
@@ -294,13 +296,17 @@ export class AdminAuditLogService {
     }
 
     if (!/^\d+$/.test(value)) {
-      throw new BadRequestException('Pagination values must be positive integers.');
+      throw new BadRequestException(
+        'Pagination values must be positive integers.',
+      );
     }
 
     const parsed = Number(value);
 
     if (!Number.isSafeInteger(parsed) || parsed < 1) {
-      throw new BadRequestException('Pagination values must be positive integers.');
+      throw new BadRequestException(
+        'Pagination values must be positive integers.',
+      );
     }
 
     return Math.min(parsed, max);
@@ -329,7 +335,9 @@ export class AdminAuditLogService {
       timestamp: record.createdAt,
       metadata: this.redactValue(this.parseJson(record.metadataJson)),
       diff: this.redactValue(this.parseJson(record.diffJson)),
-      requestContext: this.redactValue(this.parseJson(record.requestContextJson)),
+      requestContext: this.redactValue(
+        this.parseJson(record.requestContextJson),
+      ),
       previousHash: record.previousHash || null,
       contentHash: record.contentHash,
     };
@@ -397,6 +405,7 @@ export class AdminAuditLogService {
         const safeKey = this.redactString(
           this.truncateString(key, MAX_STRING_LENGTH),
         );
+
         output[safeKey] = SENSITIVE_KEY_PATTERN.test(key)
           ? '[REDACTED]'
           : this.redactValue(nestedValue, seen);

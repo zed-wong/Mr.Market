@@ -1,9 +1,9 @@
 import { Injectable, Optional } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
-import { PureMarketMakingStrategyDto } from 'src/modules/market-making/strategy/config/strategy.dto';
-import { ExecutorAction } from 'src/modules/market-making/strategy/config/executor-action.types';
-import { ExchangeConnectorAdapterService } from 'src/modules/market-making/execution/exchange-connector-adapter.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
+import { ExchangeConnectorAdapterService } from 'src/modules/market-making/execution/exchange-connector-adapter.service';
+import { ExecutorAction } from 'src/modules/market-making/strategy/config/executor-action.types';
+import { PureMarketMakingStrategyDto } from 'src/modules/market-making/strategy/config/strategy.dto';
 
 import { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
 
@@ -16,7 +16,10 @@ type QuotePlanBalance = {
 @Injectable()
 export class QuotePlannerService {
   private readonly logger = new CustomLogger(QuotePlannerService.name);
-  private readonly cancelBudgetUsageByStrategySecond = new Map<string, number>();
+  private readonly cancelBudgetUsageByStrategySecond = new Map<
+    string,
+    number
+  >();
   private readonly slotCancelCooldownByStrategy = new Map<
     string,
     Map<string, number>

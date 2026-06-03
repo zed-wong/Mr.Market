@@ -17,9 +17,9 @@ import type {
   StrategyRuntimeSession,
   StrategyTickContext,
 } from '../config/strategy-controller.types';
-import type { ConnectorHealthStatus } from '../config/strategy-params.types';
 import { StrategyExecutionCategory } from '../config/strategy-execution-category';
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
+import type { ConnectorHealthStatus } from '../config/strategy-params.types';
 import {
   AdaptivePmmSignalSnapshot,
   StrategyMarketDataProviderService,
@@ -33,8 +33,8 @@ import {
 } from '../observation/runtime-observation.service';
 import { AdaptivePmmStateService } from '../pmm/adaptive-pmm-state.service';
 import { QuotePlannerService } from '../quote/quote-planner.service';
-import { FillSettlementService } from '../settlement/fill-settlement.service';
 import { StrategySessionRegistryService } from '../runtime/strategy-session-registry.service';
+import { FillSettlementService } from '../settlement/fill-settlement.service';
 
 export type PureMarketMakingCoordinator = {
   getSession(strategyKey: string): StrategyRuntimeSession | undefined;
@@ -88,6 +88,7 @@ export class PureMarketMakingStrategyController implements StrategyController {
 
   getCadenceMs(parameters: Record<string, unknown>): number {
     const rawMs = Number(parameters?.orderRefreshTime || 5000);
+
     return Math.max(5000, rawMs);
   }
 
@@ -156,6 +157,7 @@ export class PureMarketMakingStrategyController implements StrategyController {
           `Kill switch triggered for ${strategyKey}: ${pressure.rejectCount} recent intent failures within observation window (threshold ${maxConsecutiveRejects})`,
         );
         const session = coordinator.getSession(strategyKey);
+
         if (session) {
           await coordinator.stopStrategyForUser(
             session.userId,

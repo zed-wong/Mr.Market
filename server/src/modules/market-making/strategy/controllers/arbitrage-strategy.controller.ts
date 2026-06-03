@@ -63,14 +63,16 @@ export class ArbitrageStrategyController implements StrategyController {
       throw new Error('strategy market data provider is not available');
     }
 
-    const orderBookA = await this.strategyMarketDataProviderService.getOrderBook(
-      strategyParamsDto.exchangeAName,
-      pair,
-    );
-    const orderBookB = await this.strategyMarketDataProviderService.getOrderBook(
-      strategyParamsDto.exchangeBName,
-      pair,
-    );
+    const orderBookA =
+      await this.strategyMarketDataProviderService.getOrderBook(
+        strategyParamsDto.exchangeAName,
+        pair,
+      );
+    const orderBookB =
+      await this.strategyMarketDataProviderService.getOrderBook(
+        strategyParamsDto.exchangeBName,
+        pair,
+      );
 
     const vwapA = this.calculateVWAPForAmount(orderBookA, amountToTrade, 'buy');
     const vwapB = this.calculateVWAPForAmount(
@@ -87,8 +89,8 @@ export class ArbitrageStrategyController implements StrategyController {
     const actions: ExecutorAction[] = [];
     const executionCategory =
       String(
-        (strategyParamsDto as { executionCategory?: unknown }).executionCategory ||
-          '',
+        (strategyParamsDto as { executionCategory?: unknown })
+          .executionCategory || '',
       ).toLowerCase() === 'clob_dex'
         ? 'clob_dex'
         : 'clob_cex';

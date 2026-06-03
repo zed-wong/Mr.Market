@@ -725,6 +725,7 @@ export class MarketMakingOrderProcessor {
             configOverrides: orderIntent.configOverrides,
           }),
         ));
+
       this.applyOrderRuntimeFields(strategySnapshot.resolvedConfig, {
         orderId,
         userId: paymentState.userId,

@@ -4,7 +4,7 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
-import { Observable, from, map, mergeMap, throwError } from 'rxjs';
+import { from, map, mergeMap, Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
 import { AdminAuditLogService } from './admin-audit-log.service';

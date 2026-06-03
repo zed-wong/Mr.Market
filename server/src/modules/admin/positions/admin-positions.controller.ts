@@ -1,5 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AdminPositionsService } from './admin-positions.service';
@@ -29,8 +34,7 @@ export class AdminPositionsController {
   @ApiQuery({
     name: 'query',
     required: false,
-    description:
-      'Case-insensitive bounded search over order and asset fields.',
+    description: 'Case-insensitive bounded search over order and asset fields.',
   })
   @ApiQuery({
     name: 'limit',

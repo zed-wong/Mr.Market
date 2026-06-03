@@ -14,7 +14,9 @@ export class AddTrackedOrderSettledFilledQty1780000000000
       return;
     }
 
-    const columns = await queryRunner.query(`PRAGMA table_info("tracked_order")`);
+    const columns = await queryRunner.query(
+      `PRAGMA table_info("tracked_order")`,
+    );
     const hasColumn = columns.some(
       (column: { name?: string }) => column.name === 'settledFilledQty',
     );

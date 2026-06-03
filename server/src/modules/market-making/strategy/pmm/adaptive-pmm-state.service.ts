@@ -7,6 +7,7 @@ import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { Repository } from 'typeorm';
 
 import { BalanceLedgerService } from '../../ledger/balance-ledger.service';
+import { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
 import { ExecutorAction } from '../config/executor-action.types';
 import { PureMarketMakingStrategyDto } from '../config/strategy.dto';
 import { StrategyRuntimeSession } from '../config/strategy-controller.types';
@@ -14,7 +15,6 @@ import { AdaptivePmmSignalSnapshot } from '../data/strategy-market-data-provider
 import { StrategyRuntimePressureSnapshot } from '../observation/runtime-observation.service';
 import { RuntimeObservationService } from '../observation/runtime-observation.service';
 import { QuotePlannerService } from '../quote/quote-planner.service';
-import { TrackedOrder } from '../../trackers/exchange-order-tracker.service';
 
 export type AdaptivePmmToxicityState = {
   buyScore: number;
@@ -123,12 +123,13 @@ export class AdaptivePmmStateService {
       return configuredLayers;
     }
 
-    const minOrderNotional = await this.getQuotePlanner().resolveMinOrderNotional(
-      params.exchangeName,
-      params.pair,
-      params.accountLabel,
-      referencePrice,
-    );
+    const minOrderNotional =
+      await this.getQuotePlanner().resolveMinOrderNotional(
+        params.exchangeName,
+        params.pair,
+        params.accountLabel,
+        referencePrice,
+      );
 
     if (minOrderNotional.isLessThanOrEqualTo(0)) {
       return configuredLayers;
@@ -142,7 +143,9 @@ export class AdaptivePmmStateService {
       1,
       BigNumber.min(
         configuredLayers,
-        sideBudget.dividedBy(perLayerBudget).integerValue(BigNumber.ROUND_FLOOR),
+        sideBudget
+          .dividedBy(perLayerBudget)
+          .integerValue(BigNumber.ROUND_FLOOR),
       ),
     );
 
@@ -301,7 +304,9 @@ export class AdaptivePmmStateService {
 
     session.cadenceMs = Math.max(
       session.cadenceMs,
-      Number(params.refreshMaxMs || params.orderRefreshTime || session.cadenceMs),
+      Number(
+        params.refreshMaxMs || params.orderRefreshTime || session.cadenceMs,
+      ),
     );
 
     return true;
@@ -328,6 +333,7 @@ export class AdaptivePmmStateService {
     }
 
     session.cadenceMs = baseCadenceMs;
+
     return true;
   }
 
@@ -350,7 +356,9 @@ export class AdaptivePmmStateService {
   ): AdaptivePmmSideRecoveryState {
     const windowMs = Math.max(
       0,
-      Number(params.adverseMarkoutRecoveryMs || params.adverseMarkoutCooldownMs || 0),
+      Number(
+        params.adverseMarkoutRecoveryMs || params.adverseMarkoutCooldownMs || 0,
+      ),
     );
     const baseWidenBps = Math.max(
       0,
@@ -486,7 +494,10 @@ export class AdaptivePmmStateService {
     strategyKey: string,
     snapshot: AdaptivePmmDecisionSnapshot,
   ): void {
-    const metadata = this.buildAdaptivePmmDecisionMetadata(strategyKey, snapshot);
+    const metadata = this.buildAdaptivePmmDecisionMetadata(
+      strategyKey,
+      snapshot,
+    );
 
     this.logger.log(JSON.stringify(metadata));
     void this.persistAdaptivePmmDecisionSnapshot(snapshot.params, metadata);
@@ -511,7 +522,9 @@ export class AdaptivePmmStateService {
         snapshot.signalSnapshot?.realizedVolatility ??
         null,
       imbalance:
-        snapshot.orderBookImbalance ?? snapshot.signalSnapshot?.imbalance ?? null,
+        snapshot.orderBookImbalance ??
+        snapshot.signalSnapshot?.imbalance ??
+        null,
       imbalanceDepthNotional:
         snapshot.signalSnapshot?.imbalanceDepthNotional ?? null,
       buyToxicityScore: snapshot.toxicityState?.buyScore || 0,
@@ -588,6 +601,7 @@ export class AdaptivePmmStateService {
     );
 
     session.cadenceMs = nextCadenceMs;
+
     return true;
   }
 

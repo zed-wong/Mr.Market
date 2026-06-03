@@ -25,13 +25,13 @@ import { ExchangeConnectorAdapterService } from 'src/modules/market-making/execu
 import { ExchangeOrderMappingService } from 'src/modules/market-making/execution/exchange-order-mapping.service';
 import { PureMarketMakingStrategyController } from 'src/modules/market-making/strategy/controllers/pure-market-making-strategy.controller';
 import { StrategyMarketDataProviderService } from 'src/modules/market-making/strategy/data/strategy-market-data-provider.service';
-import { AdaptivePmmStateService } from 'src/modules/market-making/strategy/pmm/adaptive-pmm-state.service';
-import { QuotePlannerService } from 'src/modules/market-making/strategy/quote/quote-planner.service';
 import { ExecutorRegistry } from 'src/modules/market-making/strategy/execution/executor-registry';
 import { StrategyIntentExecutionService } from 'src/modules/market-making/strategy/execution/strategy-intent-execution.service';
 import { StrategyIntentStoreService } from 'src/modules/market-making/strategy/execution/strategy-intent-store.service';
 import { StrategyIntentWorkerService } from 'src/modules/market-making/strategy/execution/strategy-intent-worker.service';
 import { ExecutorOrchestratorService } from 'src/modules/market-making/strategy/intent/executor-orchestrator.service';
+import { AdaptivePmmStateService } from 'src/modules/market-making/strategy/pmm/adaptive-pmm-state.service';
+import { QuotePlannerService } from 'src/modules/market-making/strategy/quote/quote-planner.service';
 import { StrategyInstanceLifecycleService } from 'src/modules/market-making/strategy/runtime/strategy-instance-lifecycle.service';
 import { StrategySessionRegistryService } from 'src/modules/market-making/strategy/runtime/strategy-session-registry.service';
 import { StrategyWatcherManagerService } from 'src/modules/market-making/strategy/runtime/strategy-watcher-manager.service';

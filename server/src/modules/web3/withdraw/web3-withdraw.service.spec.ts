@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ethers } from 'ethers';
 
 import { MR_MARKET_ROUTER_ABI } from '../contracts/mr-market-router.abi';
@@ -29,16 +33,20 @@ describe('Web3WithdrawService', () => {
     existingWithdrawal?: unknown;
   }) => {
     const withdrawalRows = new Map<string, Record<string, unknown>>();
+
     if (params?.existingWithdrawal) {
       withdrawalRows.set(
-        String((params.existingWithdrawal as { withdrawalId: string }).withdrawalId),
+        String(
+          (params.existingWithdrawal as { withdrawalId: string }).withdrawalId,
+        ),
         params.existingWithdrawal as Record<string, unknown>,
       );
     }
     const eventRows: Record<string, unknown>[] = [];
     const withdrawalRepository = {
       findOneBy: jest.fn(async (where) => {
-        if (where.withdrawalId) return withdrawalRows.get(String(where.withdrawalId)) || null;
+        if (where.withdrawalId)
+          return withdrawalRows.get(String(where.withdrawalId)) || null;
         if (where.idempotencyKey) {
           return (
             [...withdrawalRows.values()].find(
@@ -46,11 +54,13 @@ describe('Web3WithdrawService', () => {
             ) || null
           );
         }
+
         return null;
       }),
       create: jest.fn((entity) => ({ ...entity })),
       save: jest.fn(async (entity) => {
         withdrawalRows.set(String(entity.withdrawalId), entity);
+
         return entity;
       }),
     };
@@ -72,15 +82,17 @@ describe('Web3WithdrawService', () => {
       create: jest.fn((row) => row),
       save: jest.fn(async (row) => {
         eventRows.push(row);
+
         return row;
       }),
-      findOne: jest.fn(async ({ where }) =>
-        eventRows.find(
-          (row) =>
-            row.chainId === where.chainId &&
-            row.txHash === where.txHash &&
-            row.logIndex === where.logIndex,
-        ) || null,
+      findOne: jest.fn(
+        async ({ where }) =>
+          eventRows.find(
+            (row) =>
+              row.chainId === where.chainId &&
+              row.txHash === where.txHash &&
+              row.logIndex === where.logIndex,
+          ) || null,
       ),
     };
     const web3Service = {
@@ -89,6 +101,7 @@ describe('Web3WithdrawService', () => {
       getTransactionReceipt: jest.fn(),
       transferErc20: jest.fn(async () => {
         if (params?.transferError) throw params.transferError;
+
         return { txHash: `0x${'d'.repeat(64)}` };
       }),
     };
@@ -208,6 +221,7 @@ describe('Web3WithdrawService', () => {
         prepared.routerCall?.payloadHash,
       ],
     );
+
     web3Service.getTransactionReceipt.mockResolvedValue({
       status: 1,
       transactionHash: `0x${'c'.repeat(64)}`,
@@ -222,9 +236,13 @@ describe('Web3WithdrawService', () => {
       ],
     });
 
-    const result = await service.verifyWithdrawalTransaction(userId, prepared.withdrawalId, {
-      txHash: `0x${'c'.repeat(64)}`,
-    });
+    const result = await service.verifyWithdrawalTransaction(
+      userId,
+      prepared.withdrawalId,
+      {
+        txHash: `0x${'c'.repeat(64)}`,
+      },
+    );
 
     expect(balanceLedgerService.debitWithdrawal).toHaveBeenCalledWith({
       orderId,
@@ -271,7 +289,9 @@ describe('Web3WithdrawService', () => {
     });
 
     expect(result.status).toBe('blocked');
-    expect(result.failureReason).toBe('Web3 signer is not configured for chain 11155111');
+    expect(result.failureReason).toBe(
+      'Web3 signer is not configured for chain 11155111',
+    );
   });
 
   it('rejects mismatched event evidence before ledger debit', async () => {
@@ -306,6 +326,7 @@ describe('Web3WithdrawService', () => {
 
   it('rejects idempotency key reuse with a different payload', async () => {
     const { service } = buildService();
+
     await createRequest(service);
 
     await expect(
@@ -325,8 +346,8 @@ describe('Web3WithdrawService', () => {
     const { service } = buildService();
     const prepared = await createRequest(service);
 
-    await expect(service.getWithdrawal('other-user', prepared.withdrawalId)).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(
+      service.getWithdrawal('other-user', prepared.withdrawalId),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

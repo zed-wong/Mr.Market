@@ -53,9 +53,10 @@ export class StrategyStartupRecoveryService {
   async restoreDualAccountVolumeRuntimeState(
     strategy: StrategyInstance,
   ): Promise<void> {
-    const trackedOrders = this.getTrackedOrderShutdown().getCancelableTrackedOrders(
-      strategy.strategyKey,
-    );
+    const trackedOrders =
+      this.getTrackedOrderShutdown().getCancelableTrackedOrders(
+        strategy.strategyKey,
+      );
 
     const danglingMakerOrders = trackedOrders.filter(
       (order) => order.role === 'maker',
@@ -75,7 +76,8 @@ export class StrategyStartupRecoveryService {
               order.exchangeOrderId,
               order.accountLabel,
             );
-          const cancelSucceeded = this.getTrackedOrderShutdown().isCancelResultFinal(result);
+          const cancelSucceeded =
+            this.getTrackedOrderShutdown().isCancelResultFinal(result);
 
           this.exchangeOrderTrackerService?.upsertOrder({
             ...order,
@@ -94,7 +96,10 @@ export class StrategyStartupRecoveryService {
       }),
     );
 
-    await this.getTrackedOrderShutdown().waitForTrackedOrdersToSettle(strategy.strategyKey, 10_000);
+    await this.getTrackedOrderShutdown().waitForTrackedOrdersToSettle(
+      strategy.strategyKey,
+      10_000,
+    );
   }
 
   async restoreRuntimeStateForStrategy(
@@ -187,8 +192,9 @@ export class StrategyStartupRecoveryService {
             trackedOrder.cumulativeFilledQty || '0',
           ),
           status:
-            this.getTrackedOrderShutdown().normalizeExchangeOrderStatus(openOrder?.status) ||
-            trackedOrder.status,
+            this.getTrackedOrderShutdown().normalizeExchangeOrderStatus(
+              openOrder?.status,
+            ) || trackedOrder.status,
           updatedAt: getRFC3339Timestamp(),
         });
         continue;
@@ -237,7 +243,9 @@ export class StrategyStartupRecoveryService {
 
     for (const trackedOrder of trackedOrders) {
       if (
-        this.getTrackedOrderShutdown().isTrackedOrderTerminal(trackedOrder.status) ||
+        this.getTrackedOrderShutdown().isTrackedOrderTerminal(
+          trackedOrder.status,
+        ) ||
         seenOpenExchangeOrderIds.has(trackedOrder.exchangeOrderId)
       ) {
         continue;
@@ -269,8 +277,9 @@ export class StrategyStartupRecoveryService {
             trackedOrder.cumulativeFilledQty || '0',
           ),
           status:
-            this.getTrackedOrderShutdown().normalizeExchangeOrderStatus(latest?.status) ||
-            trackedOrder.status,
+            this.getTrackedOrderShutdown().normalizeExchangeOrderStatus(
+              latest?.status,
+            ) || trackedOrder.status,
           updatedAt: getRFC3339Timestamp(),
         });
       } catch (error) {
@@ -297,6 +306,7 @@ export class StrategyStartupRecoveryService {
       const reason = `interrupted create intent recovery failed: ${
         error instanceof Error ? error.message : String(error)
       }`;
+
       result.success = false;
       result.blockedReasons.push(reason);
       this.logger.warn(
@@ -319,6 +329,7 @@ export class StrategyStartupRecoveryService {
       const reason = `interrupted cancel intent recovery failed: ${
         error instanceof Error ? error.message : String(error)
       }`;
+
       result.success = false;
       result.blockedReasons.push(reason);
       this.logger.warn(
@@ -685,12 +696,13 @@ export class StrategyStartupRecoveryService {
     openOrder: any,
   ): Promise<void> {
     const exchangeOrderId = this.readString(intent.mixinOrderId);
-    const cancelResult = await this.exchangeConnectorAdapterService?.cancelOrder(
-      intent.exchange,
-      intent.pair,
-      exchangeOrderId,
-      intent.accountLabel,
-    );
+    const cancelResult =
+      await this.exchangeConnectorAdapterService?.cancelOrder(
+        intent.exchange,
+        intent.pair,
+        exchangeOrderId,
+        intent.accountLabel,
+      );
     const cancelSucceeded = this.isCancelResultFinal(
       cancelResult as Record<string, unknown> | undefined,
     );
@@ -741,6 +753,7 @@ export class StrategyStartupRecoveryService {
           'DONE',
           'interrupted cancel intent reconciled on startup',
         );
+
         return;
       }
 

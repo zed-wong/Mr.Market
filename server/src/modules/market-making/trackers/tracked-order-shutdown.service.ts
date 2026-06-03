@@ -36,12 +36,13 @@ export class TrackedOrderShutdownService {
     await Promise.all(
       openOrders.map(async (order) => {
         try {
-          const result = await this.exchangeConnectorAdapterService?.cancelOrder(
-            order.exchange,
-            order.pair,
-            order.exchangeOrderId,
-            order.accountLabel,
-          );
+          const result =
+            await this.exchangeConnectorAdapterService?.cancelOrder(
+              order.exchange,
+              order.pair,
+              order.exchangeOrderId,
+              order.accountLabel,
+            );
           const cancelSucceeded = this.isCancelResultFinal(result);
 
           this.exchangeOrderTrackerService?.upsertOrder(
@@ -129,7 +130,9 @@ export class TrackedOrderShutdownService {
                       order.accountLabel,
                     ) as Promise<
                       Awaited<
-                        ReturnType<ExchangeConnectorAdapterService['fetchOrder']>
+                        ReturnType<
+                          ExchangeConnectorAdapterService['fetchOrder']
+                        >
                       >
                     >,
                   { warnThresholdMs: 500 },
@@ -244,7 +247,10 @@ export class TrackedOrderShutdownService {
         : 'pending_cancel';
 
       this.exchangeOrderTrackerService?.upsertOrder({
-        orderId: this.readString(strategy.marketMakingOrderId, strategy.clientId),
+        orderId: this.readString(
+          strategy.marketMakingOrderId,
+          strategy.clientId,
+        ),
         strategyKey: strategy.strategyKey,
         exchange,
         accountLabel,

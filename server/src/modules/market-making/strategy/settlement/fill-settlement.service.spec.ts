@@ -54,6 +54,7 @@ describe('FillSettlementService', () => {
 
   it('does not credit bought base when quote settlement fails first', async () => {
     const service = new FillSettlementService(balanceLedgerService as any);
+
     balanceLedgerService.adjust.mockRejectedValueOnce(
       new Error('insufficient locked balance for fill settlement'),
     );

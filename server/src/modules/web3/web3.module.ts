@@ -22,8 +22,8 @@ import { Web3FundingController } from './funding/web3-funding.controller';
 import { Web3FundingService } from './funding/web3-funding.service';
 import { Web3MarketMakingController } from './market-making/web3-market-making.controller';
 import { Web3MarketMakingService } from './market-making/web3-market-making.service';
-import { Web3RouterEventPollerService } from './web3-router-event-poller.service';
 import { Web3Service } from './web3.service';
+import { Web3RouterEventPollerService } from './web3-router-event-poller.service';
 import { Web3WithdrawController } from './withdraw/web3-withdraw.controller';
 import { Web3WithdrawService } from './withdraw/web3-withdraw.service';
 

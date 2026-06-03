@@ -7,13 +7,16 @@ describe('GrowdataService', () => {
       get: jest.fn((key: string) => Promise.resolve(cache.get(key))),
       set: jest.fn((key: string, value: unknown) => {
         cache.set(key, value);
+
         return Promise.resolve();
       }),
     };
     const growdataRepository = {
-      findAllExchanges: jest.fn().mockResolvedValue([
-        { exchange_id: 'binance', name: 'Binance', enable: true },
-      ]),
+      findAllExchanges: jest
+        .fn()
+        .mockResolvedValue([
+          { exchange_id: 'binance', name: 'Binance', enable: true },
+        ]),
       findAllSimplyGrowTokens: jest.fn().mockResolvedValue([]),
       findAllArbitragePairs: jest.fn().mockResolvedValue([]),
       findAllMarketMakingPairs: jest.fn().mockResolvedValue([

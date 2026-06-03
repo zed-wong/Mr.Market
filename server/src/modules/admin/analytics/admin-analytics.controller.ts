@@ -1,5 +1,10 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AdminAnalyticsService } from './admin-analytics.service';
@@ -91,7 +96,8 @@ export class AdminAnalyticsController {
   @ApiQuery({
     name: 'pair',
     required: false,
-    description: 'Market pair override used to resolve the live order-book mid.',
+    description:
+      'Market pair override used to resolve the live order-book mid.',
   })
   @ApiQuery({
     name: 'startAt',

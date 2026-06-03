@@ -190,7 +190,9 @@ describe('AdminSystemHealthService', () => {
   it('filters by real group and exact service id', async () => {
     const { service } = buildService();
 
-    await expect(service.getHealth({ group: 'connector' })).resolves.toMatchObject({
+    await expect(
+      service.getHealth({ group: 'connector' }),
+    ).resolves.toMatchObject({
       groups: [{ name: 'connector' }],
     });
 
@@ -206,9 +208,9 @@ describe('AdminSystemHealthService', () => {
   it('rejects invalid filter identifiers', async () => {
     const { service } = buildService();
 
-    await expect(service.getHealth({ group: '../secrets' })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.getHealth({ group: '../secrets' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       service.getHealth({ service: 'x'.repeat(81) }),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -257,9 +259,7 @@ describe('AdminSystemHealthService', () => {
           { exchange: 'binance', accountLabel: 'maker' },
         ]),
         getHealthState: jest.fn(() => 'healthy'),
-        getLastRefreshTime: jest.fn(
-          () => 'Sat May 23 2026 00:06:00 GMT+0000',
-        ),
+        getLastRefreshTime: jest.fn(() => 'Sat May 23 2026 00:06:00 GMT+0000'),
       },
       balanceCache: {
         getSnapshotDiagnostic: jest.fn(() => ({
@@ -273,7 +273,9 @@ describe('AdminSystemHealthService', () => {
     });
 
     const response = await service.getHealth();
-    const runtime = response.services.find((row) => row.id === 'runtime.timing');
+    const runtime = response.services.find(
+      (row) => row.id === 'runtime.timing',
+    );
     const queue = response.services.find((row) => row.id === 'queue.snapshots');
     const balance = response.services.find((row) =>
       row.id.startsWith('connector.balance-cache.'),
@@ -288,9 +290,7 @@ describe('AdminSystemHealthService', () => {
       expect.objectContaining({ recordedAt: '2026-05-23T00:04:00.000Z' }),
     ]);
     expect(balance?.observedAt).toBe('2026-05-23T00:05:00.000Z');
-    expect(balance?.details?.lastRefreshAt).toBe(
-      '2026-05-23T00:06:00.000Z',
-    );
+    expect(balance?.details?.lastRefreshAt).toBe('2026-05-23T00:06:00.000Z');
     expect(queue?.message).toBe('Snapshot queue health source is unavailable.');
     expect(JSON.stringify(response)).not.toContain('/tmp/private');
     expect(JSON.stringify(response)).not.toContain('token=secret');
@@ -354,7 +354,9 @@ describe('AdminSystemHealthService', () => {
     const { service } = buildService({ orderTracker });
 
     const response = await service.getHealth({ service: 'orders.tracker' });
-    const tracker = response.services.find((row) => row.id === 'orders.tracker');
+    const tracker = response.services.find(
+      (row) => row.id === 'orders.tracker',
+    );
 
     expect(orderTracker.getTrackedOrderSummary).toHaveBeenCalledWith(500);
     expect(orderTracker.getAllTrackedOrders).not.toHaveBeenCalled();

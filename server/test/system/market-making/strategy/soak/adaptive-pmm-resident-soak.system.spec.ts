@@ -86,8 +86,7 @@ function createPureMmParams(orderId: string) {
   };
 }
 
-const wait = (ms: number) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const soakDurationMs = 1_800_000;
 const tickIntervalMs = 1_000;
@@ -149,14 +148,16 @@ describe('Adaptive PMM resident soak', () => {
         listControllerTypes: jest.fn().mockReturnValue(['pureMarketMaking']),
       } as any,
       {
-        dispatchActions: jest.fn(async (_strategyKey: string, actions: any[]) => {
-          dispatchedActions.push(...actions);
+        dispatchActions: jest.fn(
+          async (_strategyKey: string, actions: any[]) => {
+            dispatchedActions.push(...actions);
 
-          return actions.map((action) => ({
-            ...action,
-            status: action.status || 'NEW',
-          }));
-        }),
+            return actions.map((action) => ({
+              ...action,
+              status: action.status || 'NEW',
+            }));
+          },
+        ),
       } as any,
       strategyMarketDataProviderService as unknown as StrategyMarketDataProviderService,
       executorRegistry,

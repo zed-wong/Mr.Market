@@ -74,17 +74,14 @@ describe('AdminAnalyticsController', () => {
     ).resolves.toEqual({
       orderId: 'order-1',
     });
-    expect(analyticsService.getOrderAnalytics).toHaveBeenCalledWith(
-      'order-1',
-      {
-        exchange: 'binance',
-        pair: 'BTC/USDT',
-        startAt: '2026-06-04T00:00:00.000Z',
-        endAt: '2026-06-04T01:00:00.000Z',
-        range: undefined,
-        limit: '25',
-      },
-    );
+    expect(analyticsService.getOrderAnalytics).toHaveBeenCalledWith('order-1', {
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: '2026-06-04T00:00:00.000Z',
+      endAt: '2026-06-04T01:00:00.000Z',
+      range: undefined,
+      limit: '25',
+    });
   });
 
   it('delegates Direct Market Making dashboard queries to the service', async () => {
@@ -111,18 +108,18 @@ describe('AdminAnalyticsController', () => {
     ).resolves.toEqual({
       dashboard: { scope: { type: 'order', orderId: 'order-1' } },
     });
-    expect(analyticsService.getDirectMarketMakingDashboard).toHaveBeenCalledWith(
-      {
-        scope: 'order',
-        orderId: 'order-1',
-        exchange: 'binance',
-        pair: 'BTC/USDT',
-        startAt: '2026-06-04T00:00:00.000Z',
-        endAt: '2026-06-04T01:00:00.000Z',
-        range: undefined,
-        limit: '25',
-      },
-    );
+    expect(
+      analyticsService.getDirectMarketMakingDashboard,
+    ).toHaveBeenCalledWith({
+      scope: 'order',
+      orderId: 'order-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: '2026-06-04T00:00:00.000Z',
+      endAt: '2026-06-04T01:00:00.000Z',
+      range: undefined,
+      limit: '25',
+    });
   });
 
   it('surfaces deterministic validation errors for unsafe query shapes', async () => {

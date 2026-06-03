@@ -42,7 +42,10 @@ describe('Web3DepositService', () => {
     const { service } = buildService();
 
     expect(
-      service.resolveSupportedTokenForChain(11155111, sepoliaUsdc.toLowerCase()),
+      service.resolveSupportedTokenForChain(
+        11155111,
+        sepoliaUsdc.toLowerCase(),
+      ),
     ).toMatchObject({
       assetId: 'evm:11155111:0x1c7d4b196cb0c7b01d743fbc6116a902379c7238',
       tokenAddress: sepoliaUsdc,
@@ -53,7 +56,9 @@ describe('Web3DepositService', () => {
   it('rejects unsupported chains and tokens with validation errors', () => {
     const { service } = buildService();
 
-    expect(() => service.getInstructions('999999')).toThrow(BadRequestException);
+    expect(() => service.getInstructions('999999')).toThrow(
+      BadRequestException,
+    );
     expect(() =>
       service.resolveSupportedTokenForChain(
         11155111,

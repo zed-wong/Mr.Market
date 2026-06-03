@@ -805,6 +805,7 @@ export class ExchangeOrderTrackerService implements OnModuleInit {
 
     if (nextCount > 0) {
       this.trackedOrderStatusCounts.set(status, nextCount);
+
       return;
     }
 

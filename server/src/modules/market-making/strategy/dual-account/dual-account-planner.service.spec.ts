@@ -299,11 +299,14 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     expect(preCycleOppositeCapacity.toFixed()).toBe('0');
     expect(candidate).toBeDefined();
     expect(
-      (candidate as DualAccountBestCapacityCandidate).nextCycleQuoteCapacity
-        .isGreaterThan(0),
+      (
+        candidate as DualAccountBestCapacityCandidate
+      ).nextCycleQuoteCapacity.isGreaterThan(0),
     ).toBe(true);
     expect(
-      (candidate as DualAccountBestCapacityCandidate).rebalanceRiskQuote.isLessThan(
+      (
+        candidate as DualAccountBestCapacityCandidate
+      ).rebalanceRiskQuote.isLessThan(
         (candidate as DualAccountBestCapacityCandidate).quoteVolume,
       ),
     ).toBe(true);
@@ -334,9 +337,9 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
 
     expect(configuredBuy).toBeDefined();
     expect(
-      (configuredBuy as DualAccountBestCapacityCandidate).estimatedSpreadCostQuote.isGreaterThan(
-        0,
-      ),
+      (
+        configuredBuy as DualAccountBestCapacityCandidate
+      ).estimatedSpreadCostQuote.isGreaterThan(0),
     ).toBe(true);
 
     const rankingCandidates = [
@@ -357,9 +360,7 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
         }))
         .sort((left, right) => right.score.comparedTo(left.score))[0].label;
 
-    expect(selectWinner('cheapest_capital')).toBe(
-      'lower-volume-tight-spread',
-    );
+    expect(selectWinner('cheapest_capital')).toBe('lower-volume-tight-spread');
     expect(selectWinner('balanced')).toBe('lower-volume-tight-spread');
     expect(selectWinner('fastest_volume')).toBe('higher-volume-wide-spread');
   });

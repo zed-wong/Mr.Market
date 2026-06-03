@@ -119,17 +119,13 @@ export class GrowdataService implements OnModuleInit {
   }
 
   private async buildGrowData() {
-    const [
-      exchanges,
-      simplyGrowTokens,
-      arbitragePairs,
-      marketMakingPairs,
-    ] = await Promise.all([
-      this.getAllExchanges(),
-      this.getAllSimplyGrowTokens(),
-      this.getAllArbitragePairs(),
-      this.getAllMarketMakingPairs(),
-    ]);
+    const [exchanges, simplyGrowTokens, arbitragePairs, marketMakingPairs] =
+      await Promise.all([
+        this.getAllExchanges(),
+        this.getAllSimplyGrowTokens(),
+        this.getAllArbitragePairs(),
+        this.getAllMarketMakingPairs(),
+      ]);
 
     return {
       exchanges,

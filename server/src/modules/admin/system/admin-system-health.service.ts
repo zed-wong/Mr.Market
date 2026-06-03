@@ -305,6 +305,7 @@ export class AdminSystemHealthService {
           const status = String(key.validation_status || 'unknown');
 
           summary[status] = (summary[status] || 0) + 1;
+
           return summary;
         },
         {},
@@ -448,8 +449,8 @@ export class AdminSystemHealthService {
       queueDepth > 100
         ? 'critical'
         : queueDepth > 0 || orphanedFills > 0
-          ? 'warning'
-          : 'healthy';
+        ? 'warning'
+        : 'healthy';
 
     return [
       {
@@ -580,11 +581,7 @@ export class AdminSystemHealthService {
   }
 
   private normalizeStatus(status?: string): AdminHealthStatus {
-    if (
-      status === 'healthy' ||
-      status === 'warning' ||
-      status === 'critical'
-    ) {
+    if (status === 'healthy' || status === 'warning' || status === 'critical') {
       return status;
     }
 
@@ -655,7 +652,9 @@ export class AdminSystemHealthService {
     return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
   }
 
-  private normalizeTimestampFields<T extends Record<string, unknown>>(row: T): T {
+  private normalizeTimestampFields<T extends Record<string, unknown>>(
+    row: T,
+  ): T {
     const normalized: Record<string, unknown> = { ...row };
 
     for (const key of Object.keys(normalized)) {

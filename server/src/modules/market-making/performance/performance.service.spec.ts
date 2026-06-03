@@ -42,7 +42,7 @@ const createOrder = (
     createdAt: '2026-05-31T00:00:00.000Z',
     rewardAddress: '',
     ...overrides,
-  }) as MarketMakingOrder;
+  } as MarketMakingOrder);
 
 const entry = (overrides: Partial<LedgerEntry>): LedgerEntry =>
   ({
@@ -56,7 +56,7 @@ const entry = (overrides: Partial<LedgerEntry>): LedgerEntry =>
     idempotencyContentHash: 'hash',
     createdAt: '2026-05-31T00:00:00.000Z',
     ...overrides,
-  }) as LedgerEntry;
+  } as LedgerEntry);
 
 const fill = (
   id: string,

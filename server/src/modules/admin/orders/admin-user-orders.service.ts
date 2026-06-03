@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import {
   MarketMakingOrder,
   SimplyGrowOrder,
 } from 'src/common/entities/orders/user-orders.entity';
+import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { Repository } from 'typeorm';
 
 const USER_ORDER_TYPES = ['market_making', 'simply_grow'] as const;
@@ -96,7 +96,8 @@ export class AdminUserOrdersService {
     const orders: SerializedUserOrder[] = [];
 
     if (!filters.type || filters.type === 'market_making') {
-      const query = this.marketMakingOrderRepository.createQueryBuilder('order');
+      const query =
+        this.marketMakingOrderRepository.createQueryBuilder('order');
 
       if (filters.state) {
         query.andWhere('LOWER(order.state) = :state', { state: filters.state });
@@ -119,7 +120,10 @@ export class AdminUserOrdersService {
         .orderBy('order.createdAt', 'DESC')
         .take(MAX_SCAN_ROWS)
         .getMany();
-      orders.push(...rows.map((order) => this.serializeMarketMakingOrder(order)));
+
+      orders.push(
+        ...rows.map((order) => this.serializeMarketMakingOrder(order)),
+      );
     }
 
     if (!filters.type || filters.type === 'simply_grow') {
@@ -144,6 +148,7 @@ export class AdminUserOrdersService {
         .orderBy('order.createdAt', 'DESC')
         .take(MAX_SCAN_ROWS)
         .getMany();
+
       orders.push(...rows.map((order) => this.serializeSimplyGrowOrder(order)));
     }
 
@@ -172,7 +177,9 @@ export class AdminUserOrdersService {
     };
   }
 
-  private serializeSimplyGrowOrder(order: SimplyGrowOrder): SerializedUserOrder {
+  private serializeSimplyGrowOrder(
+    order: SimplyGrowOrder,
+  ): SerializedUserOrder {
     return {
       orderId: order.orderId,
       userId: order.userId,
@@ -256,13 +263,17 @@ export class AdminUserOrdersService {
     }
 
     if (!/^\d+$/.test(value)) {
-      throw new BadRequestException(`${options.name} must be a positive integer.`);
+      throw new BadRequestException(
+        `${options.name} must be a positive integer.`,
+      );
     }
 
     const parsed = Number(value);
 
     if (!Number.isSafeInteger(parsed) || parsed < 1) {
-      throw new BadRequestException(`${options.name} must be a positive integer.`);
+      throw new BadRequestException(
+        `${options.name} must be a positive integer.`,
+      );
     }
 
     if (parsed > options.maxValue) {

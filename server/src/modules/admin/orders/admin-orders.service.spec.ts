@@ -5,7 +5,10 @@ import { AdminOrdersService } from './admin-orders.service';
 const ts = (minute: number) =>
   `2026-05-23T00:${String(minute).padStart(2, '0')}:00.000Z`;
 
-function createQueryBuilder(rows: Array<Record<string, any>>, total = rows.length) {
+function createQueryBuilder(
+  rows: Array<Record<string, any>>,
+  total = rows.length,
+) {
   const builder = {
     clauses: [] as Array<{ sql: string; params?: Record<string, unknown> }>,
     orderBys: [] as Array<{ field: string; direction: 'ASC' | 'DESC' }>,
@@ -13,22 +16,27 @@ function createQueryBuilder(rows: Array<Record<string, any>>, total = rows.lengt
     skipValue: undefined as number | undefined,
     andWhere: jest.fn((sql: string, params?: Record<string, unknown>) => {
       builder.clauses.push({ sql, params });
+
       return builder;
     }),
     orderBy: jest.fn((field: string, direction: 'ASC' | 'DESC') => {
       builder.orderBys.push({ field, direction });
+
       return builder;
     }),
     addOrderBy: jest.fn((field: string, direction: 'ASC' | 'DESC') => {
       builder.orderBys.push({ field, direction });
+
       return builder;
     }),
     take: jest.fn((value: number) => {
       builder.takeValue = value;
+
       return builder;
     }),
     skip: jest.fn((value: number) => {
       builder.skipValue = value;
+
       return builder;
     }),
     getManyAndCount: jest.fn(async () => [rows, total]),
@@ -86,10 +94,7 @@ describe('AdminOrdersService', () => {
     };
 
     return {
-      service: new AdminOrdersService(
-        trackedOrders as any,
-        executions as any,
-      ),
+      service: new AdminOrdersService(trackedOrders as any, executions as any),
       trackedOrders,
       executions,
       mappings,
@@ -206,12 +211,15 @@ describe('AdminOrdersService', () => {
     ['limit', { limit: 'zero' }],
     ['page', { page: '0' }],
     ['query', { query: 'x'.repeat(101) }],
-  ])('rejects invalid %s filters without querying orders', async (_label, query) => {
-    const { service, queryBuilder } = buildService();
+  ])(
+    'rejects invalid %s filters without querying orders',
+    async (_label, query) => {
+      const { service, queryBuilder } = buildService();
 
-    await expect(service.listOrders(query)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(queryBuilder.getManyAndCount).not.toHaveBeenCalled();
-  });
+      await expect(service.listOrders(query)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(queryBuilder.getManyAndCount).not.toHaveBeenCalled();
+    },
+  );
 });

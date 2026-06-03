@@ -44,21 +44,17 @@ export class MessageService implements OnModuleInit {
 
         Promise.resolve(loopResult).catch((error) => {
           const message =
-            error instanceof Error ? error.stack || error.message : String(error);
+            error instanceof Error
+              ? error.stack || error.message
+              : String(error);
 
-          this.logger.error(
-            'Mixin message loop failed',
-            message,
-          );
+          this.logger.error('Mixin message loop failed', message);
         });
       } catch (error) {
         const message =
           error instanceof Error ? error.stack || error.message : String(error);
 
-        this.logger.error(
-          'Failed to start mixin message loop',
-          message,
-        );
+        this.logger.error('Failed to start mixin message loop', message);
       }
     });
   }

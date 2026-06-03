@@ -1,5 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AdminOrdersService } from './admin-orders.service';
@@ -18,8 +23,7 @@ export class AdminOrdersController {
   @ApiQuery({
     name: 'status',
     required: false,
-    description:
-      'Tracked order status. Omit or use all for all statuses.',
+    description: 'Tracked order status. Omit or use all for all statuses.',
   })
   @ApiQuery({
     name: 'side',
@@ -30,7 +34,8 @@ export class AdminOrdersController {
   @ApiQuery({
     name: 'query',
     required: false,
-    description: 'Case-insensitive bounded search over order, pair, exchange, and strategy fields.',
+    description:
+      'Case-insensitive bounded search over order, pair, exchange, and strategy fields.',
   })
   @ApiQuery({
     name: 'limit',

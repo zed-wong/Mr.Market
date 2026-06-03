@@ -182,13 +182,17 @@ export class AdminOrdersService {
     }
 
     if (!/^\d+$/.test(value)) {
-      throw new BadRequestException(`${options.name} must be a positive integer.`);
+      throw new BadRequestException(
+        `${options.name} must be a positive integer.`,
+      );
     }
 
     const parsed = Number(value);
 
     if (!Number.isSafeInteger(parsed) || parsed < 1) {
-      throw new BadRequestException(`${options.name} must be a positive integer.`);
+      throw new BadRequestException(
+        `${options.name} must be a positive integer.`,
+      );
     }
 
     if (parsed > options.maxValue) {
@@ -256,14 +260,12 @@ export class AdminOrdersService {
         continue;
       }
 
-      const summary =
-        summaries.get(internalOrderId) ||
-        {
-          count: 0,
-          lastExecutedAt: null,
-          statuses: [],
-          strategyTypes: [],
-        };
+      const summary = summaries.get(internalOrderId) || {
+        count: 0,
+        lastExecutedAt: null,
+        statuses: [],
+        strategyTypes: [],
+      };
 
       summary.count += 1;
       summary.lastExecutedAt =

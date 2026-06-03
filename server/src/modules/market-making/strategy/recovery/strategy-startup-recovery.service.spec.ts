@@ -15,7 +15,7 @@ describe('StrategyStartupRecoveryService', () => {
       status: 'running',
       parameters: {},
       ...overrides,
-    }) as StrategyInstance;
+    } as StrategyInstance);
 
   const createIntent = (overrides?: Record<string, unknown>) => ({
     intentId: 'intent-1',
@@ -92,7 +92,9 @@ describe('StrategyStartupRecoveryService', () => {
       [],
     );
 
-    expect(orderReservationService.releaseLimitOrderReservation).toHaveBeenCalledWith({
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith({
       orderId: 'order-1',
       userId: 'user-1',
       intentId: 'intent-1',
@@ -117,11 +119,11 @@ describe('StrategyStartupRecoveryService', () => {
       exchangeOrderMappingService,
       exchangeOrderTrackerService,
     } = createService({
-        mappingByExchangeOrderId: {
-          orderId: 'order-1',
-          exchangeOrderId: 'exchange-order-1',
-        },
-      });
+      mappingByExchangeOrderId: {
+        orderId: 'order-1',
+        exchangeOrderId: 'exchange-order-1',
+      },
+    });
 
     await service.recoverInterruptedCreateIntentReservations(createStrategy(), [
       {
@@ -197,7 +199,9 @@ describe('StrategyStartupRecoveryService', () => {
     ]);
 
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledTimes(1);
-    expect(orderReservationService.releaseLimitOrderReservation).toHaveBeenCalledWith(
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         intentId: 'intent-dangling',
         reason: 'interrupted_intent_recovery',
@@ -216,7 +220,9 @@ describe('StrategyStartupRecoveryService', () => {
       [],
     );
 
-    expect(orderReservationService.releaseLimitOrderReservation).toHaveBeenCalledWith(
+    expect(
+      orderReservationService.releaseLimitOrderReservation,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         intentId: 'intent-1',
         reason: 'interrupted_intent_recovery',

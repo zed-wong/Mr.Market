@@ -44,7 +44,9 @@ describe('Web3RouterEventPollerService', () => {
     const web3Service = {
       getCurrentBlockNumber: jest.fn(async () => 120),
       getLogs: jest.fn(async (_chainId, filter) => {
-        if (filter.topics?.[0] === routerInterface.getEventTopic('FundsRouted')) {
+        if (
+          filter.topics?.[0] === routerInterface.getEventTopic('FundsRouted')
+        ) {
           return [fundingLog];
         }
 
@@ -103,7 +105,9 @@ describe('Web3RouterEventPollerService', () => {
         logIndex: fundingLog.logIndex,
       }),
     );
-    expect(web3WithdrawService.recordWithdrawalRequestedEvent).toHaveBeenCalledWith(
+    expect(
+      web3WithdrawService.recordWithdrawalRequestedEvent,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         requestId: withdrawalId,
         txHash: withdrawalLog.transactionHash,

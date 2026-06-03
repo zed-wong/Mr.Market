@@ -2,8 +2,8 @@ import { Injectable, Optional } from '@nestjs/common';
 import BigNumber from 'bignumber.js';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
-import { PureMarketMakingStrategyDto } from '../strategy/config/strategy.dto';
 import { BalanceLedgerService } from '../ledger/balance-ledger.service';
+import { PureMarketMakingStrategyDto } from '../strategy/config/strategy.dto';
 import { BalanceStateCacheService } from './balance-state-cache.service';
 
 export type PairAvailableBalances = {
@@ -14,7 +14,9 @@ export type PairAvailableBalances = {
 
 @Injectable()
 export class OrderScopedBalanceQueryService {
-  private readonly logger = new CustomLogger(OrderScopedBalanceQueryService.name);
+  private readonly logger = new CustomLogger(
+    OrderScopedBalanceQueryService.name,
+  );
 
   constructor(
     @Optional()

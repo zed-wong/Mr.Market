@@ -1205,7 +1205,9 @@ export class Web3MarketMakingService {
         userId,
         assetId: balance.assetId,
         amount: locked.toFixed(),
-        idempotencyKey: `web3:runtime-reservation-release:${order.orderId}:${balance.assetId}:${reason}:${balance.updatedAt}:${locked.toFixed()}`,
+        idempotencyKey: `web3:runtime-reservation-release:${order.orderId}:${
+          balance.assetId
+        }:${reason}:${balance.updatedAt}:${locked.toFixed()}`,
         refType: `web3_order_runtime_reservation_${reason}`,
         refId: order.orderId,
       });
