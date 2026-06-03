@@ -34,6 +34,7 @@ export const NAV_ITEMS: NavGroup[] = [
       { key: 'trading.market_making', label: 'admin.nav.market_making', href: '/trading/market-making' },
       { key: 'trading.strategies', label: 'admin.nav.strategies', href: '/trading/strategies' },
       { key: 'trading.positions', label: 'admin.nav.positions', href: '/trading/positions' },
+      { key: 'trading.balances', label: 'admin.nav.balances', href: '/trading/balances' },
     ],
   },
   {

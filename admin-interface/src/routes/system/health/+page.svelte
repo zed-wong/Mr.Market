@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import { _ } from 'svelte-i18n';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
@@ -31,14 +32,14 @@
     unknown: 'text-base-content/60',
   };
 
+  type HealthViewKey = 'all' | 'trading' | 'data' | 'exchange' | 'orders' | 'infrastructure';
+
   let response = $state<AdminSystemHealthResponse | null>(null);
-  let viewFilter = $state('all');
+  let viewFilter = $state<HealthViewKey>('all');
   let serviceFilter = $state('all');
   let loading = $state(true);
   let refreshing = $state(false);
   let error = $state<string | null>(null);
-
-  type HealthViewKey = 'all' | 'trading' | 'data' | 'exchange' | 'orders' | 'infrastructure';
 
   const healthViews: Array<{ key: HealthViewKey; label: string; description: string }> = [
     { key: 'all', label: 'admin_health_view_all', description: 'admin_health_view_all_desc' },
@@ -48,6 +49,18 @@
     { key: 'orders', label: 'admin_health_view_orders', description: 'admin_health_view_orders_desc' },
     { key: 'infrastructure', label: 'admin_health_view_infrastructure', description: 'admin_health_view_infrastructure_desc' },
   ];
+
+  const isHealthViewKey = (value: string | null): value is HealthViewKey =>
+    Boolean(value && healthViews.some((view) => view.key === value));
+
+  $effect(() => {
+    const requestedView = $page.url.searchParams.get('view');
+
+    if (isHealthViewKey(requestedView) && requestedView !== viewFilter) {
+      viewFilter = requestedView;
+      serviceFilter = 'all';
+    }
+  });
 
   const rawServices = $derived(response?.services ?? []);
   const serviceView = (service: AdminSystemHealthService): Exclude<HealthViewKey, 'all'>[] => {

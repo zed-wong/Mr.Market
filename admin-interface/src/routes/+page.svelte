@@ -59,6 +59,14 @@
     tone: KpiTone;
   }
 
+  interface AttentionRow {
+    key: string;
+    label: string;
+    meta: string;
+    tone: 'warning' | 'error' | 'success';
+    href?: string;
+  }
+
   const formatNumber = (value: string | number, options: Intl.NumberFormatOptions = {}) => {
     const number = typeof value === 'number' ? value : Number(value);
 
@@ -318,7 +326,7 @@
       return [];
     }
 
-    const rows: Array<{ key: string; label: string; meta: string; tone: 'warning' | 'error' | 'success' }> = [];
+    const rows: AttentionRow[] = [];
 
     if ($setupStatus?.initialized && !$setupStatus.completedAt && !setupCardDismissed) {
       rows.push({
@@ -326,6 +334,7 @@
         label: $_('admin_dashboard_setup_needs_completion'),
         meta: $_('admin_dashboard_setup_steps_complete', { values: { count: setupStepCount } }),
         tone: 'warning',
+        href: '/setup',
       });
     }
 
@@ -335,6 +344,7 @@
         label: $_('admin_dashboard_reconciliation_violations'),
         meta: $_('admin_dashboard_unresolved_count', { values: { count: formatNumber(summary.reconciliation.totalViolations) } }),
         tone: 'error',
+        href: '/system/health?view=orders',
       });
     }
 
@@ -344,12 +354,18 @@
         label: $_('admin_dashboard_pending_intents'),
         meta: $_('admin_dashboard_waiting_processing_count', { values: { count: formatNumber(summary.kpis.pendingIntents) } }),
         tone: 'warning',
+        href: '/system/health?view=orders',
       });
     }
 
     return rows.length > 0
       ? rows
-      : [{ key: 'clear', label: $_('admin_dashboard_no_action_needed'), meta: $_('admin_dashboard_queues_clear'), tone: 'success' }];
+      : [{
+          key: 'clear',
+          label: $_('admin_dashboard_no_action_needed'),
+          meta: $_('admin_dashboard_queues_clear'),
+          tone: 'success',
+        } satisfies AttentionRow];
   });
 
   const isEmpty = $derived(
@@ -431,7 +447,17 @@
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
       {#each kpis as kpi (kpi.key)}
-        <KpiCard label={kpi.label} value={kpi.value} unit={kpi.unit} tone={kpi.tone} deltaPct={0} series={[]} />
+        {#if kpi.key === 'capital'}
+          <a
+            href="/trading/balances"
+            class="block rounded-xl focus:outline-none focus:ring-2 focus:ring-base-content/20"
+            aria-label={kpi.label}
+          >
+            <KpiCard label={kpi.label} value={kpi.value} unit={kpi.unit} tone={kpi.tone} deltaPct={0} series={[]} />
+          </a>
+        {:else}
+          <KpiCard label={kpi.label} value={kpi.value} unit={kpi.unit} tone={kpi.tone} deltaPct={0} series={[]} />
+        {/if}
       {/each}
     </div>
 
@@ -454,26 +480,50 @@
 
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {#each attentionRows as row (row.key)}
-            <div
-              class="rounded-lg border p-4 {row.tone === 'error'
-                ? 'border-error bg-error/5'
-                : row.tone === 'warning'
-                  ? 'border-warning bg-warning/5'
-                  : 'border-success bg-success/5'}"
-            >
-              <div class="flex items-start gap-3">
-                <span
-                  class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                  class:bg-error={row.tone === 'error'}
-                  class:bg-warning={row.tone === 'warning'}
-                  class:bg-success={row.tone === 'success'}
-                ></span>
-                <div class="min-w-0 flex flex-col gap-1">
-                  <span class="text-sm font-semibold text-base-content">{row.label}</span>
-                  <span class="text-xs text-base-content/60">{row.meta}</span>
+            {#if row.href}
+              <a
+                href={row.href}
+                class="group rounded-lg border p-4 transition hover:-translate-y-0.5 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-base-content/20 {row.tone === 'error'
+                  ? 'border-error bg-error/5 hover:bg-error/10'
+                  : row.tone === 'warning'
+                    ? 'border-warning bg-warning/5 hover:bg-warning/10'
+                    : 'border-success bg-success/5 hover:bg-success/10'}"
+              >
+                <div class="flex items-start gap-3">
+                  <span
+                    class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                    class:bg-error={row.tone === 'error'}
+                    class:bg-warning={row.tone === 'warning'}
+                    class:bg-success={row.tone === 'success'}
+                  ></span>
+                  <div class="min-w-0 flex flex-col gap-1">
+                    <span class="text-sm font-semibold text-base-content group-hover:underline">{row.label}</span>
+                    <span class="text-xs text-base-content/60">{row.meta}</span>
+                  </div>
+                </div>
+              </a>
+            {:else}
+              <div
+                class="rounded-lg border p-4 {row.tone === 'error'
+                  ? 'border-error bg-error/5'
+                  : row.tone === 'warning'
+                    ? 'border-warning bg-warning/5'
+                    : 'border-success bg-success/5'}"
+              >
+                <div class="flex items-start gap-3">
+                  <span
+                    class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                    class:bg-error={row.tone === 'error'}
+                    class:bg-warning={row.tone === 'warning'}
+                    class:bg-success={row.tone === 'success'}
+                  ></span>
+                  <div class="min-w-0 flex flex-col gap-1">
+                    <span class="text-sm font-semibold text-base-content">{row.label}</span>
+                    <span class="text-xs text-base-content/60">{row.meta}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            {/if}
           {/each}
         </div>
       </div>

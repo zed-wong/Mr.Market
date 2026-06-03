@@ -34,6 +34,7 @@ describe('admin shell navigation', () => {
         '/system/connectivity/exchanges',
         '/trading/market-making',
         '/system/health',
+        '/trading/balances',
         '/system/password',
         '/system/passkeys',
         '/system/audit',
@@ -61,6 +62,7 @@ describe('admin shell navigation', () => {
       '/trading/market-making',
       '/trading/strategies',
       '/trading/positions',
+      '/trading/balances',
     ]);
     expect(NAV_ITEMS.find((item) => item.key === 'system')?.children.map((entry) => entry.href)).toEqual([
       '/system/health',
