@@ -363,6 +363,184 @@ describe('AdminAnalyticsService', () => {
       .toEqual(expect.arrayContaining(['quote', 'fill', 'cancel']));
   });
 
+  it('merges timeline events with deterministic ordering, stable source refs, and range-scoped queries', async () => {
+    const { service, repositories } = buildService();
+
+    const result = await service.getFoundation({
+      scope: 'order',
+      orderId: 'order-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.analytics.perOrder.timeline.events).toEqual([
+      expect.objectContaining({
+        id: 'execution:execution-1',
+        type: 'decision',
+        at: ts(2),
+        source: 'strategy_execution_history',
+        sourceId: 'execution-1',
+        sourceRef: {
+          type: 'strategy_execution_history',
+          id: 'execution-1',
+        },
+      }),
+      expect.objectContaining({
+        id: 'intent:intent-1',
+        type: 'quote',
+        at: ts(2),
+        source: 'strategy_order_intent',
+        sourceId: 'intent-1',
+        sourceRef: {
+          type: 'strategy_order_intent',
+          id: 'intent-1',
+        },
+      }),
+      expect.objectContaining({
+        id: 'ledger:entry-1',
+        type: 'fill',
+        at: ts(2),
+        source: 'ledger_entry',
+        sourceId: 'entry-1',
+        sourceRef: {
+          type: 'ledger_entry',
+          id: 'entry-1',
+        },
+      }),
+      expect.objectContaining({
+        id: 'tracked:track-1:fill',
+        type: 'fill',
+        at: ts(5),
+        source: 'tracked_order',
+        sourceId: 'track-1',
+        sourceRef: {
+          type: 'tracked_order',
+          id: 'track-1',
+        },
+      }),
+      expect.objectContaining({
+        id: 'tracked:track-2:cancel',
+        type: 'cancel',
+        at: ts(7),
+        source: 'tracked_order',
+        sourceId: 'track-2',
+        sourceRef: {
+          type: 'tracked_order',
+          id: 'track-2',
+        },
+      }),
+    ]);
+    expect(
+      result.analytics.perOrder.timeline.events.map((event) => event.id),
+    ).toEqual([
+      'execution:execution-1',
+      'intent:intent-1',
+      'ledger:entry-1',
+      'tracked:track-1:fill',
+      'tracked:track-2:cancel',
+    ]);
+    expect(repositories.trackedOrders.builders[0].clauses).toContainEqual(
+      expect.objectContaining({
+        sql: 'trackedOrder.updatedAt BETWEEN :startedAt AND :endedAt',
+        params: { startedAt: ts(0), endedAt: ts(10) },
+      }),
+    );
+    expect(repositories.intents.builders[0].clauses).toContainEqual(
+      expect.objectContaining({
+        sql: 'intent.createdAt BETWEEN :startedAt AND :endedAt',
+        params: { startedAt: ts(0), endedAt: ts(10) },
+      }),
+    );
+    expect(repositories.executions.builders[0].clauses).toContainEqual(
+      expect.objectContaining({
+        sql: 'execution.executedAt BETWEEN :startedAt AND :endedAt',
+        params: { startedAt: ts(0), endedAt: ts(10) },
+      }),
+    );
+  });
+
+  it('returns a Direct Market Making dashboard DTO with cost and revenue fields for a complete order', async () => {
+    const { service } = buildService();
+
+    const result = await service.getDirectMarketMakingDashboard({
+      scope: 'order',
+      orderId: 'order-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.dashboard).toMatchObject({
+      scope: {
+        type: 'order',
+        orderId: 'order-1',
+        exchange: 'binance',
+        pair: 'BTC/USDT',
+      },
+      costRevenue: {
+        spreadCapture: {
+          status: 'available',
+          value: '10',
+          currency: 'USDT',
+        },
+        feeCost: {
+          status: 'available',
+          value: '1',
+          currency: 'USDT',
+        },
+        inventorySkew: {
+          status: 'available',
+          quantity: {
+            status: 'available',
+            value: '0.5',
+            currency: 'BTC',
+          },
+          notional: {
+            status: 'available',
+            value: '50.075',
+            currency: 'USDT',
+          },
+        },
+        realizedPnl: {
+          status: 'available',
+          value: '10',
+          currency: 'USDT',
+        },
+        unrealizedPnl: {
+          status: 'available',
+          value: '0.075',
+          currency: 'USDT',
+        },
+        netPnl: {
+          status: 'available',
+          value: '9.075',
+          currency: 'USDT',
+        },
+        fillRate: {
+          status: 'available',
+          value: '0.5',
+          filledQuotes: 1,
+          totalQuotes: 2,
+        },
+        quoteUptime: {
+          status: 'available',
+          value: '0.5',
+        },
+      },
+    });
+    expect(result.dashboard.sources).toEqual(
+      expect.arrayContaining([
+        'performance_service_order_performance',
+        'tracked_orders',
+        'strategy_order_intents',
+        'order_book_tracker_mid',
+      ]),
+    );
+  });
+
   it('returns mark-dependent per-order metrics as unavailable when live mid is missing', async () => {
     const { service, orderBookTracker } = buildService();
 
@@ -406,6 +584,59 @@ describe('AdminAnalyticsService', () => {
       '"0"',
     );
     expect(result.analytics.perOrder.timeline.events.length).toBeGreaterThan(0);
+  });
+
+  it('returns unavailable Direct Market Making dashboard states when mark price is missing', async () => {
+    const { service, orderBookTracker } = buildService();
+
+    orderBookTracker.getOrderBook.mockReturnValueOnce(undefined);
+    orderBookTracker.getLastUpdateAt.mockReturnValueOnce(undefined);
+    orderBookTracker.isStale.mockReturnValueOnce(true);
+
+    const result = await service.getDirectMarketMakingDashboard({
+      scope: 'order',
+      orderId: 'order-1',
+      exchange: 'binance',
+      pair: 'BTC/USDT',
+      startAt: ts(0),
+      endAt: ts(10),
+    });
+
+    expect(result.dashboard.costRevenue.realizedPnl).toMatchObject({
+      status: 'available',
+      value: '10',
+    });
+    expect(result.dashboard.costRevenue.feeCost).toMatchObject({
+      status: 'available',
+      value: '1',
+    });
+    expect(result.dashboard.costRevenue.unrealizedPnl).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-unavailable',
+    });
+    expect(result.dashboard.costRevenue.netPnl).toMatchObject({
+      status: 'unavailable',
+      value: null,
+      unavailableReason: 'order-book-mid-unavailable',
+    });
+    expect(result.dashboard.costRevenue.inventorySkew).toMatchObject({
+      status: 'unavailable',
+      unavailableReason: 'order-book-mid-unavailable',
+      notional: {
+        status: 'unavailable',
+        value: null,
+        unavailableReason: 'order-book-mid-unavailable',
+      },
+    });
+    expect(result.dashboard.costRevenue.fillRate).toMatchObject({
+      status: 'available',
+      value: '0.5',
+    });
+    expect(result.dashboard.costRevenue.quoteUptime).toMatchObject({
+      status: 'available',
+      value: '0.5',
+    });
   });
 
   it('honors scope, range, and filters across projection queries', async () => {

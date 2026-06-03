@@ -249,6 +249,23 @@ export class AdminAnalyticsService {
     };
   }
 
+  async getDirectMarketMakingDashboard(input: AdminAnalyticsQuery = {}) {
+    const foundation = await this.getFoundation(input);
+    const scopeType = foundation.scope.type;
+    const dashboard =
+      scopeType === 'order'
+        ? this.buildOrderDirectMarketMakingDashboard(foundation)
+        : this.buildAggregateDirectMarketMakingDashboard(foundation);
+
+    return {
+      generatedAt: foundation.generatedAt,
+      scope: foundation.scope,
+      range: foundation.range,
+      filters: foundation.filters,
+      dashboard,
+    };
+  }
+
   private resolveQuery(input: AdminAnalyticsQuery): ResolvedAnalyticsQuery {
     const scope = this.resolveScope(input.scope);
     const orderId = this.normalizeOptionalToken(input.orderId, 'orderId');
@@ -1136,6 +1153,11 @@ export class AdminAnalyticsService {
         ),
         feeCost,
         spreadCapture: spreadCaptureQuote,
+        inventorySkew: this.buildInventorySkew({
+          quantityByAsset: this.aggregateInventoryQuantityByAsset(snapshots),
+          costBasis: this.availableMetric(inventoryCostQuote, quoteCurrency),
+          notional: inventoryExposureNotional,
+        }),
         inventoryExposure: inventoryExposureNotional,
         fillRate,
         quoteUptime,
@@ -1369,6 +1391,166 @@ export class AdminAnalyticsService {
     };
   }
 
+  private buildOrderDirectMarketMakingDashboard(foundation: {
+    scope: {
+      type: AnalyticsScope;
+      orderId: string | null;
+      exchange: string | null;
+      pair: string | null;
+    };
+    range: { startedAt: string; endedAt: string };
+    analytics: { perOrder: any };
+    sources: {
+      trackedOrders: Array<Record<string, unknown>>;
+      strategyOrderIntents: Array<Record<string, unknown>>;
+    };
+  }) {
+    const perOrder = foundation.analytics.perOrder;
+
+    if (!perOrder) {
+      throw new BadRequestException(
+        'Direct Market Making dashboard order analytics are unavailable.',
+      );
+    }
+
+    return {
+      scope: {
+        type: 'order' as const,
+        orderId: foundation.scope.orderId,
+        exchange: perOrder.exchange,
+        pair: perOrder.pair,
+      },
+      orderIds: perOrder.orderId ? [perOrder.orderId] : [],
+      costRevenue: {
+        spreadCapture: perOrder.spreadCapture.quote,
+        feeCost: perOrder.fees.total,
+        inventorySkew: this.buildInventorySkew({
+          quantity: perOrder.inventoryExposure.quantity,
+          costBasis: perOrder.inventoryExposure.costBasis,
+          notional: perOrder.inventoryExposure.notional,
+        }),
+        realizedPnl: perOrder.pnl.realized,
+        unrealizedPnl: perOrder.pnl.unrealized,
+        netPnl: perOrder.pnl.net,
+        fillRate: this.buildDirectOrderFillRate(foundation.sources),
+        quoteUptime: this.buildDirectOrderQuoteUptime(
+          foundation.range,
+          foundation.sources.trackedOrders,
+        ),
+      },
+      sources: [
+        'performance_service_order_performance',
+        'tracked_orders',
+        'strategy_order_intents',
+        'order_book_tracker_mid',
+      ],
+    };
+  }
+
+  private buildAggregateDirectMarketMakingDashboard(foundation: {
+    scope: {
+      type: AnalyticsScope;
+      orderId: string | null;
+      exchange: string | null;
+      pair: string | null;
+    };
+    analytics: { aggregate: any };
+  }) {
+    const aggregate = foundation.analytics.aggregate;
+
+    if (!aggregate) {
+      throw new BadRequestException(
+        'Direct Market Making dashboard aggregate analytics are unavailable.',
+      );
+    }
+
+    return {
+      scope: {
+        type: foundation.scope.type,
+        orderId: null,
+        exchange: foundation.scope.exchange,
+        pair: foundation.scope.pair,
+      },
+      orderIds: aggregate.eligibleOrderIds,
+      costRevenue: {
+        spreadCapture: aggregate.spreadCapture.quote,
+        feeCost: aggregate.fees.total,
+        inventorySkew: this.buildInventorySkew({
+          quantityByAsset: aggregate.inventoryExposure.quantityByAsset,
+          costBasis: aggregate.inventoryExposure.costBasis,
+          notional: aggregate.inventoryExposure.notional,
+        }),
+        realizedPnl: aggregate.pnl.realized,
+        unrealizedPnl: aggregate.pnl.unrealized,
+        netPnl: aggregate.pnl.net,
+        fillRate: aggregate.fillRate,
+        quoteUptime: aggregate.quoteUptime,
+      },
+      sources: [
+        'performance_service_order_performance',
+        'tracked_orders',
+        'strategy_order_intents',
+        'order_book_tracker_mid',
+      ],
+    };
+  }
+
+  private buildInventorySkew(input: {
+    quantity?: DecimalMetric;
+    quantityByAsset?: Array<{ asset: string; quantity: string }>;
+    costBasis: DecimalMetric;
+    notional: DecimalMetric;
+  }) {
+    return {
+      status: input.notional.status,
+      unavailableReason: input.notional.unavailableReason,
+      quantity: input.quantity,
+      quantityByAsset: input.quantityByAsset,
+      costBasis: input.costBasis,
+      notional: input.notional,
+    };
+  }
+
+  private buildDirectOrderFillRate(sources: {
+    trackedOrders: Array<Record<string, unknown>>;
+    strategyOrderIntents: Array<Record<string, unknown>>;
+  }) {
+    const trackedOrders = sources.trackedOrders || [];
+    const totalQuotes =
+      trackedOrders.length > 0
+        ? trackedOrders.length
+        : sources.strategyOrderIntents.length;
+    const filledQuotes = trackedOrders.filter((order) =>
+      this.toDecimal(order.cumulativeFilledQty).isGreaterThan(0),
+    ).length;
+    const value =
+      totalQuotes > 0
+        ? new BigNumber(filledQuotes).dividedBy(totalQuotes)
+        : new BigNumber(0);
+
+    return {
+      ...this.availableMetric(value, null),
+      filledQuotes,
+      totalQuotes,
+    };
+  }
+
+  private buildDirectOrderQuoteUptime(
+    range: { startedAt: string; endedAt: string },
+    trackedOrders: Array<Record<string, unknown>>,
+  ) {
+    return this.buildQuoteUptime(
+      {
+        scope: 'order',
+        startedAt: range.startedAt,
+        endedAt: range.endedAt,
+        limit: trackedOrders.length || DEFAULT_LIMIT,
+        rangeKey: 'custom',
+      },
+      trackedOrders as TrackedOrderProjection[],
+    );
+  }
+
   private aggregateInventoryQuantityByAsset(
     snapshots: OrderAggregateSnapshot[],
   ) {
@@ -1467,6 +1649,10 @@ export class AdminAnalyticsService {
       side: string | null;
       price: string | null;
       qty: string | null;
+      sourceRef: {
+        type: string;
+        id: string;
+      };
     }> = [];
 
     for (const intent of sources.strategyOrderIntents) {
@@ -1476,6 +1662,10 @@ export class AdminAnalyticsService {
         at: this.normalizeTimestamp(intent.createdAt),
         source: 'strategy_order_intent',
         sourceId: intent.intentId,
+        sourceRef: {
+          type: 'strategy_order_intent',
+          id: intent.intentId,
+        },
         status: intent.status || null,
         side: intent.side || null,
         price: this.serializeNullableDecimal(intent.price),
@@ -1493,6 +1683,10 @@ export class AdminAnalyticsService {
           at: this.normalizeTimestamp(order.updatedAt),
           source: 'tracked_order',
           sourceId: order.trackingKey,
+          sourceRef: {
+            type: 'tracked_order',
+            id: order.trackingKey,
+          },
           status: order.status || null,
           side: order.side || null,
           price: this.serializeNullableDecimal(order.price),
@@ -1507,6 +1701,10 @@ export class AdminAnalyticsService {
           at: this.normalizeTimestamp(order.updatedAt),
           source: 'tracked_order',
           sourceId: order.trackingKey,
+          sourceRef: {
+            type: 'tracked_order',
+            id: order.trackingKey,
+          },
           status: order.status || null,
           side: order.side || null,
           price: this.serializeNullableDecimal(order.price),
@@ -1522,6 +1720,10 @@ export class AdminAnalyticsService {
         at: this.normalizeTimestamp(execution.executedAt),
         source: 'strategy_execution_history',
         sourceId: execution.id,
+        sourceRef: {
+          type: 'strategy_execution_history',
+          id: execution.id,
+        },
         status: execution.status || null,
         side: execution.side || null,
         price: this.serializeNullableDecimal(execution.price),
@@ -1540,6 +1742,10 @@ export class AdminAnalyticsService {
         at: this.normalizeTimestamp(entry.createdAt),
         source: 'ledger_entry',
         sourceId: entry.entryId,
+        sourceRef: {
+          type: 'ledger_entry',
+          id: entry.entryId,
+        },
         status: entry.type,
         side: null,
         price: null,
