@@ -5,7 +5,10 @@ import BigNumber from 'bignumber.js';
 import { StrategyExecutionHistory } from 'src/common/entities/market-making/strategy-execution-history.entity';
 import { StrategyInstance } from 'src/common/entities/market-making/strategy-instances.entity';
 import { MarketMakingOrder } from 'src/common/entities/orders/user-orders.entity';
-import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
+import {
+  buildSubmittedClientOrderId,
+  encodeClientOrderIdForExchange,
+} from 'src/common/helpers/client-order-id';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 import { ExchangeApiKeyService } from 'src/modules/market-making/exchange-api-key/exchange-api-key.service';
@@ -290,7 +293,10 @@ export class StrategyIntentExecutionService {
           return;
         }
 
-        const clientOrderId = await this.reserveClientOrderId(orderId);
+        const clientOrderId = await this.reserveClientOrderId(
+          orderId,
+          intent.exchange,
+        );
         let reservation: OrderReservationResult | undefined;
         let result: Record<string, unknown> | undefined;
 
@@ -356,8 +362,13 @@ export class StrategyIntentExecutionService {
           );
           await this.exchangeOrderMappingService?.createMapping({
             orderId,
+            exchangeName: intent.exchange,
             exchangeOrderId: String(result.id),
             clientOrderId,
+            exchangeClientOrderId: this.buildExchangeClientOrderId(
+              intent.exchange,
+              clientOrderId,
+            ),
           });
           await this.strategyExecutionHistoryRepository?.save(
             this.strategyExecutionHistoryRepository.create({
@@ -1725,7 +1736,10 @@ export class StrategyIntentExecutionService {
     }
   }
 
-  private async reserveClientOrderId(orderId: string): Promise<string> {
+  private async reserveClientOrderId(
+    orderId: string,
+    exchangeName: string,
+  ): Promise<string> {
     const current = this.nextClientOrderSeqByOrderId.get(orderId);
     const nextSeq =
       current ??
@@ -1737,12 +1751,31 @@ export class StrategyIntentExecutionService {
 
     await this.exchangeOrderMappingService?.reserveMapping({
       orderId,
+      exchangeName,
       clientOrderId,
+      exchangeClientOrderId: this.buildExchangeClientOrderId(
+        exchangeName,
+        clientOrderId,
+      ),
     });
 
     this.nextClientOrderSeqByOrderId.set(orderId, nextSeq + 1);
 
     return clientOrderId;
+  }
+
+  private buildExchangeClientOrderId(
+    exchangeName: string,
+    clientOrderId: string,
+  ): string | undefined {
+    const encodedClientOrderId = encodeClientOrderIdForExchange(
+      exchangeName,
+      clientOrderId,
+    );
+
+    return encodedClientOrderId === clientOrderId
+      ? undefined
+      : encodedClientOrderId;
   }
 
   private isCancelResultFinal(result: Record<string, unknown> | undefined) {

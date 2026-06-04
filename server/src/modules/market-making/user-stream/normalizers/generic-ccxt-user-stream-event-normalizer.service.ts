@@ -37,12 +37,7 @@ export class GenericCcxtUserStreamEventNormalizerService
             : undefined,
         exchangeOrderId:
           typeof payload.id === 'string' ? payload.id : undefined,
-        clientOrderId:
-          typeof payload.clientOrderId === 'string'
-            ? payload.clientOrderId
-            : typeof payload.clientOid === 'string'
-            ? payload.clientOid
-            : undefined,
+        clientOrderId: this.readClientOrderId(payload),
         side:
           payload.side === 'buy' || payload.side === 'sell'
             ? payload.side
@@ -100,12 +95,7 @@ export class GenericCcxtUserStreamEventNormalizerService
             : typeof payload.id === 'string'
             ? payload.id
             : undefined,
-        clientOrderId:
-          typeof payload.clientOrderId === 'string'
-            ? payload.clientOrderId
-            : typeof payload.clientOid === 'string'
-            ? payload.clientOid
-            : undefined,
+        clientOrderId: this.readClientOrderId(payload),
         fillId:
           typeof payload.tradeId === 'string'
             ? payload.tradeId
@@ -144,5 +134,38 @@ export class GenericCcxtUserStreamEventNormalizerService
       },
       receivedAt,
     };
+  }
+
+  private readClientOrderId(
+    payload: Record<string, unknown>,
+  ): string | undefined {
+    return (
+      this.readNonEmptyString(payload.clientOrderId) ||
+      this.readNonEmptyString(payload.clientOid) ||
+      this.readNonEmptyString(payload.cloid) ||
+      this.readNestedInfoClientOrderId(payload)
+    );
+  }
+
+  private readNestedInfoClientOrderId(
+    payload: Record<string, unknown>,
+  ): string | undefined {
+    if (!payload.info || typeof payload.info !== 'object') {
+      return undefined;
+    }
+
+    const info = payload.info as Record<string, unknown>;
+
+    return (
+      this.readNonEmptyString(info.clientOrderId) ||
+      this.readNonEmptyString(info.clientOid) ||
+      this.readNonEmptyString(info.cloid)
+    );
+  }
+
+  private readNonEmptyString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : undefined;
   }
 }

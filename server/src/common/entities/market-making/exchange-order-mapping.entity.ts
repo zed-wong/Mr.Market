@@ -19,9 +19,19 @@ export class ExchangeOrderMapping {
   @Index('IDX_exchange_order_mapping_exchange_order_id')
   exchangeOrderId?: string | null;
 
+  @Column({ nullable: true })
+  @Index('IDX_exchange_order_mapping_exchange_name')
+  exchangeName?: string | null;
+
   @Column()
   @Index('IDX_exchange_order_mapping_client_order_id', { unique: true })
   clientOrderId: string;
+
+  @Column({ nullable: true })
+  @Index('IDX_exchange_order_mapping_exchange_client_order_id', {
+    unique: true,
+  })
+  exchangeClientOrderId?: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

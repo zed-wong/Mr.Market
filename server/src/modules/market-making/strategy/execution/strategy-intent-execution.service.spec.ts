@@ -8,7 +8,10 @@ jest.mock(
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ConfigService } from '@nestjs/config';
-import { buildSubmittedClientOrderId } from 'src/common/helpers/client-order-id';
+import {
+  buildSubmittedClientOrderId,
+  encodeClientOrderIdForExchange,
+} from 'src/common/helpers/client-order-id';
 
 import { StrategyOrderIntent } from '../config/strategy-intent.types';
 import { DexVolumeStrategyService } from '../dex/dex-volume.strategy.service';
@@ -386,12 +389,16 @@ describe('StrategyIntentExecutionService', () => {
     );
     expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
       orderId: 'c1',
+      exchangeName: 'binance',
       clientOrderId: buildSubmittedClientOrderId('c1', 0),
+      exchangeClientOrderId: undefined,
     });
     expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
       orderId: 'c1',
+      exchangeName: 'binance',
       exchangeOrderId: 'order-1',
       clientOrderId: buildSubmittedClientOrderId('c1', 0),
+      exchangeClientOrderId: undefined,
     });
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1512,8 +1519,13 @@ describe('StrategyIntentExecutionService', () => {
     );
     expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
       orderId: 'mm-order-hyperliquid',
+      exchangeName: 'hyperliquid',
       exchangeOrderId: 'order-1',
       clientOrderId: submittedClientOrderId,
+      exchangeClientOrderId: encodeClientOrderIdForExchange(
+        'hyperliquid',
+        submittedClientOrderId,
+      ),
     });
     expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1636,7 +1648,9 @@ describe('StrategyIntentExecutionService', () => {
     expect(exchangeOrderMappingService.createMapping).not.toHaveBeenCalled();
     expect(exchangeOrderMappingService.reserveMapping).toHaveBeenCalledWith({
       orderId: 'mm-order-repeat',
+      exchangeName: 'binance',
       clientOrderId: buildSubmittedClientOrderId('mm-order-repeat', 0),
+      exchangeClientOrderId: undefined,
     });
 
     jest.clearAllMocks();

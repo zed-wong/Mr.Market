@@ -33,18 +33,24 @@ describe('ExchangeOrderMappingService', () => {
       service.reserveMapping({
         orderId: 'order-1',
         clientOrderId: 'order-1:0',
+        exchangeName: 'hyperliquid',
+        exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
       }),
     ).resolves.toEqual(
       expect.objectContaining({
         orderId: 'order-1',
         exchangeOrderId: null,
         clientOrderId: 'order-1:0',
+        exchangeName: 'hyperliquid',
+        exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
       }),
     );
     expect(repository.create).toHaveBeenCalledWith({
       orderId: 'order-1',
       exchangeOrderId: null,
       clientOrderId: 'order-1:0',
+      exchangeName: 'hyperliquid',
+      exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
     });
   });
 
@@ -83,12 +89,16 @@ describe('ExchangeOrderMappingService', () => {
         orderId: 'order-1',
         exchangeOrderId: 'ex-2',
         clientOrderId: 'order-1:0',
+        exchangeName: 'hyperliquid',
+        exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
       }),
     ).resolves.toEqual(
       expect.objectContaining({
         orderId: 'order-1',
         exchangeOrderId: 'ex-2',
         clientOrderId: 'order-1:0',
+        exchangeName: 'hyperliquid',
+        exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
       }),
     );
     expect(repository.save).toHaveBeenCalledTimes(1);
@@ -103,23 +113,29 @@ describe('ExchangeOrderMappingService', () => {
         orderId: 'order-1',
         exchangeOrderId: 'ex-1',
         clientOrderId: 'order-1:0',
+        exchangeName: 'hyperliquid',
+        exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
       }),
     ).resolves.toEqual(
       expect.objectContaining({
         orderId: 'order-1',
         exchangeOrderId: 'ex-1',
         clientOrderId: 'order-1:0',
+        exchangeName: 'hyperliquid',
+        exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
       }),
     );
     expect(repository.create).toHaveBeenCalledWith({
       orderId: 'order-1',
       exchangeOrderId: 'ex-1',
       clientOrderId: 'order-1:0',
+      exchangeName: 'hyperliquid',
+      exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
     });
     expect(repository.save).toHaveBeenCalledTimes(1);
   });
 
-  it('looks up mappings by clientOrderId and exchangeOrderId', async () => {
+  it('looks up mappings by clientOrderId, exchangeOrderId, and exchangeClientOrderId', async () => {
     const service = new ExchangeOrderMappingService(repository as any);
 
     repository.findOneBy.mockResolvedValueOnce({
@@ -129,6 +145,11 @@ describe('ExchangeOrderMappingService', () => {
     repository.findOneBy.mockResolvedValueOnce({
       orderId: 'order-1',
       exchangeOrderId: 'ex-1',
+    });
+    repository.findOneBy.mockResolvedValueOnce({
+      orderId: 'order-1',
+      exchangeName: 'hyperliquid',
+      exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
     });
 
     await expect(service.findByClientOrderId('order-1:0')).resolves.toEqual(
@@ -141,6 +162,17 @@ describe('ExchangeOrderMappingService', () => {
       expect.objectContaining({
         orderId: 'order-1',
         exchangeOrderId: 'ex-1',
+      }),
+    );
+    await expect(
+      service.findByExchangeClientOrderId(
+        '0x8634de59f9b5c185d0cdddf053927df7',
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        exchangeName: 'hyperliquid',
+        exchangeClientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
       }),
     );
   });

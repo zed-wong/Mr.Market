@@ -61,6 +61,18 @@ export class FillRoutingService {
       };
     }
 
+    const exchangeClientMapping =
+      await this.exchangeOrderMappingService.findByExchangeClientOrderId(
+        clientOrderId,
+      );
+
+    if (exchangeClientMapping) {
+      return {
+        orderId: exchangeClientMapping.orderId,
+        source: 'mapping',
+      };
+    }
+
     return await this.resolveOrderFromExchangeOrderId(params.exchangeOrderId);
   }
 

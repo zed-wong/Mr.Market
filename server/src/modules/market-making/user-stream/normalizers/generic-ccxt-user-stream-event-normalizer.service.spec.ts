@@ -60,4 +60,56 @@ describe('GenericCcxtUserStreamEventNormalizerService', () => {
       }),
     );
   });
+
+  it('normalizes Hyperliquid top-level cloid as the client order id for trades', () => {
+    const service = new GenericCcxtUserStreamEventNormalizerService();
+
+    const event = service.normalizeTrade(
+      'hyperliquid',
+      'maker',
+      {
+        symbol: 'BTC/USDT',
+        order: 'hl-order-1',
+        id: 'fill-1',
+        cloid: '0x8634de59f9b5c185d0cdddf053927df7',
+        side: 'buy',
+        amount: '0.5',
+        price: '100',
+      },
+      '2026-04-18T10:28:55.000Z',
+    );
+
+    expect(event?.payload).toEqual(
+      expect.objectContaining({
+        exchangeOrderId: 'hl-order-1',
+        clientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
+      }),
+    );
+  });
+
+  it('normalizes Hyperliquid nested info cloid as the client order id for orders', () => {
+    const service = new GenericCcxtUserStreamEventNormalizerService();
+
+    const event = service.normalizeOrder(
+      'hyperliquid',
+      'maker',
+      {
+        symbol: 'BTC/USDT',
+        id: 'hl-order-1',
+        info: {
+          cloid: '0x8634de59f9b5c185d0cdddf053927df7',
+        },
+        side: 'sell',
+        status: 'open',
+      },
+      '2026-04-18T10:28:55.000Z',
+    );
+
+    expect(event?.payload).toEqual(
+      expect.objectContaining({
+        exchangeOrderId: 'hl-order-1',
+        clientOrderId: '0x8634de59f9b5c185d0cdddf053927df7',
+      }),
+    );
+  });
 });
