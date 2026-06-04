@@ -1,48 +1,48 @@
 export const heroPills = [
-  { index: '01', label: 'Open' },
+  { index: '01', label: 'Launch' },
   { index: '02', label: 'Compete' },
   { index: '03', label: 'Settle' },
 ];
 
 export const problems = [
   {
-    name: 'Negotiated',
-    text: "You don't buy liquidity. You ask for it — in private, from a handful of makers, on terms no one else sees.",
+    name: 'Private',
+    text: 'Liquidity programs are often negotiated one maker at a time, with terms and performance hidden from the market.',
   },
   {
-    name: 'Opaque',
-    text: 'There is no public number for spread, useful depth, or uptime. Fake volume is the default, not the exception.',
+    name: 'Hard to measure',
+    text: 'Spread, useful depth, uptime, and attributable volume are usually reviewed after the fact, not as public campaign inputs.',
   },
   {
-    name: 'Permissioned',
-    text: 'New tokens get liquidity only if a maker agrees. Refusal has no appeal — and leaves no record.',
+    name: 'Hard to enter',
+    text: 'New markets need qualified makers, but makers need clear rules, visible targets, and a reason to allocate capacity.',
   },
 ];
 
 export const shiftCompare = {
   left: {
-    label: 'Yesterday',
-    title: 'Trading-bot primitives',
-    body: 'Spreads, inventory skew, connectors, scripts. Powerful, but only useful if you already are a market-making engineer.',
+    label: 'Typical tools',
+    title: 'Trading-bot configuration',
+    body: 'Spreads, inventory skew, connectors, scripts. Useful for specialists, but difficult for a launcher who just needs market quality.',
   },
   right: {
     label: 'Mr.Market',
     title: 'Liquidity workflows',
-    body: 'Open a campaign, set a budget, pick a target. The system absorbs the complexity; the user expresses intent.',
+    body: 'Open a campaign, set a budget, define the target, and let maker performance decide rewards.',
   },
 };
 
 export const audiences = [
   {
     label: 'For founders & treasuries',
-    title: 'Post a public liquidity mandate.',
-    body: 'Set a budget, a target depth, and a reward pool. Stop asking market makers for favors. The market becomes visible before you pay for it.',
+    title: 'Launch a measurable liquidity campaign.',
+    body: 'Set the pair, target depth, spread goal, and reward pool. Makers compete against published rules, and market quality is visible before rewards are paid.',
     cta: { href: '/offerings', text: 'See offerings →' },
   },
   {
     label: 'For makers & operators',
-    title: 'Run an open, TEE-protected engine.',
-    body: 'Compete on durable spread, useful depth, uptime, and attributable volume. Rewards are settled by rule, not by relationship.',
+    title: 'Compete with verifiable performance.',
+    body: 'Run the open-source engine, join campaigns that fit your capacity, and earn from spread quality, useful depth, uptime, and attributable volume.',
     cta: { href: '/leaderboard', text: 'View leaderboard →' },
   },
 ];
@@ -64,7 +64,7 @@ export const campaigns = [
 export const epochStats = [
   { label: 'reward pool', value: '$41,500' },
   { label: 'attributable volume', value: '$13.8m' },
-  { label: 'qualified makers', value: '124' },
+  { label: 'active makers', value: '124' },
   { label: 'avg uptime', value: '96.2%' },
 ];
 

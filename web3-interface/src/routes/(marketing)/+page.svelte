@@ -13,10 +13,10 @@
 </script>
 
 <svelte:head>
-  <title>Mr.Market — Democratized market-making engine</title>
+  <title>Mr.Market — Open market-making engine</title>
   <meta
     name="description"
-    content="Liquidity should belong to everyone, not to privilege. Mr.Market turns market-making from a private negotiation into a public, measurable, permissionless workflow."
+    content="Mr.Market turns liquidity campaigns into an open workflow: launch a target, let makers compete, measure quality, and settle rewards by rule."
   />
 </svelte:head>
 
@@ -33,10 +33,10 @@
             Market-making engine
           </span>
           <h1 class="balance-font m-0 block text-[3.75em] font-bold leading-[0.96] tracking-[-0.055em]">
-            Democratized market-making engine.
+            Open market-making engine.
           </h1>
           <span class="max-w-[38rem] text-[1.06rem] leading-8 text-base-content/66">
-            Permissionless liquidity campaigns. Automated market-making execution. Open-source runtime, protected by TEE.
+            Launch liquidity campaigns, let makers compete, and settle rewards from measurable market quality. Open-source runtime, protected by TEE.
           </span>
           <div class="flex flex-col gap-3 sm:flex-row">
             <a href="/leaderboard" class="rounded-full border border-base-content bg-base-content px-6 py-3 text-[0.68rem] font-bold text-base-100 capitalize no-underline hover:no-underline">
@@ -101,13 +101,13 @@
     </div>
   </section>
 
-  <!-- 2. THE SOUL -->
+  <!-- 2. CORE IDEA -->
   <section class="border-b quiet-rule">
     <div class="mx-auto max-w-7xl px-5 py-20 sm:px-8 lg:px-10">
-      <span class="micro-label block text-base-content/48">The soul</span>
+      <span class="micro-label block text-base-content/48">Core idea</span>
       <span class="mt-6 block max-w-5xl balance-font text-4xl font-bold leading-[1.06] sm:text-5xl">
-        Liquidity is the one thing on-chain markets never made permissionless.
-        <span class="text-base-content/40"> We're fixing that.</span>
+        On-chain markets made trading permissionless.
+        Liquidity provision still depends on closed workflows. We're changing that.
       </span>
     </div>
   </section>
@@ -117,9 +117,9 @@
     <div class="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[0.72fr_1.28fr] lg:px-10">
       <div class="flex flex-col gap-5">
         <span class="micro-label text-base-content/50">How liquidity works today</span>
-        <span class="balance-font text-5xl font-bold leading-[1.04]">Liquidity is still a favor.</span>
+        <span class="balance-font text-5xl font-bold leading-[1.04]">Liquidity still starts behind closed doors.</span>
         <span class="max-w-sm text-sm leading-7 text-base-content/62">
-          You ask the right firm. You hope for a yes. You trust the numbers they show you. None of it is public — and none of it has to be.
+          Teams negotiate privately, compare claims manually, and often pay before market quality is visible. Mr.Market makes the mandate, competition, and result public.
         </span>
       </div>
 
@@ -140,9 +140,9 @@
     <div class="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[0.72fr_1.28fr] lg:px-10">
       <div class="flex flex-col gap-5">
         <span class="micro-label text-base-content/50">The shift</span>
-        <span class="balance-font text-5xl font-bold leading-[1.04]">From primitives to workflows.</span>
+        <span class="balance-font text-5xl font-bold leading-[1.04]">From bot settings to campaign outcomes.</span>
         <span class="max-w-sm text-sm leading-7 text-base-content/62">
-          Existing market-making tools expose low-level trading primitives — only useful if you already are a market-making engineer. Mr.Market exposes liquidity as a workflow. The complexity is absorbed by the system, not pushed onto the user.
+          Most tools start with spreads, inventory, connectors, and scripts. Mr.Market starts with the outcome: target depth, spread goal, budget, and reward rules.
         </span>
       </div>
 
@@ -166,7 +166,7 @@
     <div class="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:px-10">
       <div class="flex flex-col gap-5">
         <span class="micro-label text-base-content/50">Who it's for</span>
-        <span class="balance-font text-5xl font-bold leading-[1.04]">Two sides, one open market.</span>
+        <span class="balance-font text-5xl font-bold leading-[1.04]">Campaign launchers and market makers.</span>
       </div>
 
       <div class="mt-10 grid gap-4 lg:grid-cols-2">
@@ -190,7 +190,7 @@
       <div class="grid gap-3 border-b quiet-rule p-6 md:grid-cols-[1fr_auto] md:items-end">
         <span>
           <span class="micro-label block text-base-content/50">Public proof</span>
-          <span class="mt-4 block balance-font text-4xl font-bold leading-none">Top makers this epoch</span>
+          <span class="mt-4 block balance-font text-4xl font-bold leading-none">Top makers in the current epoch</span>
         </span>
         <a href="/leaderboard" class="rounded-full border border-base-content bg-base-content px-5 py-2.5 text-[0.68rem] font-bold text-base-100 capitalize no-underline hover:no-underline">
           Open leaderboard →
@@ -222,33 +222,33 @@
     </aside>
   </section>
 
-  <!-- 7. CLOSING THESIS -->
+  <!-- 7. CLOSING PRINCIPLE -->
   <section id="thesis" class="mx-auto max-w-7xl px-5 pb-16 sm:px-8 lg:px-10">
     <div class="rounded-[2rem] border border-base-content/12 bg-base-200/52 p-7 sm:p-12">
       <div class="grid gap-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-start">
         <div>
-          <span class="micro-label block text-base-content/48">Closing thesis</span>
+          <span class="micro-label block text-base-content/48">Operating principle</span>
           <span class="mt-6 block balance-font text-4xl font-bold leading-[1.06] sm:text-5xl">
-            A liquidity layer worth building has no inside lane.
+            Liquidity programs should run on public rules.
           </span>
           <span class="mt-5 block max-w-md text-sm leading-7 text-base-content/62">
-            It is not private access made smoother. It is market entry expressed as a public mechanism.
+            A launcher should know what they are paying for. A maker should know how to qualify. Everyone should be able to verify the result.
           </span>
         </div>
 
         <div class="grid gap-3">
           <div class="rounded-[1.25rem] border border-base-content/10 bg-base-100 p-5">
             <span class="data-font text-sm text-base-content/34">01</span>
-            <span class="mt-4 block balance-font text-2xl font-bold leading-tight">No preferred relationship.</span>
+            <span class="mt-4 block balance-font text-2xl font-bold leading-tight">Public campaign terms.</span>
           </div>
           <div class="rounded-[1.25rem] border border-base-content/10 bg-base-100 p-5">
             <span class="data-font text-sm text-base-content/34">02</span>
-            <span class="mt-4 block balance-font text-2xl font-bold leading-tight">No privileged path.</span>
+            <span class="mt-4 block balance-font text-2xl font-bold leading-tight">Measurable maker performance.</span>
           </div>
           <div class="rounded-[1.25rem] border border-base-content/10 bg-base-100 p-5">
             <span class="data-font text-sm text-base-content/34">03</span>
             <span class="mt-4 block balance-font text-2xl font-bold leading-tight">
-              No party whose cooperation must be negotiated.
+              Rewards settled by rule.
             </span>
           </div>
         </div>
@@ -256,12 +256,11 @@
 
       <div class="mt-12 border-t border-base-content/10 pt-8">
         <span class="block max-w-5xl balance-font text-3xl font-bold leading-[1.12] text-base-content/44 sm:text-4xl">
-          It does not refuse regulation.
+          This is not a promise of instant liquidity.
           <span>
-            It gives markets
-            <span class="text-base-content">fewer private gates</span>,
-            and more public rules
-            <span class="text-base-content">anyone can rely on</span>.
+            It is a way to make liquidity work
+            <span class="text-base-content">visible, competitive, and auditable</span>
+            before rewards are paid.
           </span>
         </span>
       </div>
