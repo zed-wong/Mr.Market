@@ -2563,6 +2563,14 @@ describe('AdminDirectMarketMakingService', () => {
 
     strategyDefinitionRepository.find.mockResolvedValue([
       {
+        id: 'strategy-pmm',
+        name: 'Pure Market Making',
+        enabled: true,
+        visibility: 'public',
+        controllerType: 'pureMarketMaking',
+        capabilities: singleAccountLaunchConfig,
+      },
+      {
         id: 'strategy-classic',
         name: 'Dual Account Volume',
         enabled: true,
@@ -2589,6 +2597,10 @@ describe('AdminDirectMarketMakingService', () => {
     ]);
 
     await expect(service.listDirectStrategyDefinitions()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'strategy-pmm',
+        controllerType: 'pureMarketMaking',
+      }),
       expect.objectContaining({
         id: 'strategy-efficient',
         controllerType: 'efficientDualAccountVolume',
@@ -2644,6 +2656,9 @@ describe('AdminDirectMarketMakingService', () => {
         'efficientDualAccountVolume',
       ]),
     );
+    expect(
+      definitions.map((definition) => definition.controllerType),
+    ).not.toEqual(expect.arrayContaining(['dualAccountVolume']));
     expect(
       definitions.find(
         (definition) =>

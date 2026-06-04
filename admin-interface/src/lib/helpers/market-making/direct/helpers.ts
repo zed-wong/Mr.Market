@@ -295,6 +295,17 @@ const LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES = new Set([
   "dualAccountBestCapacityVolume",
 ]);
 
+const LEGACY_DUAL_ACCOUNT_STRATEGY_NAMES = new Set([
+  "dual account volume",
+  "dual account volume best capacity",
+  "dual account best capacity volume",
+]);
+
+const LEGACY_DUAL_ACCOUNT_STRATEGY_KEYS = new Set([
+  "dual-account-volume",
+  "dual-account-best-capacity-volume",
+]);
+
 const SUPPORTED_EFFICIENT_DUAL_ACCOUNT_MODES: EfficientDualAccountVolumeMode[] =
   ["cheapest_capital", "balanced", "fastest_volume"];
 
@@ -376,17 +387,56 @@ export function isEfficientDualAccountStrategy(
   strategy: DirectStrategyOptionLike | null | undefined,
 ): boolean {
   if (!strategy) return false;
+  const key = normalizeDirectStrategyText(strategy.key).replace(/\s+/g, "-");
   return (
     strategy.controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE ||
-    strategy.key === EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY ||
+    key === EFFICIENT_DUAL_ACCOUNT_STRATEGY_KEY ||
     /efficient\s+dual\s+account\s+volume/i.test(strategy.name || "")
+  );
+}
+
+function normalizeDirectStrategyText(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function isLegacyDualAccountStrategy(
+  strategy: DirectStrategyOptionLike | null | undefined,
+): boolean {
+  if (!strategy) return false;
+  const key = normalizeDirectStrategyText(strategy.key).replace(/\s+/g, "-");
+  const name = normalizeDirectStrategyText(strategy.name);
+  return (
+    isLegacyDualAccountControllerType(strategy.controllerType) ||
+    LEGACY_DUAL_ACCOUNT_STRATEGY_KEYS.has(key) ||
+    LEGACY_DUAL_ACCOUNT_STRATEGY_NAMES.has(name)
+  );
+}
+
+function isPureMarketMakingStrategy(
+  strategy: DirectStrategyOptionLike | null | undefined,
+): boolean {
+  if (!strategy) return false;
+  const key = normalizeDirectStrategyText(strategy.key).replace(/\s+/g, "-");
+  return (
+    strategy.controllerType === "pureMarketMaking" ||
+    key === "pure-market-making" ||
+    /pure\s+market\s+making/i.test(strategy.name || "")
   );
 }
 
 export function filterDirectCreateStrategies<T extends DirectStrategyOptionLike>(
   strategies: T[],
 ): T[] {
-  return strategies.filter(isEfficientDualAccountStrategy);
+  return strategies.filter(
+    (strategy) =>
+      !isLegacyDualAccountStrategy(strategy) &&
+      (isPureMarketMakingStrategy(strategy) ||
+        isEfficientDualAccountStrategy(strategy)),
+  );
 }
 
 export function getDirectReadinessSubmitStatus(args: {

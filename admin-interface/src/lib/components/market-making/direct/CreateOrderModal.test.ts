@@ -3,6 +3,7 @@ import { addMessages, init } from 'svelte-i18n';
 import { describe, expect, it } from 'vitest';
 
 import en from '../../../../i18n/en.json';
+import { filterDirectCreateStrategies } from '$lib/helpers/market-making/direct/helpers';
 import type { DirectReadinessResult } from '$lib/types/hufi/admin-direct-market-making';
 import CreateOrderModal from './CreateOrderModal.svelte';
 
@@ -108,21 +109,50 @@ const baseProps = {
 };
 
 describe('CreateOrderModal efficient readiness rendering', () => {
-  it('renders the backfilled Efficient Dual Account Volume strategy option', () => {
+  it('renders Pure Market Making and backfilled Efficient Dual Account Volume strategy options', () => {
+    const strategies = filterDirectCreateStrategies([
+      {
+        id: 'def-pmm',
+        key: 'pure_market_making',
+        name: 'Pure Market Making',
+        controllerType: 'pureMarketMaking',
+        directExecutionMode: 'single_account' as const,
+        defaultConfig: {},
+        configSchema: {},
+      },
+      {
+        id: 'def-legacy-classic',
+        key: 'dual_account_volume',
+        name: 'Dual Account Volume',
+        controllerType: 'dualAccountVolume',
+        directExecutionMode: 'dual_account' as const,
+        defaultConfig: {},
+        configSchema: {},
+      },
+      {
+        id: 'def-legacy-best',
+        key: 'dual_account_best_capacity_volume',
+        name: 'Dual Account Best Capacity Volume',
+        controllerType: 'dualAccountBestCapacityVolume',
+        directExecutionMode: 'dual_account' as const,
+        defaultConfig: {},
+        configSchema: {},
+      },
+      {
+        id: 'def-efficient-backfilled',
+        key: 'efficient_dual_account_volume',
+        name: 'Efficient Dual Account Volume',
+        controllerType: 'efficientDualAccountVolume',
+        directExecutionMode: 'dual_account' as const,
+        defaultConfig: { mode: 'balanced' },
+        configSchema: {},
+      },
+    ]);
+
     const { body } = render(CreateOrderModal, {
       props: {
         ...baseProps,
-        strategies: [
-          {
-            id: 'def-efficient-backfilled',
-            key: 'efficient_dual_account_volume',
-            name: 'Efficient Dual Account Volume',
-            controllerType: 'efficientDualAccountVolume',
-            directExecutionMode: 'dual_account' as const,
-            defaultConfig: { mode: 'balanced' },
-            configSchema: {},
-          },
-        ],
+        strategies,
         startStrategyDefinitionId: '',
         efficientMode: 'balanced',
         readiness: null,
@@ -131,7 +161,10 @@ describe('CreateOrderModal efficient readiness rendering', () => {
       },
     });
 
+    expect(body).toContain('Pure Market Making');
     expect(body).toContain('Efficient Dual Account Volume');
+    expect(body).not.toContain('def-legacy-classic');
+    expect(body).not.toContain('def-legacy-best');
     expect(body).not.toContain('Dual Account Best Capacity Volume');
   });
 
