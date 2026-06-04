@@ -18,6 +18,7 @@ type ExchangeAccountConfig = {
   label: string;
   apiKey?: string;
   secret?: string;
+  privateKey?: string;
   password?: string;
   uid?: string;
   walletAddress?: string;
@@ -147,6 +148,8 @@ export class ExchangeInitService {
         label: String(key.key_id || '').trim(),
         apiKey: key.api_key,
         secret: key.api_secret,
+        privateKey:
+          key.exchange === 'hyperliquid' ? key.api_secret : undefined,
         walletAddress:
           key.exchange === 'hyperliquid'
             ? String(key.api_key || '').trim() || undefined
@@ -206,6 +209,7 @@ export class ExchangeInitService {
         const exchange = new config.class({
           apiKey: account.apiKey,
           secret: account.secret,
+          privateKey: account.privateKey,
           password: account.password,
           uid: account.uid,
           ...(account.walletAddress

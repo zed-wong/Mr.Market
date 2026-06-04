@@ -102,10 +102,15 @@ export class ExchangeApiKeyService {
       }
 
       if (!this.exchangeInstances[keyId]) {
-        this.exchangeInstances[keyId] = new ccxt[exchangeName]({
-          apiKey,
-          secret: apiSecret,
-        });
+        const exchangeClass = ccxt[exchangeName];
+
+        this.exchangeInstances[keyId] = new exchangeClass(
+          this.buildExchangeClientOptions({
+            exchange: exchangeName,
+            api_key: apiKey,
+            api_secret: apiSecret,
+          }),
+        );
       }
     }
   }
@@ -166,10 +171,7 @@ export class ExchangeApiKeyService {
         return 'alive';
       }
 
-      new exchangeClass({
-        apiKey: key.api_key,
-        secret: key.api_secret,
-      });
+      new exchangeClass(this.buildExchangeClientOptions(key));
 
       return 'alive';
     } catch (error) {
@@ -726,6 +728,8 @@ export class ExchangeApiKeyService {
 
     if (key.exchange === 'hyperliquid') {
       const walletAddress = String(key.api_key || '').trim();
+
+      options.privateKey = key.api_secret;
 
       if (walletAddress) {
         options.walletAddress = walletAddress;
