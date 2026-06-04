@@ -2369,6 +2369,162 @@ describe('AdminDirectMarketMakingService', () => {
     ]);
   });
 
+  it('uses durable intent errorReason as the cycle failure reason when metadata has no failure reason', async () => {
+    const durableIntentOnlyFailureReason =
+      'Durable intent-only taker failure survived restart';
+    const strategyOrderIntentRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          intentId: 'durable-intent-only-maker',
+          runtimeInstanceKey: 'runtime-intent-only-cycle',
+          strategyKey: 'durable-intent-only-strategy-cycle',
+          userId: 'admin-user',
+          clientId: 'order-durable-intent-only-cycle',
+          type: 'CREATE_LIMIT_ORDER',
+          exchange: 'binance',
+          accountLabel: 'api-key-1',
+          pair: 'BTC/USDT',
+          side: 'buy',
+          price: '100',
+          qty: '0.5',
+          mixinOrderId: 'durable-intent-only-maker-order',
+          postOnly: true,
+          timeInForce: 'GTC',
+          metadata: {
+            cycleId: 'cycle-durable-intent-only-1',
+            cycleRole: 'maker',
+            role: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0',
+            notional: '50',
+            status: 'done',
+            linkedIntentId: 'durable-intent-only-maker',
+          },
+          status: 'DONE',
+          createdAt: '2026-04-01T00:00:01.000Z',
+          updatedAt: '2026-04-01T00:00:02.000Z',
+        },
+        {
+          intentId: 'durable-intent-only-maker:inline-taker',
+          runtimeInstanceKey: 'runtime-intent-only-cycle',
+          strategyKey: 'durable-intent-only-strategy-cycle',
+          userId: 'admin-user',
+          clientId: 'order-durable-intent-only-cycle',
+          type: 'CREATE_LIMIT_ORDER',
+          exchange: 'binance',
+          accountLabel: 'api-key-2',
+          pair: 'BTC/USDT',
+          side: 'sell',
+          price: '100',
+          qty: '0.5',
+          mixinOrderId: 'durable-intent-only-taker-order',
+          postOnly: false,
+          timeInForce: 'IOC',
+          metadata: {
+            cycleId: 'cycle-durable-intent-only-1',
+            cycleRole: 'taker',
+            role: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            plannedQty: '0.5',
+            plannedPrice: '100',
+            filledQty: '0',
+            notional: '50',
+            status: 'failed',
+            linkedIntentId: 'durable-intent-only-maker:inline-taker',
+          },
+          status: 'FAILED',
+          errorReason: durableIntentOnlyFailureReason,
+          createdAt: '2026-04-01T00:00:02.000Z',
+          updatedAt: '2026-04-01T00:00:03.000Z',
+        },
+      ]),
+    };
+    const strategyExecutionHistoryRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    const trackedOrderRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    const {
+      service,
+      marketMakingRepository,
+      strategyService,
+      exchangeOrderTrackerService,
+    } = buildService({
+      strategyOrderIntentRepository,
+      strategyExecutionHistoryRepository,
+      trackedOrderRepository,
+    });
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-durable-intent-only-cycle',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-durable-intent-only-cycle',
+          marketMakingOrderId: 'order-durable-intent-only-cycle',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([]);
+    exchangeOrderTrackerService.getTrackedOrders.mockReturnValue([]);
+    exchangeOrderTrackerService.getOpenOrders.mockReturnValue([]);
+
+    const result = await service.getDirectOrderStatus(
+      'order-durable-intent-only-cycle',
+    );
+
+    expect(strategyOrderIntentRepository.find).toHaveBeenCalled();
+    expect(strategyExecutionHistoryRepository.find).toHaveBeenCalled();
+    expect(trackedOrderRepository.find).toHaveBeenCalled();
+    expect(result.cycles).toEqual([
+      expect.objectContaining({
+        cycleId: 'cycle-durable-intent-only-1',
+        aggregateStatus: 'failed',
+        failureReason: durableIntentOnlyFailureReason,
+        legs: expect.arrayContaining([
+          expect.objectContaining({
+            cycleRole: 'maker',
+            accountLabel: 'api-key-1',
+            side: 'buy',
+            failureReason: null,
+            linkedIntentId: 'durable-intent-only-maker',
+          }),
+          expect.objectContaining({
+            cycleRole: 'taker',
+            accountLabel: 'api-key-2',
+            side: 'sell',
+            status: 'failed',
+            failureReason: durableIntentOnlyFailureReason,
+            linkedIntentId: 'durable-intent-only-maker:inline-taker',
+            linkedTrackedOrderId: 'durable-intent-only-taker-order',
+          }),
+        ]),
+      }),
+    ]);
+  });
+
   it('rejects legacy dual-account definitions for new direct-start orders', async () => {
     const { service, strategyDefinitionRepository, strategyConfigResolver } =
       buildService();
