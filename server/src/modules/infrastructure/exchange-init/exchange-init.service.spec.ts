@@ -8,6 +8,7 @@ import { ExchangeInitService } from './exchange-init.service';
 
 describe('ExchangeinitService', () => {
   let service: ExchangeInitService;
+  let cacheService: { get: jest.Mock; set: jest.Mock };
   let exchangeService: {
     readSupportedExchanges: jest.Mock;
     readDecryptedAPIKeys: jest.Mock;
@@ -16,6 +17,10 @@ describe('ExchangeinitService', () => {
 
   beforeEach(async () => {
     jest.useFakeTimers();
+    cacheService = {
+      get: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn().mockResolvedValue(undefined),
+    };
     exchangeService = {
       readSupportedExchanges: jest.fn().mockResolvedValue(['binance']),
       readDecryptedAPIKeys: jest
@@ -41,7 +46,7 @@ describe('ExchangeinitService', () => {
         ExchangeInitService,
         {
           provide: CACHE_MANAGER,
-          useValue: {},
+          useValue: cacheService,
         },
         {
           provide: ExchangeApiKeyService,
@@ -158,6 +163,12 @@ describe('ExchangeinitService', () => {
         options: expect.objectContaining({
           builderFee: false,
           walletAddress: '0xwallet',
+          defaultType: 'spot',
+          fetchMarkets: expect.objectContaining({ types: ['spot'] }),
+          createOrder: expect.objectContaining({ defaultType: 'spot' }),
+          fetchOrder: expect.objectContaining({ defaultType: 'spot' }),
+          fetchOpenOrders: expect.objectContaining({ defaultType: 'spot' }),
+          cancelOrder: expect.objectContaining({ defaultType: 'spot' }),
         }),
       }),
     );

@@ -237,8 +237,45 @@ describe('ExchangeApiKeyService', () => {
       options: {
         builderFee: false,
         walletAddress: '0xwallet',
+        defaultType: 'spot',
+        fetchMarkets: { types: ['spot'] },
+        createOrder: { defaultType: 'spot' },
+        fetchOrder: { defaultType: 'spot' },
+        fetchOpenOrders: { defaultType: 'spot' },
+        cancelOrder: { defaultType: 'spot' },
       },
     });
+  });
+
+  it('rejects hyperliquid deposit address requests before custody exchange calls', async () => {
+    const { service } = makeService();
+
+    await expect(
+      (service as any)._getDepositAddress({
+        exchange: 'hyperliquid',
+        apiKey: '0xwallet',
+        apiSecret: 'private-key',
+        symbol: 'USDC',
+        network: 'Arbitrum',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects hyperliquid withdrawals before custody exchange calls', async () => {
+    const { service } = makeService();
+
+    await expect(
+      (service as any)._createWithdrawal({
+        exchange: 'hyperliquid',
+        apiKey: '0xwallet',
+        apiSecret: 'private-key',
+        symbol: 'USDC',
+        network: 'Arbitrum',
+        address: '0xreceiver',
+        tag: '',
+        amount: '10',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('stores hyperliquid credentials through unchanged api_key and api_secret fields', async () => {

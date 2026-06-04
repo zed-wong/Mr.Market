@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  isHyperliquidExchange,
+  isHyperliquidSpotMarket,
+} from 'src/common/helpers/hyperliquid-spot';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
@@ -84,6 +92,9 @@ export class ExchangeConnectorAdapterService {
           exchangeName,
           accountLabel,
         );
+
+        await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
+
         const params = {
           ...(clientOrderId ? { clientOrderId } : {}),
           ...(options?.postOnly ? { postOnly: true } : {}),
@@ -301,6 +312,9 @@ export class ExchangeConnectorAdapterService {
         }
 
         const market = exchange?.markets?.[pair] || {};
+
+        this.assertKnownHyperliquidSpotMarket(exchangeName, pair, market);
+
         const rules = {
           amountMin: this.toFiniteNumber(market?.limits?.amount?.min),
           amountMax: this.toFiniteNumber(market?.limits?.amount?.max),
@@ -499,6 +513,42 @@ export class ExchangeConnectorAdapterService {
 
   private toMarketKey(exchangeName: string, pair: string): string {
     return `${exchangeName}:${pair}`;
+  }
+
+  private async assertHyperliquidSpotMarket(
+    exchangeName: string,
+    pair: string,
+    exchange: any,
+  ): Promise<void> {
+    if (!isHyperliquidExchange(exchangeName)) {
+      return;
+    }
+
+    if (!exchange?.markets || !exchange.markets[pair]) {
+      await exchange.loadMarkets();
+    }
+
+    this.assertKnownHyperliquidSpotMarket(
+      exchangeName,
+      pair,
+      exchange?.markets?.[pair],
+    );
+  }
+
+  private assertKnownHyperliquidSpotMarket(
+    exchangeName: string,
+    pair: string,
+    market: unknown,
+  ): void {
+    if (!isHyperliquidExchange(exchangeName)) {
+      return;
+    }
+
+    if (!isHyperliquidSpotMarket(market)) {
+      throw new BadRequestException(
+        `Hyperliquid support is spot-only; ${pair} is not an available Hyperliquid spot market.`,
+      );
+    }
   }
 
   private toFiniteNumber(value: unknown): number | undefined {

@@ -16,6 +16,10 @@ import {
   encrypt,
   getPublicKeyFromPrivate,
 } from 'src/common/helpers/crypto';
+import {
+  buildHyperliquidSpotOptions,
+  isHyperliquidExchange,
+} from 'src/common/helpers/hyperliquid-spot';
 import { getRFC3339Timestamp } from 'src/common/helpers/utils';
 import {
   AggregatedBalances,
@@ -379,6 +383,11 @@ export class ExchangeApiKeyService {
     symbol: string;
     network: string;
   }) {
+    this.assertHyperliquidFundingCustodyUnavailable(
+      exchange,
+      'deposit addresses',
+    );
+
     const e = new ccxt[exchange]({
       apiKey,
       secret: apiSecret,
@@ -477,6 +486,8 @@ export class ExchangeApiKeyService {
     tag: string;
     amount: string;
   }) {
+    this.assertHyperliquidFundingCustodyUnavailable(exchange, 'withdrawals');
+
     const e = new ccxt[exchange]({
       apiKey,
       secret: apiSecret,
@@ -733,14 +744,28 @@ export class ExchangeApiKeyService {
 
       if (walletAddress) {
         options.walletAddress = walletAddress;
-        options.options = {
-          builderFee: false,
-          walletAddress,
-        };
       }
+
+      options.options = buildHyperliquidSpotOptions(
+        (options.options as Record<string, unknown>) || {},
+        walletAddress || undefined,
+      );
     }
 
     return options;
+  }
+
+  private assertHyperliquidFundingCustodyUnavailable(
+    exchange: string,
+    action: string,
+  ): void {
+    if (!isHyperliquidExchange(exchange)) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Hyperliquid ${action} are unavailable because Hyperliquid support is trading-only and spot-only.`,
+    );
   }
 
   private async validateApiKeyInBackground(keyId: string): Promise<void> {
