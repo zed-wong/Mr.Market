@@ -355,6 +355,23 @@ export function getDirectReadinessSubmitStatus(args: {
   return args.canStart ? "ready" : "blocked";
 }
 
+export function isDirectReadinessForCurrentSelection(args: {
+  readiness: DirectReadinessResult | null | undefined;
+  displayedSignature: string;
+  currentSignature: string;
+  selectedMode: unknown;
+}): boolean {
+  if (!args.readiness) return false;
+  if (!args.displayedSignature || args.displayedSignature !== args.currentSignature) {
+    return false;
+  }
+
+  return (
+    normalizeEfficientDualAccountMode(args.readiness.mode) ===
+    normalizeEfficientDualAccountMode(args.selectedMode)
+  );
+}
+
 export function formatReadinessAmount(value: unknown, asset: unknown): string {
   const amount = String(value ?? "").trim();
   const unit = String(asset ?? "").trim();

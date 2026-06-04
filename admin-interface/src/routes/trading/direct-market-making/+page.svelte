@@ -53,6 +53,7 @@
         getDirectReadinessSubmitStatus,
         getErrorMessage,
         getRecoveryHint,
+        isDirectReadinessForCurrentSelection,
         isEfficientDualAccountControllerType,
         isDualDirectOrderControllerType,
         isSchemaDrivenDirectOrderControllerType,
@@ -307,6 +308,7 @@
     let directReadinessRequestId = 0;
     let directReadinessLoading = false;
     let directReadinessError = "";
+    let displayedDirectReadiness: DirectReadinessResult | null = null;
     let exchangeMarketsById: Record<string, ExchangeMarketMetadata[]> = {};
     let loadingExchangeMarketIds: string[] = [];
     let loadedExchangeMarketIds: string[] = [];
@@ -466,13 +468,31 @@
         directReadinessRequiredInputsComplete
             ? JSON.stringify(buildStartPayload())
             : "";
+    $: if (
+        directReadiness &&
+        directReadinessSignature &&
+        directReadinessCurrentSignature &&
+        directReadinessSignature !== directReadinessCurrentSignature
+    ) {
+        directReadiness = null;
+        directReadinessSignature = "";
+        directReadinessError = "";
+    }
+    $: displayedDirectReadiness = isDirectReadinessForCurrentSelection({
+        readiness: directReadiness,
+        displayedSignature: directReadinessSignature,
+        currentSignature: directReadinessCurrentSignature,
+        selectedMode: efficientMode,
+    })
+        ? directReadiness
+        : null;
     $: directReadinessStatus = getDirectReadinessSubmitStatus({
         requiredInputsComplete: directReadinessRequiredInputsComplete,
         loading: directReadinessLoading,
         failed: Boolean(directReadinessError),
         displayedSignature: directReadinessSignature,
         currentSignature: directReadinessCurrentSignature,
-        canStart: directReadiness?.canStart ?? null,
+        canStart: displayedDirectReadiness?.canStart ?? null,
     });
     $: if (
         directReadinessRequiredInputsComplete &&
@@ -725,6 +745,21 @@
             const result = await evaluateDirectReadiness(payload, token);
 
             if (requestId !== directReadinessRequestId) {
+                return null;
+            }
+
+            if (
+                !isDirectReadinessForCurrentSelection({
+                    readiness: result,
+                    displayedSignature: signature,
+                    currentSignature: directReadinessCurrentSignature,
+                    selectedMode: efficientMode,
+                })
+            ) {
+                directReadiness = null;
+                directReadinessSignature = "";
+                directReadinessError =
+                    "Readiness response did not match current selections.";
                 return null;
             }
 
@@ -1411,7 +1446,7 @@
     bind:dynamicRoleSwitching
     bind:targetQuoteVolume
     bind:efficientMode
-    readiness={directReadiness}
+    readiness={displayedDirectReadiness}
     readinessStatus={directReadinessStatus}
     readinessError={directReadinessError}
     onSubmit={handleStartOrder}

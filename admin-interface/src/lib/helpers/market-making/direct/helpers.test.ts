@@ -22,6 +22,7 @@ import {
   getEfficientDualAccountModeOptions,
   getLatestDirectRuntimeCycle,
   getReadinessCapitalRows,
+  isDirectReadinessForCurrentSelection,
   initializeDirectVariationFormValues,
   isBestCapacityDirectOrderControllerType,
   isDualAccountOrder,
@@ -656,6 +657,90 @@ describe('direct controller helpers', () => {
         canStart: true,
       }),
     ).toBe('ready');
+  });
+
+  it('treats mode changes as stale until a matching readiness response arrives', () => {
+    const balancedSignature = JSON.stringify({
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      strategyDefinitionId: 'def-efficient',
+      makerApiKeyId: 'maker-key',
+      takerApiKeyId: 'taker-key',
+      configOverrides: {
+        mode: 'balanced',
+        maxOrderAmount: 0.01,
+      },
+    });
+    const fastestVolumeSignature = JSON.stringify({
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      strategyDefinitionId: 'def-efficient',
+      makerApiKeyId: 'maker-key',
+      takerApiKeyId: 'taker-key',
+      configOverrides: {
+        mode: 'fastest_volume',
+        maxOrderAmount: 0.01,
+      },
+    });
+    const balancedReadiness = {
+      canStart: true,
+      mode: 'balanced' as const,
+      bestFirstAction: null,
+      maximumCycleQty: '0.01',
+      recommendedCycleQty: '0.01',
+      minimumCapitalByAccountAsset: [],
+      recommendedCapitalByAccountAsset: [],
+      missingBalances: [],
+      estimatedCycles: {
+        count: '1',
+        basis: 'current_available_balances',
+      },
+      estimatedVolume: {
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        baseAmount: '0.01',
+        quoteAmount: '500',
+      },
+      blockingReasons: [],
+    };
+
+    expect(
+      isDirectReadinessForCurrentSelection({
+        readiness: balancedReadiness,
+        displayedSignature: balancedSignature,
+        currentSignature: fastestVolumeSignature,
+        selectedMode: 'fastest_volume',
+      }),
+    ).toBe(false);
+    expect(
+      getDirectReadinessSubmitStatus({
+        requiredInputsComplete: true,
+        loading: false,
+        failed: false,
+        displayedSignature: balancedSignature,
+        currentSignature: fastestVolumeSignature,
+        canStart: balancedReadiness.canStart,
+      }),
+    ).toBe('stale');
+    expect(
+      isDirectReadinessForCurrentSelection({
+        readiness: balancedReadiness,
+        displayedSignature: fastestVolumeSignature,
+        currentSignature: fastestVolumeSignature,
+        selectedMode: 'fastest_volume',
+      }),
+    ).toBe(false);
+    expect(
+      isDirectReadinessForCurrentSelection({
+        readiness: {
+          ...balancedReadiness,
+          mode: 'fastest_volume',
+        },
+        displayedSignature: fastestVolumeSignature,
+        currentSignature: fastestVolumeSignature,
+        selectedMode: 'fastest_volume',
+      }),
+    ).toBe(true);
   });
 
   it('preserves backend readiness numeric strings and units for display rows', () => {

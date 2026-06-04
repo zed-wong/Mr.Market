@@ -22,6 +22,7 @@
         describeReadinessBlockingReason,
         describeReadinessMissingBalance,
         formatReadinessAmount,
+        normalizeEfficientDualAccountMode,
         type DirectReadinessSubmitStatus,
         type StrategySchema,
     } from "$lib/helpers/market-making/direct/helpers";
@@ -214,6 +215,10 @@
         readiness?.maximumUsefulCapitalByAccountAsset || [],
         "maximum",
     );
+    $: shouldRenderReadinessDetails =
+        Boolean(readiness) &&
+        (readinessStatus === "ready" || readinessStatus === "blocked") &&
+        normalizeEfficientDualAccountMode(readiness?.mode) === efficientMode;
     $: orderAmountPlaceholder = renderedMinOrderAmount
         ? $_("admin_direct_mm_order_amount_placeholder_with_min", {
               values: { amount: renderedMinOrderAmount },
@@ -1127,7 +1132,7 @@
                                 </div>
                             {/if}
 
-                            {#if readiness}
+                            {#if shouldRenderReadinessDetails && readiness}
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
                                     <div class="rounded-lg border border-base-300 bg-base-100 p-3">
                                         <span class="text-[10px] text-base-content/50 block">Backend status</span>
