@@ -1484,6 +1484,46 @@ describe('StrategyIntentExecutionService', () => {
     );
   });
 
+  it('keeps hyperliquid local tracking on the submitted clientOrderId while adapter handles cloid encoding', async () => {
+    const service = createService(true);
+    const submittedClientOrderId = buildSubmittedClientOrderId(
+      'mm-order-hyperliquid',
+      0,
+    );
+
+    await service.consumeIntents([
+      {
+        ...baseIntent,
+        exchange: 'hyperliquid',
+        intentId: 'intent-hyperliquid',
+        metadata: { orderId: 'mm-order-hyperliquid' },
+      },
+    ]);
+
+    expect(exchangeConnectorAdapterService.placeLimitOrder).toHaveBeenCalledWith(
+      'hyperliquid',
+      'BTC/USDT',
+      'buy',
+      '1',
+      '100',
+      submittedClientOrderId,
+      { postOnly: false, timeInForce: undefined },
+      undefined,
+    );
+    expect(exchangeOrderMappingService.createMapping).toHaveBeenCalledWith({
+      orderId: 'mm-order-hyperliquid',
+      exchangeOrderId: 'order-1',
+      clientOrderId: submittedClientOrderId,
+    });
+    expect(exchangeOrderTrackerService.upsertOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchange: 'hyperliquid',
+        exchangeOrderId: 'order-1',
+        clientOrderId: submittedClientOrderId,
+      }),
+    );
+  });
+
   it('skips exchange side effects when durability marks an intent as already processed', async () => {
     durabilityService.isProcessed.mockResolvedValueOnce(true);
     const service = createService(true);

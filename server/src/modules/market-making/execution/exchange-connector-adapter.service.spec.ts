@@ -110,7 +110,7 @@ describe('ExchangeConnectorAdapterService', () => {
     expect(exchange.cancelOrder).toHaveBeenCalledWith('ex-order-1', 'BTC/USDT');
   });
 
-  it('passes IOC timeInForce through limit-order placement', async () => {
+  it('passes encoded cloid and IOC timeInForce through hyperliquid limit-order placement', async () => {
     const service = new ExchangeConnectorAdapterService(
       exchangeInitService as any,
       createConfigService(),
@@ -133,11 +133,41 @@ describe('ExchangeConnectorAdapterService', () => {
       'sell',
       1,
       100,
-      { clientOrderId: 'order-1:1', timeInForce: 'IOC' },
+      {
+        cloid: '0x8634de59f9b5c185d0cdddf053927df7',
+        timeInForce: 'IOC',
+      },
     );
     expect(exchangeInitService.getExchange).toHaveBeenCalledWith(
       'hyperliquid',
       'maker',
+    );
+  });
+
+  it('keeps non-hyperliquid clientOrderId placement params unchanged', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    await service.placeLimitOrder(
+      'binance',
+      'BTC/USDT',
+      'sell',
+      '2',
+      '101',
+      'original-client-order-id',
+      { timeInForce: 'GTC' },
+      'maker',
+    );
+
+    expect(exchange.createOrder).toHaveBeenCalledWith(
+      'BTC/USDT',
+      'limit',
+      'sell',
+      2,
+      101,
+      { clientOrderId: 'original-client-order-id', timeInForce: 'GTC' },
     );
   });
 

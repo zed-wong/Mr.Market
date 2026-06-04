@@ -1,6 +1,7 @@
 import {
   buildClientOrderId,
   buildSubmittedClientOrderId,
+  encodeClientOrderIdForExchange,
   parseClientOrderId,
 } from './client-order-id';
 
@@ -25,6 +26,26 @@ describe('client-order-id helpers', () => {
     expect(buildSubmittedClientOrderId('order-1', 42)).toMatch(
       /^[a-f0-9]{20}$/,
     );
+  });
+
+  it('encodes hyperliquid submitted clientOrderId values as deterministic cloids', () => {
+    const submittedClientOrderId = buildSubmittedClientOrderId('order-1', 42);
+
+    expect(
+      encodeClientOrderIdForExchange('hyperliquid', submittedClientOrderId),
+    ).toBe('0xcdc06f85f88d6f44488f2d999850f141');
+    expect(
+      encodeClientOrderIdForExchange('HYPERLIQUID', submittedClientOrderId),
+    ).toBe('0xcdc06f85f88d6f44488f2d999850f141');
+    expect(
+      encodeClientOrderIdForExchange('hyperliquid', submittedClientOrderId),
+    ).toMatch(/^0x[0-9a-f]{32}$/);
+  });
+
+  it('preserves submitted clientOrderId values for non-hyperliquid exchanges', () => {
+    expect(
+      encodeClientOrderIdForExchange('binance', 'submitted-client-order-id'),
+    ).toBe('submitted-client-order-id');
   });
 
   it('rejects invalid clientOrderId values', () => {

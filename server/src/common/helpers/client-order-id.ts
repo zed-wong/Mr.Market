@@ -1,5 +1,7 @@
 import { createHash } from 'crypto';
 
+import { isHyperliquidExchange } from './hyperliquid-spot';
+
 export function buildClientOrderId(orderId: string, seq: number): string {
   if (!orderId || orderId.includes(':')) {
     throw new Error('orderId must be non-empty and must not contain ":"');
@@ -26,6 +28,20 @@ export function buildSubmittedClientOrderId(
     .update(`${orderId.trim()}:${seq}:submitted`)
     .digest('hex')
     .slice(0, 20);
+}
+
+export function encodeClientOrderIdForExchange(
+  exchangeName: string,
+  submittedClientOrderId: string,
+): string {
+  if (!isHyperliquidExchange(exchangeName)) {
+    return submittedClientOrderId;
+  }
+
+  return `0x${createHash('sha256')
+    .update(submittedClientOrderId)
+    .digest('hex')
+    .slice(0, 32)}`;
 }
 
 export function parseClientOrderId(

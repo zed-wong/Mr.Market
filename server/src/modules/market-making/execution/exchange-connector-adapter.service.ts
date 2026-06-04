@@ -9,6 +9,7 @@ import {
   isHyperliquidExchange,
   isHyperliquidSpotMarket,
 } from 'src/common/helpers/hyperliquid-spot';
+import { encodeClientOrderIdForExchange } from 'src/common/helpers/client-order-id';
 import { ExchangeInitService } from 'src/modules/infrastructure/exchange-init/exchange-init.service';
 import { CustomLogger } from 'src/modules/infrastructure/logger/logger.service';
 
@@ -95,8 +96,15 @@ export class ExchangeConnectorAdapterService {
 
         await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
 
+        const encodedClientOrderId = clientOrderId
+          ? encodeClientOrderIdForExchange(exchangeName, clientOrderId)
+          : undefined;
         const params = {
-          ...(clientOrderId ? { clientOrderId } : {}),
+          ...(encodedClientOrderId
+            ? isHyperliquidExchange(exchangeName)
+              ? { cloid: encodedClientOrderId }
+              : { clientOrderId: encodedClientOrderId }
+            : {}),
           ...(options?.postOnly ? { postOnly: true } : {}),
           ...(options?.timeInForce ? { timeInForce: options.timeInForce } : {}),
         };
