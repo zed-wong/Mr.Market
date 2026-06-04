@@ -46,6 +46,7 @@
 
     import {
         buildGenericSchemaConfigOverrides,
+        buildDirectReadinessRefreshKey,
         describeSafeDirectStartFailure,
         filterDirectCreateStrategies,
         formatOrderAmountForDisplay,
@@ -464,8 +465,29 @@
                 String(selectedMakerApiKey.key_id) !==
                     String(selectedTakerApiKey.key_id),
         );
+    $: directReadinessRefreshKey = buildDirectReadinessRefreshKey({
+        showStartForm,
+        isEfficientDualAccountStrategy,
+        exchangeName: startExchangeName,
+        pair: startPair,
+        strategyDefinitionId: startStrategyDefinitionId,
+        makerApiKeyId: String(selectedMakerApiKey?.key_id || ""),
+        takerApiKeyId: String(selectedTakerApiKey?.key_id || ""),
+        controllerType: selectedControllerType,
+        orderAmount,
+        orderSpread,
+        intervalTime,
+        numTrades,
+        pricePushRate,
+        postOnlySide,
+        dynamicRoleSwitching,
+        targetQuoteVolume,
+        efficientMode,
+        configRows,
+        genericConfig,
+    });
     $: directReadinessCurrentSignature =
-        directReadinessRequiredInputsComplete
+        directReadinessRequiredInputsComplete && directReadinessRefreshKey
             ? JSON.stringify(buildStartPayload())
             : "";
     $: if (

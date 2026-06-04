@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   aggregateBalancesByAsset,
+  buildDirectReadinessRefreshKey,
   buildDirectOrderDiagnosis,
   EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
   buildDirectVariationConfigOverrides,
@@ -741,6 +742,45 @@ describe('direct controller helpers', () => {
         selectedMode: 'fastest_volume',
       }),
     ).toBe(true);
+  });
+
+  it('tracks mode and cycle-size changes as direct readiness refresh inputs', () => {
+    const baseRefreshKeyInput = {
+      showStartForm: true,
+      isEfficientDualAccountStrategy: true,
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      strategyDefinitionId: 'def-efficient',
+      makerApiKeyId: 'maker-key',
+      takerApiKeyId: 'taker-key',
+      controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      orderAmount: '0.01',
+      orderSpread: '',
+      intervalTime: '30',
+      numTrades: '100',
+      pricePushRate: '0',
+      postOnlySide: 'buy',
+      dynamicRoleSwitching: false,
+      targetQuoteVolume: '',
+      efficientMode: 'balanced' as const,
+      configRows: [{ key: '', value: '' }],
+      genericConfig: {},
+    };
+
+    const balancedKey = buildDirectReadinessRefreshKey(baseRefreshKeyInput);
+
+    expect(
+      buildDirectReadinessRefreshKey({
+        ...baseRefreshKeyInput,
+        efficientMode: 'fastest_volume',
+      }),
+    ).not.toBe(balancedKey);
+    expect(
+      buildDirectReadinessRefreshKey({
+        ...baseRefreshKeyInput,
+        orderAmount: '0.02',
+      }),
+    ).not.toBe(balancedKey);
   });
 
   it('preserves backend readiness numeric strings and units for display rows', () => {

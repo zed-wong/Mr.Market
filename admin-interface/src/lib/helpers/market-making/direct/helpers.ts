@@ -254,6 +254,28 @@ export type DirectReadinessCapitalKind =
   | "recommended"
   | "maximum";
 
+export interface DirectReadinessRefreshKeyInput {
+  showStartForm: boolean;
+  isEfficientDualAccountStrategy: boolean;
+  exchangeName: string;
+  pair: string;
+  strategyDefinitionId: string;
+  makerApiKeyId: string;
+  takerApiKeyId: string;
+  controllerType: string;
+  orderAmount: string;
+  orderSpread: string;
+  intervalTime: string;
+  numTrades: string;
+  pricePushRate: string;
+  postOnlySide: string;
+  dynamicRoleSwitching: boolean;
+  targetQuoteVolume: string;
+  efficientMode: EfficientDualAccountVolumeMode;
+  configRows: Array<{ key: string; value: string }>;
+  genericConfig: Record<string, unknown>;
+}
+
 export interface DirectReadinessDisplayAmount {
   accountLabel: string;
   asset: string;
@@ -307,6 +329,35 @@ export function getEfficientDualAccountModeOptions(): EfficientDualAccountModeOp
         "Prioritizes eligible cycle volume while still respecting exchange minimums.",
     },
   ];
+}
+
+export function buildDirectReadinessRefreshKey(
+  input: DirectReadinessRefreshKeyInput,
+): string {
+  return JSON.stringify({
+    showStartForm: input.showStartForm,
+    isEfficientDualAccountStrategy: input.isEfficientDualAccountStrategy,
+    exchangeName: input.exchangeName,
+    pair: input.pair,
+    strategyDefinitionId: input.strategyDefinitionId,
+    makerApiKeyId: input.makerApiKeyId,
+    takerApiKeyId: input.takerApiKeyId,
+    controllerType: input.controllerType,
+    orderAmount: input.orderAmount,
+    orderSpread: input.orderSpread,
+    intervalTime: input.intervalTime,
+    numTrades: input.numTrades,
+    pricePushRate: input.pricePushRate,
+    postOnlySide: input.postOnlySide,
+    dynamicRoleSwitching: input.dynamicRoleSwitching,
+    targetQuoteVolume: input.targetQuoteVolume,
+    efficientMode: normalizeEfficientDualAccountMode(input.efficientMode),
+    configRows: input.configRows.map((row) => ({
+      key: String(row.key ?? ""),
+      value: String(row.value ?? ""),
+    })),
+    genericConfig: input.genericConfig,
+  });
 }
 
 export function isEfficientDualAccountControllerType(
