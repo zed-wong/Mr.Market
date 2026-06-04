@@ -882,6 +882,71 @@ describe('Efficient Dual Account runtime cycle helpers', () => {
     });
   });
 
+  it('orders unpadded numeric cycle counters before selecting the latest cycle', () => {
+    const cycles = normalizeDirectRuntimeCycles([
+      {
+        cycleId: 'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+      {
+        cycleId: 'efficient-dual-account-volume:cycle:2:2026-06-04T00:02:00.000Z',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+      {
+        cycleId: 'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+        aggregateStatus: 'partial',
+        legs: [],
+      },
+    ]);
+
+    expect(cycles.map((cycle) => cycle.cycleId)).toEqual([
+      'efficient-dual-account-volume:cycle:2:2026-06-04T00:02:00.000Z',
+      'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+    ]);
+    expect(getLatestDirectRuntimeCycle(cycles)?.cycleId).toBe(
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+    );
+  });
+
+  it('uses timestamp then backend order fallback for non-parseable cycle counters', () => {
+    const timestampedCycles = normalizeDirectRuntimeCycles([
+      {
+        cycleId: 'runtime-cycle-alpha-2026-06-04T00:10:00.000Z',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+      {
+        cycleId: 'runtime-cycle-beta-2026-06-04T00:09:00.000Z',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+    ]);
+    const backendOrderedCycles = normalizeDirectRuntimeCycles([
+      {
+        cycleId: 'runtime-cycle-alpha',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+      {
+        cycleId: 'runtime-cycle-beta',
+        aggregateStatus: 'completed',
+        legs: [],
+      },
+    ]);
+
+    expect(timestampedCycles.map((cycle) => cycle.cycleId)).toEqual([
+      'runtime-cycle-beta-2026-06-04T00:09:00.000Z',
+      'runtime-cycle-alpha-2026-06-04T00:10:00.000Z',
+    ]);
+    expect(backendOrderedCycles.map((cycle) => cycle.cycleId)).toEqual([
+      'runtime-cycle-alpha',
+      'runtime-cycle-beta',
+    ]);
+  });
+
   it('describes runtime next action, bottleneck, remaining estimates, and lifecycle gating', () => {
     expect(describeDirectRuntimeNextAction(readiness)).toContain(
       'Maker maker-main should buy 0.5 BTC against taker taker-alt',

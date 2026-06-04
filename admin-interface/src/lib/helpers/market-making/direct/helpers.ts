@@ -499,6 +499,65 @@ function normalizeRuntimeCycleLeg(
   };
 }
 
+type DirectRuntimeCycleSortEntry = {
+  cycle: DirectRuntimeCycle;
+  backendIndex: number;
+  numericCycleCounter: number | null;
+  timestampMs: number | null;
+};
+
+const RUNTIME_CYCLE_COUNTER_PATTERN =
+  /(?:^|[:_-])cycle[:_-](\d+)(?=[:_-]|$)/i;
+const RUNTIME_CYCLE_TIMESTAMP_PATTERN =
+  /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/;
+
+function readRuntimeCycleCounter(cycleId: string): number | null {
+  const match = cycleId.match(RUNTIME_CYCLE_COUNTER_PATTERN);
+
+  if (!match) {
+    return null;
+  }
+
+  const counter = Number(match[1]);
+
+  return Number.isSafeInteger(counter) ? counter : null;
+}
+
+function readRuntimeCycleTimestampMs(cycleId: string): number | null {
+  const match = cycleId.match(RUNTIME_CYCLE_TIMESTAMP_PATTERN);
+
+  if (!match) {
+    return null;
+  }
+
+  const timestampMs = Date.parse(match[0]);
+
+  return Number.isFinite(timestampMs) ? timestampMs : null;
+}
+
+function compareDirectRuntimeCycleSortEntries(
+  left: DirectRuntimeCycleSortEntry,
+  right: DirectRuntimeCycleSortEntry,
+): number {
+  if (
+    left.numericCycleCounter !== null &&
+    right.numericCycleCounter !== null &&
+    left.numericCycleCounter !== right.numericCycleCounter
+  ) {
+    return left.numericCycleCounter - right.numericCycleCounter;
+  }
+
+  if (
+    left.timestampMs !== null &&
+    right.timestampMs !== null &&
+    left.timestampMs !== right.timestampMs
+  ) {
+    return left.timestampMs - right.timestampMs;
+  }
+
+  return left.backendIndex - right.backendIndex;
+}
+
 export function normalizeDirectRuntimeCycles(
   value: unknown,
 ): DirectRuntimeCycle[] {
@@ -507,7 +566,7 @@ export function normalizeDirectRuntimeCycles(
   }
 
   return value
-    .map((row): DirectRuntimeCycle | null => {
+    .map((row, backendIndex): DirectRuntimeCycleSortEntry | null => {
       if (!row || typeof row !== "object") {
         return null;
       }
@@ -532,15 +591,23 @@ export function normalizeDirectRuntimeCycles(
             })
         : [];
 
-      return {
+      const cycle = {
         cycleId,
         aggregateStatus: readRuntimeString(record.aggregateStatus) || "unknown",
         failureReason: readNullableRuntimeString(record.failureReason),
         legs,
       };
+
+      return {
+        cycle,
+        backendIndex,
+        numericCycleCounter: readRuntimeCycleCounter(cycleId),
+        timestampMs: readRuntimeCycleTimestampMs(cycleId),
+      };
     })
-    .filter((cycle): cycle is DirectRuntimeCycle => cycle !== null)
-    .sort((left, right) => left.cycleId.localeCompare(right.cycleId));
+    .filter((entry): entry is DirectRuntimeCycleSortEntry => entry !== null)
+    .sort(compareDirectRuntimeCycleSortEntries)
+    .map((entry) => entry.cycle);
 }
 
 export function getLatestDirectRuntimeCycle(

@@ -2059,6 +2059,85 @@ describe('AdminDirectMarketMakingService', () => {
     ]);
   });
 
+  it('orders unpadded runtime cycle counters numerically in direct status', async () => {
+    const { service, marketMakingRepository, strategyService } = buildService();
+
+    marketMakingRepository.findOne.mockResolvedValue({
+      orderId: 'order-cycle-ordering',
+      exchangeName: 'binance',
+      pair: 'BTC/USDT',
+      state: 'running',
+      source: 'admin_direct',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      userId: 'admin-user',
+      apiKeyId: 'api-key-1',
+      strategySnapshot: buildStrategySnapshot(
+        {
+          exchangeName: 'binance',
+          symbol: 'BTC/USDT',
+          pair: 'BTC/USDT',
+          userId: 'admin-user',
+          clientId: 'order-cycle-ordering',
+          marketMakingOrderId: 'order-cycle-ordering',
+          makerAccountLabel: 'api-key-1',
+          takerAccountLabel: 'api-key-2',
+          makerApiKeyId: 'api-key-1',
+          takerApiKeyId: 'api-key-2',
+          mode: 'balanced',
+          strategyContract: 'efficientDualAccountVolume',
+        },
+        'efficientDualAccountVolume',
+      ),
+    });
+    strategyService.getLatestIntentsForStrategy.mockReturnValue([
+      {
+        intentId: 'cycle-10-maker',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-1',
+        side: 'buy',
+        price: '100',
+        qty: '0.5',
+        status: 'DONE',
+        metadata: {
+          cycleId:
+            'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+          cycleRole: 'maker',
+          accountLabel: 'api-key-1',
+          side: 'buy',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          status: 'filled',
+        },
+      },
+      {
+        intentId: 'cycle-9-maker',
+        strategyKey: 'strategy-cycle',
+        accountLabel: 'api-key-1',
+        side: 'sell',
+        price: '100',
+        qty: '0.5',
+        status: 'DONE',
+        metadata: {
+          cycleId:
+            'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+          cycleRole: 'maker',
+          accountLabel: 'api-key-1',
+          side: 'sell',
+          plannedQty: '0.5',
+          plannedPrice: '100',
+          status: 'filled',
+        },
+      },
+    ]);
+
+    const result = await service.getDirectOrderStatus('order-cycle-ordering');
+
+    expect(result.cycles.map((cycle) => cycle.cycleId)).toEqual([
+      'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+    ]);
+  });
+
   it('aggregates runtime cycle status from durable intent history and tracked orders after cache loss', async () => {
     const strategyOrderIntentRepository = {
       find: jest.fn().mockResolvedValue([

@@ -205,6 +205,17 @@ type DirectCycleStatus = {
   legs: DirectCycleLeg[];
 };
 
+type DirectCycleGroup = {
+  cycleId: string;
+  backendIndex: number;
+  legs: Map<string, DirectCycleLeg>;
+};
+
+const RUNTIME_CYCLE_COUNTER_PATTERN =
+  /(?:^|[:_-])cycle[:_-](\d+)(?=[:_-]|$)/i;
+const RUNTIME_CYCLE_TIMESTAMP_PATTERN =
+  /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/;
+
 @Injectable()
 export class AdminDirectMarketMakingService {
   private readonly logger = new CustomLogger(
@@ -2177,10 +2188,7 @@ export class AdminDirectMarketMakingService {
     executionHistory: StrategyExecutionHistory[] = [],
     queueState?: StrategyIntentQueueState | null,
   ): DirectCycleStatus[] {
-    const groups = new Map<
-      string,
-      { cycleId: string; legs: Map<string, DirectCycleLeg> }
-    >();
+    const groups = new Map<string, DirectCycleGroup>();
     const activeCycle = this.readActiveCycle(resolvedConfig.activeCycle);
 
     if (activeCycle) {
@@ -2272,7 +2280,7 @@ export class AdminDirectMarketMakingService {
           legs,
         };
       })
-      .sort((left, right) => left.cycleId.localeCompare(right.cycleId));
+      .sort((left, right) => this.compareRuntimeCycles(left, right, groups));
   }
 
   private buildCycleLegFromIntent(
@@ -2447,11 +2455,12 @@ export class AdminDirectMarketMakingService {
   }
 
   private upsertCycleLeg(
-    groups: Map<string, { cycleId: string; legs: Map<string, DirectCycleLeg> }>,
+    groups: Map<string, DirectCycleGroup>,
     leg: DirectCycleLeg,
   ): void {
     const group = groups.get(leg.cycleId) || {
       cycleId: leg.cycleId,
+      backendIndex: groups.size,
       legs: new Map<string, DirectCycleLeg>(),
     };
     const key = `${leg.cycleRole}:${leg.accountLabel}:${leg.side}`;
@@ -2474,6 +2483,63 @@ export class AdminDirectMarketMakingService {
         : leg,
     );
     groups.set(leg.cycleId, group);
+  }
+
+  private compareRuntimeCycles(
+    left: DirectCycleStatus,
+    right: DirectCycleStatus,
+    groups: Map<string, DirectCycleGroup>,
+  ): number {
+    const leftCounter = this.readRuntimeCycleCounter(left.cycleId);
+    const rightCounter = this.readRuntimeCycleCounter(right.cycleId);
+
+    if (
+      leftCounter !== null &&
+      rightCounter !== null &&
+      leftCounter !== rightCounter
+    ) {
+      return leftCounter - rightCounter;
+    }
+
+    const leftTimestamp = this.readRuntimeCycleTimestampMs(left.cycleId);
+    const rightTimestamp = this.readRuntimeCycleTimestampMs(right.cycleId);
+
+    if (
+      leftTimestamp !== null &&
+      rightTimestamp !== null &&
+      leftTimestamp !== rightTimestamp
+    ) {
+      return leftTimestamp - rightTimestamp;
+    }
+
+    return (
+      (groups.get(left.cycleId)?.backendIndex ?? 0) -
+      (groups.get(right.cycleId)?.backendIndex ?? 0)
+    );
+  }
+
+  private readRuntimeCycleCounter(cycleId: string): number | null {
+    const match = cycleId.match(RUNTIME_CYCLE_COUNTER_PATTERN);
+
+    if (!match) {
+      return null;
+    }
+
+    const counter = Number(match[1]);
+
+    return Number.isSafeInteger(counter) ? counter : null;
+  }
+
+  private readRuntimeCycleTimestampMs(cycleId: string): number | null {
+    const match = cycleId.match(RUNTIME_CYCLE_TIMESTAMP_PATTERN);
+
+    if (!match) {
+      return null;
+    }
+
+    const timestampMs = Date.parse(match[0]);
+
+    return Number.isFinite(timestampMs) ? timestampMs : null;
   }
 
   private selectCycleLegFailureReason(

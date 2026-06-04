@@ -150,4 +150,46 @@ describe('RuntimeCyclePanel', () => {
     expect(body).toContain('taker-alt');
     expect(body).toContain('taker IOC rejected');
   });
+
+  it('renders cycle 10 after cycle 9 as the latest runtime cycle', () => {
+    const { body } = render(RuntimeCyclePanel, {
+      props: {
+        data: {
+          ...baseStatus,
+          cycles: [
+            {
+              cycleId: 'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+              aggregateStatus: 'completed',
+              failureReason: null,
+              legs: [],
+            },
+            {
+              cycleId: 'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+              aggregateStatus: 'partial',
+              failureReason: null,
+              legs: [],
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+
+    const cycle9Position = body.indexOf(
+      'efficient-dual-account-volume:cycle:9:2026-06-04T00:09:00.000Z',
+    );
+    const cycle10Position = body.indexOf(
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+    );
+    const cycle10ListPosition = body.lastIndexOf(
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z',
+    );
+
+    expect(body).toContain(
+      'efficient-dual-account-volume:cycle:10:2026-06-04T00:10:00.000Z · completed',
+    );
+    expect(cycle9Position).toBeGreaterThanOrEqual(0);
+    expect(cycle10Position).toBeGreaterThanOrEqual(0);
+    expect(cycle10ListPosition).toBeGreaterThan(cycle9Position);
+  });
 });
