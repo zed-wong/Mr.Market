@@ -5,6 +5,11 @@
   import PageHeader from '$lib/components/admin/shared/PageHeader.svelte';
   import AdminStatePanel from '$lib/components/admin/shared/AdminStatePanel.svelte';
   import {
+    buildAdminApiKeySubmission,
+    getAdminApiKeyCredentialCopy,
+    toAdminApiKeyDisplayRecord,
+  } from '$lib/helpers/admin/api-key-credentials';
+  import {
     getApiKeyPermissionViews,
     getApiKeyReadiness,
     summarizeApiKeyReadiness,
@@ -54,13 +59,6 @@
 
   const token = () => getAccessToken() || '';
 
-  const fingerprint = (value?: string): string => {
-    const raw = String(value || '').replace(/\s/g, '');
-    if (!raw) return '—';
-    const tail = raw.slice(-8).padStart(8, '•');
-    return tail.match(/.{1,2}/g)?.join('·') || tail;
-  };
-
   const formatDate = (value?: string): string => {
     if (!value) return '—';
     const date = new Date(value);
@@ -93,6 +91,7 @@
   ];
   let totals = $derived(summarizeApiKeyReadiness(keys));
   let encryptionReady = $derived(Boolean(publicKey) && !metadataLoading && !metadataError);
+  let credentialCopy = $derived(getAdminApiKeyCredentialCopy(form.exchange));
 
   let filtered = $derived(
     keys.filter((key) => {
@@ -229,10 +228,10 @@
 
     if (!exchange) nextErrors.exchange = $_('admin_form_choose_exchange');
     if (!name) nextErrors.name = $_('admin_form_enter_display_name');
-    if (!apiKey) nextErrors.apiKey = $_('admin_form_paste_api_key');
-    if (!apiSecret) nextErrors.apiSecret = $_('admin_form_paste_api_secret');
-    if (apiKey && apiKey.length < 4) nextErrors.apiKey = $_('admin_form_api_key_min_length');
-    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = $_('admin_form_api_secret_min_length');
+    if (!apiKey) nextErrors.apiKey = $_(credentialCopy.apiKeyRequired);
+    if (!apiSecret) nextErrors.apiSecret = $_(credentialCopy.apiSecretRequired);
+    if (apiKey && apiKey.length < 4) nextErrors.apiKey = $_(credentialCopy.apiKeyMinLength);
+    if (apiSecret && apiSecret.length < 4) nextErrors.apiSecret = $_(credentialCopy.apiSecretMinLength);
     if (apiKey && existingExchangeApiKeys.has(`${exchange.toLowerCase()}:${apiKey}`)) {
       nextErrors.duplicate = $_('admin_form_api_key_duplicate');
     }
@@ -266,13 +265,13 @@
     try {
       const encryptedSecret = await encryptSecret(apiSecret, publicKey);
       await addAPIKey(
-        {
+        buildAdminApiKeySubmission({
           exchange,
           name,
-          api_key: apiKey,
-          api_secret: encryptedSecret,
+          apiKey,
+          encryptedSecret,
           permissions: form.permissions,
-        },
+        }),
         adminToken,
       );
       toast.success($_('admin_api_keys_added'));
@@ -478,15 +477,16 @@
             {:else}
               {#each filtered as key (key.key_id)}
                 {@const readiness = getApiKeyReadiness(key)}
+                {@const displayKey = toAdminApiKeyDisplayRecord(key)}
                 <tr class="border-b border-base-300 hover:bg-base-200">
                   <td>
                     <div class="flex flex-col">
-                      <span class="text-sm font-medium text-base-content capitalize">{key.name}</span>
-                      <span class="font-mono text-xs text-base-content/50">{key.key_id}</span>
+                      <span class="text-sm font-medium text-base-content capitalize">{displayKey.name}</span>
+                      <span class="font-mono text-xs text-base-content/50">{displayKey.keyId}</span>
                     </div>
                   </td>
-                  <td class="text-sm text-base-content capitalize">{key.exchange}</td>
-                  <td class="font-mono text-xs text-base-content/70">{fingerprint(key.api_key)}</td>
+                  <td class="text-sm text-base-content capitalize">{displayKey.exchange}</td>
+                  <td class="font-mono text-xs text-base-content/70">{displayKey.publicCredentialFingerprint}</td>
                   <td>
                     <div class="flex flex-wrap gap-1">
                       {#each getApiKeyPermissionViews(key) as permission (permission.capability)}
@@ -588,14 +588,16 @@
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_('api_key')}</span>
-        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" placeholder={$_('admin_connectivity_paste_api_key')} bind:value={form.apiKey} />
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_(credentialCopy.apiKeyLabel)}</span>
+        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" placeholder={$_(credentialCopy.apiKeyPlaceholder)} bind:value={form.apiKey} />
+        <span class="text-xs text-base-content/50">{$_(credentialCopy.apiKeyHelp)}</span>
         {#if formErrors.apiKey}<span class="text-xs text-error">{formErrors.apiKey}</span>{/if}
       </label>
 
       <label class="flex flex-col gap-1">
-        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_('api_secret')}</span>
-        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder={$_('admin_connectivity_paste_api_secret')} bind:value={form.apiSecret} />
+        <span class="label-text text-xs font-medium capitalize text-base-content/60">{$_(credentialCopy.apiSecretLabel)}</span>
+        <input class="input input-bordered border-base-300 bg-base-100 font-mono text-sm" type="password" placeholder={$_(credentialCopy.apiSecretPlaceholder)} bind:value={form.apiSecret} />
+        <span class="text-xs text-base-content/50">{$_(credentialCopy.apiSecretHelp)}</span>
         {#if formErrors.apiSecret}<span class="text-xs text-error">{formErrors.apiSecret}</span>{/if}
       </label>
 
