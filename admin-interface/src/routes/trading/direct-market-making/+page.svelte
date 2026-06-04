@@ -46,6 +46,7 @@
 
     import {
         buildGenericSchemaConfigOverrides,
+        describeSafeDirectStartFailure,
         filterDirectCreateStrategies,
         formatOrderAmountForDisplay,
         getDirectOrderActionAvailability,
@@ -705,12 +706,14 @@
               : null;
     }
 
-    async function refreshDirectReadiness(signature: string) {
+    async function refreshDirectReadiness(
+        signature: string,
+    ): Promise<DirectReadinessResult | null> {
         const token = getToken();
         const payload = buildStartPayload();
 
         if (!token || !payload || !isEfficientDualAccountStrategy) {
-            return;
+            return null;
         }
 
         const requestId = ++directReadinessRequestId;
@@ -722,19 +725,21 @@
             const result = await evaluateDirectReadiness(payload, token);
 
             if (requestId !== directReadinessRequestId) {
-                return;
+                return null;
             }
 
             directReadiness = result;
             directReadinessSignature = signature;
+            return result;
         } catch (error) {
             if (requestId !== directReadinessRequestId) {
-                return;
+                return null;
             }
 
             directReadiness = null;
             directReadinessSignature = signature;
-            directReadinessError = getErrorMessage(error);
+            directReadinessError = describeSafeDirectStartFailure(null, error);
+            return null;
         } finally {
             if (requestId === directReadinessRequestId) {
                 directReadinessLoading = false;
@@ -845,12 +850,21 @@
                 },
             );
         } catch (error) {
-            if (
-                isEfficientDualAccountStrategy &&
-                directReadinessCurrentSignature
-            ) {
-                await refreshDirectReadiness(directReadinessCurrentSignature);
+            let refreshedReadiness: DirectReadinessResult | null = null;
+
+            if (isEfficientDualAccountStrategy) {
+                if (directReadinessCurrentSignature) {
+                    refreshedReadiness = await refreshDirectReadiness(
+                        directReadinessCurrentSignature,
+                    );
+                }
+
+                toast.error($_("admin_direct_mm_readiness_start_blocked"), {
+                    description: describeSafeDirectStartFailure(refreshedReadiness, error),
+                });
+                return;
             }
+
             toast.error(getErrorMessage(error), {
                 description: getRecoveryHint(error),
             });

@@ -426,6 +426,25 @@ export function describeReadinessBlockingReason(
   return `${accountPrefix}${copyByCode[reason.code] || "Planner readiness is blocked. Review the account, asset, and market-rule details before starting."}${assetSuffix}`;
 }
 
+export function describeSafeDirectStartFailure(
+  readiness: DirectReadinessResult | null | undefined,
+  _error?: unknown,
+): string {
+  const missing = readiness?.missingBalances?.[0];
+
+  if (missing) {
+    return describeReadinessMissingBalance(missing);
+  }
+
+  const blocker = readiness?.blockingReasons?.[0];
+
+  if (blocker) {
+    return describeReadinessBlockingReason(blocker);
+  }
+
+  return "Start was rejected after planner revalidation. Refresh readiness and resolve account, asset, or market-rule blockers before retrying.";
+}
+
 function readRuntimeString(value: unknown): string {
   return String(value ?? "").trim();
 }

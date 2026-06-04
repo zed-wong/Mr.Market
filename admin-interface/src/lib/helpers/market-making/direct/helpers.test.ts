@@ -9,6 +9,7 @@ import {
   describeDirectRuntimeNextAction,
   describeReadinessBlockingReason,
   describeReadinessMissingBalance,
+  describeSafeDirectStartFailure,
   filterDirectCreateStrategies,
   formatDirectRuntimeRemainingEstimate,
   buildGenericSchemaConfigOverrides,
@@ -728,6 +729,55 @@ describe('direct controller helpers', () => {
         message: 'raw notional < costMin',
       }),
     ).not.toContain('raw notional');
+  });
+
+  it('builds safe stale-start rejection copy from refreshed readiness without raw backend internals', () => {
+    const unsafeBackendError = new Error(
+      'candidate maker raw notional < costMin minimumNotional=10',
+    );
+
+    const refreshedReadiness = {
+      canStart: false,
+      mode: 'balanced' as const,
+      bestFirstAction: null,
+      maximumCycleQty: '0',
+      recommendedCycleQty: '0',
+      minimumCapitalByAccountAsset: [],
+      recommendedCapitalByAccountAsset: [],
+      missingBalances: [],
+      estimatedCycles: {
+        count: '0',
+        basis: 'current_available_balances',
+      },
+      estimatedVolume: {
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        baseAmount: '0',
+        quoteAmount: '0',
+      },
+      blockingReasons: [
+        {
+          code: 'below_exchange_minimums',
+          message: 'raw notional < costMin',
+          accountLabel: 'maker-main',
+          asset: 'USDT',
+        },
+      ],
+    };
+
+    expect(
+      describeSafeDirectStartFailure(refreshedReadiness, unsafeBackendError),
+    ).toBe(
+      'maker-main: Current balances cannot satisfy exchange minimums plus the safety buffer. (USDT)',
+    );
+    expect(
+      describeSafeDirectStartFailure(null, unsafeBackendError),
+    ).toBe(
+      'Start was rejected after planner revalidation. Refresh readiness and resolve account, asset, or market-rule blockers before retrying.',
+    );
+    expect(
+      describeSafeDirectStartFailure(null, unsafeBackendError),
+    ).not.toMatch(/raw notional|costMin|candidate|minimumNotional/);
   });
 });
 
