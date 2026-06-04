@@ -47,6 +47,12 @@ describe('ExchangeConnectorAdapterService rate-limit behavior', () => {
 
   it('keeps rate-limit queues isolated per account on the same exchange', async () => {
     const exchange = {
+      markets: {},
+      loadMarkets: jest.fn(async () => {
+        exchange.markets = {
+          'BTC/USDT': { spot: true, type: 'spot' },
+        };
+      }),
       createOrder: jest.fn().mockResolvedValue({ id: 'ok' }),
     };
     const exchangeInitService = {

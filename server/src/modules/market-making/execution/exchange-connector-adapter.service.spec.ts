@@ -17,6 +17,7 @@ describe('ExchangeConnectorAdapterService', () => {
     fetchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
     fetchBalance: jest.fn().mockResolvedValue({ free: { BTC: 1, USDT: 1000 } }),
     watchOrderBook: jest.fn().mockResolvedValue({ bids: [], asks: [] }),
+    watchMyTrades: jest.fn().mockResolvedValue([{ id: 'trade-1' }]),
     watchBalance: jest.fn().mockResolvedValue({ total: {} }),
     loadMarkets: jest.fn().mockResolvedValue(undefined),
     amountToPrecision: jest.fn((_pair: string, amount: number) =>
@@ -209,6 +210,119 @@ describe('ExchangeConnectorAdapterService', () => {
 
     expect(exchange.loadMarkets).toHaveBeenCalledTimes(1);
     expect(exchange.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('rejects hyperliquid derivative markets before canceling an order', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+    (exchange.markets as any)['BTC/USDT:USDT'] = {
+      symbol: 'BTC/USDT:USDT',
+      type: 'swap',
+      spot: false,
+      swap: true,
+    };
+
+    await expect(
+      service.cancelOrder('hyperliquid', 'BTC/USDT:USDT', 'ex-order-1'),
+    ).rejects.toThrow('Hyperliquid support is spot-only');
+
+    expect(exchange.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown hyperliquid markets before canceling an order', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+    (exchange as any).markets = {};
+
+    await expect(
+      service.cancelOrder('hyperliquid', 'ETH/USDT:USDT', 'ex-order-1'),
+    ).rejects.toThrow('Hyperliquid support is spot-only');
+
+    expect(exchange.loadMarkets).toHaveBeenCalledTimes(1);
+    expect(exchange.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'fetchOrder',
+      (subject: ExchangeConnectorAdapterService) =>
+        subject.fetchOrder('hyperliquid', 'BTC/USDT:USDT', 'ex-order-1'),
+      () => exchange.fetchOrder,
+    ],
+    [
+      'fetchOpenOrders',
+      (subject: ExchangeConnectorAdapterService) =>
+        subject.fetchOpenOrders('hyperliquid', 'BTC/USDT:USDT'),
+      () => exchange.fetchOpenOrders,
+    ],
+    [
+      'fetchMyTrades',
+      (subject: ExchangeConnectorAdapterService) =>
+        subject.fetchMyTrades('hyperliquid', 'BTC/USDT:USDT'),
+      () => exchange.fetchMyTrades,
+    ],
+    [
+      'fetchOrderBook',
+      (subject: ExchangeConnectorAdapterService) =>
+        subject.fetchOrderBook('hyperliquid', 'BTC/USDT:USDT'),
+      () => exchange.fetchOrderBook,
+    ],
+    [
+      'watchOrderBook',
+      (subject: ExchangeConnectorAdapterService) =>
+        subject.watchOrderBook('hyperliquid', 'BTC/USDT:USDT'),
+      () => exchange.watchOrderBook,
+    ],
+    [
+      'watchMyTrades',
+      (subject: ExchangeConnectorAdapterService) =>
+        subject.watchMyTrades('hyperliquid', 'BTC/USDT:USDT'),
+      () => exchange.watchMyTrades,
+    ],
+  ])(
+    'rejects hyperliquid derivative markets before %s reads/watch calls',
+    async (_name, act, getExchangeMethod) => {
+      const service = new ExchangeConnectorAdapterService(
+        exchangeInitService as any,
+        createConfigService(),
+      );
+      (exchange.markets as any)['BTC/USDT:USDT'] = {
+        symbol: 'BTC/USDT:USDT',
+        type: 'swap',
+        spot: false,
+        swap: true,
+      };
+
+      await expect(act(service)).rejects.toThrow(
+        'Hyperliquid support is spot-only',
+      );
+
+      expect(getExchangeMethod()).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows hyperliquid account-wide read/watch calls without selecting a derivative market', async () => {
+    const service = new ExchangeConnectorAdapterService(
+      exchangeInitService as any,
+      createConfigService(),
+    );
+
+    await service.fetchOpenOrders('hyperliquid');
+    await service.fetchMyTrades('hyperliquid');
+    await service.watchMyTrades('hyperliquid');
+
+    expect(exchange.loadMarkets).not.toHaveBeenCalled();
+    expect(exchange.fetchOpenOrders).toHaveBeenCalledWith(undefined);
+    expect(exchange.fetchMyTrades).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(exchange.watchMyTrades).toHaveBeenCalledWith(undefined);
   });
 
   it('fetches order/open-orders/my-trades/orderbook through adapter', async () => {
