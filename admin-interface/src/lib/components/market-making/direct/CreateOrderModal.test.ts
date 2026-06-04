@@ -108,6 +108,33 @@ const baseProps = {
 };
 
 describe('CreateOrderModal efficient readiness rendering', () => {
+  it('renders the backfilled Efficient Dual Account Volume strategy option', () => {
+    const { body } = render(CreateOrderModal, {
+      props: {
+        ...baseProps,
+        strategies: [
+          {
+            id: 'def-efficient-backfilled',
+            key: 'efficient_dual_account_volume',
+            name: 'Efficient Dual Account Volume',
+            controllerType: 'efficientDualAccountVolume',
+            directExecutionMode: 'dual_account' as const,
+            defaultConfig: { mode: 'balanced' },
+            configSchema: {},
+          },
+        ],
+        startStrategyDefinitionId: '',
+        efficientMode: 'balanced',
+        readiness: null,
+        readinessStatus: 'missing',
+        readinessError: '',
+      },
+    });
+
+    expect(body).toContain('Efficient Dual Account Volume');
+    expect(body).not.toContain('Dual Account Best Capacity Volume');
+  });
+
   it('hides stale evaluated mode details while a mode change waits for fresh readiness', () => {
     const { body } = render(CreateOrderModal, {
       props: {

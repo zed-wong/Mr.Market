@@ -577,6 +577,25 @@ describe('direct controller helpers', () => {
     ]);
   });
 
+  it('keeps the create selector non-empty for a backfilled efficient strategy API fixture', () => {
+    const strategies = [
+      { id: 'pmm', key: 'pure_market_making', name: 'Pure Market Making', controllerType: 'pureMarketMaking' },
+      { id: 'legacy-classic', key: 'dual_account_volume', name: 'Dual Account Volume', controllerType: 'dualAccountVolume' },
+      { id: 'efficient-backfilled', key: 'efficient_dual_account_volume', name: 'Efficient Dual Account Volume', controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE },
+    ];
+
+    const selectableStrategies = filterDirectCreateStrategies(strategies);
+
+    expect(selectableStrategies).toHaveLength(1);
+    expect(selectableStrategies[0]).toEqual(
+      expect.objectContaining({
+        id: 'efficient-backfilled',
+        name: 'Efficient Dual Account Volume',
+        controllerType: EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
+      }),
+    );
+  });
+
   it('recognizes efficient strategies and exposes human mode copy', () => {
     expect(
       isEfficientDualAccountStrategy({

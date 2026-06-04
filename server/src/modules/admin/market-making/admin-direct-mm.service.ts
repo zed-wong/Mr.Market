@@ -81,6 +81,10 @@ import {
   DirectEditVariationDto,
   DirectStartMarketMakingDto,
 } from './admin-direct-mm.dto';
+import {
+  buildEfficientDualAccountVolumeDefinitionBackfill,
+  EFFICIENT_DUAL_ACCOUNT_VOLUME_DEFINITION_ALIASES,
+} from './efficient-dual-account-definition-backfill';
 
 const DIRECT_ORDER_STALE_MS = 15_000;
 const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
@@ -1521,11 +1525,12 @@ export class AdminDirectMarketMakingService {
 
   async listDirectStrategyDefinitions(): Promise<StrategyDefinition[]> {
     const definitions = await this.strategyDefinitionRepository.find({
-      where: { enabled: true },
       order: { updatedAt: 'DESC' },
     });
+    const backfilledDefinitions =
+      await this.ensureEfficientDualAccountDefinition(definitions);
 
-    return definitions
+    return backfilledDefinitions
       .map((definition) => attachStrategyDefinitionCapabilities(definition))
       .filter((definition) => {
         const controllerType = normalizeControllerType(
@@ -1534,12 +1539,57 @@ export class AdminDirectMarketMakingService {
         const visibility = String(definition.visibility || 'admin').trim();
 
         return (
+          definition.enabled === true &&
           ['public', 'admin'].includes(visibility) &&
           controllerType.length > 0 &&
           !LEGACY_DUAL_ACCOUNT_CONTROLLER_TYPES.has(controllerType) &&
           definition.directOrderCompatible
         );
       });
+  }
+
+  private async ensureEfficientDualAccountDefinition(
+    definitions: StrategyDefinition[],
+  ): Promise<StrategyDefinition[]> {
+    const existing = definitions.find((definition) => {
+      const controllerType = normalizeControllerType(
+        String(definition.controllerType || '').trim(),
+      );
+
+      return (
+        controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE ||
+        EFFICIENT_DUAL_ACCOUNT_VOLUME_DEFINITION_ALIASES.includes(
+          String(definition.key || '').trim() as (typeof EFFICIENT_DUAL_ACCOUNT_VOLUME_DEFINITION_ALIASES)[number],
+        )
+      );
+    });
+
+    if (existing) {
+      const capabilities = getStrategyDefinitionCapabilities(existing);
+      const isDirectCompatible =
+        existing.enabled === true &&
+        String(existing.visibility || 'admin').trim() === 'admin' &&
+        capabilities.directOrderCompatible &&
+        capabilities.directExecutionMode === 'dual_account';
+
+      if (isDirectCompatible) {
+        return definitions;
+      }
+
+      const saved = (await this.strategyDefinitionRepository.save(
+        buildEfficientDualAccountVolumeDefinitionBackfill(existing),
+      )) as StrategyDefinition;
+
+      return definitions.map((definition) =>
+        definition.id === existing.id ? saved : definition,
+      );
+    }
+
+    const saved = (await this.strategyDefinitionRepository.save(
+      buildEfficientDualAccountVolumeDefinitionBackfill(),
+    )) as StrategyDefinition;
+
+    return [saved, ...definitions];
   }
 
   mapCCXTError(error: unknown): HttpException {
