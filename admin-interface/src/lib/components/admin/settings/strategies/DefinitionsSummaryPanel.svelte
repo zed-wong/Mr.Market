@@ -30,7 +30,7 @@
     <div class="flex gap-6">
       <div class="flex flex-col">
         <span class="text-2xl font-bold text-base-content">{total}</span>
-        <span class="text-xs text-base-content/50 mt-0.5">{$_("total")}</span>
+        <span class="text-xs text-base-content/50 mt-0.5">{$_("admin_strategy_templates")}</span>
       </div>
       <div class="flex flex-col">
         <span class="text-2xl font-bold text-success">{enabled}</span>

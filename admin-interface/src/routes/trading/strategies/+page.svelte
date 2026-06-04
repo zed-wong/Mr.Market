@@ -11,8 +11,7 @@
   } from "$lib/types/hufi/strategy-definition";
 
   import PageHeader from "$lib/components/admin/shared/PageHeader.svelte";
-  import DefinitionsSummaryPanel from "$lib/components/admin/settings/strategies/DefinitionsSummaryPanel.svelte";
-  import InstancesSummaryPanel from "$lib/components/admin/settings/strategies/InstancesSummaryPanel.svelte";
+  import StrategyOperationsBoard from "$lib/components/admin/settings/strategies/StrategyOperationsBoard.svelte";
   import DefinitionsTable from "$lib/components/admin/settings/strategies/DefinitionsTable.svelte";
   import InstancesTable from "$lib/components/admin/settings/strategies/InstancesTable.svelte";
   import CreateDefinitionModal from "$lib/components/admin/settings/strategies/CreateDefinitionModal.svelte";
@@ -110,7 +109,7 @@
 <section class="space-y-6">
   <PageHeader
     eyebrow="trading"
-    title={$_("strategies")}
+    title={$_("admin_strategy_operations_title")}
     subtitle={$_("manage_strategies")}
   />
 
@@ -123,16 +122,9 @@
     <div class="skeleton h-64 w-full rounded-xl"></div>
     <div class="skeleton h-64 w-full rounded-xl"></div>
   {:else}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <DefinitionsSummaryPanel {definitions} />
-      <InstancesSummaryPanel {instances} />
-    </div>
-
-    <DefinitionsTable
+    <StrategyOperationsBoard
       {definitions}
-      onEdit={handleEdit}
-      onRemove={handleRemove}
-      onDetails={handleDetails}
+      {instances}
       onRefresh={refreshStrategies}
       onNewClick={openCreateModal}
     />
@@ -141,6 +133,15 @@
       {instances}
       onStop={handleStopInstance}
       onRefresh={refreshStrategies}
+    />
+
+    <DefinitionsTable
+      {definitions}
+      onEdit={handleEdit}
+      onRemove={handleRemove}
+      onDetails={handleDetails}
+      onRefresh={refreshStrategies}
+      onNewClick={openCreateModal}
     />
   {/if}
 </section>

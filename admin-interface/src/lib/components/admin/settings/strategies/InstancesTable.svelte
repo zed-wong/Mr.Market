@@ -7,8 +7,14 @@
   export let onStop: (instance: StrategyInstanceView) => void;
   export let onRefresh: () => void;
 
-  let showRunningOnly = false;
+  type FilterMode = "all" | "attention" | "running";
+
+  let filterMode: FilterMode = "all";
   let searchTerm = "";
+
+  function needsAttention(instance: StrategyInstanceView): boolean {
+    return ["failed", "stale"].includes(instance.status);
+  }
 
   function shortStrategyKey(value: string | undefined): string {
     if (!value) return "—";
@@ -32,15 +38,56 @@
     ].some((value) => (value || "").toLowerCase().includes(query));
   }
 
+  function attentionLabel(instance: StrategyInstanceView): string {
+    switch (instance.status) {
+      case "running":
+        return $_("admin_strategy_attention_healthy");
+      case "stale":
+        return $_("admin_strategy_attention_stale");
+      case "failed":
+        return $_("admin_strategy_attention_failed");
+      case "stopped":
+        return $_("admin_strategy_attention_stopped");
+      case "created":
+        return $_("admin_strategy_attention_starting");
+      default:
+        return instance.status || "—";
+    }
+  }
+
+  function attentionClasses(status: string): string {
+    switch (status) {
+      case "running":
+        return "bg-success/10 text-success";
+      case "stale":
+        return "bg-warning/10 text-warning";
+      case "failed":
+        return "bg-error/10 text-error";
+      case "created":
+        return "bg-info/10 text-info";
+      default:
+        return "bg-base-200 text-base-content/60";
+    }
+  }
+
   $: filtered = instances
-    .filter((i) => !showRunningOnly || i.status === "running")
+    .filter((i) => {
+      if (filterMode === "attention") return needsAttention(i);
+      if (filterMode === "running") return i.status === "running";
+      return true;
+    })
     .filter(matchesSearch)
     .slice()
     .sort((a, b) => {
+      if (needsAttention(a) && !needsAttention(b)) return -1;
+      if (!needsAttention(a) && needsAttention(b)) return 1;
       if (a.status === "running" && b.status !== "running") return -1;
       if (a.status !== "running" && b.status === "running") return 1;
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
+
+  $: attentionCount = instances.filter(needsAttention).length;
+  $: runningCount = instances.filter((i) => i.status === "running").length;
 </script>
 
 <div id="instances-table" class="bg-base-100 rounded-2xl p-4 sm:p-6 shadow-sm border border-base-200/50">
@@ -81,17 +128,24 @@
       <div class="flex bg-base-200/60 rounded-lg p-1 gap-1">
         <button
           class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors
-            {!showRunningOnly ? 'bg-white text-base-content shadow-sm' : 'text-base-content/50'}"
-          on:click={() => { showRunningOnly = false; }}
+            {filterMode === 'all' ? 'bg-white text-base-content shadow-sm' : 'text-base-content/50'}"
+          on:click={() => { filterMode = "all"; }}
         >
           {$_("admin_strategy_all")}
         </button>
         <button
           class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors
-            {showRunningOnly ? 'bg-white text-base-content shadow-sm' : 'text-base-content/50'}"
-          on:click={() => { showRunningOnly = true; }}
+            {filterMode === 'attention' ? 'bg-white text-base-content shadow-sm' : 'text-base-content/50'}"
+          on:click={() => { filterMode = "attention"; }}
         >
-          {$_("admin_strategy_running_only")} ({instances.filter((i) => i.status === "running").length})
+          {$_("admin_strategy_needs_attention")} ({attentionCount})
+        </button>
+        <button
+          class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors
+            {filterMode === 'running' ? 'bg-white text-base-content shadow-sm' : 'text-base-content/50'}"
+          on:click={() => { filterMode = "running"; }}
+        >
+          {$_("admin_strategy_running_only")} ({runningCount})
         </button>
       </div>
       <button
@@ -125,7 +179,7 @@
         <tr>
           <th
             class="py-4 px-4 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >{$_("admin_strategy_strategy_key")} / {$_("admin_strategy_definition_name")}</th
+            >{$_("admin_strategy_run")}</th
           >
           <th
             class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
@@ -137,11 +191,15 @@
           >
           <th
             class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >{$_("admin_strategy_user")}</th
+            >{$_("admin_strategy_attention")}</th
           >
           <th
             class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
-            >{$_("admin_strategy_created")}</th
+            >{$_("admin_strategy_owner")}</th
+          >
+          <th
+            class="py-4 px-2 text-xs font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300"
+            >{$_("admin_strategy_latest_activity")}</th
           >
           <th
             class="sticky right-0 z-10 bg-base-100 py-4 px-4 text-xs text-right font-bold text-base-content/50 capitalize tracking-widest border-b border-base-300 shadow-[-12px_0_16px_-18px_rgba(0,0,0,0.45)]"
@@ -152,8 +210,8 @@
       <tbody>
         {#if filtered.length === 0}
           <tr>
-            <td colspan="6" class="text-center py-10 text-base-content/50">
-              {showRunningOnly ? $_("admin_strategy_no_running_instances") : $_("admin_strategy_no_instances")}
+            <td colspan="7" class="text-center py-10 text-base-content/50">
+              {filterMode === "attention" ? $_("admin_strategy_no_attention_instances") : filterMode === "running" ? $_("admin_strategy_no_running_instances") : $_("admin_strategy_no_instances")}
             </td>
           </tr>
         {/if}
@@ -186,13 +244,18 @@
               </span>
             </td>
             <td class="py-4 px-2">
-              <span class="text-[13px] text-base-content/60 truncate max-w-[120px] block" title={instance.userId}>
-                {instance.userId || "—"}
+              <span class="inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide {attentionClasses(instance.status)}">
+                {attentionLabel(instance)}
+              </span>
+            </td>
+            <td class="py-4 px-2">
+              <span class="text-[13px] text-base-content/60 truncate max-w-[150px] block" title={instance.clientId || instance.userId}>
+                {instance.clientId || instance.userId || "—"}
               </span>
             </td>
             <td class="py-4 px-2">
               <span class="text-[13px] text-base-content/60 whitespace-nowrap">
-                {formatDate(instance.createdAt)}
+                {formatDate(instance.updatedAt)}
               </span>
             </td>
             <td class="sticky right-0 bg-base-100 py-4 px-4 shadow-[-12px_0_16px_-18px_rgba(0,0,0,0.45)]">
@@ -217,7 +280,7 @@
   <div class="md:hidden space-y-3">
     {#if filtered.length === 0}
       <div class="text-center py-10 text-base-content/50">
-        {showRunningOnly ? $_("admin_strategy_no_running_instances") : $_("admin_strategy_no_instances")}
+        {filterMode === "attention" ? $_("admin_strategy_no_attention_instances") : filterMode === "running" ? $_("admin_strategy_no_running_instances") : $_("admin_strategy_no_instances")}
       </div>
     {/if}
     {#each filtered as instance}
@@ -248,12 +311,18 @@
             <span class="font-semibold text-base-content/75">{instance.strategyType || instance.controllerType || "—"}</span>
           </div>
           <div>
-            <span class="block text-base-content/40">{$_("admin_strategy_user")}</span>
-            <span class="block truncate font-semibold text-base-content/75" title={instance.userId}>{instance.userId || "—"}</span>
+            <span class="block text-base-content/40">{$_("admin_strategy_attention")}</span>
+            <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide {attentionClasses(instance.status)}">
+              {attentionLabel(instance)}
+            </span>
           </div>
           <div class="col-span-2">
-            <span class="block text-base-content/40">{$_("admin_strategy_created")}</span>
-            <span class="font-semibold text-base-content/75">{formatDate(instance.createdAt)}</span>
+            <span class="block text-base-content/40">{$_("admin_strategy_owner")}</span>
+            <span class="block truncate font-semibold text-base-content/75" title={instance.clientId || instance.userId}>{instance.clientId || instance.userId || "—"}</span>
+          </div>
+          <div class="col-span-2">
+            <span class="block text-base-content/40">{$_("admin_strategy_latest_activity")}</span>
+            <span class="font-semibold text-base-content/75">{formatDate(instance.updatedAt)}</span>
           </div>
         </div>
 
