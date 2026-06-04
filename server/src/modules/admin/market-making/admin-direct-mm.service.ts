@@ -662,14 +662,15 @@ export class AdminDirectMarketMakingService {
     const order = await this.loadDirectVariationOrder(orderId);
     const definition = await this.loadVariationStrategyDefinition(order);
     const schema = this.readVariationConfigSchema(definition);
+    const editability = this.getVariationEditability(order);
     const fields = this.buildVariationFieldMetadata(
       schema,
-      order.strategySnapshot?.resolvedConfig || {},
+      order.strategySnapshot.resolvedConfig,
+      editability.editable,
     );
     const values = Object.fromEntries(
       fields.map((field) => [field.key, field.currentValue]),
     );
-    const editability = this.getVariationEditability(order);
 
     return {
       orderId: order.orderId,
@@ -739,22 +740,34 @@ export class AdminDirectMarketMakingService {
     const flattenedFields =
       mapStrategySnapshotToMarketMakingOrderFields(strategySnapshot);
 
-    await this.marketMakingRepository.update(
-      {
-        orderId,
-        source: 'admin_direct',
-      },
-      {
-        strategyDefinitionId: definition.id,
+    await this.marketMakingRepository.manager.transaction(async (manager) => {
+      const orderRepository = manager.getRepository(MarketMakingOrder);
+      const updateResult = await orderRepository.update(
+        {
+          orderId,
+          source: 'admin_direct',
+          state: 'paused',
+        },
+        {
+          strategyDefinitionId: definition.id,
+          strategySnapshot,
+          ...flattenedFields,
+        },
+      );
+
+      if (!updateResult.affected) {
+        throw new BadRequestException(
+          'Strategy variation edits require a paused order',
+        );
+      }
+
+      await this.updatePausedStrategyInstanceParameters(
+        order,
+        definition.id,
         strategySnapshot,
-        ...flattenedFields,
-      },
-    );
-    await this.updatePausedStrategyInstanceParameters(
-      order,
-      definition.id,
-      strategySnapshot,
-    );
+        manager.getRepository(StrategyInstance),
+      );
+    });
 
     return {
       orderId,
@@ -1762,7 +1775,11 @@ export class AdminDirectMarketMakingService {
         'Strategy variation edits are only supported for admin-direct orders',
       );
     }
-    if (!order.strategySnapshot?.resolvedConfig) {
+    if (
+      !this.isPlainVariationResolvedConfig(
+        order.strategySnapshot?.resolvedConfig,
+      )
+    ) {
       throw new BadRequestException(
         'Strategy snapshot resolved config is required for variation edit',
       );
@@ -1841,6 +1858,7 @@ export class AdminDirectMarketMakingService {
   private buildVariationFieldMetadata(
     schema: Record<string, unknown>,
     currentConfig: Record<string, unknown>,
+    editable: boolean,
   ): DirectVariationFieldMetadata[] {
     const properties = (schema as { properties: Record<string, unknown> })
       .properties;
@@ -1873,10 +1891,22 @@ export class AdminDirectMarketMakingService {
             ? { description: rule.description }
             : {}),
           currentValue: currentConfig[key],
-          editable: true,
+          editable,
           schema: rule,
         };
       });
+  }
+
+  private isPlainVariationResolvedConfig(
+    value: unknown,
+  ): value is Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+
+    return prototype === Object.prototype || prototype === null;
   }
 
   private assertVariationOverridesEditable(
@@ -2012,8 +2042,9 @@ export class AdminDirectMarketMakingService {
     order: MarketMakingOrder,
     strategyDefinitionId: string,
     strategySnapshot: MarketMakingOrderStrategySnapshot,
+    strategyInstanceRepository = this.strategyInstanceRepository,
   ): Promise<void> {
-    if (!this.strategyInstanceRepository) {
+    if (!strategyInstanceRepository) {
       return;
     }
 
@@ -2022,7 +2053,7 @@ export class AdminDirectMarketMakingService {
       strategyDefinitionId,
       strategySnapshot,
     });
-    const instance = await this.strategyInstanceRepository.findOne({
+    const instance = await strategyInstanceRepository.findOne({
       where: [
         { marketMakingOrderId: order.orderId, status: 'paused' },
         { strategyKey, status: 'paused' },
@@ -2033,8 +2064,8 @@ export class AdminDirectMarketMakingService {
       return;
     }
 
-    await this.strategyInstanceRepository.update(
-      { id: instance.id },
+    const updateResult = await strategyInstanceRepository.update(
+      { id: instance.id, status: 'paused' },
       {
         parameters: {
           ...(strategySnapshot.resolvedConfig as Record<string, any>),
@@ -2051,6 +2082,12 @@ export class AdminDirectMarketMakingService {
         updatedAt: getRFC3339Timestamp(),
       },
     );
+
+    if (!updateResult.affected) {
+      throw new BadRequestException(
+        'Strategy variation edits require a paused order',
+      );
+    }
   }
 
   private schemaMentionsRootField(schema: unknown, field: string): boolean {
