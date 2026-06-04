@@ -137,8 +137,6 @@ export class ExchangeConnectorAdapterService {
           accountLabel,
         );
 
-        await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
-
         return await exchange.cancelOrder(exchangeOrderId, pair);
       },
     );
@@ -159,8 +157,6 @@ export class ExchangeConnectorAdapterService {
           exchangeName,
           accountLabel,
         );
-
-        await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
 
         return await exchange.fetchOrder(exchangeOrderId, pair);
       },
@@ -183,13 +179,6 @@ export class ExchangeConnectorAdapterService {
           exchangeName,
           accountLabel,
         );
-
-        // Account-wide reads do not select a market; Hyperliquid spot defaults
-        // are applied during exchange initialization, while explicit symbols
-        // must still pass spot-only validation before any exchange call.
-        if (pair) {
-          await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
-        }
 
         return await exchange.fetchOpenOrders(pair);
       },
@@ -215,13 +204,6 @@ export class ExchangeConnectorAdapterService {
           accountLabel,
         );
 
-        // Account-wide reads do not select a market; Hyperliquid spot defaults
-        // are applied during exchange initialization, while explicit symbols
-        // must still pass spot-only validation before any exchange call.
-        if (pair) {
-          await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
-        }
-
         if (typeof exchange.fetchMyTrades !== 'function') {
           return [];
         }
@@ -238,8 +220,6 @@ export class ExchangeConnectorAdapterService {
       `fetchOrderBook ${pair}`,
       async () => {
         const exchange = this.exchangeInitService.getExchange(exchangeName);
-        await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
-
         const orderBook = await exchange.fetchOrderBook(pair);
 
         this.logger.log(
@@ -266,8 +246,6 @@ export class ExchangeConnectorAdapterService {
   async watchOrderBook(exchangeName: string, pair: string): Promise<any> {
     const exchange = this.exchangeInitService.getExchange(exchangeName);
 
-    await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
-
     if (typeof exchange.watchOrderBook !== 'function') {
       return null;
     }
@@ -284,13 +262,6 @@ export class ExchangeConnectorAdapterService {
       exchangeName,
       accountLabel,
     );
-
-    // Account-wide watches do not select a market; Hyperliquid spot defaults
-    // are applied during exchange initialization, while explicit symbols must
-    // still pass spot-only validation before any exchange call.
-    if (pair) {
-      await this.assertHyperliquidSpotMarket(exchangeName, pair, exchange);
-    }
 
     if (typeof exchange.watchMyTrades !== 'function') {
       return null;
