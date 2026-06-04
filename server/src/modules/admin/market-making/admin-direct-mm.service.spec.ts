@@ -2673,6 +2673,73 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
+  it('backfills pure market making when a local DB only has the efficient direct strategy', async () => {
+    const { service, strategyDefinitionRepository } = buildService();
+
+    strategyDefinitionRepository.find.mockResolvedValue([
+      {
+        id: 'strategy-efficient',
+        key: 'efficient_dual_account_volume',
+        name: 'Efficient Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'efficientDualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+      {
+        id: 'strategy-classic',
+        key: 'dual_account_volume',
+        name: 'Dual Account Volume',
+        enabled: true,
+        visibility: 'admin',
+        controllerType: 'dualAccountVolume',
+        capabilities: dualAccountLaunchConfig,
+      },
+    ]);
+    strategyDefinitionRepository.save.mockImplementation(async (payload) => ({
+      ...payload,
+      id: 'strategy-pure-backfilled',
+      createdAt: '2026-06-04T00:00:00.000Z',
+      updatedAt: '2026-06-04T00:00:00.000Z',
+    }));
+
+    const definitions = await service.listDirectStrategyDefinitions();
+
+    expect(strategyDefinitionRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'pure_market_making',
+        name: 'Pure Market Making',
+        controllerType: 'pureMarketMaking',
+        enabled: true,
+        visibility: 'public',
+        capabilities: singleAccountLaunchConfig,
+      }),
+    );
+    expect(definitions.map((definition) => definition.controllerType)).toEqual([
+      'pureMarketMaking',
+      'efficientDualAccountVolume',
+    ]);
+    expect(
+      definitions.map((definition) => definition.controllerType),
+    ).not.toEqual(
+      expect.arrayContaining([
+        'dualAccountVolume',
+        'dualAccountBestCapacityVolume',
+      ]),
+    );
+    expect(
+      definitions.find(
+        (definition) => definition.controllerType === 'pureMarketMaking',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        id: 'strategy-pure-backfilled',
+        directOrderCompatible: true,
+        directExecutionMode: 'single_account',
+      }),
+    );
+  });
+
   it('rejects reserved config override fields before resolving dual-account config', async () => {
     const { service, strategyDefinitionRepository, strategyConfigResolver } =
       buildService();

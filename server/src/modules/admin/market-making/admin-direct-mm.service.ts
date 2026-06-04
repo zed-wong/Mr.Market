@@ -85,6 +85,10 @@ import {
   buildEfficientDualAccountVolumeDefinitionBackfill,
   EFFICIENT_DUAL_ACCOUNT_VOLUME_DEFINITION_ALIASES,
 } from './efficient-dual-account-definition-backfill';
+import {
+  buildPureMarketMakingDefinitionBackfill,
+  PURE_MARKET_MAKING_DEFINITION_ALIASES,
+} from './pure-market-making-definition-backfill';
 
 const DIRECT_ORDER_STALE_MS = 15_000;
 const DIRECT_RESERVED_CONFIG_FIELDS = new Set([
@@ -1527,8 +1531,11 @@ export class AdminDirectMarketMakingService {
     const definitions = await this.strategyDefinitionRepository.find({
       order: { updatedAt: 'DESC' },
     });
-    const backfilledDefinitions =
+    let backfilledDefinitions =
       await this.ensureEfficientDualAccountDefinition(definitions);
+    backfilledDefinitions = await this.ensurePureMarketMakingDefinition(
+      backfilledDefinitions,
+    );
 
     return backfilledDefinitions
       .map((definition) => attachStrategyDefinitionCapabilities(definition))
@@ -1587,6 +1594,54 @@ export class AdminDirectMarketMakingService {
 
     const saved = (await this.strategyDefinitionRepository.save(
       buildEfficientDualAccountVolumeDefinitionBackfill(),
+    )) as StrategyDefinition;
+
+    return [saved, ...definitions];
+  }
+
+  private async ensurePureMarketMakingDefinition(
+    definitions: StrategyDefinition[],
+  ): Promise<StrategyDefinition[]> {
+    const existing = definitions.find((definition) => {
+      const controllerType = normalizeControllerType(
+        String(definition.controllerType || '').trim(),
+      );
+
+      return (
+        controllerType === 'pureMarketMaking' ||
+        PURE_MARKET_MAKING_DEFINITION_ALIASES.includes(
+          String(
+            definition.key || '',
+          ).trim() as (typeof PURE_MARKET_MAKING_DEFINITION_ALIASES)[number],
+        )
+      );
+    });
+
+    if (existing) {
+      const capabilities = getStrategyDefinitionCapabilities(existing);
+      const isDirectCompatible =
+        existing.enabled === true &&
+        ['public', 'admin'].includes(
+          String(existing.visibility || 'admin').trim(),
+        ) &&
+        capabilities.directOrderCompatible &&
+        capabilities.directExecutionMode === 'single_account';
+
+      if (isDirectCompatible) {
+        return definitions;
+      }
+
+      const saved = (await this.strategyDefinitionRepository.save(
+        buildPureMarketMakingDefinitionBackfill(existing),
+      )) as StrategyDefinition;
+
+      return definitions.map((definition) =>
+        definition.id === existing.id ? saved : definition,
+      );
+    }
+
+    const saved = (await this.strategyDefinitionRepository.save(
+      buildPureMarketMakingDefinitionBackfill(),
     )) as StrategyDefinition;
 
     return [saved, ...definitions];
