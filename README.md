@@ -41,7 +41,7 @@ make start-dev
 
 The standalone admin interface is validated locally against the real Nest server. The admin preview runs at `http://localhost:4176`, and the server runs at `http://127.0.0.1:3100`.
 
-The admin dashboard, orders, positions, and system pages use real server-backed data in this flow. Rebalance has been removed; Direct Market Making, Exchanges, and API Keys remain available. Build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3100`, then run the preview against the local production server.
+The admin dashboard, orders, positions, and system pages use real server-backed data in this flow. Rebalance has been removed; Direct Market Making, Exchanges, and API Keys remain available. The admin Direct Market Making area includes PnL, inventory, and risk analytics with per-order, per-pair, and admin-wide totals, timelines, drawdown, fill/quote metrics, cross-currency breakdowns, and mark-price unavailable states. Paused admin-direct strategy variations can be edited through schema-driven validation before resume. Hyperliquid spot is supported through the existing exchange API-key flow, where Hyperliquid credentials are labeled Wallet address and Private key. Build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3100`, then run the preview against the local production server.
 
 Use inline environment variables for local validation instead of reading `.env` files. At minimum, provide the local server values such as `PORT=3100`, `DATABASE_PATH`, `ADMIN_PASSWORD`, `JWT_SECRET`, `CORS_ORIGIN=http://localhost:4176`, and passkey origin/RP settings; build the admin interface with `PUBLIC_MRM_BACKEND_URL=http://127.0.0.1:3100`.
 
@@ -49,8 +49,10 @@ Key commands:
 
 ```
 bun run --cwd server build
+bun --no-env-file --cwd server run test --testPathPattern='analytics|pnl|variation|strategy-variation|exchange-connector-adapter.service.spec.ts|exchange-init.service.spec.ts|exchange-api-key.service.spec.ts|fill-routing.service.spec.ts|client-order-id|cloid' --runInBand
 bun run --cwd server start:prod
 bun run --cwd admin-interface check
+bun --no-env-file --cwd admin-interface x vitest run src/i18n/i18n.test.ts src/lib/components/shell/nav-items.test.ts src/lib/components/market-making src/lib/helpers src/routes/trading --reporter=verbose
 bun run --cwd admin-interface test:unit
 bun run --cwd admin-interface test:e2e
 bun run --cwd admin-interface preview -- --host localhost --port 4176
