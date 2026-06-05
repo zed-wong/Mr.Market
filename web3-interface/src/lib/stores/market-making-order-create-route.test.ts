@@ -51,15 +51,19 @@ describe('/app/market-making/order/new pure market-making route', () => {
     expect(source).not.toContain('Choose a strategy');
   });
 
-  it('requires SIWE scope and wallet approval before the create API call', () => {
+  it('requires SIWE scope and wallet approval before routing funds', () => {
     const source = routeSource();
-    const approvalIndex = source.indexOf('signWalletMessage(approvalMessage)');
-    const createIndex = source.indexOf('createMarketMakingOrder({');
+    const fundingRequestIndex = source.indexOf('createFundingRequest({');
+    const approvalIndex = source.indexOf('approveRouterTokenWithWallet({');
+    const routingIndex = source.indexOf('routeFundsWithWallet(routerCall)');
+    const verificationIndex = source.indexOf('verifyFundingRequest(response.fundingRequest.requestId');
 
     expect(source).toContain('signInWithEthereum');
     expect(source).toContain('hasAuthenticatedOrderScope');
-    expect(approvalIndex).toBeGreaterThan(-1);
-    expect(createIndex).toBeGreaterThan(approvalIndex);
+    expect(fundingRequestIndex).toBeGreaterThan(-1);
+    expect(approvalIndex).toBeGreaterThan(fundingRequestIndex);
+    expect(routingIndex).toBeGreaterThan(approvalIndex);
+    expect(verificationIndex).toBeGreaterThan(routingIndex);
     expect(source).toContain('strategyDefinitionId: selectedPureStrategy.id');
   });
 
