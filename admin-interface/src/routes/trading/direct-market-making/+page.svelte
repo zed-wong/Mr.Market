@@ -12,7 +12,6 @@
 
     import { getAllAPIKeys } from "$lib/helpers/mrm/admin/exchanges";
     import {
-        evaluateDirectReadiness,
         getDirectWalletStatus,
         getDirectOrderStatus,
         getDirectOrderVariation,
@@ -35,7 +34,6 @@
         AdminCampaign,
         DirectOrderStatus,
         DirectOrderSummary,
-        DirectReadinessResult,
         DirectStartPayload,
         DirectVariationMetadata,
         EfficientDualAccountVolumeMode,
@@ -46,15 +44,11 @@
 
     import {
         buildGenericSchemaConfigOverrides,
-        buildDirectReadinessRefreshKey,
-        describeSafeDirectStartFailure,
         filterDirectCreateStrategies,
         formatOrderAmountForDisplay,
         getDirectOrderActionAvailability,
-        getDirectReadinessSubmitStatus,
         getErrorMessage,
         getRecoveryHint,
-        isDirectReadinessForCurrentSelection,
         isEfficientDualAccountControllerType,
         isDualDirectOrderControllerType,
         isSchemaDrivenDirectOrderControllerType,
@@ -303,13 +297,6 @@
     let configRows: OverrideRow[] = [{ key: "", value: "" }];
     let genericConfig: Record<string, unknown> = {};
     let genericConfigStrategyDefinitionId = "";
-    let directReadiness: DirectReadinessResult | null = null;
-    let directReadinessSignature = "";
-    let directReadinessRequestSignature = "";
-    let directReadinessRequestId = 0;
-    let directReadinessLoading = false;
-    let directReadinessError = "";
-    let displayedDirectReadiness: DirectReadinessResult | null = null;
     let exchangeMarketsById: Record<string, ExchangeMarketMetadata[]> = {};
     let loadingExchangeMarketIds: string[] = [];
     let loadedExchangeMarketIds: string[] = [];
@@ -453,83 +440,6 @@
             );
         }
     }
-    $: directReadinessRequiredInputsComplete =
-        showStartForm &&
-        isEfficientDualAccountStrategy &&
-        Boolean(
-            startExchangeName &&
-                startPair &&
-                startStrategyDefinitionId &&
-                selectedMakerApiKey &&
-                selectedTakerApiKey &&
-                String(selectedMakerApiKey.key_id) !==
-                    String(selectedTakerApiKey.key_id),
-        );
-    $: directReadinessRefreshKey = buildDirectReadinessRefreshKey({
-        showStartForm,
-        isEfficientDualAccountStrategy,
-        exchangeName: startExchangeName,
-        pair: startPair,
-        strategyDefinitionId: startStrategyDefinitionId,
-        makerApiKeyId: String(selectedMakerApiKey?.key_id || ""),
-        takerApiKeyId: String(selectedTakerApiKey?.key_id || ""),
-        controllerType: selectedControllerType,
-        orderAmount,
-        orderSpread,
-        intervalTime,
-        numTrades,
-        pricePushRate,
-        postOnlySide,
-        dynamicRoleSwitching,
-        targetQuoteVolume,
-        efficientMode,
-        configRows,
-        genericConfig,
-    });
-    $: directReadinessCurrentSignature =
-        directReadinessRequiredInputsComplete && directReadinessRefreshKey
-            ? JSON.stringify(buildStartPayload())
-            : "";
-    $: if (
-        directReadiness &&
-        directReadinessSignature &&
-        directReadinessCurrentSignature &&
-        directReadinessSignature !== directReadinessCurrentSignature
-    ) {
-        directReadiness = null;
-        directReadinessSignature = "";
-        directReadinessError = "";
-    }
-    $: displayedDirectReadiness = isDirectReadinessForCurrentSelection({
-        readiness: directReadiness,
-        displayedSignature: directReadinessSignature,
-        currentSignature: directReadinessCurrentSignature,
-        selectedMode: efficientMode,
-    })
-        ? directReadiness
-        : null;
-    $: directReadinessStatus = getDirectReadinessSubmitStatus({
-        requiredInputsComplete: directReadinessRequiredInputsComplete,
-        loading: directReadinessLoading,
-        failed: Boolean(directReadinessError),
-        displayedSignature: directReadinessSignature,
-        currentSignature: directReadinessCurrentSignature,
-        canStart: displayedDirectReadiness?.canStart ?? null,
-    });
-    $: if (
-        directReadinessRequiredInputsComplete &&
-        directReadinessCurrentSignature &&
-        directReadinessCurrentSignature !== directReadinessRequestSignature
-    ) {
-        void refreshDirectReadiness(directReadinessCurrentSignature);
-    }
-    $: if (!directReadinessRequiredInputsComplete && !directReadinessLoading) {
-        directReadinessError = "";
-        directReadinessSignature = "";
-        directReadinessRequestSignature = "";
-        directReadiness = null;
-    }
-
     function getToken(): string {
         if (!browser) return "";
         return localStorage.getItem("admin-access-token") || "";
@@ -635,11 +545,6 @@
         dynamicRoleSwitching = false;
         targetQuoteVolume = "";
         efficientMode = "balanced";
-        directReadiness = null;
-        directReadinessSignature = "";
-        directReadinessRequestSignature = "";
-        directReadinessError = "";
-        directReadinessLoading = false;
     }
 
     function applyOrderStatusToStartForm(
@@ -748,62 +653,6 @@
               : null;
     }
 
-    async function refreshDirectReadiness(
-        signature: string,
-    ): Promise<DirectReadinessResult | null> {
-        const token = getToken();
-        const payload = buildStartPayload();
-
-        if (!token || !payload || !isEfficientDualAccountStrategy) {
-            return null;
-        }
-
-        const requestId = ++directReadinessRequestId;
-        directReadinessRequestSignature = signature;
-        directReadinessLoading = true;
-        directReadinessError = "";
-
-        try {
-            const result = await evaluateDirectReadiness(payload, token);
-
-            if (requestId !== directReadinessRequestId) {
-                return null;
-            }
-
-            if (
-                !isDirectReadinessForCurrentSelection({
-                    readiness: result,
-                    displayedSignature: signature,
-                    currentSignature: directReadinessCurrentSignature,
-                    selectedMode: efficientMode,
-                })
-            ) {
-                directReadiness = null;
-                directReadinessSignature = "";
-                directReadinessError =
-                    "Readiness response did not match current selections.";
-                return null;
-            }
-
-            directReadiness = result;
-            directReadinessSignature = signature;
-            return result;
-        } catch (error) {
-            if (requestId !== directReadinessRequestId) {
-                return null;
-            }
-
-            directReadiness = null;
-            directReadinessSignature = signature;
-            directReadinessError = describeSafeDirectStartFailure(null, error);
-            return null;
-        } finally {
-            if (requestId === directReadinessRequestId) {
-                directReadinessLoading = false;
-            }
-        }
-    }
-
     async function handleStartOrder() {
         if (isStarting || startCooldown) return;
         const token = getToken();
@@ -868,16 +717,6 @@
             return;
         }
 
-        if (
-            isEfficientDualAccountStrategy &&
-            directReadinessStatus !== "ready"
-        ) {
-            toast.error($_("admin_direct_mm_readiness_start_blocked"), {
-                description: directReadinessError || $_("admin_direct_mm_readiness_start_blocked_hint"),
-            });
-            return;
-        }
-
         isStarting = true;
         startCooldown = true;
         setTimeout(() => {
@@ -907,21 +746,6 @@
                 },
             );
         } catch (error) {
-            let refreshedReadiness: DirectReadinessResult | null = null;
-
-            if (isEfficientDualAccountStrategy) {
-                if (directReadinessCurrentSignature) {
-                    refreshedReadiness = await refreshDirectReadiness(
-                        directReadinessCurrentSignature,
-                    );
-                }
-
-                toast.error($_("admin_direct_mm_readiness_start_blocked"), {
-                    description: describeSafeDirectStartFailure(refreshedReadiness, error),
-                });
-                return;
-            }
-
             toast.error(getErrorMessage(error), {
                 description: getRecoveryHint(error),
             });
@@ -1468,9 +1292,6 @@
     bind:dynamicRoleSwitching
     bind:targetQuoteVolume
     bind:efficientMode
-    readiness={displayedDirectReadiness}
-    readinessStatus={directReadinessStatus}
-    readinessError={directReadinessError}
     onSubmit={handleStartOrder}
     onClose={resetStartForm}
 />

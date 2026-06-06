@@ -7,8 +7,6 @@ import type {
   CampaignJoinPayload,
   DirectOrderStatus,
   DirectOrderSummary,
-  DirectReadinessPayload,
-  DirectReadinessResult,
   DirectStartPayload,
   DirectVariationMetadata,
   DirectVariationSavePayload,
@@ -52,22 +50,6 @@ export const startDirectOrder = async (
 ): Promise<{ orderId: string; state: string; warnings: string[] }> => {
   const response = await fetch(
     `${MRM_BACKEND_URL}/admin/market-making/direct-start`,
-    {
-      method: "POST",
-      headers: getHeaders(token),
-      body: JSON.stringify(payload),
-    },
-  );
-
-  return handleApiResponse(response);
-};
-
-export const evaluateDirectReadiness = async (
-  payload: DirectReadinessPayload,
-  token: string,
-): Promise<DirectReadinessResult> => {
-  const response = await fetch(
-    `${MRM_BACKEND_URL}/admin/market-making/direct-readiness`,
     {
       method: "POST",
       headers: getHeaders(token),

@@ -697,4 +697,24 @@ describe('DualAccountPlannerService efficient best-capacity planning', () => {
     ]);
     expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
   });
+
+  it('allows valid zero maker or taker fee rates in readiness', async () => {
+    const { planner, exchangeConnector } = buildPlanner({
+      rules: {
+        amountMin: 0.001,
+        costMin: 10,
+        makerFee: 0,
+        takerFee: 0.001,
+      },
+    });
+
+    const readiness = await planner.evaluateEfficientDualAccountReadiness(
+      baseParams,
+    );
+
+    expect(readiness.blockingReasons).not.toContainEqual(
+      expect.objectContaining({ code: 'fee_data_missing' }),
+    );
+    expect(exchangeConnector.loadTradingRules).not.toHaveBeenCalled();
+  });
 });

@@ -815,20 +815,14 @@ export function getDirectRuntimeLifecycleView(args: {
   const hasExecutionBlocker = (args.warnings || []).some((warning) =>
     normalizeOrderLifecycleState(warning).includes("blocked"),
   );
-  const canResumeNow =
-    (persistedState === "paused" || persistedState === "stopped") &&
-    args.readiness?.canStart === true;
-  const readinessGated = persistedState === "paused" || persistedState === "stopped";
 
   if (persistedState === "paused") {
     return {
-      label: hasPlannerBlocker ? "Paused by planner" : "Paused",
-      tone: hasPlannerBlocker ? "warning" : "info",
-      summary: hasPlannerBlocker
-        ? "Planner blockers paused this order. Resolve the blocker and pass readiness before resuming."
-        : "This order is paused. Resume is gated by the latest planner readiness result.",
-      canResumeNow,
-      readinessGated,
+      label: "Paused",
+      tone: "info",
+      summary: "This order is paused. Resume it when you want runtime cycles to continue.",
+      canResumeNow: true,
+      readinessGated: false,
     };
   }
 
@@ -837,9 +831,9 @@ export function getDirectRuntimeLifecycleView(args: {
       label: "Operator stopped",
       tone: "info",
       summary:
-        "This order was stopped by an operator. Resume remains gated by current planner readiness.",
-      canResumeNow,
-      readinessGated,
+        "This order was stopped by an operator. Resume it to restart runtime cycles.",
+      canResumeNow: true,
+      readinessGated: false,
     };
   }
 
@@ -860,10 +854,9 @@ export function getDirectRuntimeLifecycleView(args: {
 
   if (hasPlannerBlocker) {
     return {
-      label: "Blocked by planner",
-      tone: "warning",
-      summary:
-        "Planner readiness cannot produce a safe next cycle. Use the bottleneck and blocker details below.",
+      label: "Waiting for next cycle",
+      tone: "info",
+      summary: "Runtime is active; the strategy will continue when it can produce the next cycle.",
       canResumeNow: false,
       readinessGated: false,
     };

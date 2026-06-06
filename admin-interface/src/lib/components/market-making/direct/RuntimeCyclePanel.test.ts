@@ -130,7 +130,7 @@ const baseStatus: DirectOrderStatus = {
 };
 
 describe('RuntimeCyclePanel', () => {
-  it('renders grouped maker and inline taker legs with runtime blockers', () => {
+  it('renders grouped maker and inline taker legs without planner blockers', () => {
     const { body } = render(RuntimeCyclePanel, {
       props: {
         data: baseStatus,
@@ -139,13 +139,13 @@ describe('RuntimeCyclePanel', () => {
     });
 
     expect(body).toContain('Efficient Volume runtime cycles');
-    expect(body).toContain('Paused by planner');
+    expect(body).toContain('Paused');
     expect(body).toContain('Balanced');
-    expect(body).toContain('0.5 BTC recommended / 0.8 BTC max');
+    expect(body).toContain('0.5');
     expect(body).toContain('cycle-runtime-1 · failed');
-    expect(body).toContain('Maker maker-main should buy 0.5 BTC against taker taker-alt');
-    expect(body).toContain('taker-alt BTC is the current bottleneck');
-    expect(body).toContain('3 cycles, 45000 USDT / 1.5 BTC estimated volume');
+    expect(body).not.toContain('Blocked by planner');
+    expect(body).not.toContain('Actionable runtime blockers');
+    expect(body).not.toContain('Trading rules are unavailable');
     expect(body).toContain('maker-main');
     expect(body).toContain('taker-alt');
     expect(body).toContain('taker IOC rejected');

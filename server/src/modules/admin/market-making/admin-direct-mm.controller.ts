@@ -50,21 +50,6 @@ export class AdminDirectMarketMakingController {
     );
   }
 
-  @Post('direct-readiness')
-  @ApiOperation({
-    summary:
-      'Evaluate direct admin Efficient Dual Account Volume planner readiness',
-  })
-  async directReadiness(
-    @Body() body: DirectStartMarketMakingDto,
-    @Req() request: { user?: { userId?: string } },
-  ) {
-    return this.adminDirectMarketMakingService.evaluateDirectReadiness(
-      body,
-      request.user?.userId,
-    );
-  }
-
   @Post('direct-stop')
   @ApiOperation({ summary: 'Stop a direct admin market-making order' })
   async directStop(@Body() body: DirectStopMarketMakingDto) {

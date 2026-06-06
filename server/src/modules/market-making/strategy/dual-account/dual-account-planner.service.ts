@@ -711,10 +711,10 @@ export class DualAccountPlannerService {
       });
     }
 
-    const makerFee = this.readPositiveFiniteNumber(rules.makerFee);
-    const takerFee = this.readPositiveFiniteNumber(rules.takerFee);
+    const makerFee = this.readNonNegativeFiniteNumber(rules.makerFee);
+    const takerFee = this.readNonNegativeFiniteNumber(rules.takerFee);
 
-    if (!makerFee || !takerFee) {
+    if (makerFee === null || takerFee === null) {
       return this.buildBlockedReadiness(params, mode, {
         code: 'fee_data_missing',
         message: `Trading fee data is unavailable for ${params.exchangeName} ${params.symbol}`,
@@ -4044,6 +4044,14 @@ export class DualAccountPlannerService {
     const amount = this.readPositiveBigNumber(value);
 
     return amount ? amount.toNumber() : null;
+  }
+
+  private readNonNegativeFiniteNumber(value: unknown): number | null {
+    const amount = new BigNumber(String(value ?? ''));
+
+    return amount.isFinite() && amount.isGreaterThanOrEqualTo(0)
+      ? amount.toNumber()
+      : null;
   }
 
   private readPositiveBigNumber(value: unknown): BigNumber | null {

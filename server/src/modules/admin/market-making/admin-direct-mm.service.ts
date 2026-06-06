@@ -219,8 +219,7 @@ type DirectCycleGroup = {
   legs: Map<string, DirectCycleLeg>;
 };
 
-const RUNTIME_CYCLE_COUNTER_PATTERN =
-  /(?:^|[:_-])cycle[:_-](\d+)(?=[:_-]|$)/i;
+const RUNTIME_CYCLE_COUNTER_PATTERN = /(?:^|[:_-])cycle[:_-](\d+)(?=[:_-]|$)/i;
 const RUNTIME_CYCLE_TIMESTAMP_PATTERN =
   /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/;
 
@@ -279,77 +278,6 @@ export class AdminDirectMarketMakingService {
     @InjectRepository(TrackedOrderEntity)
     private readonly trackedOrderRepository?: Repository<TrackedOrderEntity>,
   ) {}
-
-  async evaluateDirectReadiness(
-    dto: DirectStartMarketMakingDto,
-    adminUserId?: string,
-  ): Promise<DualAccountReadinessResult> {
-    const directUserId = adminUserId || 'admin-direct';
-    const definition = await this.strategyDefinitionRepository.findOne({
-      where: { id: dto.strategyDefinitionId, enabled: true },
-    });
-
-    if (!definition) {
-      throw new BadRequestException('Strategy definition not found');
-    }
-
-    const controllerType =
-      this.strategyConfigResolver.getDefinitionControllerType(definition);
-    const capabilities = getStrategyDefinitionCapabilities(definition);
-
-    if (
-      controllerType !== EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE ||
-      capabilities.directExecutionMode !== 'dual_account'
-    ) {
-      throw new BadRequestException(
-        'Planner readiness is only available for Efficient Dual Account Volume',
-      );
-    }
-
-    const executionAccounts = await this.resolveExecutionAccounts(
-      dto,
-      capabilities.directExecutionMode,
-    );
-    const readinessOrderId = this.buildReadinessOrderId(dto, executionAccounts);
-
-    assertStrategyConfigOverridesSafe(
-      dto.configOverrides,
-      DIRECT_RESERVED_CONFIG_FIELDS,
-    );
-    const configOverrides = dto.configOverrides || {};
-    const resolverInput = this.buildDirectResolverInput(
-      definition,
-      configOverrides,
-      {
-        symbol: dto.pair,
-        userId: directUserId,
-        clientId: readinessOrderId,
-        marketMakingOrderId: readinessOrderId,
-      },
-    );
-    const resolvedConfig =
-      await this.strategyConfigResolver.resolveForOrderSnapshot(
-        dto.strategyDefinitionId,
-        resolverInput,
-      );
-
-    this.applyDirectRuntimeFields(
-      resolvedConfig.resolvedConfig,
-      dto,
-      directUserId,
-      readinessOrderId,
-      executionAccounts,
-      capabilities.directExecutionMode,
-    );
-    Object.assign(
-      resolvedConfig.resolvedConfig,
-      this.normalizeEfficientDirectConfig(resolvedConfig.resolvedConfig),
-    );
-
-    return this.evaluateCreateTimeEfficientReadinessFromConfig(
-      resolvedConfig.resolvedConfig,
-    );
-  }
 
   async directStart(
     dto: DirectStartMarketMakingDto,
@@ -433,11 +361,6 @@ export class AdminDirectMarketMakingService {
       Object.assign(
         resolvedConfig.resolvedConfig,
         this.normalizeEfficientDirectConfig(resolvedConfig.resolvedConfig),
-      );
-      this.assertPlannerReadinessCanStart(
-        await this.evaluateCreateTimeEfficientReadinessFromConfig(
-          resolvedConfig.resolvedConfig,
-        ),
       );
     }
     const primaryMarketSnapshot = await this.resolveDirectMarketSnapshot(
@@ -592,9 +515,6 @@ export class AdminDirectMarketMakingService {
         resolvedConfig,
         this.normalizeEfficientDirectConfig(resolvedConfig),
       );
-      this.assertPlannerReadinessCanStart(
-        await this.evaluateEfficientReadinessFromConfig(resolvedConfig),
-      );
     }
     const primaryAccountLabel = this.isDualAccountMode(order)
       ? this.readMakerAccountLabel(order)
@@ -747,6 +667,7 @@ export class AdminDirectMarketMakingService {
       editConfig,
       this.buildOrderRuntimeFields(order),
     );
+
     this.validateVariationConfig(resolverInput, schema);
     const strategySnapshot =
       await this.strategyConfigResolver.resolveForOrderSnapshot(
@@ -1531,8 +1452,10 @@ export class AdminDirectMarketMakingService {
     const definitions = await this.strategyDefinitionRepository.find({
       order: { updatedAt: 'DESC' },
     });
-    let backfilledDefinitions =
-      await this.ensureEfficientDualAccountDefinition(definitions);
+    let backfilledDefinitions = await this.ensureEfficientDualAccountDefinition(
+      definitions,
+    );
+
     backfilledDefinitions = await this.ensurePureMarketMakingDefinition(
       backfilledDefinitions,
     );
@@ -1566,7 +1489,9 @@ export class AdminDirectMarketMakingService {
       return (
         controllerType === EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE ||
         EFFICIENT_DUAL_ACCOUNT_VOLUME_DEFINITION_ALIASES.includes(
-          String(definition.key || '').trim() as (typeof EFFICIENT_DUAL_ACCOUNT_VOLUME_DEFINITION_ALIASES)[number],
+          String(
+            definition.key || '',
+          ).trim() as (typeof EFFICIENT_DUAL_ACCOUNT_VOLUME_DEFINITION_ALIASES)[number],
         )
       );
     });
@@ -1699,56 +1624,6 @@ export class AdminDirectMarketMakingService {
     return this.dualAccountPlannerService.evaluateEfficientDualAccountReadiness(
       config as DualAccountVolumeStrategyParams,
     );
-  }
-
-  private async evaluateCreateTimeEfficientReadinessFromConfig(
-    config: Record<string, unknown>,
-  ): Promise<DualAccountReadinessResult> {
-    const createTimeReadinessConfig = { ...config };
-
-    delete createTimeReadinessConfig.marketMakingOrderId;
-
-    return this.evaluateEfficientReadinessFromConfig(createTimeReadinessConfig);
-  }
-
-  private assertPlannerReadinessCanStart(
-    readiness: DualAccountReadinessResult,
-  ): void {
-    if (readiness.canStart) {
-      return;
-    }
-
-    const blockerMessages = readiness.blockingReasons
-      .map((reason) => reason.message)
-      .filter(Boolean);
-    const missingMessages = readiness.missingBalances.map(
-      (missing) =>
-        `${missing.accountLabel} needs ${missing.missingAmount} ${missing.asset}`,
-    );
-    const detail = [...blockerMessages, ...missingMessages].join('; ');
-
-    throw new BadRequestException(
-      `Planner readiness blocked start${detail ? `: ${detail}` : ''}`,
-    );
-  }
-
-  private buildReadinessOrderId(
-    dto: DirectStartMarketMakingDto,
-    executionAccounts: {
-      primary: Pick<DirectExecutionAccount, 'accountLabel'>;
-      secondary?: Pick<DirectExecutionAccount, 'accountLabel'>;
-    },
-  ): string {
-    return [
-      'readiness',
-      dto.strategyDefinitionId,
-      dto.exchangeName,
-      dto.pair,
-      executionAccounts.primary.accountLabel,
-      executionAccounts.secondary?.accountLabel || 'single',
-    ]
-      .join(':')
-      .replace(/[^a-zA-Z0-9:_-]/g, '_');
   }
 
   private mapCampaignJoinError(error: unknown): HttpException {
@@ -1908,7 +1783,8 @@ export class AdminDirectMarketMakingService {
     order: MarketMakingOrder,
   ): Promise<StrategyDefinition> {
     const strategyDefinitionId =
-      order.strategySnapshot?.strategyDefinitionId || order.strategyDefinitionId;
+      order.strategySnapshot?.strategyDefinitionId ||
+      order.strategyDefinitionId;
 
     if (!strategyDefinitionId) {
       throw new BadRequestException(

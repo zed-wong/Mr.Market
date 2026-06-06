@@ -1103,7 +1103,7 @@ describe('Efficient Dual Account runtime cycle helpers', () => {
     ]);
   });
 
-  it('describes runtime next action, bottleneck, remaining estimates, and lifecycle gating', () => {
+  it('describes runtime next action, bottleneck, remaining estimates, and lifecycle state', () => {
     expect(describeDirectRuntimeNextAction(readiness)).toContain(
       'Maker maker-main should buy 0.5 BTC against taker taker-alt',
     );
@@ -1121,10 +1121,10 @@ describe('Efficient Dual Account runtime cycle helpers', () => {
         readiness,
       }),
     ).toMatchObject({
-      label: 'Paused by planner',
-      tone: 'warning',
-      canResumeNow: false,
-      readinessGated: true,
+      label: 'Paused',
+      tone: 'info',
+      canResumeNow: true,
+      readinessGated: false,
     });
 
     expect(
@@ -1142,7 +1142,7 @@ describe('Efficient Dual Account runtime cycle helpers', () => {
       label: 'Operator stopped',
       tone: 'info',
       canResumeNow: true,
-      readinessGated: true,
+      readinessGated: false,
     });
   });
 });

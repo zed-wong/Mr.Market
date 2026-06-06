@@ -5,12 +5,6 @@
         DirectRuntimeCycleLeg,
     } from "$lib/types/hufi/admin-direct-market-making";
     import {
-        describeDirectRuntimeBottleneck,
-        describeDirectRuntimeNextAction,
-        describeReadinessBlockingReason,
-        describeReadinessMissingBalance,
-        formatDirectRuntimeRemainingEstimate,
-        formatReadinessAmount,
         getDirectRuntimeLifecycleView,
         getLatestDirectRuntimeCycle,
         normalizeDirectRuntimeCycles,
@@ -61,21 +55,15 @@
         return leg.accountLabel || "account unavailable";
     }
 
-    $: readiness = data?.readiness ?? null;
     $: cycles = normalizeDirectRuntimeCycles(data?.cycles ?? []);
     $: latestCycle = getLatestDirectRuntimeCycle(cycles);
     $: lifecycle = getDirectRuntimeLifecycleView({
         state: data?.state,
         runtimeState: data?.runtimeState,
-        readiness,
+        readiness: null,
         warnings,
     });
-    $: cycleSizeLabel = readiness
-        ? `${formatReadinessAmount(readiness.recommendedCycleQty, readiness.estimatedVolume.baseAsset)} recommended / ${formatReadinessAmount(readiness.maximumCycleQty, readiness.estimatedVolume.baseAsset)} max`
-        : data?.orderConfig?.orderAmount || "Not provided";
-    $: nextAction = describeDirectRuntimeNextAction(readiness);
-    $: bottleneck = describeDirectRuntimeBottleneck(readiness);
-    $: remainingEstimate = formatDirectRuntimeRemainingEstimate(readiness);
+    $: cycleSizeLabel = data?.orderConfig?.orderAmount || "Not provided";
 </script>
 
 <div
@@ -103,22 +91,15 @@
         <span class="text-xs font-semibold text-base-content block">
             {lifecycle.summary}
         </span>
-        {#if lifecycle.readinessGated}
-            <span class="mt-1 text-[11px] text-base-content/55 block">
-                Resume is readiness-gated: {lifecycle.canResumeNow
-                    ? "current readiness allows resume"
-                    : "current readiness does not allow resume yet"}.
-            </span>
-        {/if}
     </div>
 
-    <div class="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div class="rounded-lg border border-base-300 p-3">
             <span class="text-[10px] font-semibold text-base-content/45 block">
                 Current mode
             </span>
             <span class="mt-1 text-sm font-bold text-base-content block" data-testid="efficient-runtime-mode">
-                {formatEfficientMode(data?.orderConfig?.mode || readiness?.mode)}
+                {formatEfficientMode(data?.orderConfig?.mode)}
             </span>
         </div>
         <div class="rounded-lg border border-base-300 p-3">
@@ -137,54 +118,7 @@
                 {latestCycle ? `${latestCycle.cycleId} · ${latestCycle.aggregateStatus}` : "No cycle metadata yet"}
             </span>
         </div>
-        <div class="rounded-lg border border-base-300 p-3">
-            <span class="text-[10px] font-semibold text-base-content/45 block">
-                Remaining estimate
-            </span>
-            <span class="mt-1 text-sm font-bold text-base-content block" data-testid="efficient-runtime-remaining">
-                {remainingEstimate}
-            </span>
-        </div>
     </div>
-
-    <div class="mt-3 grid gap-3 lg:grid-cols-2">
-        <div class="rounded-lg border border-base-300 p-3">
-            <span class="text-[10px] font-semibold text-base-content/45 block">
-                Next planned direction
-            </span>
-            <span class="mt-1 text-xs text-base-content/75 block" data-testid="efficient-runtime-next-action">
-                {nextAction}
-            </span>
-        </div>
-        <div class="rounded-lg border border-base-300 p-3">
-            <span class="text-[10px] font-semibold text-base-content/45 block">
-                Current bottleneck
-            </span>
-            <span class="mt-1 text-xs text-base-content/75 block" data-testid="efficient-runtime-bottleneck">
-                {bottleneck}
-            </span>
-        </div>
-    </div>
-
-    {#if readiness && (readiness.missingBalances.length > 0 || readiness.blockingReasons.length > 0)}
-        <div class="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-3" data-testid="efficient-runtime-blockers">
-            <span class="text-xs font-bold text-warning block">
-                Actionable runtime blockers
-            </span>
-            <div class="mt-2 flex flex-col gap-1.5">
-                {#each readiness.missingBalances as missing}
-                    <span class="text-xs text-base-content/75">
-                        {describeReadinessMissingBalance(missing)}
-                    </span>
-                {/each}
-                {#each readiness.blockingReasons as blocker}
-                    <span class="text-xs text-base-content/75">
-                        {describeReadinessBlockingReason(blocker)}
-                    </span>
-                {/each}
-            </div>
-        </div>
-    {/if}
 
     <div class="mt-4 flex flex-col gap-3" data-testid="efficient-runtime-cycles">
         {#if cycles.length === 0}

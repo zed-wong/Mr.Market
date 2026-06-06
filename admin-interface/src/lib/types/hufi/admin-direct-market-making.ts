@@ -346,8 +346,6 @@ export type DirectStartPayload =
       configOverrides?: Record<string, unknown>;
     };
 
-export type DirectReadinessPayload = DirectStartPayload;
-
 export interface CampaignJoinPayload {
   evmAddress: string;
   apiKeyId: string;

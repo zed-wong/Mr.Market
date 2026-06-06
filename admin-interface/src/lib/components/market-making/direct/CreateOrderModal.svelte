@@ -9,21 +9,14 @@
     import type { AdminSingleKey } from "$lib/types/hufi/admin";
     import type { MarketMakingStrategy } from "$lib/helpers/mrm/grow";
     import type {
-        DirectReadinessResult,
         EfficientDualAccountVolumeMode,
     } from "$lib/types/hufi/admin-direct-market-making";
     import {
         getEfficientDualAccountModeOptions,
-        getReadinessCapitalRows,
         isEfficientDualAccountControllerType,
         isBestCapacityDirectOrderControllerType,
         isDualAccountOrder,
         isSchemaDrivenDirectOrderControllerType,
-        describeReadinessBlockingReason,
-        describeReadinessMissingBalance,
-        formatReadinessAmount,
-        normalizeEfficientDualAccountMode,
-        type DirectReadinessSubmitStatus,
         type StrategySchema,
     } from "$lib/helpers/market-making/direct/helpers";
 
@@ -61,9 +54,6 @@
     export let dynamicRoleSwitching = true;
     export let targetQuoteVolume = "";
     export let efficientMode: EfficientDualAccountVolumeMode = "balanced";
-    export let readiness: DirectReadinessResult | null = null;
-    export let readinessStatus: DirectReadinessSubmitStatus = "missing";
-    export let readinessError = "";
 
     export let onSubmit: () => void;
     export let onClose: () => void;
@@ -155,8 +145,7 @@
         dualRequiredMissing ||
         dualAccountSelectionMissing ||
         dualAccountUnavailable ||
-        dualSameAccount ||
-        (isEfficientDualAccountStrategy && readinessStatus !== "ready");
+        dualSameAccount;
     $: efficientModeOptions = getEfficientDualAccountModeOptions();
 
     $: searchedPairs = pairSearch
@@ -195,30 +184,6 @@
         startTakerApiKeyId = String(takerAccountOptions[0]?.key_id ?? "");
     }
     $: renderedMinOrderAmount = displayMinOrderAmount || minOrderAmount;
-    $: readinessBaseAsset =
-        readiness?.bestFirstAction?.baseAsset ||
-        readiness?.estimatedVolume?.baseAsset ||
-        baseCoin;
-    $: readinessCurrentBalanceRows = getReadinessCapitalRows(
-        readiness?.currentBalancesByAccountAsset || [],
-        "current",
-    );
-    $: readinessMinimumCapitalRows = getReadinessCapitalRows(
-        readiness?.minimumCapitalByAccountAsset || [],
-        "minimum",
-    );
-    $: readinessRecommendedCapitalRows = getReadinessCapitalRows(
-        readiness?.recommendedCapitalByAccountAsset || [],
-        "recommended",
-    );
-    $: readinessMaximumCapitalRows = getReadinessCapitalRows(
-        readiness?.maximumUsefulCapitalByAccountAsset || [],
-        "maximum",
-    );
-    $: shouldRenderReadinessDetails =
-        Boolean(readiness) &&
-        (readinessStatus === "ready" || readinessStatus === "blocked") &&
-        normalizeEfficientDualAccountMode(readiness?.mode) === efficientMode;
     $: orderAmountPlaceholder = renderedMinOrderAmount
         ? $_("admin_direct_mm_order_amount_placeholder_with_min", {
               values: { amount: renderedMinOrderAmount },
@@ -248,46 +213,6 @@
             (permission) => permission.capability === "trade",
         );
         return `${apiKey.name} (${apiKey.key_id}) · ${view.label}${tradePermission ? ` · ${tradePermission.label}` : ""}`;
-    }
-
-    function readinessTitle(status: DirectReadinessSubmitStatus): string {
-        if (status === "ready") return "Ready to start";
-        if (status === "blocked") return "Cannot start yet";
-        if (status === "loading") return "Checking readiness";
-        if (status === "failed") return "Readiness check failed";
-        if (status === "stale") return "Readiness is stale";
-        return "Complete selections to check readiness";
-    }
-
-    function readinessDescription(status: DirectReadinessSubmitStatus): string {
-        if (status === "ready") return "Planner readiness allows direct start for the selected accounts.";
-        if (status === "blocked") return "Planner readiness found blockers. Review the account and asset details below.";
-        if (status === "loading") return "Waiting for backend planner readiness before enabling start.";
-        if (status === "failed") return readinessError || "Retry after fixing the readiness request.";
-        if (status === "stale") return "Inputs changed; waiting for a fresh planner readiness result.";
-        return "Select exchange, pair, two accounts, mode, and cycle limits.";
-    }
-
-    function readinessBadgeClass(status: DirectReadinessSubmitStatus): string {
-        if (status === "ready") return "bg-success/10 text-success";
-        if (status === "blocked" || status === "failed") return "bg-error/10 text-error";
-        if (status === "loading" || status === "stale") return "bg-warning/10 text-warning";
-        return "bg-base-300/50 text-base-content/60";
-    }
-
-    function readinessModeLabel(mode: EfficientDualAccountVolumeMode): string {
-        return (
-            efficientModeOptions.find((option) => option.value === mode)?.label ||
-            mode
-        );
-    }
-
-    function readinessEstimateBasisLabel(basis: string): string {
-        if (basis === "current_available_balances") {
-            return "based on current available balances";
-        }
-
-        return `based on ${basis}`;
     }
 
     import SchemaConfigForm from "$lib/components/admin/settings/strategies/SchemaConfigForm.svelte";
@@ -1104,193 +1029,6 @@
                                 {/if}
                             </div>
                         {/if}
-                    {/if}
-
-                    {#if isEfficientDualAccountStrategy}
-                        <div class="bg-base-200/40 rounded-xl p-4" data-testid="efficient-readiness-panel">
-                            <div class="flex items-start justify-between gap-3">
-                                <div>
-                                    <span class="text-xs font-semibold text-base-content/50 tracking-wider block">
-                                        Planner readiness
-                                    </span>
-                                    <span class="text-sm font-semibold text-base-content block mt-1">
-                                        {readinessTitle(readinessStatus)}
-                                    </span>
-                                    <span class="text-xs text-base-content/60 block mt-1">
-                                        {readinessDescription(readinessStatus)}
-                                    </span>
-                                </div>
-                                <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize {readinessBadgeClass(readinessStatus)}">
-                                    {readinessStatus.replace("_", " ")}
-                                </span>
-                            </div>
-
-                            {#if readinessStatus === "loading"}
-                                <div class="mt-3 flex items-center gap-2 text-xs text-base-content/60">
-                                    <span class="loading loading-spinner loading-xs"></span>
-                                    <span>Waiting for deterministic planner readiness</span>
-                                </div>
-                            {/if}
-
-                            {#if shouldRenderReadinessDetails && readiness}
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
-                                    <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] text-base-content/50 block">Backend status</span>
-                                        <span class="text-sm font-semibold text-base-content">
-                                            {readiness.canStart ? "Can start" : "Cannot start"}
-                                        </span>
-                                    </div>
-                                    <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] text-base-content/50 block">Evaluated mode</span>
-                                        <span class="text-sm font-semibold text-base-content">
-                                            {readinessModeLabel(readiness.mode)}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {#if readiness.bestFirstAction}
-                                    <div class="mt-3 rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] font-semibold text-base-content/50 block mb-1">
-                                            Best first action
-                                        </span>
-                                        <span class="text-xs text-base-content block">
-                                            Maker {readiness.bestFirstAction.makerAccountLabel}
-                                            should {readiness.bestFirstAction.side}
-                                            {formatReadinessAmount(readiness.bestFirstAction.quantity, readiness.bestFirstAction.baseAsset)}
-                                            against taker {readiness.bestFirstAction.takerAccountLabel}
-                                            at {formatReadinessAmount(readiness.bestFirstAction.price, readiness.bestFirstAction.quoteAsset)}
-                                            ({formatReadinessAmount(readiness.bestFirstAction.notional, readiness.bestFirstAction.quoteAsset)} notional).
-                                        </span>
-                                    </div>
-                                {/if}
-
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
-                                    <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] text-base-content/50 block">Maximum cycle qty</span>
-                                        <span class="text-sm font-semibold text-base-content">
-                                            {formatReadinessAmount(readiness.maximumCycleQty, readinessBaseAsset)}
-                                        </span>
-                                    </div>
-                                    <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] text-base-content/50 block">Recommended cycle qty</span>
-                                        <span class="text-sm font-semibold text-base-content">
-                                            {formatReadinessAmount(readiness.recommendedCycleQty, readinessBaseAsset)}
-                                        </span>
-                                    </div>
-                                    <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] text-base-content/50 block">Estimated cycles</span>
-                                        <span class="text-sm font-semibold text-base-content">
-                                            {readiness.estimatedCycles.count}
-                                        </span>
-                                        <span class="text-[10px] text-base-content/50 block mt-1">
-                                            {readinessEstimateBasisLabel(readiness.estimatedCycles.basis)}
-                                        </span>
-                                    </div>
-                                    <div class="rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] text-base-content/50 block">Estimated volume</span>
-                                        <span class="text-sm font-semibold text-base-content block">
-                                            {formatReadinessAmount(readiness.estimatedVolume.quoteAmount, readiness.estimatedVolume.quoteAsset)}
-                                        </span>
-                                        <span class="text-[10px] text-base-content/50 block mt-1">
-                                            {formatReadinessAmount(readiness.estimatedVolume.baseAmount, readiness.estimatedVolume.baseAsset)}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {#if readinessCurrentBalanceRows.length > 0}
-                                    <div class="mt-3 rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] font-semibold text-base-content/50 block mb-2">
-                                            Current balances
-                                        </span>
-                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            {#each readinessCurrentBalanceRows as row}
-                                                <span class="rounded-md bg-base-200/60 px-2 py-1 text-[11px] text-base-content" data-testid={row.testId}>
-                                                    {row.accountLabel}: {row.label}
-                                                </span>
-                                            {/each}
-                                        </div>
-                                    </div>
-                                {/if}
-
-                                {#if readinessMinimumCapitalRows.length > 0 || readinessRecommendedCapitalRows.length > 0 || readinessMaximumCapitalRows.length > 0}
-                                    <div class="mt-3 rounded-lg border border-base-300 bg-base-100 p-3">
-                                        <span class="text-[10px] font-semibold text-base-content/50 block mb-2">
-                                            Useful capital from backend
-                                        </span>
-                                        <div class="space-y-2">
-                                            {#if readinessMinimumCapitalRows.length > 0}
-                                                <div>
-                                                    <span class="text-[10px] text-base-content/50 block">Minimum capital</span>
-                                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                                        {#each readinessMinimumCapitalRows as row}
-                                                            <span class="rounded-md bg-base-200/60 px-2 py-1 text-[11px] text-base-content" data-testid={row.testId}>
-                                                                {row.accountLabel}: {row.label}
-                                                            </span>
-                                                        {/each}
-                                                    </div>
-                                                </div>
-                                            {/if}
-                                            {#if readinessRecommendedCapitalRows.length > 0}
-                                                <div>
-                                                    <span class="text-[10px] text-base-content/50 block">Recommended capital</span>
-                                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                                        {#each readinessRecommendedCapitalRows as row}
-                                                            <span class="rounded-md bg-base-200/60 px-2 py-1 text-[11px] text-base-content" data-testid={row.testId}>
-                                                                {row.accountLabel}: {row.label}
-                                                            </span>
-                                                        {/each}
-                                                    </div>
-                                                </div>
-                                            {/if}
-                                            {#if readinessMaximumCapitalRows.length > 0}
-                                                <div>
-                                                    <span class="text-[10px] text-base-content/50 block">Maximum useful capital</span>
-                                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                                        {#each readinessMaximumCapitalRows as row}
-                                                            <span class="rounded-md bg-base-200/60 px-2 py-1 text-[11px] text-base-content" data-testid={row.testId}>
-                                                                {row.accountLabel}: {row.label}
-                                                            </span>
-                                                        {/each}
-                                                    </div>
-                                                </div>
-                                            {/if}
-                                        </div>
-                                    </div>
-                                {/if}
-
-                                {#if readiness.missingBalances.length > 0}
-                                    <div class="mt-3 space-y-2">
-                                        {#each readiness.missingBalances as missing}
-                                            <div class="rounded-lg border border-error/20 bg-error/10 p-3">
-                                                <span class="text-xs font-semibold text-error block">
-                                                    {missing.accountLabel} needs {formatReadinessAmount(missing.missingAmount, missing.asset)}
-                                                </span>
-                                                <span class="text-[11px] text-base-content/70 block mt-1">
-                                                    {describeReadinessMissingBalance(missing)}
-                                                </span>
-                                            </div>
-                                        {/each}
-                                    </div>
-                                {/if}
-
-                                {#if readiness.blockingReasons.length > 0 && readiness.missingBalances.length === 0}
-                                    <div class="mt-3 space-y-2">
-                                        {#each readiness.blockingReasons as reason}
-                                            <div class="rounded-lg border border-error/20 bg-error/10 p-3">
-                                                <span class="text-xs font-semibold text-error block">
-                                                    {describeReadinessBlockingReason(reason)}
-                                                </span>
-                                                {#if reason.asset}
-                                                    <span class="text-[11px] text-base-content/70 block mt-1">
-                                                        Asset: {reason.asset}
-                                                    </span>
-                                                {/if}
-                                            </div>
-                                        {/each}
-                                    </div>
-                                {/if}
-                            {/if}
-                        </div>
                     {/if}
 
                     {#if isPureMarketMakingStrategy}
