@@ -6,7 +6,8 @@
 - **Strategy name:** Efficient Dual Account Volume
 - **Chinese product name:** 高效双账户刷量策略
 - **Short name:** Efficient Volume
-- **Supersedes:** `dual account volume`, `dual account volume best capacity`
+- **Implementation model:** add a new strategy contract, `efficientDualAccountVolume`
+- **Existing strategies:** keep `dualAccountVolume` and `dualAccountBestCapacityVolume` as separate legacy/admin-compatible strategies. Do not directly merge them.
 
 ## Goal
 
@@ -18,7 +19,7 @@ Design one user-facing dual-account volume strategy whose objective is:
 - Explain balance blockers in human terms before and during runtime.
 - Be fully usable from admin direct market making as a real production strategy, not only as backend planner logic.
 
-This plan replaces the current user-facing split between `dual account volume` and `dual account volume best capacity`. Those names expose implementation details instead of answering the user's real question: “How much do I need, how fast can it刷量, and why did it stop?”
+This plan adds a new user-facing strategy instead of directly merging the two existing strategies. `dualAccountVolume` and `dualAccountBestCapacityVolume` remain available for existing orders, operational comparison, and compatibility. `efficientDualAccountVolume` becomes the product strategy that answers the user's real question: “How much do I need, how fast can it刷量, and why did it stop?”
 
 ## Current Problem
 
@@ -55,18 +56,22 @@ This plan is not a greenfield rewrite. The correct implementation path is to reu
 
 The actual product change is therefore:
 
-1. Make best-capacity candidate planning the only normal planning path.
-2. Replace the hard-coded score with a mode-aware score.
-3. Add readiness/capacity projection using the same planner inputs.
-4. Add cycle-level visibility so maker and inline taker activity are shown as one user-understandable unit.
+1. Add `efficientDualAccountVolume` as a new strategy contract.
+2. Reuse the stable planner/runtime pieces from the existing two strategies.
+3. Make best-capacity candidate planning the normal path for the new strategy only.
+4. Replace the hard-coded score with a mode-aware score for the new strategy.
+5. Add readiness/capacity projection using the same planner inputs.
+6. Add cycle-level visibility so maker and inline taker activity are shown as one user-understandable unit.
 
 ## Key Product Decision
 
-Expose one strategy:
+Expose one new product strategy:
 
 > **Efficient Dual Account Volume**
 
-The strategy internally chooses execution direction and account roles. The user should choose the trading pair, accounts, budget, target aggressiveness, and runtime objective. They should not choose between low-level variants whose difference is planner mechanics.
+The strategy internally chooses execution direction and account roles. The user should choose the trading pair, accounts, budget, target aggressiveness, and runtime objective.
+
+The older `dualAccountVolume` and `dualAccountBestCapacityVolume` strategies are not removed by this plan. They remain separate contracts so existing runs, tests, and operator workflows do not change while the new product contract is validated.
 
 Optional user-facing modes can be policy presets inside the same strategy:
 
@@ -455,14 +460,15 @@ Translate internal reasons:
 
 ### Phase 1: Design The Unified Strategy Contract
 
-- Add a single strategy definition for Efficient Dual Account Volume.
+- Add a new strategy definition for Efficient Dual Account Volume.
+- Keep the existing `dualAccountVolume` and `dualAccountBestCapacityVolume` definitions.
 - Keep low-level execution policy internal.
 - Define config fields around user goals: pair, accounts, mode, max cycle size, max cost/slippage, cooldown, optional target volume, safety buffer override.
 - Preserve `tradeAmountVariance` and `priceOffsetVariance` as optional execution randomization fields.
 - Default missing persisted `mode` to `balanced`.
 - Default missing safety buffer fields to the formula in this plan.
 - Treat missing `dynamicRoleSwitching` on legacy data as `true` for the unified strategy. Legacy stopped/old-definition orders keep their existing behavior until explicitly migrated.
-- Mark existing dual-account variants as superseded in admin copy once replacement is ready.
+- Label the new strategy as the recommended user-facing volume strategy once it is ready. Do not rename, delete, or silently migrate the existing two strategies.
 
 ### Phase 2: Add Readiness And Capacity Projection
 
@@ -474,8 +480,9 @@ Translate internal reasons:
 
 ### Phase 3: Replace Fixed/Fallback Planning With Candidate Scoring
 
-- Make the existing best-capacity candidate builder the only normal path for this strategy.
-- Remove the classic “preferred side then fallback side” behavior from the unified strategy path.
+- Make the existing best-capacity candidate builder the only normal path for `efficientDualAccountVolume`.
+- Keep classic “preferred side then fallback side” behavior available to `dualAccountVolume`.
+- Keep `dualAccountBestCapacityVolume` behavior stable unless a bug fix is shared safely through common planner code.
 - Replace the existing hard-coded score weights with the mode-aware normalized scoring table above.
 - Score candidates by executable volume, future capacity, fees, spread, dust risk, and rebalance risk.
 - Emit one cycle action with a human-readable reason.
@@ -490,18 +497,21 @@ Translate internal reasons:
 
 ### Phase 5: Improve Admin UX
 
-- Replace the two dual-account strategy options with one Efficient Dual Account Volume option.
+- Add Efficient Dual Account Volume as the recommended option.
+- Keep the two existing dual-account strategy options visible or operator-accessible according to admin policy.
 - Add a pre-start balance checker.
 - Show recommended deposits and expected output before submit.
 - Add runtime cycle timeline and bottleneck explanation.
 
 ### Phase 6: Migration / Removal
 
-- Do not keep old strategies as separate user-facing products once the unified strategy is ready.
-- Existing persisted orders keep their old strategy definition until stopped or explicitly migrated by an operator action.
+- Do not remove the old strategies as part of this plan.
+- Existing persisted orders keep their old strategy definition.
+- New user-facing HuFi reward flows should prefer `efficientDualAccountVolume`.
+- Operator/admin flows may keep using the older strategies for comparison, regression isolation, and fallback.
 - Shared `DualAccountVolumeStrategyParams` fields remain backward-compatible.
 - Missing new fields resolve as: `mode = balanced`, default safety buffer formula, `cycleMode = alternating`, `dynamicRoleSwitching = true` for unified strategy only, variance fields unchanged if present and omitted if absent.
-- New admin order creation should use the unified strategy only.
+- New admin order creation should highlight the unified strategy, not force-delete or force-merge the older two.
 
 ## Test Plan
 
@@ -517,6 +527,7 @@ Translate internal reasons:
 ## Acceptance Criteria
 
 - Admin direct market making can create a new Efficient Dual Account Volume order using two selected exchange accounts and a selected pair.
+- Existing `dualAccountVolume` and `dualAccountBestCapacityVolume` orders can still start/stop using their own strategy definitions.
 - Admin direct market making can run the strategy against real order-scoped balances and exchange trading rules without requiring manual backend commands or hidden config edits.
 - Admin direct market making shows pre-start readiness: can start / cannot start, best first action, minimum capital, recommended capital, missing account/asset/amount, and estimated volume/cycles.
 - Admin direct market making shows runtime cycle visibility: cycle id, maker leg, taker leg, account labels, side, qty, price, status, and failure reason.
@@ -537,5 +548,5 @@ Translate internal reasons:
 
 - New cycle persistence table in the first implementation. Use deterministic `cycleId` metadata first.
 - Direct exchange balance reads from strategy tick planning. Use order-scoped ledger/cache-backed balance queries.
-- Keeping both old dual-account strategies as first-class new-order choices after the unified strategy ships.
+- Directly merging, renaming, or deleting `dualAccountVolume` and `dualAccountBestCapacityVolume`.
 - Automatic cross-account fund transfer. If balances are wrong, show the missing asset and recommended deposit/rebalance action.

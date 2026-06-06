@@ -2,7 +2,7 @@
 
 ## 2026-06-03
 
-- Add the capital-efficient dual-account volume plan: replace the confusing `dual account volume` / `best capacity` split with one Efficient Dual Account Volume strategy that scores all account-role directions, rotates inventory to minimize capital, exposes readiness/missing-balance diagnostics, and renders maker/taker cycle state clearly.
+- Add the capital-efficient dual-account volume plan as an additive strategy contract: keep `dualAccountVolume` and `dualAccountBestCapacityVolume` separate, and make `efficientDualAccountVolume` the new recommended product path that scores all account-role directions, rotates inventory to minimize capital, exposes readiness/missing-balance diagnostics, and renders maker/taker cycle state clearly.
 
 ## 2026-06-02
 
