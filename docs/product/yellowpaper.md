@@ -321,30 +321,23 @@ An instance is a complete deployed Mr.Market server that can run multiple strate
 
 ### 3.3 Strategy Definitions and Configuration Snapshots
 
-The Mr.Market strategy system separates "strategy products" from "strategy code."
-
-- **Strategy product**: a strategy template that users can select, view, configure, and order;
-- **Strategy code**: the server-side Controller that actually generates quoting, order placement, cancellation, and risk-control actions.
-
-The database stores only strategy products and configuration, not executable strategy code.
-
 #### Design Judgment
 
 | Object | Role | Mutable |
 |------|------|----------|
-| `StrategyDefinition` | Strategy template. Defines name, key, configuration schema, default parameters, visibility, capability declarations, and `controllerType` | Admin-manageable |
-| `strategySnapshot` | Order-level strategy snapshot. Stores the resolved configuration actually used by an order | Immutable after creation |
-| `Strategy Controller` | Server-side built-in strategy logic. Generates intents from snapshot configuration and market state | Released only through code |
-
-Mr.Market does not design its strategy system as an "infinitely composable" rule engine, because once strategy logic can be arbitrarily assembled, scheduling, risk control, reservation, intent, and state-machine boundaries lose clarity. Therefore, truly executable strategy logic is converged into server-side built-in `Strategy Controller`s. To support a new strategy category, add or modify a Controller instead of using configuration to escape into new logic. Strategy parameters themselves are open: the same Controller can correspond to infinitely many parameter sets. `StrategyDefinition` defines which parameters are configurable, what their types are, and what defaults they have; `strategySnapshot` freezes the configuration version at order creation or startup. This lets the admin continue updating strategy definitions while ensuring existing orders are not silently rewritten. Whether old orders upgrade to a new definition should be an explicit choice, not system default behavior.
+| `StrategyDefinition` | Strategy class/product family. Defines controller type, schema, capability declarations, launch surfaces, and visibility. It does not represent one reusable parameter preset. | Admin-manageable |
+| `StrategyTemplate` | Reusable parameter preset under a strategy definition. Defines named default parameter sets that operators/users can select and override when creating an order. | Admin-manageable |
+| `strategySnapshot` | Order-level frozen runtime strategy config resolved from definition + template + order overrides + runtime fields. Runtime uses this, not live definitions/templates. | Immutable after creation |
 
 #### Creation Flow
 
 When creating a market-making order, the system generates an order-level strategy snapshot through the following flow:
 
 ```text
-StrategyDefinition.defaultConfig
-  + user-provided configOverrides
+StrategyDefinition
+  + StrategyTemplate
+  + order overrides
+  + runtime order fields
   → configSchema validation
   → decimal field normalization
   → MarketMakingOrder.strategySnapshot
@@ -360,7 +353,7 @@ StrategyDefinition.defaultConfig
 | `resolvedConfig` | Configuration actually used by the order |
 | `resolvedAt` | Snapshot generation time |
 
-After an order enters runtime, it may only read `strategySnapshot.resolvedConfig`. Later changes to `StrategyDefinition` must not change created orders.
+After an order enters runtime, it may only read `strategySnapshot.resolvedConfig`. Later changes to `StrategyDefinition` or `StrategyTemplate` must not change created orders.
 
 #### Adjustable Scope
 
