@@ -8,9 +8,6 @@ import type {
   DirectOrderStatus,
   DirectOrderSummary,
   DirectStartPayload,
-  DirectVariationMetadata,
-  DirectVariationSavePayload,
-  DirectVariationSaveResponse,
   DirectWalletStatus,
 } from "$lib/types/hufi/admin-direct-market-making";
 import type { OrderPerformance } from "$lib/types/hufi/order-performance";
@@ -116,38 +113,6 @@ export const getDirectOrderStatus = async (
     {
       method: "GET",
       headers: getHeaders(token),
-    },
-  );
-
-  return handleApiResponse(response);
-};
-
-export const getDirectOrderVariation = async (
-  orderId: string,
-  token: string,
-): Promise<DirectVariationMetadata> => {
-  const response = await fetch(
-    `${MRM_BACKEND_URL}/admin/market-making/direct-orders/${orderId}/variation`,
-    {
-      method: "GET",
-      headers: getHeaders(token),
-    },
-  );
-
-  return handleApiResponse(response);
-};
-
-export const updateDirectOrderVariation = async (
-  orderId: string,
-  payload: DirectVariationSavePayload,
-  token: string,
-): Promise<DirectVariationSaveResponse> => {
-  const response = await fetch(
-    `${MRM_BACKEND_URL}/admin/market-making/direct-orders/${orderId}/variation`,
-    {
-      method: "PATCH",
-      headers: getHeaders(token),
-      body: JSON.stringify(payload),
     },
   );
 

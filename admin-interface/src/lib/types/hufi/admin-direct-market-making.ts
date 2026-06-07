@@ -42,53 +42,6 @@ export type DirectRuntimeCycle = {
   legs: DirectRuntimeCycleLeg[];
 };
 
-export type DirectVariationEditability = {
-  editable: boolean;
-  reason: 'order_not_paused' | null;
-  state: string;
-};
-
-export type DirectVariationFieldMetadata = {
-  key: string;
-  type: string | null;
-  required: boolean;
-  enum?: unknown[];
-  minimum?: number;
-  title?: string;
-  description?: string;
-  currentValue: unknown;
-  editable: boolean;
-  schema: Record<string, unknown>;
-};
-
-export type DirectVariationMetadata = {
-  orderId: string;
-  state: string;
-  strategyDefinitionId: string;
-  strategyDefinition: {
-    id: string;
-    key: string;
-    name: string;
-    controllerType: string;
-  };
-  editable: boolean;
-  editability: DirectVariationEditability;
-  values: Record<string, unknown>;
-  fields: DirectVariationFieldMetadata[];
-};
-
-export type DirectVariationSavePayload = {
-  configOverrides: Record<string, unknown>;
-};
-
-export type DirectVariationSaveResponse = {
-  orderId: string;
-  state: string;
-  strategyDefinitionId: string;
-  strategySnapshot: Record<string, unknown>;
-  flattenedFields: Record<string, unknown>;
-};
-
 export interface DirectOrderSummary {
   orderId: string;
   exchangeName: string;

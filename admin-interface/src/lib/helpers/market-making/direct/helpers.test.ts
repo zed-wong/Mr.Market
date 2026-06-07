@@ -5,7 +5,6 @@ import {
   buildDirectReadinessRefreshKey,
   buildDirectOrderDiagnosis,
   EFFICIENT_DUAL_ACCOUNT_CONTROLLER_TYPE,
-  buildDirectVariationConfigOverrides,
   describeDirectRuntimeBottleneck,
   describeDirectRuntimeNextAction,
   describeReadinessBlockingReason,
@@ -19,12 +18,10 @@ import {
   getDirectOrderActionAvailability,
   getDirectReadinessSubmitStatus,
   getDirectRuntimeLifecycleView,
-  getDirectVariationEditableFields,
   getEfficientDualAccountModeOptions,
   getLatestDirectRuntimeCycle,
   getReadinessCapitalRows,
   isDirectReadinessForCurrentSelection,
-  initializeDirectVariationFormValues,
   isBestCapacityDirectOrderControllerType,
   isDualAccountOrder,
   isDualDirectOrderControllerType,
@@ -37,7 +34,6 @@ import {
   resolveInventorySkewAllocation,
   resolveMinOrderAmount,
 } from './helpers';
-import type { DirectVariationMetadata } from '$lib/types/hufi/admin-direct-market-making';
 
 const diagnosisNow = Date.parse('2026-05-24T00:00:00.000Z');
 
@@ -1308,109 +1304,6 @@ describe('buildGenericSchemaConfigOverrides', () => {
     ).toEqual({
       threshold: 5,
       mode: 'safe',
-    });
-  });
-});
-
-describe('direct variation helpers', () => {
-  const metadata: DirectVariationMetadata = {
-    orderId: 'order-1',
-    state: 'paused',
-    strategyDefinitionId: 'strategy-1',
-    strategyDefinition: {
-      id: 'strategy-1',
-      key: 'pure-market-making',
-      name: 'Pure Market Making',
-      controllerType: 'pureMarketMaking',
-    },
-    editable: true,
-    editability: { editable: true, reason: null, state: 'paused' },
-    values: {
-      bidSpread: '0.001',
-      enabled: true,
-      pair: 'BTC/USDT',
-      strategyDefinitionId: 'spoofed',
-    },
-    fields: [
-      {
-        key: 'bidSpread',
-        type: 'number',
-        required: false,
-        currentValue: '0.001',
-        editable: true,
-        schema: { type: 'number' },
-      },
-      {
-        key: 'priceSourceType',
-        type: 'string',
-        required: false,
-        enum: ['mid_price', 'last_trade'],
-        currentValue: 'mid_price',
-        editable: true,
-        schema: { type: 'string', enum: ['mid_price', 'last_trade'] },
-      },
-      {
-        key: 'enabled',
-        type: 'boolean',
-        required: false,
-        currentValue: true,
-        editable: true,
-        schema: { type: 'boolean' },
-      },
-      {
-        key: 'pair',
-        type: 'string',
-        required: true,
-        currentValue: 'BTC/USDT',
-        editable: true,
-        schema: { type: 'string' },
-      },
-      {
-        key: 'strategyDefinitionId',
-        type: 'string',
-        required: true,
-        currentValue: 'strategy-1',
-        editable: true,
-        schema: { type: 'string' },
-      },
-      {
-        key: 'readonlyNote',
-        type: 'string',
-        required: false,
-        currentValue: 'server-owned',
-        editable: false,
-        schema: { type: 'string' },
-      },
-    ],
-  };
-
-  it('initializes variation form values from editable metadata and omits reserved fields', () => {
-    expect(getDirectVariationEditableFields(metadata).map((field) => field.key)).toEqual([
-      'bidSpread',
-      'priceSourceType',
-      'enabled',
-    ]);
-    expect(initializeDirectVariationFormValues(metadata)).toEqual({
-      bidSpread: '0.001',
-      priceSourceType: 'mid_price',
-      enabled: true,
-    });
-  });
-
-  it('builds save payloads from editable fields only and coerces primitive schema values', () => {
-    expect(
-      buildDirectVariationConfigOverrides(metadata, {
-        bidSpread: '0.002',
-        priceSourceType: 'last_trade',
-        enabled: false,
-        pair: 'ETH/USDT',
-        strategyDefinitionId: 'malicious',
-        readonlyNote: 'ignored',
-      }),
-    ).toEqual({
-      bidSpread: 0.002,
-      priceSourceType: 'last_trade',
-      enabled: false,
     });
   });
 });

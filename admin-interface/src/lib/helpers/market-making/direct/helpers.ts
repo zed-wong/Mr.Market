@@ -10,8 +10,6 @@ import type {
   DirectRuntimeCycle,
   DirectRuntimeCycleLeg,
   DirectRuntimeCycleLegRole,
-  DirectVariationFieldMetadata,
-  DirectVariationMetadata,
 } from "$lib/types/hufi/admin-direct-market-making";
 
 export interface ExchangeMarketAmountLimits {
@@ -1357,101 +1355,4 @@ export function buildGenericSchemaConfigOverrides(
   );
 }
 
-function isReservedDirectVariationField(field: string): boolean {
-  if (DIRECT_RESERVED_CONFIG_FIELDS.has(field)) {
-    return true;
-  }
 
-  const normalized = field.trim().toLowerCase();
-
-  return normalized === "id" || normalized.endsWith("id");
-}
-
-export function getDirectVariationEditableFields(
-  metadata: DirectVariationMetadata | null | undefined,
-): DirectVariationFieldMetadata[] {
-  return (metadata?.fields || []).filter(
-    (field) =>
-      field.editable &&
-      Boolean(field.key) &&
-      !isReservedDirectVariationField(field.key),
-  );
-}
-
-export function stringifyDirectVariationInputValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-
-  return String(value);
-}
-
-function coerceDirectVariationInputValue(
-  field: DirectVariationFieldMetadata,
-  value: unknown,
-): unknown {
-  if (field.type === "boolean") {
-    return Boolean(value);
-  }
-
-  if (field.type === "number" || field.type === "integer") {
-    if (value === "") {
-      return "";
-    }
-
-    const numeric = Number(value);
-    return Number.isNaN(numeric) ? value : numeric;
-  }
-
-  if (field.type === "object" || field.type === "array") {
-    const raw = String(value ?? "").trim();
-    if (!raw) {
-      return field.type === "array" ? [] : {};
-    }
-
-    return JSON.parse(raw);
-  }
-
-  return value;
-}
-
-export function initializeDirectVariationFormValues(
-  metadata: DirectVariationMetadata | null | undefined,
-): Record<string, string | boolean> {
-  return getDirectVariationEditableFields(metadata).reduce<
-    Record<string, string | boolean>
-  >((acc, field) => {
-    const currentValue =
-      metadata?.values && Object.prototype.hasOwnProperty.call(metadata.values, field.key)
-        ? metadata.values[field.key]
-        : field.currentValue;
-
-    acc[field.key] =
-      field.type === "boolean"
-        ? Boolean(currentValue)
-        : stringifyDirectVariationInputValue(currentValue);
-
-    return acc;
-  }, {});
-}
-
-export function buildDirectVariationConfigOverrides(
-  metadata: DirectVariationMetadata | null | undefined,
-  values: Record<string, unknown>,
-): Record<string, unknown> {
-  return getDirectVariationEditableFields(metadata).reduce<Record<string, unknown>>(
-    (acc, field) => {
-      if (!Object.prototype.hasOwnProperty.call(values, field.key)) {
-        return acc;
-      }
-
-      acc[field.key] = coerceDirectVariationInputValue(field, values[field.key]);
-      return acc;
-    },
-    {},
-  );
-}

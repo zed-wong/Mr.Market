@@ -5,12 +5,10 @@
     import AdminStatePanel from "$lib/components/admin/shared/AdminStatePanel.svelte";
     import PnlChart from "$lib/components/market-making/direct/PnlChart.svelte";
     import RuntimeCyclePanel from "$lib/components/market-making/direct/RuntimeCyclePanel.svelte";
-    import StrategyVariationPanel from "$lib/components/market-making/direct/StrategyVariationPanel.svelte";
     import type { AdminErrorState } from "$lib/helpers/admin/common-states";
     import type {
         DirectOrderSummary,
         DirectOrderStatus,
-        DirectVariationMetadata,
     } from "$lib/types/hufi/admin-direct-market-making";
     import type { OrderPerformance } from "$lib/types/hufi/order-performance";
     import {
@@ -30,11 +28,6 @@
     export let order: DirectOrderSummary | null = null;
     export let data: DirectOrderStatus | null = null;
     export let performance: OrderPerformance | null = null;
-    export let variationMetadata: DirectVariationMetadata | null = null;
-    export let variationLoading = false;
-    export let variationError: string | null = null;
-    export let variationSaving = false;
-    export let variationSaveError: string | null = null;
     export let loading = false;
     export let refreshing = false;
     export let error: AdminErrorState | null = null;
@@ -43,9 +36,6 @@
     export let onStartOrder: () => void;
     export let onStopOrder: () => void;
     export let onRemoveOrder: () => void;
-    export let onSaveVariation: (configOverrides: Record<string, unknown>) => void | Promise<void> =
-        async () => {};
-
     function copyOrderId() {
         if (!order) return;
         navigator.clipboard.writeText(order.orderId);
@@ -907,15 +897,6 @@
                     {#if data && isEfficientDualAccountStrategy}
                         <RuntimeCyclePanel data={data} warnings={order.warnings || []} />
                     {/if}
-
-                    <StrategyVariationPanel
-                        metadata={variationMetadata}
-                        loading={variationLoading}
-                        error={variationError}
-                        saving={variationSaving}
-                        saveError={variationSaveError}
-                        onSave={onSaveVariation}
-                    />
 
                     <!-- Order Config -->
                     <div>
