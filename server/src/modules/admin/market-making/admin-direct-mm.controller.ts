@@ -4,7 +4,6 @@ import {
   Delete,
   Get,
   Param,
-  Patch,
   Post,
   Req,
   UseGuards,
@@ -18,7 +17,6 @@ import { PerformanceService } from 'src/modules/market-making/performance/perfor
 import { AdminAuditInterceptor } from '../system/admin-audit.interceptor';
 import {
   CampaignJoinRequestDto,
-  DirectEditVariationDto,
   DirectResumeMarketMakingDto,
   DirectStartMarketMakingDto,
   DirectStopMarketMakingDto,
@@ -60,25 +58,6 @@ export class AdminDirectMarketMakingController {
   @ApiOperation({ summary: 'Resume a direct admin market-making order' })
   async directResume(@Body() body: DirectResumeMarketMakingDto) {
     return this.adminDirectMarketMakingService.directResume(body.orderId);
-  }
-
-  @Patch('direct-orders/:id/variation')
-  @ApiOperation({
-    summary: 'Edit a paused direct admin market-making strategy variation',
-  })
-  async editPausedVariation(
-    @Param('id') id: string,
-    @Body() body: DirectEditVariationDto,
-  ) {
-    return this.adminDirectMarketMakingService.editPausedVariation(id, body);
-  }
-
-  @Get('direct-orders/:id/variation')
-  @ApiOperation({
-    summary: 'Get editable variation metadata for a direct admin order',
-  })
-  async getPausedVariationMetadata(@Param('id') id: string) {
-    return this.adminDirectMarketMakingService.getPausedVariationMetadata(id);
   }
 
   @Delete('direct-orders/:id')

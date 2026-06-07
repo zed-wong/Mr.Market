@@ -564,7 +564,7 @@ describe('direct controller helpers', () => {
     );
   });
 
-  it('filters new-order strategies to Pure Market Making and Efficient Dual Account Volume', () => {
+  it('filters new-order strategies to direct-compatible PMM and dual-account variants', () => {
     const strategies = [
       { id: 'legacy-classic', key: 'dual-account-volume', name: 'dual account volume', controllerType: 'dualAccountVolume' },
       { id: 'legacy-best', key: 'dual-account-best-capacity-volume', name: 'dual account volume best capacity', controllerType: 'dualAccountBestCapacityVolume' },
@@ -573,6 +573,8 @@ describe('direct controller helpers', () => {
     ];
 
     expect(filterDirectCreateStrategies(strategies).map((strategy) => strategy.id)).toEqual([
+      'legacy-classic',
+      'legacy-best',
       'pmm',
       'efficient',
     ]);
@@ -590,6 +592,8 @@ describe('direct controller helpers', () => {
 
     expect(selectableStrategies.map((strategy) => strategy.id)).toEqual([
       'pmm',
+      'legacy-classic',
+      'legacy-best',
       'efficient-backfilled',
     ]);
     expect(selectableStrategies).toEqual(
@@ -598,6 +602,16 @@ describe('direct controller helpers', () => {
           id: 'pmm',
           name: 'Pure Market Making',
           controllerType: 'pureMarketMaking',
+        }),
+        expect.objectContaining({
+          id: 'legacy-classic',
+          name: 'Dual Account Volume',
+          controllerType: 'dualAccountVolume',
+        }),
+        expect.objectContaining({
+          id: 'legacy-best',
+          name: 'Dual Account Best Capacity Volume',
+          controllerType: 'dualAccountBestCapacityVolume',
         }),
         expect.objectContaining({
           id: 'efficient-backfilled',

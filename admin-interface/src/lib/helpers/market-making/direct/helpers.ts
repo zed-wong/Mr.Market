@@ -433,9 +433,9 @@ export function filterDirectCreateStrategies<T extends DirectStrategyOptionLike>
 ): T[] {
   return strategies.filter(
     (strategy) =>
-      !isLegacyDualAccountStrategy(strategy) &&
-      (isPureMarketMakingStrategy(strategy) ||
-        isEfficientDualAccountStrategy(strategy)),
+      isPureMarketMakingStrategy(strategy) ||
+      isLegacyDualAccountStrategy(strategy) ||
+      isEfficientDualAccountStrategy(strategy),
   );
 }
 

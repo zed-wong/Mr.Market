@@ -70,7 +70,7 @@ const baseProps = {
 };
 
 describe('CreateOrderModal direct strategy rendering', () => {
-  it('renders Pure Market Making and backfilled Efficient Dual Account Volume strategy options', () => {
+  it('renders Pure Market Making, legacy dual account, and Efficient Dual Account Volume strategy options', () => {
     const strategies = filterDirectCreateStrategies([
       {
         id: 'def-pmm',
@@ -120,9 +120,8 @@ describe('CreateOrderModal direct strategy rendering', () => {
     });
 
     expect(body).toContain('Pure Market Making');
+    expect(body).toContain('Dual Account Volume');
+    expect(body).toContain('Dual Account Best Capacity Volume');
     expect(body).toContain('Efficient Dual Account Volume');
-    expect(body).not.toContain('def-legacy-classic');
-    expect(body).not.toContain('def-legacy-best');
-    expect(body).not.toContain('Dual Account Best Capacity Volume');
   });
 });

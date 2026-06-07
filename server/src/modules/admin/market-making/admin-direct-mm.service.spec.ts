@@ -1280,7 +1280,7 @@ describe('AdminDirectMarketMakingService', () => {
     );
   });
 
-  it('rejects classic dual-account direct starts so new orders use the unified contract', async () => {
+  it('starts classic dual-account direct orders when the legacy definition is selected', async () => {
     const {
       service,
       strategyDefinitionRepository,
@@ -1315,13 +1315,21 @@ describe('AdminDirectMarketMakingService', () => {
 
     await expect(
       service.directStart(dualAccountStartDto, 'admin-user'),
-    ).rejects.toThrow(
-      'Legacy dual-account strategy variants cannot be used for new direct orders',
+    ).resolves.toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategySnapshot: expect.objectContaining({
+          controllerType: 'dualAccountVolume',
+        }),
+      }),
     );
-    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
   });
 
-  it('rejects best-capacity dual-account direct starts so hidden variants do not re-enter', async () => {
+  it('starts best-capacity dual-account direct orders when the legacy definition is selected', async () => {
     const {
       service,
       strategyDefinitionRepository,
@@ -1356,10 +1364,18 @@ describe('AdminDirectMarketMakingService', () => {
 
     await expect(
       service.directStart(dualAccountStartDto, 'admin-user'),
-    ).rejects.toThrow(
-      'Legacy dual-account strategy variants cannot be used for new direct orders',
+    ).resolves.toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
+    expect(userOrdersService.createMarketMaking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategySnapshot: expect.objectContaining({
+          controllerType: 'dualAccountBestCapacityVolume',
+        }),
+      }),
     );
-    expect(userOrdersService.createMarketMaking).not.toHaveBeenCalled();
   });
 
   it('starts an efficient unified dual-account direct order with normalized contract defaults', async () => {
@@ -2262,7 +2278,7 @@ describe('AdminDirectMarketMakingService', () => {
     ]);
   });
 
-  it('rejects legacy dual-account definitions for new direct-start orders', async () => {
+  it('resolves legacy dual-account definitions for new direct-start orders', async () => {
     const { service, strategyDefinitionRepository, strategyConfigResolver } =
       buildService();
 
@@ -2276,6 +2292,20 @@ describe('AdminDirectMarketMakingService', () => {
     strategyConfigResolver.getDefinitionControllerType.mockReturnValue(
       'dualAccountBestCapacityVolume',
     );
+    strategyConfigResolver.resolveForOrderSnapshot.mockResolvedValue({
+      controllerType: 'dualAccountBestCapacityVolume',
+      resolvedConfig: {
+        exchangeName: 'binance',
+        symbol: 'BTC/USDT',
+        baseTradeAmount: 5,
+        baseIntervalTime: 10,
+        numTrades: 20,
+        baseIncrementPercentage: 0.2,
+        pricePushRate: 0,
+        balanceA: '1',
+        balanceB: '1000',
+      },
+    });
 
     await expect(
       service.directStart(
@@ -2285,16 +2315,16 @@ describe('AdminDirectMarketMakingService', () => {
         },
         'admin-user',
       ),
-    ).rejects.toThrow(
-      'Legacy dual-account strategy variants cannot be used for new direct orders',
-    );
+    ).resolves.toEqual({
+      orderId: expect.any(String),
+      state: 'running',
+      warnings: [],
+    });
 
-    expect(
-      strategyConfigResolver.resolveForOrderSnapshot,
-    ).not.toHaveBeenCalled();
+    expect(strategyConfigResolver.resolveForOrderSnapshot).toHaveBeenCalled();
   });
 
-  it('hides legacy dual-account variants from new direct strategy definitions', async () => {
+  it('lists legacy dual-account variants in direct strategy definitions', async () => {
     const { service, strategyDefinitionRepository } = buildService();
 
     strategyDefinitionRepository.find.mockResolvedValue([
@@ -2336,6 +2366,14 @@ describe('AdminDirectMarketMakingService', () => {
       expect.objectContaining({
         id: 'strategy-pmm',
         controllerType: 'pureMarketMaking',
+      }),
+      expect.objectContaining({
+        id: 'strategy-classic',
+        controllerType: 'dualAccountVolume',
+      }),
+      expect.objectContaining({
+        id: 'strategy-best',
+        controllerType: 'dualAccountBestCapacityVolume',
       }),
       expect.objectContaining({
         id: 'strategy-efficient',
@@ -2389,12 +2427,10 @@ describe('AdminDirectMarketMakingService', () => {
     expect(definitions.map((definition) => definition.controllerType)).toEqual(
       expect.arrayContaining([
         'pureMarketMaking',
+        'dualAccountVolume',
         'efficientDualAccountVolume',
       ]),
     );
-    expect(
-      definitions.map((definition) => definition.controllerType),
-    ).not.toEqual(expect.arrayContaining(['dualAccountVolume']));
     expect(
       definitions.find(
         (definition) =>
@@ -2454,15 +2490,8 @@ describe('AdminDirectMarketMakingService', () => {
     expect(definitions.map((definition) => definition.controllerType)).toEqual([
       'pureMarketMaking',
       'efficientDualAccountVolume',
+      'dualAccountVolume',
     ]);
-    expect(
-      definitions.map((definition) => definition.controllerType),
-    ).not.toEqual(
-      expect.arrayContaining([
-        'dualAccountVolume',
-        'dualAccountBestCapacityVolume',
-      ]),
-    );
     expect(
       definitions.find(
         (definition) => definition.controllerType === 'pureMarketMaking',
