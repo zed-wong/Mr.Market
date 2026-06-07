@@ -4,6 +4,7 @@
 
 ## 1. Adaptive PMM
 
+- 48-hour launch priority: make Adaptive PMM user-facing as the real liquidity provision product. Users self-direct inventory/market risk, and only positive PnL after fees counts as earning.
 - Validate Adaptive PMM as the current execution-layer mainline.
 - Confirm quote quality for arbitrary market pairs: signals, inventory skew, fee floor, min-notional, budgets, and cancel/create cadence.
 - Re-check order lifecycle after the `StrategyService` split: reservation pause, fill settlement, reconciliation, and decision snapshots.
@@ -22,6 +23,7 @@
 
 ## 3. Volume Strategy
 
+- 48-hour launch priority: make dual-account volume user-facing for HuFi campaign rewards, because HuFi currently rewards market making by volume. Users should be able to create a volume strategy from the frontend and see expected reward, fee cost, qualified volume, and net result.
 - Build Volume Strategy after PMM and PNL/Risk views are stable.
 - Use it for HuFi campaign volume-based rewards.
 - Track qualified volume, fee cost, expected reward, realized reward, and net PNL.

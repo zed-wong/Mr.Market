@@ -3,6 +3,7 @@
 ## 2026-06-07
 
 - Clarify the yellowpaper strategy source of truth: `StrategyDefinition` is the strategy class/product family, `StrategyTemplate` is the complete reusable parameter set, and `strategySnapshot` is resolved from definition, template, and runtime fields without per-order config overrides.
+- Add the 48-hour launch core plan around the two product priorities: user-facing adaptive pure PMM for real liquidity and PnL-driven market making, plus user-facing dual-account volume strategy creation for HuFi campaign volume rewards.
 
 ## 2026-06-03
 
